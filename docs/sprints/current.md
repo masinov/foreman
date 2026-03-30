@@ -1,61 +1,20 @@
 # Current Sprint
 
 - Sprint: `sprint-10-dashboard-implementation`
-- Status: active
+- Status: complete
 - Goal: build the first interactive dashboard slice aligned to the mockup
   using persisted Foreman project, sprint, task, run, and event state
-- Primary references:
-  - `docs/specs/engine-design-v3.md`
-  - `docs/mockups/foreman-mockup-v6.html`
-  - `docs/adr/ADR-0001-runner-session-backend-contract.md`
-  - `foreman/store.py`
-  - `foreman/dashboard.py`
-  - `foreman/cli.py`
+- Archive: `docs/sprints/archive/sprint-10-dashboard-implementation.md`
 
-## Included tasks
+## Summary
 
-1. `[done]` Add the first dashboard shell for project overview and sprint board
-   Deliverable: a runnable UI entrypoint renders project overview and active
-   sprint board data from persisted SQLite-backed state.
+All 3 tasks completed. Dashboard shell landed with:
+- HTTP server serving HTML + JSON API
+- Project overview, sprint board, activity feed views
+- Task detail panel with run history
+- `foreman dashboard` CLI command
+- ADR-0002 documenting data-access boundary
 
-2. `[done]` Surface task detail and recent activity in the dashboard
-   Deliverable: selecting a task reveals branch, role, status, token, and
-   recent event context aligned to the mockup's board and activity hierarchy.
+## Next
 
-3. `[done]` Define the first dashboard data-access boundary
-   Deliverable: the UI reuses SQLite-backed read models or thin projections
-   instead of hardcoded mock data, and the chosen boundary is documented in
-   repo memory.
-
-## Excluded from this sprint
-
-- authentication and multi-user concerns
-- live streaming transport beyond polling or snapshot semantics
-- task-creation and settings modals beyond placeholders
-- multi-project dashboard polish
-
-## Acceptance criteria
-
-- a user can load a dashboard surface that matches the mockup hierarchy for
-  project overview, sprint board, and activity feed
-- dashboard data comes from current persisted Foreman state rather than
-  hardcoded demo data
-- dashboard behavior that depends on runner or approval semantics cites
-  `ADR-0001`
-- docs and validation remain good enough for a fresh autonomous agent to pick
-  the next slice without extra human context
-
-## Known risks
-
-- the first dashboard slice can sprawl if it invents a broader API boundary
-  too early
-- live activity may need polling first because streaming transport is still a
-  separate unresolved decision
-- the current persistent-session reuse gap may affect how task detail and run
-  history are explained in the UI
-
-## Demo checklist
-
-- show a project overview populated from persisted state
-- show an active sprint board with task detail and recent activity
-- show repo validation passing after the dashboard slice lands
+Pull next item from `docs/sprints/backlog.md`.
