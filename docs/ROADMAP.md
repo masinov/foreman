@@ -57,7 +57,7 @@ Target deliverables:
 
 Status:
 
-- next active slice
+- completed on `feat/sqlite-store-baseline`
 
 ## Milestone 3: Roles, workflows, and scaffold generation
 
@@ -107,8 +107,7 @@ Target deliverables:
 
 ## Near-term priorities
 
-1. implement the SQLite store and query layer
-2. add TOML-based role and workflow loading
-3. implement project initialization and repo scaffold generation
-4. replace bootstrap CLI placeholders with store-backed inspection output
-5. define the first ADRs only when runtime decisions stop being hypothetical
+1. add TOML-based role and workflow loading
+2. implement project initialization and repo scaffold generation
+3. expand store-backed inspection beyond `projects` and `status`
+4. implement the first ADR only when a runtime decision becomes binding
