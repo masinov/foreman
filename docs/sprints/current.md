@@ -1,44 +1,37 @@
 # Current Sprint
 
-- Sprint: `sprint-11-multi-project-dashboard-polish`
+- Sprint: `sprint-12-dashboard-approve-deny-integration`
 - Status: complete
-- Goal: polish the dashboard for multi-project navigation, improve activity
-  stream filtering, and add human message input capability
+- Goal: wire dashboard approve/deny buttons to the orchestrator so human-gate
+  decisions actually resume workflow execution
 - Primary references:
   - `docs/specs/engine-design-v3.md`
-  - `docs/mockups/foreman-mockup-v6.html`
-  - `docs/adr/ADR-0002-dashboard-data-access-boundary.md`
   - `foreman/dashboard.py`
+  - `foreman/orchestrator.py`
+  - `foreman/cli.py`
 
 ## Included tasks
 
-1. `[done]` Add human message input to dashboard activity panel
-   Deliverable: activity panel includes a text input and send button that POSTs
-   to a new `/api/tasks/{id}/message` endpoint.
+1. `[done]` Wire approve button to orchestrator resume
+   Deliverable: clicking approve on a blocked task calls the orchestrator to
+   resume the workflow with approval outcome.
 
-2. `[done]` Improve activity stream filtering
-   Deliverable: activity filter dropdown allows filtering by event type or by
-   task, matching the mockup's activity filter affordance.
+2. `[done]` Wire deny button to orchestrator resume
+   Deliverable: clicking deny on a blocked task calls the orchestrator to
+   resume the workflow with denial outcome.
 
-3. `[done]` Add project switcher to dashboard topbar
-   Deliverable: topbar shows current project with a dropdown to switch between
-   projects when multiple exist.
+3. `[done]` Update dashboard UI after approve/deny
+   Deliverable: after approve/deny, the task status and activity stream update
+   to reflect the decision.
 
 ## Excluded from this sprint
 
-- authentication and multi-user concerns
-- live streaming transport beyond polling
-- task creation modal
-- sprint creation modal
+- streaming transport for dashboard
+- event-retention pruning
+- security review workflow variant
 
 ## Acceptance criteria
 
-- a user can type a message in the activity panel and send it to a task
-- activity stream can be filtered by event type
-- dashboard supports navigation between multiple projects
-
-## Known risks
-
-- human message persistence requires new event type handling
-- filtering may require additional store query methods
-- project switcher state management adds JavaScript complexity
+- clicking approve on a human-gate task resumes the workflow
+- clicking deny on a human-gate task resumes the workflow with steer outcome
+- dashboard reflects the updated task status immediately

@@ -840,21 +840,47 @@ function truncate(text, limit) {
 
 async function approveTask(taskId, event) {
   if (event) event.stopPropagation();
+  const card = event.target.closest('.card');
+  const btn = card.querySelector('.btn-approve');
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Approving...';
+
   try {
-    await fetch(`/api/tasks/${taskId}/approve`, { method: 'POST' });
+    const resp = await fetch(`/api/tasks/${taskId}/approve`, { method: 'POST' });
+    const data = await resp.json();
+    if (!resp.ok) {
+      throw new Error(data.error || 'Failed to approve');
+    }
+    hideDetail();
     if (currentSprint) loadSprint(currentSprint);
   } catch (e) {
     console.error('Failed to approve task:', e);
+    btn.textContent = 'Error';
+    setTimeout(() => { btn.textContent = originalText; btn.disabled = false; }, 2000);
   }
 }
 
 async function denyTask(taskId, event) {
   if (event) event.stopPropagation();
+  const card = event.target.closest('.card');
+  const btn = card.querySelector('.btn-deny');
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Denying...';
+
   try {
-    await fetch(`/api/tasks/${taskId}/deny`, { method: 'POST' });
+    const resp = await fetch(`/api/tasks/${taskId}/deny`, { method: 'POST' });
+    const data = await resp.json();
+    if (!resp.ok) {
+      throw new Error(data.error || 'Failed to deny');
+    }
+    hideDetail();
     if (currentSprint) loadSprint(currentSprint);
   } catch (e) {
     console.error('Failed to deny task:', e);
+    btn.textContent = 'Error';
+    setTimeout(() => { btn.textContent = originalText; btn.disabled = false; }, 2000);
   }
 }
 
@@ -1265,9 +1291,26 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             parts = path.split("/")
             if len(parts) == 4 and parts[1] == "api" and parts[2] == "tasks":
                 task_id = parts[3]
-                # For now, just return success - actual approval handling
-                # would require orchestrator integration
-                self._send_json({"status": "approved", "task_id": task_id})
+                task = self.store.get_task(task_id)
+                if task is None:
+                    self._send_error(f"Task not found: {task_id}")
+                    return
+
+                # Call orchestrator to resume human gate
+                from .orchestrator import ForemanOrchestrator, OrchestratorError
+                orchestrator = ForemanOrchestrator(self.store)
+                try:
+                    result = orchestrator.resume_human_gate(task_id, outcome="approve")
+                except OrchestratorError as exc:
+                    self._send_error(f"Failed to approve: {exc}", 500)
+                    return
+
+                self._send_json({
+                    "status": "approved",
+                    "task_id": task_id,
+                    "next_step": result.next_step,
+                    "deferred": result.deferred,
+                })
                 return
 
         # API: Deny task
@@ -1275,7 +1318,37 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             parts = path.split("/")
             if len(parts) == 4 and parts[1] == "api" and parts[2] == "tasks":
                 task_id = parts[3]
-                self._send_json({"status": "denied", "task_id": task_id})
+                task = self.store.get_task(task_id)
+                if task is None:
+                    self._send_error(f"Task not found: {task_id}")
+                    return
+
+                # Read optional note from request body
+                note = None
+                content_length = int(self.headers.get("Content-Length", 0))
+                if content_length > 0:
+                    body = self.rfile.read(content_length)
+                    try:
+                        data = json.loads(body)
+                        note = data.get("note")
+                    except json.JSONDecodeError:
+                        pass
+
+                # Call orchestrator to resume human gate
+                from .orchestrator import ForemanOrchestrator, OrchestratorError
+                orchestrator = ForemanOrchestrator(self.store)
+                try:
+                    result = orchestrator.resume_human_gate(task_id, outcome="deny", note=note)
+                except OrchestratorError as exc:
+                    self._send_error(f"Failed to deny: {exc}", 500)
+                    return
+
+                self._send_json({
+                    "status": "denied",
+                    "task_id": task_id,
+                    "next_step": result.next_step,
+                    "deferred": result.deferred,
+                })
                 return
 
         # API: Send human message to task
