@@ -2,15 +2,15 @@
 
 ## Current sprint
 
-- Sprint: `sprint-10-dashboard-implementation`
+- Sprint: `sprint-11-multi-project-dashboard-polish`
 - Status: active
-- Goal: build the first interactive dashboard slice aligned to the mockup
-  using persisted Foreman project, sprint, task, run, and event state
+- Goal: polish the dashboard for multi-project navigation, improve activity
+  stream filtering, and add human message input capability
 
 ## Active branches
 
-- `feat/dashboard-shell` — land the first web dashboard shell with SQLite-backed
-  project overview, sprint board, and activity feed
+- `chore/sprint-11-multi-project-polish` — update sprint state after
+  dashboard implementation merge
 
 ## Completed this week
 
@@ -164,11 +164,9 @@
 
 ## Ready next
 
-1. define the first ADR now that runner session handling and backend
-   contracts are active runtime constraints
-2. build the dashboard implementation aligned to the mockup
-3. decide how live activity should graduate from polling CLI snapshots to a
-   streaming dashboard transport
+1. add human message input to dashboard activity panel
+2. add activity stream filtering by event type
+3. add project switcher for multi-project navigation
 
 ## Open risks
 
@@ -177,8 +175,7 @@
   long-term architecture.
 - The package now has a real store, loader, orchestrator, project
   initialization path, human-gate resume commands, native Claude and Codex
-  runners, and monitoring CLI surfaces, but the dashboard implementation is
-  still missing.
+  runners, monitoring CLI surfaces, and the first dashboard shell.
 - The bootstrap CLI currently requires explicit `--db PATH` selection for
   SQLite-backed lifecycle, inspection, monitoring, and human-gate commands
   because engine-instance configuration does not exist yet.
