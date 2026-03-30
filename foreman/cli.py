@@ -982,6 +982,28 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _set_handler(config_parser, handle_stub, "config")
 
+    dashboard_parser = subparsers.add_parser(
+        "dashboard",
+        help="Start the web dashboard.",
+    )
+    _add_db_option(
+        dashboard_parser,
+        required=True,
+        help_text="Path to the SQLite store for dashboard data.",
+    )
+    dashboard_parser.add_argument(
+        "--host",
+        default="localhost",
+        help="Host to bind to (default: localhost).",
+    )
+    dashboard_parser.add_argument(
+        "--port",
+        type=int,
+        default=8080,
+        help="Port to listen on (default: 8080).",
+    )
+    _set_handler(dashboard_parser, handle_dashboard, "dashboard")
+
     return parser
 
 
