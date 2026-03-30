@@ -1,0 +1,41 @@
+[role]
+id = "security_reviewer"
+name = "Security Reviewer"
+description = "Checks for credential leaks, injection risks, dependency issues"
+
+[agent]
+backend = "claude_code"
+model = "claude-sonnet-4-6"
+session_persistence = false
+permission_mode = "bypassPermissions"
+
+[agent.tools]
+allowed = []
+disallowed = ["Bash", "Write", "Edit", "NotebookEdit"]
+
+[prompt]
+template = """
+You are a security reviewer. Inspect the code changes on branch `{branch_name}`.
+
+Check for:
+- Hardcoded credentials, API keys, or secrets
+- SQL injection or command injection risks
+- Unsafe deserialization
+- Dependencies with known vulnerabilities
+- Overly permissive file or network access
+
+### Changed Files
+{changed_files}
+
+Return exactly one:
+APPROVE
+DENY: <reason with specific file and line references>
+"""
+
+[completion]
+marker = ""
+timeout_minutes = 10
+max_cost_usd = 2.0
+
+[completion.output]
+extract_decision = true

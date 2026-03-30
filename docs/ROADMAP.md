@@ -71,6 +71,12 @@ Target deliverables:
 - scaffold generator for `AGENTS.md`, `docs/adr/`, and `.foreman/`
 - `.gitignore` update helpers
 
+Status:
+
+- partially completed on `feat/role-workflow-loaders`
+- role and workflow loading plus prompt rendering landed
+- scaffold generation and `.gitignore` update helpers remain
+
 ## Milestone 4: Orchestrator and built-ins
 
 Goal: execute one task through a workflow with durable state transitions.
@@ -107,7 +113,9 @@ Target deliverables:
 
 ## Near-term priorities
 
-1. add TOML-based role and workflow loading
-2. implement project initialization and repo scaffold generation
-3. expand store-backed inspection beyond `projects` and `status`
-4. implement the first ADR only when a runtime decision becomes binding
+1. implement the orchestrator main loop using loaded workflows and persisted
+   task state
+2. add built-in execution seams for test, merge, and mark-done steps
+3. implement project initialization and repo scaffold generation
+4. expand store-backed inspection beyond `projects`, `status`, `roles`, and
+   `workflows`

@@ -1,0 +1,92 @@
+[workflow]
+id = "development_secure"
+name = "Development with Security Review"
+methodology = "development"
+
+[[steps]]
+id = "develop"
+role = "developer"
+
+[[steps]]
+id = "code_review"
+role = "code_reviewer"
+
+[[steps]]
+id = "security_review"
+role = "security_reviewer"
+
+[[steps]]
+id = "test"
+role = "_builtin:run_tests"
+
+[[steps]]
+id = "merge"
+role = "_builtin:merge"
+
+[[steps]]
+id = "done"
+role = "_builtin:mark_done"
+
+[[transitions]]
+from = "develop"
+trigger = "completion:done"
+to = "code_review"
+
+[[transitions]]
+from = "code_review"
+trigger = "completion:approve"
+to = "security_review"
+
+[[transitions]]
+from = "code_review"
+trigger = "completion:deny"
+to = "develop"
+carry_output = true
+
+[[transitions]]
+from = "code_review"
+trigger = "completion:steer"
+to = "develop"
+carry_output = true
+
+[[transitions]]
+from = "security_review"
+trigger = "completion:approve"
+to = "test"
+
+[[transitions]]
+from = "security_review"
+trigger = "completion:deny"
+to = "develop"
+carry_output = true
+
+[[transitions]]
+from = "test"
+trigger = "completion:success"
+to = "merge"
+
+[[transitions]]
+from = "test"
+trigger = "completion:failure"
+to = "develop"
+carry_output = true
+
+[[transitions]]
+from = "merge"
+trigger = "completion:success"
+to = "done"
+
+[[transitions]]
+from = "merge"
+trigger = "completion:failure"
+to = "develop"
+carry_output = true
+
+[[gates]]
+trigger = "cost_exceeded"
+action = "kill_and_block"
+message = "Cost limit exceeded."
+
+[fallback]
+action = "block"
+message = "Unhandled workflow outcome."

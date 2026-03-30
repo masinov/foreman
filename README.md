@@ -32,8 +32,10 @@ The bootstrap implementation has started. The repository now contains:
 - a first `foreman/` package scaffold with a runnable CLI shell,
 - a SQLite-backed store baseline with typed models for projects, sprints,
   tasks, runs, and events,
+- shipped declarative `roles/*.toml` and `workflows/*.toml` definitions,
+- TOML loaders plus prompt rendering and workflow transition validation,
 - smoke and round-trip tests for the CLI shell and store,
-- repo-memory docs that point the next slice at roles and workflow loading.
+- repo-memory docs that point the next slice at the orchestrator loop.
 
 The immediate goal is to keep turning this scaffold into the real Foreman
 runtime without carrying over assumptions from the previous project.
@@ -67,8 +69,9 @@ Both wrappers expect these files to be current:
 
 The next recommended task is:
 
-- load declarative roles and workflows from TOML, including transition
-  validation and prompt rendering support.
+- implement the orchestrator main loop so one persisted task can move through
+  the standard development workflow using the loaded role and workflow
+  definitions.
 
 That task is already recorded in `docs/sprints/current.md`, so a fresh agent
 can continue without additional instructions.
@@ -96,6 +99,8 @@ Current code-level validation also includes:
 ./venv/bin/foreman --help
 ./venv/bin/foreman projects
 ./venv/bin/foreman status
+./venv/bin/foreman roles
+./venv/bin/foreman workflows
 ./venv/bin/foreman projects --db /tmp/foreman.db
 ./venv/bin/foreman status --db /tmp/foreman.db
 ```

@@ -2,16 +2,16 @@
 
 ## Current sprint
 
-- Sprint: `sprint-01-foundation`
+- Sprint: `sprint-02-orchestrator`
 - Status: active
-- Goal: turn the repo from a transplanted scaffold into a clean starting point
-  for building Foreman's first runnable backend slices
+- Goal: execute one persisted task through the standard development workflow
+  using the store plus loaded role and workflow definitions
 
 ## Active branches
 
-- `feat/sqlite-store-baseline` — land the SQLite-backed models, store layer,
-  round-trip tests, and store-backed `projects` or `status` inspection with
-  `--db`
+- `feat/role-workflow-loaders` — land declarative role and workflow loading,
+  shipped TOML defaults, prompt rendering, transition validation, and CLI
+  inspection for `roles` and `workflows`
 
 ## Completed this week
 
@@ -32,6 +32,13 @@
   tasks, runs, and events
 - added round-trip store tests plus `foreman projects --db ...` and
   `foreman status --db ...` inspection support
+- shipped declarative `roles/*.toml` and `workflows/*.toml` defaults from the
+  spec examples
+- implemented TOML-compatible role and workflow loaders, prompt rendering, and
+  transition validation
+- added `foreman roles` and `foreman workflows` plus dedicated loader tests
+- completed `sprint-01-foundation` and rolled repo memory forward to
+  `sprint-02-orchestrator`
 
 ## Current repo state
 
@@ -40,7 +47,8 @@
   - the UI mockup,
   - the initial `foreman` package scaffold and CLI shell,
   - a SQLite-backed store baseline with spec-shaped DDL and query helpers,
-  - smoke tests for the CLI bootstrap slice plus store round-trip coverage,
+  - shipped default role and workflow definitions with loader validation,
+  - smoke tests for the CLI bootstrap slice plus store and loader coverage,
   - regression coverage for the reviewed Codex supervisor flow,
   - the Codex and Claude supervisor scripts,
   - repo-memory docs that define the next engineering slices.
@@ -50,9 +58,9 @@
 
 ## Ready next
 
-1. load role and workflow definitions from TOML
-2. add prompt rendering and transition validation coverage for declarative
-   workflows
+1. implement the orchestrator main loop against persisted tasks, runs, and
+   events
+2. add built-in execution seams for test, merge, and mark-done workflow steps
 3. extend project initialization and broader CLI inspection commands to use the
    persisted store directly
 4. define the first ADR only when a runtime constraint stops being hypothetical
@@ -62,12 +70,15 @@
 - `reviewed_codex.py` and `reviewed_claude.py` are bootstrap supervisors, not
   the Foreman product itself; their behavior should not accidentally become the
   long-term architecture.
-- The package now has a real store layer, but role loading, workflow loading,
-  project initialization, orchestrator control flow, and native runners are
-  still unimplemented.
-- editable installs are now validated with `./venv/bin/pip install -e . --no-build-isolation`,
-  so fresh environments still need the repo venv to include the packaging toolchain
-  declared in `pyproject.toml`.
+- The package now has a real store layer plus declarative loader support, but
+  project initialization, orchestrator control flow, built-in execution, and
+  native runners are still unimplemented.
+- editable installs are now validated with
+  `./venv/bin/pip install -e . --no-build-isolation`, so fresh environments
+  still need the repo venv to include the packaging toolchain declared in
+  `pyproject.toml`.
+- Python 3.10 support currently relies on a local TOML compatibility shim and a
+  pip-vendored fallback during `--no-deps` validation installs.
 - The SQLite layer currently uses bootstrap DDL without a migration framework;
   schema evolution rules still need an ADR once later slices depend on them.
 - The UI mockup is static; implementing it will require decisions about API

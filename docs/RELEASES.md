@@ -11,6 +11,9 @@ The first runnable CLI checkpoint is recorded in
 The first persisted SQLite store checkpoint is recorded in
 `docs/checkpoints/sqlite-store-baseline.md`.
 
+The declarative loader checkpoint is recorded in
+`docs/checkpoints/role-workflow-loaders.md`.
+
 ## Near-term policy
 
 Until the first orchestrator slice exists:

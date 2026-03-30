@@ -1,0 +1,82 @@
+[workflow]
+id = "development"
+name = "Standard Development"
+methodology = "development"
+
+[[steps]]
+id = "develop"
+role = "developer"
+
+[[steps]]
+id = "review"
+role = "code_reviewer"
+
+[[steps]]
+id = "test"
+role = "_builtin:run_tests"
+
+[[steps]]
+id = "merge"
+role = "_builtin:merge"
+
+[[steps]]
+id = "done"
+role = "_builtin:mark_done"
+
+[[transitions]]
+from = "develop"
+trigger = "completion:done"
+to = "review"
+
+[[transitions]]
+from = "review"
+trigger = "completion:approve"
+to = "test"
+
+[[transitions]]
+from = "review"
+trigger = "completion:deny"
+to = "develop"
+carry_output = true
+
+[[transitions]]
+from = "review"
+trigger = "completion:steer"
+to = "develop"
+carry_output = true
+
+[[transitions]]
+from = "test"
+trigger = "completion:success"
+to = "merge"
+
+[[transitions]]
+from = "test"
+trigger = "completion:failure"
+to = "develop"
+carry_output = true
+
+[[transitions]]
+from = "merge"
+trigger = "completion:success"
+to = "done"
+
+[[transitions]]
+from = "merge"
+trigger = "completion:failure"
+to = "develop"
+carry_output = true
+
+[[gates]]
+trigger = "cost_exceeded"
+action = "kill_and_block"
+message = "Cost limit exceeded. Requires human review."
+
+[[gates]]
+trigger = "time_exceeded"
+action = "kill_and_block"
+message = "Time limit exceeded. Requires human review."
+
+[fallback]
+action = "block"
+message = "Unhandled workflow outcome. Requires human review."

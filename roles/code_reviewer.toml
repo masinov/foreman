@@ -1,0 +1,62 @@
+[role]
+id = "code_reviewer"
+name = "Code Reviewer"
+description = "Reviews completed work and returns APPROVE, DENY, or STEER"
+
+[agent]
+backend = "claude_code"
+model = "claude-sonnet-4-6"
+session_persistence = false
+permission_mode = "bypassPermissions"
+
+[agent.tools]
+allowed = []
+disallowed = ["Bash", "Write", "Edit", "NotebookEdit"]
+
+[prompt]
+template = """
+You are reviewing completed development work.
+
+## Task Under Review
+{task_title}: {task_description}
+
+### Acceptance Criteria
+{acceptance_criteria}
+
+### Developer Summary
+{previous_output}
+
+### Branch
+{branch_name}
+
+### Git Status
+{git_status}
+
+### Changed Files
+{changed_files}
+
+### Recent Commits
+{recent_commits}
+
+### Instructions
+Use Read, Glob, and Grep to verify:
+1. The claimed files exist and match the summary
+2. Tests exist and are plausible
+3. Relevant docs are updated if they exist (ARCHITECTURE.md, ADRs)
+4. The work matches the acceptance criteria
+5. No obvious regressions, leftover debug code, or hardcoded credentials
+6. If an ADR should have been created for a significant decision, flag it
+
+Return exactly one:
+APPROVE
+DENY: <reason>
+STEER: <specific corrective action>
+"""
+
+[completion]
+marker = ""
+timeout_minutes = 10
+max_cost_usd = 2.0
+
+[completion.output]
+extract_decision = true
