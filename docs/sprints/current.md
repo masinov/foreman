@@ -10,15 +10,15 @@
 
 ## Included tasks
 
-1. `[todo]` Implement the first concrete Codex runner backend
+1. `[done]` Implement the first concrete Codex runner backend
    Deliverable: `foreman/runner/codex.py` can execute one role prompt, return
    normalized run results, and preserve session IDs for persistent roles.
 
-2. `[todo]` Integrate native Codex runner selection into the orchestrator path
+2. `[done]` Integrate native Codex runner selection into the orchestrator path
    Deliverable: Foreman can execute Codex-backed roles without an injected
    scripted test executor while preserving run, event, and retry semantics.
 
-3. `[todo]` Add runner coverage for success, session reuse, approval handling,
+3. `[in_progress]` Add runner coverage for success, session reuse, approval handling,
    and infrastructure failure behavior
    Deliverable: tests prove the Codex runner returns normalized results and
    integrates cleanly with orchestrator execution alongside the existing

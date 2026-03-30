@@ -14,7 +14,7 @@ from typing import Any
 from .models import Project, Task, utc_now_text
 from .orchestrator import AgentEventRecord, AgentExecutionResult, AgentExecutor
 from .roles import RoleDefinition
-from .runner.base import AgentEvent, AgentRunConfig, RunnerError
+from .runner.base import AgentEvent, AgentRunConfig, InfrastructureError
 from .runner.claude_code import ClaudeCodeRunner
 
 
@@ -97,7 +97,7 @@ class ClaudeCodeExecutor:
                         outcome = signal_outcome
                         detail = event.payload.get("detail", "")
 
-        except RunnerError as exc:
+        except InfrastructureError as exc:
             events.append(
                 AgentEventRecord(
                     event_type="agent.error",

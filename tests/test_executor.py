@@ -8,7 +8,7 @@ from foreman.executor import ClaudeCodeExecutor, RunnerExecutorConfig
 from foreman.models import Project, Task
 from foreman.orchestrator import AgentExecutionResult
 from foreman.roles import default_roles_dir, load_roles
-from foreman.runner.base import AgentEvent, RunnerError
+from foreman.runner.base import AgentEvent, InfrastructureError
 
 
 class RunnerExecutorConfigTests(unittest.TestCase):
@@ -153,7 +153,7 @@ class ClaudeCodeExecutorTests(unittest.TestCase):
         """Execute handles runner errors gracefully."""
         mock_runner = MagicMock()
         mock_runner_class.return_value = mock_runner
-        mock_runner.run.side_effect = RunnerError("Claude CLI not found")
+        mock_runner.run.side_effect = InfrastructureError("Claude CLI not found")
 
         executor = ClaudeCodeExecutor()
         executor.runner = mock_runner

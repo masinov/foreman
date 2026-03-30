@@ -14,7 +14,7 @@ from .context import ProjectContextProjection, build_project_context, relative_p
 from .errors import ForemanError
 from .git import GitError, changed_files, checkout_branch, recent_commits, status_text
 from .models import Event, Project, Run, Task, utc_now_text
-from .runner import AgentRunConfig, ClaudeCodeRunner, run_with_retry
+from .runner import AgentRunConfig, ClaudeCodeRunner, CodexRunner, run_with_retry
 from .runner.base import AgentRunner as NativeAgentRunner
 from .roles import RoleDefinition, default_roles_dir, load_roles
 from .store import ForemanStore
@@ -128,7 +128,7 @@ class ForemanOrchestrator:
         self.agent_runners = (
             dict(agent_runners)
             if agent_runners is not None
-            else {"claude_code": ClaudeCodeRunner()}
+            else {"claude_code": ClaudeCodeRunner(), "codex": CodexRunner()}
         )
         self.builtin_executor = builtin_executor or BuiltinExecutor()
         self.runner_sleep = runner_sleep

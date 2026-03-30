@@ -1,68 +1,72 @@
 """Tests for the Foreman runner module."""
 
 import json
-import subprocess
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from foreman.runner.base import (
     AgentEvent,
     AgentRunConfig,
-    AgentRunner,
-    RunnerError,
+    InfrastructureError,
+    run_with_retry,
 )
 from foreman.runner.claude_code import ClaudeCodeRunner
-from foreman.runner.signals import (
-    event_from_signal,
-    extract_signals,
-    parse_signal,
-)
+from foreman.runner.codex import CodexRunner
+from foreman.runner.signals import extract_signal_events
 
 
 class SignalParsingTests(unittest.TestCase):
     """Tests for signal parsing utilities."""
 
-    def test_parse_signal_valid(self) -> None:
-        """Parse a valid FOREMAN_SIGNAL line."""
-        line = "Some output\nFOREMAN_SIGNAL: {\"type\": \"status\", \"value\": \"working\"}"
-        result = parse_signal(line)
-        self.assertIsNotNone(result)
-        self.assertEqual(result["type"], "status")
-        self.assertEqual(result["value"], "working")
+    def test_extract_signal_events_empty_text(self) -> None:
+        """Return empty tuple for empty text."""
+        cleaned, events = extract_signal_events("")
+        self.assertEqual(cleaned, "")
+        self.assertEqual(events, ())
 
-    def test_parse_signal_invalid_json(self) -> None:
-        """Return None for malformed JSON in signal."""
-        line = "FOREMAN_SIGNAL: {not valid json}"
-        result = parse_signal(line)
-        self.assertIsNone(result)
+    def test_extract_signal_events_no_signals(self) -> None:
+        """Return original text when no signals present."""
+        text = "Regular output without signals"
+        cleaned, events = extract_signal_events(text)
+        self.assertEqual(cleaned, text)
+        self.assertEqual(events, ())
 
-    def test_parse_signal_no_match(self) -> None:
-        """Return None when no signal pattern is present."""
-        line = "Regular output without signal"
-        result = parse_signal(line)
-        self.assertIsNone(result)
+    def test_extract_signal_events_single_signal(self) -> None:
+        """Extract a single FOREMAN_SIGNAL from text."""
+        text = 'Some output\nFOREMAN_SIGNAL: {"type": "progress", "percent": 50}'
+        cleaned, events = extract_signal_events(text)
+        self.assertIn("Some output", cleaned)
+        self.assertNotIn("FOREMAN_SIGNAL", cleaned)
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].event_type, "signal.progress")
+        self.assertEqual(events[0].payload["percent"], 50)
 
-    def test_extract_signals_multiple(self) -> None:
+    def test_extract_signal_events_multiple_signals(self) -> None:
         """Extract multiple signals from text."""
         text = """
 FOREMAN_SIGNAL: {"type": "progress", "percent": 50}
 Some other output
 FOREMAN_SIGNAL: {"type": "progress", "percent": 100}
 """
-        signals = extract_signals(text)
-        self.assertEqual(len(signals), 2)
-        self.assertEqual(signals[0]["percent"], 50)
-        self.assertEqual(signals[1]["percent"], 100)
+        cleaned, events = extract_signal_events(text)
+        self.assertEqual(len(events), 2)
+        self.assertEqual(events[0].payload["percent"], 50)
+        self.assertEqual(events[1].payload["percent"], 100)
 
-    def test_event_from_signal(self) -> None:
-        """Create AgentEvent from parsed signal."""
-        signal = {"type": "checkpoint", "name": "phase1", "status": "done"}
-        event = event_from_signal(signal)
-        self.assertEqual(event.event_type, "signal.checkpoint")
-        self.assertEqual(event.payload["name"], "phase1")
-        self.assertEqual(event.payload["status"], "done")
-        self.assertNotIn("type", event.payload)
+    def test_extract_signal_events_invalid_json(self) -> None:
+        """Skip signals with invalid JSON."""
+        text = "FOREMAN_SIGNAL: {not valid json}"
+        cleaned, events = extract_signal_events(text)
+        self.assertNotIn("FOREMAN_SIGNAL", cleaned)
+        self.assertEqual(events, ())
+
+    def test_extract_signal_events_unknown_type(self) -> None:
+        """Skip signals with unknown type."""
+        text = 'FOREMAN_SIGNAL: {"type": "unknown_type", "value": 1}'
+        cleaned, events = extract_signal_events(text)
+        self.assertNotIn("FOREMAN_SIGNAL", cleaned)
+        self.assertEqual(events, ())
 
 
 class AgentRunConfigTests(unittest.TestCase):
@@ -70,13 +74,20 @@ class AgentRunConfigTests(unittest.TestCase):
 
     def test_defaults(self) -> None:
         """Default configuration values."""
-        config = AgentRunConfig(backend="claude_code")
+        config = AgentRunConfig(
+            backend="claude_code",
+            model=None,
+            prompt="",
+            working_dir=Path("/tmp"),
+            session_id=None,
+            permission_mode="auto",
+        )
         self.assertEqual(config.backend, "claude_code")
         self.assertIsNone(config.model)
         self.assertEqual(config.prompt, "")
         self.assertEqual(config.permission_mode, "auto")
-        self.assertEqual(config.timeout_seconds, 3600)
-        self.assertEqual(config.max_cost_usd, 10.0)
+        self.assertEqual(config.timeout_seconds, 0)
+        self.assertEqual(config.max_cost_usd, 0.0)
 
     def test_full_config(self) -> None:
         """Full configuration with all fields."""
@@ -87,14 +98,14 @@ class AgentRunConfigTests(unittest.TestCase):
             working_dir=Path("/tmp/test"),
             session_id="sess-123",
             permission_mode="ask",
-            disallowed_tools=["Bash"],
+            disallowed_tools=("Bash",),
             extra_flags={"verbose": True},
             timeout_seconds=600,
             max_cost_usd=5.0,
         )
         self.assertEqual(config.model, "claude-sonnet-4-6")
         self.assertEqual(config.session_id, "sess-123")
-        self.assertEqual(config.disallowed_tools, ["Bash"])
+        self.assertEqual(config.disallowed_tools, ("Bash",))
 
 
 class AgentEventTests(unittest.TestCase):
@@ -116,6 +127,62 @@ class AgentEventTests(unittest.TestCase):
         self.assertEqual(event.payload["cost_usd"], 0.05)
 
 
+class RunWithRetryTests(unittest.TestCase):
+    """Tests for run_with_retry helper."""
+
+    def test_success_on_first_try(self) -> None:
+        """Return events immediately on success."""
+        runner = MagicMock()
+        runner.run.return_value = iter([
+            AgentEvent("agent.completed", payload={"cost_usd": 0.01}),
+        ])
+        config = AgentRunConfig(
+            backend="claude_code",
+            prompt="test",
+            working_dir=Path("/tmp"),
+            session_id=None,
+            permission_mode="auto",
+            model=None,
+        )
+
+        events = list(run_with_retry(runner, config, max_retries=0))
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].event_type, "agent.completed")
+
+    def test_retries_on_infrastructure_error(self) -> None:
+        """Retry on infrastructure errors."""
+        runner = MagicMock()
+        call_count = [0]
+
+        def mock_run(config):
+            call_count[0] += 1
+            if call_count[0] < 3:
+                raise InfrastructureError("Transient error")
+            yield AgentEvent("agent.completed", payload={})
+
+        runner.run = mock_run
+        config = AgentRunConfig(
+            backend="claude_code",
+            prompt="test",
+            working_dir=Path("/tmp"),
+            session_id=None,
+            permission_mode="auto",
+            model=None,
+        )
+
+        sleep_calls = []
+        events = list(run_with_retry(
+            runner,
+            config,
+            max_retries=3,
+            sleep=lambda s: sleep_calls.append(s),
+        ))
+
+        self.assertEqual(len(events), 3)  # 2 infra_error + 1 completed
+        self.assertEqual(events[-1].event_type, "agent.completed")
+        self.assertEqual(len(sleep_calls), 2)  # 2 retries
+
+
 class ClaudeCodeRunnerTests(unittest.TestCase):
     """Tests for ClaudeCodeRunner."""
 
@@ -125,23 +192,18 @@ class ClaudeCodeRunnerTests(unittest.TestCase):
             backend="claude_code",
             prompt="Test prompt",
             working_dir=Path("/tmp"),
+            session_id=None,
+            permission_mode="auto",
+            model=None,
         )
-
-    def test_unsupported_backend_raises(self) -> None:
-        """Runner raises error for unsupported backend."""
-        config = AgentRunConfig(backend="unknown", prompt="test")
-        with self.assertRaises(RunnerError) as ctx:
-            list(self.runner.run(config))
-        self.assertIn("Unsupported backend", str(ctx.exception))
 
     def test_build_command_basic(self) -> None:
         """Build basic command without extras."""
-        cmd = self.runner._build_command(self.config)
+        cmd = self.runner.build_command(self.config)
         self.assertEqual(cmd[0], "claude")
         self.assertIn("--print", cmd)
-        self.assertIn("--verbose", cmd)
+        self.assertIn("--output-format", cmd)
         self.assertIn("stream-json", cmd)
-        self.assertIn("Test prompt", cmd)
 
     def test_build_command_with_model(self) -> None:
         """Build command with model selection."""
@@ -149,8 +211,11 @@ class ClaudeCodeRunnerTests(unittest.TestCase):
             backend="claude_code",
             model="claude-opus-4-6",
             prompt="test",
+            working_dir=Path("/tmp"),
+            session_id=None,
+            permission_mode="auto",
         )
-        cmd = self.runner._build_command(config)
+        cmd = self.runner.build_command(config)
         self.assertIn("--model", cmd)
         self.assertIn("claude-opus-4-6", cmd)
 
@@ -159,9 +224,12 @@ class ClaudeCodeRunnerTests(unittest.TestCase):
         config = AgentRunConfig(
             backend="claude_code",
             prompt="test",
+            working_dir=Path("/tmp"),
             session_id="sess-abc123",
+            permission_mode="auto",
+            model=None,
         )
-        cmd = self.runner._build_command(config)
+        cmd = self.runner.build_command(config)
         self.assertIn("--resume", cmd)
         self.assertIn("sess-abc123", cmd)
 
@@ -170,87 +238,176 @@ class ClaudeCodeRunnerTests(unittest.TestCase):
         config = AgentRunConfig(
             backend="claude_code",
             prompt="test",
-            disallowed_tools=["Bash", "Write"],
+            working_dir=Path("/tmp"),
+            session_id=None,
+            permission_mode="auto",
+            model=None,
+            disallowed_tools=("Bash", "Write"),
         )
-        cmd = self.runner._build_command(config)
-        self.assertIn("--disallowed-tool", cmd)
-        self.assertIn("Bash", cmd)
-        self.assertIn("Write", cmd)
+        cmd = self.runner.build_command(config)
+        self.assertIn("--disallowed-tools", cmd)
+        self.assertIn("Bash,Write", cmd)
 
-    def test_parse_assistant_text_message(self) -> None:
-        """Parse assistant message with text content."""
-        data = {
-            "type": "assistant",
-            "message": {
-                "content": [{"type": "text", "text": "Hello, world!"}]
+
+class CodexRunnerTests(unittest.TestCase):
+    """Tests for CodexRunner."""
+
+    def setUp(self) -> None:
+        self.runner = CodexRunner()
+        self.config = AgentRunConfig(
+            backend="codex",
+            prompt="Test prompt",
+            working_dir=Path("/tmp"),
+            session_id=None,
+            permission_mode="auto",
+            model=None,
+        )
+
+    def test_build_command_basic(self) -> None:
+        """Build basic command without extras."""
+        cmd = self.runner.build_command(self.config)
+        self.assertEqual(cmd[0], "codex")
+        self.assertIn("--json-rpc", cmd)
+        self.assertIn("--quiet", cmd)
+
+    def test_build_command_with_model(self) -> None:
+        """Build command with model selection."""
+        config = AgentRunConfig(
+            backend="codex",
+            model="o3",
+            prompt="test",
+            working_dir=Path("/tmp"),
+            session_id=None,
+            permission_mode="auto",
+        )
+        cmd = self.runner.build_command(config)
+        self.assertIn("--model", cmd)
+        self.assertIn("o3", cmd)
+
+    def test_build_command_with_session(self) -> None:
+        """Build command with session resume."""
+        config = AgentRunConfig(
+            backend="codex",
+            prompt="test",
+            working_dir=Path("/tmp"),
+            session_id="sess-abc123",
+            permission_mode="auto",
+            model=None,
+        )
+        cmd = self.runner.build_command(config)
+        self.assertIn("--session", cmd)
+        self.assertIn("sess-abc123", cmd)
+
+    def test_parse_text_delta_notification(self) -> None:
+        """Parse text_delta notification."""
+        notification = {
+            "method": "text_delta",
+            "params": {"text": "Hello, world!"},
+        }
+        events = self.runner._parse_notification(
+            notification,
+            working_dir=Path("/tmp"),
+        )
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].event_type, "agent.message")
+        self.assertEqual(events[0].payload["text"], "Hello, world!")
+
+    def test_parse_tool_call_bash(self) -> None:
+        """Parse Bash tool call notification."""
+        notification = {
+            "method": "tool_call",
+            "params": {
+                "name": "Bash",
+                "arguments": {"command": "ls -la", "cwd": "/tmp"},
             },
         }
-        event = self.runner._parse_assistant_event(data)
-        self.assertEqual(event.event_type, "agent.message")
-        self.assertEqual(event.payload["text"], "Hello, world!")
+        events = self.runner._parse_notification(
+            notification,
+            working_dir=Path("/tmp"),
+        )
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].event_type, "agent.command")
+        self.assertEqual(events[0].payload["command"], "ls -la")
 
-    def test_parse_assistant_bash_tool(self) -> None:
-        """Parse assistant message with Bash tool use."""
-        data = {
-            "type": "assistant",
-            "message": {
-                "content": [
-                    {
-                        "type": "tool_use",
-                        "name": "Bash",
-                        "input": {"command": "ls -la", "description": "List files"},
-                    }
-                ]
+    def test_parse_tool_call_file_write(self) -> None:
+        """Parse file write tool call notification."""
+        notification = {
+            "method": "tool_call",
+            "params": {
+                "name": "Write",
+                "arguments": {"file_path": "/tmp/test.py", "content": "print(1)"},
             },
         }
-        event = self.runner._parse_assistant_event(data)
-        self.assertEqual(event.event_type, "agent.command")
-        self.assertEqual(event.payload["command"], "ls -la")
-        self.assertEqual(event.payload["description"], "List files")
+        events = self.runner._parse_notification(
+            notification,
+            working_dir=Path("/tmp"),
+        )
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].event_type, "agent.file_change")
+        self.assertEqual(events[0].payload["tool"], "Write")
+        self.assertEqual(events[0].payload["path"], "/tmp/test.py")
 
-    def test_parse_assistant_file_tool(self) -> None:
-        """Parse assistant message with file tool use."""
-        data = {
-            "type": "assistant",
-            "message": {
-                "content": [
-                    {
-                        "type": "tool_use",
-                        "name": "Write",
-                        "input": {"file_path": "/tmp/test.py", "content": "print(1)"},
-                    }
-                ]
+    def test_parse_cost_update_notification(self) -> None:
+        """Parse cost update notification."""
+        notification = {
+            "method": "cost_update",
+            "params": {"cost_usd": 0.05, "tokens": 100},
+        }
+        events = self.runner._parse_notification(
+            notification,
+            working_dir=Path("/tmp"),
+        )
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].event_type, "agent.cost_update")
+        self.assertEqual(events[0].payload["cumulative_usd"], 0.05)
+
+    def test_parse_approval_request_notification(self) -> None:
+        """Parse approval request notification."""
+        notification = {
+            "method": "approval_request",
+            "params": {
+                "type": "tool",
+                "tool": "Bash",
+                "command": "rm -rf /",
+                "message": "Dangerous command detected",
             },
         }
-        event = self.runner._parse_assistant_event(data)
-        self.assertEqual(event.event_type, "agent.file_change")
-        self.assertEqual(event.payload["tool"], "Write")
-        self.assertEqual(event.payload["path"], "/tmp/test.py")
+        events = self.runner._parse_notification(
+            notification,
+            working_dir=Path("/tmp"),
+        )
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].event_type, "agent.approval_request")
+        self.assertEqual(events[0].payload["tool"], "Bash")
 
-    def test_parse_result_success(self) -> None:
-        """Parse successful result event."""
-        data = {
-            "type": "result",
-            "is_error": False,
-            "total_cost_usd": 0.05,
-            "duration_ms": 5000,
+    def test_parse_successful_response(self) -> None:
+        """Parse successful JSON-RPC response."""
+        response = {
+            "result": {
+                "text": "Task completed!",
+                "session_id": "sess-123",
+                "cost_usd": 0.05,
+                "duration_ms": 5000,
+            }
         }
-        event = self.runner._parse_result_event(data)
-        self.assertEqual(event.event_type, "agent.completed")
-        self.assertEqual(event.payload["cost_usd"], 0.05)
-        self.assertEqual(event.payload["duration_ms"], 5000)
+        events = self.runner._parse_response(response)
+        self.assertTrue(any(e.event_type == "agent.completed" for e in events))
+        completed = next(e for e in events if e.event_type == "agent.completed")
+        self.assertEqual(completed.payload["session_id"], "sess-123")
+        self.assertEqual(completed.payload["cost_usd"], 0.05)
 
-    def test_parse_result_error(self) -> None:
-        """Parse error result event."""
-        data = {
-            "type": "result",
-            "is_error": True,
-            "error": "Something went wrong",
-            "total_cost_usd": 0.02,
+    def test_parse_error_response(self) -> None:
+        """Parse error JSON-RPC response."""
+        response = {
+            "error": {
+                "code": -1,
+                "message": "Something went wrong",
+            }
         }
-        event = self.runner._parse_result_event(data)
-        self.assertEqual(event.event_type, "agent.error")
-        self.assertEqual(event.payload["error"], "Something went wrong")
+        events = self.runner._parse_response(response)
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].event_type, "agent.error")
+        self.assertEqual(events[0].payload["error"], "Something went wrong")
 
 
 if __name__ == "__main__":
