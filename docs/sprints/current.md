@@ -1,59 +1,61 @@
 # Current Sprint
 
-- Sprint: `sprint-09-runner-session-backend-adr`
+- Sprint: `sprint-10-dashboard-implementation`
 - Status: active
-- Goal: capture the first accepted ADR for runner session handling, approval
-  policy, and backend contract boundaries now that native runners and
-  monitoring CLI surfaces exist
+- Goal: build the first interactive dashboard slice aligned to the mockup
+  using persisted Foreman project, sprint, task, run, and event state
 - Primary references:
   - `docs/specs/engine-design-v3.md`
   - `docs/mockups/foreman-mockup-v6.html`
-  - `foreman/runner/`
-  - `foreman/orchestrator.py`
+  - `docs/adr/ADR-0001-runner-session-backend-contract.md`
+  - `foreman/store.py`
+  - `foreman/dashboard.py`
   - `foreman/cli.py`
 
 ## Included tasks
 
-1. `[todo]` Write the first accepted runner session ADR
-   Deliverable: an ADR in `docs/adr/` defines session creation, reuse,
-   invalidation, and persistence expectations across Claude and Codex roles.
+1. `[done]` Add the first dashboard shell for project overview and sprint board
+   Deliverable: a runnable UI entrypoint renders project overview and active
+   sprint board data from persisted SQLite-backed state.
 
-2. `[todo]` Document approval policy and backend contract boundaries
-   Deliverable: the ADR states what the shared runner protocol guarantees,
-   what remains backend-specific, and how approval or pricing gaps should be
-   represented in persisted state.
+2. `[in_progress]` Surface task detail and recent activity in the dashboard
+   Deliverable: selecting a task reveals branch, role, status, token, and
+   recent event context aligned to the mockup's board and activity hierarchy.
 
-3. `[todo]` Align architecture and roadmap docs to the accepted ADR
-   Deliverable: repo memory references the ADR as an active implementation
-   constraint for future runner, monitoring, and dashboard slices.
+3. `[todo]` Define the first dashboard data-access boundary
+   Deliverable: the UI reuses SQLite-backed read models or thin projections
+   instead of hardcoded mock data, and the chosen boundary is documented in
+   repo memory.
 
 ## Excluded from this sprint
 
-- dashboard and web implementation
-- live streaming transport work beyond documenting the boundary
-- schema migration framework work
+- authentication and multi-user concerns
+- live streaming transport beyond polling or snapshot semantics
+- task-creation and settings modals beyond placeholders
+- multi-project dashboard polish
 
 ## Acceptance criteria
 
-- an accepted ADR exists in `docs/adr/` for runner sessions and backend
-  contract boundaries
-- `docs/STATUS.md`, `docs/ARCHITECTURE.md`, and `docs/ROADMAP.md` reference
-  the ADR as a current implementation constraint
-- current runtime behavior is documented accurately without backfilling
-  speculative guarantees
+- a user can load a dashboard surface that matches the mockup hierarchy for
+  project overview, sprint board, and activity feed
+- dashboard data comes from current persisted Foreman state rather than
+  hardcoded demo data
+- dashboard behavior that depends on runner or approval semantics cites
+  `ADR-0001`
 - docs and validation remain good enough for a fresh autonomous agent to pick
   the next slice without extra human context
 
 ## Known risks
 
-- the current Claude and Codex runner paths already differ in small but real
-  ways; the ADR needs to document those differences without freezing accidental
-  quirks as permanent product policy
-- monitoring CLI output now exposes backend telemetry gaps directly, so the ADR
-  needs to stay explicit about zero-USD token runs and approval semantics
+- the first dashboard slice can sprawl if it invents a broader API boundary
+  too early
+- live activity may need polling first because streaming transport is still a
+  separate unresolved decision
+- the current persistent-session reuse gap may affect how task detail and run
+  history are explained in the UI
 
 ## Demo checklist
 
-- show the accepted ADR path in `docs/adr/`
-- show at least one repo doc referencing the ADR as an active constraint
-- show repo validation passing after the runner ADR slice lands
+- show a project overview populated from persisted state
+- show an active sprint board with task detail and recent activity
+- show repo validation passing after the dashboard slice lands

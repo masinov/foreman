@@ -9,6 +9,7 @@ import time
 from typing import Callable, Sequence
 
 from . import __version__
+from .dashboard import run_dashboard
 from .models import Project, utc_now_text
 from .orchestrator import ForemanOrchestrator, OrchestratorError
 from .roles import RoleLoadError, default_roles_dir, load_roles
@@ -724,6 +725,21 @@ def handle_stub(args: argparse.Namespace) -> int:
         "This CLI shell defines the canonical command surface from the product spec.",
         CLI_SHELL_NOTE,
     )
+    return 0
+
+
+def handle_dashboard(args: argparse.Namespace) -> int:
+    """Handle ``foreman dashboard``."""
+
+    try:
+        run_dashboard(
+            db_path=args.db,
+            host=args.host,
+            port=args.port,
+        )
+    except OSError as exc:
+        print(f"Failed to start dashboard: {exc}", file=sys.stderr)
+        return 1
     return 0
 
 

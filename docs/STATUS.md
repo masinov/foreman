@@ -2,16 +2,15 @@
 
 ## Current sprint
 
-- Sprint: `sprint-09-runner-session-backend-adr`
+- Sprint: `sprint-10-dashboard-implementation`
 - Status: active
-- Goal: capture the first accepted ADR for runner session handling, approval
-  policy, and backend contract boundaries now that native runners and
-  monitoring CLI surfaces exist
+- Goal: build the first interactive dashboard slice aligned to the mockup
+  using persisted Foreman project, sprint, task, run, and event state
 
 ## Active branches
 
-- `feat/monitoring-cli` — land store-backed board, history, cost, and watch
-  monitoring commands, then roll repo memory into the runner ADR sprint
+- `feat/dashboard-shell` — land the first web dashboard shell with SQLite-backed
+  project overview, sprint board, and activity feed
 
 ## Completed this week
 
@@ -101,6 +100,21 @@
   aggregation, per-task run rollups, and recent event slices
 - completed `sprint-08-monitoring-cli` and rolled repo memory forward to
   `sprint-09-runner-session-backend-adr`
+- accepted `ADR-0001-runner-session-backend-contract` for session scope,
+  workflow-versus-runner approval handling, and backend telemetry boundaries
+- documented the current persistent-session reuse gap explicitly: session ids
+  are persisted on runs, but fresh orchestrator invocations do not yet reload
+  the last same-role session from SQLite
+- completed `sprint-09-runner-session-backend-adr` and rolled repo memory
+  forward to `sprint-10-dashboard-implementation`
+- implemented `foreman.dashboard` with an HTTP server that serves the first
+  dashboard HTML shell aligned to the mockup's project overview, sprint board,
+  and activity feed hierarchy
+- added JSON API endpoints for projects, sprints, tasks, and events so the
+  dashboard can render persisted SQLite state instead of hardcoded demo data
+- added `foreman dashboard --db <path>` CLI command to start the web server
+- added dashboard unit tests for project status detection, API data access,
+  and HTML content verification
 
 ## Current repo state
 
@@ -125,13 +139,17 @@
     Codex-backed roles,
   - store-backed monitoring CLI surfaces for board, history, cost, and
     bounded watch snapshots against persisted SQLite state,
+  - an accepted ADR for runner session scope, approval policy, and backend
+    contract boundaries,
   - immediate native human-gate resume when the next backend is available and
     the project repo exists, with deferred persistence retained for missing
     backends or missing repo paths,
+  - the first web dashboard shell with project overview, sprint board, and
+    activity feed views rendered from persisted SQLite state,
   - persisted project initialization and update behavior keyed by repo path,
   - smoke tests for the CLI bootstrap slice plus store, loader, and
-    orchestrator, scaffold, context projection, Claude runner, and Codex
-    runner coverage,
+    orchestrator, scaffold, context projection, Claude runner, Codex runner,
+    and dashboard coverage,
   - regression coverage for the reviewed Codex supervisor flow,
   - the Codex and Claude supervisor scripts,
   - repo-memory docs that define the next engineering slices.
