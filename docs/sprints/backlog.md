@@ -2,12 +2,6 @@
 
 ## Next up after the current sprint
 
-### `todo` Human gate commands
-
-- Implement `foreman approve` and `foreman deny` with persisted pause or resume
-  behavior.
-- Visible deliverable: a paused workflow can resume from a human decision.
-
 ### `todo` Native Claude Code runner
 
 - Implement the runner interface, session handling, event capture, and retry
@@ -37,7 +31,7 @@
 
 ## Parking lot
 
-- first ADR once context projection or human-gate semantics harden
+- first ADR once human-gate semantics or runner contracts harden
 - security review workflow variant
 - optional PR summary and checkpoint automation
 - event-retention pruning

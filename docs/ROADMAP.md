@@ -90,10 +90,11 @@ Target deliverables:
 
 Status:
 
-- partially completed on `feat/orchestrator-main-loop`
-- directed task selection, workflow transitions, loop limits, and built-ins for
-  tests, merge, mark-done, and human-gate pause now exist
-- context projection and human-gate resume commands remain
+- partially completed on `feat/context-projection-runtime`
+- directed task selection, workflow transitions, loop limits, built-ins for
+  tests, merge, mark-done, human-gate pause, and runtime context projection
+  now exist
+- human-gate resume commands remain
 
 ## Milestone 5: Claude and Codex runners
 
@@ -120,7 +121,7 @@ Target deliverables:
 
 ## Near-term priorities
 
-1. project runtime context into `.foreman/` before and after orchestrator runs
-2. implement human-gate approve and deny commands against paused tasks
-3. add the first native Claude Code or Codex runner backend
-4. expose project state through the monitoring CLI surfaces
+1. implement human-gate approve and deny commands against paused tasks
+2. add the first native Claude Code or Codex runner backend
+3. expose project state through the monitoring CLI surfaces
+4. capture the first ADR once human-gate or runner semantics harden

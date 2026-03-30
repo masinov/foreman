@@ -5,10 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 import subprocess
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+from .context import relative_project_path, write_project_context
 from .git import GitMergeResult, merge_branch
 from .models import Project, Task, utc_now_text
+
+if TYPE_CHECKING:
+    from .store import ForemanStore
 
 
 @dataclass(slots=True)
@@ -39,11 +43,19 @@ class BuiltinExecutor:
         task: Task,
         step_id: str,
         carried_output: str | None,
+        store: ForemanStore | None = None,
     ) -> BuiltinResult:
         """Dispatch one built-in role by identifier."""
 
         if role_id == "_builtin:run_tests":
             return self._run_tests(project=project)
+        if role_id == "_builtin:context_write":
+            return self._context_write(
+                store=store,
+                project=project,
+                task=task,
+                carried_output=carried_output,
+            )
         if role_id == "_builtin:merge":
             return self._merge(project=project, task=task)
         if role_id == "_builtin:mark_done":
@@ -170,6 +182,35 @@ class BuiltinExecutor:
         return BuiltinResult(
             outcome="paused",
             detail=task.blocked_reason,
+        )
+
+    def _context_write(
+        self,
+        *,
+        store: ForemanStore | None,
+        project: Project,
+        task: Task,
+        carried_output: str | None,
+    ) -> BuiltinResult:
+        if store is None:
+            raise ValueError("Context projection requires a store.")
+
+        projection = write_project_context(
+            store,
+            project,
+            current_task=task,
+            carried_output=carried_output,
+        )
+        return BuiltinResult(
+            outcome="success",
+            detail="Runtime context written.",
+            events=tuple(
+                BuiltinEventRecord(
+                    event_type="engine.context_write",
+                    payload={"path": relative_project_path(project, path)},
+                )
+                for path in projection.written_paths
+            ),
         )
 
 

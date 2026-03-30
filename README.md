@@ -39,11 +39,12 @@ The bootstrap implementation has started. The repository now contains:
 - a working `foreman init --db <path>` path that scaffolds `AGENTS.md`,
   `docs/adr/`, `.foreman/`, and `.gitignore` updates in a target repo while
   persisting or updating the project in SQLite,
+- runtime context projection into `.foreman/context.md` and
+  `.foreman/status.md` before agent steps and after task completion,
 - git execution helpers and integration coverage for workflow transitions,
 - scaffold, smoke, integration, and round-trip tests for the CLI shell and
   store,
-- repo-memory docs that point the next slice at runtime context projection
-  under `.foreman/`.
+- repo-memory docs that point the next slice at human-gate resume commands.
 
 The immediate goal is to keep turning this scaffold into the real Foreman
 runtime without carrying over assumptions from the previous project.
@@ -77,9 +78,9 @@ Both wrappers expect these files to be current:
 
 The next recommended task is:
 
-- project `.foreman/context.md` and `.foreman/status.md` from SQLite before
-  and after orchestrator activity so agents receive fresh runtime context from
-  the store.
+- implement `foreman approve` and `foreman deny` so paused human-gate tasks
+  can resume from persisted workflow state instead of restarting from the
+  workflow entry step.
 
 That task is already recorded in `docs/sprints/current.md`, so a fresh agent
 can continue without additional instructions.

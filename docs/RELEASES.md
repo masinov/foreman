@@ -20,6 +20,9 @@ The first orchestrator workflow execution checkpoint is recorded in
 The first project-initialization checkpoint is recorded in
 `docs/checkpoints/project-init-scaffold.md`.
 
+The first runtime-context projection checkpoint is recorded in
+`docs/checkpoints/context-projection-runtime.md`.
+
 ## Near-term policy
 
 Until the first native runner slice exists:
@@ -34,6 +37,7 @@ Until the first native runner slice exists:
 - first persisted SQLite project state
 - first project initialization and repo scaffold generation
 - first orchestrator workflow execution
+- first runtime `.foreman` context projection
 - first native Claude or Codex runner
 - first dashboard implementation milestone
 
