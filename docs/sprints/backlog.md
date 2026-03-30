@@ -2,20 +2,6 @@
 
 ## Next up after the current sprint
 
-### `todo` Native Claude Code runner
-
-- Implement the runner interface, session handling, event capture, and retry
-  behavior for Claude Code.
-- Visible deliverable: a persisted run with structured events from one Claude
-  task execution.
-
-### `todo` Native Codex runner
-
-- Implement the runner interface, session handling, event capture, and retry
-  behavior for Codex.
-- Visible deliverable: a persisted run with structured events from one Codex
-  task execution.
-
 ### `todo` Monitoring CLI
 
 - Add `foreman board`, `foreman watch`, `foreman history`, and `foreman cost`.
@@ -31,7 +17,8 @@
 
 ## Parking lot
 
-- first ADR once human-gate semantics or runner contracts harden
+- first ADR for runner session handling and backend contracts after Codex
+  parity lands
 - security review workflow variant
 - optional PR summary and checkpoint automation
 - event-retention pruning

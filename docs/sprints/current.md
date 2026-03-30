@@ -1,53 +1,53 @@
 # Current Sprint
 
-- Sprint: `sprint-05-human-gates`
+- Sprint: `sprint-07-codex-runner`
 - Status: active
-- Goal: resume paused human-gate tasks through `foreman approve` and
-  `foreman deny` with persisted workflow state
+- Goal: execute shipped Codex roles through a native Foreman runner with
+  persisted runs, sessions, and structured events
 - Primary references:
   - `docs/specs/engine-design-v3.md`
   - `docs/mockups/foreman-mockup-v6.html`
 
 ## Included tasks
 
-1. `[todo]` Add CLI commands for human-gate approval and denial
-   Deliverable: operators can issue `foreman approve <task-id>` and
-   `foreman deny <task-id>` against paused tasks in the SQLite store.
+1. `[todo]` Implement the first concrete Codex runner backend
+   Deliverable: `foreman/runner/codex.py` can execute one role prompt, return
+   normalized run results, and preserve session IDs for persistent roles.
 
-2. `[todo]` Integrate workflow resume semantics for paused tasks
-   Deliverable: a task paused by `_builtin:human_gate` can resume from its
-   persisted workflow step with the recorded carried output and decision.
+2. `[todo]` Integrate native Codex runner selection into the orchestrator path
+   Deliverable: Foreman can execute Codex-backed roles without an injected
+   scripted test executor while preserving run, event, and retry semantics.
 
-3. `[todo]` Add coverage for pause, approve, deny, and resume behavior
-   Deliverable: tests prove human-gate tasks block, persist resume metadata,
-   and continue through the workflow after an explicit human decision.
+3. `[todo]` Add runner coverage for success, session reuse, approval handling,
+   and infrastructure failure behavior
+   Deliverable: tests prove the Codex runner returns normalized results and
+   integrates cleanly with orchestrator execution alongside the existing
+   Claude backend.
 
 ## Excluded from this sprint
 
-- native Claude Code and Codex runner implementations
 - monitoring CLI surfaces beyond approve and deny
 - dashboard and web implementation
 - schema migration framework work
 
 ## Acceptance criteria
 
-- `foreman approve` and `foreman deny` operate on paused human-gate tasks
-- paused tasks resume from persisted workflow state instead of restarting from
-  the workflow entry step
-- approval and denial decisions are persisted with workflow and event history
+- the orchestrator can execute a Codex-backed role through a native runner
+  implementation
+- persistent Codex sessions can be reused across eligible workflow steps
+- runner failures are normalized into durable run and event history
 - docs and validation remain good enough for a fresh autonomous agent to pick
   the next slice without extra human context
 
 ## Known risks
 
-- human-gate resume has to interact cleanly with existing loop counts, carried
-  output, and branch state without duplicating prior workflow steps
-- CLI resume commands should not silently mutate tasks that are blocked for
-  non-human-gate reasons
+- the Codex runner must not leak backend-specific quirks into the shared
+  orchestrator model
+- session lifecycle and retry behavior need to line up with the spec without
+  diverging from the now-shipped Claude runner semantics
 
 ## Demo checklist
 
-- show a task pause at `_builtin:human_gate`
-- show `foreman approve` or `foreman deny` resuming that task from persisted
-  state
-- show repo validation passing after the human-gate slice lands
+- show one Codex-backed role executing through the native runner
+- show persisted run metadata and structured events from that execution
+- show repo validation passing after the runner slice lands

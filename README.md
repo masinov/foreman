@@ -41,10 +41,21 @@ The bootstrap implementation has started. The repository now contains:
   persisting or updating the project in SQLite,
 - runtime context projection into `.foreman/context.md` and
   `.foreman/status.md` before agent steps and after task completion,
+- human-gate `foreman approve --db <path>` and `foreman deny --db <path>`
+  commands that persist explicit approval or denial decisions and resume the
+  workflow from the paused step instead of restarting from entry,
+- bootstrap human-gate resume deferral for agent-backed next steps when no
+  native runner is configured yet, while still recording the next workflow
+  step and carried output in SQLite,
+- shared native runner primitives plus the first Claude Code stream-json
+  backend in `foreman/runner/`,
+- native orchestrator execution for shipped Claude-backed roles, including
+  retry normalization, session reuse for persistent developer roles, and
+  structured runner event capture,
 - git execution helpers and integration coverage for workflow transitions,
 - scaffold, smoke, integration, and round-trip tests for the CLI shell and
   store,
-- repo-memory docs that point the next slice at human-gate resume commands.
+- repo-memory docs that point the next slice at the native Codex runner.
 
 The immediate goal is to keep turning this scaffold into the real Foreman
 runtime without carrying over assumptions from the previous project.
@@ -78,9 +89,8 @@ Both wrappers expect these files to be current:
 
 The next recommended task is:
 
-- implement `foreman approve` and `foreman deny` so paused human-gate tasks
-  can resume from persisted workflow state instead of restarting from the
-  workflow entry step.
+- implement the native Codex runner so Foreman supports both first-class agent
+  backends promised in the spec.
 
 That task is already recorded in `docs/sprints/current.md`, so a fresh agent
 can continue without additional instructions.
@@ -105,11 +115,14 @@ Current code-level validation also includes:
 ```bash
 ./venv/bin/pip install -e . --no-build-isolation --no-deps
 ./venv/bin/python -m unittest discover -s tests -v
+./venv/bin/python -m unittest tests.test_runner_claude tests.test_orchestrator -v
 ./venv/bin/foreman --help
 ./venv/bin/foreman projects
 ./venv/bin/foreman status
 ./venv/bin/foreman roles
 ./venv/bin/foreman workflows
+./venv/bin/foreman approve --help
+./venv/bin/foreman deny --help
 ./venv/bin/foreman projects --db /tmp/foreman.db
 ./venv/bin/foreman status --db /tmp/foreman.db
 ```

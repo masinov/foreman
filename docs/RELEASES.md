@@ -23,9 +23,15 @@ The first project-initialization checkpoint is recorded in
 The first runtime-context projection checkpoint is recorded in
 `docs/checkpoints/context-projection-runtime.md`.
 
+The first human-gate resume checkpoint is recorded in
+`docs/checkpoints/human-gate-resume.md`.
+
+The first native Claude runner checkpoint is recorded in
+`docs/checkpoints/claude-code-runner.md`.
+
 ## Near-term policy
 
-Until the first native runner slice exists:
+While the native runner and monitoring milestones are still incomplete:
 
 - use tags only for meaningful checkpoints,
 - prefer sprint-completion checkpoints over frequent versioning,
@@ -38,6 +44,7 @@ Until the first native runner slice exists:
 - first project initialization and repo scaffold generation
 - first orchestrator workflow execution
 - first runtime `.foreman` context projection
+- first persisted human-gate resume path
 - first native Claude or Codex runner
 - first dashboard implementation milestone
 
