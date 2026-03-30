@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 import re
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 from uuid import uuid4
 
 from .builtins import BuiltinEventRecord, BuiltinExecutor
@@ -64,6 +64,19 @@ class ProjectRunResult:
     executed_task_ids: tuple[str, ...]
     blocked_task_ids: tuple[str, ...]
     stop_reason: str
+
+
+@dataclass(slots=True)
+class HumanGateResumeResult:
+    """Summary of one human-gate decision and any resumed execution."""
+
+    task: Task
+    decision: str
+    paused_step: str
+    next_step: str
+    deferred: bool
+    carried_output: str | None = None
+    note: str | None = None
 
 
 class AgentExecutor(Protocol):
@@ -572,6 +585,160 @@ class ForemanOrchestrator:
             task.step_visit_counts = {}
             self.store.save_task(task)
 
+    def resume_human_gate(
+        self,
+        task_id: str,
+        *,
+        outcome: str,
+        note: str | None = None,
+    ) -> HumanGateResumeResult:
+        """Apply one human-gate decision and continue execution when possible."""
+
+        if outcome not in {"approve", "deny"}:
+            raise OrchestratorError(f"Unsupported human-gate outcome {outcome!r}.")
+
+        current_task = self.store.get_task(task_id)
+        if current_task is None:
+            raise OrchestratorError(f"Unknown task {task_id!r}.")
+        if current_task.status != "blocked" or not current_task.workflow_current_step:
+            raise OrchestratorError(
+                f"Task {task_id!r} is not paused at a human gate."
+            )
+
+        project = self.store.get_project(current_task.project_id)
+        if project is None:
+            raise OrchestratorError(
+                f"Task {task_id!r} references unknown project {current_task.project_id!r}."
+            )
+        workflow = self._load_workflow_for_project(project)
+        paused_step = workflow.get_step(current_task.workflow_current_step)
+        if paused_step is None or paused_step.role != "_builtin:human_gate":
+            raise OrchestratorError(
+                f"Task {task_id!r} is not paused on a resumable human-gate step."
+            )
+
+        transition = workflow.find_transition(paused_step.id, outcome)
+        if transition is None:
+            raise OrchestratorError(
+                f"Workflow {workflow.id!r} has no `{outcome}` transition from "
+                f"{paused_step.id!r}."
+            )
+
+        next_step = workflow.get_step(transition.to_step)
+        if next_step is None:
+            raise OrchestratorError(
+                f"Workflow {workflow.id!r} is missing step {transition.to_step!r}."
+            )
+
+        carried_output = current_task.workflow_carried_output
+        if outcome == "deny" and note:
+            carried_output = note
+
+        decision_detail = note or (
+            "Approved by human." if outcome == "approve" else "Denied by human."
+        )
+        decision_run = self._create_system_run(
+            current_task,
+            workflow_step=paused_step.id,
+            outcome=outcome,
+            detail=decision_detail,
+            role_id="_builtin:human_gate",
+            agent_backend="human",
+        )
+        self._emit_event(
+            decision_run,
+            "workflow.transition",
+            {
+                "from_step": paused_step.id,
+                "to_step": transition.to_step,
+                "trigger": f"completion:{outcome}",
+            },
+        )
+        event_payload: dict[str, Any] = {
+            "step": paused_step.id,
+            "decision": outcome,
+            "next_step": transition.to_step,
+            "deferred": False,
+        }
+        if note:
+            event_payload["note"] = note
+        self._emit_event(
+            decision_run,
+            "workflow.resumed",
+            event_payload,
+        )
+
+        current_task.status = "in_progress"
+        current_task.blocked_reason = None
+        current_task.workflow_current_step = None
+        current_task.workflow_carried_output = None
+        self.store.save_task(current_task)
+
+        # Deferred execution when no agent executor available
+        if self.agent_executor is None:
+            current_task.workflow_current_step = transition.to_step
+            current_task.workflow_carried_output = carried_output
+            self.store.save_task(current_task)
+            refreshed = self.store.get_task(current_task.id)
+            if refreshed is None:
+                raise OrchestratorError(
+                    f"Task {current_task.id!r} disappeared during deferred resume."
+                )
+            return HumanGateResumeResult(
+                task=refreshed,
+                decision=outcome,
+                paused_step=paused_step.id,
+                next_step=transition.to_step,
+                deferred=True,
+                carried_output=carried_output,
+                note=note,
+            )
+
+        if str(project.settings.get("task_selection_mode", "directed")) == "directed":
+            current_task.branch_name = current_task.branch_name or generate_branch_name(
+                current_task
+            )
+            checkout_branch(
+                project.repo_path,
+                current_task.branch_name,
+                create=True,
+                base_branch=project.default_branch,
+            )
+
+        self.run_workflow_from_step(
+            project,
+            workflow,
+            current_task,
+            step=transition.to_step,
+            carried_output=carried_output,
+        )
+        refreshed = self.store.get_task(current_task.id)
+        if refreshed is None:
+            raise OrchestratorError(
+                f"Task {current_task.id!r} disappeared during human-gate resume."
+            )
+        latest_run = self.store.get_latest_run(refreshed.id)
+        if latest_run is not None:
+            self._write_runtime_context(
+                latest_run,
+                project,
+                context_projection=build_project_context(
+                    self.store,
+                    project,
+                    current_task=refreshed,
+                    carried_output=refreshed.workflow_carried_output,
+                ),
+            )
+        return HumanGateResumeResult(
+            task=refreshed,
+            decision=outcome,
+            paused_step=paused_step.id,
+            next_step=transition.to_step,
+            deferred=False,
+            carried_output=carried_output,
+            note=note,
+        )
+
     def _load_workflow_for_project(self, project: Project) -> WorkflowDefinition:
         workflow = self.workflows.get(project.workflow_id)
         if workflow is None:
@@ -823,15 +990,17 @@ class ForemanOrchestrator:
         workflow_step: str,
         outcome: str,
         detail: str,
+        role_id: str = "_builtin:orchestrator",
+        agent_backend: str = "orchestrator",
     ) -> Run:
         now = utc_now_text()
         run = Run(
             id=_new_id("run"),
             task_id=task.id,
             project_id=task.project_id,
-            role_id="_builtin:orchestrator",
+            role_id=role_id,
             workflow_step=workflow_step,
-            agent_backend="orchestrator",
+            agent_backend=agent_backend,
             status="completed",
             outcome=outcome,
             outcome_detail=detail,

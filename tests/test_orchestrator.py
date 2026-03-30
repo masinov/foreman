@@ -12,6 +12,7 @@ from foreman.models import Project, Sprint, Task
 from foreman.orchestrator import (
     AgentExecutionResult,
     ForemanOrchestrator,
+    OrchestratorError,
 )
 from foreman.roles import default_roles_dir, load_roles
 from foreman.store import ForemanStore
@@ -722,6 +723,431 @@ class ForemanOrchestratorTests(unittest.TestCase):
                     {"path": ".foreman/status.md"},
                 ],
             )
+
+
+class HumanGateResumeTests(unittest.TestCase):
+    """Tests for human-gate pause and resume behavior."""
+
+    def create_workspace(self) -> tuple[Path, Path]:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        root = Path(temp_dir.name)
+        repo_path = root / "repo"
+        repo_path.mkdir()
+        db_path = root / "foreman.db"
+        return repo_path, db_path
+
+    def git(self, repo_path: Path, *args: str) -> subprocess.CompletedProcess[str]:
+        result = subprocess.run(
+            ["git", *args],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise AssertionError(
+                f"git {' '.join(args)} failed in {repo_path}\n"
+                f"stdout:\n{result.stdout}\n"
+                f"stderr:\n{result.stderr}"
+            )
+        return result
+
+    def write_text(self, path: Path, text: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+    def commit_all(self, repo_path: Path, message: str) -> None:
+        self.git(repo_path, "add", ".")
+        self.git(repo_path, "commit", "-m", message)
+
+    def initialize_repo(self, repo_path: Path) -> None:
+        self.git(repo_path, "init")
+        self.git(repo_path, "checkout", "-b", "main")
+        self.git(repo_path, "config", "user.email", "foreman-tests@example.com")
+        self.git(repo_path, "config", "user.name", "Foreman Tests")
+        self.write_text(repo_path / "AGENTS.md", "# Local Instructions\nUse tests.\n")
+        self.write_text(repo_path / ".gitignore", ".foreman/\n")
+        self.write_text(repo_path / "README.md", "# Temp Repo\n")
+        self.commit_all(repo_path, "chore: initial commit")
+
+    def test_human_gate_pauses_task_at_gate_step(self) -> None:
+        """Task pauses at human_gate step with persisted workflow state."""
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project = Project(
+                id="project-1",
+                name="Human Gate Test",
+                repo_path=str(repo_path),
+                spec_path=None,
+                methodology="development",
+                workflow_id="development_with_architect",
+                default_branch="main",
+                created_at="2026-03-30T12:00:00Z",
+                updated_at="2026-03-30T12:00:00Z",
+            )
+            sprint = Sprint(
+                id="sprint-1",
+                project_id=project.id,
+                title="Human Gate Sprint",
+                goal="Test human gate pause and resume",
+                status="active",
+                created_at="2026-03-30T12:00:00Z",
+                started_at="2026-03-30T12:00:00Z",
+            )
+            task = Task(
+                id="task-1",
+                sprint_id=sprint.id,
+                project_id=project.id,
+                title="Plan architecture",
+                description="Plan the system architecture",
+                status="todo",
+                task_type="feature",
+                priority=1,
+                order_index=1,
+                acceptance_criteria="Architecture plan approved",
+                created_at="2026-03-30T12:00:00Z",
+            )
+            store.save_project(project)
+            store.save_sprint(sprint)
+            store.save_task(task)
+
+            roles = load_roles(default_roles_dir())
+            workflows = load_workflows(
+                default_workflows_dir(),
+                available_role_ids=set(roles),
+            )
+
+            def architect_handler(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
+                del task
+                del carried_output
+                self.assertIn("Plan", prompt)
+                return AgentExecutionResult(
+                    outcome="done",
+                    detail="Architecture plan completed.",
+                )
+
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=roles,
+                workflows=workflows,
+                agent_executor=ScriptedAgentExecutor(
+                    {
+                        ("architect", 1): architect_handler,
+                    }
+                ),
+            )
+
+            # Run until human gate pauses
+            orchestrator.run_project(project.id)
+
+            paused_task = store.get_task(task.id)
+            self.assertIsNotNone(paused_task)
+            assert paused_task is not None
+
+            # Task should be paused at human_approval step
+            self.assertEqual(paused_task.status, "blocked")
+            self.assertEqual(paused_task.workflow_current_step, "human_approval")
+            self.assertIsNone(paused_task.workflow_carried_output)
+            self.assertIn("human", paused_task.blocked_reason.lower())
+
+            # Verify a workflow.paused event was emitted
+            events = store.list_events(task_id=task.id)
+            paused_events = [
+                event for event in events if event.event_type == "workflow.paused"
+            ]
+            self.assertEqual(len(paused_events), 1)
+            self.assertEqual(
+                paused_events[0].payload,
+                {"step": "human_approval", "reason": "human_gate"},
+            )
+
+    def test_approve_resumes_from_human_gate(self) -> None:
+        """Approve resumes task from human gate to develop step."""
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project = Project(
+                id="project-1",
+                name="Human Gate Test",
+                repo_path=str(repo_path),
+                spec_path=None,
+                methodology="development",
+                workflow_id="development_with_architect",
+                default_branch="main",
+                created_at="2026-03-30T12:00:00Z",
+                updated_at="2026-03-30T12:00:00Z",
+            )
+            sprint = Sprint(
+                id="sprint-1",
+                project_id=project.id,
+                title="Human Gate Sprint",
+                goal="Test human gate pause and resume",
+                status="active",
+                created_at="2026-03-30T12:00:00Z",
+                started_at="2026-03-30T12:00:00Z",
+            )
+            task = Task(
+                id="task-1",
+                sprint_id=sprint.id,
+                project_id=project.id,
+                title="Plan architecture",
+                description="Plan the system architecture",
+                status="todo",
+                task_type="feature",
+                priority=1,
+                order_index=1,
+                acceptance_criteria="Architecture plan approved",
+                created_at="2026-03-30T12:00:00Z",
+            )
+            store.save_project(project)
+            store.save_sprint(sprint)
+            store.save_task(task)
+
+            roles = load_roles(default_roles_dir())
+            workflows = load_workflows(
+                default_workflows_dir(),
+                available_role_ids=set(roles),
+            )
+
+            def architect_handler(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
+                del task
+                del carried_output
+                self.assertIn("Plan", prompt)
+                return AgentExecutionResult(
+                    outcome="done",
+                    detail="Architecture plan completed.",
+                )
+
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=roles,
+                workflows=workflows,
+                agent_executor=ScriptedAgentExecutor(
+                    {
+                        ("architect", 1): architect_handler,
+                    }
+                ),
+            )
+
+            # Run until human gate pauses
+            orchestrator.run_project(project.id)
+
+            # Resume with approve (no agent executor means deferred)
+            result = orchestrator.resume_human_gate(
+                task.id,
+                outcome="approve",
+            )
+
+            self.assertEqual(result.decision, "approve")
+            self.assertEqual(result.paused_step, "human_approval")
+            self.assertEqual(result.next_step, "develop")
+            # Since agent_executor is provided, execution continues (not deferred)
+            self.assertEqual(result.deferred, False)
+
+            # Task should be in progress (or done/blocked depending on next step)
+            resumed_task = store.get_task(task.id)
+            self.assertIsNotNone(resumed_task)
+            assert resumed_task is not None
+
+            # Verify workflow.resumed event was emitted
+            events = store.list_events(task_id=task.id)
+            resumed_events = [
+                event for event in events if event.event_type == "workflow.resumed"
+            ]
+            self.assertGreaterEqual(len(resumed_events), 1)
+            self.assertEqual(
+                resumed_events[0].payload["decision"],
+                "approve",
+            )
+
+            # Verify a decision run was created
+            decision_runs = [
+                run
+                for run in store.list_runs(task_id=task.id)
+                if run.role_id == "_builtin:human_gate"
+            ]
+            self.assertGreaterEqual(len(decision_runs), 1)
+            # The last decision run should be the approve decision
+            self.assertEqual(decision_runs[-1].outcome, "approve")
+
+    def test_deny_resumes_from_human_gate(self) -> None:
+        """Denying task at human gate returns to plan step."""
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project = Project(
+                id="project-1",
+                name="Human Gate Test",
+                repo_path=str(repo_path),
+                spec_path=None,
+                methodology="development",
+                workflow_id="development_with_architect",
+                default_branch="main",
+                created_at="2026-03-30T12:00:00Z",
+                updated_at="2026-03-30T12:00:00Z",
+            )
+            sprint = Sprint(
+                id="sprint-1",
+                project_id=project.id,
+                title="Human Gate Sprint",
+                goal="Test human gate pause and resume",
+                status="active",
+                created_at="2026-03-30T12:00:00Z",
+                started_at="2026-03-30T12:00:00Z",
+            )
+            task = Task(
+                id="task-1",
+                sprint_id=sprint.id,
+                project_id=project.id,
+                title="Plan architecture",
+                description="Plan the system architecture",
+                status="todo",
+                task_type="feature",
+                priority=1,
+                order_index=1,
+                acceptance_criteria="Architecture plan approved",
+                created_at="2026-03-30T12:00:00Z",
+            )
+            store.save_project(project)
+            store.save_sprint(sprint)
+            store.save_task(task)
+
+            roles = load_roles(default_roles_dir())
+            workflows = load_workflows(
+                default_workflows_dir(),
+                available_role_ids=set(roles),
+            )
+
+            def architect_handler(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
+                del task
+                del carried_output
+                self.assertIn("Plan", prompt)
+                return AgentExecutionResult(
+                    outcome="done",
+                    detail="Architecture plan completed.",
+                )
+
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=roles,
+                workflows=workflows,
+                agent_executor=ScriptedAgentExecutor(
+                    {
+                        ("architect", 1): architect_handler,
+                    }
+                ),
+            )
+
+            # Run until human gate pauses
+            orchestrator.run_project(project.id)
+
+            # Resume with deny and should return to plan step
+            result = orchestrator.resume_human_gate(
+                task.id,
+                outcome="deny",
+                note="The architecture needs more detail.",
+            )
+
+            self.assertEqual(result.decision, "deny")
+            self.assertEqual(result.paused_step, "human_approval")
+            self.assertEqual(result.next_step, "plan")
+            # Since agent_executor is provided, execution continues (not deferred)
+            self.assertEqual(result.deferred, False)
+            self.assertEqual(result.note, "The architecture needs more detail.")
+
+            # Task should be back in progress at plan step
+            resumed_task = store.get_task(task.id)
+            self.assertIsNotNone(resumed_task)
+            assert resumed_task is not None
+
+            # Verify the denial run was created
+            deny_runs = [
+                run
+                for run in store.list_runs(task_id=task.id)
+                if run.outcome == "deny"
+            ]
+            self.assertEqual(len(deny_runs), 1)
+
+    def test_resume_human_gate_errors_for_invalid_state(self) -> None:
+        """resume_human_gate raises errors for invalid task states."""
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project = Project(
+                id="project-1",
+                name="Error Test",
+                repo_path=str(repo_path),
+                spec_path=None,
+                methodology="development",
+                workflow_id="development",
+                default_branch="main",
+                created_at="2026-03-30T12:00:00Z",
+                updated_at="2026-03-30T12:00:00Z",
+            )
+            sprint = Sprint(
+                id="sprint-1",
+                project_id=project.id,
+                title="Error Sprint",
+                goal="Test error conditions",
+                status="active",
+                created_at="2026-03-30T12:00:00Z",
+                started_at="2026-03-30T12:00:00Z",
+            )
+            task = Task(
+                id="task-1",
+                sprint_id=sprint.id,
+                project_id=project.id,
+                title="Error Task",
+                description="Test error conditions",
+                status="todo",
+                task_type="feature",
+                priority=1,
+                order_index=1,
+                acceptance_criteria="Errors raised correctly",
+                created_at="2026-03-30T12:00:00Z",
+            )
+            store.save_project(project)
+            store.save_sprint(sprint)
+            store.save_task(task)
+
+            orchestrator = ForemanOrchestrator(store)
+
+            # Unknown task
+            with self.assertRaises(OrchestratorError) as exc:
+                orchestrator.resume_human_gate("task-unknown", outcome="approve")
+            self.assertIn("Unknown task", str(exc.exception))
+
+            # Task not blocked
+            with self.assertRaises(OrchestratorError) as exc:
+                orchestrator.resume_human_gate(task.id, outcome="approve")
+            self.assertIn("not paused at a human gate", str(exc.exception))
+
+            # Task blocked but not at human gate
+            task.status = "blocked"
+            task.blocked_reason = "Some other reason"
+            task.workflow_current_step = None
+            store.save_task(task)
+
+            with self.assertRaises(OrchestratorError) as exc:
+                orchestrator.resume_human_gate(task.id, outcome="approve")
+            self.assertIn("not paused at a human gate", str(exc.exception))
+
+            # Invalid outcome
+            task.workflow_current_step = "develop"
+            store.save_task(task)
+            with self.assertRaises(OrchestratorError) as exc:
+                orchestrator.resume_human_gate(task.id, outcome="maybe")
+            self.assertIn("Unsupported human-gate outcome", str(exc.exception))
 
 
 if __name__ == "__main__":

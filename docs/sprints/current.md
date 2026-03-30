@@ -10,15 +10,15 @@
 
 ## Included tasks
 
-1. `[todo]` Add CLI commands for human-gate approval and denial
+1. `[done]` Add CLI commands for human-gate approval and denial
    Deliverable: operators can issue `foreman approve <task-id>` and
    `foreman deny <task-id>` against paused tasks in the SQLite store.
 
-2. `[todo]` Integrate workflow resume semantics for paused tasks
+2. `[done]` Integrate workflow resume semantics for paused tasks
    Deliverable: a task paused by `_builtin:human_gate` can resume from its
    persisted workflow step with the recorded carried output and decision.
 
-3. `[todo]` Add coverage for pause, approve, deny, and resume behavior
+3. `[done]` Add coverage for pause, approve, deny, and resume behavior
    Deliverable: tests prove human-gate tasks block, persist resume metadata,
    and continue through the workflow after an explicit human decision.
 
