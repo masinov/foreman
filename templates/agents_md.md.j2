@@ -1,0 +1,59 @@
+# AGENTS.md
+
+## Project Identity
+
+- Project: {project_name}
+- Spec: {spec_path}
+
+## Branching
+
+- Use one branch per task with these prefixes: `feat/`, `fix/`, `refactor/`,
+  `docs/`, `spike/`, `chore/`
+- Never work directly on `{default_branch}`
+- The engine handles merges after reviewer approval
+
+## Commits
+
+- Use conventional prefixes: `feat:`, `fix:`, `refactor:`, `test:`, `docs:`,
+  `chore:`
+- Keep commits small and coherent
+
+## Environment
+
+- Use `./venv/bin/python` and `./venv/bin/pip`
+- Never use system Python
+
+## Testing
+
+- Run `{test_command}` before marking work complete
+
+## Documentation
+
+- Create ADRs in `docs/adr/` for meaningful architectural decisions
+- Update `docs/ARCHITECTURE.md` when the codebase structure changes
+  significantly
+- Update `docs/ROADMAP.md` when completed work changes the next priorities
+- Create `CHANGELOG.md` when the project matures enough that change tracking is
+  useful
+
+## Signals
+
+Emit `FOREMAN_SIGNAL: {{...}}` lines when needed:
+
+- `task_started`: use when you select work autonomously; include `title` and
+  optionally `task_type`, `branch`, and `criteria`
+- `task_created`: use when you discover follow-up work; include `title` and
+  optionally `task_type`, `description`, and `criteria`
+- `progress`: use for material progress updates; include `message`
+- `blocker`: use when human help is required; include `message`
+
+## Completion
+
+- When the shipped developer role finishes, end with `{completion_marker}`
+- Provide a structured completion summary before the marker
+
+## Constraints
+
+- Never merge to `{default_branch}`
+- Never edit files under `{context_dir}/`
+- Never bypass denied or approval-gated operations
