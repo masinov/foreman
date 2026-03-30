@@ -300,6 +300,197 @@ def handle_stub(args: argparse.Namespace) -> int:
     return 0
 
 
+def handle_board(args: argparse.Namespace) -> int:
+    """Handle ``foreman board`` - show a terminal task board."""
+
+    with ForemanStore(args.db) as store:
+        store.initialize()
+        project = store.get_project(args.project_id)
+        if project is None:
+            print(f"Project not found: {args.project_id}", file=sys.stderr)
+            return 1
+
+        sprint = store.get_active_sprint(project.id)
+        if sprint is None:
+            _print_lines(
+                f"Project: {project.name}",
+                f"Status: no active sprint",
+            )
+            return 0
+
+        tasks = store.list_tasks(sprint_id=sprint.id)
+        todo_tasks = [t for t in tasks if t.status == "todo"]
+        in_progress_tasks = [t for t in tasks if t.status == "in_progress"]
+        blocked_tasks = [t for t in tasks if t.status == "blocked"]
+        done_tasks = [t for t in tasks if t.status == "done"]
+
+        lines = [
+            f"Project: {project.name}",
+            f"Sprint: {sprint.title}",
+            "",
+            "## In Progress",
+        ]
+        if in_progress_tasks:
+            for task in in_progress_tasks:
+                role = task.assigned_role or "unassigned"
+                lines.append(f"  [{task.id}] {task.title} ({role})")
+        else:
+            lines.append("  (none)")
+
+        lines.append("")
+        lines.append("## Blocked")
+        if blocked_tasks:
+            for task in blocked_tasks:
+                reason = task.blocked_reason or "no reason given"
+                lines.append(f"  [{task.id}] {task.title} - {reason}")
+        else:
+            lines.append("  (none)")
+
+        lines.append("")
+        lines.append("## Todo")
+        if todo_tasks:
+            for task in todo_tasks[:10]:  # Show max 10 todo items
+                lines.append(f"  [{task.id}] {task.title}")
+            if len(todo_tasks) > 10:
+                lines.append(f"  ... and {len(todo_tasks) - 10} more")
+        else:
+            lines.append("  (none)")
+
+        lines.append("")
+        lines.append(f"## Done ({len(done_tasks)})")
+
+        _print_lines(*lines)
+        return 0
+
+
+def handle_watch(args: argparse.Namespace) -> int:
+    """Handle ``foreman watch`` - tail project or run events."""
+
+    with ForemanStore(args.db) as store:
+        store.initialize()
+
+        if args.run:
+            # Show events for a specific run
+            events = store.list_events(run_id=args.run)
+            if not events:
+                print(f"No events found for run: {args.run}", file=sys.stderr)
+                return 1
+
+            lines = [f"Events for run {args.run}:"]
+            for event in events[-50:]:  # Show last 50 events
+                lines.append(f"  [{event.timestamp}] {event.event_type}")
+                if event.payload:
+                    for key, value in list(event.payload.items())[:3]:
+                        lines.append(f"    {key}: {value}")
+            _print_lines(*lines)
+            return 0
+
+        if args.project_id:
+            project = store.get_project(args.project_id)
+            if project is None:
+                print(f"Project not found: {args.project_id}", file=sys.stderr)
+                return 1
+
+            # Show recent events for the project
+            events = store.list_events(project_id=project.id)
+            lines = [f"Recent events for project {project.name}:"]
+            for event in events[-20:]:  # Show last 20 events
+                lines.append(f"  [{event.timestamp}] {event.event_type}")
+            _print_lines(*lines)
+            return 0
+
+        # Show all recent events
+        events = store.list_events()
+        lines = ["Recent events:"]
+        for event in events[-20:]:
+            lines.append(f"  [{event.timestamp}] {event.event_type} (project={event.project_id})")
+        _print_lines(*lines)
+        return 0
+
+
+def handle_history(args: argparse.Namespace) -> int:
+    """Handle ``foreman history`` - show run and event history for a task."""
+
+    with ForemanStore(args.db) as store:
+        store.initialize()
+        task = store.get_task(args.task_id)
+        if task is None:
+            print(f"Task not found: {args.task_id}", file=sys.stderr)
+            return 1
+
+        runs = store.list_runs(task_id=task.id)
+        lines = [
+            f"Task: {task.title}",
+            f"Status: {task.status}",
+            "",
+            f"## Run History ({len(runs)} runs)",
+        ]
+
+        total_cost = 0.0
+        for run in runs:
+            total_cost += run.cost_usd
+            status_icon = "✓" if run.status == "completed" else "✗" if run.status == "failed" else "→"
+            lines.append(f"  {status_icon} [{run.id}] {run.role_id} @ {run.workflow_step}")
+            lines.append(f"      Status: {run.status}, Outcome: {run.outcome or 'pending'}")
+            if run.cost_usd > 0:
+                lines.append(f"      Cost: ${run.cost_usd:.4f}, Duration: {run.duration_ms or 0}ms")
+
+        lines.append("")
+        lines.append(f"Total cost: ${total_cost:.4f}")
+
+        _print_lines(*lines)
+        return 0
+
+
+def handle_cost(args: argparse.Namespace) -> int:
+    """Handle ``foreman cost`` - show project cost totals."""
+
+    with ForemanStore(args.db) as store:
+        store.initialize()
+        project = store.get_project(args.project_id)
+        if project is None:
+            print(f"Project not found: {args.project_id}", file=sys.stderr)
+            return 1
+
+        if args.sprint:
+            sprint = store.get_sprint(args.sprint)
+            if sprint is None:
+                print(f"Sprint not found: {args.sprint}", file=sys.stderr)
+                return 1
+            runs = [r for r in store.list_runs(project_id=project.id) if r.task_id]
+            # Filter to runs for tasks in this sprint
+            tasks = {t.id: t for t in store.list_tasks(sprint_id=sprint.id)}
+            runs = [r for r in runs if r.task_id in tasks]
+            scope = f"Sprint: {sprint.title}"
+        else:
+            runs = store.list_runs(project_id=project.id)
+            scope = f"Project: {project.name}"
+
+        total_cost = sum(r.cost_usd for r in runs)
+        total_tokens = sum(r.token_count for r in runs)
+
+        # Group by role
+        role_costs: dict[str, float] = {}
+        for run in runs:
+            role_costs[run.role_id] = role_costs.get(run.role_id, 0.0) + run.cost_usd
+
+        lines = [
+            scope,
+            "",
+            "## Cost Summary",
+            f"  Total runs: {len(runs)}",
+            f"  Total cost: ${total_cost:.4f}",
+            f"  Total tokens: {total_tokens:,}",
+            "",
+            "## Cost by Role",
+        ]
+        for role_id, cost in sorted(role_costs.items(), key=lambda x: -x[1]):
+            lines.append(f"  {role_id}: ${cost:.4f}")
+
+        _print_lines(*lines)
+        return 0
+
+
 def _set_handler(
     parser: argparse.ArgumentParser, handler: Handler, command_path: str
 ) -> argparse.ArgumentParser:
@@ -441,24 +632,28 @@ def build_parser() -> argparse.ArgumentParser:
 
     board_parser = subparsers.add_parser("board", help="Show a terminal task board.")
     board_parser.add_argument("project_id", help="Project identifier.")
-    _set_handler(board_parser, handle_stub, "board")
+    _add_db_option(board_parser, required=True)
+    _set_handler(board_parser, handle_board, "board")
 
     watch_parser = subparsers.add_parser("watch", help="Tail project or run events.")
     watch_parser.add_argument("project_id", nargs="?", help="Project identifier.")
     watch_parser.add_argument("--run", help="Run identifier.")
-    _set_handler(watch_parser, handle_stub, "watch")
+    _add_db_option(watch_parser, required=True)
+    _set_handler(watch_parser, handle_watch, "watch")
 
     cost_parser = subparsers.add_parser("cost", help="Show project cost totals.")
     cost_parser.add_argument("project_id", help="Project identifier.")
     cost_parser.add_argument("--sprint", help="Sprint identifier.")
-    _set_handler(cost_parser, handle_stub, "cost")
+    _add_db_option(cost_parser, required=True)
+    _set_handler(cost_parser, handle_cost, "cost")
 
     history_parser = subparsers.add_parser(
         "history",
         help="Show run and event history for a task.",
     )
     history_parser.add_argument("task_id", help="Task identifier.")
-    _set_handler(history_parser, handle_stub, "history")
+    _add_db_option(history_parser, required=True)
+    _set_handler(history_parser, handle_history, "history")
 
     approve_parser = subparsers.add_parser("approve", help="Approve a paused task.")
     approve_parser.add_argument("task_id", help="Task identifier.")

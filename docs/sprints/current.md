@@ -9,16 +9,16 @@
 
 ## Included tasks
 
-1. `[todo]` Implement `foreman board` command
+1. `[done]` Implement `foreman board` command
    Deliverable: operators can view sprint and task status without opening the database.
 
-2. `[todo]` Implement `foreman watch` command
+2. `[done]` Implement `foreman watch` command
    Deliverable: live activity feed showing task progress, agent messages, and cost updates.
 
-3. `[todo]` Implement `foreman history` command
+3. `[done]` Implement `foreman history` command
    Deliverable: run history with events, decisions, and outcomes.
 
-4. `[todo]` Implement `foreman cost` command
+4. `[done]` Implement `foreman cost` command
    Deliverable: cost summary by project, sprint, or task.
 
 ## Excluded from this sprint

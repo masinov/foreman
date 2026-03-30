@@ -432,6 +432,252 @@ class ForemanCLISmokeTests(unittest.TestCase):
         self.assertEqual(refreshed.workflow_current_step, "plan")
         self.assertEqual(refreshed.workflow_carried_output, "rethink the approach")
 
+    def test_board_command_shows_task_board(self) -> None:
+        store, db_path = self.create_store()
+        project = Project(
+            id="project-1",
+            name="Foreman Demo",
+            repo_path="/tmp/foreman-demo",
+            workflow_id="development",
+            created_at="2026-03-30T09:00:00Z",
+            updated_at="2026-03-30T09:00:00Z",
+        )
+        sprint = Sprint(
+            id="sprint-1",
+            project_id=project.id,
+            title="Sprint 1",
+            status="active",
+            created_at="2026-03-30T09:05:00Z",
+        )
+        task1 = Task(
+            id="task-1",
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="In progress task",
+            status="in_progress",
+            assigned_role="developer",
+            created_at="2026-03-30T09:15:00Z",
+        )
+        task2 = Task(
+            id="task-2",
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="Todo task",
+            status="todo",
+            created_at="2026-03-30T09:16:00Z",
+        )
+        task3 = Task(
+            id="task-3",
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="Blocked task",
+            status="blocked",
+            blocked_reason="Waiting on dependency",
+            created_at="2026-03-30T09:17:00Z",
+        )
+        store.save_project(project)
+        store.save_sprint(sprint)
+        store.save_task(task1)
+        store.save_task(task2)
+        store.save_task(task3)
+
+        result = self.run_cli("board", "project-1", "--db", str(db_path))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Project: Foreman Demo", result.stdout)
+        self.assertIn("Sprint: Sprint 1", result.stdout)
+        self.assertIn("## In Progress", result.stdout)
+        self.assertIn("[task-1] In progress task (developer)", result.stdout)
+        self.assertIn("## Blocked", result.stdout)
+        self.assertIn("[task-3] Blocked task - Waiting on dependency", result.stdout)
+        self.assertIn("## Todo", result.stdout)
+        self.assertIn("[task-2] Todo task", result.stdout)
+
+    def test_history_command_shows_run_history(self) -> None:
+        store, db_path = self.create_store()
+        project = Project(
+            id="project-1",
+            name="Foreman Demo",
+            repo_path="/tmp/foreman-demo",
+            workflow_id="development",
+            created_at="2026-03-30T09:00:00Z",
+            updated_at="2026-03-30T09:00:00Z",
+        )
+        sprint = Sprint(
+            id="sprint-1",
+            project_id=project.id,
+            title="Sprint 1",
+            status="active",
+            created_at="2026-03-30T09:05:00Z",
+        )
+        task = Task(
+            id="task-1",
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="Sample task",
+            status="in_progress",
+            created_at="2026-03-30T09:15:00Z",
+        )
+        store.save_project(project)
+        store.save_sprint(sprint)
+        store.save_task(task)
+
+        # Add a run
+        from foreman.models import Run
+        run = Run(
+            id="run-1",
+            task_id=task.id,
+            project_id=project.id,
+            role_id="developer",
+            workflow_step="develop",
+            agent_backend="claude_code",
+            status="completed",
+            outcome="done",
+            cost_usd=0.05,
+            duration_ms=5000,
+            created_at="2026-03-30T09:20:00Z",
+        )
+        store.save_run(run)
+
+        result = self.run_cli("history", "task-1", "--db", str(db_path))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Task: Sample task", result.stdout)
+        self.assertIn("Status: in_progress", result.stdout)
+        self.assertIn("Run History", result.stdout)
+        self.assertIn("[run-1] developer @ develop", result.stdout)
+        self.assertIn("Total cost: $0.0500", result.stdout)
+
+    def test_cost_command_shows_project_cost(self) -> None:
+        store, db_path = self.create_store()
+        project = Project(
+            id="project-1",
+            name="Foreman Demo",
+            repo_path="/tmp/foreman-demo",
+            workflow_id="development",
+            created_at="2026-03-30T09:00:00Z",
+            updated_at="2026-03-30T09:00:00Z",
+        )
+        sprint = Sprint(
+            id="sprint-1",
+            project_id=project.id,
+            title="Sprint 1",
+            status="active",
+            created_at="2026-03-30T09:05:00Z",
+        )
+        task = Task(
+            id="task-1",
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="Sample task",
+            status="done",
+            created_at="2026-03-30T09:15:00Z",
+        )
+        store.save_project(project)
+        store.save_sprint(sprint)
+        store.save_task(task)
+
+        # Add runs with costs
+        from foreman.models import Run
+        run1 = Run(
+            id="run-1",
+            task_id=task.id,
+            project_id=project.id,
+            role_id="developer",
+            workflow_step="develop",
+            agent_backend="claude_code",
+            status="completed",
+            outcome="done",
+            cost_usd=0.10,
+            token_count=1000,
+            created_at="2026-03-30T09:20:00Z",
+        )
+        run2 = Run(
+            id="run-2",
+            task_id=task.id,
+            project_id=project.id,
+            role_id="code_reviewer",
+            workflow_step="review",
+            agent_backend="claude_code",
+            status="completed",
+            outcome="approve",
+            cost_usd=0.05,
+            token_count=500,
+            created_at="2026-03-30T09:30:00Z",
+        )
+        store.save_run(run1)
+        store.save_run(run2)
+
+        result = self.run_cli("cost", "project-1", "--db", str(db_path))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Project: Foreman Demo", result.stdout)
+        self.assertIn("Total runs: 2", result.stdout)
+        self.assertIn("Total cost: $0.1500", result.stdout)
+        self.assertIn("Total tokens: 1,500", result.stdout)
+        self.assertIn("developer: $0.1000", result.stdout)
+        self.assertIn("code_reviewer: $0.0500", result.stdout)
+
+    def test_watch_command_shows_recent_events(self) -> None:
+        store, db_path = self.create_store()
+        project = Project(
+            id="project-1",
+            name="Foreman Demo",
+            repo_path="/tmp/foreman-demo",
+            workflow_id="development",
+            created_at="2026-03-30T09:00:00Z",
+            updated_at="2026-03-30T09:00:00Z",
+        )
+        sprint = Sprint(
+            id="sprint-1",
+            project_id=project.id,
+            title="Sprint 1",
+            status="active",
+            created_at="2026-03-30T09:05:00Z",
+        )
+        task = Task(
+            id="task-1",
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="Sample task",
+            status="in_progress",
+            created_at="2026-03-30T09:15:00Z",
+        )
+        store.save_project(project)
+        store.save_sprint(sprint)
+        store.save_task(task)
+
+        # Add a run first (required for events due to FK constraint)
+        from foreman.models import Run, Event
+        run = Run(
+            id="run-1",
+            task_id=task.id,
+            project_id=project.id,
+            role_id="developer",
+            workflow_step="develop",
+            agent_backend="claude_code",
+            status="completed",
+            created_at="2026-03-30T09:20:00Z",
+        )
+        store.save_run(run)
+
+        # Add an event
+        event = Event(
+            id="event-1",
+            run_id=run.id,
+            task_id=task.id,
+            project_id=project.id,
+            event_type="workflow.step_started",
+            timestamp="2026-03-30T09:20:00Z",
+        )
+        store.save_event(event)
+
+        result = self.run_cli("watch", "--db", str(db_path))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Recent events:", result.stdout)
+        self.assertIn("workflow.step_started", result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()
