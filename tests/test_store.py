@@ -129,8 +129,17 @@ class ForemanStoreTests(unittest.TestCase):
             self.assertEqual(reopened.get_active_sprint(project.id), sprint)
             self.assertEqual(reopened.get_task(task.id), task)
             self.assertEqual(reopened.list_tasks(project_id=project.id), [task])
+            self.assertEqual(
+                reopened.list_tasks(project_id=project.id, status="in_progress"),
+                [task],
+            )
             self.assertEqual(reopened.get_run(run.id), run)
             self.assertEqual(reopened.list_runs(task_id=task.id), [run])
+            self.assertEqual(
+                reopened.list_runs(task_id=task.id, status="completed"),
+                [run],
+            )
+            self.assertEqual(reopened.get_latest_run(task.id), run)
             self.assertEqual(
                 reopened.list_events(run_id=run.id),
                 [started_event, completion_event],

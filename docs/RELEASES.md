@@ -14,9 +14,12 @@ The first persisted SQLite store checkpoint is recorded in
 The declarative loader checkpoint is recorded in
 `docs/checkpoints/role-workflow-loaders.md`.
 
+The first orchestrator workflow execution checkpoint is recorded in
+`docs/checkpoints/orchestrator-main-loop.md`.
+
 ## Near-term policy
 
-Until the first orchestrator slice exists:
+Until the first native runner slice exists:
 
 - use tags only for meaningful checkpoints,
 - prefer sprint-completion checkpoints over frequent versioning,
