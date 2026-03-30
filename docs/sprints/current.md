@@ -1,53 +1,43 @@
 # Current Sprint
 
-- Sprint: `sprint-07-codex-runner`
+- Sprint: `sprint-08-monitoring-cli`
 - Status: active
-- Goal: execute shipped Codex roles through a native Foreman runner with
-  persisted runs, sessions, and structured events
+- Goal: expose project state through CLI inspection commands
 - Primary references:
   - `docs/specs/engine-design-v3.md`
   - `docs/mockups/foreman-mockup-v6.html`
 
 ## Included tasks
 
-1. `[done]` Implement the first concrete Codex runner backend
-   Deliverable: `foreman/runner/codex.py` can execute one role prompt, return
-   normalized run results, and preserve session IDs for persistent roles.
+1. `[todo]` Implement `foreman board` command
+   Deliverable: operators can view sprint and task status without opening the database.
 
-2. `[done]` Integrate native Codex runner selection into the orchestrator path
-   Deliverable: Foreman can execute Codex-backed roles without an injected
-   scripted test executor while preserving run, event, and retry semantics.
+2. `[todo]` Implement `foreman watch` command
+   Deliverable: live activity feed showing task progress, agent messages, and cost updates.
 
-3. `[done]` Add runner coverage for success, session reuse, approval handling,
-   and infrastructure failure behavior
-   Deliverable: tests prove the Codex runner returns normalized results and
-   integrates cleanly with orchestrator execution alongside the existing
-   Claude backend.
+3. `[todo]` Implement `foreman history` command
+   Deliverable: run history with events, decisions, and outcomes.
+
+4. `[todo]` Implement `foreman cost` command
+   Deliverable: cost summary by project, sprint, or task.
 
 ## Excluded from this sprint
 
-- monitoring CLI surfaces beyond approve and deny
-- dashboard and web implementation
-- schema migration framework work
+- dashboard implementation
+- ADR framework work
+- multi-project support
 
 ## Acceptance criteria
 
-- the orchestrator can execute a Codex-backed role through a native runner
-  implementation
-- persistent Codex sessions can be reused across eligible workflow steps
-- runner failures are normalized into durable run and event history
-- docs and validation remain good enough for a fresh autonomous agent to pick
-  the next slice without extra human context
+- all four commands work with `--db` flag
+- operators can inspect state without opening the database
+- docs and validation remain good for a fresh autonomous agent
 
-## Known risks
+- live updates visible in watch output
+- history shows decisions and outcomes chronologically
+- cost tracking works across projects, sprints, and tasks
 
-- the Codex runner must not leak backend-specific quirks into the shared
-  orchestrator model
-- session lifecycle and retry behavior need to line up with the spec without
-  diverging from the now-shipped Claude runner semantics
-
-## Demo checklist
-
-- show one Codex-backed role executing through the native runner
-- show persisted run metadata and structured events from that execution
-- show repo validation passing after the runner slice lands
+- demo checklist
+- show `foreman board` output for a sample project
+- show `foreman watch` with live updates
+- show repo validation passing after the slice lands

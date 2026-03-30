@@ -2,16 +2,14 @@
 
 ## Current sprint
 
-- Sprint: `sprint-07-codex-runner`
+- Sprint: `sprint-08-monitoring-cli`
 - Status: active
-- Goal: execute shipped Codex roles through a native Foreman runner with
-  persisted run metadata, session handling, and structured events
+- Goal: expose project state through CLI inspection commands
 
 ## Active branches
 
-- `feat/claude-runner` — land the first native Claude Code runner, native
-  orchestrator integration, and repo-memory rollover into the Codex runner
-  sprint
+- `feat/claude-runner` — contains both Claude and Codex runner implementations,
+  ready for merge to main
 
 ## Completed this week
 
@@ -119,11 +117,10 @@
 
 ## Ready next
 
-1. add the first native Codex runner backend
-2. expose project state through the monitoring CLI surfaces
-3. define the first ADR now that runner session handling is an active runtime
+1. expose project state through the monitoring CLI surfaces
+2. define the first ADR now that runner session handling is an active runtime
    constraint
-4. build the dashboard implementation aligned to the mockup
+3. build the dashboard implementation aligned to the mockup
 
 ## Open risks
 
@@ -131,9 +128,8 @@
   the Foreman product itself; their behavior should not accidentally become the
   long-term architecture.
 - The package now has a real store, loader, orchestrator, project
-  initialization path, human-gate resume commands, and a native Claude runner,
-  but the Codex backend is still missing so Foreman does not yet satisfy the
-  full dual-backend product commitment.
+  initialization path, human-gate resume commands, and native Claude and Codex
+  runners, satisfying the dual-backend product commitment.
 - The bootstrap CLI currently requires explicit `--db PATH` selection for
   project lifecycle commands because engine-instance configuration does not
   exist yet.
