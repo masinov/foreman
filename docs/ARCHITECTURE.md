@@ -154,6 +154,152 @@ The first implementation slice has landed:
 - `foreman.cli` exposes the initial command shell,
 - smoke tests cover `python -m foreman --help`, `projects`, and `status`.
 
-The deeper runtime layers are still placeholders. The next implementation slice
-should fill in the SQLite-backed models and store before more orchestration
-behavior lands.
+The second implementation slice has now landed:
+
+- `foreman.models` defines typed entities for projects, sprints, tasks, runs,
+  and events,
+- `foreman.store` bootstraps the SQLite schema and persists or queries the core
+  entities,
+- `foreman projects --db <path>` and `foreman status --db <path>` can inspect
+  persisted state,
+- round-trip tests cover the store baseline.
+
+The third implementation slice has now landed:
+
+- shipped default `roles/*.toml` and `workflows/*.toml` files mirror the spec's
+  declarative examples,
+- `foreman.roles` loads role definitions and renders prompt templates with the
+  completion marker and signal docs,
+- `foreman.workflows` loads workflow graphs and validates transitions against
+  declared steps and known roles,
+- `foreman roles` and `foreman workflows` expose the shipped definitions
+  through the CLI.
+
+The fourth implementation slice has now landed:
+
+- `foreman.orchestrator` can select the next directed task from persisted
+  sprint state and execute the loaded workflow graph step by step,
+- `foreman.builtins` provides explicit seams for test, merge, mark-done, and
+  human-gate pause behavior,
+- `foreman.git` wraps the branch, merge, status, diff, and commit-history calls
+  needed by workflow execution and reviewer prompts,
+- `tests/test_orchestrator.py` drives the shipped development workflow against
+  a real temporary git repo with a scripted executor.
+
+The fifth implementation slice has now landed:
+
+- `foreman.scaffold` generates the minimal repo scaffold described by the spec
+  and renders `AGENTS.md` from `templates/agents_md.md.j2`,
+- `foreman.cli` now supports `foreman init --db <path>` to initialize or
+  update persisted projects directly from the command line,
+- the store can look up projects by repo path so repeated initialization runs
+  update the same project record instead of creating duplicates,
+- `tests/test_scaffold.py` and the CLI smoke coverage verify scaffold
+  generation, `.gitignore` behavior, and preservation of user-owned
+  `AGENTS.md`.
+
+The sixth implementation slice has now landed:
+
+- `foreman.context` renders runtime `.foreman/context.md` and
+  `.foreman/status.md` from persisted project, sprint, and task records,
+- `foreman.orchestrator` now writes runtime context before agent execution and
+  after task completion while reusing the same rendered content for prompt
+  context injection,
+- `foreman.builtins` now supports `_builtin:context_write` so custom workflows
+  can force an explicit context refresh,
+- `tests/test_context.py` and expanded orchestrator integration coverage verify
+  runtime projection, builtin context writes, and gitignored temp-repo
+  behavior.
+
+The seventh implementation slice has now landed:
+
+- `foreman.cli` now supports `foreman approve --db <path>` and
+  `foreman deny --db <path>` for tasks paused at `_builtin:human_gate`,
+- `foreman.orchestrator` can persist human approval or denial decisions,
+  record `workflow.resumed` events, and continue from the paused workflow step
+  instead of restarting from workflow entry,
+- when the resumed next step needs an agent backend that is not available yet,
+  the orchestrator now stores a deferred next step and carried output so a
+  later run can continue from that exact point,
+- `tests/test_orchestrator.py` and `tests/test_cli.py` now cover immediate and
+  deferred human-gate resume behavior.
+
+The eighth implementation slice has now landed:
+
+- `foreman.runner.base` now defines shared native runner config, event, and
+  infrastructure-retry primitives,
+- `foreman.runner.signals` now extracts `FOREMAN_SIGNAL:` lines from assistant
+  output without polluting the persisted message text,
+- `foreman.runner.claude_code` now launches Claude Code in `stream-json` mode,
+  maps Claude events into Foreman agent events, enforces per-run gates, and
+  supports session resume,
+- `foreman.orchestrator` now falls back to the native runner map when no
+  scripted executor is injected, so shipped Claude-backed roles can execute
+  through the product runtime itself,
+- `tests/test_runner_claude.py` adds direct runner coverage, and
+  `tests/test_orchestrator.py` now verifies native runner execution, retry
+  persistence, and developer session reuse.
+
+The ninth implementation slice has now landed:
+
+- `foreman.runner.codex` now launches `codex app-server` over stdio, starts or
+  resumes threads through JSON-RPC, maps streamed Codex items into Foreman
+  agent events, and auto-responds to tool approval requests from role policy,
+- `foreman.orchestrator` now includes both native backends by default and can
+  resume human-gate approvals immediately for native backends when the repo
+  runtime is available,
+- `tests/test_runner_codex.py` adds direct Codex runner coverage, and
+  `tests/test_orchestrator.py` now verifies Codex success, session reuse, and
+  native human-gate resume behavior.
+
+The tenth implementation slice has now landed:
+
+- `foreman.store` now exposes recent-event slices plus project or sprint run
+  rollups for monitoring reads,
+- `foreman.cli` now supports `foreman board --db <path>`, `foreman history
+  --db <path>`, `foreman cost --db <path>`, and `foreman watch --db <path>`
+  directly against SQLite,
+- the board view groups active sprint tasks by status and includes branch,
+  role, blocked-reason, and token context,
+- the watch view intentionally uses bounded polling snapshots instead of a
+  live stream until a dedicated transport boundary exists,
+- `tests/test_store.py` and `tests/test_cli.py` now cover monitoring query
+  semantics, sprint scoping, and recent activity rendering.
+
+Current runtime constraints worth preserving:
+
+- every workflow step persists a `runs` row, including built-ins, so workflow
+  and engine events always have a durable `run_id`,
+- the orchestrator uses synthetic orchestrator runs for control-path events
+  such as loop limits and crash recovery because the current schema requires
+  `events.run_id` to be non-null,
+- the shipped workflow TOML treats `_builtin:mark_done` as a terminal step with
+  no outgoing edge, so the runtime currently treats `task.status == "done"` as
+  successful workflow termination instead of a fallback block.
+- `foreman init` never overwrites a repo's existing `AGENTS.md`; the generated
+  instructions are a one-time scaffold that the user owns afterward,
+- the bootstrap CLI currently requires explicit `--db PATH` selection for
+  SQLite-backed lifecycle, inspection, monitoring, and human-gate commands
+  until engine-level database discovery exists,
+- deferred human-gate resume is represented by an `in_progress` task whose
+  `workflow_current_step` points at the next step to execute, and task
+  selection now prioritizes that persisted resume point before untouched todo
+  tasks,
+- Foreman now ships native Claude Code and Codex runners; unsupported
+  backends still need explicit runner implementations before the orchestrator
+  can execute them directly,
+- immediate human-gate resume now re-checks out the task branch before native
+  execution, while still deferring safely when the next backend or repo
+  runtime is unavailable,
+- Codex token usage is persisted through native runner events, but the current
+  app-server contract does not expose USD pricing so Codex `cost_usd` remains
+  zero for now,
+- `foreman watch` currently polls the store with bounded snapshots rather than
+  maintaining a live event stream, so the eventual dashboard transport
+  contract is still undecided,
+- `.foreman/status.md` currently emits an explicit open-decisions placeholder
+  because the SQLite schema does not yet persist those records.
+
+The next implementation slice should capture the first ADR for runner session
+handling, approval policy, and backend contract boundaries so later dashboard
+and runner work can rely on an accepted constraint.

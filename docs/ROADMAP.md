@@ -57,7 +57,7 @@ Target deliverables:
 
 Status:
 
-- next active slice
+- completed on `feat/sqlite-store-baseline`
 
 ## Milestone 3: Roles, workflows, and scaffold generation
 
@@ -71,6 +71,12 @@ Target deliverables:
 - scaffold generator for `AGENTS.md`, `docs/adr/`, and `.foreman/`
 - `.gitignore` update helpers
 
+Status:
+
+- completed on `feat/init-scaffold-generator`
+- role and workflow loading, prompt rendering, scaffold generation, and
+  `.gitignore` update helpers are now in place
+
 ## Milestone 4: Orchestrator and built-ins
 
 Goal: execute one task through a workflow with durable state transitions.
@@ -81,6 +87,15 @@ Target deliverables:
 - step transitions and loop limits
 - built-ins for tests, merge, mark-done, and human gates
 - context projection into `.foreman/context.md` and `.foreman/status.md`
+
+Status:
+
+- completed on `feat/human-gate-resume`
+- directed task selection, workflow transitions, loop limits, built-ins for
+  tests, merge, mark-done, human-gate pause, human-gate resume, and runtime
+  context projection now exist
+- bootstrap CLI approvals can defer agent-backed next steps until the native
+  runner milestone lands
 
 ## Milestone 5: Claude and Codex runners
 
@@ -94,6 +109,14 @@ Target deliverables:
 - structured event capture
 - infrastructure retry handling
 
+Status:
+
+- completed on `feat/codex-runner`
+- the shared runner protocol, Claude Code backend, Codex backend, retry
+  normalization, and orchestrator integration now exist
+- native human-gate resume now proceeds immediately when the next backend and
+  repo are available, while still persisting deferred state when they are not
+
 ## Milestone 6: Monitoring surfaces
 
 Goal: expose Foreman state through CLI and a web dashboard.
@@ -105,10 +128,17 @@ Target deliverables:
 - project, sprint, and task detail APIs
 - web implementation aligned to `docs/mockups/foreman-mockup-v6.html`
 
+Status:
+
+- in progress on `feat/monitoring-cli`
+- the terminal monitoring CLI now exposes board, history, cost, and bounded
+  watch snapshots directly from SQLite
+- project, sprint, and task detail APIs plus the dashboard implementation are
+  still pending
+
 ## Near-term priorities
 
-1. implement the SQLite store and query layer
-2. add TOML-based role and workflow loading
-3. implement project initialization and repo scaffold generation
-4. replace bootstrap CLI placeholders with store-backed inspection output
-5. define the first ADRs only when runtime decisions stop being hypothetical
+1. capture the first ADR for runner session handling and backend contracts
+2. build the first dashboard slice aligned to the mockup
+3. decide how the future dashboard activity feed should relate to the current
+   polling-based `foreman watch` semantics
