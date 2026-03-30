@@ -65,6 +65,25 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   .breadcrumb-link.current{color:var(--text-primary);cursor:default}
   .breadcrumb-link.current:hover{background:none}
 
+  /* Project switcher */
+  .project-switcher{position:relative;display:inline-block}
+  .project-switcher-toggle{color:var(--text-secondary);cursor:pointer;padding:4px 8px;
+    border-radius:var(--radius);transition:var(--transition);display:inline-flex;align-items:center;gap:4px}
+  .project-switcher-toggle:hover{color:var(--text-primary);background:var(--bg-raised)}
+  .project-switcher-toggle::after{content:'▾';font-size:10px;opacity:0.6}
+  .project-switcher-menu{position:absolute;top:100%;left:0;background:var(--bg-raised);
+    border:1px solid var(--border);border-radius:var(--radius);min-width:200px;
+    max-height:300px;overflow-y:auto;z-index:300;box-shadow:0 4px 12px rgba(0,0,0,.3);display:none}
+  .project-switcher-menu.visible{display:block}
+  .project-switcher-item{display:block;width:100%;padding:8px 12px;text-align:left;
+    font-family:var(--font-mono);font-size:11px;color:var(--text-secondary);
+    background:none;border:none;cursor:pointer;transition:var(--transition)}
+  .project-switcher-item:hover{background:var(--bg-card);color:var(--text-primary)}
+  .project-switcher-item.current{color:var(--accent);background:var(--accent-dim)}
+  .project-switcher-item .ps-status{font-size:9px;padding:1px 4px;border-radius:2px;margin-left:8px}
+  .project-switcher-item .ps-status.running{color:var(--green);background:var(--green-dim)}
+  .project-switcher-item .ps-status.idle{color:var(--text-tertiary);background:var(--bg)}
+
   /* Views */
   .view{display:none}.view.visible{display:block}
 
@@ -423,7 +442,24 @@ function updateBreadcrumb() {
     const projName = proj ? proj.name : currentProject;
 
     html += '<span class="breadcrumb-sep">/</span>';
-    html += `<span class="breadcrumb-link ${currentSprint ? '' : 'current'}" onclick="${currentSprint ? "navigate('project','"+currentProject+"')" : ''}">${projName}</span>`;
+
+    // Show project switcher if multiple projects exist
+    if (projectData.length > 1) {
+      html += `<div class="project-switcher">
+        <span class="project-switcher-toggle" onclick="toggleProjectSwitcher(event)">${projName}</span>
+        <div class="project-switcher-menu" id="projectSwitcherMenu">
+          ${projectData.map(p => `
+            <button class="project-switcher-item ${p.id === currentProject ? 'current' : ''}"
+              onclick="switchProject('${p.id}', event)">
+              ${p.name}
+              <span class="ps-status ${p.status}">${p.status}</span>
+            </button>
+          `).join('')}
+        </div>
+      </div>`;
+    } else {
+      html += `<span class="breadcrumb-link ${currentSprint ? '' : 'current'}" onclick="${currentSprint ? "navigate('project','"+currentProject+"')" : ''}">${projName}</span>`;
+    }
   }
 
   if (currentSprint && currentProject) {
@@ -437,6 +473,26 @@ function updateBreadcrumb() {
 
   bc.innerHTML = html;
 }
+
+function toggleProjectSwitcher(event) {
+  event.stopPropagation();
+  const menu = document.getElementById('projectSwitcherMenu');
+  menu.classList.toggle('visible');
+}
+
+function switchProject(projectId, event) {
+  event.stopPropagation();
+  document.getElementById('projectSwitcherMenu').classList.remove('visible');
+  navigate('project', projectId);
+}
+
+// Close project switcher when clicking outside
+document.addEventListener('click', (e) => {
+  const menu = document.getElementById('projectSwitcherMenu');
+  if (menu && !e.target.closest('.project-switcher')) {
+    menu.classList.remove('visible');
+  }
+});
 
 function formatTokens(count) {
   if (!count) return '0';

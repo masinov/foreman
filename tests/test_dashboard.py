@@ -388,3 +388,11 @@ class DashboardHandlerTests(unittest.TestCase):
         self.assertIn("activityFilterMenu", DASHBOARD_HTML)
         self.assertIn("filterEvents", DASHBOARD_HTML)
         self.assertIn("toggleFilterMenu", DASHBOARD_HTML)
+
+    def test_dashboard_project_switcher_html(self):
+        """Dashboard HTML contains project switcher elements."""
+        from foreman.dashboard import DASHBOARD_HTML
+        self.assertIn("project-switcher", DASHBOARD_HTML)
+        self.assertIn("projectSwitcherMenu", DASHBOARD_HTML)
+        self.assertIn("switchProject", DASHBOARD_HTML)
+        self.assertIn("toggleProjectSwitcher", DASHBOARD_HTML)
