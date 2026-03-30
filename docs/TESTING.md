@@ -24,6 +24,13 @@ The first package slice also adds CLI smoke coverage:
 - `./venv/bin/foreman projects`
 - `./venv/bin/foreman status`
 
+The SQLite store slice adds:
+
+- `tests/test_store.py` for round-trip persistence across projects, sprints,
+  tasks, runs, and events
+- subprocess coverage proving `foreman projects --db <path>` and
+  `foreman status --db <path>` can inspect persisted store data
+
 The bootstrap supervisor path now also has regression coverage for reviewed
 Codex continuation behavior in `tests/test_reviewed_codex.py`.
 
