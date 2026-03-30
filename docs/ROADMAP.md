@@ -128,8 +128,17 @@ Target deliverables:
 - project, sprint, and task detail APIs
 - web implementation aligned to `docs/mockups/foreman-mockup-v6.html`
 
+Status:
+
+- in progress on `feat/monitoring-cli`
+- the terminal monitoring CLI now exposes board, history, cost, and bounded
+  watch snapshots directly from SQLite
+- project, sprint, and task detail APIs plus the dashboard implementation are
+  still pending
+
 ## Near-term priorities
 
-1. expose project state through the monitoring CLI surfaces
-2. capture the first ADR for runner session handling and backend contracts
-3. build the first dashboard slice aligned to the mockup
+1. capture the first ADR for runner session handling and backend contracts
+2. build the first dashboard slice aligned to the mockup
+3. decide how the future dashboard activity feed should relate to the current
+   polling-based `foreman watch` semantics

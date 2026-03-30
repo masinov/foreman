@@ -93,8 +93,8 @@ Both wrappers expect these files to be current:
 
 The next recommended task is:
 
-- implement the monitoring CLI so operators can inspect board state, history,
-  costs, and recent activity without opening SQLite manually.
+- capture the first runner session and backend ADR now that native runners and
+  monitoring CLI surfaces exist.
 
 That task is already recorded in `docs/sprints/current.md`, so a fresh agent
 can continue without additional instructions.

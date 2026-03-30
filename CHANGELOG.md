@@ -45,6 +45,9 @@ scaffold changes rather than product releases.
 - runner coverage in `tests/test_runner_claude.py`
 - the first native Codex runner in `foreman/runner/codex.py`
 - runner coverage in `tests/test_runner_codex.py`
+- store-backed monitoring commands in `foreman.cli` for `board`, `history`,
+  `cost`, and `watch`
+- monitoring read-model helpers in `foreman.store`
 
 ### Changed
 
@@ -87,3 +90,5 @@ scaffold changes rather than product releases.
   backend and repo are available
 - completed `sprint-07-codex-runner`, archived it, and advanced project
   memory to the monitoring CLI sprint
+- completed `sprint-08-monitoring-cli`, archived it, and advanced project
+  memory to the runner session and backend ADR sprint
