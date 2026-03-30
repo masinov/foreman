@@ -380,3 +380,11 @@ class DashboardHandlerTests(unittest.TestCase):
         human_events = [e for e in events if e.event_type == "human.message"]
         self.assertEqual(len(human_events), 1)
         self.assertEqual(human_events[0].payload["text"], "Please add more tests")
+
+    def test_dashboard_activity_filter_html(self):
+        """Dashboard HTML contains activity filter elements."""
+        from foreman.dashboard import DASHBOARD_HTML
+        self.assertIn("activity-filter", DASHBOARD_HTML)
+        self.assertIn("activityFilterMenu", DASHBOARD_HTML)
+        self.assertIn("filterEvents", DASHBOARD_HTML)
+        self.assertIn("toggleFilterMenu", DASHBOARD_HTML)

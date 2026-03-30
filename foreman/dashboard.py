@@ -206,6 +206,17 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     color:var(--text-tertiary);letter-spacing:.06em;text-transform:uppercase}
   .event-divider::after{content:'';flex:1;height:1px;background:var(--border-subtle)}
 
+  /* Activity filter */
+  .activity-filter{font-size:10px;color:var(--text-tertiary);background:none;border:1px solid var(--border);
+    padding:3px 8px;border-radius:2px;font-family:var(--font-mono);cursor:pointer;transition:var(--transition)}
+  .activity-filter:hover{border-color:var(--text-tertiary);color:var(--text-secondary)}
+  .activity-filter-menu{position:absolute;top:100%;right:0;background:var(--bg-raised);border:1px solid var(--border);
+    border-radius:var(--radius);padding:4px 0;min-width:140px;z-index:300;box-shadow:0 4px 12px rgba(0,0,0,.3)}
+  .activity-filter-item{display:block;width:100%;padding:6px 12px;text-align:left;font-family:var(--font-mono);
+    font-size:10px;color:var(--text-secondary);background:none;border:none;cursor:pointer;transition:var(--transition)}
+  .activity-filter-item:hover{background:var(--bg-card);color:var(--text-primary)}
+  .activity-filter-item.active{color:var(--accent)}
+
   /* Activity input */
   .activity-input{flex-shrink:0;padding:10px 12px;border-top:1px solid var(--border-subtle);display:flex;gap:8px;align-items:flex-end}
   .activity-input textarea{flex:1;background:var(--bg-input);border:1px solid var(--border);
@@ -322,6 +333,16 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <div class="activity">
         <div class="activity-header">
           <div class="activity-header-left"><span class="activity-title">Activity</span></div>
+          <div style="position:relative">
+            <button class="activity-filter" id="activityFilterBtn" onclick="toggleFilterMenu()">All events</button>
+            <div class="activity-filter-menu" id="activityFilterMenu" style="display:none">
+              <button class="activity-filter-item active" onclick="filterEvents('all')">All events</button>
+              <button class="activity-filter-item" onclick="filterEvents('command')">Commands</button>
+              <button class="activity-filter-item" onclick="filterEvents('file')">Files</button>
+              <button class="activity-filter-item" onclick="filterEvents('signal')">Signals</button>
+              <button class="activity-filter-item" onclick="filterEvents('human')">Human</button>
+            </div>
+          </div>
         </div>
         <div class="activity-stream" id="activityStream"></div>
         <div class="activity-context" id="activityContext" style="display:none">
@@ -657,7 +678,24 @@ function renderActivity(events) {
     return;
   }
 
-  container.innerHTML = events.map(e => {
+  // Apply current filter
+  const filteredEvents = currentEventFilter === 'all'
+    ? events
+    : events.filter(e => {
+        if (!e.event_type) return false;
+        if (currentEventFilter === 'command') return e.event_type.includes('command');
+        if (currentEventFilter === 'file') return e.event_type.includes('file');
+        if (currentEventFilter === 'signal') return e.event_type.includes('signal');
+        if (currentEventFilter === 'human') return e.event_type.includes('human');
+        return true;
+      });
+
+  if (filteredEvents.length === 0) {
+    container.innerHTML = `<div style="color:var(--text-tertiary);padding:16px">No ${currentEventFilter} events.</div>`;
+    return;
+  }
+
+  container.innerHTML = filteredEvents.map(e => {
     const time = e.timestamp ? e.timestamp.split('T')[1]?.split('.')[0]?.substring(0, 5) || '' : '';
     const dotClass = getEventDotClass(e.event_type);
     const body = formatEventBody(e);
@@ -671,6 +709,34 @@ function renderActivity(events) {
     `;
   }).join('');
 }
+
+let currentEventFilter = 'all';
+
+function toggleFilterMenu() {
+  const menu = document.getElementById('activityFilterMenu');
+  menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+}
+
+function filterEvents(filterType) {
+  currentEventFilter = filterType;
+  document.getElementById('activityFilterBtn').textContent =
+    filterType === 'all' ? 'All events' :
+    filterType === 'command' ? 'Commands' :
+    filterType === 'file' ? 'Files' :
+    filterType === 'signal' ? 'Signals' : 'Human';
+  document.querySelectorAll('.activity-filter-item').forEach(item => item.classList.remove('active'));
+  event.target.classList.add('active');
+  document.getElementById('activityFilterMenu').style.display = 'none';
+  // Re-render with current data
+  if (eventData.length > 0) renderActivity(eventData);
+}
+
+// Close filter menu when clicking outside
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.activity-filter') && !e.target.closest('.activity-filter-menu')) {
+    document.getElementById('activityFilterMenu').style.display = 'none';
+  }
+});
 
 function getEventDotClass(eventType) {
   if (!eventType) return 'dot-message';
