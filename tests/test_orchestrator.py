@@ -13,6 +13,7 @@ from foreman.orchestrator import (
     AgentExecutionResult,
     ForemanOrchestrator,
 )
+from foreman.runner.base import AgentEvent, AgentRunConfig, InfrastructureError
 from foreman.roles import default_roles_dir, load_roles
 from foreman.store import ForemanStore
 from foreman.workflows import (
@@ -82,6 +83,52 @@ class ScriptedAgentExecutor:
         raise AssertionError(f"Missing prompt capture for {(role_id, call_index)!r}")
 
 
+@dataclass(slots=True)
+class RunnerCapture:
+    """Recorded native runner input for one orchestrated call."""
+
+    call_index: int
+    model: str | None
+    session_id: str | None
+    prompt: str
+    working_dir: Path
+    disallowed_tools: tuple[str, ...]
+
+
+class ScriptedNativeRunner:
+    """Drive the native runner path with deterministic scripted behavior."""
+
+    def __init__(self, handlers: dict[int, object]) -> None:
+        self.handlers = handlers
+        self.call_count = 0
+        self.captures: list[RunnerCapture] = []
+
+    def run(self, config: AgentRunConfig):
+        self.call_count += 1
+        self.captures.append(
+            RunnerCapture(
+                call_index=self.call_count,
+                model=config.model,
+                session_id=config.session_id,
+                prompt=config.prompt,
+                working_dir=config.working_dir,
+                disallowed_tools=config.disallowed_tools,
+            )
+        )
+        handler = self.handlers.get(self.call_count)
+        if handler is None:
+            raise AssertionError(f"No scripted native runner handler for call {self.call_count}")
+        if isinstance(handler, Exception):
+            raise handler
+        yield from handler(config)
+
+    def capture(self, call_index: int) -> RunnerCapture:
+        for capture in self.captures:
+            if capture.call_index == call_index:
+                return capture
+        raise AssertionError(f"Missing native runner capture for call {call_index}")
+
+
 class ForemanOrchestratorTests(unittest.TestCase):
     """Verify that the orchestrator can drive the shipped development workflow."""
 
@@ -141,6 +188,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
         store: ForemanStore,
         *,
         repo_path: Path,
+        workflow_id: str = "development",
         task_title: str = "Implement orchestrator loop",
         test_command: str = "test -f ready.txt",
     ) -> tuple[Project, Sprint, Task]:
@@ -149,7 +197,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
             name="Foreman Demo",
             repo_path=str(repo_path),
             spec_path="docs/specs/engine-design-v3.md",
-            workflow_id="development",
+            workflow_id=workflow_id,
             default_branch="main",
             settings={
                 "task_selection_mode": "directed",
@@ -419,6 +467,529 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 },
                 transitions,
             )
+
+    def test_human_gate_approve_resumes_workflow_and_finishes_the_task(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(
+                store,
+                repo_path=repo_path,
+                workflow_id="development_with_architect",
+                task_title="Approve the architect plan",
+            )
+            executor = ScriptedAgentExecutor({})
+
+            def architect_handler(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
+                del task
+                self.assertIsNone(carried_output)
+                self.assertIn("Title: Approve the architect plan", prompt)
+                self.write_text(repo_path / "plan.md", "Initial plan\n")
+                self.commit_all(repo_path, "docs: capture initial plan")
+                return AgentExecutionResult(
+                    outcome="done",
+                    detail="Architect plan ready for approval.",
+                )
+
+            def developer_handler(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
+                del task
+                self.assertIsNone(carried_output)
+                self.assertIn("## Task: Approve the architect plan", prompt)
+                self.write_text(repo_path / "feature.txt", "implemented\n")
+                self.write_text(repo_path / "ready.txt", "ready\n")
+                self.commit_all(repo_path, "feat: implement approved plan")
+                return AgentExecutionResult(
+                    outcome="done",
+                    detail="Implemented the approved plan.",
+                )
+
+            def reviewer_handler(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
+                del task
+                self.assertIsNone(carried_output)
+                self.assertIn("Implemented the approved plan.", prompt)
+                return AgentExecutionResult(
+                    outcome="approve",
+                    detail="Approved after review.",
+                )
+
+            executor.handlers.update(
+                {
+                    ("architect", 1): architect_handler,
+                    ("developer", 1): developer_handler,
+                    ("code_reviewer", 1): reviewer_handler,
+                }
+            )
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=self.roles,
+                workflows=self.workflows,
+                agent_executor=executor,
+            )
+
+            first_result = orchestrator.run_project(project.id)
+
+            self.assertEqual(first_result.executed_task_ids, (task.id,))
+            self.assertEqual(first_result.blocked_task_ids, (task.id,))
+
+            resume_orchestrator = ForemanOrchestrator(
+                store,
+                roles=self.roles,
+                workflows=self.workflows,
+                agent_executor=executor,
+            )
+            resume_result = resume_orchestrator.resume_human_gate(
+                task.id,
+                outcome="approve",
+                note="looks good",
+            )
+
+            self.assertFalse(resume_result.deferred)
+            self.assertEqual(resume_result.paused_step, "human_approval")
+            self.assertEqual(resume_result.next_step, "develop")
+            self.assertEqual(resume_result.task.status, "done")
+            self.assertIsNone(resume_result.task.workflow_current_step)
+
+            runs = store.list_runs(task_id=task.id)
+            self.assertEqual(
+                [run.workflow_step for run in runs],
+                ["plan", "human_approval", "human_approval", "develop", "review", "test", "merge", "done"],
+            )
+            self.assertEqual(
+                [run.outcome for run in runs],
+                ["done", "paused", "approve", "done", "approve", "success", "success", "success"],
+            )
+
+            resumed_events = [
+                event.payload
+                for event in store.list_events(task_id=task.id)
+                if event.event_type == "workflow.resumed"
+            ]
+            self.assertEqual(
+                resumed_events,
+                [
+                    {
+                        "step": "human_approval",
+                        "decision": "approve",
+                        "next_step": "develop",
+                        "deferred": False,
+                        "note": "looks good",
+                    }
+                ],
+            )
+
+    def test_human_gate_deny_carries_the_note_back_into_planning(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(
+                store,
+                repo_path=repo_path,
+                workflow_id="development_with_architect",
+                task_title="Rework the architect plan",
+            )
+            executor = ScriptedAgentExecutor({})
+
+            def architect_one(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
+                del task
+                self.assertIsNone(carried_output)
+                self.write_text(repo_path / "plan.md", "Initial plan\n")
+                self.commit_all(repo_path, "docs: draft initial plan")
+                return AgentExecutionResult(
+                    outcome="done",
+                    detail="Initial plan ready.",
+                )
+
+            def architect_two(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
+                del task
+                self.assertEqual(carried_output, "rethink the approach")
+                self.assertIn("rethink the approach", prompt)
+                self.write_text(repo_path / "plan.md", "Revised plan\n")
+                self.commit_all(repo_path, "docs: revise plan after denial")
+                return AgentExecutionResult(
+                    outcome="done",
+                    detail="Revised plan ready.",
+                )
+
+            executor.handlers.update(
+                {
+                    ("architect", 1): architect_one,
+                    ("architect", 2): architect_two,
+                }
+            )
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=self.roles,
+                workflows=self.workflows,
+                agent_executor=executor,
+            )
+
+            first_result = orchestrator.run_project(project.id)
+
+            self.assertEqual(first_result.stop_reason, "blocked")
+            resume_orchestrator = ForemanOrchestrator(
+                store,
+                roles=self.roles,
+                workflows=self.workflows,
+                agent_executor=executor,
+            )
+            resume_result = resume_orchestrator.resume_human_gate(
+                task.id,
+                outcome="deny",
+                note="rethink the approach",
+            )
+
+            self.assertFalse(resume_result.deferred)
+            self.assertEqual(resume_result.next_step, "plan")
+            self.assertEqual(resume_result.task.status, "blocked")
+            self.assertEqual(resume_result.task.workflow_current_step, "human_approval")
+            self.assertEqual(
+                resume_result.task.step_visit_counts,
+                {"plan": 2, "human_approval": 2},
+            )
+
+            runs = store.list_runs(task_id=task.id)
+            self.assertEqual(
+                [run.workflow_step for run in runs],
+                ["plan", "human_approval", "human_approval", "plan", "human_approval"],
+            )
+            self.assertEqual(
+                [run.outcome for run in runs],
+                ["done", "paused", "deny", "done", "paused"],
+            )
+
+    def test_human_gate_resume_can_be_deferred_until_an_agent_executor_is_available(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(
+                store,
+                repo_path=repo_path,
+                workflow_id="development_with_architect",
+                task_title="Resume after bootstrap approval",
+            )
+            blocked_task = Task(
+                id=task.id,
+                sprint_id=task.sprint_id,
+                project_id=task.project_id,
+                title=task.title,
+                description=task.description,
+                status="blocked",
+                task_type=task.task_type,
+                priority=task.priority,
+                order_index=task.order_index,
+                branch_name="feat/task-1-resume-after-bootstrap-approval",
+                acceptance_criteria=task.acceptance_criteria,
+                blocked_reason="Awaiting human approval",
+                workflow_current_step="human_approval",
+                created_at=task.created_at,
+                started_at="2026-03-30T12:20:00Z",
+            )
+            store.save_task(blocked_task)
+
+            bootstrap_orchestrator = ForemanOrchestrator(
+                store,
+                roles=self.roles,
+                workflows=self.workflows,
+            )
+            resume_result = bootstrap_orchestrator.resume_human_gate(
+                task.id,
+                outcome="approve",
+            )
+
+            self.assertTrue(resume_result.deferred)
+            self.assertEqual(resume_result.task.status, "in_progress")
+            self.assertEqual(resume_result.task.workflow_current_step, "develop")
+            self.assertIsNone(resume_result.task.blocked_reason)
+
+            def developer_handler(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
+                del task
+                self.assertIsNone(carried_output)
+                self.write_text(repo_path / "feature.txt", "implemented after defer\n")
+                self.write_text(repo_path / "ready.txt", "ready\n")
+                self.commit_all(repo_path, "feat: finish deferred task")
+                return AgentExecutionResult(
+                    outcome="done",
+                    detail="Finished after deferred resume.",
+                )
+
+            def reviewer_handler(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
+                del task
+                self.assertIn("Finished after deferred resume.", prompt)
+                self.assertIsNone(carried_output)
+                return AgentExecutionResult(
+                    outcome="approve",
+                    detail="Approved after deferred resume.",
+                )
+
+            runner_orchestrator = ForemanOrchestrator(
+                store,
+                roles=self.roles,
+                workflows=self.workflows,
+                agent_executor=ScriptedAgentExecutor(
+                    {
+                        ("developer", 1): developer_handler,
+                        ("code_reviewer", 1): reviewer_handler,
+                    }
+                ),
+            )
+
+            result = runner_orchestrator.run_project(project.id)
+
+            self.assertEqual(result.executed_task_ids, (task.id,))
+            self.assertEqual(result.stop_reason, "idle")
+            final_task = store.get_task(task.id)
+            self.assertIsNotNone(final_task)
+            assert final_task is not None
+            self.assertEqual(final_task.status, "done")
+
+    def test_native_runner_executes_claude_roles_without_an_injected_executor(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+            project.settings["default_model"] = "claude-sonnet-4-6"
+            store.save_project(project)
+            runner = ScriptedNativeRunner(
+                {
+                    1: lambda config: self._native_developer_success(repo_path, config),
+                    2: lambda config: self._native_reviewer_approve(config),
+                }
+            )
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=self.roles,
+                workflows=self.workflows,
+                agent_runners={"claude_code": runner},
+            )
+
+            result = orchestrator.run_project(project.id)
+
+            self.assertEqual(result.executed_task_ids, (task.id,))
+            self.assertEqual(result.stop_reason, "idle")
+            updated_task = store.get_task(task.id)
+            self.assertIsNotNone(updated_task)
+            assert updated_task is not None
+            self.assertEqual(updated_task.status, "done")
+
+            developer_capture = runner.capture(1)
+            reviewer_capture = runner.capture(2)
+            self.assertEqual(developer_capture.model, "claude-sonnet-4-6")
+            self.assertIsNone(developer_capture.session_id)
+            self.assertEqual(reviewer_capture.disallowed_tools, ("Bash", "Write", "Edit", "NotebookEdit"))
+
+            runs = store.list_runs(task_id=task.id)
+            self.assertEqual(
+                [run.workflow_step for run in runs],
+                ["develop", "review", "test", "merge", "done"],
+            )
+            self.assertEqual(runs[0].session_id, "dev-session")
+            self.assertEqual(
+                [run.outcome for run in runs],
+                ["done", "approve", "success", "success", "success"],
+            )
+
+    def test_native_runner_reuses_persistent_developer_sessions_after_review_denial(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+            project.settings["default_model"] = "claude-sonnet-4-6"
+            store.save_project(project)
+            runner = ScriptedNativeRunner(
+                {
+                    1: lambda config: self._native_developer_initial_pass(repo_path, config),
+                    2: lambda config: self._native_reviewer_deny(config),
+                    3: lambda config: self._native_developer_followup(repo_path, config),
+                    4: lambda config: self._native_reviewer_approve(config),
+                }
+            )
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=self.roles,
+                workflows=self.workflows,
+                agent_runners={"claude_code": runner},
+            )
+
+            result = orchestrator.run_project(project.id)
+
+            self.assertEqual(result.stop_reason, "idle")
+            self.assertEqual(runner.capture(1).session_id, None)
+            self.assertEqual(runner.capture(3).session_id, "dev-session")
+            self.assertIn("Please add the ready marker.", runner.capture(3).prompt)
+
+            updated_task = store.get_task(task.id)
+            self.assertIsNotNone(updated_task)
+            assert updated_task is not None
+            self.assertEqual(updated_task.status, "done")
+            self.assertEqual(
+                updated_task.step_visit_counts,
+                {
+                    "develop": 2,
+                    "review": 2,
+                    "test": 1,
+                    "merge": 1,
+                    "done": 1,
+                },
+            )
+
+    def test_native_runner_infra_retries_are_persisted_and_block_the_task_on_exhaustion(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(
+                store,
+                repo_path=repo_path,
+                task_title="Handle runner outage",
+            )
+            project.settings["default_model"] = "claude-sonnet-4-6"
+            project.settings["max_infra_retries"] = 2
+            store.save_project(project)
+            runner = ScriptedNativeRunner(
+                {
+                    1: InfrastructureError("claude unavailable"),
+                    2: InfrastructureError("claude unavailable"),
+                    3: InfrastructureError("claude unavailable"),
+                }
+            )
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=self.roles,
+                workflows=self.workflows,
+                agent_runners={"claude_code": runner},
+                runner_sleep=lambda _: None,
+            )
+
+            result = orchestrator.run_project(project.id)
+
+            self.assertEqual(result.stop_reason, "blocked")
+            blocked_task = store.get_task(task.id)
+            self.assertIsNotNone(blocked_task)
+            assert blocked_task is not None
+            self.assertEqual(blocked_task.status, "blocked")
+            self.assertEqual(
+                blocked_task.blocked_reason,
+                "Unhandled workflow outcome. Requires human review.",
+            )
+
+            event_types = [event.event_type for event in store.list_events(task_id=task.id)]
+            self.assertEqual(event_types.count("agent.infra_error"), 2)
+            self.assertIn("agent.error", event_types)
+            runs = store.list_runs(task_id=task.id)
+            self.assertEqual(len(runs), 1)
+            self.assertEqual(runs[0].status, "failed")
+            self.assertEqual(runs[0].outcome, "error")
+
+    def _native_developer_success(
+        self,
+        repo_path: Path,
+        config: AgentRunConfig,
+    ) -> tuple[AgentEvent, ...]:
+        self.assertIn("## Task: Implement orchestrator loop", config.prompt)
+        self.write_text(repo_path / "feature.txt", "implemented\n")
+        self.write_text(repo_path / "ready.txt", "ready\n")
+        self.commit_all(repo_path, "feat: implement workflow slice with native runner")
+        return (
+            AgentEvent(
+                "agent.message",
+                payload={"text": "Implemented the workflow slice.\nTASK_COMPLETE", "phase": "assistant"},
+            ),
+            AgentEvent(
+                "agent.completed",
+                payload={
+                    "session_id": "dev-session",
+                    "cost_usd": 1.2,
+                    "duration_ms": 1200,
+                    "token_count": 250,
+                },
+            ),
+        )
+
+    def _native_developer_initial_pass(
+        self,
+        repo_path: Path,
+        config: AgentRunConfig,
+    ) -> tuple[AgentEvent, ...]:
+        self.assertIsNone(config.session_id)
+        self.write_text(repo_path / "feature.txt", "initial implementation\n")
+        self.commit_all(repo_path, "feat: initial native runner implementation")
+        return (
+            AgentEvent(
+                "agent.message",
+                payload={"text": "Initial implementation complete.\nTASK_COMPLETE", "phase": "assistant"},
+            ),
+            AgentEvent(
+                "agent.completed",
+                payload={
+                    "session_id": "dev-session",
+                    "cost_usd": 1.0,
+                    "duration_ms": 900,
+                    "token_count": 200,
+                },
+            ),
+        )
+
+    def _native_developer_followup(
+        self,
+        repo_path: Path,
+        config: AgentRunConfig,
+    ) -> tuple[AgentEvent, ...]:
+        self.assertEqual(config.session_id, "dev-session")
+        self.write_text(repo_path / "feature.txt", "updated after review\n")
+        self.write_text(repo_path / "ready.txt", "ready\n")
+        self.commit_all(repo_path, "fix: address review feedback with native runner")
+        return (
+            AgentEvent(
+                "agent.message",
+                payload={"text": "Updated after review feedback.\nTASK_COMPLETE", "phase": "assistant"},
+            ),
+            AgentEvent(
+                "agent.completed",
+                payload={
+                    "session_id": "dev-session",
+                    "cost_usd": 1.4,
+                    "duration_ms": 1000,
+                    "token_count": 230,
+                },
+            ),
+        )
+
+    def _native_reviewer_approve(self, config: AgentRunConfig) -> tuple[AgentEvent, ...]:
+        self.assertIn("Use Read, Glob, and Grep", config.prompt)
+        return (
+            AgentEvent(
+                "agent.message",
+                payload={"text": "APPROVE", "phase": "result"},
+            ),
+            AgentEvent(
+                "agent.completed",
+                payload={"cost_usd": 0.2, "duration_ms": 200, "token_count": 40},
+            ),
+        )
+
+    def _native_reviewer_deny(self, config: AgentRunConfig) -> tuple[AgentEvent, ...]:
+        self.assertIn("Initial implementation complete.", config.prompt)
+        return (
+            AgentEvent(
+                "agent.message",
+                payload={"text": "DENY: Please add the ready marker.", "phase": "result"},
+            ),
+            AgentEvent(
+                "agent.completed",
+                payload={"cost_usd": 0.2, "duration_ms": 210, "token_count": 41},
+            ),
+        )
 
     def test_missing_transition_uses_workflow_fallback_and_blocks_the_task(self) -> None:
         repo_path, db_path = self.create_workspace()

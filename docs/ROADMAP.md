@@ -90,11 +90,12 @@ Target deliverables:
 
 Status:
 
-- partially completed on `feat/context-projection-runtime`
+- completed on `feat/human-gate-resume`
 - directed task selection, workflow transitions, loop limits, built-ins for
-  tests, merge, mark-done, human-gate pause, and runtime context projection
-  now exist
-- human-gate resume commands remain
+  tests, merge, mark-done, human-gate pause, human-gate resume, and runtime
+  context projection now exist
+- bootstrap CLI approvals can defer agent-backed next steps until the native
+  runner milestone lands
 
 ## Milestone 5: Claude and Codex runners
 
@@ -107,6 +108,13 @@ Target deliverables:
 - Codex backend
 - structured event capture
 - infrastructure retry handling
+
+Status:
+
+- partially completed on `feat/claude-runner`
+- the shared runner protocol, Claude Code backend, retry normalization, and
+  orchestrator integration now exist
+- Codex backend support remains
 
 ## Milestone 6: Monitoring surfaces
 
@@ -121,7 +129,7 @@ Target deliverables:
 
 ## Near-term priorities
 
-1. implement human-gate approve and deny commands against paused tasks
-2. add the first native Claude Code or Codex runner backend
-3. expose project state through the monitoring CLI surfaces
-4. capture the first ADR once human-gate or runner semantics harden
+1. add the first native Codex runner backend
+2. expose project state through the monitoring CLI surfaces
+3. capture the first ADR for runner session handling and backend contracts
+4. build the first dashboard slice aligned to the mockup

@@ -2,16 +2,16 @@
 
 ## Current sprint
 
-- Sprint: `sprint-05-human-gates`
+- Sprint: `sprint-07-codex-runner`
 - Status: active
-- Goal: resume paused human-gate tasks through `foreman approve` and
-  `foreman deny` with persisted workflow state
+- Goal: execute shipped Codex roles through a native Foreman runner with
+  persisted run metadata, session handling, and structured events
 
 ## Active branches
 
-- `feat/context-projection-runtime` — land store-driven `.foreman` context
-  projection, builtin context writes, and repo-memory rollover into the human
-  gate sprint
+- `feat/claude-runner` — land the first native Claude Code runner, native
+  orchestrator integration, and repo-memory rollover into the Codex runner
+  sprint
 
 ## Completed this week
 
@@ -64,6 +64,26 @@
   including gitignored runtime files in temporary repo fixtures
 - completed `sprint-04-context-projection` and rolled repo memory forward to
   `sprint-05-human-gates`
+- implemented `foreman approve --db <path>` and `foreman deny --db <path>`
+  against paused human-gate tasks in SQLite
+- added persisted human-decision runs plus `workflow.resumed` events for
+  approval and denial history
+- taught the orchestrator to resume from a persisted workflow step instead of
+  always restarting from workflow entry
+- added bootstrap deferred resume semantics so human-gate decisions can record
+  the next step and carried output even before native runners land
+- expanded orchestrator and CLI coverage for human-gate pause, approve, deny,
+  immediate resume, and deferred resume behavior
+- completed `sprint-05-human-gates` and rolled repo memory forward to
+  `sprint-06-claude-runner`
+- implemented shared native runner primitives, structured signal extraction,
+  and the first Claude Code stream-json backend
+- taught the orchestrator to execute shipped Claude-backed roles through the
+  native runner path when no scripted executor is injected
+- added runner coverage for event mapping, retry normalization, developer
+  session reuse, and native orchestrator execution
+- completed `sprint-06-claude-runner` and rolled repo memory forward to
+  `sprint-07-codex-runner`
 
 ## Current repo state
 
@@ -79,6 +99,10 @@
     `.foreman/`, and `.gitignore` updates in a target repo,
   - runtime `.foreman/context.md` and `.foreman/status.md` projection from
     SQLite before agent execution and after task completion,
+  - persisted human-gate approval and denial commands with durable resume
+    history and deferred-next-step support when no native runner is available,
+  - the first native Claude Code runner with stream-json parsing, structured
+    event mapping, infrastructure retries, and developer session reuse,
   - persisted project initialization and update behavior keyed by repo path,
   - smoke tests for the CLI bootstrap slice plus store, loader, and
     orchestrator, scaffold, and context projection coverage,
@@ -91,24 +115,27 @@
 
 ## Ready next
 
-1. add the first native Claude Code runner backend
-2. add the first native Codex runner backend
-3. expose project state through the monitoring CLI surfaces
-4. define the first ADR once the human-gate runtime or native runner
-   constraints
-   stop being hypothetical
+1. add the first native Codex runner backend
+2. expose project state through the monitoring CLI surfaces
+3. define the first ADR now that runner session handling is an active runtime
+   constraint
+4. build the dashboard implementation aligned to the mockup
 
 ## Open risks
 
 - `reviewed_codex.py` and `reviewed_claude.py` are bootstrap supervisors, not
   the Foreman product itself; their behavior should not accidentally become the
   long-term architecture.
-- The package now has a real store, loader, orchestrator, and project
-  initialization path, but human-gate resume commands and native runners are
-  still unimplemented.
+- The package now has a real store, loader, orchestrator, project
+  initialization path, human-gate resume commands, and a native Claude runner,
+  but the Codex backend is still missing so Foreman does not yet satisfy the
+  full dual-backend product commitment.
 - The bootstrap CLI currently requires explicit `--db PATH` selection for
   project lifecycle commands because engine-instance configuration does not
   exist yet.
+- The native Claude runner assumes a working `claude` executable in PATH and
+  currently relies on runtime process errors rather than an explicit preflight
+  health check.
 - editable installs are now validated with
   `./venv/bin/pip install -e . --no-build-isolation`, so fresh environments
   still need the repo venv to include the packaging toolchain declared in
@@ -134,6 +161,10 @@
 - The spec expects `.foreman/status.md` to list open decisions, but the current
   SQLite schema has no structured decision records yet. The runtime projection
   currently emits an explicit placeholder until those records exist.
+- The spec describes `foreman approve` and `foreman deny` as immediately
+  resuming workflow execution. The current runtime now does that for
+  Claude-backed steps, but it still persists a deferred next step when the
+  resumed workflow needs a backend that Foreman cannot run yet.
 
 ## Open decisions
 
@@ -141,3 +172,5 @@
   endpoints or as a richer app shell from the start
 - how much of the current wrapper logic should survive once native Foreman
   runners exist
+- whether project `default_model` should be validated against the selected
+  agent backend instead of being passed through verbatim at runtime

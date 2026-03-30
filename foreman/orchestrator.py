@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 import re
@@ -14,6 +14,8 @@ from .context import ProjectContextProjection, build_project_context, relative_p
 from .errors import ForemanError
 from .git import GitError, changed_files, checkout_branch, recent_commits, status_text
 from .models import Event, Project, Run, Task, utc_now_text
+from .runner import AgentRunConfig, ClaudeCodeRunner, run_with_retry
+from .runner.base import AgentRunner as NativeAgentRunner
 from .roles import RoleDefinition, default_roles_dir, load_roles
 from .store import ForemanStore
 from .workflows import WorkflowDefinition, default_workflows_dir, load_workflows
@@ -66,6 +68,19 @@ class ProjectRunResult:
     stop_reason: str
 
 
+@dataclass(slots=True)
+class HumanGateResumeResult:
+    """Summary of one human-gate decision and any resumed execution."""
+
+    task: Task
+    decision: str
+    paused_step: str
+    next_step: str
+    deferred: bool
+    carried_output: str | None = None
+    note: str | None = None
+
+
 class AgentExecutor(Protocol):
     """Execution protocol for workflow agent steps."""
 
@@ -93,7 +108,9 @@ class ForemanOrchestrator:
         roles: Mapping[str, RoleDefinition] | None = None,
         workflows: Mapping[str, WorkflowDefinition] | None = None,
         agent_executor: AgentExecutor | None = None,
+        agent_runners: Mapping[str, NativeAgentRunner] | None = None,
         builtin_executor: BuiltinExecutor | None = None,
+        runner_sleep: Callable[[float], None] | None = None,
     ) -> None:
         loaded_roles = dict(roles) if roles is not None else load_roles(default_roles_dir())
         loaded_workflows = (
@@ -108,7 +125,13 @@ class ForemanOrchestrator:
         self.roles = loaded_roles
         self.workflows = loaded_workflows
         self.agent_executor = agent_executor
+        self.agent_runners = (
+            dict(agent_runners)
+            if agent_runners is not None
+            else {"claude_code": ClaudeCodeRunner()}
+        )
         self.builtin_executor = builtin_executor or BuiltinExecutor()
+        self.runner_sleep = runner_sleep
 
     def run_project(
         self,
@@ -186,6 +209,9 @@ class ForemanOrchestrator:
         sprint_tasks = self.store.list_tasks(sprint_id=sprint.id)
         tasks_by_id = {task.id: task for task in sprint_tasks}
         for task in sprint_tasks:
+            if task.status == "in_progress" and task.workflow_current_step:
+                return task
+        for task in sprint_tasks:
             if task.status != "todo":
                 continue
             if self._dependencies_satisfied(task, tasks_by_id):
@@ -205,10 +231,31 @@ class ForemanOrchestrator:
             raise OrchestratorError(f"Unknown task {task.id!r}.")
         if current_task.status in {"done", "cancelled"}:
             return current_task
-        if current_task.status == "blocked" and current_task.workflow_current_step:
+        resume_step = workflow.entry_step
+        resume_carried_output: str | None = None
+        is_resuming = current_task.workflow_current_step is not None
+
+        if current_task.status == "blocked":
+            if current_task.workflow_current_step:
+                paused_step = workflow.get_step(current_task.workflow_current_step)
+                if paused_step is not None and paused_step.role == "_builtin:human_gate":
+                    raise OrchestratorError(
+                        f"Task {task.id!r} is paused at a human gate and must be resumed with "
+                        f"`foreman approve` or `foreman deny`."
+                    )
             raise OrchestratorError(
-                f"Task {task.id!r} is paused at a human gate and cannot be resumed yet."
+                f"Task {task.id!r} is blocked and cannot be run until it is resumed or unblocked."
             )
+
+        if is_resuming:
+            persisted_step = workflow.get_step(current_task.workflow_current_step or "")
+            if persisted_step is None:
+                raise OrchestratorError(
+                    f"Task {task.id!r} cannot resume from unknown step "
+                    f"{current_task.workflow_current_step!r}."
+                )
+            resume_step = persisted_step.id
+            resume_carried_output = current_task.workflow_carried_output
 
         if str(project.settings.get("task_selection_mode", "directed")) == "directed":
             current_task.branch_name = current_task.branch_name or generate_branch_name(
@@ -225,7 +272,8 @@ class ForemanOrchestrator:
         current_task.blocked_reason = None
         current_task.workflow_current_step = None
         current_task.workflow_carried_output = None
-        current_task.step_visit_counts = {}
+        if not is_resuming:
+            current_task.step_visit_counts = {}
         current_task.started_at = current_task.started_at or utc_now_text()
         self.store.save_task(current_task)
 
@@ -233,8 +281,8 @@ class ForemanOrchestrator:
             project,
             workflow,
             current_task,
-            step=workflow.entry_step,
-            carried_output=None,
+            step=resume_step,
+            carried_output=resume_carried_output,
         )
         refreshed = self.store.get_task(current_task.id)
         if refreshed is None:
@@ -252,6 +300,152 @@ class ForemanOrchestrator:
                 ),
             )
         return refreshed
+
+    def resume_human_gate(
+        self,
+        task_id: str,
+        *,
+        outcome: str,
+        note: str | None = None,
+    ) -> HumanGateResumeResult:
+        """Apply one human-gate decision and continue execution when possible."""
+
+        if outcome not in {"approve", "deny"}:
+            raise OrchestratorError(f"Unsupported human-gate outcome {outcome!r}.")
+
+        current_task = self.store.get_task(task_id)
+        if current_task is None:
+            raise OrchestratorError(f"Unknown task {task_id!r}.")
+        if current_task.status != "blocked" or not current_task.workflow_current_step:
+            raise OrchestratorError(
+                f"Task {task_id!r} is not paused at a human gate."
+            )
+
+        project = self.store.get_project(current_task.project_id)
+        if project is None:
+            raise OrchestratorError(
+                f"Task {task_id!r} references unknown project {current_task.project_id!r}."
+            )
+        workflow = self._load_workflow_for_project(project)
+        paused_step = workflow.get_step(current_task.workflow_current_step)
+        if paused_step is None or paused_step.role != "_builtin:human_gate":
+            raise OrchestratorError(
+                f"Task {task_id!r} is not paused on a resumable human-gate step."
+            )
+
+        transition = workflow.find_transition(paused_step.id, outcome)
+        if transition is None:
+            raise OrchestratorError(
+                f"Workflow {workflow.id!r} has no `{outcome}` transition from "
+                f"{paused_step.id!r}."
+            )
+
+        next_step = workflow.get_step(transition.to_step)
+        if next_step is None:
+            raise OrchestratorError(
+                f"Workflow {workflow.id!r} is missing step {transition.to_step!r}."
+            )
+
+        carried_output = current_task.workflow_carried_output
+        if outcome == "deny" and note:
+            carried_output = note
+
+        decision_detail = note or (
+            "Approved by human." if outcome == "approve" else "Denied by human."
+        )
+        deferred = (
+            not next_step.role.startswith("_builtin:")
+            and self.agent_executor is None
+        )
+        decision_run = self._create_system_run(
+            current_task,
+            workflow_step=paused_step.id,
+            outcome=outcome,
+            detail=decision_detail,
+            role_id="_builtin:human_gate",
+            agent_backend="human",
+        )
+        self._emit_event(
+            decision_run,
+            "workflow.transition",
+            {
+                "from_step": paused_step.id,
+                "to_step": transition.to_step,
+                "trigger": f"completion:{outcome}",
+            },
+        )
+        event_payload = {
+            "step": paused_step.id,
+            "decision": outcome,
+            "next_step": transition.to_step,
+            "deferred": deferred,
+        }
+        if note:
+            event_payload["note"] = note
+        self._emit_event(
+            decision_run,
+            "workflow.resumed",
+            event_payload,
+        )
+
+        current_task.status = "in_progress"
+        current_task.blocked_reason = None
+        current_task.workflow_current_step = None
+        current_task.workflow_carried_output = None
+        self.store.save_task(current_task)
+
+        if deferred:
+            current_task.workflow_current_step = transition.to_step
+            current_task.workflow_carried_output = carried_output
+            self.store.save_task(current_task)
+            refreshed = self.store.get_task(current_task.id)
+            if refreshed is None:
+                raise OrchestratorError(
+                    f"Task {current_task.id!r} disappeared during deferred resume."
+                )
+            return HumanGateResumeResult(
+                task=refreshed,
+                decision=outcome,
+                paused_step=paused_step.id,
+                next_step=transition.to_step,
+                deferred=True,
+                carried_output=carried_output,
+                note=note,
+            )
+
+        self.run_workflow_from_step(
+            project,
+            workflow,
+            current_task,
+            step=transition.to_step,
+            carried_output=carried_output,
+        )
+        refreshed = self.store.get_task(current_task.id)
+        if refreshed is None:
+            raise OrchestratorError(
+                f"Task {current_task.id!r} disappeared during human-gate resume."
+            )
+        latest_run = self.store.get_latest_run(refreshed.id)
+        if latest_run is not None:
+            self._write_runtime_context(
+                latest_run,
+                project,
+                context_projection=build_project_context(
+                    self.store,
+                    project,
+                    current_task=refreshed,
+                    carried_output=refreshed.workflow_carried_output,
+                ),
+            )
+        return HumanGateResumeResult(
+            task=refreshed,
+            decision=outcome,
+            paused_step=paused_step.id,
+            next_step=transition.to_step,
+            deferred=False,
+            carried_output=carried_output,
+            note=note,
+        )
 
     def run_workflow_from_step(
         self,
@@ -691,19 +885,24 @@ class ForemanOrchestrator:
         session_id: str | None,
         carried_output: str | None,
     ) -> AgentExecutionResult:
-        if self.agent_executor is None:
-            raise OrchestratorError(
-                f"No agent executor is configured for role {role.id!r}."
-            )
         try:
-            return self.agent_executor.execute(
+            if self.agent_executor is not None:
+                return self.agent_executor.execute(
+                    role=role,
+                    project=project,
+                    task=task,
+                    workflow_step=workflow_step,
+                    prompt=prompt,
+                    session_id=session_id,
+                    carried_output=carried_output,
+                )
+            return self._execute_native_runner_step(
                 role=role,
                 project=project,
                 task=task,
                 workflow_step=workflow_step,
                 prompt=prompt,
                 session_id=session_id,
-                carried_output=carried_output,
             )
         except Exception as exc:  # pragma: no cover - defensive fallback
             return AgentExecutionResult(
@@ -717,6 +916,183 @@ class ForemanOrchestrator:
                     ),
                 ),
             )
+
+    def _execute_native_runner_step(
+        self,
+        *,
+        role: RoleDefinition,
+        project: Project,
+        task: Task,
+        workflow_step: str,
+        prompt: str,
+        session_id: str | None,
+    ) -> AgentExecutionResult:
+        runner = self.agent_runners.get(role.agent.backend)
+        if runner is None:
+            raise OrchestratorError(
+                f"No native runner is configured for backend {role.agent.backend!r}."
+            )
+
+        model = role.agent.model or _string_setting(
+            project,
+            "default_model",
+            default="",
+        )
+        config = AgentRunConfig(
+            backend=role.agent.backend,
+            model=model or None,
+            prompt=prompt,
+            working_dir=Path(project.repo_path),
+            session_id=session_id,
+            permission_mode=role.agent.permission_mode,
+            disallowed_tools=role.agent.tools.disallowed,
+            extra_flags=role.agent.flags,
+            timeout_seconds=max(role.completion.timeout_minutes, 0) * 60,
+            max_cost_usd=max(role.completion.max_cost_usd, 0.0),
+        )
+        max_retries = _int_setting(project, "max_infra_retries", default=3)
+
+        events: list[AgentEventRecord] = []
+        message_fragments: list[str] = []
+        final_status = "failed"
+        outcome = "error"
+        detail = ""
+        final_session_id = session_id
+        cost_usd = 0.0
+        token_count = 0
+        duration_ms: int | None = None
+
+        retry_kwargs: dict[str, Any] = {"max_retries": max_retries}
+        if self.runner_sleep is not None:
+            retry_kwargs["sleep"] = self.runner_sleep
+
+        for event in run_with_retry(
+            runner,
+            config,
+            **retry_kwargs,
+        ):
+            events.append(
+                AgentEventRecord(
+                    event_type=event.event_type,
+                    payload=dict(event.payload),
+                    timestamp=event.timestamp,
+                )
+            )
+            if event.event_type == "agent.message":
+                text = _optional_string(event.payload.get("text"))
+                if text and (not message_fragments or message_fragments[-1] != text):
+                    message_fragments.append(text)
+                continue
+
+            if event.event_type == "agent.cost_update":
+                cost_usd = _coerce_float_value(
+                    event.payload.get("cumulative_usd"),
+                    default=cost_usd,
+                )
+                token_count = _coerce_int_value(
+                    event.payload.get("cumulative_tokens"),
+                    default=token_count,
+                )
+                continue
+
+            if event.event_type == "agent.completed":
+                final_session_id = (
+                    _optional_string(event.payload.get("session_id")) or final_session_id
+                )
+                cost_usd = _coerce_float_value(
+                    event.payload.get("cost_usd"),
+                    default=cost_usd,
+                )
+                token_count = _coerce_int_value(
+                    event.payload.get("token_count"),
+                    default=token_count,
+                )
+                duration_ms = _coerce_int_value(
+                    event.payload.get("duration_ms"),
+                    default=duration_ms,
+                )
+                outcome, detail = self._extract_completion_output(
+                    role,
+                    "\n\n".join(message_fragments),
+                )
+                final_status = "completed"
+                continue
+
+            if event.event_type == "agent.killed":
+                gate_type = _optional_string(event.payload.get("gate_type")) or "gate"
+                final_status = "timeout" if gate_type == "time" else "killed"
+                outcome = "error"
+                detail = (
+                    _optional_string(event.payload.get("reason"))
+                    or "Agent run was killed by a gate."
+                )
+                continue
+
+            if event.event_type == "agent.error":
+                final_session_id = (
+                    _optional_string(event.payload.get("session_id")) or final_session_id
+                )
+                cost_usd = _coerce_float_value(
+                    event.payload.get("cost_usd"),
+                    default=cost_usd,
+                )
+                token_count = _coerce_int_value(
+                    event.payload.get("token_count"),
+                    default=token_count,
+                )
+                duration_ms = _coerce_int_value(
+                    event.payload.get("duration_ms"),
+                    default=duration_ms,
+                )
+                final_status = "failed"
+                detail = (
+                    _optional_string(event.payload.get("error"))
+                    or "\n\n".join(message_fragments)
+                    or "Agent execution failed."
+                )
+
+        if not detail:
+            detail = "\n\n".join(message_fragments).strip()
+        if not detail:
+            detail = "Agent execution finished without output."
+
+        return AgentExecutionResult(
+            outcome=outcome,
+            detail=detail,
+            status=final_status,
+            session_id=final_session_id,
+            cost_usd=cost_usd,
+            token_count=token_count,
+            duration_ms=duration_ms,
+            model=model or None,
+            events=tuple(events),
+        )
+
+    def _extract_completion_output(
+        self,
+        role: RoleDefinition,
+        text: str,
+    ) -> tuple[str, str]:
+        cleaned_text = text.strip()
+        output_config = role.completion.output
+        marker = role.completion.marker.strip()
+
+        if output_config.extract_decision:
+            return _extract_decision_output(cleaned_text)
+
+        if marker:
+            if marker not in cleaned_text.splitlines():
+                return ("error", f"Missing completion marker `{marker}`.")
+            cleaned_text = _strip_completion_marker(cleaned_text, marker)
+
+        if output_config.extract_json:
+            json_block = _extract_json_block(cleaned_text)
+            return ("done", json_block or cleaned_text or "Completed without JSON output.")
+
+        if output_config.extract_summary or output_config.extract_branch:
+            return ("done", cleaned_text or "Completed.")
+
+        return ("done", cleaned_text or "Completed.")
 
     def _emit_agent_events(
         self,
@@ -823,15 +1199,17 @@ class ForemanOrchestrator:
         workflow_step: str,
         outcome: str,
         detail: str,
+        role_id: str = "_builtin:orchestrator",
+        agent_backend: str = "orchestrator",
     ) -> Run:
         now = utc_now_text()
         run = Run(
             id=_new_id("run"),
             task_id=task.id,
             project_id=task.project_id,
-            role_id="_builtin:orchestrator",
+            role_id=role_id,
             workflow_step=workflow_step,
-            agent_backend="orchestrator",
+            agent_backend=agent_backend,
             status="completed",
             outcome=outcome,
             outcome_detail=detail,
@@ -946,3 +1324,54 @@ def _optional_string(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _coerce_float_value(value: Any, *, default: float) -> float:
+    if isinstance(value, bool):
+        return default
+    if isinstance(value, (int, float)):
+        return float(value)
+    return default
+
+
+def _coerce_int_value(value: Any, *, default: int | None) -> int | None:
+    if isinstance(value, bool):
+        return default
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    return default
+
+
+def _extract_decision_output(text: str) -> tuple[str, str]:
+    if not text:
+        return ("error", "Reviewer returned no decision.")
+
+    first_line = next((line.strip() for line in text.splitlines() if line.strip()), "")
+    if first_line == "APPROVE":
+        return ("approve", "APPROVE")
+    if first_line == "DENY":
+        return ("deny", "DENY")
+    if first_line == "STEER":
+        return ("steer", "STEER")
+    if first_line.startswith("DENY:"):
+        return ("deny", first_line.partition(":")[2].strip() or text)
+    if first_line.startswith("STEER:"):
+        return ("steer", first_line.partition(":")[2].strip() or text)
+    if first_line.startswith("APPROVE:"):
+        return ("approve", first_line.partition(":")[2].strip() or text)
+    return ("error", text)
+
+
+def _strip_completion_marker(text: str, marker: str) -> str:
+    lines = [line for line in text.splitlines() if line.strip() != marker]
+    return "\n".join(lines).strip()
+
+
+def _extract_json_block(text: str) -> str | None:
+    match = re.search(r"```json\s*(.*?)```", text, re.DOTALL | re.IGNORECASE)
+    if match is None:
+        return None
+    return match.group(1).strip() or None
+

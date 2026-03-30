@@ -9,6 +9,7 @@ from typing import Callable, Sequence
 
 from . import __version__
 from .models import Project, utc_now_text
+from .orchestrator import ForemanOrchestrator, OrchestratorError
 from .roles import RoleLoadError, default_roles_dir, load_roles
 from .scaffold import (
     DEFAULT_DEFAULT_BRANCH,
@@ -31,7 +32,7 @@ STORE_OPTION_NOTE = (
     "SQLite-backed inspection is available now via `--db PATH` for `projects` and `status`."
 )
 STORE_FOLLOWUP_NOTE = (
-    "Project creation is available via `foreman init --db PATH`; richer workflow commands land in later slices."
+    "Project creation is available via `foreman init --db PATH`; paused human-gate tasks can now be resumed with `foreman approve --db PATH` and `foreman deny --db PATH`."
 )
 
 Handler = Callable[[argparse.Namespace], int]
@@ -228,6 +229,18 @@ def handle_status(args: argparse.Namespace) -> int:
     )
     _print_lines(*lines)
     return 0
+
+
+def handle_approve(args: argparse.Namespace) -> int:
+    """Handle ``foreman approve``."""
+
+    return _handle_human_gate_decision(args, outcome="approve")
+
+
+def handle_deny(args: argparse.Namespace) -> int:
+    """Handle ``foreman deny``."""
+
+    return _handle_human_gate_decision(args, outcome="deny")
 
 
 def handle_roles(_: argparse.Namespace) -> int:
@@ -450,12 +463,22 @@ def build_parser() -> argparse.ArgumentParser:
     approve_parser = subparsers.add_parser("approve", help="Approve a paused task.")
     approve_parser.add_argument("task_id", help="Task identifier.")
     approve_parser.add_argument("--note", help="Optional approval note.")
-    _set_handler(approve_parser, handle_stub, "approve")
+    _add_db_option(
+        approve_parser,
+        required=True,
+        help_text="Path to the SQLite store containing the paused task.",
+    )
+    _set_handler(approve_parser, handle_approve, "approve")
 
     deny_parser = subparsers.add_parser("deny", help="Deny a paused task.")
     deny_parser.add_argument("task_id", help="Task identifier.")
     deny_parser.add_argument("--note", help="Optional denial note.")
-    _set_handler(deny_parser, handle_stub, "deny")
+    _add_db_option(
+        deny_parser,
+        required=True,
+        help_text="Path to the SQLite store containing the paused task.",
+    )
+    _set_handler(deny_parser, handle_deny, "deny")
 
     roles_parser = subparsers.add_parser("roles", help="List available roles.")
     _set_handler(roles_parser, handle_roles, "roles")
@@ -519,3 +542,38 @@ def _allocate_project_id(
             return candidate
         candidate = f"{base_id}-{suffix}"
         suffix += 1
+
+
+def _handle_human_gate_decision(args: argparse.Namespace, *, outcome: str) -> int:
+    with ForemanStore(args.db) as store:
+        store.initialize()
+        orchestrator = ForemanOrchestrator(store)
+        try:
+            result = orchestrator.resume_human_gate(
+                args.task_id,
+                outcome=outcome,
+                note=args.note,
+            )
+        except OrchestratorError as exc:
+            print(f"Failed to {outcome} task: {exc}", file=sys.stderr)
+            return 1
+        db_path = store.db_path
+
+    action = "Approved" if outcome == "approve" else "Denied"
+    lines = [
+        f"{action} task",
+        f"Database: {db_path}",
+        f"Task ID: {result.task.id}",
+        f"Resume from: {result.paused_step}",
+        f"Next step: {result.next_step}",
+        f"Status: {result.task.status}",
+        f"Resume deferred: {'yes' if result.deferred else 'no'}",
+    ]
+    if args.note:
+        lines.append(f"Note: {args.note}")
+    if result.task.workflow_current_step:
+        lines.append(f"Persisted step: {result.task.workflow_current_step}")
+    if result.task.blocked_reason:
+        lines.append(f"Blocked reason: {result.task.blocked_reason}")
+    _print_lines(*lines)
+    return 0

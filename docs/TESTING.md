@@ -70,6 +70,24 @@ The context projection slice adds:
 - temporary repo fixtures now include `.foreman/` in `.gitignore` so runtime
   context stays untracked during git-backed workflow tests
 
+The human-gate resume slice adds:
+
+- orchestrator integration coverage for human-gate approval, denial, persisted
+  resume metadata, and bootstrap deferred resume behavior
+- subprocess CLI coverage proving `foreman approve --db <path>` and
+  `foreman deny --db <path>` update paused tasks and persist the next workflow
+  step correctly
+- command help validation for the new human-gate CLI surfaces
+
+The native Claude runner slice adds:
+
+- `tests/test_runner_claude.py` for command construction, Claude stream-json
+  event mapping, signal extraction, terminal failure detection, and retry
+  helper behavior
+- orchestrator integration coverage proving the native runner path executes
+  shipped Claude-backed roles, reuses developer session IDs, and persists
+  retry-driven runner failures into run and event history
+
 ## Expected testing layers once code lands
 
 Unit tests:

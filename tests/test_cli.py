@@ -312,6 +312,126 @@ class ForemanCLISmokeTests(unittest.TestCase):
         self.assertIn("development | methodology=development | entry=develop | steps=5 | transitions=8 | gates=2 | fallback=block", result.stdout)
         self.assertIn("development_secure | methodology=development | entry=develop | steps=6 | transitions=10 | gates=1 | fallback=block", result.stdout)
 
+    def test_approve_command_records_a_deferred_resume_for_paused_human_gate_tasks(self) -> None:
+        store, db_path = self.create_store()
+        project = Project(
+            id="project-1",
+            name="Foreman Demo",
+            repo_path="/tmp/foreman-demo",
+            workflow_id="development_with_architect",
+            default_branch="main",
+            settings={"task_selection_mode": "directed"},
+            created_at="2026-03-30T09:00:00Z",
+            updated_at="2026-03-30T09:00:00Z",
+        )
+        sprint = Sprint(
+            id="sprint-1",
+            project_id=project.id,
+            title="Sprint 1",
+            goal="Resume paused work",
+            status="active",
+            order_index=1,
+            created_at="2026-03-30T09:05:00Z",
+            started_at="2026-03-30T09:10:00Z",
+        )
+        task = Task(
+            id="task-1",
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="Approve the architect plan",
+            status="blocked",
+            task_type="feature",
+            branch_name="feat/task-1-approve-the-architect-plan",
+            blocked_reason="Awaiting human approval",
+            workflow_current_step="human_approval",
+            created_at="2026-03-30T09:15:00Z",
+            started_at="2026-03-30T09:16:00Z",
+        )
+        store.save_project(project)
+        store.save_sprint(sprint)
+        store.save_task(task)
+
+        result = self.run_cli("approve", "task-1", "--db", str(db_path))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Approved task", result.stdout)
+        self.assertIn(f"Database: {db_path}", result.stdout)
+        self.assertIn("Resume from: human_approval", result.stdout)
+        self.assertIn("Next step: develop", result.stdout)
+        self.assertIn("Status: in_progress", result.stdout)
+        self.assertIn("Resume deferred: yes", result.stdout)
+        self.assertIn("Persisted step: develop", result.stdout)
+
+        refreshed = store.get_task(task.id)
+        self.assertIsNotNone(refreshed)
+        assert refreshed is not None
+        self.assertEqual(refreshed.status, "in_progress")
+        self.assertEqual(refreshed.workflow_current_step, "develop")
+        self.assertIsNone(refreshed.workflow_carried_output)
+        self.assertIsNone(refreshed.blocked_reason)
+
+    def test_deny_command_carries_the_note_into_the_deferred_resume_state(self) -> None:
+        store, db_path = self.create_store()
+        project = Project(
+            id="project-1",
+            name="Foreman Demo",
+            repo_path="/tmp/foreman-demo",
+            workflow_id="development_with_architect",
+            default_branch="main",
+            settings={"task_selection_mode": "directed"},
+            created_at="2026-03-30T09:00:00Z",
+            updated_at="2026-03-30T09:00:00Z",
+        )
+        sprint = Sprint(
+            id="sprint-1",
+            project_id=project.id,
+            title="Sprint 1",
+            goal="Resume paused work",
+            status="active",
+            order_index=1,
+            created_at="2026-03-30T09:05:00Z",
+            started_at="2026-03-30T09:10:00Z",
+        )
+        task = Task(
+            id="task-1",
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="Rework the architect plan",
+            status="blocked",
+            task_type="feature",
+            branch_name="feat/task-1-rework-the-architect-plan",
+            blocked_reason="Awaiting human approval",
+            workflow_current_step="human_approval",
+            created_at="2026-03-30T09:15:00Z",
+            started_at="2026-03-30T09:16:00Z",
+        )
+        store.save_project(project)
+        store.save_sprint(sprint)
+        store.save_task(task)
+
+        result = self.run_cli(
+            "deny",
+            "task-1",
+            "--note",
+            "rethink the approach",
+            "--db",
+            str(db_path),
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Denied task", result.stdout)
+        self.assertIn("Next step: plan", result.stdout)
+        self.assertIn("Resume deferred: yes", result.stdout)
+        self.assertIn("Note: rethink the approach", result.stdout)
+        self.assertIn("Persisted step: plan", result.stdout)
+
+        refreshed = store.get_task(task.id)
+        self.assertIsNotNone(refreshed)
+        assert refreshed is not None
+        self.assertEqual(refreshed.status, "in_progress")
+        self.assertEqual(refreshed.workflow_current_step, "plan")
+        self.assertEqual(refreshed.workflow_carried_output, "rethink the approach")
+
 
 if __name__ == "__main__":
     unittest.main()
