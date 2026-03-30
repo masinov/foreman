@@ -88,6 +88,13 @@ Target deliverables:
 - built-ins for tests, merge, mark-done, and human gates
 - context projection into `.foreman/context.md` and `.foreman/status.md`
 
+Status:
+
+- partially completed on `feat/orchestrator-main-loop`
+- directed task selection, workflow transitions, loop limits, and built-ins for
+  tests, merge, mark-done, and human-gate pause now exist
+- context projection and human-gate resume commands remain
+
 ## Milestone 5: Claude and Codex runners
 
 Goal: move beyond bootstrap wrappers into native runner support.
@@ -113,9 +120,7 @@ Target deliverables:
 
 ## Near-term priorities
 
-1. implement the orchestrator main loop using loaded workflows and persisted
-   task state
-2. add built-in execution seams for test, merge, and mark-done steps
-3. implement project initialization and repo scaffold generation
-4. expand store-backed inspection beyond `projects`, `status`, `roles`, and
-   `workflows`
+1. implement project initialization and repo scaffold generation
+2. project runtime context into `.foreman/` before orchestrator runs
+3. implement human-gate approve and deny commands against paused tasks
+4. add the first native Claude Code or Codex runner backend

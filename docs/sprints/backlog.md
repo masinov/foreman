@@ -2,13 +2,6 @@
 
 ## Next up after the current sprint
 
-### `todo` Repo scaffold generator
-
-- Generate `AGENTS.md`, `docs/adr/`, and `.foreman/` for a new project from the
-  spec settings.
-- Visible deliverable: `foreman init` creates a new project repo scaffold and
-  updates `.gitignore`.
-
 ### `todo` Context projection
 
 - Write `.foreman/context.md` and `.foreman/status.md` before runs.
