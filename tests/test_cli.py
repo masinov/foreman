@@ -1,4 +1,4 @@
-"""Smoke tests for the bootstrap Foreman CLI."""
+"""Smoke tests for the Foreman CLI foundation slices."""
 
 from __future__ import annotations
 
@@ -184,6 +184,22 @@ class ForemanCLISmokeTests(unittest.TestCase):
         self.assertIn("Projects: 1", result.stdout)
         self.assertIn("Active sprints: 1", result.stdout)
         self.assertIn("Tasks: todo=1 in_progress=0 blocked=0 done=1 cancelled=0", result.stdout)
+
+    def test_roles_command_lists_shipped_roles(self) -> None:
+        result = self.run_cli("roles")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Roles", result.stdout)
+        self.assertIn("developer | backend=claude_code | model=project-default | session=persistent", result.stdout)
+        self.assertIn("code_reviewer | backend=claude_code | model=claude-sonnet-4-6 | session=ephemeral", result.stdout)
+
+    def test_workflows_command_lists_shipped_workflows(self) -> None:
+        result = self.run_cli("workflows")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Workflows", result.stdout)
+        self.assertIn("development | methodology=development | entry=develop | steps=5 | transitions=8 | gates=2 | fallback=block", result.stdout)
+        self.assertIn("development_secure | methodology=development | entry=develop | steps=6 | transitions=10 | gates=1 | fallback=block", result.stdout)
 
 
 if __name__ == "__main__":

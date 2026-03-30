@@ -31,6 +31,15 @@ The SQLite store slice adds:
 - subprocess coverage proving `foreman projects --db <path>` and
   `foreman status --db <path>` can inspect persisted store data
 
+The declarative loader slice adds:
+
+- `tests/test_roles.py` for shipped role loading, duplicate-id rejection, and
+  prompt rendering behavior
+- `tests/test_workflows.py` for shipped workflow loading, transition validation,
+  and unknown-role rejection
+- subprocess coverage proving `foreman roles` and `foreman workflows` can load
+  the shipped definitions
+
 The bootstrap supervisor path now also has regression coverage for reviewed
 Codex continuation behavior in `tests/test_reviewed_codex.py`.
 
