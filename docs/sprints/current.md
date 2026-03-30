@@ -12,15 +12,15 @@
 
 ## Included tasks
 
-1. `[todo]` Wire approve button to orchestrator resume
+1. `[done]` Wire approve button to orchestrator resume
    Deliverable: clicking approve on a blocked task calls the orchestrator to
    resume the workflow with approval outcome.
 
-2. `[todo]` Wire deny button to orchestrator resume
+2. `[done]` Wire deny button to orchestrator resume
    Deliverable: clicking deny on a blocked task calls the orchestrator to
    resume the workflow with denial outcome.
 
-3. `[todo]` Update dashboard UI after approve/deny
+3. `[done]` Update dashboard UI after approve/deny
    Deliverable: after approve/deny, the task status and activity stream update
    to reflect the decision.
 
