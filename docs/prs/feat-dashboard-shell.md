@@ -20,6 +20,10 @@
 - `docs/STATUS.md` — added dashboard implementation to completed list
 - `docs/checkpoints/dashboard-slice.md` — new checkpoint file
 
+## Review history
+- Initial submission: missing dashboard_parser in build_parser()
+- Fix: added dashboard_parser with --db, --host, --port options to build_parser()
+
 ## Migrations
 - none
 
