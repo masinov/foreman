@@ -858,7 +858,7 @@ def build_parser() -> argparse.ArgumentParser:
     init_parser.add_argument(
         "--workflow",
         default=None,
-        help="Workflow identifier to assign to the project. Defaults to `development` for new projects.",
+        help="Workflow identifier to assign to the project. Defaults to `development` for new projects; use `development_secure` to require a security review step before test and merge.",
     )
     init_parser.add_argument(
         "--default-branch",

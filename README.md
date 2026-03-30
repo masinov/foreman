@@ -42,6 +42,9 @@ The integrated pre-release baseline now contains:
 - native Claude Code and Codex runners with structured event capture, retry
   normalization, approval-policy handling, and persisted session reuse across
   fresh orchestrator invocations for persistent roles,
+- an opt-in `development_secure` workflow that now runs end to end through
+  code review, security review, test, and merge with durable carry-output
+  semantics,
 - store-backed monitoring commands for `board`, `history`, `cost`, and
   bounded `watch`,
 - accepted ADRs for runner session and backend contract boundaries
@@ -56,6 +59,19 @@ The integrated pre-release baseline now contains:
 The current repo-memory goal is to keep that baseline coherent while moving
 into the next implementation gap rather than leaving finished work stranded on
 feature branches.
+
+## Workflow selection
+
+Use the default `development` workflow for standard bootstrap project setup.
+
+Use `development_secure` when a project should require a dedicated security
+review after code review and before tests and merge.
+
+Example:
+
+```bash
+./venv/bin/foreman init /path/to/repo --name "Secure Project" --spec docs/spec.md --workflow development_secure
+```
 
 ## Autonomous entry points
 
@@ -85,12 +101,12 @@ Both wrappers expect these files to be current:
 
 ## Next implementation slice
 
-The current sprint is `sprint-16-security-review-workflow`.
+The current sprint is `sprint-17-native-backend-preflight-checks`.
 
 The next recommended task is:
 
-- make the shipped `development_secure` workflow variant execute end to end
-  with orchestrator and CLI coverage.
+- add explicit preflight validation for required Claude Code and Codex native
+  backend prerequisites before long-running orchestrator work starts.
 
 That work is recorded in `docs/sprints/current.md`, so a fresh agent can pick
 it up without reconstructing branch history first.

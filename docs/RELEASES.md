@@ -43,8 +43,8 @@ The first dashboard implementation checkpoint is recorded in
 
 ## Near-term policy
 
-While the security review workflow runtime and backend preflight checks are
-still incomplete:
+While backend preflight checks and event-retention pruning are still
+incomplete:
 
 - use tags only for meaningful checkpoints,
 - prefer sprint-completion checkpoints over frequent versioning,

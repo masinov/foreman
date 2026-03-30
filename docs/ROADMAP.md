@@ -237,14 +237,33 @@ Target deliverables:
 
 Status:
 
-- current sprint is `sprint-16-security-review-workflow`
-- workflow and role definitions already exist, but runtime coverage is still
-  missing
+- completed on `feat/security-review-workflow`
+- `development_secure` now runs end to end through code review, security
+  review, test, and merge in orchestrator coverage
+- security-review approval and denial paths are now explicit in tests and
+  bootstrap docs
+
+## Milestone 12: Native backend preflight checks
+
+Goal: fail fast when required Claude Code or Codex native backend
+prerequisites are unavailable or misconfigured.
+
+Target deliverables:
+
+- explicit preflight validation for required `claude` and `codex`
+  executables and backend startup assumptions
+- clearer persisted and operator-facing errors for preflight failures
+- tests and docs for preflight failures and recovery
+
+Status:
+
+- current sprint is `sprint-17-native-backend-preflight-checks`
 
 ## Near-term priorities
 
-1. add runtime coverage for the shipped security review workflow variant
-2. add explicit native backend preflight checks so runtime failures surface
+1. add explicit native backend preflight checks so runtime failures surface
    before long-running orchestrator work starts
-3. implement spec-aligned event-retention pruning after the workflow and
-   backend bootstrap gaps are closed
+2. implement spec-aligned event-retention pruning after the backend bootstrap
+   gap is closed
+3. align `foreman watch` with the dashboard live transport and the spec's
+   live-tail intent

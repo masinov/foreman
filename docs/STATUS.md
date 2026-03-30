@@ -2,15 +2,15 @@
 
 ## Current sprint
 
-- Sprint: `sprint-16-security-review-workflow`
+- Sprint: `sprint-17-native-backend-preflight-checks`
 - Status: active
-- Goal: make the shipped secure workflow variant execute end to end with
-  orchestrator and CLI coverage
+- Goal: fail fast when required Claude Code or Codex native backend
+  prerequisites are unavailable or misconfigured
 
 ## Active branches
 
 - no long-lived feature branch should remain loose after the engine DB
-  discovery slice; start sprint-16 work from `main`
+  discovery and security-review slices; start sprint-17 work from `main`
 
 ## Completed this week
 
@@ -29,6 +29,13 @@
   dashboard CLI entrypoint to use repo-local DB discovery without explicit
   flags
 - updated scaffold generation so the default `.foreman.db` stays gitignored
+- completed `sprint-16-security-review-workflow`
+- added end-to-end orchestrator coverage for the shipped
+  `development_secure` workflow variant
+- covered security-review approval and denial transitions explicitly,
+  including carry-output back into development after a denial
+- documented how bootstrap project initialization should opt into
+  `development_secure`
 
 ## Current repo state
 
@@ -42,6 +49,8 @@
     available as an explicit override,
   - persisted human-gate approval and denial commands with deferred or
     immediate native resume behavior,
+  - the opt-in `development_secure` workflow executing code review, security
+    review, test, and merge with durable transition state,
   - native Claude Code and Codex runners with structured event capture,
     approval-policy handling, retry normalization, and persisted session reuse
     across fresh orchestrator invocations for persistent roles,
@@ -62,10 +71,12 @@
 
 ## Ready next
 
-1. execute the shipped `development_secure` workflow variant end to end
-2. add orchestrator coverage for security-review approval and denial outcomes
-3. document how secure workflow selection should be used during bootstrap
-   project initialization
+1. validate `claude` and `codex` executable availability before native runs
+   start
+2. surface backend preflight failures as explicit operator-facing errors
+   instead of generic runtime crashes
+3. document backend startup assumptions and recovery steps for bootstrap
+   operators
 
 ## Open risks
 

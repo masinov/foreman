@@ -92,6 +92,8 @@ Foreman now has:
 - shipped `roles/*.toml` and `workflows/*.toml` defaults,
 - prompt rendering with completion and signal conventions,
 - a persisted orchestrator loop that can execute the shipped workflow graph,
+- end-to-end runtime coverage for the opt-in `development_secure` variant
+  through code review, security review, test, and merge,
 - built-ins for tests, merge, mark-done, human-gate pause or resume, and
   runtime context projection.
 
@@ -148,6 +150,8 @@ The current dashboard baseline includes:
   that file gitignored.
 - `--db PATH` remains the explicit override for alternate stores and
   out-of-repo inspection.
+- secure workflow selection is currently explicit at project init time via
+  `workflow_id`, including `foreman init --workflow development_secure`.
 - Deferred human-gate resume is represented by an `in_progress` task whose
   `workflow_current_step` points at the next step to execute.
 - Immediate human-gate resume re-checks out the task branch before native
@@ -168,9 +172,10 @@ The current dashboard baseline includes:
 
 ## Next architectural slice
 
-The next slice should make the shipped security workflow runtime-real:
+The next slice should make native backend startup assumptions explicit:
 
-- execute `development_secure` end to end through the orchestrator,
-- cover security-review approval and denial outcomes explicitly in tests,
-- document when bootstrap project initialization should choose the secure
-  workflow variant.
+- validate required `claude` and `codex` executables before long-running
+  orchestrator work starts,
+- distinguish backend preflight failures from mid-run agent failures in
+  persisted task and run state,
+- document the operator recovery path for failed backend preflight checks.

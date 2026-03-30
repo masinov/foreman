@@ -370,6 +370,265 @@ class ForemanOrchestratorTests(unittest.TestCase):
             "main",
         )
 
+    def test_secure_workflow_runs_through_security_review_and_finishes_task(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(
+                store,
+                repo_path=repo_path,
+                workflow_id="development_secure",
+                task_title="Ship secure workflow slice",
+            )
+
+            def developer_handler(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
+                del task
+                self.assertIsNone(carried_output)
+                self.assertIn("Task: Ship secure workflow slice", prompt)
+                self.write_text(repo_path / "feature.txt", "secure implementation\n")
+                self.write_text(repo_path / "ready.txt", "ready\n")
+                self.commit_all(repo_path, "feat: implement secure workflow slice")
+                return AgentExecutionResult(
+                    outcome="done",
+                    detail="Implemented the secure workflow slice.",
+                )
+
+            def reviewer_handler(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
+                del task
+                self.assertIsNone(carried_output)
+                self.assertIn("Implemented the secure workflow slice.", prompt)
+                self.assertIn("feature.txt", prompt)
+                return AgentExecutionResult(
+                    outcome="approve",
+                    detail="Approved for security review.",
+                )
+
+            def security_handler(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
+                del task
+                self.assertIsNone(carried_output)
+                self.assertIn("Inspect the code changes on branch", prompt)
+                self.assertIn("feature.txt", prompt)
+                self.assertIn("ready.txt", prompt)
+                return AgentExecutionResult(
+                    outcome="approve",
+                    detail="No security issues found.",
+                )
+
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=self.roles,
+                workflows=self.workflows,
+                agent_executor=ScriptedAgentExecutor(
+                    {
+                        ("developer", 1): developer_handler,
+                        ("code_reviewer", 1): reviewer_handler,
+                        ("security_reviewer", 1): security_handler,
+                    }
+                ),
+            )
+
+            result = orchestrator.run_project(project.id)
+
+            self.assertEqual(result.executed_task_ids, (task.id,))
+            self.assertEqual(result.blocked_task_ids, ())
+            self.assertEqual(result.stop_reason, "idle")
+
+            updated_task = store.get_task(task.id)
+            self.assertIsNotNone(updated_task)
+            assert updated_task is not None
+            self.assertEqual(updated_task.status, "done")
+            self.assertEqual(
+                updated_task.step_visit_counts,
+                {
+                    "develop": 1,
+                    "code_review": 1,
+                    "security_review": 1,
+                    "test": 1,
+                    "merge": 1,
+                    "done": 1,
+                },
+            )
+
+            runs = store.list_runs(task_id=task.id)
+            self.assertEqual(
+                [run.workflow_step for run in runs],
+                ["develop", "code_review", "security_review", "test", "merge", "done"],
+            )
+            self.assertEqual(
+                [run.outcome for run in runs],
+                ["done", "approve", "approve", "success", "success", "success"],
+            )
+
+            transitions = [
+                event.payload
+                for event in store.list_events(task_id=task.id)
+                if event.event_type == "workflow.transition"
+            ]
+            self.assertIn(
+                {
+                    "from_step": "code_review",
+                    "to_step": "security_review",
+                    "trigger": "completion:approve",
+                },
+                transitions,
+            )
+            self.assertIn(
+                {
+                    "from_step": "security_review",
+                    "to_step": "test",
+                    "trigger": "completion:approve",
+                },
+                transitions,
+            )
+
+    def test_security_review_denial_carries_output_back_into_development(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(
+                store,
+                repo_path=repo_path,
+                workflow_id="development_secure",
+                task_title="Remove insecure token handling",
+            )
+            executor = ScriptedAgentExecutor({})
+
+            def developer_one(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
+                del task
+                self.assertIsNone(carried_output)
+                self.write_text(repo_path / "feature.txt", "token = 'hardcoded'\n")
+                self.write_text(repo_path / "ready.txt", "ready\n")
+                self.commit_all(repo_path, "feat: initial secure workflow implementation")
+                return AgentExecutionResult(
+                    outcome="done",
+                    detail="Initial implementation complete.",
+                )
+
+            def reviewer_one(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
+                del task
+                self.assertIsNone(carried_output)
+                self.assertIn("Initial implementation complete.", prompt)
+                return AgentExecutionResult(
+                    outcome="approve",
+                    detail="Approved for security review.",
+                )
+
+            def security_one(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
+                del task
+                self.assertIsNone(carried_output)
+                self.assertIn("feature.txt", prompt)
+                return AgentExecutionResult(
+                    outcome="deny",
+                    detail="Remove the hardcoded token in feature.txt.",
+                )
+
+            def developer_two(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
+                del task
+                self.assertEqual(
+                    carried_output,
+                    "Remove the hardcoded token in feature.txt.",
+                )
+                self.assertIn("Remove the hardcoded token in feature.txt.", prompt)
+                self.write_text(repo_path / "feature.txt", "token = os.environ['TOKEN']\n")
+                self.commit_all(repo_path, "fix: remove hardcoded token")
+                return AgentExecutionResult(
+                    outcome="done",
+                    detail="Removed the hardcoded token.",
+                )
+
+            def reviewer_two(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
+                del task
+                self.assertIsNone(carried_output)
+                self.assertIn("Removed the hardcoded token.", prompt)
+                return AgentExecutionResult(
+                    outcome="approve",
+                    detail="Approved after security fix.",
+                )
+
+            def security_two(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
+                del task
+                self.assertIsNone(carried_output)
+                self.assertIn("feature.txt", prompt)
+                return AgentExecutionResult(
+                    outcome="approve",
+                    detail="Security review passed.",
+                )
+
+            executor.handlers.update(
+                {
+                    ("developer", 1): developer_one,
+                    ("code_reviewer", 1): reviewer_one,
+                    ("security_reviewer", 1): security_one,
+                    ("developer", 2): developer_two,
+                    ("code_reviewer", 2): reviewer_two,
+                    ("security_reviewer", 2): security_two,
+                }
+            )
+
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=self.roles,
+                workflows=self.workflows,
+                agent_executor=executor,
+            )
+
+            result = orchestrator.run_project(project.id)
+
+            self.assertEqual(result.executed_task_ids, (task.id,))
+            self.assertEqual(result.stop_reason, "idle")
+
+            updated_task = store.get_task(task.id)
+            self.assertIsNotNone(updated_task)
+            assert updated_task is not None
+            self.assertEqual(updated_task.status, "done")
+            self.assertEqual(
+                updated_task.step_visit_counts,
+                {
+                    "develop": 2,
+                    "code_review": 2,
+                    "security_review": 2,
+                    "test": 1,
+                    "merge": 1,
+                    "done": 1,
+                },
+            )
+            self.assertEqual(
+                executor.capture("developer", 2).carried_output,
+                "Remove the hardcoded token in feature.txt.",
+            )
+            self.assertEqual(
+                [run.workflow_step for run in store.list_runs(task_id=task.id)],
+                [
+                    "develop",
+                    "code_review",
+                    "security_review",
+                    "develop",
+                    "code_review",
+                    "security_review",
+                    "test",
+                    "merge",
+                    "done",
+                ],
+            )
+
+            transitions = [
+                event.payload
+                for event in store.list_events(task_id=task.id)
+                if event.event_type == "workflow.transition"
+            ]
+            self.assertIn(
+                {
+                    "from_step": "security_review",
+                    "to_step": "develop",
+                    "trigger": "completion:deny",
+                },
+                transitions,
+            )
+
     def test_review_feedback_and_test_failures_carry_output_back_into_development(self) -> None:
         repo_path, db_path = self.create_workspace()
         self.initialize_repo(repo_path)

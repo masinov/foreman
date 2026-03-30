@@ -450,6 +450,37 @@ class ForemanCLISmokeTests(unittest.TestCase):
 
         self.assertIsNotNone(project)
 
+    def test_init_command_accepts_secure_workflow_selection(self) -> None:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        repo_path = Path(temp_dir.name) / "target-repo"
+        repo_path.mkdir()
+        spec_path = repo_path / "docs" / "spec.md"
+        spec_path.parent.mkdir(parents=True)
+        spec_path.write_text("# Spec\n", encoding="utf-8")
+
+        result = self.run_cli(
+            "init",
+            str(repo_path),
+            "--name",
+            "Secure Project",
+            "--spec",
+            "docs/spec.md",
+            "--workflow",
+            "development_secure",
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Workflow: development_secure", result.stdout)
+
+        with ForemanStore(repo_path / ".foreman.db") as store:
+            store.initialize()
+            project = store.find_project_by_repo_path(str(repo_path))
+
+        self.assertIsNotNone(project)
+        assert project is not None
+        self.assertEqual(project.workflow_id, "development_secure")
+
     def test_init_command_preserves_existing_agents_and_updates_existing_project(self) -> None:
         temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(temp_dir.cleanup)

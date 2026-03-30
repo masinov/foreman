@@ -1,45 +1,44 @@
 # Current Sprint
 
-- Sprint: `sprint-16-security-review-workflow`
+- Sprint: `sprint-17-native-backend-preflight-checks`
 - Status: active
-- Goal: make the shipped secure workflow variant execute end to end with
-  orchestrator and CLI coverage
+- Goal: fail fast when required Claude Code or Codex native backend
+  prerequisites are unavailable or misconfigured
 - Primary references:
   - `docs/specs/engine-design-v3.md`
   - `docs/STATUS.md`
-  - `roles/security_reviewer.toml`
-  - `workflows/development_secure.toml`
+  - `foreman/runner/claude_code.py`
+  - `foreman/runner/codex.py`
   - `foreman/orchestrator.py`
-  - `foreman/cli.py`
+  - `tests/test_runner_claude.py`
+  - `tests/test_runner_codex.py`
   - `tests/test_orchestrator.py`
 
 ## Included tasks
 
-1. `[todo]` Execute the shipped secure workflow variant end to end
-   Deliverable: the `development_secure` workflow can run through
-   `security_review` with durable orchestrator state instead of existing only
-   as a loaded configuration artifact.
+1. `[todo]` Validate native backend availability before execution
+   Deliverable: Claude Code and Codex runs fail with explicit preflight errors
+   when required executables or startup contracts are missing.
 
-2. `[todo]` Add security review outcome coverage
-   Deliverable: approve and deny paths from the security-review step are
-   covered by orchestrator tests and produce the expected workflow
-   transitions.
+2. `[todo]` Persist and surface preflight failures cleanly
+   Deliverable: orchestrator and runner-facing error paths distinguish
+   backend preflight failure from mid-run agent failure.
 
-3. `[todo]` Document secure workflow selection in bootstrap flows
-   Deliverable: repo docs explain when to choose `development_secure` during
-   project initialization and what behavior it currently adds over the default
-   workflow.
+3. `[todo]` Document backend startup assumptions and operator recovery
+   Deliverable: repo docs explain required binaries, startup assumptions, and
+   what operators should do when preflight fails.
 
 ## Excluded from this sprint
 
-- backend preflight health checks
 - event-retention pruning
 - multi-user dashboard concerns
+- `foreman watch` live-tail alignment
 - migration framework work
 
 ## Acceptance criteria
 
-- `development_secure` is exercised by automated runtime tests, not just loader
-  tests
-- security review approval and denial semantics are explicit in tests and docs
-- bootstrap project initialization docs clearly explain secure workflow usage
+- missing or misconfigured native backends fail before long-running execution
+  begins
+- automated tests cover Claude Code and Codex preflight failure modes
+- docs explain backend assumptions and operator recovery steps clearly enough
+  for fresh agents and operators

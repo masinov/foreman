@@ -32,11 +32,12 @@ The current suite covers:
 - `tests/test_context.py` for `.foreman/context.md` and `.foreman/status.md`
   rendering
 - `tests/test_orchestrator.py` for workflow execution, dependency-aware task
-  selection, test failure carry-output, review denial loops, native runner
-  execution, human-gate resume, retry persistence, and fresh-process native
-  session reuse
+  selection, test failure carry-output, secure workflow approval and denial
+  loops, native runner execution, human-gate resume, retry persistence, and
+  fresh-process native session reuse
 - `tests/test_cli.py` for CLI smoke paths, repo-local DB discovery, explicit
-  override semantics, and monitoring command subprocess behavior
+  override semantics, secure workflow initialization, and monitoring command
+  subprocess behavior
 - `tests/test_runner_claude.py` for Claude Code command construction, event
   mapping, signal extraction, and failure handling
 - `tests/test_runner_codex.py` for Codex app-server startup, thread start or
@@ -67,6 +68,7 @@ Integration tests:
 - project initialization
 - sprint and task lifecycle
 - orchestrator transitions
+- `development_secure` approval and denial paths through `security_review`
 - built-in test, merge, and human-gate steps
 - context projection into `.foreman/`
 - cross-invocation native session reuse for Claude Code, Codex, and

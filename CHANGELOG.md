@@ -34,6 +34,8 @@ memory changes rather than versioned product releases.
 - a dedicated dashboard sprint event stream for incremental live activity
   updates
 - `foreman/executor.py` and `tests/test_executor.py`
+- end-to-end runtime coverage for the opt-in `development_secure` workflow
+  plus secure workflow initialization coverage in the CLI
 
 ### Changed
 
@@ -61,6 +63,8 @@ memory changes rather than versioned product releases.
   advanced project memory to the engine DB discovery sprint
 - completed `sprint-15-engine-db-discovery`, archived it, and advanced project
   memory to the security review workflow sprint
+- completed `sprint-16-security-review-workflow`, archived it, and advanced
+  project memory to the native backend preflight sprint
 - reconciled the loose feature and recovery branches into an integrated
   mainline candidate and restored missing repo-memory artifacts from the
   runner-session ADR branch
