@@ -2,16 +2,16 @@
 
 ## Current sprint
 
-- Sprint: `sprint-08-monitoring-cli`
+- Sprint: `sprint-09-runner-session-backend-adr`
 - Status: active
-- Goal: expose active project state through CLI board, history, watch, and
-  cost surfaces without opening SQLite manually
+- Goal: capture the first accepted ADR for runner session handling, approval
+  policy, and backend contract boundaries now that native runners and
+  monitoring CLI surfaces exist
 
 ## Active branches
 
-- `feat/codex-runner` — land the native Codex runner, fix immediate native
-  human-gate resume behavior, and roll repo memory into the monitoring CLI
-  sprint
+- `feat/monitoring-cli` — land store-backed board, history, cost, and watch
+  monitoring commands, then roll repo memory into the runner ADR sprint
 
 ## Completed this week
 
@@ -94,6 +94,13 @@
   Codex success, review denial session reuse, and native human-gate resume
 - completed `sprint-07-codex-runner` and rolled repo memory forward to
   `sprint-08-monitoring-cli`
+- implemented store-backed `foreman board --db <path>`, `foreman history --db
+  <path>`, `foreman cost --db <path>`, and `foreman watch --db <path>` for
+  direct inspection of persisted sprint, run, and event state
+- added monitoring read-model helpers for sprint-scoped task counts, cost
+  aggregation, per-task run rollups, and recent event slices
+- completed `sprint-08-monitoring-cli` and rolled repo memory forward to
+  `sprint-09-runner-session-backend-adr`
 
 ## Current repo state
 
@@ -116,6 +123,8 @@
   - a native Codex runner with JSON-RPC thread start or resume, automatic
     approval handling, token-usage capture, and persistent thread reuse for
     Codex-backed roles,
+  - store-backed monitoring CLI surfaces for board, history, cost, and
+    bounded watch snapshots against persisted SQLite state,
   - immediate native human-gate resume when the next backend is available and
     the project repo exists, with deferred persistence retained for missing
     backends or missing repo paths,
@@ -132,10 +141,11 @@
 
 ## Ready next
 
-1. expose project state through the monitoring CLI surfaces
-2. define the first ADR now that runner session handling and backend
+1. define the first ADR now that runner session handling and backend
    contracts are active runtime constraints
-3. build the dashboard implementation aligned to the mockup
+2. build the dashboard implementation aligned to the mockup
+3. decide how live activity should graduate from polling CLI snapshots to a
+   streaming dashboard transport
 
 ## Open risks
 
@@ -143,12 +153,15 @@
   the Foreman product itself; their behavior should not accidentally become the
   long-term architecture.
 - The package now has a real store, loader, orchestrator, project
-  initialization path, human-gate resume commands, and native Claude and
-  Codex runners, but the monitoring CLI and dashboard surfaces are still
-  missing.
+  initialization path, human-gate resume commands, native Claude and Codex
+  runners, and monitoring CLI surfaces, but the dashboard implementation is
+  still missing.
 - The bootstrap CLI currently requires explicit `--db PATH` selection for
-  project lifecycle commands because engine-instance configuration does not
-  exist yet.
+  SQLite-backed lifecycle, inspection, monitoring, and human-gate commands
+  because engine-instance configuration does not exist yet.
+- `foreman watch` is currently a bounded polling view rather than the fully
+  live event tail described in the spec, so terminal monitoring does not yet
+  establish the eventual streaming transport boundary for the dashboard.
 - The native Claude and Codex runners assume working `claude` and `codex`
   executables in PATH and currently rely on runtime process errors rather than
   explicit preflight health checks.
@@ -174,9 +187,9 @@
   task status to `done` as successful workflow termination and records that
   nuance here until the spec text is clarified.
 - The spec's CLI examples omit explicit database selection, while the bootstrap
-  CLI currently requires `--db PATH` for `foreman init`, `foreman projects`,
-  and `foreman status` because engine-level DB discovery has not been
-  implemented yet.
+  CLI currently requires `--db PATH` for SQLite-backed init, inspection,
+  monitoring, and human-gate commands because engine-level DB discovery has
+  not been implemented yet.
 - The spec expects `.foreman/status.md` to list open decisions, but the current
   SQLite schema has no structured decision records yet. The runtime projection
   currently emits an explicit placeholder until those records exist.
@@ -185,6 +198,9 @@
   Claude-backed and Codex-backed next steps when a native runner is available
   and the repo path exists, but it still persists a deferred next step when
   the resumed workflow cannot execute safely yet.
+- The spec describes `foreman watch` as a live event tail, while the current
+  implementation intentionally renders bounded polling snapshots with
+  `--iterations` and `--interval` until a streaming transport boundary exists.
 
 ## Open decisions
 
@@ -192,6 +208,8 @@
   endpoints or as a richer app shell from the start
 - how much of the current wrapper logic should survive once native Foreman
   runners exist
+- whether the live dashboard activity surface should share the same transport
+  model as `foreman watch` or move directly to a dedicated streaming channel
 - whether project `default_model` should be validated against the selected
   agent backend instead of being passed through verbatim at runtime
 - whether the shipped role pack should stay Claude-first or grow a parallel

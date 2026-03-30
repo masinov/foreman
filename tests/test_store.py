@@ -194,6 +194,187 @@ class ForemanStoreTests(unittest.TestCase):
             with self.assertRaises(sqlite3.IntegrityError):
                 store.save_sprint(active_two)
 
+    def test_monitoring_queries_scope_costs_and_recent_events(self) -> None:
+        db_path = self.create_db_path()
+        project = Project(
+            id="project-1",
+            name="Foreman",
+            repo_path="/work/foreman",
+            workflow_id="development",
+            created_at="2026-03-30T11:00:00Z",
+            updated_at="2026-03-30T11:00:00Z",
+        )
+        active_sprint = Sprint(
+            id="sprint-1",
+            project_id=project.id,
+            title="Monitoring",
+            status="active",
+            order_index=2,
+            created_at="2026-03-30T11:05:00Z",
+            started_at="2026-03-30T11:06:00Z",
+        )
+        previous_sprint = Sprint(
+            id="sprint-0",
+            project_id=project.id,
+            title="Previous",
+            status="completed",
+            order_index=1,
+            created_at="2026-03-20T11:05:00Z",
+            completed_at="2026-03-21T11:06:00Z",
+        )
+        active_task = Task(
+            id="task-1",
+            sprint_id=active_sprint.id,
+            project_id=project.id,
+            title="Active task",
+            status="in_progress",
+            created_at="2026-03-30T11:10:00Z",
+        )
+        idle_task = Task(
+            id="task-2",
+            sprint_id=active_sprint.id,
+            project_id=project.id,
+            title="Idle task",
+            status="todo",
+            created_at="2026-03-30T11:11:00Z",
+        )
+        previous_task = Task(
+            id="task-3",
+            sprint_id=previous_sprint.id,
+            project_id=project.id,
+            title="Previous task",
+            status="done",
+            created_at="2026-03-20T11:10:00Z",
+        )
+        active_run = Run(
+            id="run-1",
+            task_id=active_task.id,
+            project_id=project.id,
+            role_id="developer",
+            workflow_step="develop",
+            agent_backend="claude_code",
+            status="completed",
+            cost_usd=1.50,
+            token_count=100,
+            duration_ms=2000,
+            created_at="2026-03-30T11:20:00Z",
+        )
+        zero_cost_run = Run(
+            id="run-2",
+            task_id=active_task.id,
+            project_id=project.id,
+            role_id="code_reviewer",
+            workflow_step="review",
+            agent_backend="codex",
+            status="completed",
+            cost_usd=0.0,
+            token_count=50,
+            duration_ms=500,
+            created_at="2026-03-30T11:25:00Z",
+        )
+        previous_run = Run(
+            id="run-3",
+            task_id=previous_task.id,
+            project_id=project.id,
+            role_id="developer",
+            workflow_step="develop",
+            agent_backend="claude_code",
+            status="completed",
+            cost_usd=4.00,
+            token_count=200,
+            duration_ms=1000,
+            created_at="2026-03-21T11:20:00Z",
+        )
+        first_event = Event(
+            id="event-1",
+            run_id=active_run.id,
+            task_id=active_task.id,
+            project_id=project.id,
+            event_type="agent.message",
+            timestamp="2026-03-30T11:21:00Z",
+            payload={"text": "starting"},
+        )
+        second_event = Event(
+            id="event-2",
+            run_id=zero_cost_run.id,
+            task_id=active_task.id,
+            project_id=project.id,
+            event_type="agent.command",
+            timestamp="2026-03-30T11:22:00Z",
+            payload={"command": "pytest"},
+        )
+        third_event = Event(
+            id="event-3",
+            run_id=zero_cost_run.id,
+            task_id=active_task.id,
+            project_id=project.id,
+            event_type="signal.completion",
+            timestamp="2026-03-30T11:23:00Z",
+            payload={"summary": "done"},
+        )
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            store.save_project(project)
+            store.save_sprint(previous_sprint)
+            store.save_sprint(active_sprint)
+            store.save_task(active_task)
+            store.save_task(idle_task)
+            store.save_task(previous_task)
+            store.save_run(active_run)
+            store.save_run(zero_cost_run)
+            store.save_run(previous_run)
+            store.save_event(first_event)
+            store.save_event(second_event)
+            store.save_event(third_event)
+
+            self.assertEqual(
+                store.task_counts(sprint_id=active_sprint.id),
+                {
+                    "todo": 1,
+                    "in_progress": 1,
+                    "blocked": 0,
+                    "done": 0,
+                    "cancelled": 0,
+                },
+            )
+            self.assertEqual(
+                store.run_totals(project_id=project.id),
+                {
+                    "run_count": 3,
+                    "total_cost_usd": 5.5,
+                    "total_token_count": 350,
+                    "total_duration_ms": 3500,
+                    "zero_cost_token_runs": 1,
+                },
+            )
+            self.assertEqual(
+                store.run_totals(project_id=project.id, sprint_id=active_sprint.id),
+                {
+                    "run_count": 2,
+                    "total_cost_usd": 1.5,
+                    "total_token_count": 150,
+                    "total_duration_ms": 2500,
+                    "zero_cost_token_runs": 1,
+                },
+            )
+
+            task_totals = {
+                row["task_id"]: row for row in store.task_run_totals(sprint_id=active_sprint.id)
+            }
+            self.assertEqual(set(task_totals), {"task-1", "task-2"})
+            self.assertEqual(task_totals["task-1"]["run_count"], 2)
+            self.assertEqual(task_totals["task-1"]["total_cost_usd"], 1.5)
+            self.assertEqual(task_totals["task-1"]["total_token_count"], 150)
+            self.assertEqual(task_totals["task-2"]["run_count"], 0)
+            self.assertEqual(task_totals["task-2"]["total_cost_usd"], 0.0)
+            self.assertEqual(task_totals["task-2"]["total_token_count"], 0)
+
+            self.assertEqual(
+                store.list_recent_events(project_id=project.id, limit=2),
+                [second_event, third_event],
+            )
+
     def test_utc_now_text_preserves_microseconds(self) -> None:
         timestamp = utc_now_text()
 

@@ -2,13 +2,6 @@
 
 ## Next up after the current sprint
 
-### `todo` Runner session and backend ADR
-
-- Capture the first ADR for runner session handling, approval policy, and
-  backend contract boundaries now that both native backends exist.
-- Visible deliverable: an accepted ADR in `docs/adr/` that future runner and
-  monitoring work can rely on.
-
 ### `todo` Dashboard implementation
 
 - Build the project, sprint, and task views defined in

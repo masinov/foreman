@@ -1,53 +1,59 @@
 # Current Sprint
 
-- Sprint: `sprint-08-monitoring-cli`
+- Sprint: `sprint-09-runner-session-backend-adr`
 - Status: active
-- Goal: expose active Foreman state through CLI board, history, watch, and
-  cost surfaces without opening SQLite manually
+- Goal: capture the first accepted ADR for runner session handling, approval
+  policy, and backend contract boundaries now that native runners and
+  monitoring CLI surfaces exist
 - Primary references:
   - `docs/specs/engine-design-v3.md`
   - `docs/mockups/foreman-mockup-v6.html`
+  - `foreman/runner/`
+  - `foreman/orchestrator.py`
+  - `foreman/cli.py`
 
 ## Included tasks
 
-1. `[todo]` Add `foreman board --db <path>` for current sprint task inspection
-   Deliverable: operators can list active sprint tasks grouped by status with
-   task type, branch, assigned role, and blocked reason context.
+1. `[todo]` Write the first accepted runner session ADR
+   Deliverable: an ADR in `docs/adr/` defines session creation, reuse,
+   invalidation, and persistence expectations across Claude and Codex roles.
 
-2. `[todo]` Add `foreman history --db <path>` and `foreman cost --db <path>`
-   for run and event inspection
-   Deliverable: operators can inspect recent task history plus persisted cost
-   or token summaries from SQLite without manual queries.
+2. `[todo]` Document approval policy and backend contract boundaries
+   Deliverable: the ADR states what the shared runner protocol guarantees,
+   what remains backend-specific, and how approval or pricing gaps should be
+   represented in persisted state.
 
-3. `[todo]` Add `foreman watch --db <path>` as a polling activity snapshot
-   Deliverable: the CLI can refresh task counts and recent activity in a
-   mockup-aligned monitoring view suitable for terminal use.
+3. `[todo]` Align architecture and roadmap docs to the accepted ADR
+   Deliverable: repo memory references the ADR as an active implementation
+   constraint for future runner, monitoring, and dashboard slices.
 
 ## Excluded from this sprint
 
-- ADR authoring beyond noting the now-active runner questions
 - dashboard and web implementation
+- live streaming transport work beyond documenting the boundary
 - schema migration framework work
 
 ## Acceptance criteria
 
-- `foreman board` exposes the active sprint task board directly from SQLite
-- `foreman history` and `foreman cost` expose recent runs, events, and usage
-  summaries without opening the database manually
-- `foreman watch` provides a useful polling view of active project activity
+- an accepted ADR exists in `docs/adr/` for runner sessions and backend
+  contract boundaries
+- `docs/STATUS.md`, `docs/ARCHITECTURE.md`, and `docs/ROADMAP.md` reference
+  the ADR as a current implementation constraint
+- current runtime behavior is documented accurately without backfilling
+  speculative guarantees
 - docs and validation remain good enough for a fresh autonomous agent to pick
   the next slice without extra human context
 
 ## Known risks
 
-- the monitoring commands must stay aligned to the mockup hierarchy without
-  prematurely committing to a full web API boundary
-- Codex runs currently lack USD telemetry, so cost surfaces may need to expose
-  token summaries and explicit placeholders rather than inferred pricing
+- the current Claude and Codex runner paths already differ in small but real
+  ways; the ADR needs to document those differences without freezing accidental
+  quirks as permanent product policy
+- monitoring CLI output now exposes backend telemetry gaps directly, so the ADR
+  needs to stay explicit about zero-USD token runs and approval semantics
 
 ## Demo checklist
 
-- show one project board view from SQLite
-- show one history or cost query returning persisted run data
-- show the polling watch view refreshing without corrupting state
-- show repo validation passing after the monitoring CLI slice lands
+- show the accepted ADR path in `docs/adr/`
+- show at least one repo doc referencing the ADR as an active constraint
+- show repo validation passing after the runner ADR slice lands

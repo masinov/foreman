@@ -98,6 +98,17 @@ The native Codex runner slice adds:
   the native runner path, reuse persistent developer sessions, and resume
   immediately after human approval when the repo and backend are available
 
+The monitoring CLI slice adds:
+
+- store coverage for sprint-scoped task counts, aggregate run totals,
+  per-task rollups, and recent event slices used by monitoring reads
+- subprocess CLI coverage proving `foreman board --db <path>`,
+  `foreman history --db <path>`, `foreman cost --db <path>`, and
+  `foreman watch --db <path>` expose persisted activity without mutating
+  store state
+- run-scoped and project-scoped watch validation so polling output stays
+  bounded and reviewable in terminal workflows
+
 ## Expected testing layers once code lands
 
 Unit tests:

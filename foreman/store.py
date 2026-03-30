@@ -684,6 +684,160 @@ class ForemanStore:
         rows = self._connection.execute(sql, tuple(params)).fetchall()
         return [_row_to_event(row) for row in rows]
 
+    def list_recent_events(
+        self,
+        *,
+        run_id: str | None = None,
+        task_id: str | None = None,
+        project_id: str | None = None,
+        limit: int = 10,
+    ) -> list[Event]:
+        """Return the most recent events while preserving display order."""
+
+        if limit <= 0:
+            return []
+
+        filters: list[str] = []
+        params: list[Any] = []
+        if run_id is not None:
+            filters.append("run_id = ?")
+            params.append(run_id)
+        if task_id is not None:
+            filters.append("task_id = ?")
+            params.append(task_id)
+        if project_id is not None:
+            filters.append("project_id = ?")
+            params.append(project_id)
+
+        sql = "SELECT * FROM events"
+        if filters:
+            sql = f"{sql} WHERE {' AND '.join(filters)}"
+        sql = f"{sql} ORDER BY timestamp DESC, rowid DESC LIMIT ?"
+        params.append(limit)
+
+        rows = self._connection.execute(sql, tuple(params)).fetchall()
+        events = [_row_to_event(row) for row in rows]
+        events.reverse()
+        return events
+
+    def run_totals(
+        self,
+        *,
+        project_id: str | None = None,
+        sprint_id: str | None = None,
+        task_id: str | None = None,
+    ) -> dict[str, int | float]:
+        """Return aggregate run metrics for a project, sprint, or task scope."""
+
+        filters: list[str] = []
+        params: list[Any] = []
+        join_clause = ""
+
+        if sprint_id is not None:
+            join_clause = " JOIN tasks ON tasks.id = runs.task_id"
+            filters.append("tasks.sprint_id = ?")
+            params.append(sprint_id)
+        if project_id is not None:
+            filters.append("runs.project_id = ?")
+            params.append(project_id)
+        if task_id is not None:
+            filters.append("runs.task_id = ?")
+            params.append(task_id)
+
+        sql = """
+            SELECT
+                COUNT(runs.id) AS run_count,
+                COALESCE(SUM(runs.cost_usd), 0.0) AS total_cost_usd,
+                COALESCE(SUM(runs.token_count), 0) AS total_token_count,
+                COALESCE(SUM(runs.duration_ms), 0) AS total_duration_ms,
+                COALESCE(
+                    SUM(
+                        CASE
+                            WHEN runs.token_count > 0 AND runs.cost_usd = 0 THEN 1
+                            ELSE 0
+                        END
+                    ),
+                    0
+                ) AS zero_cost_token_runs
+            FROM runs
+        """
+        sql = f"{sql}{join_clause}"
+        if filters:
+            sql = f"{sql} WHERE {' AND '.join(filters)}"
+
+        row = self._connection.execute(sql, tuple(params)).fetchone()
+        assert row is not None
+        return {
+            "run_count": int(row["run_count"]),
+            "total_cost_usd": float(row["total_cost_usd"]),
+            "total_token_count": int(row["total_token_count"]),
+            "total_duration_ms": int(row["total_duration_ms"]),
+            "zero_cost_token_runs": int(row["zero_cost_token_runs"]),
+        }
+
+    def task_run_totals(
+        self,
+        *,
+        project_id: str | None = None,
+        sprint_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return per-task aggregate run metrics for one project or sprint."""
+
+        filters: list[str] = []
+        params: list[Any] = []
+        if project_id is not None:
+            filters.append("tasks.project_id = ?")
+            params.append(project_id)
+        if sprint_id is not None:
+            filters.append("tasks.sprint_id = ?")
+            params.append(sprint_id)
+
+        sql = """
+            SELECT
+                tasks.id AS task_id,
+                tasks.title AS task_title,
+                tasks.status AS task_status,
+                tasks.task_type AS task_type,
+                tasks.branch_name AS branch_name,
+                tasks.assigned_role AS assigned_role,
+                COUNT(runs.id) AS run_count,
+                COALESCE(SUM(runs.cost_usd), 0.0) AS total_cost_usd,
+                COALESCE(SUM(runs.token_count), 0) AS total_token_count,
+                COALESCE(SUM(runs.duration_ms), 0) AS total_duration_ms
+            FROM tasks
+            LEFT JOIN runs ON runs.task_id = tasks.id
+        """
+        if filters:
+            sql = f"{sql} WHERE {' AND '.join(filters)}"
+        sql = f"""
+            {sql}
+            GROUP BY
+                tasks.id,
+                tasks.title,
+                tasks.status,
+                tasks.task_type,
+                tasks.branch_name,
+                tasks.assigned_role
+            ORDER BY tasks.priority ASC, tasks.order_index ASC, tasks.created_at ASC, tasks.id ASC
+        """
+
+        rows = self._connection.execute(sql, tuple(params)).fetchall()
+        return [
+            {
+                "task_id": str(row["task_id"]),
+                "task_title": str(row["task_title"]),
+                "task_status": str(row["task_status"]),
+                "task_type": str(row["task_type"]),
+                "branch_name": row["branch_name"],
+                "assigned_role": row["assigned_role"],
+                "run_count": int(row["run_count"]),
+                "total_cost_usd": float(row["total_cost_usd"]),
+                "total_token_count": int(row["total_token_count"]),
+                "total_duration_ms": int(row["total_duration_ms"]),
+            }
+            for row in rows
+        ]
+
     def count_projects(self) -> int:
         """Return the number of tracked projects."""
 
@@ -700,17 +854,27 @@ class ForemanStore:
         ).fetchone()
         return int(row["value"])
 
-    def task_counts(self, project_id: str | None = None) -> dict[str, int]:
+    def task_counts(
+        self,
+        project_id: str | None = None,
+        sprint_id: str | None = None,
+    ) -> dict[str, int]:
         """Return task counts keyed by task status."""
 
         sql = "SELECT status, COUNT(*) AS value FROM tasks"
-        params: Sequence[Any] = ()
+        filters: list[str] = []
+        params: list[Any] = []
         if project_id is not None:
-            sql = f"{sql} WHERE project_id = ?"
-            params = (project_id,)
+            filters.append("project_id = ?")
+            params.append(project_id)
+        if sprint_id is not None:
+            filters.append("sprint_id = ?")
+            params.append(sprint_id)
+        if filters:
+            sql = f"{sql} WHERE {' AND '.join(filters)}"
         sql = f"{sql} GROUP BY status"
 
         counts = {status: 0 for status in TASK_STATUSES}
-        for row in self._connection.execute(sql, params).fetchall():
+        for row in self._connection.execute(sql, tuple(params)).fetchall():
             counts[str(row["status"])] = int(row["value"])
         return counts

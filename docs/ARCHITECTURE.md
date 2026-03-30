@@ -252,6 +252,20 @@ The ninth implementation slice has now landed:
   `tests/test_orchestrator.py` now verifies Codex success, session reuse, and
   native human-gate resume behavior.
 
+The tenth implementation slice has now landed:
+
+- `foreman.store` now exposes recent-event slices plus project or sprint run
+  rollups for monitoring reads,
+- `foreman.cli` now supports `foreman board --db <path>`, `foreman history
+  --db <path>`, `foreman cost --db <path>`, and `foreman watch --db <path>`
+  directly against SQLite,
+- the board view groups active sprint tasks by status and includes branch,
+  role, blocked-reason, and token context,
+- the watch view intentionally uses bounded polling snapshots instead of a
+  live stream until a dedicated transport boundary exists,
+- `tests/test_store.py` and `tests/test_cli.py` now cover monitoring query
+  semantics, sprint scoping, and recent activity rendering.
+
 Current runtime constraints worth preserving:
 
 - every workflow step persists a `runs` row, including built-ins, so workflow
@@ -265,7 +279,8 @@ Current runtime constraints worth preserving:
 - `foreman init` never overwrites a repo's existing `AGENTS.md`; the generated
   instructions are a one-time scaffold that the user owns afterward,
 - the bootstrap CLI currently requires explicit `--db PATH` selection for
-  project lifecycle commands until engine-level database discovery exists,
+  SQLite-backed lifecycle, inspection, monitoring, and human-gate commands
+  until engine-level database discovery exists,
 - deferred human-gate resume is represented by an `in_progress` task whose
   `workflow_current_step` points at the next step to execute, and task
   selection now prioritizes that persisted resume point before untouched todo
@@ -279,9 +294,12 @@ Current runtime constraints worth preserving:
 - Codex token usage is persisted through native runner events, but the current
   app-server contract does not expose USD pricing so Codex `cost_usd` remains
   zero for now,
+- `foreman watch` currently polls the store with bounded snapshots rather than
+  maintaining a live event stream, so the eventual dashboard transport
+  contract is still undecided,
 - `.foreman/status.md` currently emits an explicit open-decisions placeholder
   because the SQLite schema does not yet persist those records.
 
-The next implementation slice should expose monitoring CLI surfaces so
-operators can inspect board state, history, and cost data directly from the
-store.
+The next implementation slice should capture the first ADR for runner session
+handling, approval policy, and backend contract boundaries so later dashboard
+and runner work can rely on an accepted constraint.
