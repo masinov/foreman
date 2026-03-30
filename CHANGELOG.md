@@ -37,6 +37,7 @@ memory changes rather than versioned product releases.
 - end-to-end runtime coverage for the opt-in `development_secure` workflow
   plus secure workflow initialization coverage in the CLI
 - explicit native backend preflight validation for Claude Code and Codex
+- spec-aligned event-retention pruning for old project events
 
 ### Changed
 
@@ -68,6 +69,8 @@ memory changes rather than versioned product releases.
   project memory to the native backend preflight sprint
 - completed `sprint-17-native-backend-preflight-checks`, archived it, and
   advanced project memory to the event-retention pruning sprint
+- completed `sprint-18-event-retention-pruning`, archived it, and advanced
+  project memory to the watch live-tail alignment sprint
 - reconciled the loose feature and recovery branches into an integrated
   mainline candidate and restored missing repo-memory artifacts from the
   runner-session ADR branch

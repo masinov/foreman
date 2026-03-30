@@ -276,6 +276,194 @@ class ForemanStoreTests(unittest.TestCase):
                 ),
             )
 
+    def test_prune_old_events_preserves_blocked_and_in_progress_task_history(self) -> None:
+        db_path = self.create_db_path()
+        project = Project(
+            id="project-1",
+            name="Foreman",
+            repo_path="/work/foreman",
+            workflow_id="development",
+            created_at="2026-03-30T11:00:00Z",
+            updated_at="2026-03-30T11:00:00Z",
+        )
+        other_project = Project(
+            id="project-2",
+            name="Other",
+            repo_path="/work/other",
+            workflow_id="development",
+            created_at="2026-03-30T11:00:00Z",
+            updated_at="2026-03-30T11:00:00Z",
+        )
+        sprint = Sprint(
+            id="sprint-1",
+            project_id=project.id,
+            title="Retention",
+            status="active",
+            created_at="2026-03-30T11:05:00Z",
+            started_at="2026-03-30T11:06:00Z",
+        )
+        other_sprint = Sprint(
+            id="sprint-2",
+            project_id=other_project.id,
+            title="Other Sprint",
+            status="active",
+            created_at="2026-03-30T11:05:00Z",
+            started_at="2026-03-30T11:06:00Z",
+        )
+        blocked_task = Task(
+            id="task-blocked",
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="Blocked task",
+            status="blocked",
+            created_at="2026-03-01T11:10:00Z",
+        )
+        in_progress_task = Task(
+            id="task-wip",
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="In-progress task",
+            status="in_progress",
+            created_at="2026-03-01T11:11:00Z",
+        )
+        done_task = Task(
+            id="task-done",
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="Done task",
+            status="done",
+            created_at="2026-03-01T11:12:00Z",
+        )
+        other_task = Task(
+            id="task-other",
+            sprint_id=other_sprint.id,
+            project_id=other_project.id,
+            title="Other project task",
+            status="done",
+            created_at="2026-03-01T11:12:00Z",
+        )
+        blocked_run = Run(
+            id="run-blocked",
+            task_id=blocked_task.id,
+            project_id=project.id,
+            role_id="developer",
+            workflow_step="develop",
+            agent_backend="claude_code",
+            status="failed",
+            created_at="2026-03-01T11:20:00Z",
+        )
+        in_progress_run = Run(
+            id="run-wip",
+            task_id=in_progress_task.id,
+            project_id=project.id,
+            role_id="developer",
+            workflow_step="develop",
+            agent_backend="claude_code",
+            status="running",
+            created_at="2026-03-01T11:21:00Z",
+        )
+        done_run = Run(
+            id="run-done",
+            task_id=done_task.id,
+            project_id=project.id,
+            role_id="developer",
+            workflow_step="develop",
+            agent_backend="claude_code",
+            status="completed",
+            created_at="2026-03-01T11:22:00Z",
+        )
+        other_run = Run(
+            id="run-other",
+            task_id=other_task.id,
+            project_id=other_project.id,
+            role_id="developer",
+            workflow_step="develop",
+            agent_backend="claude_code",
+            status="completed",
+            created_at="2026-03-01T11:23:00Z",
+        )
+        blocked_event = Event(
+            id="event-blocked",
+            run_id=blocked_run.id,
+            task_id=blocked_task.id,
+            project_id=project.id,
+            event_type="signal.blocker",
+            timestamp="2026-03-01T12:00:00.000000Z",
+            payload={"message": "Waiting on approval"},
+        )
+        in_progress_event = Event(
+            id="event-wip",
+            run_id=in_progress_run.id,
+            task_id=in_progress_task.id,
+            project_id=project.id,
+            event_type="agent.message",
+            timestamp="2026-03-01T12:05:00.000000Z",
+            payload={"text": "Still running"},
+        )
+        old_done_event = Event(
+            id="event-old-done",
+            run_id=done_run.id,
+            task_id=done_task.id,
+            project_id=project.id,
+            event_type="signal.completion",
+            timestamp="2026-03-01T12:10:00.000000Z",
+            payload={"summary": "Old completion"},
+        )
+        fresh_done_event = Event(
+            id="event-fresh-done",
+            run_id=done_run.id,
+            task_id=done_task.id,
+            project_id=project.id,
+            event_type="engine.merge",
+            timestamp="2026-03-30T12:10:00.000000Z",
+            payload={"branch": "feat/example", "target": "main"},
+        )
+        other_project_event = Event(
+            id="event-other-project",
+            run_id=other_run.id,
+            task_id=other_task.id,
+            project_id=other_project.id,
+            event_type="signal.completion",
+            timestamp="2026-03-01T12:15:00.000000Z",
+            payload={"summary": "Keep the other project intact"},
+        )
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            store.save_project(project)
+            store.save_project(other_project)
+            store.save_sprint(sprint)
+            store.save_sprint(other_sprint)
+            store.save_task(blocked_task)
+            store.save_task(in_progress_task)
+            store.save_task(done_task)
+            store.save_task(other_task)
+            store.save_run(blocked_run)
+            store.save_run(in_progress_run)
+            store.save_run(done_run)
+            store.save_run(other_run)
+            store.save_event(blocked_event)
+            store.save_event(in_progress_event)
+            store.save_event(old_done_event)
+            store.save_event(fresh_done_event)
+            store.save_event(other_project_event)
+
+            pruned_count = store.prune_old_events(
+                project_id=project.id,
+                older_than="2026-03-24T12:00:00.000000Z",
+            )
+
+            self.assertEqual(pruned_count, 1)
+            self.assertIsNone(store.get_event(old_done_event.id))
+            self.assertEqual(
+                store.list_events(project_id=project.id),
+                [blocked_event, in_progress_event, fresh_done_event],
+            )
+            self.assertEqual(
+                store.list_events(project_id=other_project.id),
+                [other_project_event],
+            )
+
     def test_sprint_event_queries_scope_and_resume_after_one_event(self) -> None:
         db_path = self.create_db_path()
         project = Project(

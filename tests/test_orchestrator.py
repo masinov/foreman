@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import subprocess
 import tempfile
 import unittest
 
-from foreman.models import Project, Run, Sprint, Task
+from foreman.models import Event, Project, Run, Sprint, Task
 from foreman.orchestrator import (
     AgentExecutionResult,
     ForemanOrchestrator,
@@ -1377,6 +1378,146 @@ class ForemanOrchestratorTests(unittest.TestCase):
             self.assertEqual(runs[0].status, "failed")
             self.assertEqual(runs[0].outcome, "error")
             self.assertIn("preflight failed", runs[0].outcome_detail.lower())
+
+    def test_run_project_prunes_old_done_task_events_and_preserves_blocked_history(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+        fixed_now = datetime(2026, 3, 31, 12, 0, 0, tzinfo=timezone.utc)
+        cutoff = (fixed_now - timedelta(days=7)).isoformat(timespec="microseconds").replace("+00:00", "Z")
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, sprint, task = self.seed_project(store, repo_path=repo_path)
+            project.settings["event_retention_days"] = 7
+            store.save_project(project)
+
+            blocked_task = Task(
+                id="task-blocked",
+                sprint_id=sprint.id,
+                project_id=project.id,
+                title="Blocked historical task",
+                status="blocked",
+                blocked_reason="Waiting on approval",
+                created_at="2026-03-01T12:00:00Z",
+            )
+            previous_sprint = Sprint(
+                id="sprint-0",
+                project_id=project.id,
+                title="Earlier sprint",
+                status="completed",
+                created_at="2026-03-01T10:00:00Z",
+                completed_at="2026-03-10T10:00:00Z",
+            )
+            done_task = Task(
+                id="task-done-old",
+                sprint_id=previous_sprint.id,
+                project_id=project.id,
+                title="Old completed task",
+                status="done",
+                created_at="2026-03-01T12:05:00Z",
+                completed_at="2026-03-02T12:05:00Z",
+            )
+            store.save_sprint(previous_sprint)
+            store.save_task(blocked_task)
+            store.save_task(done_task)
+
+            blocked_run = Run(
+                id="run-blocked-old",
+                task_id=blocked_task.id,
+                project_id=project.id,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude_code",
+                status="failed",
+                created_at="2026-03-01T12:10:00Z",
+            )
+            done_run = Run(
+                id="run-done-old",
+                task_id=done_task.id,
+                project_id=project.id,
+                role_id="developer",
+                workflow_step="done",
+                agent_backend="claude_code",
+                status="completed",
+                created_at="2026-03-01T12:12:00Z",
+            )
+            store.save_run(blocked_run)
+            store.save_run(done_run)
+
+            blocked_event = Event(
+                id="event-blocked-old",
+                run_id=blocked_run.id,
+                task_id=blocked_task.id,
+                project_id=project.id,
+                event_type="signal.blocker",
+                timestamp="2026-03-01T12:15:00.000000Z",
+                payload={"message": "Keep me"},
+            )
+            old_done_event = Event(
+                id="event-done-old",
+                run_id=done_run.id,
+                task_id=done_task.id,
+                project_id=project.id,
+                event_type="signal.completion",
+                timestamp="2026-03-01T12:20:00.000000Z",
+                payload={"summary": "Prune me"},
+            )
+            store.save_event(blocked_event)
+            store.save_event(old_done_event)
+
+            def developer_handler(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
+                del task
+                self.assertIsNone(carried_output)
+                self.write_text(repo_path / "feature.txt", "retention-safe implementation\n")
+                self.write_text(repo_path / "ready.txt", "ready\n")
+                self.commit_all(repo_path, "feat: finish pruning slice")
+                return AgentExecutionResult(
+                    outcome="done",
+                    detail="Finished the pruning slice.",
+                )
+
+            def reviewer_handler(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
+                del task
+                self.assertIsNone(carried_output)
+                self.assertIn("Finished the pruning slice.", prompt)
+                return AgentExecutionResult(
+                    outcome="approve",
+                    detail="Approved after review.",
+                )
+
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=self.roles,
+                workflows=self.workflows,
+                agent_executor=ScriptedAgentExecutor(
+                    {
+                        ("developer", 1): developer_handler,
+                        ("code_reviewer", 1): reviewer_handler,
+                    }
+                ),
+                utc_now=lambda: fixed_now,
+            )
+
+            result = orchestrator.run_project(project.id)
+
+            self.assertEqual(result.executed_task_ids, (task.id,))
+            self.assertEqual(result.stop_reason, "blocked")
+            self.assertIsNotNone(store.get_event(blocked_event.id))
+            self.assertIsNone(store.get_event(old_done_event.id))
+
+            pruned_events = [
+                event
+                for event in store.list_events(project_id=project.id)
+                if event.event_type == "engine.event_pruned"
+            ]
+            self.assertEqual(len(pruned_events), 1)
+            self.assertEqual(
+                pruned_events[0].payload,
+                {
+                    "count": 1,
+                    "older_than": cutoff,
+                },
+            )
 
     def test_native_runner_executes_codex_roles_without_an_injected_executor(self) -> None:
         repo_path, db_path = self.create_workspace()

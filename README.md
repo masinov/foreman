@@ -43,6 +43,8 @@ The integrated pre-release baseline now contains:
   normalization, explicit startup preflight checks, approval-policy handling,
   and persisted session reuse across fresh orchestrator invocations for
   persistent roles,
+- optional startup event-retention pruning when `event_retention_days` is
+  configured, while preserving history for blocked and in-progress tasks,
 - an opt-in `development_secure` workflow that now runs end to end through
   code review, security review, test, and merge with durable carry-output
   semantics,
@@ -91,6 +93,18 @@ Operator recovery:
 2. verify the backend manually from the shell,
 3. rerun the blocked task or project once the backend startup path is healthy.
 
+## Event retention
+
+Foreman can now prune old `events` rows on orchestrator startup when a
+project sets `event_retention_days`.
+
+- pruning is project-scoped and cutoff-based,
+- events for `blocked` and `in_progress` tasks are preserved regardless of
+  age,
+- pruning emits `engine.event_pruned` when rows are removed,
+- `runs` rows are not pruned yet, so event retention is only the first layer
+  of history cleanup.
+
 ## Autonomous entry points
 
 Run all Python commands through the repo virtual environment:
@@ -119,12 +133,12 @@ Both wrappers expect these files to be current:
 
 ## Next implementation slice
 
-The current sprint is `sprint-18-event-retention-pruning`.
+The current sprint is `sprint-19-watch-live-tail-alignment`.
 
 The next recommended task is:
 
-- implement spec-aligned pruning for old event rows while preserving events
-  attached to blocked or in-progress tasks.
+- align `foreman watch` with the dashboard live transport and the spec's
+  live-tail intent.
 
 That work is recorded in `docs/sprints/current.md`, so a fresh agent can pick
 it up without reconstructing branch history first.

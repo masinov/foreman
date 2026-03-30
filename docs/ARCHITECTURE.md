@@ -82,6 +82,8 @@ The repository now ships:
   runs, and events,
 - query helpers for project status, sprint board state, run totals, and recent
   event slices,
+- store-backed pruning of old `events` rows by project and cutoff while
+  preserving blocked and in-progress task history,
 - persisted workflow step, carried-output, and human-gate resume state on
   tasks and runs.
 
@@ -161,6 +163,9 @@ The current dashboard baseline includes:
 - backend preflight failures now fail once before `agent.started`, while
   post-start transport and process failures remain retryable infrastructure
   errors.
+- `event_retention_days` now prunes old project events on startup, but current
+  schema constraints force `engine.event_pruned` to ride on a synthetic
+  task-bound orchestrator run instead of a pure project-level event.
 - `session_persistence` is a role-level policy with scope `task + role +
   backend`, and fresh orchestrator invocations now reload the last compatible
   persisted session from SQLite for persistent roles.
@@ -176,8 +181,8 @@ The current dashboard baseline includes:
 
 ## Next architectural slice
 
-The next slice should bring event retention in line with the spec:
+The next slice should align CLI live tailing with the dashboard stream:
 
-- prune old events when `event_retention_days` is configured,
-- preserve events that still belong to blocked or in-progress work,
-- emit durable pruning records without breaking monitoring expectations.
+- replace bounded `foreman watch` polling with an aligned incremental tail,
+- clarify how CLI tailing scopes to project, sprint, and run activity,
+- document the boundary between CLI watch behavior and dashboard transport.

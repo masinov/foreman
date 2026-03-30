@@ -279,12 +279,33 @@ Target deliverables:
 
 Status:
 
-- current sprint is `sprint-18-event-retention-pruning`
+- completed on `feat/event-retention-pruning`
+- the store now prunes old project events by cutoff while preserving blocked
+  and in-progress task history
+- orchestrator startup now honors `event_retention_days` and emits
+  `engine.event_pruned` when rows are removed
+- retention currently applies only to `events`; `runs` remain intact
+
+## Milestone 14: Watch live-tail alignment
+
+Goal: align `foreman watch` with the dashboard live transport and the spec's
+live-tail intent.
+
+Target deliverables:
+
+- an explicit streaming model for `foreman watch`
+- incremental persisted activity delivery in the CLI without bounded polling
+- tests and docs that explain the boundary between CLI watch and dashboard
+  streaming
+
+Status:
+
+- current sprint is `sprint-19-watch-live-tail-alignment`
 
 ## Near-term priorities
 
-1. implement spec-aligned event-retention pruning while preserving active-work
-   history
-2. align `foreman watch` with the dashboard live transport and the spec's
+1. align `foreman watch` with the dashboard live transport and the spec's
    live-tail intent
-3. introduce a migration framework once retention and watch gaps are closed
+2. introduce a migration framework once watch alignment is complete
+3. decide whether retention should later extend beyond `events` into broader
+   history lifecycle management

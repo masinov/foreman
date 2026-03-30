@@ -1,40 +1,45 @@
 # Current Sprint
 
-- Sprint: `sprint-18-event-retention-pruning`
+- Sprint: `sprint-19-watch-live-tail-alignment`
 - Status: active
-- Goal: implement spec-aligned pruning for old event rows without deleting
-  history that still belongs to blocked or in-progress work
+- Goal: align `foreman watch` with the dashboard live transport and the
+  spec's live-tail intent
 - Primary references:
   - `docs/specs/engine-design-v3.md`
+  - `docs/mockups/foreman-mockup-v6.html`
   - `docs/STATUS.md`
-  - `foreman/store.py`
-  - `foreman/orchestrator.py`
-  - `tests/test_store.py`
-  - `tests/test_orchestrator.py`
+  - `foreman/cli.py`
+  - `foreman/dashboard.py`
+  - `tests/test_cli.py`
+  - `tests/test_dashboard.py`
 
 ## Included tasks
 
-1. `[todo]` Add store support for spec-aligned event pruning
-   Deliverable: the store can delete old events by project and cutoff while
-   preserving events attached to blocked or in-progress tasks.
+1. `[todo]` Define the live-tail boundary for `foreman watch`
+   Deliverable: the CLI watch command follows an explicit streaming model that
+   matches the product's live-activity intent without inheriting dashboard-only
+   UI assumptions.
 
-2. `[todo]` Run retention pruning from orchestrator startup
-   Deliverable: project startup honors `event_retention_days` and emits
-   `engine.event_pruned` when old events are removed.
+2. `[todo]` Replace bounded polling snapshots with incremental updates
+   Deliverable: `foreman watch` can stream ongoing persisted activity instead
+   of requiring fixed `--iterations` polling loops.
 
-3. `[todo]` Document retention behavior and operator expectations
-   Deliverable: repo docs explain cutoff semantics, preserved-task exceptions,
-   and what operators should expect when pruning runs.
+3. `[todo]` Document watch and dashboard alignment
+   Deliverable: repo docs explain how the CLI tail relates to the dashboard's
+   live stream, including any remaining scope or UX differences.
 
 ## Excluded from this sprint
 
-- multi-user dashboard concerns
-- `foreman watch` live-tail alignment
 - migration framework work
 - backend auth and service-reachability health checks
+- multi-user dashboard concerns
+- a separate pub-sub or websocket transport layer
 
 ## Acceptance criteria
 
-- old events are pruned according to `event_retention_days`
-- events for blocked or in-progress tasks are preserved regardless of age
-- automated tests and docs make the retention boundary explicit for operators
+- `foreman watch` no longer depends on bounded polling snapshots for its core
+  live-tail path
+- automated tests cover the aligned watch behavior at the CLI and dashboard
+  boundary where practical
+- docs explain the live-tail boundary clearly enough for operators and fresh
+  agents

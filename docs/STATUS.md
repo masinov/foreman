@@ -2,16 +2,16 @@
 
 ## Current sprint
 
-- Sprint: `sprint-18-event-retention-pruning`
+- Sprint: `sprint-19-watch-live-tail-alignment`
 - Status: active
-- Goal: implement spec-aligned pruning for old event rows without deleting
-  history that still belongs to blocked or in-progress work
+- Goal: align `foreman watch` with the dashboard live transport and the
+  spec's live-tail intent
 
 ## Active branches
 
 - no long-lived feature branch should remain loose after the engine DB
-  discovery, security-review, and backend-preflight slices; start sprint-18
-  work from `main`
+  discovery, security-review, backend-preflight, and retention slices; start
+  sprint-19 work from `main`
 
 ## Completed this week
 
@@ -43,6 +43,13 @@
 - made backend preflight failures fail once before `agent.started` instead of
   consuming infrastructure retries
 - documented backend prerequisites and recovery expectations for operators
+- completed `sprint-18-event-retention-pruning`
+- added store-backed pruning of old project events by cutoff while preserving
+  blocked and in-progress task history
+- wired orchestrator startup to honor `event_retention_days` and emit
+  `engine.event_pruned` when rows are removed
+- documented retention boundaries, including the current schema constraint
+  that pruning records still attach to a task-bound synthetic run
 
 ## Current repo state
 
@@ -62,6 +69,9 @@
     explicit startup preflight checks, approval-policy handling, retry
     normalization, and persisted session reuse across fresh orchestrator
     invocations for persistent roles,
+  - orchestrator startup event-retention pruning driven by
+    `event_retention_days`, with durable `engine.event_pruned` records and
+    protection for blocked and in-progress task history,
   - monitoring CLI surfaces for board, history, cost, and bounded watch
     snapshots,
   - accepted ADRs for runner session semantics and dashboard data access,
@@ -79,11 +89,11 @@
 
 ## Ready next
 
-1. add store support for deleting old events by project and cutoff while
-   preserving events for blocked and in-progress tasks
-2. run event pruning from orchestrator startup when
-   `event_retention_days` is configured
-3. document retention behavior, cutoff semantics, and operator expectations
+1. replace bounded `foreman watch` snapshots with a live incremental tail
+   model that aligns with the dashboard transport intent
+2. define how CLI live tailing should scope to project, sprint, and run views
+   without duplicating dashboard-specific UI assumptions
+3. document the alignment between dashboard streaming and CLI watch behavior
 
 ## Open risks
 
@@ -101,6 +111,8 @@
 - The Codex app-server protocol exposes token usage but not USD pricing, so
   Codex runs currently persist `token_count` accurately while `cost_usd`
   remains `0.0`.
+- Event retention currently prunes only `events`; `runs` rows and stored
+  prompts continue to accumulate until a later lifecycle or migration slice.
 - The SQLite layer still uses bootstrap DDL without a migration framework.
 
 ## Documented conflicts
@@ -128,6 +140,10 @@
   runtime now treats backend preflight failures as explicit non-retryable
   startup errors so missing executables or malformed startup handshakes fail
   once before `agent.started`.
+- The spec describes `engine.event_pruned` as a project-level emit, but the
+  current schema still requires non-null `run_id` and `task_id` on events. The
+  runtime therefore records pruning through a synthetic orchestrator run
+  attached to one stable project task.
 
 ## Open decisions
 
@@ -139,5 +155,7 @@
   backend instead of being passed through verbatim at runtime
 - whether backend preflight should eventually expand beyond executable and
   startup-contract checks into authentication or service reachability checks
+- whether retention should later prune `runs`, stored prompts, or other
+  history surfaces in addition to `events`
 - whether the secure workflow should remain an explicit opt-in at init time or
   be selected automatically from project policy in a later slice

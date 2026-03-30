@@ -9,6 +9,8 @@ from typing import Any, Sequence
 
 from .models import Event, Project, Run, Sprint, TASK_STATUSES, Task
 
+_PRUNE_PROTECTED_TASK_STATUSES = ("blocked", "in_progress")
+
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS projects (
     id              TEXT PRIMARY KEY,
@@ -807,6 +809,35 @@ class ForemanStore:
         events = [_row_to_event(row) for row in rows]
         events.reverse()
         return events
+
+    def prune_old_events(
+        self,
+        *,
+        project_id: str,
+        older_than: str,
+    ) -> int:
+        """Delete project events older than one cutoff while preserving active-work history."""
+
+        with self._connection:
+            cursor = self._connection.execute(
+                f"""
+                DELETE FROM events
+                WHERE project_id = ?
+                  AND timestamp < ?
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM tasks
+                      WHERE tasks.id = events.task_id
+                        AND tasks.status IN ({", ".join("?" for _ in _PRUNE_PROTECTED_TASK_STATUSES)})
+                  )
+                """,
+                (
+                    project_id,
+                    older_than,
+                    *_PRUNE_PROTECTED_TASK_STATUSES,
+                ),
+            )
+        return int(cursor.rowcount)
 
     def run_totals(
         self,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import re
 from typing import Any, Protocol
@@ -111,6 +112,7 @@ class ForemanOrchestrator:
         agent_runners: Mapping[str, NativeAgentRunner] | None = None,
         builtin_executor: BuiltinExecutor | None = None,
         runner_sleep: Callable[[float], None] | None = None,
+        utc_now: Callable[[], datetime] | None = None,
     ) -> None:
         loaded_roles = dict(roles) if roles is not None else load_roles(default_roles_dir())
         loaded_workflows = (
@@ -135,6 +137,7 @@ class ForemanOrchestrator:
         )
         self.builtin_executor = builtin_executor or BuiltinExecutor()
         self.runner_sleep = runner_sleep
+        self.utc_now = utc_now or (lambda: datetime.now(timezone.utc))
 
     def run_project(
         self,
@@ -148,6 +151,7 @@ class ForemanOrchestrator:
         if project is None:
             raise OrchestratorError(f"Unknown project {project_id!r}.")
         workflow = self._load_workflow_for_project(project)
+        self.prune_old_events(project)
         self.recover_orphaned_tasks(project.id)
 
         executed_task_ids: list[str] = []
@@ -802,6 +806,66 @@ class ForemanOrchestrator:
             task.blocked_reason = None
             task.step_visit_counts = {}
             self.store.save_task(task)
+
+    def prune_old_events(self, project: Project) -> int:
+        """Prune old project events when retention is configured."""
+
+        retention_days = _coerce_int_value(
+            project.settings.get("event_retention_days"),
+            default=None,
+        )
+        if retention_days is None:
+            return 0
+
+        cutoff = (
+            self.utc_now() - timedelta(days=retention_days)
+        ).isoformat(timespec="microseconds").replace("+00:00", "Z")
+        pruned_count = self.store.prune_old_events(
+            project_id=project.id,
+            older_than=cutoff,
+        )
+        if pruned_count <= 0:
+            return 0
+
+        task = self._select_project_system_task(project.id)
+        if task is None:
+            return pruned_count
+
+        detail = f"Pruned {pruned_count} old events older than {cutoff}."
+        run = self._create_system_run(
+            task,
+            workflow_step="orchestrator",
+            outcome="success",
+            detail=detail,
+        )
+        self._emit_event(
+            run,
+            "engine.event_pruned",
+            {
+                "count": pruned_count,
+                "older_than": cutoff,
+            },
+        )
+        return pruned_count
+
+    def _select_project_system_task(self, project_id: str) -> Task | None:
+        """Choose a stable task for project-scoped synthetic orchestrator events."""
+
+        active_tasks = self.store.list_tasks(
+            project_id=project_id,
+            statuses=("in_progress", "blocked"),
+        )
+        if active_tasks:
+            return active_tasks[0]
+
+        active_sprint = self.store.get_active_sprint(project_id)
+        if active_sprint is not None:
+            sprint_tasks = self.store.list_tasks(sprint_id=active_sprint.id)
+            if sprint_tasks:
+                return sprint_tasks[0]
+
+        project_tasks = self.store.list_tasks(project_id=project_id)
+        return project_tasks[0] if project_tasks else None
 
     def _load_workflow_for_project(self, project: Project) -> WorkflowDefinition:
         workflow = self.workflows.get(project.workflow_id)

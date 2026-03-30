@@ -2,8 +2,9 @@
 
 ## Next up after current sprint
 
-- `sprint-19-watch-live-tail-alignment` — align `foreman watch` with the
-  dashboard live transport and the spec's live activity intent
+- `sprint-20-migration-framework-bootstrap` — introduce an explicit schema
+  migration path for store evolution, retention-safe upgrades, and future
+  model changes
 
 ## Parking lot
 

@@ -23,7 +23,8 @@ repo-memory validation and code-level regression coverage:
 The current suite covers:
 
 - `tests/test_store.py` for SQLite round-trips, status-filtered reads, run
-  totals, recent-event slices, and sprint-scoped event queries
+  totals, recent-event slices, sprint-scoped event queries, and event
+  retention pruning
 - `tests/test_roles.py` and `tests/test_workflows.py` for shipped declarative
   configuration loading and validation
 - `tests/test_scaffold.py` for generated `AGENTS.md`, idempotent `.gitignore`
@@ -34,7 +35,8 @@ The current suite covers:
 - `tests/test_orchestrator.py` for workflow execution, dependency-aware task
   selection, test failure carry-output, secure workflow approval and denial
   loops, native runner execution, preflight no-retry behavior, human-gate
-  resume, retry persistence, and fresh-process native session reuse
+  resume, event-retention startup behavior, retry persistence, and
+  fresh-process native session reuse
 - `tests/test_cli.py` for CLI smoke paths, repo-local DB discovery, explicit
   override semantics, secure workflow initialization, and monitoring command
   subprocess behavior
@@ -70,6 +72,7 @@ Integration tests:
 - sprint and task lifecycle
 - orchestrator transitions
 - `development_secure` approval and denial paths through `security_review`
+- event-retention pruning with preserved blocked and in-progress task history
 - built-in test, merge, and human-gate steps
 - context projection into `.foreman/`
 - cross-invocation native session reuse for Claude Code, Codex, and
