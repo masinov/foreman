@@ -48,6 +48,7 @@ scaffold changes rather than product releases.
 - store-backed monitoring commands in `foreman.cli` for `board`, `history`,
   `cost`, and `watch`
 - monitoring read-model helpers in `foreman.store`
+- `docs/adr/ADR-0001-runner-session-backend-contract.md`
 
 ### Changed
 
@@ -92,3 +93,5 @@ scaffold changes rather than product releases.
   memory to the monitoring CLI sprint
 - completed `sprint-08-monitoring-cli`, archived it, and advanced project
   memory to the runner session and backend ADR sprint
+- completed `sprint-09-runner-session-backend-adr`, archived it, and advanced
+  project memory to the dashboard implementation sprint

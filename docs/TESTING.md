@@ -109,6 +109,13 @@ The monitoring CLI slice adds:
 - run-scoped and project-scoped watch validation so polling output stays
   bounded and reviewable in terminal workflows
 
+The runner contract ADR slice adds:
+
+- repo-memory validation after accepting ADR-0001 and rolling sprint state to
+  the dashboard slice
+- baseline `py_compile` validation for the reviewed supervisors and repo
+  validation scripts because this slice changes documentation only
+
 ## Expected testing layers once code lands
 
 Unit tests:

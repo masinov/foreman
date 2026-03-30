@@ -2,16 +2,15 @@
 
 ## Current sprint
 
-- Sprint: `sprint-09-runner-session-backend-adr`
+- Sprint: `sprint-10-dashboard-implementation`
 - Status: active
-- Goal: capture the first accepted ADR for runner session handling, approval
-  policy, and backend contract boundaries now that native runners and
-  monitoring CLI surfaces exist
+- Goal: build the first interactive dashboard slice aligned to the mockup
+  using persisted Foreman project, sprint, task, run, and event state
 
 ## Active branches
 
-- `feat/monitoring-cli` — land store-backed board, history, cost, and watch
-  monitoring commands, then roll repo memory into the runner ADR sprint
+- `docs/runner-session-backend-adr` — accept ADR-0001 for runner sessions and
+  backend contract boundaries, then roll repo memory into the dashboard sprint
 
 ## Completed this week
 
@@ -101,6 +100,13 @@
   aggregation, per-task run rollups, and recent event slices
 - completed `sprint-08-monitoring-cli` and rolled repo memory forward to
   `sprint-09-runner-session-backend-adr`
+- accepted `ADR-0001-runner-session-backend-contract` for session scope,
+  workflow-versus-runner approval handling, and backend telemetry boundaries
+- documented the current persistent-session reuse gap explicitly: session ids
+  are persisted on runs, but fresh orchestrator invocations do not yet reload
+  the last same-role session from SQLite
+- completed `sprint-09-runner-session-backend-adr` and rolled repo memory
+  forward to `sprint-10-dashboard-implementation`
 
 ## Current repo state
 
@@ -125,6 +131,8 @@
     Codex-backed roles,
   - store-backed monitoring CLI surfaces for board, history, cost, and
     bounded watch snapshots against persisted SQLite state,
+  - an accepted ADR for runner session scope, approval policy, and backend
+    contract boundaries,
   - immediate native human-gate resume when the next backend is available and
     the project repo exists, with deferred persistence retained for missing
     backends or missing repo paths,
@@ -141,11 +149,11 @@
 
 ## Ready next
 
-1. define the first ADR now that runner session handling and backend
-   contracts are active runtime constraints
-2. build the dashboard implementation aligned to the mockup
-3. decide how live activity should graduate from polling CLI snapshots to a
+1. build the dashboard implementation aligned to the mockup
+2. decide how live activity should graduate from polling CLI snapshots to a
    streaming dashboard transport
+3. add the security review workflow variant after the dashboard boundary is
+   clearer
 
 ## Open risks
 
@@ -156,6 +164,8 @@
   initialization path, human-gate resume commands, native Claude and Codex
   runners, and monitoring CLI surfaces, but the dashboard implementation is
   still missing.
+- Persistent session ids are stored durably on runs, but the orchestrator does
+  not yet reload the last same-role session from SQLite on a fresh invocation.
 - The bootstrap CLI currently requires explicit `--db PATH` selection for
   SQLite-backed lifecycle, inspection, monitoring, and human-gate commands
   because engine-instance configuration does not exist yet.
@@ -198,6 +208,11 @@
   Claude-backed and Codex-backed next steps when a native runner is available
   and the repo path exists, but it still persists a deferred next step when
   the resumed workflow cannot execute safely yet.
+- The spec says the orchestrator stores a persistent developer session id and
+  reuses it for subsequent runs of the same role on the same task. The current
+  runtime persists the session id on `runs`, but only guarantees reuse during
+  a contiguous workflow execution path; fresh invocations do not yet reload the
+  last persisted session from SQLite.
 - The spec describes `foreman watch` as a live event tail, while the current
   implementation intentionally renders bounded polling snapshots with
   `--iterations` and `--interval` until a streaming transport boundary exists.
@@ -208,6 +223,8 @@
   endpoints or as a richer app shell from the start
 - how much of the current wrapper logic should survive once native Foreman
   runners exist
+- how persistent session invalidation should work after backend-side thread or
+  conversation corruption
 - whether the live dashboard activity surface should share the same transport
   model as `foreman watch` or move directly to a dedicated streaming channel
 - whether project `default_model` should be validated against the selected

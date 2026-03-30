@@ -56,10 +56,12 @@ The bootstrap implementation has started. The repository now contains:
   structured runner event capture,
 - native orchestrator execution for Codex-backed roles, plus immediate
   human-gate resume when the next native backend and repo are available,
+- an accepted runner contract ADR in
+  `docs/adr/ADR-0001-runner-session-backend-contract.md`,
 - git execution helpers and integration coverage for workflow transitions,
 - scaffold, smoke, integration, and round-trip tests for the CLI shell and
   store,
-- repo-memory docs that point the next slice at the monitoring CLI surfaces.
+- repo-memory docs that point the next slice at dashboard implementation.
 
 The immediate goal is to keep turning this scaffold into the real Foreman
 runtime without carrying over assumptions from the previous project.
@@ -93,8 +95,9 @@ Both wrappers expect these files to be current:
 
 The next recommended task is:
 
-- capture the first runner session and backend ADR now that native runners and
-  monitoring CLI surfaces exist.
+- build the first dashboard implementation aligned to
+  `docs/mockups/foreman-mockup-v6.html` while honoring
+  `docs/adr/ADR-0001-runner-session-backend-contract.md`.
 
 That task is already recorded in `docs/sprints/current.md`, so a fresh agent
 can continue without additional instructions.

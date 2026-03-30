@@ -35,9 +35,12 @@ The first native Codex runner checkpoint is recorded in
 The first monitoring CLI checkpoint is recorded in
 `docs/checkpoints/monitoring-cli.md`.
 
+The first runner contract ADR checkpoint is recorded in
+`docs/checkpoints/runner-session-backend-contract.md`.
+
 ## Near-term policy
 
-While the runner ADR and dashboard milestones are still incomplete:
+While the dashboard milestone is still incomplete:
 
 - use tags only for meaningful checkpoints,
 - prefer sprint-completion checkpoints over frequent versioning,
@@ -54,6 +57,7 @@ While the runner ADR and dashboard milestones are still incomplete:
 - first native Claude runner
 - first native Codex runner
 - first monitoring CLI milestone
+- first accepted runner contract ADR
 - first dashboard implementation milestone
 
 ## Before creating a release tag

@@ -5,7 +5,7 @@
 - Status: bootstrap implementation baseline
 - Primary source: `docs/specs/engine-design-v3.md`
 - UI reference: `docs/mockups/foreman-mockup-v6.html`
-- ADRs: none accepted yet
+- ADRs: `docs/adr/ADR-0001-runner-session-backend-contract.md`
 
 This document describes the current architectural baseline for implementing
 Foreman from the spec. It records active constraints without pretending that
@@ -266,6 +266,17 @@ The tenth implementation slice has now landed:
 - `tests/test_store.py` and `tests/test_cli.py` now cover monitoring query
   semantics, sprint scoping, and recent activity rendering.
 
+The eleventh implementation slice has now landed:
+
+- `docs/adr/ADR-0001-runner-session-backend-contract.md` now defines the
+  shared runner contract, the role-scoped session policy, the split between
+  workflow approvals and runner transport approvals, and the current backend
+  telemetry rules,
+- repo-memory docs now cite ADR-0001 as an active implementation constraint
+  for later runner, monitoring, and dashboard slices,
+- the current gap around cross-invocation persistent-session reload is now
+  documented explicitly instead of being left implicit in orchestrator code.
+
 Current runtime constraints worth preserving:
 
 - every workflow step persists a `runs` row, including built-ins, so workflow
@@ -291,6 +302,8 @@ Current runtime constraints worth preserving:
 - immediate human-gate resume now re-checks out the task branch before native
   execution, while still deferring safely when the next backend or repo
   runtime is unavailable,
+- persistent session ids are stored on `runs`, but fresh orchestrator
+  invocations do not yet reload the last same-role session from SQLite,
 - Codex token usage is persisted through native runner events, but the current
   app-server contract does not expose USD pricing so Codex `cost_usd` remains
   zero for now,
@@ -300,6 +313,6 @@ Current runtime constraints worth preserving:
 - `.foreman/status.md` currently emits an explicit open-decisions placeholder
   because the SQLite schema does not yet persist those records.
 
-The next implementation slice should capture the first ADR for runner session
-handling, approval policy, and backend contract boundaries so later dashboard
-and runner work can rely on an accepted constraint.
+The next implementation slice should build the first dashboard implementation
+aligned to the mockup while honoring ADR-0001 and the existing SQLite-backed
+read model surfaces.

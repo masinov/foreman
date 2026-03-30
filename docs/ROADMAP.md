@@ -130,15 +130,33 @@ Target deliverables:
 
 Status:
 
-- in progress on `feat/monitoring-cli`
-- the terminal monitoring CLI now exposes board, history, cost, and bounded
-  watch snapshots directly from SQLite
+- terminal monitoring CLI is now in place with board, history, cost, and
+  bounded watch snapshots directly from SQLite
 - project, sprint, and task detail APIs plus the dashboard implementation are
   still pending
 
+## Milestone 7: Runner contract ADR baseline
+
+Goal: accept the first explicit runtime contract for native runner sessions,
+approval boundaries, and backend telemetry.
+
+Target deliverables:
+
+- accepted ADR for session scope and persistence
+- accepted ADR for workflow-versus-runner approval handling
+- accepted ADR for backend telemetry and unsupported-backend behavior
+
+Status:
+
+- completed on `docs/runner-session-backend-adr`
+- `docs/adr/ADR-0001-runner-session-backend-contract.md` is now the active
+  runner contract baseline
+- cross-invocation persistent-session reload remains documented follow-up work
+
 ## Near-term priorities
 
-1. capture the first ADR for runner session handling and backend contracts
-2. build the first dashboard slice aligned to the mockup
-3. decide how the future dashboard activity feed should relate to the current
+1. build the first dashboard slice aligned to the mockup
+2. decide how the future dashboard activity feed should relate to the current
    polling-based `foreman watch` semantics
+3. add the security review workflow variant after the dashboard boundary is
+   clearer
