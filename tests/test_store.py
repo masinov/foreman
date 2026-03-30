@@ -7,7 +7,7 @@ import sqlite3
 import tempfile
 import unittest
 
-from foreman.models import Event, Project, Run, Sprint, Task
+from foreman.models import Event, Project, Run, Sprint, Task, utc_now_text
 from foreman.store import ForemanStore
 
 
@@ -189,6 +189,95 @@ class ForemanStoreTests(unittest.TestCase):
 
             with self.assertRaises(sqlite3.IntegrityError):
                 store.save_sprint(active_two)
+
+    def test_utc_now_text_preserves_microseconds(self) -> None:
+        timestamp = utc_now_text()
+
+        self.assertRegex(timestamp, r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$")
+
+    def test_run_and_event_history_preserve_insertion_order_when_timestamps_match(self) -> None:
+        db_path = self.create_db_path()
+        project = Project(
+            id="project-1",
+            name="Foreman",
+            repo_path="/work/foreman",
+            workflow_id="development",
+            created_at="2026-03-30T12:00:00.000000Z",
+            updated_at="2026-03-30T12:00:00.000000Z",
+        )
+        sprint = Sprint(
+            id="sprint-1",
+            project_id=project.id,
+            title="Ordering",
+            status="active",
+            created_at="2026-03-30T12:01:00.000000Z",
+            started_at="2026-03-30T12:01:00.000000Z",
+        )
+        task = Task(
+            id="task-1",
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="Preserve run ordering",
+            status="in_progress",
+            created_at="2026-03-30T12:02:00.000000Z",
+        )
+        first_run = Run(
+            id="run-z",
+            task_id=task.id,
+            project_id=project.id,
+            role_id="developer",
+            workflow_step="develop",
+            agent_backend="codex",
+            status="completed",
+            outcome="done",
+            created_at="2026-03-30T12:03:00.000000Z",
+        )
+        second_run = Run(
+            id="run-a",
+            task_id=task.id,
+            project_id=project.id,
+            role_id="code_reviewer",
+            workflow_step="review",
+            agent_backend="codex",
+            status="completed",
+            outcome="approve",
+            created_at="2026-03-30T12:03:00.000000Z",
+        )
+        first_event = Event(
+            id="event-z",
+            run_id=first_run.id,
+            task_id=task.id,
+            project_id=project.id,
+            event_type="workflow.step_started",
+            timestamp="2026-03-30T12:04:00.000000Z",
+            payload={"step": "develop"},
+        )
+        second_event = Event(
+            id="event-a",
+            run_id=second_run.id,
+            task_id=task.id,
+            project_id=project.id,
+            event_type="workflow.step_completed",
+            timestamp="2026-03-30T12:04:00.000000Z",
+            payload={"step": "review"},
+        )
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            store.save_project(project)
+            store.save_sprint(sprint)
+            store.save_task(task)
+            store.save_run(first_run)
+            store.save_run(second_run)
+            store.save_event(first_event)
+            store.save_event(second_event)
+
+            self.assertEqual(store.list_runs(task_id=task.id), [first_run, second_run])
+            self.assertEqual(store.get_latest_run(task.id), second_run)
+            self.assertEqual(
+                store.list_events(task_id=task.id),
+                [first_event, second_event],
+            )
 
 
 if __name__ == "__main__":

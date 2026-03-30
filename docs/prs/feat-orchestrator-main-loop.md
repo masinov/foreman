@@ -6,6 +6,8 @@
   definitions
 - add explicit built-ins for tests, merge, mark-done, and human-gate pause
 - cover the workflow engine with real git-backed integration tests
+- stabilize persisted run and event history ordering with high-resolution UTC
+  timestamps plus insertion-order tie-breaks for equal timestamps
 
 ## Scope
 
