@@ -21,6 +21,10 @@ scaffold changes rather than product releases.
 - store round-trip tests in `tests/test_store.py`
 - store-backed `foreman projects --db <path>` and `foreman status --db <path>`
   inspection paths
+- shipped declarative `roles/*.toml` and `workflows/*.toml` defaults
+- TOML-compatible loader modules in `foreman.roles` and `foreman.workflows`
+- loader tests in `tests/test_roles.py` and `tests/test_workflows.py`
+- CLI inspection commands for `foreman roles` and `foreman workflows`
 
 ### Changed
 
@@ -36,3 +40,5 @@ scaffold changes rather than product releases.
   post-approval merge finalization, and continuation to the next slice
 - shifted the active project-memory slice from the SQLite store baseline to
   role and workflow loading
+- completed `sprint-01-foundation`, archived it, and advanced project memory to
+  the orchestrator sprint

@@ -1,0 +1,51 @@
+[role]
+id = "architect"
+name = "Architect"
+description = "Reads the spec and produces a task breakdown for a sprint"
+
+[agent]
+backend = "claude_code"
+model = "claude-opus-4-6"
+session_persistence = false
+permission_mode = "bypassPermissions"
+
+[agent.tools]
+allowed = []
+disallowed = ["Write", "Edit", "NotebookEdit"]
+
+[prompt]
+template = """
+You are the architect for this project.
+
+## Project Spec
+The spec is at: {spec_path}
+Read it thoroughly before producing your plan.
+
+## Current State
+{sprint_context}
+
+{project_status}
+
+## Instructions
+Read the spec and the current repository state. Produce a task breakdown
+for the next sprint as a JSON array. Each task object must have:
+
+- "title": string
+- "task_type": "feature" | "fix" | "refactor" | "docs" | "spike" | "chore"
+- "description": string
+- "acceptance_criteria": string
+- "complexity": "small" | "medium" | "large"
+- "depends_on": [list of task titles this depends on]
+
+Output the array inside a ```json fenced block.
+
+When done, end with: {completion_marker}
+"""
+
+[completion]
+marker = "TASK_COMPLETE"
+timeout_minutes = 15
+max_cost_usd = 5.0
+
+[completion.output]
+extract_json = true

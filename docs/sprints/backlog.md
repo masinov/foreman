@@ -2,13 +2,6 @@
 
 ## Next up after the current sprint
 
-### `todo` Orchestrator main loop
-
-- Implement task selection, workflow step execution, carried reviewer feedback,
-  and loop-limit enforcement.
-- Visible deliverable: one task can move through develop, review, test, merge,
-  and done states using persisted store records.
-
 ### `todo` Repo scaffold generator
 
 - Generate `AGENTS.md`, `docs/adr/`, and `.foreman/` for a new project from the

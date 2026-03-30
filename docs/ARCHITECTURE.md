@@ -164,6 +164,17 @@ The second implementation slice has now landed:
   persisted state,
 - round-trip tests cover the store baseline.
 
+The third implementation slice has now landed:
+
+- shipped default `roles/*.toml` and `workflows/*.toml` files mirror the spec's
+  declarative examples,
+- `foreman.roles` loads role definitions and renders prompt templates with the
+  completion marker and signal docs,
+- `foreman.workflows` loads workflow graphs and validates transitions against
+  declared steps and known roles,
+- `foreman roles` and `foreman workflows` expose the shipped definitions
+  through the CLI.
+
 The deeper runtime layers are still placeholders. The next implementation slice
-should load declarative roles and workflows before more orchestration behavior
-lands.
+should implement the orchestrator main loop against the store and loaded
+workflow graph.

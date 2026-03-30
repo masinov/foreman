@@ -1,55 +1,54 @@
 # Current Sprint
 
-- Sprint: `sprint-01-foundation`
+- Sprint: `sprint-02-orchestrator`
 - Status: active
-- Goal: establish the first runnable Foreman backend foundation while keeping
-  the repo autonomous-agent-ready from day one
+- Goal: move one persisted task through the standard development workflow using
+  the SQLite store plus declarative role and workflow definitions
 - Primary references:
   - `docs/specs/engine-design-v3.md`
   - `docs/mockups/foreman-mockup-v6.html`
 
 ## Included tasks
 
-1. `[done]` Repurpose the transplanted repo scaffold for Foreman
-   Deliverable: Foreman-specific docs, aligned wrapper scripts, working repo
-   validation, and a concrete sprint and backlog state.
+1. `[todo]` Implement the orchestrator main loop
+   Deliverable: one task can move through develop, review, test, merge, and
+   done states using persisted store records.
 
-2. `[done]` Bootstrap the Python package and CLI shell
-   Deliverable: `pyproject.toml`, `foreman/` package, CLI entrypoint, and smoke
-   tests for `foreman --help`, `foreman projects`, and `foreman status`.
+2. `[todo]` Add built-in execution seams for the standard development workflow
+   Deliverable: `_builtin:run_tests`, `_builtin:merge`, and
+   `_builtin:mark_done` execute through explicit orchestrator paths rather than
+   hard-coded workflow branching.
 
-3. `[done]` Implement the SQLite model and store baseline
-   Deliverable: typed project, sprint, task, run, and event models, DDL
-   bootstrap, and round-trip tests for core persistence.
-
-4. `[todo]` Load declarative roles and workflows from disk
-   Deliverable: TOML loaders for `roles/` and `workflows/`, plus tests for
-   parsing, prompt rendering, and transition validation.
+3. `[todo]` Add integration coverage for persisted workflow transitions
+   Deliverable: tests prove reviewer feedback and test failures carry output
+   back into development and honor workflow fallback behavior.
 
 ## Excluded from this sprint
 
-- full web dashboard implementation
-- native runner integrations beyond bootstrap supervisor alignment
-- cost analytics and advanced event querying
+- project scaffold generation from `foreman init`
+- context projection into `.foreman/`
+- native Claude Code and Codex runner implementations
+- dashboard and monitoring CLI surfaces
 
 ## Acceptance criteria
 
-- the repo has a runnable `foreman` package skeleton
-- core SQLite state can be created and queried locally
-- roles and workflows can be loaded from TOML
+- a project task can advance through the standard development workflow using
+  persisted store state and loaded workflow definitions
+- orchestrator transitions are driven by the loaded workflow graph rather than
+  ad hoc branching
+- built-in test, merge, and mark-done steps have explicit seams
 - docs and validation remain good enough for a fresh autonomous agent to pick
   the next slice without extra human context
 
 ## Known risks
 
-- the bootstrap wrapper scripts may diverge from the eventual native runner
-  design if left unchecked
-- package layout decisions made too early could make later CLI or API splitting
-  harder
+- bootstrap supervisor behavior could still drift from the eventual native
+  orchestrator loop if the boundaries stay implicit
+- merge and test built-ins touch git and process execution, so sandbox-safe
+  seams matter before native runner work lands
 
 ## Demo checklist
 
 - show the repo validation passing
-- show the CLI entrypoint responding
-- show `foreman projects --db <path>` or `foreman status --db <path>` reading
-  seeded SQLite state
+- show `foreman roles` and `foreman workflows` responding
+- show one integration test that advances a task through loaded workflow steps

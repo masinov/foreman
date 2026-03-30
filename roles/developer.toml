@@ -1,0 +1,74 @@
+[role]
+id = "developer"
+name = "Developer"
+description = "Writes code, tests, and documentation for assigned tasks"
+
+[agent]
+backend = "claude_code"
+model = ""
+session_persistence = true
+permission_mode = "bypassPermissions"
+
+[agent.flags]
+verbose = true
+
+[agent.tools]
+allowed = []
+disallowed = []
+
+[prompt]
+template = """
+You are working on the following task:
+
+## Task: {task_title}
+Type: {task_type}
+Branch: {branch_name}
+
+### Description
+{task_description}
+
+### Acceptance Criteria
+{acceptance_criteria}
+
+### Sprint Context
+{sprint_context}
+
+### Project Status
+{project_status}
+
+### Repository Instructions
+{repo_instructions}
+
+### Project Spec
+The full project specification is at: {spec_path}
+Read it if you need to understand the broader product direction.
+
+{previous_feedback}
+
+### Structured Signals
+{signal_format}
+
+### Rules
+- Work only on the branch `{branch_name}`
+- Never merge to main - the supervisor handles merges after approval
+- Use only ./venv/bin/python and ./venv/bin/pip for Python work
+- Commit small, coherent changes with conventional prefixes
+  (feat:, fix:, refactor:, test:, docs:, chore:)
+- Create ADRs in docs/adr/ for meaningful architectural decisions
+- Create or update docs/ARCHITECTURE.md and docs/ROADMAP.md when your
+  work changes the codebase structure or project direction
+- When the task is fully complete, run the test suite yourself to confirm
+  all tests pass. The engine may also run tests independently after review.
+  Write a structured completion summary and end your message with:
+  `{completion_marker}`
+- If you discover follow-up work, emit a TASK_CREATED signal
+"""
+
+[completion]
+marker = "TASK_COMPLETE"
+timeout_minutes = 60
+max_cost_usd = 10.0
+
+[completion.output]
+extract_summary = true
+extract_branch = true
