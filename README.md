@@ -36,10 +36,14 @@ The bootstrap implementation has started. The repository now contains:
 - TOML loaders plus prompt rendering and workflow transition validation,
 - an orchestrator loop that can move a persisted task through the shipped
   development workflow with built-in test, merge, and mark-done steps,
+- a working `foreman init --db <path>` path that scaffolds `AGENTS.md`,
+  `docs/adr/`, `.foreman/`, and `.gitignore` updates in a target repo while
+  persisting or updating the project in SQLite,
 - git execution helpers and integration coverage for workflow transitions,
-- smoke and round-trip tests for the CLI shell and store,
-- repo-memory docs that point the next slice at scaffold generation through
-  `foreman init`.
+- scaffold, smoke, integration, and round-trip tests for the CLI shell and
+  store,
+- repo-memory docs that point the next slice at runtime context projection
+  under `.foreman/`.
 
 The immediate goal is to keep turning this scaffold into the real Foreman
 runtime without carrying over assumptions from the previous project.
@@ -73,9 +77,9 @@ Both wrappers expect these files to be current:
 
 The next recommended task is:
 
-- implement the `foreman init` scaffold generator so Foreman can create a
-  target repo's `AGENTS.md`, `docs/adr/`, `.foreman/`, `.gitignore` updates,
-  and persisted project record from one command.
+- project `.foreman/context.md` and `.foreman/status.md` from SQLite before
+  and after orchestrator activity so agents receive fresh runtime context from
+  the store.
 
 That task is already recorded in `docs/sprints/current.md`, so a fresh agent
 can continue without additional instructions.

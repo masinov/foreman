@@ -53,6 +53,14 @@ The orchestrator slice adds:
 - store coverage for status-filtered task and run queries plus stable
   latest-run lookup behavior
 
+The scaffold slice adds:
+
+- `tests/test_scaffold.py` for generated `AGENTS.md`, idempotent `.gitignore`
+  updates, and preservation of a user-owned `AGENTS.md`
+- subprocess coverage proving `foreman init --db <path>` can scaffold a target
+  repo, persist a new project, and update that same project on re-run
+- store coverage for repo-path lookup used by project re-initialization
+
 ## Expected testing layers once code lands
 
 Unit tests:

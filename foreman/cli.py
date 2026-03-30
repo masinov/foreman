@@ -3,11 +3,23 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 import sys
 from typing import Callable, Sequence
 
 from . import __version__
+from .models import Project, utc_now_text
 from .roles import RoleLoadError, default_roles_dir, load_roles
+from .scaffold import (
+    DEFAULT_DEFAULT_BRANCH,
+    DEFAULT_TEST_COMMAND,
+    DEFAULT_WORKFLOW_ID,
+    ScaffoldError,
+    default_project_settings,
+    generate_project_id,
+    resolve_spec_path,
+    scaffold_repository,
+)
 from .store import ForemanStore
 from .workflows import WorkflowLoadError, default_workflows_dir, load_workflows
 
@@ -19,7 +31,7 @@ STORE_OPTION_NOTE = (
     "SQLite-backed inspection is available now via `--db PATH` for `projects` and `status`."
 )
 STORE_FOLLOWUP_NOTE = (
-    "Project creation and richer workflow commands land in later slices."
+    "Project creation is available via `foreman init --db PATH`; richer workflow commands land in later slices."
 )
 
 Handler = Callable[[argparse.Namespace], int]
@@ -30,10 +42,16 @@ def _print_lines(*lines: str) -> None:
         print(line)
 
 
-def _add_db_option(parser: argparse.ArgumentParser) -> None:
+def _add_db_option(
+    parser: argparse.ArgumentParser,
+    *,
+    required: bool = False,
+    help_text: str = "Path to the SQLite store to inspect.",
+) -> None:
     parser.add_argument(
         "--db",
-        help="Path to the SQLite store to inspect.",
+        required=required,
+        help=help_text,
     )
 
 
@@ -49,16 +67,87 @@ def _format_task_counts(counts: dict[str, int]) -> str:
 
 
 def handle_init(args: argparse.Namespace) -> int:
-    """Handle ``foreman init`` while scaffold generation is still pending."""
+    """Handle ``foreman init``."""
 
-    _print_lines(
-        "foreman init is wired but not implemented yet.",
-        f"Target repo: {args.repo_path}",
-        f"Project name: {args.name}",
-        f"Spec path: {args.spec}",
-        f"Workflow: {args.workflow}",
-        "Planned follow-up: repo scaffold generation after the loader foundations land.",
-    )
+    roles_dir = default_roles_dir()
+    workflows_dir = default_workflows_dir()
+    repo_path = Path(args.repo_path).expanduser().resolve()
+    try:
+        roles = load_roles(roles_dir)
+        workflows = load_workflows(workflows_dir, available_role_ids=set(roles))
+        spec_reference, _ = resolve_spec_path(repo_path, args.spec)
+    except (RoleLoadError, WorkflowLoadError, ScaffoldError) as exc:
+        print(f"Failed to initialize project: {exc}", file=sys.stderr)
+        return 1
+
+    with ForemanStore(args.db) as store:
+        store.initialize()
+        existing = store.find_project_by_repo_path(str(repo_path))
+        workflow_id = args.workflow or (
+            existing.workflow_id if existing is not None else DEFAULT_WORKFLOW_ID
+        )
+        workflow = workflows.get(workflow_id)
+        if workflow is None:
+            print(f"Unknown workflow: {workflow_id}", file=sys.stderr)
+            return 1
+
+        default_branch = args.default_branch or (
+            existing.default_branch if existing is not None else DEFAULT_DEFAULT_BRANCH
+        )
+        test_command = args.test_command or (
+            str(existing.settings.get("test_command", ""))
+            if existing is not None
+            else DEFAULT_TEST_COMMAND
+        )
+        if not test_command:
+            test_command = DEFAULT_TEST_COMMAND
+
+        try:
+            scaffold_result = scaffold_repository(
+                repo_path,
+                project_name=args.name,
+                spec_path=spec_reference,
+                default_branch=default_branch,
+                test_command=test_command,
+            )
+        except ScaffoldError as exc:
+            print(f"Failed to initialize project: {exc}", file=sys.stderr)
+            return 1
+
+        settings = dict(existing.settings) if existing is not None else {}
+        for key, value in default_project_settings(test_command=test_command).items():
+            settings.setdefault(key, value)
+        settings["test_command"] = test_command
+
+        project = Project(
+            id=_allocate_project_id(store, args.name, repo_path, existing),
+            name=args.name,
+            repo_path=str(repo_path),
+            spec_path=spec_reference,
+            methodology=workflow.methodology,
+            workflow_id=workflow_id,
+            default_branch=default_branch,
+            settings=settings,
+            created_at=existing.created_at if existing is not None else utc_now_text(),
+            updated_at=utc_now_text(),
+        )
+        store.save_project(project)
+        db_path = store.db_path
+
+    lines = [
+        "Initialized project" if existing is None else "Updated project",
+        f"Database: {db_path}",
+        f"Project ID: {project.id}",
+        f"Project name: {project.name}",
+        f"Repo: {project.repo_path}",
+        f"Spec: {project.spec_path}",
+        f"Workflow: {project.workflow_id}",
+        f"Default branch: {project.default_branch}",
+        "Scaffold:",
+    ]
+    for artifact in scaffold_result.artifacts:
+        lines.append(f"{artifact.path} | {artifact.action}")
+    _print_lines(*lines)
     return 0
 
 
@@ -84,7 +173,7 @@ def handle_projects(args: argparse.Namespace) -> int:
             lines.extend(
                 [
                     "No projects are tracked yet.",
-                    "Use `foreman init` once scaffold generation lands, or seed the store through the Python API in the meantime.",
+                    "Use `foreman init --db PATH` to register a project, or seed the store through the Python API in the meantime.",
                 ]
             )
         else:
@@ -223,10 +312,25 @@ def build_parser() -> argparse.ArgumentParser:
     init_parser.add_argument("repo_path", help="Path to the target repository.")
     init_parser.add_argument("--name", required=True, help="Human-readable project name.")
     init_parser.add_argument("--spec", required=True, help="Path to the project spec.")
+    _add_db_option(
+        init_parser,
+        required=True,
+        help_text="Path to the SQLite store to initialize or update.",
+    )
     init_parser.add_argument(
         "--workflow",
-        default="development",
-        help="Workflow identifier to assign to the project.",
+        default=None,
+        help="Workflow identifier to assign to the project. Defaults to `development` for new projects.",
+    )
+    init_parser.add_argument(
+        "--default-branch",
+        default=None,
+        help="Default branch for the target repository. Defaults to `main` for new projects.",
+    )
+    init_parser.add_argument(
+        "--test-command",
+        default=None,
+        help="Override the persisted test command for the initialized project.",
     )
     _set_handler(init_parser, handle_init, "init")
 
@@ -395,3 +499,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     return handler(args)
+
+
+def _allocate_project_id(
+    store: ForemanStore,
+    name: str,
+    repo_path: Path,
+    existing: Project | None,
+) -> str:
+    if existing is not None:
+        return existing.id
+
+    base_id = generate_project_id(name, repo_path)
+    candidate = base_id
+    suffix = 2
+    while True:
+        stored = store.get_project(candidate)
+        if stored is None or stored.repo_path == str(repo_path):
+            return candidate
+        candidate = f"{base_id}-{suffix}"
+        suffix += 1

@@ -186,6 +186,18 @@ The fourth implementation slice has now landed:
 - `tests/test_orchestrator.py` drives the shipped development workflow against
   a real temporary git repo with a scripted executor.
 
+The fifth implementation slice has now landed:
+
+- `foreman.scaffold` generates the minimal repo scaffold described by the spec
+  and renders `AGENTS.md` from `templates/agents_md.md.j2`,
+- `foreman.cli` now supports `foreman init --db <path>` to initialize or
+  update persisted projects directly from the command line,
+- the store can look up projects by repo path so repeated initialization runs
+  update the same project record instead of creating duplicates,
+- `tests/test_scaffold.py` and the CLI smoke coverage verify scaffold
+  generation, `.gitignore` behavior, and preservation of user-owned
+  `AGENTS.md`.
+
 Current runtime constraints worth preserving:
 
 - every workflow step persists a `runs` row, including built-ins, so workflow
@@ -196,7 +208,11 @@ Current runtime constraints worth preserving:
 - the shipped workflow TOML treats `_builtin:mark_done` as a terminal step with
   no outgoing edge, so the runtime currently treats `task.status == "done"` as
   successful workflow termination instead of a fallback block.
+- `foreman init` never overwrites a repo's existing `AGENTS.md`; the generated
+  instructions are a one-time scaffold that the user owns afterward,
+- the bootstrap CLI currently requires explicit `--db PATH` selection for
+  project lifecycle commands until engine-level database discovery exists.
 
-The next implementation slice should implement `foreman init` and scaffold
-generation so initialized projects can move from bootstrap docs into SQLite
-plus repo-local runtime files.
+The next implementation slice should project `.foreman/context.md` and
+`.foreman/status.md` from SQLite before and after workflow activity so agents
+receive fresh runtime context from the engine instead of bootstrap docs.
