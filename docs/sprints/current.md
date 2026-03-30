@@ -18,7 +18,7 @@
    Deliverable: Foreman can execute Codex-backed roles without an injected
    scripted test executor while preserving run, event, and retry semantics.
 
-3. `[in_progress]` Add runner coverage for success, session reuse, approval handling,
+3. `[done]` Add runner coverage for success, session reuse, approval handling,
    and infrastructure failure behavior
    Deliverable: tests prove the Codex runner returns normalized results and
    integrates cleanly with orchestrator execution alongside the existing

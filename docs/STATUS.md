@@ -84,6 +84,10 @@
   session reuse, and native orchestrator execution
 - completed `sprint-06-claude-runner` and rolled repo memory forward to
   `sprint-07-codex-runner`
+- implemented native Codex runner with JSON-RPC protocol support
+- integrated CodexRunner into orchestrator default agent_runners
+- added 10 Codex runner tests covering command building and event parsing
+- completed `sprint-07-codex-runner`
 
 ## Current repo state
 
