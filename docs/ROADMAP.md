@@ -344,7 +344,11 @@ Target deliverables:
 
 Status:
 
-- current sprint is `sprint-21-dashboard-api-extraction`
+- completed on `refactor/dashboard-api-extraction`
+- `foreman/dashboard_api.py` now owns dashboard reads, actions, and
+  incremental stream payload assembly
+- the legacy `foreman/dashboard.py` shell now routes through the extracted API
+  contract instead of assembling backend responses inline
 
 ## Milestone 17: React dashboard foundation
 
@@ -358,7 +362,7 @@ Target deliverables:
 
 Status:
 
-- planned in `sprint-22-react-dashboard-foundation`
+- current sprint is `sprint-22-react-dashboard-foundation`
 
 ## Milestone 18: Product surface hardening
 

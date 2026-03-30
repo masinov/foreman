@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import json
 import unittest
+from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
 import tempfile
 from unittest.mock import MagicMock
 
 from foreman.dashboard import DashboardHandler
+from foreman.dashboard_api import DashboardAPI
 from foreman.models import Event, Project, Run, Sprint, Task
 from foreman.store import ForemanStore
 
@@ -45,7 +47,7 @@ class MockRequest:
 
 
 class DashboardHandlerTests(unittest.TestCase):
-    """Test DashboardHandler API methods directly."""
+    """Test the extracted dashboard API contract and HTML shell."""
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -186,6 +188,19 @@ class DashboardHandlerTests(unittest.TestCase):
             payload={"path": "foreman/dashboard.py"},
         )
         cls.store.save_event(cls.event_2)
+        cls.api = DashboardAPI(
+            cls.store,
+            now_factory=lambda: datetime(
+                2026,
+                3,
+                30,
+                14,
+                0,
+                0,
+                123456,
+                tzinfo=timezone.utc,
+            ),
+        )
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -212,8 +227,7 @@ class DashboardHandlerTests(unittest.TestCase):
 
     def test_project_status_detection(self):
         """Project status is derived from task states."""
-        handler = self.create_handler()
-        self.assertEqual(handler._get_project_status("proj-1"), "running")
+        self.assertEqual(self.api.get_project_status("proj-1"), "running")
 
         # Create another project with only blocked tasks
         project2 = Project(
@@ -238,7 +252,7 @@ class DashboardHandlerTests(unittest.TestCase):
             status="blocked",
         )
         self.store.save_task(task2)
-        self.assertEqual(handler._get_project_status("proj-2"), "blocked")
+        self.assertEqual(self.api.get_project_status("proj-2"), "blocked")
 
         # Project with no tasks -> idle
         project3 = Project(
@@ -248,41 +262,12 @@ class DashboardHandlerTests(unittest.TestCase):
             workflow_id="development",
         )
         self.store.save_project(project3)
-        self.assertEqual(handler._get_project_status("proj-3"), "idle")
+        self.assertEqual(self.api.get_project_status("proj-3"), "idle")
 
     def test_api_projects_list(self):
         """API returns list of projects with task counts and totals."""
-        handler = self.create_handler("/api/projects")
-        # Call the handler logic directly
-        # We need to simulate the API call
-        from urllib.parse import parse_qs, urlparse
-
-        parsed = urlparse("/api/projects")
-        path = parsed.path
-
-        # Get projects data
-        projects = self.store.list_projects()
-        result = []
-        for p in projects:
-            active_sprint = self.store.get_active_sprint(p.id)
-            task_counts = self.store.task_counts(project_id=p.id)
-            totals = self.store.run_totals(project_id=p.id)
-            status = handler._get_project_status(p.id)
-            result.append({
-                "id": p.id,
-                "name": p.name,
-                "workflow_id": p.workflow_id,
-                "status": status,
-                "active_sprint": {
-                    "id": active_sprint.id,
-                    "title": active_sprint.title,
-                } if active_sprint else None,
-                "task_counts": task_counts,
-                "totals": totals,
-            })
-
-        # Verify the data
-        proj = next(p for p in result if p["id"] == "proj-1")
+        result = self.api.list_projects()
+        proj = next(p for p in result["projects"] if p["id"] == "proj-1")
         self.assertEqual(proj["name"], "Test Project")
         self.assertEqual(proj["status"], "running")
         self.assertIsNotNone(proj["active_sprint"])
@@ -291,39 +276,49 @@ class DashboardHandlerTests(unittest.TestCase):
 
     def test_api_project_sprints(self):
         """API returns sprints for a project."""
-        sprints = self.store.list_sprints("proj-1")
-        self.assertEqual(len(sprints), 2)
-        sprint_ids = [s.id for s in sprints]
+        result = self.api.list_project_sprints("proj-1")
+        self.assertEqual(len(result["sprints"]), 2)
+        sprint_ids = [s["id"] for s in result["sprints"]]
         self.assertIn("sprint-1", sprint_ids)
         self.assertIn("sprint-0", sprint_ids)
 
     def test_api_sprint_tasks(self):
         """API returns tasks for a sprint."""
-        tasks = self.store.list_tasks(sprint_id="sprint-1")
-        task_ids = [t.id for t in tasks]
+        result = self.api.list_sprint_tasks("sprint-1")
+        task_ids = [t["id"] for t in result["tasks"]]
         self.assertIn("task-1", task_ids)
         self.assertIn("task-2", task_ids)
         self.assertIn("task-3", task_ids)
 
     def test_api_sprint_events(self):
         """API returns events for a sprint."""
-        # Get events for tasks in sprint-1
-        events = self.store.list_events(task_id="task-2", limit=10)
+        events = self.api.list_sprint_events("sprint-1", limit=10)["events"]
         self.assertGreaterEqual(len(events), 2)
-        event_types = [e.event_type for e in events]
+        event_types = [e["event_type"] for e in events]
         self.assertIn("agent.message", event_types)
         self.assertIn("agent.file_change", event_types)
 
-    def test_dashboard_handler_serializes_incremental_sprint_events(self):
-        """Dashboard can serialize sprint event batches after a known event."""
-        handler = self.create_handler()
-        events = handler._list_sprint_event_payloads(
+    def test_dashboard_api_serializes_incremental_sprint_events(self):
+        """Dashboard API can serialize sprint event batches after a known event."""
+        events = self.api.list_sprint_events(
+            "sprint-1",
+            limit=10,
+            after_event_id="event-1",
+        )["events"]
+        self.assertEqual([event["id"] for event in events], ["event-2"])
+        self.assertEqual(events[0]["task_id"], "task-2")
+
+    def test_dashboard_api_wraps_stream_messages_for_sse(self):
+        """Dashboard API exposes the SSE payload contract separately from HTTP transport."""
+        messages = self.api.list_sprint_stream_messages(
             "sprint-1",
             limit=10,
             after_event_id="event-1",
         )
-        self.assertEqual([event["id"] for event in events], ["event-2"])
-        self.assertEqual(events[0]["task_id"], "task-2")
+        self.assertEqual(len(messages), 1)
+        self.assertEqual(messages[0]["event_id"], "event-2")
+        self.assertEqual(messages[0]["payload"]["type"], "event")
+        self.assertEqual(messages[0]["payload"]["event"]["id"], "event-2")
 
     def test_dashboard_html_content(self):
         """Dashboard HTML contains expected elements."""
@@ -334,24 +329,15 @@ class DashboardHandlerTests(unittest.TestCase):
 
     def test_api_task_detail(self):
         """API returns task details with runs."""
-        task = self.store.get_task("task-2")
-        self.assertIsNotNone(task)
-
-        # Get task totals
-        totals = self.store.run_totals(task_id="task-2")
-
-        # Get runs for this task
-        runs = self.store.list_runs(task_id="task-2")
-
-        # Verify the data
-        self.assertEqual(task.title, "In progress task")
-        self.assertEqual(task.status, "in_progress")
-        self.assertEqual(task.branch_name, "feat/dashboard")
-        self.assertEqual(task.assigned_role, "developer")
-        self.assertEqual(len(runs), 1)
-        self.assertEqual(runs[0].role_id, "developer")
-        self.assertEqual(runs[0].token_count, 15000)
-        self.assertIn("total_token_count", totals)
+        task = self.api.get_task("task-2")
+        self.assertEqual(task["title"], "In progress task")
+        self.assertEqual(task["status"], "in_progress")
+        self.assertEqual(task["branch_name"], "feat/dashboard")
+        self.assertEqual(task["assigned_role"], "developer")
+        self.assertEqual(len(task["runs"]), 1)
+        self.assertEqual(task["runs"][0]["role_id"], "developer")
+        self.assertEqual(task["runs"][0]["token_count"], 15000)
+        self.assertIn("total_token_count", task["totals"])
 
     def test_dashboard_detail_panel_html(self):
         """Dashboard HTML contains detail panel elements."""
@@ -372,25 +358,21 @@ class DashboardHandlerTests(unittest.TestCase):
         self.assertIn("autoResize", DASHBOARD_HTML)
 
     def test_human_message_event_storage(self):
-        """Human message events can be stored and retrieved."""
-        # Create a human message event associated with the existing run
-        event = Event(
-            id="evt-human-test",
-            run_id=self.run_1.id,
-            task_id=self.in_progress_task.id,
-            project_id=self.project.id,
-            event_type="human.message",
-            timestamp="2026-03-30T14:00:00Z",
-            role_id="human",
-            payload={"text": "Please add more tests"},
+        """Human guidance messages are persisted through the dashboard API contract."""
+        result = self.api.create_human_message(
+            self.in_progress_task.id,
+            text="Please add more tests",
         )
-        self.store.save_event(event)
-
-        # Retrieve events for the task
+        self.assertEqual(result["status"], "sent")
+        self.assertEqual(result["task_id"], self.in_progress_task.id)
         events = self.store.list_events(task_id=self.in_progress_task.id)
         human_events = [e for e in events if e.event_type == "human.message"]
         self.assertEqual(len(human_events), 1)
         self.assertEqual(human_events[0].payload["text"], "Please add more tests")
+        self.assertEqual(
+            human_events[0].id,
+            "evt-20260330140000123456-task-2",
+        )
 
     def test_dashboard_activity_filter_html(self):
         """Dashboard HTML contains activity filter elements."""
@@ -418,7 +400,7 @@ class DashboardHandlerTests(unittest.TestCase):
 
 
 class DashboardApproveDenyIntegrationTests(unittest.TestCase):
-    """Integration tests for dashboard approve/deny with orchestrator."""
+    """Integration tests for dashboard action endpoints and orchestrator wiring."""
 
     @classmethod
     def setUpClass(cls):
@@ -429,8 +411,8 @@ class DashboardApproveDenyIntegrationTests(unittest.TestCase):
     def tearDownClass(cls):
         cls.temp_dir.cleanup()
 
-    def test_approve_endpoint_calls_resume_human_gate(self):
-        """Approve endpoint calls orchestrator.resume_human_gate."""
+    def test_approve_action_calls_resume_human_gate(self):
+        """Approve action delegates through the extracted dashboard API."""
         store = ForemanStore(self.db_path)
         store.initialize()
 
@@ -467,24 +449,20 @@ class DashboardApproveDenyIntegrationTests(unittest.TestCase):
         self.assertEqual(task.status, "blocked")
         self.assertEqual(task.workflow_current_step, "human_approval")
 
-        # Call the orchestrator to resume
-        from foreman.orchestrator import ForemanOrchestrator
+        api = DashboardAPI(store)
+        result = api.approve_task(task.id)
+        updated_task = store.get_task(task.id)
 
-        orchestrator = ForemanOrchestrator(store)
-        result = orchestrator.resume_human_gate(
-            task.id,
-            outcome="approve",
-        )
-
-        # Verify the result
-        self.assertEqual(result.task.status, "in_progress")
-        self.assertEqual(result.next_step, "develop")
-        self.assertTrue(result.deferred)  # No native runner available
+        self.assertIsNotNone(updated_task)
+        self.assertEqual(updated_task.status, "in_progress")
+        self.assertEqual(result["status"], "approved")
+        self.assertEqual(result["next_step"], "develop")
+        self.assertTrue(result["deferred"])  # No native runner available
 
         store.close()
 
-    def test_deny_endpoint_calls_resume_human_gate(self):
-        """Deny endpoint calls orchestrator.resume_human_gate."""
+    def test_deny_action_calls_resume_human_gate(self):
+        """Deny action delegates through the extracted dashboard API."""
         store = ForemanStore(self.db_path)
         store.initialize()
 
@@ -521,19 +499,14 @@ class DashboardApproveDenyIntegrationTests(unittest.TestCase):
         self.assertEqual(task.status, "blocked")
         self.assertEqual(task.workflow_current_step, "human_approval")
 
-        # Call the orchestrator to resume
-        from foreman.orchestrator import ForemanOrchestrator
+        api = DashboardAPI(store)
+        result = api.deny_task(task.id, note="Needs more work")
+        updated_task = store.get_task(task.id)
 
-        orchestrator = ForemanOrchestrator(store)
-        result = orchestrator.resume_human_gate(
-            task.id,
-            outcome="deny",
-            note="Needs more work",
-        )
-
-        # Verify the result
-        self.assertEqual(result.task.status, "in_progress")
-        self.assertEqual(result.next_step, "plan")  # Deny goes back to plan
-        self.assertTrue(result.deferred)  # No native runner available
+        self.assertIsNotNone(updated_task)
+        self.assertEqual(updated_task.status, "in_progress")
+        self.assertEqual(result["status"], "denied")
+        self.assertEqual(result["next_step"], "plan")  # Deny goes back to plan
+        self.assertTrue(result["deferred"])  # No native runner available
 
         store.close()

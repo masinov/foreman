@@ -43,8 +43,8 @@ The current codebase maps closely onto that split:
 - `foreman/roles.py` and `foreman/workflows.py` own declarative configuration,
 - `foreman/orchestrator.py` owns workflow execution and durable transitions,
 - `foreman/runner/` owns backend-specific transport and event normalization,
-- `foreman/cli.py` and `foreman/dashboard.py` expose inspection and control
-  surfaces.
+- `foreman/cli.py`, `foreman/dashboard.py`, and `foreman/dashboard_api.py`
+  expose inspection and control surfaces.
 
 ## Source of truth
 
@@ -121,8 +121,8 @@ The current runtime supports:
 Foreman now exposes two first-class observation surfaces:
 
 - CLI inspection commands: `board`, `history`, `cost`, and live `watch`
-- a dashboard web surface that is currently implemented in
-  `foreman/dashboard.py`
+- a dashboard backend contract in `foreman/dashboard_api.py` plus a legacy web
+  shell in `foreman/dashboard.py`
 
 Per ADR-0002, the dashboard currently reads directly from `ForemanStore`
 read-model helpers rather than going through a separate query service or
@@ -138,6 +138,8 @@ Per ADR-0003, the product direction is now:
 
 The current dashboard baseline includes:
 
+- extracted backend responses for project, sprint, task, action, and
+  streaming contracts in `foreman/dashboard_api.py`,
 - project overview and multi-project switching,
 - sprint board grouped by task status,
 - task detail with run history, acceptance criteria, and step visit counts,
@@ -150,9 +152,10 @@ The current dashboard baseline includes:
 
 The current implementation debt in this area is explicit:
 
-- the dashboard HTML, CSS, and browser logic are embedded into one Python
-  module,
-- backend transport and UI rendering are coupled together,
+- the legacy dashboard HTML, CSS, and browser logic are still embedded into
+  one Python module,
+- the backend API is extracted, but the legacy HTTP shell still ships from the
+  same module as the inline markup,
 - there is no dedicated frontend build, component, or end-to-end test stack.
 
 The current CLI watch baseline now includes:
@@ -205,8 +208,9 @@ The current CLI watch baseline now includes:
 - Codex token usage is persisted accurately, but the current app-server
   contract does not expose USD pricing, so Codex `cost_usd` remains zero.
 - the dashboard live transport currently uses server-sent events over a
-  threaded HTTP server, with store polling inside the transport loop as the
-  current implementation boundary until API extraction lands.
+  threaded HTTP server, with store polling inside the transport loop and the
+  extracted `foreman.dashboard_api` contract now acting as the backend
+  boundary for the upcoming React frontend.
 - `foreman watch` now shares the dashboard's persisted-event cursor boundary
   but stays on a direct store-read loop instead of going through the HTTP SSE
   transport.
@@ -215,9 +219,10 @@ The current CLI watch baseline now includes:
 
 ## Next architectural slice
 
-The next slice should correct the dashboard boundary first:
+The next slice should replace the legacy dashboard shell:
 
-- extract dashboard reads, actions, and streaming into explicit backend API
-  modules,
-- preserve the current functionality while removing inline UI coupling,
-- document the handoff boundary for the React frontend sprint that follows.
+- introduce the dedicated React frontend on top of the extracted backend API,
+- preserve the current dashboard behavior while moving rendering and client
+  state out of Python,
+- add frontend-aware validation so the product UI is not judged only through
+  backend HTML-string assertions.

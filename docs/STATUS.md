@@ -2,10 +2,10 @@
 
 ## Current sprint
 
-- Sprint: `sprint-21-dashboard-api-extraction`
+- Sprint: `sprint-22-react-dashboard-foundation`
 - Status: active
-- Goal: replace the embedded Python-served dashboard surface with an explicit
-  API boundary that supports a dedicated React frontend
+- Goal: replace the legacy Python-served dashboard shell with a dedicated
+  React frontend on top of the extracted backend API boundary
 
 ## Active branches
 
@@ -64,6 +64,13 @@
   product dashboard inside one Python module
 - recorded a ranked hardening detour for dashboard replacement, stub removal,
   migration work, and broader product-surface remediation
+- completed `sprint-21-dashboard-api-extraction`
+- extracted dashboard reads, task actions, and streaming payload assembly into
+  `foreman/dashboard_api.py`
+- reduced `foreman/dashboard.py` to a thinner HTTP adapter over the extracted
+  backend contract while preserving the legacy dashboard shell
+- strengthened dashboard regression coverage around API and SSE payload
+  contracts to prepare the React handoff
 
 ## Current repo state
 
@@ -90,11 +97,14 @@
     across project, sprint, and run scopes,
   - accepted ADRs for runner session semantics, dashboard data access, and the
     dedicated product web UI and API boundary,
-  - a current dashboard implementation that delivers project overview, sprint
-    board, task detail, activity feed, human message input, activity
-    filtering, project switching, approve or deny actions, and a dedicated
-    sprint event stream, but is still embedded into one Python module and must
-    be replaced,
+  - an extracted dashboard backend contract in `foreman/dashboard_api.py`
+    covering project, sprint, task, action, and incremental streaming
+    payloads,
+  - a legacy dashboard shell in `foreman/dashboard.py` that still delivers
+    project overview, sprint board, task detail, activity feed, human message
+    input, activity filtering, project switching, approve or deny actions,
+    and a dedicated sprint event stream, but is now explicitly transitional
+    and must be replaced,
   - unit and integration coverage across store, CLI, orchestrator, runners,
     dashboard, scaffold, and executor seams,
   - repo-memory docs that are intended to let a fresh agent continue from the
@@ -105,11 +115,12 @@
 
 ## Ready next
 
-1. extract dashboard reads, actions, and streaming into explicit API modules
-   that no longer depend on embedded HTML delivery
-2. introduce a dedicated React dashboard frontend on top of that API boundary
-3. remove or implement remaining stub and placeholder product surfaces before
-   resuming lower-level infrastructure detours
+1. replace the legacy dashboard shell with a dedicated React frontend on top
+   of the extracted API and streaming boundary
+2. remove or implement remaining stub and placeholder product surfaces once
+   the new frontend is in place
+3. resume lower-level infrastructure detours with the migration framework
+   slice after product-surface hardening
 
 ## Open risks
 
@@ -119,9 +130,9 @@
 - Repo-local discovery currently depends on an existing `.foreman.db` in the
   current repo lineage or on `foreman init` creating one; cross-repo and
   out-of-repo inspection still requires explicit `--db`.
-- the current dashboard is still rendered from one Python module via embedded
-  HTML, CSS, and JavaScript; this is now considered unacceptable product
-  architecture and is scheduled for replacement.
+- the current dashboard still ships through a legacy inline shell in
+  `foreman/dashboard.py`; the backend contract is extracted now, but the React
+  replacement has not landed yet.
 - Native backend preflight now validates executable presence and Codex startup
   handshake assumptions, but it does not yet prove downstream auth or service
   reachability beyond startup.
@@ -138,8 +149,9 @@
 - project-scoped `foreman watch` resolves the active sprint once at startup;
   if sprint ownership changes mid-tail, operators currently need to restart
   the command to follow the new sprint.
-- dashboard validation is still dominated by API and HTML-string assertions;
-  there is no dedicated frontend test stack or end-to-end browser coverage.
+- dashboard validation now covers the extracted backend contract directly, but
+  there is still no dedicated frontend test stack or end-to-end browser
+  coverage.
 
 ## Documented conflicts
 

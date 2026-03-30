@@ -41,6 +41,9 @@ The first runner contract ADR checkpoint is recorded in
 The first dashboard implementation checkpoint is recorded in
 `docs/checkpoints/dashboard-slice.md`.
 
+The first extracted dashboard API boundary checkpoint is recorded in
+`docs/checkpoints/dashboard-api-boundary.md`.
+
 The production-hardening reset checkpoint is recorded in
 `docs/checkpoints/production-hardening-audit.md`.
 

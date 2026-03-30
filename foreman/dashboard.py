@@ -5,18 +5,20 @@ from __future__ import annotations
 import json
 import time
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from .models import Event
+from .dashboard_api import (
+    ACTIVITY_EVENT_LIMIT,
+    STREAM_BATCH_LIMIT,
+    STREAM_HEARTBEAT_SECONDS,
+    STREAM_POLL_INTERVAL_SECONDS,
+    DashboardAPI,
+    DashboardActionError,
+    DashboardNotFoundError,
+    DashboardValidationError,
+)
 from .store import ForemanStore
-
-
-ACTIVITY_EVENT_LIMIT = 50
-STREAM_BATCH_LIMIT = 100
-STREAM_HEARTBEAT_SECONDS = 10.0
-STREAM_POLL_INTERVAL_SECONDS = 0.5
 
 
 DASHBOARD_HTML = """<!DOCTYPE html>
@@ -1173,6 +1175,11 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             if owns_store and self.store is not None:
                 self.store.close()
 
+    def _api(self) -> DashboardAPI:
+        if self.store is None:
+            raise RuntimeError("Store not configured")
+        return DashboardAPI(self.store)
+
     def _send_json(self, data: dict[str, Any], status: int = 200) -> None:
         body = json.dumps(data).encode("utf-8")
         self.send_response(status)
@@ -1193,16 +1200,18 @@ class DashboardHandler(SimpleHTTPRequestHandler):
     def _send_error(self, message: str, status: int = 404) -> None:
         self._send_json({"error": message}, status)
 
-    def _serialize_event(self, event: Event) -> dict[str, Any]:
-        return {
-            "id": event.id,
-            "task_id": event.task_id,
-            "project_id": event.project_id,
-            "event_type": event.event_type,
-            "timestamp": event.timestamp,
-            "role_id": event.role_id,
-            "payload": event.payload,
-        }
+    def _read_json_body(self) -> dict[str, Any]:
+        content_length = int(self.headers.get("Content-Length", 0))
+        if content_length <= 0:
+            return {}
+        body = self.rfile.read(content_length)
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError as exc:
+            raise DashboardValidationError("Invalid JSON") from exc
+        if not isinstance(data, dict):
+            raise DashboardValidationError("JSON object required")
+        return data
 
     def _list_sprint_event_payloads(
         self,
@@ -1211,16 +1220,11 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         limit: int = ACTIVITY_EVENT_LIMIT,
         after_event_id: str | None = None,
     ) -> list[dict[str, Any]]:
-        assert self.store is not None
-        if after_event_id:
-            events = self.store.list_sprint_events(
-                sprint_id,
-                after_event_id=after_event_id,
-                limit=limit,
-            )
-        else:
-            events = self.store.list_recent_sprint_events(sprint_id, limit=limit)
-        return [self._serialize_event(event) for event in events]
+        return self._api().list_sprint_events(
+            sprint_id,
+            limit=limit,
+            after_event_id=after_event_id,
+        )["events"]
 
     def _send_event_stream_headers(self) -> None:
         self.send_response(200)
@@ -1255,7 +1259,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         self.wfile.flush()
 
     def _stream_sprint_events(self, sprint_id: str, *, after_event_id: str | None = None) -> None:
-        assert self.store is not None
+        api = self._api()
         self._send_event_stream_headers()
         self.wfile.write(b"retry: 1000\n\n")
         self.wfile.flush()
@@ -1264,16 +1268,16 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         last_heartbeat_at = time.monotonic()
 
         while True:
-            event_payloads = self._list_sprint_event_payloads(
+            messages = api.list_sprint_stream_messages(
                 sprint_id,
                 limit=STREAM_BATCH_LIMIT,
                 after_event_id=last_event_id,
             )
-            if event_payloads:
-                for payload in event_payloads:
-                    last_event_id = str(payload["id"])
+            if messages:
+                for message in messages:
+                    last_event_id = str(message["event_id"])
                     self._write_sse_message(
-                        {"type": "event", "event": payload},
+                        message["payload"],
                         event_id=last_event_id,
                     )
                 last_heartbeat_at = time.monotonic()
@@ -1284,15 +1288,11 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             time.sleep(STREAM_POLL_INTERVAL_SECONDS)
 
     def _get_project_status(self, project_id: str) -> str:
-        assert self.store is not None
-        tasks = self.store.list_tasks(project_id=project_id)
-        has_in_progress = any(t.status == "in_progress" for t in tasks)
-        has_blocked = any(t.status == "blocked" for t in tasks)
-        if has_in_progress:
-            return "running"
-        if has_blocked:
-            return "blocked"
-        return "idle"
+        return self._api().get_project_status(project_id)
+
+    @staticmethod
+    def _path_parts(path: str) -> list[str]:
+        return [part for part in path.split("/") if part]
 
     def do_GET(self) -> None:
         if self.store is None:
@@ -1302,208 +1302,68 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
         query = parse_qs(parsed.query)
+        parts = self._path_parts(path)
 
-        # Dashboard HTML
         if path == "/" or path == "/dashboard":
             self._send_html(DASHBOARD_HTML)
             return
 
-        # API: List projects
-        if path == "/api/projects":
-            projects = self.store.list_projects()
-            result = []
-            for p in projects:
-                active_sprint = self.store.get_active_sprint(p.id)
-                task_counts = self.store.task_counts(project_id=p.id)
-                totals = self.store.run_totals(project_id=p.id)
-                result.append({
-                    "id": p.id,
-                    "name": p.name,
-                    "workflow_id": p.workflow_id,
-                    "status": self._get_project_status(p.id),
-                    "active_sprint": {
-                        "id": active_sprint.id,
-                        "title": active_sprint.title,
-                    } if active_sprint else None,
-                    "task_counts": task_counts,
-                    "totals": totals,
-                })
-            self._send_json({"projects": result})
-            return
+        try:
+            api = self._api()
 
-        # API: Get project
-        if path.startswith("/api/projects/"):
-            parts = path.split("/")
-            if len(parts) == 4:
-                project_id = parts[3]
-                project = self.store.get_project(project_id)
-                if project is None:
-                    self._send_error(f"Project not found: {project_id}")
-                    return
-                self._send_json({
-                    "id": project.id,
-                    "name": project.name,
-                    "workflow_id": project.workflow_id,
-                    "default_branch": project.default_branch,
-                    "repo_path": project.repo_path,
-                    "spec_path": project.spec_path,
-                    "methodology": project.methodology,
-                })
+            if parts == ["api", "projects"]:
+                self._send_json(api.list_projects())
                 return
 
-        # API: List sprints for project
-        if path.startswith("/api/projects/") and path.endswith("/sprints"):
-            parts = path.split("/")
-            if len(parts) == 5:
-                project_id = parts[3]
-                sprints = self.store.list_sprints(project_id)
-                result = []
-                for s in sprints:
-                    task_counts = self.store.task_counts(sprint_id=s.id)
-                    totals = self.store.run_totals(sprint_id=s.id)
-                    total_tasks = sum(task_counts.values())
-                    result.append({
-                        "id": s.id,
-                        "title": s.title,
-                        "goal": s.goal,
-                        "status": s.status,
-                        "task_counts": {**task_counts, "total": total_tasks},
-                        "totals": totals,
-                    })
-                self._send_json({"sprints": result})
+            if len(parts) == 3 and parts[:2] == ["api", "projects"]:
+                self._send_json(api.get_project(parts[2]))
                 return
 
-        # API: Get sprint
-        if path.startswith("/api/sprints/"):
-            parts = path.split("/")
-            if len(parts) == 4:
-                sprint_id = parts[3]
-                sprint = self.store.get_sprint(sprint_id)
-                if sprint is None:
-                    self._send_error(f"Sprint not found: {sprint_id}")
-                    return
-                task_counts = self.store.task_counts(sprint_id=sprint.id)
-                totals = self.store.run_totals(sprint_id=sprint.id)
-                self._send_json({
-                    "id": sprint.id,
-                    "title": sprint.title,
-                    "goal": sprint.goal,
-                    "status": sprint.status,
-                    "task_counts": task_counts,
-                    "totals": totals,
-                })
+            if len(parts) == 4 and parts[:2] == ["api", "projects"] and parts[3] == "sprints":
+                self._send_json(api.list_project_sprints(parts[2]))
                 return
 
-        # API: List tasks for sprint
-        if path.startswith("/api/sprints/") and path.endswith("/tasks"):
-            parts = path.split("/")
-            if len(parts) == 5:
-                sprint_id = parts[3]
-                tasks = self.store.list_tasks(sprint_id=sprint_id)
-                task_totals = {
-                    str(row["task_id"]): row
-                    for row in self.store.task_run_totals(sprint_id=sprint_id)
-                }
-                result = []
-                for t in tasks:
-                    metrics = task_totals.get(t.id, {})
-                    result.append({
-                        "id": t.id,
-                        "title": t.title,
-                        "status": t.status,
-                        "task_type": t.task_type,
-                        "branch_name": t.branch_name,
-                        "assigned_role": t.assigned_role,
-                        "blocked_reason": t.blocked_reason,
-                        "acceptance_criteria": t.acceptance_criteria,
-                        "totals": {
-                            "total_token_count": metrics.get("total_token_count", 0),
-                            "total_cost_usd": metrics.get("total_cost_usd", 0.0),
-                            "run_count": metrics.get("run_count", 0),
-                        },
-                    })
-                self._send_json({"tasks": result})
+            if len(parts) == 3 and parts[:2] == ["api", "sprints"]:
+                self._send_json(api.get_sprint(parts[2]))
                 return
 
-        # API: Live event stream for sprint
-        if path.startswith("/api/sprints/") and path.endswith("/stream"):
-            parts = path.split("/")
-            if len(parts) == 5:
-                sprint_id = parts[3]
-                sprint = self.store.get_sprint(sprint_id)
-                if sprint is None:
-                    self._send_error(f"Sprint not found: {sprint_id}")
-                    return
+            if len(parts) == 4 and parts[:2] == ["api", "sprints"] and parts[3] == "tasks":
+                self._send_json(api.list_sprint_tasks(parts[2]))
+                return
+
+            if len(parts) == 4 and parts[:2] == ["api", "sprints"] and parts[3] == "stream":
+                api.get_sprint(parts[2])
                 after_event_id = self.headers.get("Last-Event-ID") or query.get("after", [None])[0]
                 try:
-                    self._stream_sprint_events(sprint_id, after_event_id=after_event_id)
+                    self._stream_sprint_events(parts[2], after_event_id=after_event_id)
                 except (BrokenPipeError, ConnectionResetError):
                     pass
                 return
 
-        # API: List events for sprint
-        if path.startswith("/api/sprints/") and path.endswith("/events"):
-            parts = path.split("/")
-            if len(parts) == 5:
-                sprint_id = parts[3]
-                limit = int(query.get("limit", [50])[0])
+            if len(parts) == 4 and parts[:2] == ["api", "sprints"] and parts[3] == "events":
+                try:
+                    limit = int(query.get("limit", [str(ACTIVITY_EVENT_LIMIT)])[0])
+                except ValueError as exc:
+                    raise DashboardValidationError("Invalid limit") from exc
                 after_event_id = query.get("after", [None])[0]
-                events = self._list_sprint_event_payloads(
-                    sprint_id,
-                    limit=limit,
-                    after_event_id=after_event_id,
+                self._send_json(
+                    api.list_sprint_events(
+                        parts[2],
+                        limit=limit,
+                        after_event_id=after_event_id,
+                    )
                 )
-                self._send_json({"events": events})
                 return
 
-        # API: Get task details
-        if path.startswith("/api/tasks/"):
-            parts = path.split("/")
-            if len(parts) == 4:
-                task_id = parts[3]
-                task = self.store.get_task(task_id)
-                if task is None:
-                    self._send_error(f"Task not found: {task_id}")
-                    return
-
-                # Get task totals
-                totals = self.store.run_totals(task_id=task_id)
-
-                # Get runs for this task
-                runs = self.store.list_runs(task_id=task_id)
-                runs_data = []
-                for r in runs:
-                    runs_data.append({
-                        "id": r.id,
-                        "role_id": r.role_id,
-                        "workflow_step": r.workflow_step,
-                        "agent_backend": r.agent_backend,
-                        "status": r.status,
-                        "outcome": r.outcome,
-                        "outcome_detail": r.outcome_detail,
-                        "token_count": r.token_count,
-                        "cost_usd": r.cost_usd,
-                        "duration_ms": r.duration_ms,
-                        "created_at": r.created_at,
-                        "model": r.model,
-                    })
-
-                self._send_json({
-                    "id": task.id,
-                    "title": task.title,
-                    "status": task.status,
-                    "task_type": task.task_type,
-                    "branch_name": task.branch_name,
-                    "assigned_role": task.assigned_role,
-                    "created_by": task.created_by,
-                    "blocked_reason": task.blocked_reason,
-                    "acceptance_criteria": task.acceptance_criteria,
-                    "workflow_current_step": task.workflow_current_step,
-                    "step_visit_counts": task.step_visit_counts or {},
-                    "totals": totals,
-                    "runs": runs_data,
-                })
+            if len(parts) == 3 and parts[:2] == ["api", "tasks"]:
+                self._send_json(api.get_task(parts[2]))
                 return
+        except DashboardNotFoundError as exc:
+            self._send_error(str(exc), 404)
+            return
+        except DashboardValidationError as exc:
+            self._send_error(str(exc), 400)
+            return
 
         self._send_error("Not found", 404)
 
@@ -1514,120 +1374,33 @@ class DashboardHandler(SimpleHTTPRequestHandler):
 
         parsed = urlparse(self.path)
         path = parsed.path
+        parts = self._path_parts(path)
 
-        # API: Approve task
-        if path.endswith("/approve"):
-            parts = path.split("/")
-            if len(parts) == 4 and parts[1] == "api" and parts[2] == "tasks":
-                task_id = parts[3]
-                task = self.store.get_task(task_id)
-                if task is None:
-                    self._send_error(f"Task not found: {task_id}")
-                    return
+        try:
+            api = self._api()
 
-                # Call orchestrator to resume human gate
-                from .orchestrator import ForemanOrchestrator, OrchestratorError
-                orchestrator = ForemanOrchestrator(self.store)
-                try:
-                    result = orchestrator.resume_human_gate(task_id, outcome="approve")
-                except OrchestratorError as exc:
-                    self._send_error(f"Failed to approve: {exc}", 500)
-                    return
-
-                self._send_json({
-                    "status": "approved",
-                    "task_id": task_id,
-                    "next_step": result.next_step,
-                    "deferred": result.deferred,
-                })
+            if len(parts) == 4 and parts[:2] == ["api", "tasks"] and parts[3] == "approve":
+                self._send_json(api.approve_task(parts[2]))
                 return
 
-        # API: Deny task
-        if path.endswith("/deny"):
-            parts = path.split("/")
-            if len(parts) == 4 and parts[1] == "api" and parts[2] == "tasks":
-                task_id = parts[3]
-                task = self.store.get_task(task_id)
-                if task is None:
-                    self._send_error(f"Task not found: {task_id}")
-                    return
-
-                # Read optional note from request body
-                note = None
-                content_length = int(self.headers.get("Content-Length", 0))
-                if content_length > 0:
-                    body = self.rfile.read(content_length)
-                    try:
-                        data = json.loads(body)
-                        note = data.get("note")
-                    except json.JSONDecodeError:
-                        pass
-
-                # Call orchestrator to resume human gate
-                from .orchestrator import ForemanOrchestrator, OrchestratorError
-                orchestrator = ForemanOrchestrator(self.store)
-                try:
-                    result = orchestrator.resume_human_gate(task_id, outcome="deny", note=note)
-                except OrchestratorError as exc:
-                    self._send_error(f"Failed to deny: {exc}", 500)
-                    return
-
-                self._send_json({
-                    "status": "denied",
-                    "task_id": task_id,
-                    "next_step": result.next_step,
-                    "deferred": result.deferred,
-                })
+            if len(parts) == 4 and parts[:2] == ["api", "tasks"] and parts[3] == "deny":
+                note = self._read_json_body().get("note")
+                self._send_json(api.deny_task(parts[2], note=note))
                 return
 
-        # API: Send human message to task
-        if path.endswith("/messages"):
-            parts = path.split("/")
-            if len(parts) == 5 and parts[1] == "api" and parts[2] == "tasks":
-                task_id = parts[3]
-                task = self.store.get_task(task_id)
-                if task is None:
-                    self._send_error(f"Task not found: {task_id}")
-                    return
-
-                # Read JSON body
-                content_length = int(self.headers.get("Content-Length", 0))
-                body = self.rfile.read(content_length)
-                try:
-                    data = json.loads(body)
-                except json.JSONDecodeError:
-                    self._send_error("Invalid JSON", 400)
-                    return
-
-                text = data.get("text", "").strip()
-                if not text:
-                    self._send_error("Message text required", 400)
-                    return
-
-                # Get the latest run for this task to associate the message
-                runs = self.store.list_runs(task_id=task_id)
-                run_id = runs[0].id if runs else "none"
-
-                # Create human message event
-                from datetime import datetime, timezone
-                event = Event(
-                    id=f"evt-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{task_id[:8]}",
-                    run_id=run_id,
-                    task_id=task_id,
-                    project_id=task.project_id,
-                    event_type="human.message",
-                    timestamp=datetime.now(timezone.utc).isoformat(),
-                    role_id="human",
-                    payload={"text": text},
-                )
-                self.store.save_event(event)
-
-                self._send_json({
-                    "status": "sent",
-                    "event_id": event.id,
-                    "task_id": task_id,
-                })
+            if len(parts) == 4 and parts[:2] == ["api", "tasks"] and parts[3] == "messages":
+                data = self._read_json_body()
+                self._send_json(api.create_human_message(parts[2], text=str(data.get("text", ""))))
                 return
+        except DashboardNotFoundError as exc:
+            self._send_error(str(exc), 404)
+            return
+        except DashboardValidationError as exc:
+            self._send_error(str(exc), 400)
+            return
+        except DashboardActionError as exc:
+            self._send_error(str(exc), 500)
+            return
 
         self._send_error("Not found", 404)
 

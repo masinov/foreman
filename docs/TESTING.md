@@ -47,10 +47,10 @@ The current suite covers:
 - `tests/test_runner_codex.py` for Codex app-server startup, thread start or
   resume, startup preflight, approval responses, streamed event mapping, and
   failure handling
-- `tests/test_dashboard.py` for dashboard HTML shell rendering, SQLite-backed
-  API reads, task detail data, human message affordances, activity filtering,
-  project switching, incremental sprint-event serialization, and approve or
-  deny integration behavior
+- `tests/test_dashboard.py` for the extracted dashboard API contract, legacy
+  dashboard HTML shell rendering, task detail data, human message
+  persistence, incremental sprint-event stream payloads, and approve or deny
+  integration behavior
 - `tests/test_executor.py` for runner-backed execution config, event
   translation, completion handling, and infrastructure-error behavior in
   `foreman.executor`
@@ -64,7 +64,7 @@ Unit tests:
 - SQLite store round-trips
 - role and workflow parsing
 - signal parsing
-- dashboard handler read logic
+- dashboard API contract payloads and action behavior
 - dashboard live transport serialization
 - git helper behavior that can be isolated
 - frontend component behavior once the React dashboard exists

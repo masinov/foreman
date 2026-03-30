@@ -41,6 +41,8 @@ memory changes rather than versioned product releases.
 - live-tail `foreman watch` support across project, sprint, and run scopes
 - `docs/adr/ADR-0003-web-ui-api-boundary.md`
 - production-hardening audit and detour planning docs
+- `foreman/dashboard_api.py` as the extracted dashboard backend contract
+- `docs/checkpoints/dashboard-api-boundary.md`
 
 ### Changed
 
@@ -81,6 +83,10 @@ memory changes rather than versioned product releases.
 - replanned the next work as a production-hardening detour covering dashboard
   API extraction, React frontend replacement, stub removal, and delayed
   migration work
+- completed `sprint-21-dashboard-api-extraction`, archived it, and advanced
+  project memory to the React dashboard foundation sprint
+- extracted dashboard reads, actions, and incremental stream payload assembly
+  into `foreman/dashboard_api.py` while keeping the current shell functional
 - reconciled the loose feature and recovery branches into an integrated
   mainline candidate and restored missing repo-memory artifacts from the
   runner-session ADR branch

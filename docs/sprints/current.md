@@ -1,9 +1,9 @@
 # Current Sprint
 
-- Sprint: `sprint-21-dashboard-api-extraction`
+- Sprint: `sprint-22-react-dashboard-foundation`
 - Status: active
-- Goal: replace the embedded dashboard delivery path with an explicit backend
-  API boundary for a dedicated React frontend
+- Goal: replace the legacy Python-served dashboard shell with a dedicated
+  React frontend on top of the extracted backend API and streaming boundary
 - Primary references:
   - `docs/specs/engine-design-v3.md`
   - `docs/mockups/foreman-mockup-v6.html`
@@ -12,35 +12,37 @@
   - `docs/ARCHITECTURE.md`
   - `docs/ROADMAP.md`
   - `foreman/dashboard.py`
+  - `foreman/dashboard_api.py`
   - `tests/test_dashboard.py`
 
 ## Included tasks
 
-1. `[todo]` Extract dashboard reads and actions into explicit API modules
-   Deliverable: dashboard routes and streaming no longer depend on embedded UI
-   markup living inside the same backend module.
+1. `[todo]` Scaffold the dedicated frontend app and build pipeline
+   Deliverable: the repo contains a maintainable React dashboard entrypoint
+   instead of relying on substantial inline browser code inside Python.
 
-2. `[todo]` Define stable API and streaming contracts for the frontend handoff
-   Deliverable: JSON and incremental event responses are documented and
-   covered well enough for a React frontend to consume without reading Python
-   implementation details.
+2. `[todo]` Recreate the shipped dashboard surfaces on the new frontend
+   Deliverable: project overview, sprint board, task detail, activity feed,
+   human message input, and approve or deny flows all render through React
+   while staying aligned to the mockup.
 
-3. `[todo]` Preserve current dashboard functionality behind the new API seam
-   Deliverable: existing project, sprint, task, activity, approve or deny, and
-   human-message flows continue to work while the UI delivery path is decoupled.
+3. `[todo]` Wire the React client to the extracted JSON and streaming API
+   Deliverable: the new frontend consumes the extracted dashboard API and
+   sprint event stream without reading backend implementation details.
 
 ## Excluded from this sprint
 
-- building the React app itself
+- removing remaining stub CLI product commands
 - schema migration framework work
 - retention expansion beyond `events`
 - autonomous task-selection mode
-- cross-project engine-instance configuration
+- authentication and multi-user concerns
 
 ## Acceptance criteria
 
-- dashboard backend routes are separated cleanly enough that the UI can move
-  to a dedicated frontend without carrying inline HTML along with it
-- automated tests cover the extracted API and streaming contracts
-- docs explain the backend/frontend split clearly enough for the next sprint
-  to build the React dashboard without re-litigating architecture
+- the product dashboard no longer depends on large inline HTML, CSS, and
+  browser logic embedded inside Python modules
+- the React frontend covers the currently shipped dashboard behaviors without
+  regressing the extracted API contract
+- automated validation includes frontend-aware coverage beyond backend-only
+  HTML string checks

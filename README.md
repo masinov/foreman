@@ -56,10 +56,13 @@ The integrated pre-release baseline now contains:
 - accepted ADRs for runner session and backend contract boundaries
   (`ADR-0001`), dashboard data access (`ADR-0002`), and the product web UI
   and API boundary (`ADR-0003`),
-- a current dashboard bootstrap implementation with project overview, sprint
-  board, task detail, activity feed, human message input, activity filtering,
-  project switching, approve or deny actions wired into orchestrator resume,
-  and a dedicated sprint event stream for live activity updates,
+- an extracted dashboard backend contract in `foreman/dashboard_api.py` for
+  project, sprint, task, action, and streaming payloads,
+- a current legacy dashboard shell in `foreman/dashboard.py` with project
+  overview, sprint board, task detail, activity feed, human message input,
+  activity filtering, project switching, approve or deny actions wired into
+  orchestrator resume, and a dedicated sprint event stream for live activity
+  updates,
 - unit and integration coverage across store, CLI, orchestrator, runners,
   dashboard, and runner-backed executor seams.
 
@@ -136,12 +139,13 @@ rendering repeated snapshots.
 
 ## Dashboard direction
 
-The current dashboard implementation in `foreman/dashboard.py` is now treated
-as an implementation debt item, not the desired product architecture.
+The current inline shell in `foreman/dashboard.py` is now treated as a legacy
+delivery path, not the desired product architecture.
 
 The accepted direction is:
 
-- Python backend modules expose JSON and streaming APIs,
+- Python backend modules expose JSON and streaming APIs through
+  `foreman/dashboard_api.py`,
 - a dedicated React frontend owns product UI rendering and state management,
 - mockup alignment remains mandatory for hierarchy and interaction behavior.
 
@@ -173,12 +177,12 @@ Both wrappers expect these files to be current:
 
 ## Next implementation slice
 
-The current sprint is `sprint-21-dashboard-api-extraction`.
+The current sprint is `sprint-22-react-dashboard-foundation`.
 
 The next recommended task is:
 
-- extract the dashboard into an explicit API boundary that a dedicated React
-  frontend can consume.
+- replace the legacy Python-served dashboard shell with a dedicated React
+  frontend that consumes the extracted API and streaming boundary.
 
 That work is recorded in `docs/sprints/current.md`, so a fresh agent can pick
 it up without reconstructing branch history first.
