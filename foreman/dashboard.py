@@ -208,6 +208,38 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 
   .done-card{opacity:.6}
 
+  /* Detail panel */
+  .detail-overlay{position:fixed;top:0;right:0;bottom:0;width:480px;background:var(--bg-raised);
+    border-left:1px solid var(--border);z-index:200;display:flex;flex-direction:column;
+    box-shadow:-20px 0 60px rgba(0,0,0,.5);animation:slideIn 200ms ease}
+  @keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
+  .detail-header{padding:16px 20px;border-bottom:1px solid var(--border-subtle);
+    display:flex;justify-content:space-between;align-items:flex-start;flex-shrink:0}
+  .detail-header h2{font-family:var(--font-serif);font-size:16px;font-weight:600;line-height:1.4;margin-bottom:6px}
+  .detail-close{background:none;border:none;color:var(--text-tertiary);cursor:pointer;
+    font-size:16px;font-family:var(--font-mono);padding:4px 8px;transition:var(--transition)}
+  .detail-close:hover{color:var(--text-primary)}
+  .detail-body{flex:1;overflow-y:auto;padding:16px 20px}
+  .detail-section{margin-bottom:20px}
+  .detail-section-title{font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--text-tertiary);margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid var(--border-subtle)}
+  .detail-field{display:flex;justify-content:space-between;padding:3px 0;font-size:11px}
+  .detail-field-label{color:var(--text-tertiary)}.detail-field-value{color:var(--text-secondary);text-align:right;font-variant-numeric:tabular-nums}
+  .detail-criteria{font-size:11px;color:var(--text-secondary);line-height:1.5;font-family:var(--font-serif);padding:8px 0}
+  .run-timeline{display:flex;flex-direction:column;gap:2px}
+  .run-entry{display:grid;grid-template-columns:52px 1fr auto;gap:10px;padding:8px;font-size:11px;
+    border-radius:var(--radius);cursor:pointer;transition:var(--transition)}
+  .run-entry:hover{background:var(--bg-card)}
+  .run-role{color:var(--text-tertiary);font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.04em}
+  .run-detail-text{color:var(--text-secondary)}
+  .run-outcome{font-size:10px;font-weight:500;padding:1px 6px;border-radius:2px}
+  .outcome-done{color:var(--green);background:var(--green-dim)}
+  .outcome-steer{color:var(--amber);background:var(--amber-dim)}
+  .outcome-failed{color:var(--red);background:var(--red-dim)}
+  .run-tokens{font-size:10px;color:var(--text-tertiary);text-align:right;font-variant-numeric:tabular-nums}
+  .detail-tag-line{display:flex;gap:8px;align-items:center;margin-top:4px}
+  .detail-status{font-size:11px;color:var(--text-tertiary)}
+
   ::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:transparent}
   ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
   ::-webkit-scrollbar-thumb:hover{background:var(--text-tertiary)}
@@ -278,6 +310,34 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         </div>
         <div class="activity-stream" id="activityStream"></div>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- Detail panel -->
+<div class="detail-overlay" id="detail-panel" style="display:none">
+  <div class="detail-header">
+    <div>
+      <h2 id="detailTitle">Loading...</h2>
+      <div class="detail-tag-line">
+        <span class="card-tag tag-feature" id="detailTag">feature</span>
+        <span class="detail-status" id="detailStatus">status</span>
+      </div>
+    </div>
+    <button class="detail-close" onclick="hideDetail()">&times;</button>
+  </div>
+  <div class="detail-body">
+    <div class="detail-section">
+      <div class="detail-section-title">Details</div>
+      <div id="detailFields"></div>
+    </div>
+    <div class="detail-section" id="criteriaSection" style="display:none">
+      <div class="detail-section-title">Acceptance Criteria</div>
+      <div class="detail-criteria" id="detailCriteria"></div>
+    </div>
+    <div class="detail-section">
+      <div class="detail-section-title">Run History</div>
+      <div class="run-timeline" id="runTimeline"></div>
     </div>
   </div>
 </div>
@@ -549,7 +609,7 @@ function renderTaskCard(task) {
   const isDone = task.status === 'done';
 
   return `
-    <div class="card ${isBlocked ? 'card-blocked' : ''} ${isDone ? 'done-card' : ''}">
+    <div class="card ${isBlocked ? 'card-blocked' : ''} ${isDone ? 'done-card' : ''}" onclick="showTaskDetail('${task.id}', event)">
       <div class="card-title">${task.title}</div>
       <div class="card-meta">
         <span class="card-tag tag-${task.task_type || 'feature'}">${task.task_type || 'feature'}</span>
@@ -560,8 +620,8 @@ function renderTaskCard(task) {
       ${isBlocked && task.blocked_reason ? `<div class="card-blocked-reason">${task.blocked_reason}</div>` : ''}
       ${isBlocked ? `
         <div class="card-actions">
-          <button class="btn btn-approve" onclick="approveTask('${task.id}')">Approve</button>
-          <button class="btn btn-deny" onclick="denyTask('${task.id}')">Deny</button>
+          <button class="btn btn-approve" onclick="approveTask('${task.id}', event)">Approve</button>
+          <button class="btn btn-deny" onclick="denyTask('${task.id}', event)">Deny</button>
         </div>
       ` : ''}
     </div>
@@ -634,7 +694,8 @@ function truncate(text, limit) {
   return text.substring(0, limit - 3) + '...';
 }
 
-async function approveTask(taskId) {
+async function approveTask(taskId, event) {
+  if (event) event.stopPropagation();
   try {
     await fetch(`/api/tasks/${taskId}/approve`, { method: 'POST' });
     if (currentSprint) loadSprint(currentSprint);
@@ -643,13 +704,99 @@ async function approveTask(taskId) {
   }
 }
 
-async function denyTask(taskId) {
+async function denyTask(taskId, event) {
+  if (event) event.stopPropagation();
   try {
     await fetch(`/api/tasks/${taskId}/deny`, { method: 'POST' });
     if (currentSprint) loadSprint(currentSprint);
   } catch (e) {
     console.error('Failed to deny task:', e);
   }
+}
+
+let currentDetailTask = null;
+
+async function showTaskDetail(taskId, event) {
+  if (event) event.stopPropagation();
+  currentDetailTask = taskId;
+
+  try {
+    const resp = await fetch(`/api/tasks/${taskId}`);
+    const data = await resp.json();
+
+    document.getElementById('detailTitle').textContent = data.title || 'Untitled';
+    document.getElementById('detailTag').textContent = data.task_type || 'feature';
+    document.getElementById('detailTag').className = `card-tag tag-${data.task_type || 'feature'}`;
+    document.getElementById('detailStatus').textContent = `${data.status || 'todo'}${data.workflow_current_step ? ' · ' + data.workflow_current_step : ''}`;
+
+    // Build detail fields
+    const fieldsHtml = [];
+    if (data.branch_name) {
+      fieldsHtml.push(`<div class="detail-field"><span class="detail-field-label">Branch</span><span class="detail-field-value">${data.branch_name}</span></div>`);
+    }
+    if (data.created_by) {
+      fieldsHtml.push(`<div class="detail-field"><span class="detail-field-label">Created by</span><span class="detail-field-value">${data.created_by}</span></div>`);
+    }
+    if (data.assigned_role) {
+      fieldsHtml.push(`<div class="detail-field"><span class="detail-field-label">Role</span><span class="detail-field-value">${data.assigned_role}</span></div>`);
+    }
+    if (data.totals?.total_token_count) {
+      fieldsHtml.push(`<div class="detail-field"><span class="detail-field-label">Tokens</span><span class="detail-field-value">${formatTokens(data.totals.total_token_count)}</span></div>`);
+    }
+    if (data.step_visit_counts && Object.keys(data.step_visit_counts).length > 0) {
+      const visits = Object.entries(data.step_visit_counts).map(([k, v]) => `${k}: ${v}`).join(', ');
+      fieldsHtml.push(`<div class="detail-field"><span class="detail-field-label">Step visits</span><span class="detail-field-value">${visits}</span></div>`);
+    }
+    if (data.blocked_reason) {
+      fieldsHtml.push(`<div class="detail-field"><span class="detail-field-label">Blocked reason</span><span class="detail-field-value" style="color:var(--amber)">${data.blocked_reason}</span></div>`);
+    }
+    document.getElementById('detailFields').innerHTML = fieldsHtml.join('');
+
+    // Acceptance criteria
+    const criteriaSection = document.getElementById('criteriaSection');
+    if (data.acceptance_criteria) {
+      criteriaSection.style.display = 'block';
+      document.getElementById('detailCriteria').textContent = data.acceptance_criteria;
+    } else {
+      criteriaSection.style.display = 'none';
+    }
+
+    // Run history
+    const runs = data.runs || [];
+    const timelineEl = document.getElementById('runTimeline');
+    if (runs.length === 0) {
+      timelineEl.innerHTML = '<div style="color:var(--text-tertiary);padding:8px 0">No runs yet.</div>';
+    } else {
+      timelineEl.innerHTML = runs.map(r => {
+        const outcomeClass = r.outcome === 'done' ? 'outcome-done' : r.outcome === 'steer' ? 'outcome-steer' : r.outcome === 'failed' ? 'outcome-failed' : '';
+        const tokens = r.token_count ? `${formatTokens(r.token_count)} tok` : '';
+        const duration = r.duration_ms ? `${Math.round(r.duration_ms / 60000)} min` : '';
+        const step = r.workflow_step || '';
+        const visit = r.visit_count ? `visit ${r.visit_count}` : '';
+
+        return `
+          <div class="run-entry">
+            <span class="run-role">${r.role_id || '-'}</span>
+            <span class="run-detail-text">${step}${visit ? ' · ' + visit : ''}${duration ? ' · ' + duration : ''}</span>
+            <span>
+              ${r.outcome ? `<span class="run-outcome ${outcomeClass}">${r.outcome}</span>` : ''}
+              ${tokens ? `<div class="run-tokens">${tokens}</div>` : ''}
+            </span>
+          </div>
+        `;
+      }).join('');
+    }
+
+    document.getElementById('detail-panel').style.display = 'flex';
+
+  } catch (e) {
+    console.error('Failed to load task detail:', e);
+  }
+}
+
+function hideDetail() {
+  document.getElementById('detail-panel').style.display = 'none';
+  currentDetailTask = null;
 }
 
 // Initialize
@@ -859,6 +1006,55 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                         "payload": e.payload,
                     })
                 self._send_json({"events": result})
+                return
+
+        # API: Get task details
+        if path.startswith("/api/tasks/"):
+            parts = path.split("/")
+            if len(parts) == 4:
+                task_id = parts[3]
+                task = self.store.get_task(task_id)
+                if task is None:
+                    self._send_error(f"Task not found: {task_id}")
+                    return
+
+                # Get task totals
+                totals = self.store.run_totals(task_id=task_id)
+
+                # Get runs for this task
+                runs = self.store.list_runs(task_id=task_id)
+                runs_data = []
+                for r in runs:
+                    runs_data.append({
+                        "id": r.id,
+                        "role_id": r.role_id,
+                        "workflow_step": r.workflow_step,
+                        "agent_backend": r.agent_backend,
+                        "status": r.status,
+                        "outcome": r.outcome,
+                        "outcome_detail": r.outcome_detail,
+                        "token_count": r.token_count,
+                        "cost_usd": r.cost_usd,
+                        "duration_ms": r.duration_ms,
+                        "created_at": r.created_at,
+                        "model": r.model,
+                    })
+
+                self._send_json({
+                    "id": task.id,
+                    "title": task.title,
+                    "status": task.status,
+                    "task_type": task.task_type,
+                    "branch_name": task.branch_name,
+                    "assigned_role": task.assigned_role,
+                    "created_by": task.created_by,
+                    "blocked_reason": task.blocked_reason,
+                    "acceptance_criteria": task.acceptance_criteria,
+                    "workflow_current_step": task.workflow_current_step,
+                    "step_visit_counts": task.step_visit_counts or {},
+                    "totals": totals,
+                    "runs": runs_data,
+                })
                 return
 
         self._send_error("Not found", 404)

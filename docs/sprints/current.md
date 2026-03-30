@@ -18,7 +18,7 @@
    Deliverable: a runnable UI entrypoint renders project overview and active
    sprint board data from persisted SQLite-backed state.
 
-2. `[in_progress]` Surface task detail and recent activity in the dashboard
+2. `[done]` Surface task detail and recent activity in the dashboard
    Deliverable: selecting a task reveals branch, role, status, token, and
    recent event context aligned to the mockup's board and activity hierarchy.
 

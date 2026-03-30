@@ -320,3 +320,34 @@ class DashboardHandlerTests(unittest.TestCase):
         self.assertIn("<title>Foreman Dashboard</title>", DASHBOARD_HTML)
         self.assertIn("Projects", DASHBOARD_HTML)
         self.assertIn("api/projects", DASHBOARD_HTML)
+
+    def test_api_task_detail(self):
+        """API returns task details with runs."""
+        task = self.store.get_task("task-2")
+        self.assertIsNotNone(task)
+
+        # Get task totals
+        totals = self.store.run_totals(task_id="task-2")
+
+        # Get runs for this task
+        runs = self.store.list_runs(task_id="task-2")
+
+        # Verify the data
+        self.assertEqual(task.title, "In progress task")
+        self.assertEqual(task.status, "in_progress")
+        self.assertEqual(task.branch_name, "feat/dashboard")
+        self.assertEqual(task.assigned_role, "developer")
+        self.assertEqual(len(runs), 1)
+        self.assertEqual(runs[0].role_id, "developer")
+        self.assertEqual(runs[0].token_count, 15000)
+        self.assertIn("total_token_count", totals)
+
+    def test_dashboard_detail_panel_html(self):
+        """Dashboard HTML contains detail panel elements."""
+        from foreman.dashboard import DASHBOARD_HTML
+        self.assertIn("detail-panel", DASHBOARD_HTML)
+        self.assertIn("detail-overlay", DASHBOARD_HTML)
+        self.assertIn("showTaskDetail", DASHBOARD_HTML)
+        self.assertIn("hideDetail", DASHBOARD_HTML)
+        self.assertIn("Run History", DASHBOARD_HTML)
+        self.assertIn("Acceptance Criteria", DASHBOARD_HTML)
