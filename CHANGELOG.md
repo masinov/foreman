@@ -37,6 +37,17 @@ scaffold changes rather than product releases.
 - runtime context projection in `foreman.context` for `.foreman/context.md` and
   `.foreman/status.md`
 - context projection coverage in `tests/test_context.py`
+- `foreman approve --db <path>` and `foreman deny --db <path>` for persisted
+  human-gate decisions
+- human-gate resume coverage in `tests/test_orchestrator.py` and
+  `tests/test_cli.py`
+- the first native Claude runner in `foreman/runner/claude_code.py`
+- runner coverage in `tests/test_runner_claude.py`
+- the first native Codex runner in `foreman/runner/codex.py`
+- runner coverage in `tests/test_runner_codex.py`
+- store-backed monitoring commands in `foreman.cli` for `board`, `history`,
+  `cost`, and `watch`
+- monitoring read-model helpers in `foreman.store`
 
 ### Changed
 
@@ -66,3 +77,18 @@ scaffold changes rather than product releases.
   runtime context projection path
 - completed `sprint-04-context-projection`, archived it, and advanced project
   memory to the human-gate sprint
+- taught the orchestrator to resume from persisted human-gate workflow state
+  and to defer agent-backed next steps until a native runner is available
+- completed `sprint-05-human-gates`, archived it, and advanced project memory
+  to the Claude runner sprint
+- taught the orchestrator to execute shipped Claude-backed roles through the
+  native runner path with retry normalization and session reuse
+- completed `sprint-06-claude-runner`, archived it, and advanced project
+  memory to the Codex runner sprint
+- taught the orchestrator to execute Codex-backed roles through the native
+  runner path and to resume human-gate approvals immediately when the native
+  backend and repo are available
+- completed `sprint-07-codex-runner`, archived it, and advanced project
+  memory to the monitoring CLI sprint
+- completed `sprint-08-monitoring-cli`, archived it, and advanced project
+  memory to the runner session and backend ADR sprint

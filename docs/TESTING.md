@@ -70,6 +70,45 @@ The context projection slice adds:
 - temporary repo fixtures now include `.foreman/` in `.gitignore` so runtime
   context stays untracked during git-backed workflow tests
 
+The human-gate resume slice adds:
+
+- orchestrator integration coverage for human-gate approval, denial, persisted
+  resume metadata, native immediate resume, and deferred resume when runtime
+  prerequisites are missing
+- subprocess CLI coverage proving `foreman approve --db <path>` and
+  `foreman deny --db <path>` update paused tasks and persist the next workflow
+  step correctly
+- command help validation for the new human-gate CLI surfaces
+
+The native Claude runner slice adds:
+
+- `tests/test_runner_claude.py` for command construction, Claude stream-json
+  event mapping, signal extraction, terminal failure detection, and retry
+  helper behavior
+- orchestrator integration coverage proving the native runner path executes
+  shipped Claude-backed roles, reuses developer session IDs, and persists
+  retry-driven runner failures into run and event history
+
+The native Codex runner slice adds:
+
+- `tests/test_runner_codex.py` for Codex app-server startup, thread start or
+  resume, approval-response handling, streamed event mapping, and terminal
+  failure detection
+- orchestrator integration coverage proving Codex-backed roles execute through
+  the native runner path, reuse persistent developer sessions, and resume
+  immediately after human approval when the repo and backend are available
+
+The monitoring CLI slice adds:
+
+- store coverage for sprint-scoped task counts, aggregate run totals,
+  per-task rollups, and recent event slices used by monitoring reads
+- subprocess CLI coverage proving `foreman board --db <path>`,
+  `foreman history --db <path>`, `foreman cost --db <path>`, and
+  `foreman watch --db <path>` expose persisted activity without mutating
+  store state
+- run-scoped and project-scoped watch validation so polling output stays
+  bounded and reviewable in terminal workflows
+
 ## Expected testing layers once code lands
 
 Unit tests:

@@ -211,6 +211,61 @@ The sixth implementation slice has now landed:
   runtime projection, builtin context writes, and gitignored temp-repo
   behavior.
 
+The seventh implementation slice has now landed:
+
+- `foreman.cli` now supports `foreman approve --db <path>` and
+  `foreman deny --db <path>` for tasks paused at `_builtin:human_gate`,
+- `foreman.orchestrator` can persist human approval or denial decisions,
+  record `workflow.resumed` events, and continue from the paused workflow step
+  instead of restarting from workflow entry,
+- when the resumed next step needs an agent backend that is not available yet,
+  the orchestrator now stores a deferred next step and carried output so a
+  later run can continue from that exact point,
+- `tests/test_orchestrator.py` and `tests/test_cli.py` now cover immediate and
+  deferred human-gate resume behavior.
+
+The eighth implementation slice has now landed:
+
+- `foreman.runner.base` now defines shared native runner config, event, and
+  infrastructure-retry primitives,
+- `foreman.runner.signals` now extracts `FOREMAN_SIGNAL:` lines from assistant
+  output without polluting the persisted message text,
+- `foreman.runner.claude_code` now launches Claude Code in `stream-json` mode,
+  maps Claude events into Foreman agent events, enforces per-run gates, and
+  supports session resume,
+- `foreman.orchestrator` now falls back to the native runner map when no
+  scripted executor is injected, so shipped Claude-backed roles can execute
+  through the product runtime itself,
+- `tests/test_runner_claude.py` adds direct runner coverage, and
+  `tests/test_orchestrator.py` now verifies native runner execution, retry
+  persistence, and developer session reuse.
+
+The ninth implementation slice has now landed:
+
+- `foreman.runner.codex` now launches `codex app-server` over stdio, starts or
+  resumes threads through JSON-RPC, maps streamed Codex items into Foreman
+  agent events, and auto-responds to tool approval requests from role policy,
+- `foreman.orchestrator` now includes both native backends by default and can
+  resume human-gate approvals immediately for native backends when the repo
+  runtime is available,
+- `tests/test_runner_codex.py` adds direct Codex runner coverage, and
+  `tests/test_orchestrator.py` now verifies Codex success, session reuse, and
+  native human-gate resume behavior.
+
+The tenth implementation slice has now landed:
+
+- `foreman.store` now exposes recent-event slices plus project or sprint run
+  rollups for monitoring reads,
+- `foreman.cli` now supports `foreman board --db <path>`, `foreman history
+  --db <path>`, `foreman cost --db <path>`, and `foreman watch --db <path>`
+  directly against SQLite,
+- the board view groups active sprint tasks by status and includes branch,
+  role, blocked-reason, and token context,
+- the watch view intentionally uses bounded polling snapshots instead of a
+  live stream until a dedicated transport boundary exists,
+- `tests/test_store.py` and `tests/test_cli.py` now cover monitoring query
+  semantics, sprint scoping, and recent activity rendering.
+
 Current runtime constraints worth preserving:
 
 - every workflow step persists a `runs` row, including built-ins, so workflow
@@ -224,10 +279,27 @@ Current runtime constraints worth preserving:
 - `foreman init` never overwrites a repo's existing `AGENTS.md`; the generated
   instructions are a one-time scaffold that the user owns afterward,
 - the bootstrap CLI currently requires explicit `--db PATH` selection for
-  project lifecycle commands until engine-level database discovery exists,
+  SQLite-backed lifecycle, inspection, monitoring, and human-gate commands
+  until engine-level database discovery exists,
+- deferred human-gate resume is represented by an `in_progress` task whose
+  `workflow_current_step` points at the next step to execute, and task
+  selection now prioritizes that persisted resume point before untouched todo
+  tasks,
+- Foreman now ships native Claude Code and Codex runners; unsupported
+  backends still need explicit runner implementations before the orchestrator
+  can execute them directly,
+- immediate human-gate resume now re-checks out the task branch before native
+  execution, while still deferring safely when the next backend or repo
+  runtime is unavailable,
+- Codex token usage is persisted through native runner events, but the current
+  app-server contract does not expose USD pricing so Codex `cost_usd` remains
+  zero for now,
+- `foreman watch` currently polls the store with bounded snapshots rather than
+  maintaining a live event stream, so the eventual dashboard transport
+  contract is still undecided,
 - `.foreman/status.md` currently emits an explicit open-decisions placeholder
   because the SQLite schema does not yet persist those records.
 
-The next implementation slice should implement `foreman approve` and
-`foreman deny` so tasks paused at `_builtin:human_gate` can resume from the
-persisted workflow step and carried output instead of restarting from entry.
+The next implementation slice should capture the first ADR for runner session
+handling, approval policy, and backend contract boundaries so later dashboard
+and runner work can rely on an accepted constraint.

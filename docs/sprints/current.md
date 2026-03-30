@@ -1,53 +1,37 @@
 # Current Sprint
 
-- Sprint: `sprint-05-human-gates`
-- Status: active
-- Goal: resume paused human-gate tasks through `foreman approve` and
-  `foreman deny` with persisted workflow state
+- Sprint: `sprint-12-dashboard-approve-deny-integration`
+- Status: complete
+- Goal: wire dashboard approve/deny buttons to the orchestrator so human-gate
+  decisions actually resume workflow execution
 - Primary references:
   - `docs/specs/engine-design-v3.md`
-  - `docs/mockups/foreman-mockup-v6.html`
+  - `foreman/dashboard.py`
+  - `foreman/orchestrator.py`
+  - `foreman/cli.py`
 
 ## Included tasks
 
-1. `[todo]` Add CLI commands for human-gate approval and denial
-   Deliverable: operators can issue `foreman approve <task-id>` and
-   `foreman deny <task-id>` against paused tasks in the SQLite store.
+1. `[done]` Wire approve button to orchestrator resume
+   Deliverable: clicking approve on a blocked task calls the orchestrator to
+   resume the workflow with approval outcome.
 
-2. `[todo]` Integrate workflow resume semantics for paused tasks
-   Deliverable: a task paused by `_builtin:human_gate` can resume from its
-   persisted workflow step with the recorded carried output and decision.
+2. `[done]` Wire deny button to orchestrator resume
+   Deliverable: clicking deny on a blocked task calls the orchestrator to
+   resume the workflow with denial outcome.
 
-3. `[todo]` Add coverage for pause, approve, deny, and resume behavior
-   Deliverable: tests prove human-gate tasks block, persist resume metadata,
-   and continue through the workflow after an explicit human decision.
+3. `[done]` Update dashboard UI after approve/deny
+   Deliverable: after approve/deny, the task status and activity stream update
+   to reflect the decision.
 
 ## Excluded from this sprint
 
-- native Claude Code and Codex runner implementations
-- monitoring CLI surfaces beyond approve and deny
-- dashboard and web implementation
-- schema migration framework work
+- streaming transport for dashboard
+- event-retention pruning
+- security review workflow variant
 
 ## Acceptance criteria
 
-- `foreman approve` and `foreman deny` operate on paused human-gate tasks
-- paused tasks resume from persisted workflow state instead of restarting from
-  the workflow entry step
-- approval and denial decisions are persisted with workflow and event history
-- docs and validation remain good enough for a fresh autonomous agent to pick
-  the next slice without extra human context
-
-## Known risks
-
-- human-gate resume has to interact cleanly with existing loop counts, carried
-  output, and branch state without duplicating prior workflow steps
-- CLI resume commands should not silently mutate tasks that are blocked for
-  non-human-gate reasons
-
-## Demo checklist
-
-- show a task pause at `_builtin:human_gate`
-- show `foreman approve` or `foreman deny` resuming that task from persisted
-  state
-- show repo validation passing after the human-gate slice lands
+- [x] clicking approve on a human-gate task resumes the workflow
+- [x] clicking deny on a human-gate task resumes the workflow with steer outcome
+- [x] dashboard reflects the updated task status immediately (verified by integration tests)

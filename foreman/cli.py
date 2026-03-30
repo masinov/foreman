@@ -5,10 +5,13 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 import sys
+import time
 from typing import Callable, Sequence
 
 from . import __version__
+from .dashboard import run_dashboard
 from .models import Project, utc_now_text
+from .orchestrator import ForemanOrchestrator, OrchestratorError
 from .roles import RoleLoadError, default_roles_dir, load_roles
 from .scaffold import (
     DEFAULT_DEFAULT_BRANCH,
@@ -28,10 +31,17 @@ CLI_DESCRIPTION = (
 )
 CLI_SHELL_NOTE = "This command surface is still incomplete while Foreman is under active development."
 STORE_OPTION_NOTE = (
-    "SQLite-backed inspection is available now via `--db PATH` for `projects` and `status`."
+    "SQLite-backed inspection is available now via `--db PATH` for `projects`, `status`, `board`, `history`, `watch`, and `cost`."
 )
 STORE_FOLLOWUP_NOTE = (
-    "Project creation is available via `foreman init --db PATH`; richer workflow commands land in later slices."
+    "Project creation is available via `foreman init --db PATH`; paused human-gate tasks can now be resumed with `foreman approve --db PATH` and `foreman deny --db PATH`."
+)
+BOARD_STATUS_SECTIONS: tuple[tuple[str, str], ...] = (
+    ("todo", "Todo"),
+    ("in_progress", "In Progress"),
+    ("blocked", "Blocked"),
+    ("done", "Done"),
+    ("cancelled", "Cancelled"),
 )
 
 Handler = Callable[[argparse.Namespace], int]
@@ -64,6 +74,425 @@ def _format_task_counts(counts: dict[str, int]) -> str:
         f"done={counts['done']} "
         f"cancelled={counts['cancelled']}"
     )
+
+
+def _format_usd(value: float) -> str:
+    return f"${value:.2f}"
+
+
+def _format_step_visits(step_visit_counts: dict[str, int]) -> str:
+    if not step_visit_counts:
+        return "none"
+    return ", ".join(f"{step}={count}" for step, count in step_visit_counts.items())
+
+
+def _truncate_text(text: str, *, limit: int = 96) -> str:
+    if len(text) <= limit:
+        return text
+    return f"{text[: limit - 3]}..."
+
+
+def _format_event_details(event_type: str, payload: dict[str, object]) -> str:
+    if event_type == "agent.command":
+        command = str(payload.get("command", "")).strip()
+        return _truncate_text(command or "(no command recorded)")
+
+    if event_type == "agent.file_change":
+        path = str(payload.get("path", "")).strip()
+        return path or "(no path recorded)"
+
+    if event_type == "agent.message":
+        text = str(payload.get("text", "")).strip()
+        return _truncate_text(text or "(no message text)")
+
+    if event_type == "workflow.resumed":
+        parts = []
+        decision = str(payload.get("decision", "")).strip()
+        next_step = str(payload.get("next_step", "")).strip()
+        if decision:
+            parts.append(f"decision={decision}")
+        if next_step:
+            parts.append(f"next={next_step}")
+        if payload.get("deferred"):
+            parts.append("deferred=yes")
+        note = str(payload.get("note", "")).strip()
+        if note:
+            parts.append(f"note={_truncate_text(note)}")
+        return " | ".join(parts) if parts else "(no workflow details)"
+
+    detail_keys = (
+        "summary",
+        "note",
+        "message",
+        "step",
+        "trigger",
+        "path",
+        "command",
+        "session_id",
+        "error",
+        "decision",
+        "next_step",
+    )
+    parts = []
+    for key in detail_keys:
+        value = payload.get(key)
+        if value in (None, "", []):
+            continue
+        parts.append(f"{key}={_truncate_text(str(value))}")
+    return " | ".join(parts) if parts else "(no payload details)"
+
+
+def _render_event_line(event_type: str, timestamp: str, role_id: str | None, payload: dict[str, object]) -> str:
+    line = f"{timestamp} | {event_type}"
+    if role_id:
+        line = f"{line} | role={role_id}"
+    return f"{line} | {_format_event_details(event_type, payload)}"
+
+
+def _render_board_task_line(task_id: str, title: str, task_type: str, details: list[str]) -> str:
+    parts = [task_id, task_type, title]
+    parts.extend(detail for detail in details if detail)
+    return f"- {' | '.join(parts)}"
+
+
+def handle_board(args: argparse.Namespace) -> int:
+    """Handle ``foreman board``."""
+
+    with ForemanStore(args.db) as store:
+        store.initialize()
+        project = store.get_project(args.project_id)
+        if project is None:
+            print(f"Unknown project: {args.project_id}", file=sys.stderr)
+            return 1
+
+        active_sprint = store.get_active_sprint(project.id)
+        lines = [
+            "Board",
+            f"Database: {store.db_path}",
+            f"Project: {project.id} | {project.name}",
+        ]
+        if active_sprint is None:
+            lines.append("No active sprint for this project.")
+            _print_lines(*lines)
+            return 0
+
+        tasks = store.list_tasks(sprint_id=active_sprint.id)
+        counts = store.task_counts(sprint_id=active_sprint.id)
+        totals = store.run_totals(project_id=project.id, sprint_id=active_sprint.id)
+        task_totals = {
+            str(row["task_id"]): row for row in store.task_run_totals(sprint_id=active_sprint.id)
+        }
+        task_count = sum(counts.values())
+
+    lines.extend(
+        [
+            f"Sprint: {active_sprint.id} | {active_sprint.title}",
+            f"Goal: {active_sprint.goal or 'n/a'}",
+            (
+                f"Progress: done={counts['done']}/{task_count} | "
+                f"in_progress={counts['in_progress']} | "
+                f"blocked={counts['blocked']} | "
+                f"todo={counts['todo']} | "
+                f"cancelled={counts['cancelled']}"
+            ),
+            (
+                f"Activity: runs={totals['run_count']} | "
+                f"tokens={totals['total_token_count']} | "
+                f"cost_usd={_format_usd(float(totals['total_cost_usd']))}"
+            ),
+        ]
+    )
+
+    for status, label in BOARD_STATUS_SECTIONS:
+        if status == "cancelled" and counts["cancelled"] == 0:
+            continue
+        lines.append(f"{label} ({counts[status]})")
+        status_tasks = [task for task in tasks if task.status == status]
+        if not status_tasks:
+            lines.append("- none")
+            continue
+        for task in status_tasks:
+            metrics = task_totals.get(task.id, {})
+            details: list[str] = []
+            token_count = int(metrics.get("total_token_count", 0))
+            if token_count:
+                details.append(f"tokens={token_count}")
+            if task.branch_name:
+                details.append(f"branch={task.branch_name}")
+            if task.assigned_role:
+                details.append(f"role={task.assigned_role}")
+            if task.workflow_current_step:
+                details.append(f"step={task.workflow_current_step}")
+            if task.step_visit_counts:
+                details.append(f"visits={_format_step_visits(task.step_visit_counts)}")
+            if task.blocked_reason:
+                details.append(f"reason={task.blocked_reason}")
+            lines.append(_render_board_task_line(task.id, task.title, task.task_type, details))
+
+    _print_lines(*lines)
+    return 0
+
+
+def handle_history(args: argparse.Namespace) -> int:
+    """Handle ``foreman history``."""
+
+    with ForemanStore(args.db) as store:
+        store.initialize()
+        task = store.get_task(args.task_id)
+        if task is None:
+            print(f"Unknown task: {args.task_id}", file=sys.stderr)
+            return 1
+
+        db_path = store.db_path
+        project = store.get_project(task.project_id)
+        sprint = store.get_sprint(task.sprint_id)
+        runs = store.list_runs(task_id=task.id)
+        events = store.list_events(task_id=task.id)
+        totals = store.run_totals(task_id=task.id)
+
+    lines = [
+        "History",
+        f"Database: {db_path}",
+        f"Task: {task.id} | {task.title}",
+        f"Project: {task.project_id} | {project.name if project is not None else 'unknown'}",
+        f"Sprint: {task.sprint_id} | {sprint.title if sprint is not None else 'unknown'}",
+        f"Status: {task.status} | type={task.task_type} | created_by={task.created_by}",
+        (
+            f"Totals: runs={totals['run_count']} | "
+            f"tokens={totals['total_token_count']} | "
+            f"cost_usd={_format_usd(float(totals['total_cost_usd']))} | "
+            f"duration_ms={totals['total_duration_ms']}"
+        ),
+        f"Step visits: {_format_step_visits(task.step_visit_counts)}",
+    ]
+    if task.branch_name:
+        lines.append(f"Branch: {task.branch_name}")
+    if task.assigned_role:
+        lines.append(f"Assigned role: {task.assigned_role}")
+    if task.blocked_reason:
+        lines.append(f"Blocked reason: {task.blocked_reason}")
+
+    lines.append("Runs:")
+    if not runs:
+        lines.append("- none")
+    else:
+        for run in runs:
+            parts = [
+                run.id,
+                f"role={run.role_id}",
+                f"step={run.workflow_step}",
+                f"backend={run.agent_backend}",
+                f"status={run.status}",
+                f"cost_usd={_format_usd(run.cost_usd)}",
+                f"tokens={run.token_count}",
+                f"duration_ms={run.duration_ms or 0}",
+                f"retries={run.retry_count}",
+            ]
+            if run.outcome:
+                parts.append(f"outcome={run.outcome}")
+            if run.outcome_detail:
+                parts.append(f"detail={_truncate_text(run.outcome_detail)}")
+            if run.model:
+                parts.append(f"model={run.model}")
+            if run.session_id:
+                parts.append(f"session={run.session_id}")
+            lines.append(f"- {' | '.join(parts)}")
+
+    lines.append("Events:")
+    if not events:
+        lines.append("- none")
+    else:
+        for event in events:
+            lines.append(
+                f"- {_render_event_line(event.event_type, event.timestamp, event.role_id, event.payload)}"
+            )
+
+    _print_lines(*lines)
+    return 0
+
+
+def handle_cost(args: argparse.Namespace) -> int:
+    """Handle ``foreman cost``."""
+
+    with ForemanStore(args.db) as store:
+        store.initialize()
+        project = store.get_project(args.project_id)
+        if project is None:
+            print(f"Unknown project: {args.project_id}", file=sys.stderr)
+            return 1
+
+        db_path = store.db_path
+        sprint = None
+        if args.sprint:
+            sprint = store.get_sprint(args.sprint)
+            if sprint is None:
+                print(f"Unknown sprint: {args.sprint}", file=sys.stderr)
+                return 1
+            if sprint.project_id != project.id:
+                print(
+                    f"Sprint {sprint.id} does not belong to project {project.id}.",
+                    file=sys.stderr,
+                )
+                return 1
+
+        totals = store.run_totals(
+            project_id=project.id,
+            sprint_id=sprint.id if sprint is not None else None,
+        )
+        task_totals = store.task_run_totals(
+            sprint_id=sprint.id if sprint is not None else None,
+            project_id=None if sprint is not None else project.id,
+        )
+
+    lines = [
+        "Cost",
+        f"Database: {db_path}",
+        f"Project: {project.id} | {project.name}",
+        (
+            f"Scope: sprint {sprint.id} | {sprint.title}"
+            if sprint is not None
+            else "Scope: project"
+        ),
+        (
+            f"Totals: runs={totals['run_count']} | "
+            f"tokens={totals['total_token_count']} | "
+            f"cost_usd={_format_usd(float(totals['total_cost_usd']))} | "
+            f"duration_ms={totals['total_duration_ms']}"
+        ),
+        "By task:",
+    ]
+    if not task_totals:
+        lines.append("- none")
+    else:
+        for row in task_totals:
+            lines.append(
+                "- "
+                f"{row['task_id']} | {row['task_type']} | {row['task_title']} | "
+                f"status={row['task_status']} | runs={row['run_count']} | "
+                f"tokens={row['total_token_count']} | "
+                f"cost_usd={_format_usd(float(row['total_cost_usd']))}"
+            )
+    if int(totals["zero_cost_token_runs"]) > 0:
+        lines.append(
+            "Note: some runs reported token usage with $0.00 cost; persisted USD totals do not infer missing backend pricing."
+        )
+
+    _print_lines(*lines)
+    return 0
+
+
+def handle_watch(args: argparse.Namespace) -> int:
+    """Handle ``foreman watch``."""
+
+    if args.run and args.project_id:
+        print("Do not provide a project_id when using --run.", file=sys.stderr)
+        return 1
+    if not args.run and not args.project_id:
+        print("Provide either a project_id or --run.", file=sys.stderr)
+        return 1
+    if args.iterations < 1:
+        print("--iterations must be at least 1.", file=sys.stderr)
+        return 1
+    if args.interval < 0:
+        print("--interval must be zero or greater.", file=sys.stderr)
+        return 1
+    if args.limit < 1:
+        print("--limit must be at least 1.", file=sys.stderr)
+        return 1
+
+    lines: list[str] = ["Watch"]
+    with ForemanStore(args.db) as store:
+        store.initialize()
+        if args.run:
+            run = store.get_run(args.run)
+            if run is None:
+                print(f"Unknown run: {args.run}", file=sys.stderr)
+                return 1
+            task = store.get_task(run.task_id)
+            project = store.get_project(run.project_id)
+            lines.extend(
+                [
+                    f"Database: {store.db_path}",
+                    f"Scope: run {run.id}",
+                    f"Project: {run.project_id} | {project.name if project is not None else 'unknown'}",
+                    f"Task: {run.task_id} | {task.title if task is not None else 'unknown'}",
+                ]
+            )
+            for iteration_index in range(args.iterations):
+                current_run = store.get_run(run.id) or run
+                current_task = store.get_task(run.task_id) or task
+                lines.append(
+                    f"Snapshot {iteration_index + 1}/{args.iterations} | {utc_now_text()}"
+                )
+                lines.append(
+                    f"Run: status={current_run.status} | step={current_run.workflow_step} | role={current_run.role_id}"
+                )
+                recent_events = store.list_recent_events(run_id=run.id, limit=args.limit)
+                lines.append("Recent activity:")
+                if not recent_events:
+                    lines.append("- none")
+                else:
+                    for event in recent_events:
+                        lines.append(
+                            f"- {_render_event_line(event.event_type, event.timestamp, event.role_id, event.payload)}"
+                        )
+                if current_task.blocked_reason:
+                    lines.append(f"Blocked reason: {current_task.blocked_reason}")
+                if iteration_index + 1 < args.iterations:
+                    lines.append("")
+                    time.sleep(args.interval)
+            _print_lines(*lines)
+            return 0
+
+        project = store.get_project(args.project_id)
+        if project is None:
+            print(f"Unknown project: {args.project_id}", file=sys.stderr)
+            return 1
+
+        lines.extend(
+            [
+                f"Database: {store.db_path}",
+                f"Scope: project {project.id}",
+                f"Project: {project.id} | {project.name}",
+            ]
+        )
+        for iteration_index in range(args.iterations):
+            active_sprint = store.get_active_sprint(project.id)
+            sprint_id = active_sprint.id if active_sprint is not None else None
+            counts = store.task_counts(
+                project_id=project.id if sprint_id is None else None,
+                sprint_id=sprint_id,
+            )
+            totals = store.run_totals(
+                project_id=project.id,
+                sprint_id=sprint_id,
+            )
+            recent_events = store.list_recent_events(project_id=project.id, limit=args.limit)
+            lines.append(
+                f"Snapshot {iteration_index + 1}/{args.iterations} | {utc_now_text()}"
+            )
+            if active_sprint is None:
+                lines.append("Sprint: none")
+            else:
+                lines.append(f"Sprint: {active_sprint.id} | {active_sprint.title}")
+            lines.append(_format_task_counts(counts))
+            lines.append(
+                f"Activity: runs={totals['run_count']} | tokens={totals['total_token_count']} | cost_usd={_format_usd(float(totals['total_cost_usd']))}"
+            )
+            lines.append("Recent activity:")
+            if not recent_events:
+                lines.append("- none")
+            else:
+                for event in recent_events:
+                    lines.append(
+                        f"- {_render_event_line(event.event_type, event.timestamp, event.role_id, event.payload)}"
+                    )
+            if iteration_index + 1 < args.iterations:
+                lines.append("")
+                time.sleep(args.interval)
+
+    _print_lines(*lines)
+    return 0
 
 
 def handle_init(args: argparse.Namespace) -> int:
@@ -230,6 +659,18 @@ def handle_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def handle_approve(args: argparse.Namespace) -> int:
+    """Handle ``foreman approve``."""
+
+    return _handle_human_gate_decision(args, outcome="approve")
+
+
+def handle_deny(args: argparse.Namespace) -> int:
+    """Handle ``foreman deny``."""
+
+    return _handle_human_gate_decision(args, outcome="deny")
+
+
 def handle_roles(_: argparse.Namespace) -> int:
     """Handle ``foreman roles``."""
 
@@ -284,6 +725,21 @@ def handle_stub(args: argparse.Namespace) -> int:
         "This CLI shell defines the canonical command surface from the product spec.",
         CLI_SHELL_NOTE,
     )
+    return 0
+
+
+def handle_dashboard(args: argparse.Namespace) -> int:
+    """Handle ``foreman dashboard``."""
+
+    try:
+        run_dashboard(
+            db_path=args.db,
+            host=args.host,
+            port=args.port,
+        )
+    except OSError as exc:
+        print(f"Failed to start dashboard: {exc}", file=sys.stderr)
+        return 1
     return 0
 
 
@@ -428,34 +884,82 @@ def build_parser() -> argparse.ArgumentParser:
 
     board_parser = subparsers.add_parser("board", help="Show a terminal task board.")
     board_parser.add_argument("project_id", help="Project identifier.")
-    _set_handler(board_parser, handle_stub, "board")
+    _add_db_option(
+        board_parser,
+        required=True,
+        help_text="Path to the SQLite store containing the project board state.",
+    )
+    _set_handler(board_parser, handle_board, "board")
 
     watch_parser = subparsers.add_parser("watch", help="Tail project or run events.")
     watch_parser.add_argument("project_id", nargs="?", help="Project identifier.")
     watch_parser.add_argument("--run", help="Run identifier.")
-    _set_handler(watch_parser, handle_stub, "watch")
+    watch_parser.add_argument(
+        "--limit",
+        type=int,
+        default=8,
+        help="Maximum number of recent events to show per snapshot.",
+    )
+    watch_parser.add_argument(
+        "--interval",
+        type=float,
+        default=2.0,
+        help="Seconds to wait between snapshots when polling.",
+    )
+    watch_parser.add_argument(
+        "--iterations",
+        type=int,
+        default=1,
+        help="Number of snapshots to render before exiting.",
+    )
+    _add_db_option(
+        watch_parser,
+        required=True,
+        help_text="Path to the SQLite store containing project or run activity.",
+    )
+    _set_handler(watch_parser, handle_watch, "watch")
 
     cost_parser = subparsers.add_parser("cost", help="Show project cost totals.")
     cost_parser.add_argument("project_id", help="Project identifier.")
     cost_parser.add_argument("--sprint", help="Sprint identifier.")
-    _set_handler(cost_parser, handle_stub, "cost")
+    _add_db_option(
+        cost_parser,
+        required=True,
+        help_text="Path to the SQLite store containing project run totals.",
+    )
+    _set_handler(cost_parser, handle_cost, "cost")
 
     history_parser = subparsers.add_parser(
         "history",
         help="Show run and event history for a task.",
     )
     history_parser.add_argument("task_id", help="Task identifier.")
-    _set_handler(history_parser, handle_stub, "history")
+    _add_db_option(
+        history_parser,
+        required=True,
+        help_text="Path to the SQLite store containing task history.",
+    )
+    _set_handler(history_parser, handle_history, "history")
 
     approve_parser = subparsers.add_parser("approve", help="Approve a paused task.")
     approve_parser.add_argument("task_id", help="Task identifier.")
     approve_parser.add_argument("--note", help="Optional approval note.")
-    _set_handler(approve_parser, handle_stub, "approve")
+    _add_db_option(
+        approve_parser,
+        required=True,
+        help_text="Path to the SQLite store containing the paused task.",
+    )
+    _set_handler(approve_parser, handle_approve, "approve")
 
     deny_parser = subparsers.add_parser("deny", help="Deny a paused task.")
     deny_parser.add_argument("task_id", help="Task identifier.")
     deny_parser.add_argument("--note", help="Optional denial note.")
-    _set_handler(deny_parser, handle_stub, "deny")
+    _add_db_option(
+        deny_parser,
+        required=True,
+        help_text="Path to the SQLite store containing the paused task.",
+    )
+    _set_handler(deny_parser, handle_deny, "deny")
 
     roles_parser = subparsers.add_parser("roles", help="List available roles.")
     _set_handler(roles_parser, handle_roles, "roles")
@@ -477,6 +981,28 @@ def build_parser() -> argparse.ArgumentParser:
         help="Configuration assignment in key=value form.",
     )
     _set_handler(config_parser, handle_stub, "config")
+
+    dashboard_parser = subparsers.add_parser(
+        "dashboard",
+        help="Start the web dashboard.",
+    )
+    _add_db_option(
+        dashboard_parser,
+        required=True,
+        help_text="Path to the SQLite store for dashboard data.",
+    )
+    dashboard_parser.add_argument(
+        "--host",
+        default="localhost",
+        help="Host to bind to (default: localhost).",
+    )
+    dashboard_parser.add_argument(
+        "--port",
+        type=int,
+        default=8080,
+        help="Port to listen on (default: 8080).",
+    )
+    _set_handler(dashboard_parser, handle_dashboard, "dashboard")
 
     return parser
 
@@ -519,3 +1045,38 @@ def _allocate_project_id(
             return candidate
         candidate = f"{base_id}-{suffix}"
         suffix += 1
+
+
+def _handle_human_gate_decision(args: argparse.Namespace, *, outcome: str) -> int:
+    with ForemanStore(args.db) as store:
+        store.initialize()
+        orchestrator = ForemanOrchestrator(store)
+        try:
+            result = orchestrator.resume_human_gate(
+                args.task_id,
+                outcome=outcome,
+                note=args.note,
+            )
+        except OrchestratorError as exc:
+            print(f"Failed to {outcome} task: {exc}", file=sys.stderr)
+            return 1
+        db_path = store.db_path
+
+    action = "Approved" if outcome == "approve" else "Denied"
+    lines = [
+        f"{action} task",
+        f"Database: {db_path}",
+        f"Task ID: {result.task.id}",
+        f"Resume from: {result.paused_step}",
+        f"Next step: {result.next_step}",
+        f"Status: {result.task.status}",
+        f"Resume deferred: {'yes' if result.deferred else 'no'}",
+    ]
+    if args.note:
+        lines.append(f"Note: {args.note}")
+    if result.task.workflow_current_step:
+        lines.append(f"Persisted step: {result.task.workflow_current_step}")
+    if result.task.blocked_reason:
+        lines.append(f"Blocked reason: {result.task.blocked_reason}")
+    _print_lines(*lines)
+    return 0
