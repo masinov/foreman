@@ -3,12 +3,20 @@
 from __future__ import annotations
 
 import json
-from http.server import HTTPServer, SimpleHTTPRequestHandler
+import time
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+from .models import Event
 from .store import ForemanStore
+
+
+ACTIVITY_EVENT_LIMIT = 50
+STREAM_BATCH_LIMIT = 100
+STREAM_HEARTBEAT_SECONDS = 10.0
+STREAM_POLL_INTERVAL_SECONDS = 0.5
 
 
 DASHBOARD_HTML = """<!DOCTYPE html>
@@ -405,24 +413,36 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 </div>
 
 <script>
+const ACTIVITY_EVENT_LIMIT = 50;
+const MAX_STREAM_EVENTS = 100;
 let currentProject = null;
 let currentSprint = null;
 let projectData = [];
 let sprintData = {};
 let taskData = {};
 let eventData = [];
+let sprintStream = null;
+let latestEventId = null;
+let refreshTimer = null;
 
 function navigate(view, id) {
+  if (currentSprint && (view !== 'sprint' || id !== currentSprint)) {
+    closeSprintStream();
+  }
   document.querySelectorAll('.view').forEach(v => v.classList.remove('visible'));
 
   if (view === 'dashboard') {
     currentProject = null;
     currentSprint = null;
+    latestEventId = null;
+    eventData = [];
     document.getElementById('view-dashboard').classList.add('visible');
     loadDashboard();
   } else if (view === 'project') {
     currentProject = id;
     currentSprint = null;
+    latestEventId = null;
+    eventData = [];
     document.getElementById('view-project').classList.add('visible');
     loadProject(id);
   } else if (view === 'sprint') {
@@ -511,6 +531,24 @@ function getSprintStatusClass(status) {
   if (status === 'active') return 'sc-active';
   if (status === 'done' || status === 'completed') return 'sc-completed';
   return 'sc-planned';
+}
+
+function updateCurrentProjectSprintSummary(summary) {
+  if (!currentProject || !summary) return;
+  const projectSprints = sprintData[currentProject];
+  if (!projectSprints) return;
+  sprintData[currentProject] = projectSprints.map(s => s.id === summary.id ? {...s, ...summary} : s);
+}
+
+function renderSprintSummary(sprint) {
+  document.getElementById('sprintName').textContent = sprint.title;
+  document.getElementById('sprintGoal').textContent = sprint.goal || '';
+
+  const counts = sprint.task_counts || {};
+  const total = (counts.done || 0) + (counts.in_progress || 0) + (counts.blocked || 0) + (counts.todo || 0);
+  document.getElementById('sprintProgress').textContent = `${counts.done || 0}/${total} done`;
+  document.getElementById('sprintTokens').textContent = formatTokens(sprint.totals?.total_token_count || 0);
+  document.getElementById('sprintRuns').textContent = sprint.totals?.run_count || 0;
 }
 
 function renderProgressBar(counts) {
@@ -648,7 +686,7 @@ async function loadSprint(sprintId) {
     const [sprintResp, tasksResp, eventsResp] = await Promise.all([
       fetch(`/api/sprints/${sprintId}`),
       fetch(`/api/sprints/${sprintId}/tasks`),
-      fetch(`/api/sprints/${sprintId}/events?limit=50`)
+      fetch(`/api/sprints/${sprintId}/events?limit=${ACTIVITY_EVENT_LIMIT}`)
     ]);
     const sprintData = await sprintResp.json();
     const tasksData = await tasksResp.json();
@@ -656,21 +694,114 @@ async function loadSprint(sprintId) {
 
     taskData[sprintId] = tasksData.tasks || [];
     eventData = eventsData.events || [];
+    latestEventId = eventData.length > 0 ? eventData[eventData.length - 1].id : null;
 
-    document.getElementById('sprintName').textContent = sprintData.title;
-    document.getElementById('sprintGoal').textContent = sprintData.goal || '';
-
-    const counts = sprintData.task_counts || {};
-    const total = (counts.done || 0) + (counts.in_progress || 0) + (counts.blocked || 0) + (counts.todo || 0);
-    document.getElementById('sprintProgress').textContent = `${counts.done || 0}/${total} done`;
-    document.getElementById('sprintTokens').textContent = formatTokens(sprintData.totals?.total_token_count || 0);
-    document.getElementById('sprintRuns').textContent = sprintData.totals?.run_count || 0;
-
+    updateCurrentProjectSprintSummary(sprintData);
+    renderSprintSummary(sprintData);
     renderBoard(taskData[sprintId]);
     renderActivity(eventData);
+    openSprintStream(sprintId);
 
   } catch (e) {
     console.error('Failed to load sprint:', e);
+  }
+}
+
+function closeSprintStream() {
+  if (refreshTimer) {
+    clearTimeout(refreshTimer);
+    refreshTimer = null;
+  }
+  if (sprintStream) {
+    sprintStream.close();
+    sprintStream = null;
+  }
+}
+
+function openSprintStream(sprintId) {
+  closeSprintStream();
+  if (typeof EventSource === 'undefined') {
+    console.warn('EventSource is not available in this browser.');
+    return;
+  }
+
+  const after = latestEventId ? `?after=${encodeURIComponent(latestEventId)}` : '';
+  sprintStream = new EventSource(`/api/sprints/${sprintId}/stream${after}`);
+  sprintStream.onmessage = (message) => {
+    if (currentSprint !== sprintId) {
+      closeSprintStream();
+      return;
+    }
+
+    try {
+      const payload = JSON.parse(message.data);
+      if (payload.type !== 'event' || !payload.event) {
+        return;
+      }
+      appendActivityEvent(payload.event);
+      queueSprintRefresh();
+    } catch (error) {
+      console.error('Failed to parse sprint stream event:', error);
+    }
+  };
+  sprintStream.onerror = (error) => {
+    if (currentSprint !== sprintId) {
+      closeSprintStream();
+      return;
+    }
+    console.warn('Sprint stream connection issue:', error);
+  };
+}
+
+function appendActivityEvent(event) {
+  if (!event || !event.id) return;
+  const existingIndex = eventData.findIndex(entry => entry.id === event.id);
+  if (existingIndex >= 0) {
+    eventData[existingIndex] = event;
+  } else {
+    eventData.push(event);
+    if (eventData.length > MAX_STREAM_EVENTS) {
+      eventData = eventData.slice(eventData.length - MAX_STREAM_EVENTS);
+    }
+  }
+  latestEventId = event.id;
+  renderActivity(eventData);
+}
+
+function queueSprintRefresh() {
+  if (!currentSprint || refreshTimer) return;
+  refreshTimer = window.setTimeout(async () => {
+    refreshTimer = null;
+    await refreshCurrentSprintState();
+  }, 250);
+}
+
+async function refreshCurrentSprintState() {
+  if (!currentSprint) return;
+
+  try {
+    const sprintId = currentSprint;
+    const [sprintResp, tasksResp] = await Promise.all([
+      fetch(`/api/sprints/${sprintId}`),
+      fetch(`/api/sprints/${sprintId}/tasks`)
+    ]);
+    const sprint = await sprintResp.json();
+    const tasks = await tasksResp.json();
+
+    if (currentSprint !== sprintId) {
+      return;
+    }
+
+    taskData[sprintId] = tasks.tasks || [];
+    updateCurrentProjectSprintSummary(sprint);
+    renderSprintSummary(sprint);
+    renderBoard(taskData[sprintId]);
+
+    if (currentDetailTask) {
+      await showTaskDetail(currentDetailTask);
+    }
+  } catch (error) {
+    console.error('Failed to refresh sprint state from stream activity:', error);
   }
 }
 
@@ -1002,14 +1133,11 @@ async function sendHumanMessage() {
       body: JSON.stringify({text: text})
     });
     const data = await resp.json();
+    if (!resp.ok) {
+      throw new Error(data.error || 'Failed to send message');
+    }
     input.value = '';
     autoResize(input);
-    // Reload activity to show the new message
-    if (currentSprint) {
-      const eventsResp = await fetch(`/api/sprints/${currentSprint}/events?limit=50`);
-      const eventsData = await eventsResp.json();
-      renderActivity(eventsData.events || []);
-    }
   } catch (e) {
     console.error('Failed to send message:', e);
   } finally {
@@ -1029,15 +1157,21 @@ navigate('dashboard');
 class DashboardHandler(SimpleHTTPRequestHandler):
     """HTTP request handler for the Foreman dashboard."""
 
+    protocol_version = "HTTP/1.1"
     store: ForemanStore | None = None
     db_path: str | None = None
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
-        # Create a thread-local store if db_path is set
+        owns_store = False
         if self.db_path is not None and self.store is None:
-            self.__class__.store = ForemanStore(self.db_path)
-            self.__class__.store.initialize()
-        super().__init__(*args, directory=None, **kwargs)
+            self.store = ForemanStore(self.db_path)
+            self.store.initialize()
+            owns_store = True
+        try:
+            super().__init__(*args, directory=None, **kwargs)
+        finally:
+            if owns_store and self.store is not None:
+                self.store.close()
 
     def _send_json(self, data: dict[str, Any], status: int = 200) -> None:
         body = json.dumps(data).encode("utf-8")
@@ -1058,6 +1192,96 @@ class DashboardHandler(SimpleHTTPRequestHandler):
 
     def _send_error(self, message: str, status: int = 404) -> None:
         self._send_json({"error": message}, status)
+
+    def _serialize_event(self, event: Event) -> dict[str, Any]:
+        return {
+            "id": event.id,
+            "task_id": event.task_id,
+            "project_id": event.project_id,
+            "event_type": event.event_type,
+            "timestamp": event.timestamp,
+            "role_id": event.role_id,
+            "payload": event.payload,
+        }
+
+    def _list_sprint_event_payloads(
+        self,
+        sprint_id: str,
+        *,
+        limit: int = ACTIVITY_EVENT_LIMIT,
+        after_event_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        assert self.store is not None
+        if after_event_id:
+            events = self.store.list_sprint_events(
+                sprint_id,
+                after_event_id=after_event_id,
+                limit=limit,
+            )
+        else:
+            events = self.store.list_recent_sprint_events(sprint_id, limit=limit)
+        return [self._serialize_event(event) for event in events]
+
+    def _send_event_stream_headers(self) -> None:
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "keep-alive")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+
+    def _write_sse_message(
+        self,
+        payload: dict[str, Any],
+        *,
+        event_id: str | None = None,
+        event_name: str | None = None,
+    ) -> None:
+        chunks: list[str] = []
+        if event_id:
+            chunks.append(f"id: {event_id}")
+        if event_name:
+            chunks.append(f"event: {event_name}")
+        data = json.dumps(payload)
+        for line in data.splitlines():
+            chunks.append(f"data: {line}")
+        chunks.append("")
+        chunks.append("")
+        self.wfile.write("\n".join(chunks).encode("utf-8"))
+        self.wfile.flush()
+
+    def _write_sse_comment(self, message: str) -> None:
+        self.wfile.write(f": {message}\n\n".encode("utf-8"))
+        self.wfile.flush()
+
+    def _stream_sprint_events(self, sprint_id: str, *, after_event_id: str | None = None) -> None:
+        assert self.store is not None
+        self._send_event_stream_headers()
+        self.wfile.write(b"retry: 1000\n\n")
+        self.wfile.flush()
+
+        last_event_id = after_event_id
+        last_heartbeat_at = time.monotonic()
+
+        while True:
+            event_payloads = self._list_sprint_event_payloads(
+                sprint_id,
+                limit=STREAM_BATCH_LIMIT,
+                after_event_id=last_event_id,
+            )
+            if event_payloads:
+                for payload in event_payloads:
+                    last_event_id = str(payload["id"])
+                    self._write_sse_message(
+                        {"type": "event", "event": payload},
+                        event_id=last_event_id,
+                    )
+                last_heartbeat_at = time.monotonic()
+            elif time.monotonic() - last_heartbeat_at >= STREAM_HEARTBEAT_SECONDS:
+                self._write_sse_comment("keepalive")
+                last_heartbeat_at = time.monotonic()
+
+            time.sleep(STREAM_POLL_INTERVAL_SECONDS)
 
     def _get_project_status(self, project_id: str) -> str:
         assert self.store is not None
@@ -1201,30 +1425,35 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 self._send_json({"tasks": result})
                 return
 
+        # API: Live event stream for sprint
+        if path.startswith("/api/sprints/") and path.endswith("/stream"):
+            parts = path.split("/")
+            if len(parts) == 5:
+                sprint_id = parts[3]
+                sprint = self.store.get_sprint(sprint_id)
+                if sprint is None:
+                    self._send_error(f"Sprint not found: {sprint_id}")
+                    return
+                after_event_id = self.headers.get("Last-Event-ID") or query.get("after", [None])[0]
+                try:
+                    self._stream_sprint_events(sprint_id, after_event_id=after_event_id)
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+                return
+
         # API: List events for sprint
         if path.startswith("/api/sprints/") and path.endswith("/events"):
             parts = path.split("/")
             if len(parts) == 5:
                 sprint_id = parts[3]
                 limit = int(query.get("limit", [50])[0])
-                tasks = self.store.list_tasks(sprint_id=sprint_id)
-                task_ids = [t.id for t in tasks]
-                events = []
-                for tid in task_ids:
-                    events.extend(self.store.list_events(task_id=tid, limit=limit))
-                events.sort(key=lambda e: e.timestamp, reverse=True)
-                events = events[:limit]
-                events.reverse()
-                result = []
-                for e in events:
-                    result.append({
-                        "id": e.id,
-                        "event_type": e.event_type,
-                        "timestamp": e.timestamp,
-                        "role_id": e.role_id,
-                        "payload": e.payload,
-                    })
-                self._send_json({"events": result})
+                after_event_id = query.get("after", [None])[0]
+                events = self._list_sprint_event_payloads(
+                    sprint_id,
+                    limit=limit,
+                    after_event_id=after_event_id,
+                )
+                self._send_json({"events": events})
                 return
 
         # API: Get task details
@@ -1415,7 +1644,7 @@ def run_dashboard(db_path: str, host: str = "localhost", port: int = 8080) -> No
         host: Host address to bind to.
         port: Port number to listen on.
     """
-    # Set db_path on handler class so each request thread can create its own store
+    # Set db_path on handler class so each request can create its own store.
     DashboardHandler.db_path = db_path
     DashboardHandler.store = None
 
@@ -1424,7 +1653,7 @@ def run_dashboard(db_path: str, host: str = "localhost", port: int = 8080) -> No
     init_store.initialize()
     init_store.close()
 
-    server = HTTPServer((host, port), DashboardHandler)
+    server = ThreadingHTTPServer((host, port), DashboardHandler)
     print(f"Foreman dashboard running at http://{host}:{port}/")
     print(f"Database: {db_path}")
     print("Press Ctrl+C to stop.")

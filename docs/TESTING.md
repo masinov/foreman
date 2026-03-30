@@ -23,7 +23,7 @@ repo-memory validation and code-level regression coverage:
 The current suite covers:
 
 - `tests/test_store.py` for SQLite round-trips, status-filtered reads, run
-  totals, and recent-event slices
+  totals, recent-event slices, and sprint-scoped event queries
 - `tests/test_roles.py` and `tests/test_workflows.py` for shipped declarative
   configuration loading and validation
 - `tests/test_scaffold.py` for generated `AGENTS.md`, idempotent `.gitignore`
@@ -42,7 +42,8 @@ The current suite covers:
   resume, approval responses, streamed event mapping, and failure handling
 - `tests/test_dashboard.py` for dashboard HTML shell rendering, SQLite-backed
   API reads, task detail data, human message affordances, activity filtering,
-  project switching, and approve or deny integration behavior
+  project switching, incremental sprint-event serialization, and approve or
+  deny integration behavior
 - `tests/test_executor.py` for runner-backed execution config, event
   translation, completion handling, and infrastructure-error behavior in
   `foreman.executor`
@@ -57,6 +58,7 @@ Unit tests:
 - role and workflow parsing
 - signal parsing
 - dashboard handler read logic
+- dashboard live transport serialization
 - git helper behavior that can be isolated
 
 Integration tests:
@@ -80,7 +82,7 @@ UI validation:
 - manual checks against `docs/mockups/foreman-mockup-v6.html`
 - project dashboard navigation
 - sprint board interactions
-- activity feed behavior
+- activity feed behavior and live stream updates
 - human message, filter, and approve or deny flows
 
 ## Definition of done

@@ -1,42 +1,42 @@
 # Current Sprint
 
-- Sprint: `sprint-14-dashboard-streaming-transport`
+- Sprint: `sprint-15-engine-db-discovery`
 - Status: active
-- Goal: replace polling-only dashboard activity refresh with an explicit live
-  transport that keeps activity and task state current
+- Goal: remove the bootstrap requirement to pass explicit `--db` paths for
+  normal SQLite-backed CLI flows
 - Primary references:
   - `docs/specs/engine-design-v3.md`
-  - `docs/mockups/foreman-mockup-v6.html`
-  - `docs/adr/ADR-0002-dashboard-data-access-boundary.md`
-  - `foreman/dashboard.py`
-  - `foreman/store.py`
+  - `docs/STATUS.md`
   - `foreman/cli.py`
+  - `foreman/store.py`
+  - `scripts/reviewed_codex.py`
+  - `scripts/reviewed_claude.py`
 
 ## Included tasks
 
-1. `[todo]` Add a live dashboard event transport endpoint
-   Deliverable: the dashboard has a dedicated endpoint for incremental event
-   delivery instead of relying on periodic full refresh polling.
+1. `[todo]` Add engine-level database discovery
+   Deliverable: Foreman resolves a default SQLite path for normal repo-local
+   usage without requiring `--db` on every command.
 
-2. `[todo]` Wire the dashboard activity feed to the live transport
-   Deliverable: new activity appears in the UI without manual refresh and
-   without polling the full event list every cycle.
+2. `[todo]` Wire CLI flows to discovery with explicit override semantics
+   Deliverable: inspection, monitoring, and human-gate resume commands work
+   without explicit `--db`, while `--db PATH` still overrides discovery
+   deterministically.
 
-3. `[todo]` Keep task state and transport semantics aligned
-   Deliverable: task cards and selected task detail stay in sync with incoming
-   events, and the repo docs explain how this transport relates to the current
-   bounded `foreman watch` behavior.
+3. `[todo]` Document discovery and fallback behavior
+   Deliverable: repo docs explain how Foreman finds or creates the active
+   engine database and how that interacts with bootstrap initialization.
 
 ## Excluded from this sprint
 
-- authentication and multi-user concerns
-- security review workflow variant
-- event-retention pruning
-- engine-level database discovery
+- a migration framework for schema evolution
+- remote or multi-host engine discovery
+- security review workflow implementation
+- dashboard authentication and multi-user concerns
 
 ## Acceptance criteria
 
-- the dashboard receives new persisted events without full-list polling
-- activity and task state stay current while the page is open
-- the transport boundary is documented clearly enough for the next slice to
-  build on it without reverse-engineering the dashboard code
+- normal SQLite-backed CLI flows work without explicit `--db`
+- `--db PATH` remains a deterministic override
+- docs and tests explain the discovery boundary clearly enough for autonomous
+  supervisors to continue without reconstructing prior chat context

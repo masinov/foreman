@@ -138,8 +138,8 @@ Status:
 - the dashboard now exposes project overview, sprint board, task detail,
   direct SQLite-backed JSON APIs, human message input, activity filtering,
   project switching, and approve or deny workflow resume actions
-- live transport is still pending; the dashboard currently uses polling
-  snapshots rather than a dedicated stream
+- the live transport milestone was deferred to a dedicated follow-up slice so
+  the dashboard shell could land first without inventing a separate read model
 
 ## Milestone 7: Runner contract ADR baseline
 
@@ -193,15 +193,38 @@ Target deliverables:
 
 Status:
 
-- current sprint is `sprint-14-dashboard-streaming-transport`
-- no implementation has landed yet; the dashboard still relies on polling
-  snapshots
+- completed on `feat/dashboard-streaming-transport`
+- the dashboard now exposes a dedicated sprint event stream for incremental
+  persisted activity delivery
+- the dashboard client now subscribes to live sprint activity and refreshes
+  board state on incoming events without full-list polling
+- the dashboard server now runs on a threaded HTTP boundary so long-lived
+  streams do not block action endpoints
+
+## Milestone 10: Engine DB discovery
+
+Goal: remove the bootstrap requirement for explicit `--db` selection in normal
+SQLite-backed CLI flows.
+
+Target deliverables:
+
+- a default engine database discovery path for repo-local usage
+- CLI wiring that uses discovery by default while preserving `--db` override
+  semantics
+- documentation and tests for initialization, inspection, monitoring, and
+  human-gate resume behavior under discovery
+
+Status:
+
+- current sprint is `sprint-15-engine-db-discovery`
+- implementation is not started yet; normal CLI flows still require explicit
+  `--db`
 
 ## Near-term priorities
 
-1. add a live dashboard transport so activity no longer depends on polling
-   full snapshots
-2. remove the bootstrap requirement for explicit `--db` paths in normal CLI
+1. remove the bootstrap requirement for explicit `--db` paths in normal CLI
    flows
-3. add the security review workflow variant after the dashboard transport and
-   database-discovery gaps are closed
+2. add the security review workflow variant after the database-discovery gap is
+   closed
+3. add explicit native backend preflight checks so runtime failures surface
+   before long-running orchestrator work starts

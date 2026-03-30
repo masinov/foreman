@@ -46,7 +46,8 @@ The integrated pre-release baseline now contains:
   (`ADR-0001`) and dashboard data access (`ADR-0002`),
 - a dashboard web surface with project overview, sprint board, task detail,
   activity feed, human message input, activity filtering, project switching,
-  and approve or deny actions wired into orchestrator resume,
+  approve or deny actions wired into orchestrator resume, and a dedicated
+  sprint event stream for live activity updates,
 - unit and integration coverage across store, CLI, orchestrator, runners,
   dashboard, and runner-backed executor seams.
 
@@ -82,12 +83,12 @@ Both wrappers expect these files to be current:
 
 ## Next implementation slice
 
-The current sprint is `sprint-14-dashboard-streaming-transport`.
+The current sprint is `sprint-15-engine-db-discovery`.
 
 The next recommended task is:
 
-- replace polling-only dashboard refresh with a dedicated live event transport
-  so activity and task state stay current while the dashboard is open.
+- remove the bootstrap requirement to pass explicit `--db` paths for normal
+  SQLite-backed CLI inspection and resume flows.
 
 That work is recorded in `docs/sprints/current.md`, so a fresh agent can pick
 it up without reconstructing branch history first.

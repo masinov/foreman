@@ -276,6 +276,134 @@ class ForemanStoreTests(unittest.TestCase):
                 ),
             )
 
+    def test_sprint_event_queries_scope_and_resume_after_one_event(self) -> None:
+        db_path = self.create_db_path()
+        project = Project(
+            id="project-1",
+            name="Foreman",
+            repo_path="/work/foreman",
+            workflow_id="development",
+            created_at="2026-03-30T11:00:00Z",
+            updated_at="2026-03-30T11:00:00Z",
+        )
+        active_sprint = Sprint(
+            id="sprint-1",
+            project_id=project.id,
+            title="Streaming transport",
+            status="active",
+            created_at="2026-03-30T11:05:00Z",
+            started_at="2026-03-30T11:10:00Z",
+        )
+        other_sprint = Sprint(
+            id="sprint-0",
+            project_id=project.id,
+            title="Earlier work",
+            status="completed",
+            created_at="2026-03-29T11:05:00Z",
+            started_at="2026-03-29T11:10:00Z",
+            completed_at="2026-03-29T12:00:00Z",
+        )
+        sprint_task = Task(
+            id="task-1",
+            sprint_id=active_sprint.id,
+            project_id=project.id,
+            title="Live dashboard",
+            status="in_progress",
+            created_at="2026-03-30T11:15:00Z",
+        )
+        other_task = Task(
+            id="task-0",
+            sprint_id=other_sprint.id,
+            project_id=project.id,
+            title="Archive docs",
+            status="done",
+            created_at="2026-03-29T11:15:00Z",
+        )
+        run = Run(
+            id="run-1",
+            task_id=sprint_task.id,
+            project_id=project.id,
+            role_id="developer",
+            workflow_step="develop",
+            agent_backend="codex",
+            status="running",
+            created_at="2026-03-30T11:20:00Z",
+        )
+        other_run = Run(
+            id="run-0",
+            task_id=other_task.id,
+            project_id=project.id,
+            role_id="developer",
+            workflow_step="review",
+            agent_backend="claude_code",
+            status="completed",
+            created_at="2026-03-29T11:20:00Z",
+        )
+        first_event = Event(
+            id="event-1",
+            run_id=run.id,
+            task_id=sprint_task.id,
+            project_id=project.id,
+            event_type="workflow.step_started",
+            timestamp="2026-03-30T11:21:00Z",
+            role_id="developer",
+            payload={"step": "develop"},
+        )
+        second_event = Event(
+            id="event-2",
+            run_id=run.id,
+            task_id=sprint_task.id,
+            project_id=project.id,
+            event_type="agent.message",
+            timestamp="2026-03-30T11:22:00Z",
+            role_id="developer",
+            payload={"text": "Streaming now"},
+        )
+        third_event = Event(
+            id="event-3",
+            run_id=other_run.id,
+            task_id=other_task.id,
+            project_id=project.id,
+            event_type="signal.completion",
+            timestamp="2026-03-29T11:25:00Z",
+            role_id="developer",
+            payload={"summary": "Other sprint complete"},
+        )
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            store.save_project(project)
+            store.save_sprint(active_sprint)
+            store.save_sprint(other_sprint)
+            store.save_task(sprint_task)
+            store.save_task(other_task)
+            store.save_run(run)
+            store.save_run(other_run)
+            store.save_event(first_event)
+            store.save_event(second_event)
+            store.save_event(third_event)
+
+            self.assertEqual(
+                store.list_recent_sprint_events(active_sprint.id, limit=10),
+                [first_event, second_event],
+            )
+            self.assertEqual(
+                store.list_sprint_events(
+                    active_sprint.id,
+                    after_event_id=first_event.id,
+                    limit=10,
+                ),
+                [second_event],
+            )
+            self.assertEqual(
+                store.list_sprint_events(
+                    active_sprint.id,
+                    after_event_id="missing-event",
+                    limit=10,
+                ),
+                [],
+            )
+
     def test_only_one_active_sprint_is_allowed_per_project(self) -> None:
         db_path = self.create_db_path()
         project = Project(

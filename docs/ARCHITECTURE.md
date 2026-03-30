@@ -125,6 +125,8 @@ The current dashboard baseline includes:
 - task detail with run history, acceptance criteria, and step visit counts,
 - activity feed filtering,
 - human message submission stored as `human.message` events,
+- a dedicated sprint event stream for incremental persisted activity delivery,
+- debounced board and selected-task refresh on incoming activity,
 - approve or deny actions that call the orchestrator to resume workflow
   execution.
 
@@ -152,17 +154,21 @@ The current dashboard baseline includes:
   persisted session from SQLite for persistent roles.
 - Codex token usage is persisted accurately, but the current app-server
   contract does not expose USD pricing, so Codex `cost_usd` remains zero.
-- `foreman watch` and the dashboard activity feed still rely on bounded polling
-  rather than a dedicated streaming transport.
+- the dashboard live transport uses server-sent events over a threaded HTTP
+  server, with store polling inside the transport loop as the current
+  implementation boundary.
+- `foreman watch` still renders bounded polling snapshots and is not yet
+  aligned to the dashboard's live transport.
 - `.foreman/status.md` still emits an explicit open-decisions placeholder
   because the SQLite schema does not yet persist decision records.
 
 ## Next architectural slice
 
-The next slice should define and implement the dashboard's live transport
-boundary:
+The next slice should define the engine-level database discovery boundary:
 
-- add a dedicated transport endpoint for incremental event delivery,
-- wire the dashboard activity feed and task state refresh to that transport,
-- keep the transport semantics aligned with the future replacement for bounded
-  `foreman watch` polling.
+- choose and implement the default SQLite location for repo-local Foreman
+  usage,
+- wire normal CLI flows to discovery while keeping `--db` as an explicit
+  override,
+- document how discovery interacts with initialization, monitoring, and
+  human-gate resume behavior.

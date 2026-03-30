@@ -2,27 +2,30 @@
 
 ## Current sprint
 
-- Sprint: `sprint-14-dashboard-streaming-transport`
+- Sprint: `sprint-15-engine-db-discovery`
 - Status: active
-- Goal: replace polling-only dashboard refresh with an explicit live event
-  transport that keeps the activity feed and task state current
+- Goal: remove the bootstrap requirement to pass explicit `--db` paths for
+  normal SQLite-backed CLI flows
 
 ## Active branches
 
-- no long-lived feature branch should remain loose after the session
-  continuity slice; start sprint-14 work from `main`
+- no long-lived feature branch should remain loose after the dashboard
+  streaming slice; start sprint-15 work from `main`
 
 ## Completed this week
 
 - reconciled the previously loose feature and recovery histories into one
   integrated mainline and pushed the result to `origin/main`
-- restored the missing sprint-09 runner-session ADR artifacts and archived
-  sprints 09 through 12
 - completed `sprint-13-persistent-session-reload`
 - implemented cross-invocation native session reuse for persistent roles by
   reloading the latest compatible `session_id` from SQLite
-- added regression coverage for fresh-process Claude Code and Codex session
-  reuse plus the negative case for non-persistent reviewer sessions
+- completed `sprint-14-dashboard-streaming-transport`
+- added a dedicated dashboard sprint event stream with incremental persisted
+  event delivery
+- switched the dashboard activity panel to a live subscription path and
+  debounced task-state refresh on incoming events
+- moved the dashboard server to a threaded HTTP boundary so long-lived
+  activity streams do not block approve or deny or message requests
 
 ## Current repo state
 
@@ -42,7 +45,8 @@
   - accepted ADRs for runner session semantics and dashboard data access,
   - a dashboard web surface with project overview, sprint board, task detail,
     activity feed, human message input, activity filtering, project switching,
-    and approve or deny actions that resume the workflow,
+    approve or deny actions that resume the workflow, and a dedicated sprint
+    event stream that keeps activity current without full-list polling,
   - unit and integration coverage across store, CLI, orchestrator, runners,
     dashboard, and executor seams,
   - repo-memory docs that are intended to let a fresh agent continue from the
@@ -53,11 +57,11 @@
 
 ## Ready next
 
-1. add a live dashboard transport endpoint so new events appear without polling
-   full snapshots
-2. wire the dashboard activity panel and task state refresh to that transport
-3. align the streaming dashboard behavior with the eventual replacement for
-   bounded `foreman watch` polling semantics
+1. add engine-level database discovery for repo-local CLI usage
+2. keep explicit `--db` as a deterministic override while normal flows resolve
+   the active engine database automatically
+3. document how database discovery interacts with init, monitoring, and
+   human-gate resume commands
 
 ## Open risks
 
@@ -67,8 +71,8 @@
 - The bootstrap CLI still requires explicit `--db PATH` selection for
   SQLite-backed lifecycle, inspection, monitoring, and human-gate commands
   because engine-instance configuration does not exist yet.
-- `foreman watch` and the dashboard activity feed still rely on bounded polling
-  snapshots rather than a live streaming transport.
+- `foreman watch` still relies on bounded polling snapshots even though the
+  dashboard now uses a dedicated live event stream.
 - The native Claude and Codex runners assume working `claude` and `codex`
   executables in PATH and currently rely on runtime process errors rather than
   explicit preflight health checks.
@@ -95,14 +99,14 @@
   resuming workflow execution. The current runtime does that when the next
   backend and repo are available, but it still persists a deferred next step
   when the resumed workflow cannot execute safely yet.
-- The spec describes `foreman watch` as a live event tail, while the current
-  implementation intentionally renders bounded polling snapshots until a
-  dedicated streaming transport boundary exists.
+- The spec describes `foreman watch` as a live event tail. The current
+  bootstrap CLI still renders bounded polling snapshots, while the dashboard
+  now uses a dedicated event stream for live activity.
 
 ## Open decisions
 
-- whether the dashboard activity surface should reuse `foreman watch`
-  semantics or move to a dedicated streaming channel
+- whether `foreman watch` should converge on the dashboard's dedicated
+  streaming transport or remain a separate CLI-tail implementation
 - whether project `default_model` should be validated against the selected
   backend instead of being passed through verbatim at runtime
 - whether engine-level database discovery should replace the current explicit

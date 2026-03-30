@@ -30,6 +30,8 @@ memory changes rather than versioned product releases.
 - `foreman/dashboard.py` with dashboard HTML shell and direct JSON endpoints
 - dashboard task detail, activity feed, human message input, activity filter,
   project switcher, and approve or deny actions
+- a dedicated dashboard sprint event stream for incremental live activity
+  updates
 - `foreman/executor.py` and `tests/test_executor.py`
 
 ### Changed
@@ -54,6 +56,8 @@ memory changes rather than versioned product releases.
   advanced project memory to the persistent-session reload sprint
 - completed `sprint-13-persistent-session-reload`, archived it, and advanced
   project memory to the dashboard streaming transport sprint
+- completed `sprint-14-dashboard-streaming-transport`, archived it, and
+  advanced project memory to the engine DB discovery sprint
 - reconciled the loose feature and recovery branches into an integrated
   mainline candidate and restored missing repo-memory artifacts from the
   runner-session ADR branch

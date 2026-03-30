@@ -711,6 +711,67 @@ class ForemanStore:
         rows = self._connection.execute(sql, tuple(params)).fetchall()
         return [_row_to_event(row) for row in rows]
 
+    def list_sprint_events(
+        self,
+        sprint_id: str,
+        *,
+        after_event_id: str | None = None,
+        limit: int | None = None,
+    ) -> list[Event]:
+        """List sprint-scoped events in display order, optionally after one known event."""
+
+        params: list[Any] = [sprint_id]
+        sql = """
+            SELECT e.*
+            FROM events e
+            INNER JOIN tasks t ON t.id = e.task_id
+            WHERE t.sprint_id = ?
+        """
+
+        if after_event_id is not None:
+            marker = self._connection.execute(
+                "SELECT timestamp, rowid FROM events WHERE id = ?",
+                (after_event_id,),
+            ).fetchone()
+            if marker is None:
+                return []
+            sql += """
+                AND (
+                    e.timestamp > ?
+                    OR (e.timestamp = ? AND e.rowid > ?)
+                )
+            """
+            params.extend([marker["timestamp"], marker["timestamp"], marker["rowid"]])
+
+        sql += " ORDER BY e.timestamp ASC, e.rowid ASC"
+        if limit is not None:
+            sql += " LIMIT ?"
+            params.append(limit)
+
+        rows = self._connection.execute(sql, tuple(params)).fetchall()
+        return [_row_to_event(row) for row in rows]
+
+    def list_recent_sprint_events(self, sprint_id: str, *, limit: int = 50) -> list[Event]:
+        """Return the most recent sprint events while preserving display order."""
+
+        if limit <= 0:
+            return []
+
+        rows = self._connection.execute(
+            """
+            SELECT e.*
+            FROM events e
+            INNER JOIN tasks t ON t.id = e.task_id
+            WHERE t.sprint_id = ?
+            ORDER BY e.timestamp DESC, e.rowid DESC
+            LIMIT ?
+            """,
+            (sprint_id, limit),
+        ).fetchall()
+        events = [_row_to_event(row) for row in rows]
+        events.reverse()
+        return events
+
     def list_recent_events(
         self,
         *,

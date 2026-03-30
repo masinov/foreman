@@ -314,6 +314,17 @@ class DashboardHandlerTests(unittest.TestCase):
         self.assertIn("agent.message", event_types)
         self.assertIn("agent.file_change", event_types)
 
+    def test_dashboard_handler_serializes_incremental_sprint_events(self):
+        """Dashboard can serialize sprint event batches after a known event."""
+        handler = self.create_handler()
+        events = handler._list_sprint_event_payloads(
+            "sprint-1",
+            limit=10,
+            after_event_id="event-1",
+        )
+        self.assertEqual([event["id"] for event in events], ["event-2"])
+        self.assertEqual(events[0]["task_id"], "task-2")
+
     def test_dashboard_html_content(self):
         """Dashboard HTML contains expected elements."""
         from foreman.dashboard import DASHBOARD_HTML
@@ -388,6 +399,14 @@ class DashboardHandlerTests(unittest.TestCase):
         self.assertIn("activityFilterMenu", DASHBOARD_HTML)
         self.assertIn("filterEvents", DASHBOARD_HTML)
         self.assertIn("toggleFilterMenu", DASHBOARD_HTML)
+
+    def test_dashboard_streaming_transport_html(self):
+        """Dashboard HTML wires the activity feed to the sprint event stream."""
+        from foreman.dashboard import DASHBOARD_HTML
+        self.assertIn("EventSource", DASHBOARD_HTML)
+        self.assertIn("/api/sprints/${sprintId}/stream", DASHBOARD_HTML)
+        self.assertIn("openSprintStream", DASHBOARD_HTML)
+        self.assertIn("queueSprintRefresh", DASHBOARD_HTML)
 
     def test_dashboard_project_switcher_html(self):
         """Dashboard HTML contains project switcher elements."""
