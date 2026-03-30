@@ -32,7 +32,8 @@ The current suite covers:
   rendering
 - `tests/test_orchestrator.py` for workflow execution, dependency-aware task
   selection, test failure carry-output, review denial loops, native runner
-  execution, human-gate resume, and retry persistence
+  execution, human-gate resume, retry persistence, and fresh-process native
+  session reuse
 - `tests/test_cli.py` for CLI smoke paths plus monitoring command subprocess
   behavior
 - `tests/test_runner_claude.py` for Claude Code command construction, event
@@ -65,7 +66,8 @@ Integration tests:
 - orchestrator transitions
 - built-in test, merge, and human-gate steps
 - context projection into `.foreman/`
-- cross-invocation native session reuse once the current sprint lands
+- cross-invocation native session reuse for Claude Code, Codex, and
+  non-persistent reviewer roles
 
 Runner smoke tests:
 

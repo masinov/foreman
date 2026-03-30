@@ -2,27 +2,27 @@
 
 ## Current sprint
 
-- Sprint: `sprint-13-persistent-session-reload`
+- Sprint: `sprint-14-dashboard-streaming-transport`
 - Status: active
-- Goal: reload the last persisted same-role native runner session from SQLite
-  on fresh orchestrator invocations so session persistence survives process
-  restarts
+- Goal: replace polling-only dashboard refresh with an explicit live event
+  transport that keeps the activity feed and task state current
 
 ## Active branches
 
-- no long-lived feature branch should remain loose after the reconciliation
-  into `main`; start new slice work from `main`
+- no long-lived feature branch should remain loose after the session
+  continuity slice; start sprint-14 work from `main`
 
 ## Completed this week
 
 - reconciled the previously loose feature and recovery histories into one
-  integrated mainline
+  integrated mainline and pushed the result to `origin/main`
 - restored the missing sprint-09 runner-session ADR artifacts and archived
   sprints 09 through 12
-- completed the dashboard implementation, multi-project dashboard polish, and
-  dashboard approve or deny orchestrator integration slices
-- accepted `ADR-0001-runner-session-backend-contract` and
-  `ADR-0002-dashboard-data-access-boundary`
+- completed `sprint-13-persistent-session-reload`
+- implemented cross-invocation native session reuse for persistent roles by
+  reloading the latest compatible `session_id` from SQLite
+- added regression coverage for fresh-process Claude Code and Codex session
+  reuse plus the negative case for non-persistent reviewer sessions
 
 ## Current repo state
 
@@ -35,8 +35,8 @@
   - persisted human-gate approval and denial commands with deferred or
     immediate native resume behavior,
   - native Claude Code and Codex runners with structured event capture,
-    approval-policy handling, retry normalization, and session persistence
-    hooks,
+    approval-policy handling, retry normalization, and persisted session reuse
+    across fresh orchestrator invocations for persistent roles,
   - monitoring CLI surfaces for board, history, cost, and bounded watch
     snapshots,
   - accepted ADRs for runner session semantics and dashboard data access,
@@ -53,21 +53,17 @@
 
 ## Ready next
 
-1. reload the last compatible native session by `task + role + backend` from
-   SQLite before launching Claude Code or Codex
-2. add coverage for cross-invocation session reuse, including human-gate
-   resume after a fresh orchestrator process
-3. preserve the current role policy so `session_persistence = false` still
-   forces a fresh backend session
+1. add a live dashboard transport endpoint so new events appear without polling
+   full snapshots
+2. wire the dashboard activity panel and task state refresh to that transport
+3. align the streaming dashboard behavior with the eventual replacement for
+   bounded `foreman watch` polling semantics
 
 ## Open risks
 
 - `reviewed_codex.py` and `reviewed_claude.py` are bootstrap supervisors, not
   the Foreman product itself; their behavior should not accidentally become the
   long-term architecture.
-- Cross-invocation native session reuse is still incomplete: `runs.session_id`
-  is persisted, but fresh orchestrator invocations do not yet reload the last
-  compatible session from SQLite.
 - The bootstrap CLI still requires explicit `--db PATH` selection for
   SQLite-backed lifecycle, inspection, monitoring, and human-gate commands
   because engine-instance configuration does not exist yet.

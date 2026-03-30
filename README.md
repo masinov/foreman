@@ -38,7 +38,8 @@ The integrated pre-release baseline now contains:
 - persisted human-gate approval and denial flows with deferred or immediate
   native resume depending on runtime availability,
 - native Claude Code and Codex runners with structured event capture, retry
-  normalization, approval-policy handling, and session persistence hooks,
+  normalization, approval-policy handling, and persisted session reuse across
+  fresh orchestrator invocations for persistent roles,
 - store-backed monitoring commands for `board`, `history`, `cost`, and
   bounded `watch`,
 - accepted ADRs for runner session and backend contract boundaries
@@ -81,13 +82,12 @@ Both wrappers expect these files to be current:
 
 ## Next implementation slice
 
-The current sprint is `sprint-13-persistent-session-reload`.
+The current sprint is `sprint-14-dashboard-streaming-transport`.
 
 The next recommended task is:
 
-- reload the last persisted native runner session from SQLite on fresh
-  orchestrator invocations so role-level session persistence survives process
-  restarts for both Claude Code and Codex.
+- replace polling-only dashboard refresh with a dedicated live event transport
+  so activity and task state stay current while the dashboard is open.
 
 That work is recorded in `docs/sprints/current.md`, so a fresh agent can pick
 it up without reconstructing branch history first.

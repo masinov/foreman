@@ -485,7 +485,7 @@ class ForemanOrchestrator:
 
         current_task = self.store.get_task(task.id) or task
         current_step = step
-        session_id: str | None = None
+        session_ids: dict[tuple[str, str], str] = {}
 
         while current_step is not None:
             step_def = workflow.get_step(current_step)
@@ -671,13 +671,25 @@ class ForemanOrchestrator:
                     "workflow.step_started",
                     {"step": current_step, "visit_count": visit_count},
                 )
+                session_key = (role.id, role.agent.backend)
+                session_id: str | None = None
+                if role.agent.session_persistence:
+                    session_id = session_ids.get(session_key)
+                    if session_id is None:
+                        session_id = self.store.get_latest_session_id(
+                            task_id=current_task.id,
+                            role_id=role.id,
+                            agent_backend=role.agent.backend,
+                        )
+                        if session_id:
+                            session_ids[session_key] = session_id
                 result = self._execute_agent_step(
                     role=role,
                     project=project,
                     task=current_task,
                     workflow_step=current_step,
                     prompt=prompt,
-                    session_id=session_id if role.agent.session_persistence else None,
+                    session_id=session_id,
                     carried_output=carried_output,
                 )
                 self._emit_agent_events(run, current_task, project, role.id, result.events)
@@ -693,7 +705,7 @@ class ForemanOrchestrator:
                     duration_ms=result.duration_ms,
                 )
                 if role.agent.session_persistence and result.session_id:
-                    session_id = result.session_id
+                    session_ids[session_key] = result.session_id
                 outcome = result.outcome
                 detail = result.detail
 

@@ -157,7 +157,8 @@ Status:
 - completed on `docs/runner-session-backend-adr`
 - `docs/adr/ADR-0001-runner-session-backend-contract.md` is now the active
   runner contract baseline
-- cross-invocation persistent-session reload remains documented follow-up work
+- cross-invocation session continuity is now an explicit implementation area
+  owned by the next milestone
 
 ## Milestone 8: Session continuity
 
@@ -172,14 +173,35 @@ Target deliverables:
 
 Status:
 
-- current sprint is `sprint-13-persistent-session-reload`
-- no implementation has landed yet; the gap is documented and actively queued
+- completed on `feat/persistent-session-reload`
+- the store and orchestrator now reload the last compatible persisted
+  `session_id` for persistent roles on fresh process starts
+- regression coverage now covers Claude Code, Codex, and the negative case for
+  non-persistent reviewer sessions
+
+## Milestone 9: Dashboard live transport
+
+Goal: replace polling-only dashboard refresh with an explicit event transport
+that can evolve into the product's live activity surface.
+
+Target deliverables:
+
+- dedicated dashboard transport endpoint for incremental events
+- UI subscription path that keeps activity and task state current
+- documented boundary between dashboard live transport and the current bounded
+  `foreman watch` model
+
+Status:
+
+- current sprint is `sprint-14-dashboard-streaming-transport`
+- no implementation has landed yet; the dashboard still relies on polling
+  snapshots
 
 ## Near-term priorities
 
-1. reload persisted same-role native sessions from SQLite on fresh
-   orchestrator invocations
-2. decide how the future dashboard activity feed should relate to the current
-   polling-based `foreman watch` semantics
-3. add the security review workflow variant after the session continuity work
-   is in place
+1. add a live dashboard transport so activity no longer depends on polling
+   full snapshots
+2. remove the bootstrap requirement for explicit `--db` paths in normal CLI
+   flows
+3. add the security review workflow variant after the dashboard transport and
+   database-discovery gaps are closed

@@ -8,7 +8,7 @@ import subprocess
 import tempfile
 import unittest
 
-from foreman.models import Project, Sprint, Task
+from foreman.models import Project, Run, Sprint, Task
 from foreman.orchestrator import (
     AgentExecutionResult,
     ForemanOrchestrator,
@@ -235,6 +235,40 @@ class ForemanOrchestratorTests(unittest.TestCase):
         store.save_sprint(sprint)
         store.save_task(task)
         return project, sprint, task
+
+    def seed_run(
+        self,
+        store: ForemanStore,
+        *,
+        project: Project,
+        task: Task,
+        role_id: str,
+        workflow_step: str,
+        agent_backend: str,
+        created_at: str,
+        session_id: str | None = None,
+        outcome: str = "done",
+        outcome_detail: str = "Completed.",
+        status: str = "completed",
+        model: str | None = None,
+    ) -> Run:
+        run = Run(
+            id=f"run-{len(store.list_runs(task_id=task.id)) + 1}",
+            task_id=task.id,
+            project_id=project.id,
+            role_id=role_id,
+            workflow_step=workflow_step,
+            agent_backend=agent_backend,
+            status=status,
+            outcome=outcome,
+            outcome_detail=outcome_detail,
+            model=model,
+            session_id=session_id,
+            branch_name=task.branch_name,
+            created_at=created_at,
+        )
+        store.save_run(run)
+        return run
 
     def roles_with_backend(
         self,
@@ -862,6 +896,126 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 },
             )
 
+    def test_native_runner_reuses_persisted_claude_session_after_fresh_orchestrator_invocation(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+            project.settings["default_model"] = "claude-sonnet-4-6"
+            store.save_project(project)
+            task.status = "in_progress"
+            task.workflow_current_step = "develop"
+            task.branch_name = "feat/task-1-implement-orchestrator-loop"
+            task.started_at = "2026-03-30T12:20:00Z"
+            store.save_task(task)
+            self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude_code",
+                session_id="persisted-dev-session",
+                outcome_detail="Previous development run.",
+                created_at="2026-03-30T12:21:00Z",
+                model="claude-sonnet-4-6",
+            )
+            runner = ScriptedNativeRunner(
+                {
+                    1: lambda config: self._native_developer_resumed(
+                        repo_path,
+                        config,
+                        expected_session_id="persisted-dev-session",
+                    ),
+                    2: lambda config: self._native_reviewer_approve(config),
+                }
+            )
+            resume_orchestrator = ForemanOrchestrator(
+                store,
+                roles=self.roles,
+                workflows=self.workflows,
+                agent_runners={"claude_code": runner},
+            )
+
+            result = resume_orchestrator.run_project(project.id)
+
+            self.assertEqual(result.stop_reason, "idle")
+            self.assertEqual(runner.capture(1).session_id, "persisted-dev-session")
+            updated_task = store.get_task(task.id)
+            self.assertIsNotNone(updated_task)
+            assert updated_task is not None
+            self.assertEqual(updated_task.status, "done")
+
+    def test_non_persistent_native_roles_ignore_persisted_sessions_after_fresh_orchestrator_invocation(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+            project.settings["default_model"] = "claude-sonnet-4-6"
+            store.save_project(project)
+            task.status = "in_progress"
+            task.workflow_current_step = "review"
+            task.branch_name = "feat/task-1-implement-orchestrator-loop"
+            task.started_at = "2026-03-30T12:20:00Z"
+            store.save_task(task)
+
+            self.git(repo_path, "checkout", "-b", task.branch_name)
+            self.write_text(repo_path / "feature.txt", "implemented already\n")
+            self.write_text(repo_path / "ready.txt", "ready\n")
+            self.commit_all(repo_path, "feat: seed branch for review")
+            self.git(repo_path, "checkout", "main")
+
+            self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude_code",
+                session_id="persisted-dev-session",
+                outcome_detail="Developer finished work.",
+                created_at="2026-03-30T12:21:00Z",
+                model="claude-sonnet-4-6",
+            )
+            self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="code_reviewer",
+                workflow_step="review",
+                agent_backend="claude_code",
+                session_id="stale-review-session",
+                outcome="deny",
+                outcome_detail="Previous review session.",
+                created_at="2026-03-30T12:22:00Z",
+                model="claude-sonnet-4-6",
+            )
+
+            runner = ScriptedNativeRunner(
+                {
+                    1: lambda config: self._native_reviewer_approve(config),
+                }
+            )
+            resume_orchestrator = ForemanOrchestrator(
+                store,
+                roles=self.roles,
+                workflows=self.workflows,
+                agent_runners={"claude_code": runner},
+            )
+
+            result = resume_orchestrator.run_project(project.id)
+
+            self.assertEqual(result.stop_reason, "idle")
+            self.assertIsNone(runner.capture(1).session_id)
+            updated_task = store.get_task(task.id)
+            self.assertIsNotNone(updated_task)
+            assert updated_task is not None
+            self.assertEqual(updated_task.status, "done")
+
     def test_native_runner_infra_retries_are_persisted_and_block_the_task_on_exhaustion(self) -> None:
         repo_path, db_path = self.create_workspace()
         self.initialize_repo(repo_path)
@@ -1009,6 +1163,67 @@ class ForemanOrchestratorTests(unittest.TestCase):
             assert updated_task is not None
             self.assertEqual(updated_task.status, "done")
 
+    def test_native_runner_reuses_persisted_codex_session_after_fresh_orchestrator_invocation(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+            project.settings["default_model"] = "gpt-5.4"
+            store.save_project(project)
+            task.status = "in_progress"
+            task.workflow_current_step = "develop"
+            task.branch_name = "feat/task-1-implement-orchestrator-loop"
+            task.started_at = "2026-03-30T12:20:00Z"
+            store.save_task(task)
+            self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="codex",
+                session_id="persisted-thread-123",
+                outcome_detail="Previous codex run.",
+                created_at="2026-03-30T12:21:00Z",
+                model="gpt-5.4",
+            )
+            codex_roles = self.roles_with_backend(
+                "codex",
+                role_models={
+                    "architect": "o3",
+                    "code_reviewer": "gpt-5.4",
+                    "developer": "",
+                    "security_reviewer": "gpt-5.4",
+                },
+            )
+            runner = ScriptedNativeRunner(
+                {
+                    1: lambda config: self._native_developer_resumed(
+                        repo_path,
+                        config,
+                        expected_session_id="persisted-thread-123",
+                    ),
+                    2: lambda config: self._native_reviewer_approve(config),
+                }
+            )
+            resume_orchestrator = ForemanOrchestrator(
+                store,
+                roles=codex_roles,
+                workflows=self.workflows,
+                agent_runners={"codex": runner},
+            )
+
+            result = resume_orchestrator.run_project(project.id)
+
+            self.assertEqual(result.stop_reason, "idle")
+            self.assertEqual(runner.capture(1).session_id, "persisted-thread-123")
+            updated_task = store.get_task(task.id)
+            self.assertIsNotNone(updated_task)
+            assert updated_task is not None
+            self.assertEqual(updated_task.status, "done")
+
     def test_native_runner_executes_codex_resume_after_human_gate_approval(self) -> None:
         repo_path, db_path = self.create_workspace()
         self.initialize_repo(repo_path)
@@ -1055,14 +1270,14 @@ class ForemanOrchestratorTests(unittest.TestCase):
                     2: lambda config: self._native_reviewer_approve(config),
                 }
             )
-            orchestrator = ForemanOrchestrator(
+            resume_orchestrator = ForemanOrchestrator(
                 store,
                 roles=codex_roles,
                 workflows=self.workflows,
                 agent_runners={"codex": runner},
             )
 
-            resume_result = orchestrator.resume_human_gate(task.id, outcome="approve")
+            resume_result = resume_orchestrator.resume_human_gate(task.id, outcome="approve")
 
             self.assertFalse(resume_result.deferred)
             self.assertEqual(resume_result.next_step, "develop")
@@ -1145,6 +1360,33 @@ class ForemanOrchestratorTests(unittest.TestCase):
                     "cost_usd": 1.4,
                     "duration_ms": 1000,
                     "token_count": 230,
+                },
+            ),
+        )
+
+    def _native_developer_resumed(
+        self,
+        repo_path: Path,
+        config: AgentRunConfig,
+        *,
+        expected_session_id: str,
+    ) -> tuple[AgentEvent, ...]:
+        self.assertEqual(config.session_id, expected_session_id)
+        self.write_text(repo_path / "feature.txt", "resumed implementation\n")
+        self.write_text(repo_path / "ready.txt", "ready\n")
+        self.commit_all(repo_path, "fix: resume native runner session")
+        return (
+            AgentEvent(
+                "agent.message",
+                payload={"text": "Resumed existing session.\nTASK_COMPLETE", "phase": "assistant"},
+            ),
+            AgentEvent(
+                "agent.completed",
+                payload={
+                    "session_id": expected_session_id,
+                    "cost_usd": 1.1,
+                    "duration_ms": 850,
+                    "token_count": 180,
                 },
             ),
         )

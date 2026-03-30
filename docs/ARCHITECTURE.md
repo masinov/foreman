@@ -148,9 +148,8 @@ The current dashboard baseline includes:
   execution, while still deferring safely when the next backend or repo
   runtime is unavailable.
 - `session_persistence` is a role-level policy with scope `task + role +
-  backend`, but fresh orchestrator invocations do not yet reload the last
-  compatible session from SQLite. That is the active implementation gap from
-  ADR-0001.
+  backend`, and fresh orchestrator invocations now reload the last compatible
+  persisted session from SQLite for persistent roles.
 - Codex token usage is persisted accurately, but the current app-server
   contract does not expose USD pricing, so Codex `cost_usd` remains zero.
 - `foreman watch` and the dashboard activity feed still rely on bounded polling
@@ -160,11 +159,10 @@ The current dashboard baseline includes:
 
 ## Next architectural slice
 
-The next slice should close the cross-invocation session-reuse gap from
-ADR-0001:
+The next slice should define and implement the dashboard's live transport
+boundary:
 
-- add a store query for the last compatible persisted session,
-- teach the orchestrator to reuse it for persistent roles on fresh process
-  starts,
-- keep non-persistent roles starting fresh,
-- cover Claude Code, Codex, and human-gate resume in tests.
+- add a dedicated transport endpoint for incremental event delivery,
+- wire the dashboard activity feed and task state refresh to that transport,
+- keep the transport semantics aligned with the future replacement for bounded
+  `foreman watch` polling.

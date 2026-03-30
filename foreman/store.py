@@ -610,6 +610,33 @@ class ForemanStore:
         ).fetchone()
         return _row_to_run(row) if row else None
 
+    def get_latest_session_id(
+        self,
+        *,
+        task_id: str,
+        role_id: str,
+        agent_backend: str,
+    ) -> str | None:
+        """Return the latest persisted non-empty session id for one task role backend scope."""
+
+        row = self._connection.execute(
+            """
+            SELECT session_id FROM runs
+            WHERE task_id = ?
+              AND role_id = ?
+              AND agent_backend = ?
+              AND session_id IS NOT NULL
+              AND session_id != ''
+            ORDER BY created_at DESC, rowid DESC
+            LIMIT 1
+            """,
+            (task_id, role_id, agent_backend),
+        ).fetchone()
+        if row is None:
+            return None
+        session_id = row["session_id"]
+        return str(session_id) if session_id else None
+
     def save_event(self, event: Event) -> Event:
         """Insert or update an event record."""
 

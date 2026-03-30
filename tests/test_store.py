@@ -159,6 +159,123 @@ class ForemanStoreTests(unittest.TestCase):
                 },
             )
 
+    def test_get_latest_session_id_uses_task_role_backend_scope(self) -> None:
+        db_path = self.create_db_path()
+        project = Project(
+            id="project-1",
+            name="Foreman",
+            repo_path="/work/foreman",
+            workflow_id="development",
+            created_at="2026-03-30T10:00:00Z",
+            updated_at="2026-03-30T10:00:00Z",
+        )
+        sprint = Sprint(
+            id="sprint-1",
+            project_id=project.id,
+            title="Session reuse",
+            status="active",
+            created_at="2026-03-30T10:05:00Z",
+            started_at="2026-03-30T10:10:00Z",
+        )
+        task = Task(
+            id="task-1",
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="Reuse native sessions",
+            status="in_progress",
+            created_at="2026-03-30T10:15:00Z",
+        )
+        earlier_match = Run(
+            id="run-1",
+            task_id=task.id,
+            project_id=project.id,
+            role_id="developer",
+            workflow_step="develop",
+            agent_backend="claude_code",
+            status="completed",
+            session_id="session-old",
+            created_at="2026-03-30T10:20:00Z",
+        )
+        later_other_role = Run(
+            id="run-2",
+            task_id=task.id,
+            project_id=project.id,
+            role_id="code_reviewer",
+            workflow_step="review",
+            agent_backend="claude_code",
+            status="completed",
+            session_id="review-session",
+            created_at="2026-03-30T10:25:00Z",
+        )
+        later_other_backend = Run(
+            id="run-3",
+            task_id=task.id,
+            project_id=project.id,
+            role_id="developer",
+            workflow_step="develop",
+            agent_backend="codex",
+            status="completed",
+            session_id="codex-session",
+            created_at="2026-03-30T10:30:00Z",
+        )
+        latest_match = Run(
+            id="run-4",
+            task_id=task.id,
+            project_id=project.id,
+            role_id="developer",
+            workflow_step="develop",
+            agent_backend="claude_code",
+            status="failed",
+            session_id="session-new",
+            created_at="2026-03-30T10:35:00Z",
+        )
+        empty_session = Run(
+            id="run-5",
+            task_id=task.id,
+            project_id=project.id,
+            role_id="developer",
+            workflow_step="develop",
+            agent_backend="claude_code",
+            status="completed",
+            session_id=None,
+            created_at="2026-03-30T10:40:00Z",
+        )
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            store.save_project(project)
+            store.save_sprint(sprint)
+            store.save_task(task)
+            store.save_run(earlier_match)
+            store.save_run(later_other_role)
+            store.save_run(later_other_backend)
+            store.save_run(latest_match)
+            store.save_run(empty_session)
+
+            self.assertEqual(
+                store.get_latest_session_id(
+                    task_id=task.id,
+                    role_id="developer",
+                    agent_backend="claude_code",
+                ),
+                "session-new",
+            )
+            self.assertEqual(
+                store.get_latest_session_id(
+                    task_id=task.id,
+                    role_id="developer",
+                    agent_backend="codex",
+                ),
+                "codex-session",
+            )
+            self.assertIsNone(
+                store.get_latest_session_id(
+                    task_id=task.id,
+                    role_id="architect",
+                    agent_backend="claude_code",
+                ),
+            )
+
     def test_only_one_active_sprint_is_allowed_per_project(self) -> None:
         db_path = self.create_db_path()
         project = Project(

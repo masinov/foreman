@@ -52,6 +52,8 @@ memory changes rather than versioned product releases.
   advanced project memory to the dashboard approve or deny integration sprint
 - completed `sprint-12-dashboard-approve-deny-integration`, archived it, and
   advanced project memory to the persistent-session reload sprint
+- completed `sprint-13-persistent-session-reload`, archived it, and advanced
+  project memory to the dashboard streaming transport sprint
 - reconciled the loose feature and recovery branches into an integrated
   mainline candidate and restored missing repo-memory artifacts from the
   runner-session ADR branch
