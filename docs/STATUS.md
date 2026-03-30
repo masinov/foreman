@@ -2,16 +2,16 @@
 
 ## Current sprint
 
-- Sprint: `sprint-19-watch-live-tail-alignment`
+- Sprint: `sprint-20-migration-framework-bootstrap`
 - Status: active
-- Goal: align `foreman watch` with the dashboard live transport and the
-  spec's live-tail intent
+- Goal: introduce an explicit schema migration path for store evolution and
+  retention-safe upgrades
 
 ## Active branches
 
 - no long-lived feature branch should remain loose after the engine DB
   discovery, security-review, backend-preflight, and retention slices; start
-  sprint-19 work from `main`
+  sprint-20 work from `main`
 
 ## Completed this week
 
@@ -50,6 +50,13 @@
   `engine.event_pruned` when rows are removed
 - documented retention boundaries, including the current schema constraint
   that pruning records still attach to a task-bound synthetic run
+- completed `sprint-19-watch-live-tail-alignment`
+- replaced bounded `foreman watch` snapshots with a persisted live tail for
+  project, sprint, and run scopes
+- aligned CLI watch delivery with the dashboard's cursor-based sprint-event
+  model while keeping the CLI on a direct store-read transport
+- documented the new watch boundary and advanced repo memory to the migration
+  framework slice
 
 ## Current repo state
 
@@ -72,8 +79,8 @@
   - orchestrator startup event-retention pruning driven by
     `event_retention_days`, with durable `engine.event_pruned` records and
     protection for blocked and in-progress task history,
-  - monitoring CLI surfaces for board, history, cost, and bounded watch
-    snapshots,
+  - monitoring CLI surfaces for board, history, cost, and live watch tails
+    across project, sprint, and run scopes,
   - accepted ADRs for runner session semantics and dashboard data access,
   - a dashboard web surface with project overview, sprint board, task detail,
     activity feed, human message input, activity filtering, project switching,
@@ -89,11 +96,12 @@
 
 ## Ready next
 
-1. replace bounded `foreman watch` snapshots with a live incremental tail
-   model that aligns with the dashboard transport intent
-2. define how CLI live tailing should scope to project, sprint, and run views
-   without duplicating dashboard-specific UI assumptions
-3. document the alignment between dashboard streaming and CLI watch behavior
+1. introduce an explicit migration runner for store schema upgrades and fresh
+   initialization from versioned steps
+2. define how migration metadata should be stored so later retention and
+   lifecycle slices can evolve SQLite safely
+3. document operator expectations for upgrading existing local `.foreman.db`
+   files
 
 ## Open risks
 
@@ -103,8 +111,6 @@
 - Repo-local discovery currently depends on an existing `.foreman.db` in the
   current repo lineage or on `foreman init` creating one; cross-repo and
   out-of-repo inspection still requires explicit `--db`.
-- `foreman watch` still relies on bounded polling snapshots even though the
-  dashboard now uses a dedicated live event stream.
 - Native backend preflight now validates executable presence and Codex startup
   handshake assumptions, but it does not yet prove downstream auth or service
   reachability beyond startup.
@@ -114,6 +120,9 @@
 - Event retention currently prunes only `events`; `runs` rows and stored
   prompts continue to accumulate until a later lifecycle or migration slice.
 - The SQLite layer still uses bootstrap DDL without a migration framework.
+- project-scoped `foreman watch` resolves the active sprint once at startup;
+  if sprint ownership changes mid-tail, operators currently need to restart
+  the command to follow the new sprint.
 
 ## Documented conflicts
 
@@ -133,9 +142,6 @@
   resuming workflow execution. The current runtime does that when the next
   backend and repo are available, but it still persists a deferred next step
   when the resumed workflow cannot execute safely yet.
-- The spec describes `foreman watch` as a live event tail. The current
-  bootstrap CLI still renders bounded polling snapshots, while the dashboard
-  now uses a dedicated event stream for live activity.
 - The spec's retry pseudocode retries every `InfrastructureError`. The current
   runtime now treats backend preflight failures as explicit non-retryable
   startup errors so missing executables or malformed startup handshakes fail
@@ -147,8 +153,6 @@
 
 ## Open decisions
 
-- whether `foreman watch` should converge on the dashboard's dedicated
-  streaming transport or remain a separate CLI-tail implementation
 - whether the bootstrap repo-local `.foreman.db` location should remain
   long-term or give way to a broader engine-instance configuration model
 - whether project `default_model` should be validated against the selected
@@ -159,3 +163,5 @@
   history surfaces in addition to `events`
 - whether the secure workflow should remain an explicit opt-in at init time or
   be selected automatically from project policy in a later slice
+- whether project-scoped watch should eventually auto-rebind if a different
+  sprint becomes active during a long-lived tail session

@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 import subprocess
 import tempfile
+import time
 import unittest
 
 from foreman.models import Event, Project, Run, Sprint, Task
@@ -60,6 +61,15 @@ class ForemanCLISmokeTests(unittest.TestCase):
             capture_output=True,
             text=True,
             check=False,
+        )
+
+    def spawn_cli(self, *args: str) -> subprocess.Popen[str]:
+        return subprocess.Popen(
+            [str(FOREMAN), *args],
+            cwd=REPO_ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
         )
 
     def create_store(self) -> tuple[ForemanStore, Path]:
@@ -794,7 +804,7 @@ class ForemanCLISmokeTests(unittest.TestCase):
             result.stdout,
         )
 
-    def test_watch_command_shows_project_snapshot_without_mutating_state(self) -> None:
+    def test_watch_command_tails_project_activity_without_mutating_state(self) -> None:
         store, db_path = self.create_store()
         fixture = self.seed_monitoring_state(store)
 
@@ -803,25 +813,27 @@ class ForemanCLISmokeTests(unittest.TestCase):
             fixture["project_id"],
             "--db",
             str(db_path),
-            "--iterations",
-            "1",
             "--limit",
             "3",
-            "--interval",
+            "--idle-timeout",
             "0",
         )
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Watch", result.stdout)
         self.assertIn("Scope: project project-1", result.stdout)
-        self.assertIn("Snapshot 1/1 |", result.stdout)
-        self.assertIn("Sprint: sprint-1 | Monitoring Sprint", result.stdout)
+        self.assertIn("Stream: active sprint sprint-1 | Monitoring Sprint", result.stdout)
         self.assertIn("Tasks: todo=1 in_progress=1 blocked=1 done=1 cancelled=0", result.stdout)
         self.assertIn("Activity: runs=3 | tokens=1150 | cost_usd=$2.00", result.stdout)
+        self.assertIn(
+            "Delivery: recent 3 persisted events followed by live updates",
+            result.stdout,
+        )
         self.assertIn(
             "- 2026-03-30T09:41:12Z | signal.completion | role=code_reviewer | summary=Add more activity detail.",
             result.stdout,
         )
+        self.assertNotIn("Codex runner shipped.", result.stdout)
 
         refreshed = store.get_task(fixture["wip_task_id"])
         self.assertIsNotNone(refreshed)
@@ -838,11 +850,9 @@ class ForemanCLISmokeTests(unittest.TestCase):
             fixture["wip_run_id"],
             "--db",
             str(db_path),
-            "--iterations",
-            "1",
             "--limit",
             "2",
-            "--interval",
+            "--idle-timeout",
             "0",
         )
 
@@ -858,6 +868,71 @@ class ForemanCLISmokeTests(unittest.TestCase):
             "- 2026-03-30T09:32:00Z | agent.file_change | role=developer | foreman/cli.py",
             result.stdout,
         )
+
+    def test_watch_command_can_scope_to_one_sprint(self) -> None:
+        store, db_path = self.create_store()
+        fixture = self.seed_monitoring_state(store)
+
+        result = self.run_cli(
+            "watch",
+            "--sprint",
+            fixture["active_sprint_id"],
+            "--db",
+            str(db_path),
+            "--limit",
+            "2",
+            "--idle-timeout",
+            "0",
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Scope: sprint sprint-1", result.stdout)
+        self.assertIn("Project: project-1 | Foreman Demo", result.stdout)
+        self.assertIn("Sprint: sprint-1 | Monitoring Sprint", result.stdout)
+        self.assertIn(
+            "- 2026-03-30T09:51:30Z | signal.completion | role=developer | summary=Store summaries are complete.",
+            result.stdout,
+        )
+        self.assertNotIn("Codex runner shipped.", result.stdout)
+
+    def test_watch_command_streams_new_project_activity_until_idle_timeout(self) -> None:
+        store, db_path = self.create_store()
+        fixture = self.seed_monitoring_state(store)
+
+        process = self.spawn_cli(
+            "watch",
+            fixture["project_id"],
+            "--db",
+            str(db_path),
+            "--limit",
+            "1",
+            "--idle-timeout",
+            "1.0",
+        )
+        self.addCleanup(lambda: process.kill() if process.poll() is None else None)
+
+        time.sleep(0.2)
+        store.save_event(
+            Event(
+                id="event-wip-5",
+                run_id="run-wip-2",
+                task_id=fixture["wip_task_id"],
+                project_id=fixture["project_id"],
+                event_type="signal.progress",
+                role_id="developer",
+                timestamp="2026-03-30T09:52:00Z",
+                payload={"message": "Waiting on review feedback."},
+            )
+        )
+
+        stdout, stderr = process.communicate(timeout=5)
+
+        self.assertEqual(process.returncode, 0, stderr)
+        self.assertIn(
+            "- 2026-03-30T09:52:00Z | signal.progress | role=developer | message=Waiting on review feedback.",
+            stdout,
+        )
+        self.assertIn("Watch ended after 1.0s without new activity.", stdout)
 
     def test_roles_command_lists_shipped_roles(self) -> None:
         result = self.run_cli("roles")

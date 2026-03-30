@@ -2,9 +2,9 @@
 
 ## Next up after current sprint
 
-- `sprint-20-migration-framework-bootstrap` — introduce an explicit schema
-  migration path for store evolution, retention-safe upgrades, and future
-  model changes
+- `sprint-21-history-lifecycle-expansion` — extend retention and cleanup
+  policy beyond `events` so `runs`, stored prompts, and related history can
+  evolve safely on top of the migration framework
 
 ## Parking lot
 

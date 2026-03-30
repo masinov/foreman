@@ -680,12 +680,21 @@ class ForemanStore:
         ).fetchone()
         return _row_to_event(row) if row else None
 
+    def _get_event_cursor_marker(self, event_id: str) -> sqlite3.Row | None:
+        """Return the timestamp and rowid used for incremental event queries."""
+
+        return self._connection.execute(
+            "SELECT timestamp, rowid FROM events WHERE id = ?",
+            (event_id,),
+        ).fetchone()
+
     def list_events(
         self,
         *,
         run_id: str | None = None,
         task_id: str | None = None,
         project_id: str | None = None,
+        after_event_id: str | None = None,
         limit: int | None = None,
     ) -> list[Event]:
         """List events filtered by run, task, and or project."""
@@ -693,19 +702,32 @@ class ForemanStore:
         filters: list[str] = []
         params: list[Any] = []
         if run_id is not None:
-            filters.append("run_id = ?")
+            filters.append("e.run_id = ?")
             params.append(run_id)
         if task_id is not None:
-            filters.append("task_id = ?")
+            filters.append("e.task_id = ?")
             params.append(task_id)
         if project_id is not None:
-            filters.append("project_id = ?")
+            filters.append("e.project_id = ?")
             params.append(project_id)
+        if after_event_id is not None:
+            marker = self._get_event_cursor_marker(after_event_id)
+            if marker is None:
+                return []
+            filters.append(
+                """
+                (
+                    e.timestamp > ?
+                    OR (e.timestamp = ? AND e.rowid > ?)
+                )
+                """
+            )
+            params.extend([marker["timestamp"], marker["timestamp"], marker["rowid"]])
 
-        sql = "SELECT * FROM events"
+        sql = "SELECT e.* FROM events e"
         if filters:
             sql = f"{sql} WHERE {' AND '.join(filters)}"
-        sql = f"{sql} ORDER BY timestamp ASC, rowid ASC"
+        sql = f"{sql} ORDER BY e.timestamp ASC, e.rowid ASC"
         if limit is not None:
             sql = f"{sql} LIMIT ?"
             params.append(limit)
@@ -731,10 +753,7 @@ class ForemanStore:
         """
 
         if after_event_id is not None:
-            marker = self._connection.execute(
-                "SELECT timestamp, rowid FROM events WHERE id = ?",
-                (after_event_id,),
-            ).fetchone()
+            marker = self._get_event_cursor_marker(after_event_id)
             if marker is None:
                 return []
             sql += """

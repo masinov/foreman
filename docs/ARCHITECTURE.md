@@ -116,7 +116,7 @@ The current runtime supports:
 
 Foreman now exposes two first-class observation surfaces:
 
-- CLI inspection commands: `board`, `history`, `cost`, and bounded `watch`
+- CLI inspection commands: `board`, `history`, `cost`, and live `watch`
 - a dashboard web surface in `foreman/dashboard.py`
 
 Per ADR-0002, the dashboard currently reads directly from `ForemanStore`
@@ -134,6 +134,15 @@ The current dashboard baseline includes:
 - debounced board and selected-task refresh on incoming activity,
 - approve or deny actions that call the orchestrator to resume workflow
   execution.
+
+The current CLI watch baseline now includes:
+
+- project tails that resolve the active sprint at startup and fall back to
+  project-wide activity when no sprint is active,
+- explicit sprint tails for one sprint's persisted activity,
+- explicit run tails for one run's persisted activity,
+- incremental cursor-based delivery from SQLite rather than repeated
+  snapshot rendering.
 
 ## Current runtime constraints worth preserving
 
@@ -174,15 +183,18 @@ The current dashboard baseline includes:
 - the dashboard live transport uses server-sent events over a threaded HTTP
   server, with store polling inside the transport loop as the current
   implementation boundary.
-- `foreman watch` still renders bounded polling snapshots and is not yet
-  aligned to the dashboard's live transport.
+- `foreman watch` now shares the dashboard's persisted-event cursor boundary
+  but stays on a direct store-read loop instead of going through the HTTP SSE
+  transport.
 - `.foreman/status.md` still emits an explicit open-decisions placeholder
   because the SQLite schema does not yet persist decision records.
 
 ## Next architectural slice
 
-The next slice should align CLI live tailing with the dashboard stream:
+The next slice should make schema evolution explicit:
 
-- replace bounded `foreman watch` polling with an aligned incremental tail,
-- clarify how CLI tailing scopes to project, sprint, and run activity,
-- document the boundary between CLI watch behavior and dashboard transport.
+- introduce versioned schema metadata and ordered upgrade steps,
+- preserve safe initialization for new stores while allowing existing DBs to
+  migrate forward,
+- document how later retention and lifecycle slices should depend on the
+  migration boundary.

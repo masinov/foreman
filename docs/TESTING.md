@@ -23,8 +23,8 @@ repo-memory validation and code-level regression coverage:
 The current suite covers:
 
 - `tests/test_store.py` for SQLite round-trips, status-filtered reads, run
-  totals, recent-event slices, sprint-scoped event queries, and event
-  retention pruning
+  totals, recent-event slices, incremental event cursors, sprint-scoped event
+  queries, and event retention pruning
 - `tests/test_roles.py` and `tests/test_workflows.py` for shipped declarative
   configuration loading and validation
 - `tests/test_scaffold.py` for generated `AGENTS.md`, idempotent `.gitignore`
@@ -38,8 +38,8 @@ The current suite covers:
   resume, event-retention startup behavior, retry persistence, and
   fresh-process native session reuse
 - `tests/test_cli.py` for CLI smoke paths, repo-local DB discovery, explicit
-  override semantics, secure workflow initialization, and monitoring command
-  subprocess behavior
+  override semantics, secure workflow initialization, live watch tails, and
+  monitoring command subprocess behavior
 - `tests/test_runner_claude.py` for Claude Code command construction, startup
   preflight, event mapping, signal extraction, and failure handling
 - `tests/test_runner_codex.py` for Codex app-server startup, thread start or
@@ -73,6 +73,7 @@ Integration tests:
 - orchestrator transitions
 - `development_secure` approval and denial paths through `security_review`
 - event-retention pruning with preserved blocked and in-progress task history
+- CLI live-tail watch behavior across project, sprint, and run scopes
 - built-in test, merge, and human-gate steps
 - context projection into `.foreman/`
 - cross-invocation native session reuse for Claude Code, Codex, and
@@ -90,6 +91,7 @@ UI validation:
 - project dashboard navigation
 - sprint board interactions
 - activity feed behavior and live stream updates
+- alignment between dashboard sprint streaming and CLI watch tailing
 - human message, filter, and approve or deny flows
 
 ## Definition of done

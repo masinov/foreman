@@ -43,8 +43,7 @@ The first dashboard implementation checkpoint is recorded in
 
 ## Near-term policy
 
-While `foreman watch` live-tail alignment and migration bootstrap are still
-incomplete:
+While migration bootstrap is still incomplete:
 
 - use tags only for meaningful checkpoints,
 - prefer sprint-completion checkpoints over frequent versioning,

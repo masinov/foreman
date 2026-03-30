@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 from pathlib import Path
 import sys
 import time
 from typing import Callable, Sequence
 
 from . import __version__
-from .dashboard import run_dashboard
-from .models import Project, utc_now_text
+from .dashboard import STREAM_POLL_INTERVAL_SECONDS, run_dashboard
+from .models import Event, Project, utc_now_text
 from .orchestrator import ForemanOrchestrator, OrchestratorError
 from .roles import RoleLoadError, default_roles_dir, load_roles
 from .scaffold import (
@@ -43,6 +44,16 @@ BOARD_STATUS_SECTIONS: tuple[tuple[str, str], ...] = (
 )
 
 Handler = Callable[[argparse.Namespace], int]
+WATCH_STREAM_BATCH_LIMIT = 100
+
+
+@dataclass(frozen=True)
+class WatchStreamPlan:
+    """Resolved watch scope plus the functions needed to tail it."""
+
+    header_lines: tuple[str, ...]
+    recent_events: tuple[Event, ...]
+    fetch_events: Callable[[str | None, int], list[Event]]
 
 
 class CliResolutionError(ValueError):
@@ -52,6 +63,11 @@ class CliResolutionError(ValueError):
 def _print_lines(*lines: str) -> None:
     for line in lines:
         print(line)
+
+
+def _print_stream_lines(*lines: str) -> None:
+    for line in lines:
+        print(line, flush=True)
 
 
 def _add_db_option(
@@ -152,6 +168,12 @@ def _format_usd(value: float) -> str:
     return f"${value:.2f}"
 
 
+def _format_idle_timeout(value: float | None) -> str:
+    if value is None:
+        return "until interrupted"
+    return f"{value:.1f}s of inactivity"
+
+
 def _format_step_visits(step_visit_counts: dict[str, int]) -> str:
     if not step_visit_counts:
         return "none"
@@ -225,6 +247,118 @@ def _render_board_task_line(task_id: str, title: str, task_type: str, details: l
     parts = [task_id, task_type, title]
     parts.extend(detail for detail in details if detail)
     return f"- {' | '.join(parts)}"
+
+
+def _format_watch_activity_totals(totals: dict[str, int | float]) -> str:
+    return (
+        f"Activity: runs={totals['run_count']} | "
+        f"tokens={totals['total_token_count']} | "
+        f"cost_usd={_format_usd(float(totals['total_cost_usd']))}"
+    )
+
+
+def _build_run_watch_plan(store: ForemanStore, run_id: str, *, limit: int) -> WatchStreamPlan | None:
+    run = store.get_run(run_id)
+    if run is None:
+        return None
+
+    task = store.get_task(run.task_id)
+    project = store.get_project(run.project_id)
+    header_lines = (
+        f"Database: {store.db_path}",
+        f"Scope: run {run.id}",
+        f"Project: {run.project_id} | {project.name if project is not None else 'unknown'}",
+        f"Task: {run.task_id} | {task.title if task is not None else 'unknown'}",
+        f"Run: status={run.status} | step={run.workflow_step} | role={run.role_id}",
+    )
+    return WatchStreamPlan(
+        header_lines=header_lines,
+        recent_events=tuple(store.list_recent_events(run_id=run.id, limit=limit)),
+        fetch_events=lambda after_event_id, batch_limit: store.list_events(
+            run_id=run.id,
+            after_event_id=after_event_id,
+            limit=batch_limit,
+        ),
+    )
+
+
+def _build_sprint_watch_plan(store: ForemanStore, sprint_id: str, *, limit: int) -> WatchStreamPlan | None:
+    sprint = store.get_sprint(sprint_id)
+    if sprint is None:
+        return None
+
+    project = store.get_project(sprint.project_id)
+    counts = store.task_counts(sprint_id=sprint.id)
+    totals = store.run_totals(project_id=sprint.project_id, sprint_id=sprint.id)
+    header_lines = (
+        f"Database: {store.db_path}",
+        f"Scope: sprint {sprint.id}",
+        f"Project: {sprint.project_id} | {project.name if project is not None else 'unknown'}",
+        f"Sprint: {sprint.id} | {sprint.title}",
+        _format_task_counts(counts),
+        _format_watch_activity_totals(totals),
+    )
+    return WatchStreamPlan(
+        header_lines=header_lines,
+        recent_events=tuple(store.list_recent_sprint_events(sprint.id, limit=limit)),
+        fetch_events=lambda after_event_id, batch_limit: store.list_sprint_events(
+            sprint.id,
+            after_event_id=after_event_id,
+            limit=batch_limit,
+        ),
+    )
+
+
+def _build_project_watch_plan(store: ForemanStore, project_id: str, *, limit: int) -> WatchStreamPlan | None:
+    project = store.get_project(project_id)
+    if project is None:
+        return None
+
+    active_sprint = store.get_active_sprint(project.id)
+    header_lines = [
+        f"Database: {store.db_path}",
+        f"Scope: project {project.id}",
+        f"Project: {project.id} | {project.name}",
+    ]
+
+    if active_sprint is not None:
+        counts = store.task_counts(sprint_id=active_sprint.id)
+        totals = store.run_totals(project_id=project.id, sprint_id=active_sprint.id)
+        header_lines.extend(
+            [
+                f"Stream: active sprint {active_sprint.id} | {active_sprint.title}",
+                _format_task_counts(counts),
+                _format_watch_activity_totals(totals),
+            ]
+        )
+        recent_events = tuple(store.list_recent_sprint_events(active_sprint.id, limit=limit))
+        fetch_events = lambda after_event_id, batch_limit: store.list_sprint_events(
+            active_sprint.id,
+            after_event_id=after_event_id,
+            limit=batch_limit,
+        )
+    else:
+        counts = store.task_counts(project_id=project.id)
+        totals = store.run_totals(project_id=project.id)
+        header_lines.extend(
+            [
+                "Stream: project-wide persisted events",
+                _format_task_counts(counts),
+                _format_watch_activity_totals(totals),
+            ]
+        )
+        recent_events = tuple(store.list_recent_events(project_id=project.id, limit=limit))
+        fetch_events = lambda after_event_id, batch_limit: store.list_events(
+            project_id=project.id,
+            after_event_id=after_event_id,
+            limit=batch_limit,
+        )
+
+    return WatchStreamPlan(
+        header_lines=tuple(header_lines),
+        recent_events=recent_events,
+        fetch_events=fetch_events,
+    )
 
 
 def handle_board(args: argparse.Namespace) -> int:
@@ -468,17 +602,20 @@ def handle_cost(args: argparse.Namespace) -> int:
 def handle_watch(args: argparse.Namespace) -> int:
     """Handle ``foreman watch``."""
 
-    if args.run and args.project_id:
-        print("Do not provide a project_id when using --run.", file=sys.stderr)
+    scope_count = sum(
+        1
+        for value in (
+            args.project_id,
+            args.run,
+            args.sprint,
+        )
+        if value is not None
+    )
+    if scope_count != 1:
+        print("Provide exactly one watch scope: project_id, --sprint, or --run.", file=sys.stderr)
         return 1
-    if not args.run and not args.project_id:
-        print("Provide either a project_id or --run.", file=sys.stderr)
-        return 1
-    if args.iterations < 1:
-        print("--iterations must be at least 1.", file=sys.stderr)
-        return 1
-    if args.interval < 0:
-        print("--interval must be zero or greater.", file=sys.stderr)
+    if args.idle_timeout is not None and args.idle_timeout < 0:
+        print("--idle-timeout must be zero or greater.", file=sys.stderr)
         return 1
     if args.limit < 1:
         print("--limit must be at least 1.", file=sys.stderr)
@@ -488,98 +625,64 @@ def handle_watch(args: argparse.Namespace) -> int:
     if db_path is None:
         return 1
 
-    lines: list[str] = ["Watch"]
     with ForemanStore(db_path) as store:
         store.initialize()
         if args.run:
-            run = store.get_run(args.run)
-            if run is None:
+            plan = _build_run_watch_plan(store, args.run, limit=args.limit)
+            if plan is None:
                 print(f"Unknown run: {args.run}", file=sys.stderr)
                 return 1
-            task = store.get_task(run.task_id)
-            project = store.get_project(run.project_id)
-            lines.extend(
-                [
-                    f"Database: {store.db_path}",
-                    f"Scope: run {run.id}",
-                    f"Project: {run.project_id} | {project.name if project is not None else 'unknown'}",
-                    f"Task: {run.task_id} | {task.title if task is not None else 'unknown'}",
-                ]
-            )
-            for iteration_index in range(args.iterations):
-                current_run = store.get_run(run.id) or run
-                current_task = store.get_task(run.task_id) or task
-                lines.append(
-                    f"Snapshot {iteration_index + 1}/{args.iterations} | {utc_now_text()}"
+        elif args.sprint:
+            plan = _build_sprint_watch_plan(store, args.sprint, limit=args.limit)
+            if plan is None:
+                print(f"Unknown sprint: {args.sprint}", file=sys.stderr)
+                return 1
+        else:
+            plan = _build_project_watch_plan(store, args.project_id, limit=args.limit)
+            if plan is None:
+                print(f"Unknown project: {args.project_id}", file=sys.stderr)
+                return 1
+
+        _print_stream_lines(
+            "Watch",
+            *plan.header_lines,
+            f"Delivery: recent {args.limit} persisted events followed by live updates",
+            f"Exit: {_format_idle_timeout(args.idle_timeout)}",
+            "Recent activity:",
+        )
+        if not plan.recent_events:
+            _print_stream_lines("- none")
+        else:
+            for event in plan.recent_events:
+                _print_stream_lines(
+                    f"- {_render_event_line(event.event_type, event.timestamp, event.role_id, event.payload)}"
                 )
-                lines.append(
-                    f"Run: status={current_run.status} | step={current_run.workflow_step} | role={current_run.role_id}"
-                )
-                recent_events = store.list_recent_events(run_id=run.id, limit=args.limit)
-                lines.append("Recent activity:")
-                if not recent_events:
-                    lines.append("- none")
-                else:
+
+        last_event_id = plan.recent_events[-1].id if plan.recent_events else None
+        last_activity_at = time.monotonic()
+        try:
+            while True:
+                recent_events = plan.fetch_events(last_event_id, WATCH_STREAM_BATCH_LIMIT)
+                now = time.monotonic()
+                if recent_events:
                     for event in recent_events:
-                        lines.append(
+                        _print_stream_lines(
                             f"- {_render_event_line(event.event_type, event.timestamp, event.role_id, event.payload)}"
                         )
-                if current_task.blocked_reason:
-                    lines.append(f"Blocked reason: {current_task.blocked_reason}")
-                if iteration_index + 1 < args.iterations:
-                    lines.append("")
-                    time.sleep(args.interval)
-            _print_lines(*lines)
+                        last_event_id = event.id
+                    last_activity_at = now
+                    continue
+                if args.idle_timeout is not None and now - last_activity_at >= args.idle_timeout:
+                    if args.idle_timeout > 0:
+                        _print_stream_lines(
+                            f"Watch ended after {args.idle_timeout:.1f}s without new activity."
+                        )
+                    return 0
+                time.sleep(STREAM_POLL_INTERVAL_SECONDS)
+        except KeyboardInterrupt:
+            _print_stream_lines("Watch interrupted.")
             return 0
 
-        project = store.get_project(args.project_id)
-        if project is None:
-            print(f"Unknown project: {args.project_id}", file=sys.stderr)
-            return 1
-
-        lines.extend(
-            [
-                f"Database: {store.db_path}",
-                f"Scope: project {project.id}",
-                f"Project: {project.id} | {project.name}",
-            ]
-        )
-        for iteration_index in range(args.iterations):
-            active_sprint = store.get_active_sprint(project.id)
-            sprint_id = active_sprint.id if active_sprint is not None else None
-            counts = store.task_counts(
-                project_id=project.id if sprint_id is None else None,
-                sprint_id=sprint_id,
-            )
-            totals = store.run_totals(
-                project_id=project.id,
-                sprint_id=sprint_id,
-            )
-            recent_events = store.list_recent_events(project_id=project.id, limit=args.limit)
-            lines.append(
-                f"Snapshot {iteration_index + 1}/{args.iterations} | {utc_now_text()}"
-            )
-            if active_sprint is None:
-                lines.append("Sprint: none")
-            else:
-                lines.append(f"Sprint: {active_sprint.id} | {active_sprint.title}")
-            lines.append(_format_task_counts(counts))
-            lines.append(
-                f"Activity: runs={totals['run_count']} | tokens={totals['total_token_count']} | cost_usd={_format_usd(float(totals['total_cost_usd']))}"
-            )
-            lines.append("Recent activity:")
-            if not recent_events:
-                lines.append("- none")
-            else:
-                for event in recent_events:
-                    lines.append(
-                        f"- {_render_event_line(event.event_type, event.timestamp, event.role_id, event.payload)}"
-                    )
-            if iteration_index + 1 < args.iterations:
-                lines.append("")
-                time.sleep(args.interval)
-
-    _print_lines(*lines)
     return 0
 
 
@@ -972,26 +1075,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _set_handler(board_parser, handle_board, "board")
 
-    watch_parser = subparsers.add_parser("watch", help="Tail project or run events.")
+    watch_parser = subparsers.add_parser("watch", help="Tail project, sprint, or run events.")
     watch_parser.add_argument("project_id", nargs="?", help="Project identifier.")
     watch_parser.add_argument("--run", help="Run identifier.")
+    watch_parser.add_argument("--sprint", help="Sprint identifier.")
     watch_parser.add_argument(
         "--limit",
         type=int,
         default=8,
-        help="Maximum number of recent events to show per snapshot.",
+        help="Maximum number of recent persisted events to show before live tailing.",
     )
     watch_parser.add_argument(
-        "--interval",
+        "--idle-timeout",
         type=float,
-        default=2.0,
-        help="Seconds to wait between snapshots when polling.",
-    )
-    watch_parser.add_argument(
-        "--iterations",
-        type=int,
-        default=1,
-        help="Number of snapshots to render before exiting.",
+        help="Exit after this many idle seconds without new events. Omit to keep tailing until interrupted.",
     )
     _add_db_option(
         watch_parser,

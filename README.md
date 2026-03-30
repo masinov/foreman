@@ -49,7 +49,7 @@ The integrated pre-release baseline now contains:
   code review, security review, test, and merge with durable carry-output
   semantics,
 - store-backed monitoring commands for `board`, `history`, `cost`, and
-  bounded `watch`,
+  live `watch` across project, sprint, and run scopes,
 - accepted ADRs for runner session and backend contract boundaries
   (`ADR-0001`) and dashboard data access (`ADR-0002`),
 - a dashboard web surface with project overview, sprint board, task detail,
@@ -105,6 +105,18 @@ project sets `event_retention_days`.
 - `runs` rows are not pruned yet, so event retention is only the first layer
   of history cleanup.
 
+## Live watch
+
+`foreman watch` now tails persisted activity incrementally instead of
+rendering repeated snapshots.
+
+- `foreman watch <project-id>` tails the active sprint by default and falls
+  back to project-wide events when no sprint is active,
+- `foreman watch --sprint <sprint-id>` tails one sprint explicitly,
+- `foreman watch --run <run-id>` tails one run explicitly,
+- the CLI and dashboard now share the same persisted-event cursor model even
+  though the dashboard still delivers it over HTTP server-sent events.
+
 ## Autonomous entry points
 
 Run all Python commands through the repo virtual environment:
@@ -133,12 +145,12 @@ Both wrappers expect these files to be current:
 
 ## Next implementation slice
 
-The current sprint is `sprint-19-watch-live-tail-alignment`.
+The current sprint is `sprint-20-migration-framework-bootstrap`.
 
 The next recommended task is:
 
-- align `foreman watch` with the dashboard live transport and the spec's
-  live-tail intent.
+- introduce an explicit schema migration path for store evolution and
+  retention-safe upgrades.
 
 That work is recorded in `docs/sprints/current.md`, so a fresh agent can pick
 it up without reconstructing branch history first.

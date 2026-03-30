@@ -133,8 +133,8 @@ Status:
 - completed across `feat/monitoring-cli`, `feat/dashboard-shell`,
   `chore/sprint-11-multi-project-polish`, and
   `feat/dashboard-approve-deny-integration`
-- the terminal monitoring CLI now exposes board, history, cost, and bounded
-  watch snapshots directly from SQLite
+- the terminal monitoring CLI first exposed board, history, cost, and an
+  initial watch surface directly from SQLite
 - the dashboard now exposes project overview, sprint board, task detail,
   direct SQLite-backed JSON APIs, human message input, activity filtering,
   project switching, and approve or deny workflow resume actions
@@ -300,12 +300,34 @@ Target deliverables:
 
 Status:
 
-- current sprint is `sprint-19-watch-live-tail-alignment`
+- completed on `feat/watch-live-tail-alignment`
+- `foreman watch` now delivers recent persisted activity followed by
+  incremental live updates instead of repeated polling snapshots
+- project, sprint, and run scopes are now explicit, with project watch
+  defaulting to the active sprint when one exists
+- the CLI and dashboard now share the same persisted-event cursor model even
+  though the dashboard still delivers it over SSE
+
+## Milestone 15: Migration framework bootstrap
+
+Goal: introduce an explicit schema migration path for future SQLite
+evolution.
+
+Target deliverables:
+
+- versioned migration metadata for the store
+- an ordered upgrade runner for existing databases and fresh initialization
+- tests and docs for migration expectations and operator workflow
+
+Status:
+
+- current sprint is `sprint-20-migration-framework-bootstrap`
 
 ## Near-term priorities
 
-1. align `foreman watch` with the dashboard live transport and the spec's
-   live-tail intent
-2. introduce a migration framework once watch alignment is complete
-3. decide whether retention should later extend beyond `events` into broader
+1. introduce a migration framework for store evolution and retention-safe
+   upgrades
+2. decide whether retention should later extend beyond `events` into broader
    history lifecycle management
+3. decide whether project-scoped watch should auto-rebind when the active
+   sprint changes during a long-lived tail session

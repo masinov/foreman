@@ -38,6 +38,7 @@ memory changes rather than versioned product releases.
   plus secure workflow initialization coverage in the CLI
 - explicit native backend preflight validation for Claude Code and Codex
 - spec-aligned event-retention pruning for old project events
+- live-tail `foreman watch` support across project, sprint, and run scopes
 
 ### Changed
 
@@ -71,6 +72,8 @@ memory changes rather than versioned product releases.
   advanced project memory to the event-retention pruning sprint
 - completed `sprint-18-event-retention-pruning`, archived it, and advanced
   project memory to the watch live-tail alignment sprint
+- completed `sprint-19-watch-live-tail-alignment`, archived it, and advanced
+  project memory to the migration framework bootstrap sprint
 - reconciled the loose feature and recovery branches into an integrated
   mainline candidate and restored missing repo-memory artifacts from the
   runner-session ADR branch
