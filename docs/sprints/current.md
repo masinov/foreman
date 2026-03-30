@@ -1,61 +1,44 @@
 # Current Sprint
 
-- Sprint: `sprint-10-dashboard-implementation`
-- Status: active
-- Goal: build the first interactive dashboard slice aligned to the mockup
-  using persisted Foreman project, sprint, task, run, and event state
+- Sprint: `sprint-11-multi-project-dashboard-polish`
+- Status: complete
+- Goal: polish the dashboard for multi-project navigation, improve activity
+  stream filtering, and add human message input capability
 - Primary references:
   - `docs/specs/engine-design-v3.md`
   - `docs/mockups/foreman-mockup-v6.html`
-  - `docs/adr/ADR-0001-runner-session-backend-contract.md`
-  - `foreman/store.py`
+  - `docs/adr/ADR-0002-dashboard-data-access-boundary.md`
   - `foreman/dashboard.py`
-  - `foreman/cli.py`
 
 ## Included tasks
 
-1. `[done]` Add the first dashboard shell for project overview and sprint board
-   Deliverable: a runnable UI entrypoint renders project overview and active
-   sprint board data from persisted SQLite-backed state.
+1. `[done]` Add human message input to dashboard activity panel
+   Deliverable: activity panel includes a text input and send button that POSTs
+   to a new `/api/tasks/{id}/message` endpoint.
 
-2. `[done]` Surface task detail and recent activity in the dashboard
-   Deliverable: selecting a task reveals branch, role, status, token, and
-   recent event context aligned to the mockup's board and activity hierarchy.
+2. `[done]` Improve activity stream filtering
+   Deliverable: activity filter dropdown allows filtering by event type or by
+   task, matching the mockup's activity filter affordance.
 
-3. `[done]` Define the first dashboard data-access boundary
-   Deliverable: the UI reuses SQLite-backed read models or thin projections
-   instead of hardcoded mock data, and the chosen boundary is documented in
-   repo memory.
+3. `[done]` Add project switcher to dashboard topbar
+   Deliverable: topbar shows current project with a dropdown to switch between
+   projects when multiple exist.
 
 ## Excluded from this sprint
 
 - authentication and multi-user concerns
-- live streaming transport beyond polling or snapshot semantics
-- task-creation and settings modals beyond placeholders
-- multi-project dashboard polish
+- live streaming transport beyond polling
+- task creation modal
+- sprint creation modal
 
 ## Acceptance criteria
 
-- a user can load a dashboard surface that matches the mockup hierarchy for
-  project overview, sprint board, and activity feed
-- dashboard data comes from current persisted Foreman state rather than
-  hardcoded demo data
-- dashboard behavior that depends on runner or approval semantics cites
-  `ADR-0001`
-- docs and validation remain good enough for a fresh autonomous agent to pick
-  the next slice without extra human context
+- a user can type a message in the activity panel and send it to a task
+- activity stream can be filtered by event type
+- dashboard supports navigation between multiple projects
 
 ## Known risks
 
-- the first dashboard slice can sprawl if it invents a broader API boundary
-  too early
-- live activity may need polling first because streaming transport is still a
-  separate unresolved decision
-- the current persistent-session reuse gap may affect how task detail and run
-  history are explained in the UI
-
-## Demo checklist
-
-- show a project overview populated from persisted state
-- show an active sprint board with task detail and recent activity
-- show repo validation passing after the dashboard slice lands
+- human message persistence requires new event type handling
+- filtering may require additional store query methods
+- project switcher state management adds JavaScript complexity

@@ -351,3 +351,48 @@ class DashboardHandlerTests(unittest.TestCase):
         self.assertIn("hideDetail", DASHBOARD_HTML)
         self.assertIn("Run History", DASHBOARD_HTML)
         self.assertIn("Acceptance Criteria", DASHBOARD_HTML)
+
+    def test_dashboard_activity_input_html(self):
+        """Dashboard HTML contains activity input elements."""
+        from foreman.dashboard import DASHBOARD_HTML
+        self.assertIn("activity-input", DASHBOARD_HTML)
+        self.assertIn("humanInput", DASHBOARD_HTML)
+        self.assertIn("sendHumanMessage", DASHBOARD_HTML)
+        self.assertIn("autoResize", DASHBOARD_HTML)
+
+    def test_human_message_event_storage(self):
+        """Human message events can be stored and retrieved."""
+        # Create a human message event associated with the existing run
+        event = Event(
+            id="evt-human-test",
+            run_id=self.run_1.id,
+            task_id=self.in_progress_task.id,
+            project_id=self.project.id,
+            event_type="human.message",
+            timestamp="2026-03-30T14:00:00Z",
+            role_id="human",
+            payload={"text": "Please add more tests"},
+        )
+        self.store.save_event(event)
+
+        # Retrieve events for the task
+        events = self.store.list_events(task_id=self.in_progress_task.id)
+        human_events = [e for e in events if e.event_type == "human.message"]
+        self.assertEqual(len(human_events), 1)
+        self.assertEqual(human_events[0].payload["text"], "Please add more tests")
+
+    def test_dashboard_activity_filter_html(self):
+        """Dashboard HTML contains activity filter elements."""
+        from foreman.dashboard import DASHBOARD_HTML
+        self.assertIn("activity-filter", DASHBOARD_HTML)
+        self.assertIn("activityFilterMenu", DASHBOARD_HTML)
+        self.assertIn("filterEvents", DASHBOARD_HTML)
+        self.assertIn("toggleFilterMenu", DASHBOARD_HTML)
+
+    def test_dashboard_project_switcher_html(self):
+        """Dashboard HTML contains project switcher elements."""
+        from foreman.dashboard import DASHBOARD_HTML
+        self.assertIn("project-switcher", DASHBOARD_HTML)
+        self.assertIn("projectSwitcherMenu", DASHBOARD_HTML)
+        self.assertIn("switchProject", DASHBOARD_HTML)
+        self.assertIn("toggleProjectSwitcher", DASHBOARD_HTML)

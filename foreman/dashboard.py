@@ -65,6 +65,25 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   .breadcrumb-link.current{color:var(--text-primary);cursor:default}
   .breadcrumb-link.current:hover{background:none}
 
+  /* Project switcher */
+  .project-switcher{position:relative;display:inline-block}
+  .project-switcher-toggle{color:var(--text-secondary);cursor:pointer;padding:4px 8px;
+    border-radius:var(--radius);transition:var(--transition);display:inline-flex;align-items:center;gap:4px}
+  .project-switcher-toggle:hover{color:var(--text-primary);background:var(--bg-raised)}
+  .project-switcher-toggle::after{content:'▾';font-size:10px;opacity:0.6}
+  .project-switcher-menu{position:absolute;top:100%;left:0;background:var(--bg-raised);
+    border:1px solid var(--border);border-radius:var(--radius);min-width:200px;
+    max-height:300px;overflow-y:auto;z-index:300;box-shadow:0 4px 12px rgba(0,0,0,.3);display:none}
+  .project-switcher-menu.visible{display:block}
+  .project-switcher-item{display:block;width:100%;padding:8px 12px;text-align:left;
+    font-family:var(--font-mono);font-size:11px;color:var(--text-secondary);
+    background:none;border:none;cursor:pointer;transition:var(--transition)}
+  .project-switcher-item:hover{background:var(--bg-card);color:var(--text-primary)}
+  .project-switcher-item.current{color:var(--accent);background:var(--accent-dim)}
+  .project-switcher-item .ps-status{font-size:9px;padding:1px 4px;border-radius:2px;margin-left:8px}
+  .project-switcher-item .ps-status.running{color:var(--green);background:var(--green-dim)}
+  .project-switcher-item .ps-status.idle{color:var(--text-tertiary);background:var(--bg)}
+
   /* Views */
   .view{display:none}.view.visible{display:block}
 
@@ -206,6 +225,32 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     color:var(--text-tertiary);letter-spacing:.06em;text-transform:uppercase}
   .event-divider::after{content:'';flex:1;height:1px;background:var(--border-subtle)}
 
+  /* Activity filter */
+  .activity-filter{font-size:10px;color:var(--text-tertiary);background:none;border:1px solid var(--border);
+    padding:3px 8px;border-radius:2px;font-family:var(--font-mono);cursor:pointer;transition:var(--transition)}
+  .activity-filter:hover{border-color:var(--text-tertiary);color:var(--text-secondary)}
+  .activity-filter-menu{position:absolute;top:100%;right:0;background:var(--bg-raised);border:1px solid var(--border);
+    border-radius:var(--radius);padding:4px 0;min-width:140px;z-index:300;box-shadow:0 4px 12px rgba(0,0,0,.3)}
+  .activity-filter-item{display:block;width:100%;padding:6px 12px;text-align:left;font-family:var(--font-mono);
+    font-size:10px;color:var(--text-secondary);background:none;border:none;cursor:pointer;transition:var(--transition)}
+  .activity-filter-item:hover{background:var(--bg-card);color:var(--text-primary)}
+  .activity-filter-item.active{color:var(--accent)}
+
+  /* Activity input */
+  .activity-input{flex-shrink:0;padding:10px 12px;border-top:1px solid var(--border-subtle);display:flex;gap:8px;align-items:flex-end}
+  .activity-input textarea{flex:1;background:var(--bg-input);border:1px solid var(--border);
+    border-radius:var(--radius);color:var(--text-primary);font-family:var(--font-mono);
+    font-size:11px;padding:8px 10px;resize:none;line-height:1.5;min-height:36px;max-height:120px;transition:var(--transition)}
+  .activity-input textarea::placeholder{color:var(--text-tertiary)}
+  .activity-input textarea:focus{outline:none;border-color:var(--text-tertiary)}
+  .activity-input button{font-family:var(--font-mono);font-size:10px;font-weight:600;padding:8px 14px;
+    border-radius:var(--radius);border:1px solid var(--border);background:var(--bg-card);
+    color:var(--text-secondary);cursor:pointer;transition:var(--transition);letter-spacing:.04em;
+    text-transform:uppercase;white-space:nowrap;height:36px}
+  .activity-input button:hover{background:var(--bg-card-hover);color:var(--text-primary);border-color:var(--text-tertiary)}
+  .activity-input.disabled{opacity:0.5;pointer-events:none}
+  .activity-context{font-size:10px;color:var(--text-tertiary);padding:4px 12px;border-top:1px solid var(--border-subtle)}
+
   .done-card{opacity:.6}
 
   /* Detail panel */
@@ -307,8 +352,25 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <div class="activity">
         <div class="activity-header">
           <div class="activity-header-left"><span class="activity-title">Activity</span></div>
+          <div style="position:relative">
+            <button class="activity-filter" id="activityFilterBtn" onclick="toggleFilterMenu()">All events</button>
+            <div class="activity-filter-menu" id="activityFilterMenu" style="display:none">
+              <button class="activity-filter-item active" onclick="filterEvents('all')">All events</button>
+              <button class="activity-filter-item" onclick="filterEvents('command')">Commands</button>
+              <button class="activity-filter-item" onclick="filterEvents('file')">Files</button>
+              <button class="activity-filter-item" onclick="filterEvents('signal')">Signals</button>
+              <button class="activity-filter-item" onclick="filterEvents('human')">Human</button>
+            </div>
+          </div>
         </div>
         <div class="activity-stream" id="activityStream"></div>
+        <div class="activity-context" id="activityContext" style="display:none">
+          Sending to: <span id="activityContextTask"></span>
+        </div>
+        <div class="activity-input disabled" id="activityInput">
+          <textarea rows="1" placeholder="Select a task to send a message..." id="humanInput" oninput="autoResize(this)"></textarea>
+          <button onclick="sendHumanMessage()">Send</button>
+        </div>
       </div>
     </div>
   </div>
@@ -380,7 +442,24 @@ function updateBreadcrumb() {
     const projName = proj ? proj.name : currentProject;
 
     html += '<span class="breadcrumb-sep">/</span>';
-    html += `<span class="breadcrumb-link ${currentSprint ? '' : 'current'}" onclick="${currentSprint ? "navigate('project','"+currentProject+"')" : ''}">${projName}</span>`;
+
+    // Show project switcher if multiple projects exist
+    if (projectData.length > 1) {
+      html += `<div class="project-switcher">
+        <span class="project-switcher-toggle" onclick="toggleProjectSwitcher(event)">${projName}</span>
+        <div class="project-switcher-menu" id="projectSwitcherMenu">
+          ${projectData.map(p => `
+            <button class="project-switcher-item ${p.id === currentProject ? 'current' : ''}"
+              onclick="switchProject('${p.id}', event)">
+              ${p.name}
+              <span class="ps-status ${p.status}">${p.status}</span>
+            </button>
+          `).join('')}
+        </div>
+      </div>`;
+    } else {
+      html += `<span class="breadcrumb-link ${currentSprint ? '' : 'current'}" onclick="${currentSprint ? "navigate('project','"+currentProject+"')" : ''}">${projName}</span>`;
+    }
   }
 
   if (currentSprint && currentProject) {
@@ -394,6 +473,26 @@ function updateBreadcrumb() {
 
   bc.innerHTML = html;
 }
+
+function toggleProjectSwitcher(event) {
+  event.stopPropagation();
+  const menu = document.getElementById('projectSwitcherMenu');
+  menu.classList.toggle('visible');
+}
+
+function switchProject(projectId, event) {
+  event.stopPropagation();
+  document.getElementById('projectSwitcherMenu').classList.remove('visible');
+  navigate('project', projectId);
+}
+
+// Close project switcher when clicking outside
+document.addEventListener('click', (e) => {
+  const menu = document.getElementById('projectSwitcherMenu');
+  if (menu && !e.target.closest('.project-switcher')) {
+    menu.classList.remove('visible');
+  }
+});
 
 function formatTokens(count) {
   if (!count) return '0';
@@ -635,7 +734,24 @@ function renderActivity(events) {
     return;
   }
 
-  container.innerHTML = events.map(e => {
+  // Apply current filter
+  const filteredEvents = currentEventFilter === 'all'
+    ? events
+    : events.filter(e => {
+        if (!e.event_type) return false;
+        if (currentEventFilter === 'command') return e.event_type.includes('command');
+        if (currentEventFilter === 'file') return e.event_type.includes('file');
+        if (currentEventFilter === 'signal') return e.event_type.includes('signal');
+        if (currentEventFilter === 'human') return e.event_type.includes('human');
+        return true;
+      });
+
+  if (filteredEvents.length === 0) {
+    container.innerHTML = `<div style="color:var(--text-tertiary);padding:16px">No ${currentEventFilter} events.</div>`;
+    return;
+  }
+
+  container.innerHTML = filteredEvents.map(e => {
     const time = e.timestamp ? e.timestamp.split('T')[1]?.split('.')[0]?.substring(0, 5) || '' : '';
     const dotClass = getEventDotClass(e.event_type);
     const body = formatEventBody(e);
@@ -649,6 +765,34 @@ function renderActivity(events) {
     `;
   }).join('');
 }
+
+let currentEventFilter = 'all';
+
+function toggleFilterMenu() {
+  const menu = document.getElementById('activityFilterMenu');
+  menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+}
+
+function filterEvents(filterType) {
+  currentEventFilter = filterType;
+  document.getElementById('activityFilterBtn').textContent =
+    filterType === 'all' ? 'All events' :
+    filterType === 'command' ? 'Commands' :
+    filterType === 'file' ? 'Files' :
+    filterType === 'signal' ? 'Signals' : 'Human';
+  document.querySelectorAll('.activity-filter-item').forEach(item => item.classList.remove('active'));
+  event.target.classList.add('active');
+  document.getElementById('activityFilterMenu').style.display = 'none';
+  // Re-render with current data
+  if (eventData.length > 0) renderActivity(eventData);
+}
+
+// Close filter menu when clicking outside
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.activity-filter') && !e.target.closest('.activity-filter-menu')) {
+    document.getElementById('activityFilterMenu').style.display = 'none';
+  }
+});
 
 function getEventDotClass(eventType) {
   if (!eventType) return 'dot-message';
@@ -789,6 +933,14 @@ async function showTaskDetail(taskId, event) {
 
     document.getElementById('detail-panel').style.display = 'flex';
 
+    // Enable activity input for this task
+    const activityInput = document.getElementById('activityInput');
+    activityInput.classList.remove('disabled');
+    document.getElementById('humanInput').placeholder = 'Send a message to guide the agent...';
+    const contextEl = document.getElementById('activityContext');
+    contextEl.style.display = 'block';
+    document.getElementById('activityContextTask').textContent = data.title;
+
   } catch (e) {
     console.error('Failed to load task detail:', e);
   }
@@ -797,6 +949,47 @@ async function showTaskDetail(taskId, event) {
 function hideDetail() {
   document.getElementById('detail-panel').style.display = 'none';
   currentDetailTask = null;
+  // Disable activity input when no task selected
+  document.getElementById('activityInput').classList.add('disabled');
+  document.getElementById('humanInput').placeholder = 'Select a task to send a message...';
+  document.getElementById('activityContext').style.display = 'none';
+}
+
+function autoResize(el) {
+  el.style.height = '36px';
+  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+}
+
+async function sendHumanMessage() {
+  const input = document.getElementById('humanInput');
+  const text = input.value.trim();
+  if (!text || !currentDetailTask) return;
+
+  const btn = input.parentElement.querySelector('button');
+  btn.disabled = true;
+  btn.textContent = 'Sending...';
+
+  try {
+    const resp = await fetch(`/api/tasks/${currentDetailTask}/messages`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({text: text})
+    });
+    const data = await resp.json();
+    input.value = '';
+    autoResize(input);
+    // Reload activity to show the new message
+    if (currentSprint) {
+      const eventsResp = await fetch(`/api/sprints/${currentSprint}/events?limit=50`);
+      const eventsData = await eventsResp.json();
+      renderActivity(eventsData.events || []);
+    }
+  } catch (e) {
+    console.error('Failed to send message:', e);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Send';
+  }
 }
 
 // Initialize
@@ -1083,6 +1276,55 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             if len(parts) == 4 and parts[1] == "api" and parts[2] == "tasks":
                 task_id = parts[3]
                 self._send_json({"status": "denied", "task_id": task_id})
+                return
+
+        # API: Send human message to task
+        if path.endswith("/messages"):
+            parts = path.split("/")
+            if len(parts) == 5 and parts[1] == "api" and parts[2] == "tasks":
+                task_id = parts[3]
+                task = self.store.get_task(task_id)
+                if task is None:
+                    self._send_error(f"Task not found: {task_id}")
+                    return
+
+                # Read JSON body
+                content_length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(content_length)
+                try:
+                    data = json.loads(body)
+                except json.JSONDecodeError:
+                    self._send_error("Invalid JSON", 400)
+                    return
+
+                text = data.get("text", "").strip()
+                if not text:
+                    self._send_error("Message text required", 400)
+                    return
+
+                # Get the latest run for this task to associate the message
+                runs = self.store.list_runs(task_id=task_id)
+                run_id = runs[0].id if runs else "none"
+
+                # Create human message event
+                from datetime import datetime, timezone
+                event = Event(
+                    id=f"evt-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{task_id[:8]}",
+                    run_id=run_id,
+                    task_id=task_id,
+                    project_id=task.project_id,
+                    event_type="human.message",
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                    role_id="human",
+                    payload={"text": text},
+                )
+                self.store.save_event(event)
+
+                self._send_json({
+                    "status": "sent",
+                    "event_id": event.id,
+                    "task_id": task_id,
+                })
                 return
 
         self._send_error("Not found", 404)
