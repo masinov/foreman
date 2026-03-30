@@ -4,6 +4,8 @@
 
 Foreman testing should verify durable workflow behavior, not just syntax.
 Compilation-only checks are insufficient.
+String-presence assertions are acceptable for bootstrap seams, but not as the
+final validation strategy for finished product surfaces.
 
 ## Current baseline
 
@@ -65,6 +67,7 @@ Unit tests:
 - dashboard handler read logic
 - dashboard live transport serialization
 - git helper behavior that can be isolated
+- frontend component behavior once the React dashboard exists
 
 Integration tests:
 
@@ -78,6 +81,7 @@ Integration tests:
 - context projection into `.foreman/`
 - cross-invocation native session reuse for Claude Code, Codex, and
   non-persistent reviewer roles
+- dashboard API contract behavior independent of the frontend implementation
 
 Runner smoke tests:
 
@@ -93,6 +97,7 @@ UI validation:
 - activity feed behavior and live stream updates
 - alignment between dashboard sprint streaming and CLI watch tailing
 - human message, filter, and approve or deny flows
+- browser-driven validation for the dedicated frontend once it lands
 
 ## Definition of done
 
@@ -102,6 +107,10 @@ Do not mark a task done unless:
 - new behavior is covered by tests when practical,
 - user-visible changes include validation notes,
 - the docs reflect the new reality.
+
+For product UI work, "done" should eventually include API contract coverage,
+frontend behavior coverage, and browser-level validation rather than only
+backend tests that inspect HTML strings.
 
 If a slice cannot reasonably add tests yet, explain why in the PR summary and
 record the follow-up explicitly.

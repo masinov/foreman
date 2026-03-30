@@ -2,16 +2,16 @@
 
 ## Current sprint
 
-- Sprint: `sprint-20-migration-framework-bootstrap`
+- Sprint: `sprint-21-dashboard-api-extraction`
 - Status: active
-- Goal: introduce an explicit schema migration path for store evolution and
-  retention-safe upgrades
+- Goal: replace the embedded Python-served dashboard surface with an explicit
+  API boundary that supports a dedicated React frontend
 
 ## Active branches
 
 - no long-lived feature branch should remain loose after the engine DB
   discovery, security-review, backend-preflight, and retention slices; start
-  sprint-20 work from `main`
+  dashboard hardening work from `main`
 
 ## Completed this week
 
@@ -57,6 +57,13 @@
   model while keeping the CLI on a direct store-read transport
 - documented the new watch boundary and advanced repo memory to the migration
   framework slice
+- completed `sprint-20-production-hardening-reset`
+- tightened repo instructions so bootstrap state now refers only to project
+  memory and feature coverage, not to acceptable implementation quality
+- accepted a dedicated web UI and API boundary that deprecates embedding the
+  product dashboard inside one Python module
+- recorded a ranked hardening detour for dashboard replacement, stub removal,
+  migration work, and broader product-surface remediation
 
 ## Current repo state
 
@@ -81,11 +88,13 @@
     protection for blocked and in-progress task history,
   - monitoring CLI surfaces for board, history, cost, and live watch tails
     across project, sprint, and run scopes,
-  - accepted ADRs for runner session semantics and dashboard data access,
-  - a dashboard web surface with project overview, sprint board, task detail,
-    activity feed, human message input, activity filtering, project switching,
-    approve or deny actions that resume the workflow, and a dedicated sprint
-    event stream that keeps activity current without full-list polling,
+  - accepted ADRs for runner session semantics, dashboard data access, and the
+    dedicated product web UI and API boundary,
+  - a current dashboard implementation that delivers project overview, sprint
+    board, task detail, activity feed, human message input, activity
+    filtering, project switching, approve or deny actions, and a dedicated
+    sprint event stream, but is still embedded into one Python module and must
+    be replaced,
   - unit and integration coverage across store, CLI, orchestrator, runners,
     dashboard, scaffold, and executor seams,
   - repo-memory docs that are intended to let a fresh agent continue from the
@@ -96,12 +105,11 @@
 
 ## Ready next
 
-1. introduce an explicit migration runner for store schema upgrades and fresh
-   initialization from versioned steps
-2. define how migration metadata should be stored so later retention and
-   lifecycle slices can evolve SQLite safely
-3. document operator expectations for upgrading existing local `.foreman.db`
-   files
+1. extract dashboard reads, actions, and streaming into explicit API modules
+   that no longer depend on embedded HTML delivery
+2. introduce a dedicated React dashboard frontend on top of that API boundary
+3. remove or implement remaining stub and placeholder product surfaces before
+   resuming lower-level infrastructure detours
 
 ## Open risks
 
@@ -111,18 +119,27 @@
 - Repo-local discovery currently depends on an existing `.foreman.db` in the
   current repo lineage or on `foreman init` creating one; cross-repo and
   out-of-repo inspection still requires explicit `--db`.
+- the current dashboard is still rendered from one Python module via embedded
+  HTML, CSS, and JavaScript; this is now considered unacceptable product
+  architecture and is scheduled for replacement.
 - Native backend preflight now validates executable presence and Codex startup
   handshake assumptions, but it does not yet prove downstream auth or service
   reachability beyond startup.
 - The Codex app-server protocol exposes token usage but not USD pricing, so
   Codex runs currently persist `token_count` accurately while `cost_usd`
   remains `0.0`.
+- multiple CLI product surfaces still route through `handle_stub`, including
+  project, sprint, task, run, and config commands.
+- `task_selection_mode=\"autonomous\"` is still not implemented in the
+  orchestrator even though the project settings model exposes it.
 - Event retention currently prunes only `events`; `runs` rows and stored
   prompts continue to accumulate until a later lifecycle or migration slice.
 - The SQLite layer still uses bootstrap DDL without a migration framework.
 - project-scoped `foreman watch` resolves the active sprint once at startup;
   if sprint ownership changes mid-tail, operators currently need to restart
   the command to follow the new sprint.
+- dashboard validation is still dominated by API and HTML-string assertions;
+  there is no dedicated frontend test stack or end-to-end browser coverage.
 
 ## Documented conflicts
 
@@ -138,6 +155,10 @@
 - The spec expects `.foreman/status.md` to list open decisions, but the current
   SQLite schema has no structured decision records yet. The runtime projection
   currently emits an explicit placeholder until those records exist.
+- The mockup is a static HTML interaction reference, not a frontend stack
+  specification. The previous implementation treated that as enough license to
+  embed the dashboard directly into a Python module; the active architecture
+  direction now rejects that interpretation.
 - The spec describes `foreman approve` and `foreman deny` as immediately
   resuming workflow execution. The current runtime does that when the next
   backend and repo are available, but it still persists a deferred next step
@@ -153,8 +174,8 @@
 
 ## Open decisions
 
-- whether the bootstrap repo-local `.foreman.db` location should remain
-  long-term or give way to a broader engine-instance configuration model
+- whether the repo-local `.foreman.db` location should remain long-term or
+  give way to a broader engine-instance configuration model
 - whether project `default_model` should be validated against the selected
   backend instead of being passed through verbatim at runtime
 - whether backend preflight should eventually expand beyond executable and

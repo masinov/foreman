@@ -41,9 +41,13 @@ The first runner contract ADR checkpoint is recorded in
 The first dashboard implementation checkpoint is recorded in
 `docs/checkpoints/dashboard-slice.md`.
 
+The production-hardening reset checkpoint is recorded in
+`docs/checkpoints/production-hardening-audit.md`.
+
 ## Near-term policy
 
-While migration bootstrap is still incomplete:
+While dashboard API extraction, React dashboard foundation, product-surface
+hardening, and migration bootstrap are still incomplete:
 
 - use tags only for meaningful checkpoints,
 - prefer sprint-completion checkpoints over frequent versioning,
@@ -62,6 +66,8 @@ While migration bootstrap is still incomplete:
 - first monitoring CLI milestone
 - first accepted runner contract ADR
 - first dashboard implementation milestone
+- first extracted dashboard API boundary
+- first dedicated frontend milestone
 
 ## Before creating a release tag
 

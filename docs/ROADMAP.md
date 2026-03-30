@@ -12,6 +12,10 @@ Roadmap items should preserve the product identity defined in the Foreman spec:
 - repo-local context projection under `.foreman/`,
 - a dashboard aligned with the mockup.
 
+Incremental slices must still aim at durable production architecture. Bootstrap
+status does not justify implementation shapes that are knowingly meant to be
+replaced wholesale.
+
 ## Milestone 0: Repo reset and bootstrap
 
 Goal: make the transplanted scaffold belong to Foreman.
@@ -308,7 +312,70 @@ Status:
 - the CLI and dashboard now share the same persisted-event cursor model even
   though the dashboard still delivers it over SSE
 
-## Milestone 15: Migration framework bootstrap
+## Milestone 15: Production hardening reset
+
+Goal: correct repo guidance so bootstrap status cannot be read as permission
+for prototype-grade product architecture.
+
+Target deliverables:
+
+- tightened repo instructions and architecture rules
+- accepted UI and API boundary ADR for the product dashboard
+- a ranked hardening detour covering dashboard replacement and other
+  half-implemented or structurally weak surfaces
+
+Status:
+
+- completed on `docs/production-hardening-reset`
+- bootstrap language now explicitly applies to repo memory and feature
+  coverage, not acceptable code quality
+- a dedicated React frontend plus Python API boundary is now the accepted
+  dashboard direction
+
+## Milestone 16: Dashboard API extraction
+
+Goal: separate dashboard backend contracts from the embedded Python-served UI.
+
+Target deliverables:
+
+- explicit backend modules for dashboard reads, actions, and streaming
+- stable JSON and incremental event contracts
+- tests and docs that let a separate frontend consume the dashboard API
+
+Status:
+
+- current sprint is `sprint-21-dashboard-api-extraction`
+
+## Milestone 17: React dashboard foundation
+
+Goal: replace the embedded dashboard shell with a dedicated React frontend.
+
+Target deliverables:
+
+- frontend app scaffold and build pipeline
+- initial React implementation of current dashboard surfaces
+- integration with the extracted dashboard API and streaming boundary
+
+Status:
+
+- planned in `sprint-22-react-dashboard-foundation`
+
+## Milestone 18: Product surface hardening
+
+Goal: remove or finish known placeholder and structurally weak product
+surfaces.
+
+Target deliverables:
+
+- removal or implementation of stub CLI product commands
+- remediation of known mockup and settings gaps
+- stronger API, frontend, and end-to-end validation for shipped surfaces
+
+Status:
+
+- planned in `sprint-23-product-surface-hardening`
+
+## Milestone 19: Migration framework bootstrap
 
 Goal: introduce an explicit schema migration path for future SQLite
 evolution.
@@ -321,13 +388,26 @@ Target deliverables:
 
 Status:
 
-- current sprint is `sprint-20-migration-framework-bootstrap`
+- planned in `sprint-24-migration-framework-bootstrap`
+
+## Milestone 20: History lifecycle expansion
+
+Goal: extend retention and cleanup beyond `events` after migration support
+exists.
+
+Target deliverables:
+
+- lifecycle policy for `runs`, stored prompts, and related history
+- retention-safe migrations for expanded cleanup behavior
+- docs for operator-facing history lifecycle expectations
+
+Status:
+
+- planned in `sprint-25-history-lifecycle-expansion`
 
 ## Near-term priorities
 
-1. introduce a migration framework for store evolution and retention-safe
-   upgrades
-2. decide whether retention should later extend beyond `events` into broader
-   history lifecycle management
-3. decide whether project-scoped watch should auto-rebind when the active
-   sprint changes during a long-lived tail session
+1. extract the dashboard into an explicit Python API boundary
+2. replace the embedded dashboard with a dedicated React frontend
+3. remove or finish known stub and placeholder product surfaces
+4. resume migration work once the product-surface boundary is corrected

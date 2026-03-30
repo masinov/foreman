@@ -13,6 +13,9 @@ authoritative product inputs are:
 Everything else in the repo exists to turn those two artifacts into a working
 runtime without losing project memory along the way.
 
+Bootstrap here refers to repo-memory scaffolding and incomplete feature
+coverage. It does not mean product code may use throwaway architecture.
+
 ## Key references
 
 - Agent operating instructions: `AGENTS.md`
@@ -51,17 +54,31 @@ The integrated pre-release baseline now contains:
 - store-backed monitoring commands for `board`, `history`, `cost`, and
   live `watch` across project, sprint, and run scopes,
 - accepted ADRs for runner session and backend contract boundaries
-  (`ADR-0001`) and dashboard data access (`ADR-0002`),
-- a dashboard web surface with project overview, sprint board, task detail,
-  activity feed, human message input, activity filtering, project switching,
-  approve or deny actions wired into orchestrator resume, and a dedicated
-  sprint event stream for live activity updates,
+  (`ADR-0001`), dashboard data access (`ADR-0002`), and the product web UI
+  and API boundary (`ADR-0003`),
+- a current dashboard bootstrap implementation with project overview, sprint
+  board, task detail, activity feed, human message input, activity filtering,
+  project switching, approve or deny actions wired into orchestrator resume,
+  and a dedicated sprint event stream for live activity updates,
 - unit and integration coverage across store, CLI, orchestrator, runners,
   dashboard, and runner-backed executor seams.
 
 The current repo-memory goal is to keep that baseline coherent while moving
 into the next implementation gap rather than leaving finished work stranded on
 feature branches.
+
+## Implementation standard
+
+Incremental delivery is expected. Throwaway implementation structure is not.
+
+- production-facing code should land behind boundaries that can survive into
+  the finished product,
+- the mockup defines UI hierarchy and interaction intent, not permission to
+  embed the product UI into backend modules,
+- the accepted direction for the dashboard is now a dedicated React frontend
+  consuming a Python API and streaming boundary,
+- known placeholder or stub product surfaces are treated as debt to remove,
+  not as acceptable steady-state architecture.
 
 ## Workflow selection
 
@@ -117,6 +134,17 @@ rendering repeated snapshots.
 - the CLI and dashboard now share the same persisted-event cursor model even
   though the dashboard still delivers it over HTTP server-sent events.
 
+## Dashboard direction
+
+The current dashboard implementation in `foreman/dashboard.py` is now treated
+as an implementation debt item, not the desired product architecture.
+
+The accepted direction is:
+
+- Python backend modules expose JSON and streaming APIs,
+- a dedicated React frontend owns product UI rendering and state management,
+- mockup alignment remains mandatory for hierarchy and interaction behavior.
+
 ## Autonomous entry points
 
 Run all Python commands through the repo virtual environment:
@@ -145,12 +173,12 @@ Both wrappers expect these files to be current:
 
 ## Next implementation slice
 
-The current sprint is `sprint-20-migration-framework-bootstrap`.
+The current sprint is `sprint-21-dashboard-api-extraction`.
 
 The next recommended task is:
 
-- introduce an explicit schema migration path for store evolution and
-  retention-safe upgrades.
+- extract the dashboard into an explicit API boundary that a dedicated React
+  frontend can consume.
 
 That work is recorded in `docs/sprints/current.md`, so a fresh agent can pick
 it up without reconstructing branch history first.

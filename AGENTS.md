@@ -34,6 +34,10 @@ If the spec, mockup, and current code disagree:
 2. trust the mockup for UI information architecture and interaction intent,
 3. document the conflict in `docs/STATUS.md` before changing behavior.
 
+The mockup is a product-behavior and UI-structure reference. It does not, by
+itself, define the implementation stack. Implementation-stack decisions belong
+in ADRs and architecture docs, and once made they must be followed explicitly.
+
 Do not casually edit the spec or mockup. Only change them when the task
 explicitly revises product direction.
 
@@ -45,8 +49,9 @@ explicitly revises product direction.
 
 ## Current Project Reality
 
-This repository is at a bootstrap stage. The spec and mockup are authoritative;
-the implementation is still being built.
+This repository is at a bootstrap stage for **project memory and feature
+coverage**, not for implementation quality. The spec and mockup are
+authoritative; the implementation is still being built.
 
 Until Foreman itself exists, this repo uses committed markdown files as a
 temporary project-memory scaffold:
@@ -57,9 +62,26 @@ temporary project-memory scaffold:
 - `docs/ARCHITECTURE.md`
 - `docs/ROADMAP.md`
 
-Do not confuse this bootstrap scaffold with the intended final product design.
-Per the spec, Foreman's runtime source of truth should move into SQLite, with
-markdown becoming projection rather than primary state.
+Do not confuse this bootstrap scaffold with permission to land throwaway or
+prototype-grade architecture. Per the spec, Foreman's runtime source of truth
+should move into SQLite, with markdown becoming projection rather than primary
+state.
+
+## Implementation Standard
+
+Every landed slice must move the codebase toward a robust production product,
+even when the feature set is incomplete.
+
+Rules:
+
+- bootstrap status refers to repo memory and sequencing, not to code quality,
+- do not land implementation shapes that are obviously meant to be thrown away,
+- do not justify weak boundaries by saying the product is "not finished yet",
+- if a slice would require a knowingly bad architecture shortcut, stop and
+  record a reset or refactor slice instead of normalizing the shortcut,
+- product surfaces may be partial, but the parts that land should be able to
+  survive into the final product with incremental refinement rather than full
+  replacement.
 
 ## Planning Rules
 
@@ -75,6 +97,10 @@ Do not jump into non-trivial coding without first stating:
 Prefer small vertical slices over broad rewrites. A good slice usually lands a
 visible capability end to end: schema, store, CLI or API seam, tests, and
 docs.
+
+Small vertical slices still need durable seams. "Small" is not a reason to
+inline a future subsystem into the wrong module or skip the architectural
+boundary the product will need anyway.
 
 If the current sprint is exhausted, pull the next justified slice from
 `docs/sprints/backlog.md` and update sprint state as part of the same change.
@@ -97,6 +123,13 @@ Preserve the core product commitments:
 - both Claude Code and Codex backends remain first-class targets.
 - the dashboard and sprint/task views should stay aligned to the mockup's
   hierarchy and affordances.
+- product web UI should live in dedicated frontend code, not as embedded HTML
+  strings inside backend modules.
+- backend modules should expose durable API, orchestration, and persistence
+  boundaries rather than mixing transport, rendering, and storage concerns.
+- completed product-facing commands should not remain stubs or placeholder
+  surfaces unless the current sprint is explicitly about scaffolding that
+  command and the unfinished state is documented as a known gap.
 
 Avoid carrying old Apparatus-specific concepts into this codebase. This repo is
 not a research-writing product, and no leftover domain language from that
@@ -177,6 +210,9 @@ Each completed task should leave behind a visible deliverable such as:
 
 “Worked on X” is not a deliverable.
 
+A deliverable is not complete if it only works through a knowingly weak
+implementation boundary that the next sprint must discard.
+
 ## Documentation Expectations
 
 Keep these docs current when relevant:
@@ -201,6 +237,10 @@ implementation constraint. Good ADR candidates in this repo include:
 - API or UI boundary,
 - security review path,
 - cost and time gate policy.
+
+When a UI or API boundary decision is made, future slices must follow it. Do
+not continue landing code that violates an accepted ADR just because the
+violating implementation already exists.
 
 Do not front-load speculative ADRs. Put open questions in `docs/STATUS.md` or
 `docs/ROADMAP.md` until the code actually depends on a decision.
@@ -249,6 +289,8 @@ As implementation lands, add and run:
 - manual UI validation notes against the mockup.
 
 Work is not done if it only compiles.
+Work is also not done if it lands a user-facing surface through an
+architecture that is already known to be unacceptable for the product.
 
 ## Wrapper Expectations
 

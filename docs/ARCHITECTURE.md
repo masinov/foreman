@@ -8,11 +8,12 @@
 - ADRs:
   - `docs/adr/ADR-0001-runner-session-backend-contract.md`
   - `docs/adr/ADR-0002-dashboard-data-access-boundary.md`
+  - `docs/adr/ADR-0003-web-ui-api-boundary.md`
 
 This document records the active architectural baseline for Foreman as it
 exists after reconciling the completed feature branches. It documents the
-constraints the code now depends on and the gaps the next sprint is expected
-to close.
+constraints the code now depends on, the structural debt that is explicitly
+being corrected, and the gaps the next sprint is expected to close.
 
 ## Product identity
 
@@ -60,6 +61,8 @@ Primary persisted entities:
 Committed markdown in this repository is still temporary bootstrap memory.
 Once Foreman matures, files like `docs/STATUS.md` and `docs/sprints/current.md`
 should become planning artifacts or projections rather than operational state.
+That bootstrap memory status does not relax implementation quality standards
+for product code.
 
 ## Runtime repo boundary
 
@@ -78,7 +81,8 @@ be generated or projected rather than treated as the product database.
 
 The repository now ships:
 
-- typed models and a bootstrap SQLite schema for projects, sprints, tasks,
+- typed models and a currently bootstrap SQLite schema for projects, sprints,
+  tasks,
   runs, and events,
 - query helpers for project status, sprint board state, run totals, and recent
   event slices,
@@ -117,11 +121,20 @@ The current runtime supports:
 Foreman now exposes two first-class observation surfaces:
 
 - CLI inspection commands: `board`, `history`, `cost`, and live `watch`
-- a dashboard web surface in `foreman/dashboard.py`
+- a dashboard web surface that is currently implemented in
+  `foreman/dashboard.py`
 
 Per ADR-0002, the dashboard currently reads directly from `ForemanStore`
 read-model helpers rather than going through a separate query service or
 projection database.
+
+Per ADR-0003, the product direction is now:
+
+- backend modules expose the dashboard through explicit JSON and streaming API
+  boundaries,
+- a dedicated React frontend owns web UI rendering and client state,
+- embedding substantial product UI markup inside backend Python modules is
+  treated as debt to remove, not as an acceptable steady-state design.
 
 The current dashboard baseline includes:
 
@@ -134,6 +147,13 @@ The current dashboard baseline includes:
 - debounced board and selected-task refresh on incoming activity,
 - approve or deny actions that call the orchestrator to resume workflow
   execution.
+
+The current implementation debt in this area is explicit:
+
+- the dashboard HTML, CSS, and browser logic are embedded into one Python
+  module,
+- backend transport and UI rendering are coupled together,
+- there is no dedicated frontend build, component, or end-to-end test stack.
 
 The current CLI watch baseline now includes:
 
@@ -175,14 +195,18 @@ The current CLI watch baseline now includes:
 - `event_retention_days` now prunes old project events on startup, but current
   schema constraints force `engine.event_pruned` to ride on a synthetic
   task-bound orchestrator run instead of a pure project-level event.
+- multiple product-facing CLI surfaces still route through a generic stub
+  handler and must not be treated as complete.
+- `task_selection_mode="autonomous"` is modeled in settings but is not yet
+  implemented in the orchestrator.
 - `session_persistence` is a role-level policy with scope `task + role +
   backend`, and fresh orchestrator invocations now reload the last compatible
   persisted session from SQLite for persistent roles.
 - Codex token usage is persisted accurately, but the current app-server
   contract does not expose USD pricing, so Codex `cost_usd` remains zero.
-- the dashboard live transport uses server-sent events over a threaded HTTP
-  server, with store polling inside the transport loop as the current
-  implementation boundary.
+- the dashboard live transport currently uses server-sent events over a
+  threaded HTTP server, with store polling inside the transport loop as the
+  current implementation boundary until API extraction lands.
 - `foreman watch` now shares the dashboard's persisted-event cursor boundary
   but stays on a direct store-read loop instead of going through the HTTP SSE
   transport.
@@ -191,10 +215,9 @@ The current CLI watch baseline now includes:
 
 ## Next architectural slice
 
-The next slice should make schema evolution explicit:
+The next slice should correct the dashboard boundary first:
 
-- introduce versioned schema metadata and ordered upgrade steps,
-- preserve safe initialization for new stores while allowing existing DBs to
-  migrate forward,
-- document how later retention and lifecycle slices should depend on the
-  migration boundary.
+- extract dashboard reads, actions, and streaming into explicit backend API
+  modules,
+- preserve the current functionality while removing inline UI coupling,
+- document the handoff boundary for the React frontend sprint that follows.

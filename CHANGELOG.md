@@ -39,6 +39,8 @@ memory changes rather than versioned product releases.
 - explicit native backend preflight validation for Claude Code and Codex
 - spec-aligned event-retention pruning for old project events
 - live-tail `foreman watch` support across project, sprint, and run scopes
+- `docs/adr/ADR-0003-web-ui-api-boundary.md`
+- production-hardening audit and detour planning docs
 
 ### Changed
 
@@ -74,6 +76,11 @@ memory changes rather than versioned product releases.
   project memory to the watch live-tail alignment sprint
 - completed `sprint-19-watch-live-tail-alignment`, archived it, and advanced
   project memory to the migration framework bootstrap sprint
+- tightened repo instructions so bootstrap status no longer permits
+  prototype-grade implementation decisions
+- replanned the next work as a production-hardening detour covering dashboard
+  API extraction, React frontend replacement, stub removal, and delayed
+  migration work
 - reconciled the loose feature and recovery branches into an integrated
   mainline candidate and restored missing repo-memory artifacts from the
   runner-session ADR branch
