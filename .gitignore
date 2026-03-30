@@ -205,3 +205,8 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Foreman / agent runtime state
+.foreman/
+.codex/
+.claude/

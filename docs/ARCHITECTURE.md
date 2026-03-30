@@ -1,0 +1,152 @@
+# Architecture
+
+## Status
+
+- Status: bootstrap implementation baseline
+- Primary source: `docs/specs/engine-design-v3.md`
+- UI reference: `docs/mockups/foreman-mockup-v6.html`
+- ADRs: none accepted yet
+
+This document describes the current architectural baseline for implementing
+Foreman from the spec. It records active constraints without pretending that
+unmade decisions are already settled.
+
+## Product identity
+
+Foreman is an autonomous development engine that:
+
+- stores structured project state in SQLite,
+- projects ephemeral context into a gitignored repo path,
+- drives development through declarative roles and workflows,
+- records runs and events for later inspection,
+- exposes state to both CLI and UI surfaces.
+
+It is not just a wrapper around one coding agent. The wrappers in `scripts/`
+are bootstrap tooling, not the final product architecture.
+
+## Core layers
+
+The spec defines four layers:
+
+1. Agent Runner
+2. Role System
+3. Workflow Engine
+4. Orchestrator
+
+Those layers should remain explicit in the codebase. Avoid collapsing them into
+one monolithic service class or one prompt-heavy script.
+
+## Source of truth
+
+Foreman's runtime source of truth should be SQLite.
+
+Primary entities:
+
+- projects
+- sprints
+- tasks
+- runs
+- events
+
+Committed markdown in this repository is temporary bootstrap memory for the
+pre-implementation stage. Once the product exists, files like
+`docs/STATUS.md` and `docs/sprints/current.md` should be treated as planning
+artifacts or exports, not as the runtime database.
+
+## Repo-level runtime boundary
+
+The runtime repo integration should stay narrow:
+
+- generated `AGENTS.md`
+- `docs/adr/`
+- gitignored `.foreman/`
+
+Per the spec, convention docs such as branching and testing ultimately belong
+in generated instructions rather than a sprawling committed scaffold. This repo
+currently keeps them committed only because the product itself does not exist
+yet.
+
+## Recommended early package seams
+
+The first package layout should closely follow the spec:
+
+- `foreman/models.py`
+- `foreman/store.py`
+- `foreman/roles.py`
+- `foreman/workflows.py`
+- `foreman/orchestrator.py`
+- `foreman/builtins.py`
+- `foreman/scaffold.py`
+- `foreman/context.py`
+- `foreman/git.py`
+- `foreman/cli.py`
+- `foreman/runner/`
+
+Support files outside the package:
+
+- `roles/*.toml`
+- `workflows/*.toml`
+- `templates/*.j2`
+- `tests/`
+
+## Runner boundary
+
+Foreman should support at least two runner backends:
+
+- Claude Code
+- Codex
+
+Both need a shared protocol around:
+
+- prompt input,
+- session handling,
+- structured events,
+- time and cost gates,
+- infrastructure error retries.
+
+Do not let one backend's quirks leak into the shared orchestration model.
+
+## Workflow boundary
+
+Workflows should stay declarative and outcome-based.
+
+Built-in steps from the spec that deserve explicit implementation seams:
+
+- run tests
+- merge
+- mark done
+- human gate
+- context projection
+
+The workflow layer should resolve transitions and loop limits from persisted
+task state rather than by ad hoc control flow in runner scripts.
+
+## Monitoring surfaces
+
+Foreman needs two first-class observation surfaces:
+
+- CLI inspection commands
+- a web dashboard
+
+The mockup establishes the main UI hierarchy:
+
+- dashboard of projects
+- project-level sprint views
+- sprint-level task board with activity feed
+- settings and creation modals
+
+Implementation does not need to match the mockup pixel for pixel on day one,
+but the object model and navigation hierarchy should match it.
+
+## Bootstrap reality
+
+Today the repo contains only:
+
+- the spec,
+- the mockup,
+- bootstrap wrappers,
+- repo-memory docs.
+
+There is no `foreman/` package yet, no `pyproject.toml`, and no test suite for
+runtime code. The first implementation slice should create those foundations
+before deeper architecture work lands.

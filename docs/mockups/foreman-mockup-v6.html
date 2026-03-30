@@ -1,0 +1,1230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Foreman</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,300;8..60,400;8..60,600&display=swap');
+
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg:#0c0c0e;--bg-raised:#141417;--bg-card:#1a1a1f;--bg-card-hover:#1f1f25;
+    --bg-input:#111114;--border:#2a2a30;--border-subtle:#1f1f25;
+    --text-primary:#e8e6e3;--text-secondary:#8a8a8e;--text-tertiary:#5a5a5e;
+    --accent:#c9a55a;--accent-dim:#c9a55a22;
+    --green:#4a9;--green-dim:#4a922;--red:#c55;--red-dim:#c5522;
+    --amber:#c90;--amber-dim:#c9022;--blue:#59b;--blue-dim:#59b22;
+    --font-mono:'JetBrains Mono',monospace;--font-serif:'Source Serif 4',serif;
+    --radius:3px;--transition:180ms ease;
+  }
+  html{font-size:14px}
+  body{font-family:var(--font-mono);background:var(--bg);color:var(--text-primary);
+    line-height:1.5;min-height:100vh;-webkit-font-smoothing:antialiased}
+
+  /* ═══ Topbar ════════════════════════════════════ */
+  .topbar{display:flex;align-items:center;justify-content:space-between;
+    padding:0 24px;height:48px;border-bottom:1px solid var(--border);
+    background:var(--bg);position:sticky;top:0;z-index:100}
+  .topbar-left{display:flex;align-items:center;gap:0}
+  .logo{font-weight:700;font-size:13px;letter-spacing:.12em;text-transform:uppercase;
+    cursor:pointer;transition:var(--transition);padding-right:4px}
+  .logo:hover{color:var(--accent)}
+  .topbar-right{display:flex;align-items:center;gap:14px}
+  .topbar-tokens{font-size:11px;color:var(--text-tertiary);letter-spacing:.04em;font-variant-numeric:tabular-nums}
+  .topbar-tokens span{color:var(--text-secondary)}
+  .engine-status{display:flex;align-items:center;gap:6px;font-size:10px;
+    letter-spacing:.04em;text-transform:uppercase}
+  .engine-status .dot{width:6px;height:6px;border-radius:50%}
+  .engine-status.running .dot{background:var(--green);box-shadow:0 0 6px var(--green);animation:pulse 2.5s ease-in-out infinite}
+  .engine-status.running{color:var(--green)}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+  .topbar-btn{background:none;border:1px solid var(--border);color:var(--text-tertiary);
+    cursor:pointer;font-family:var(--font-mono);font-size:11px;padding:4px 10px;
+    border-radius:var(--radius);transition:var(--transition);display:flex;align-items:center;gap:5px}
+  .topbar-btn:hover{color:var(--text-primary);border-color:var(--text-tertiary);background:var(--bg-raised)}
+  .topbar-btn svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+  /* ═══ Breadcrumb with dropdowns ═════════════════ */
+  .breadcrumb{display:flex;align-items:center;gap:0;font-size:12px}
+  .breadcrumb-sep{color:var(--text-tertiary);padding:0 6px;font-size:11px;user-select:none}
+  .breadcrumb-segment{position:relative;display:flex;align-items:center;gap:0}
+  .breadcrumb-link{color:var(--text-secondary);cursor:pointer;padding:4px 8px;
+    border-radius:var(--radius);transition:var(--transition);text-decoration:none;
+    font-family:var(--font-mono);font-size:12px}
+  .breadcrumb-link:hover{color:var(--text-primary);background:var(--bg-raised)}
+  .breadcrumb-link.current{color:var(--text-primary);cursor:default}
+  .breadcrumb-link.current:hover{background:none}
+  .breadcrumb-chevron{display:flex;align-items:center;justify-content:center;
+    width:20px;height:24px;cursor:pointer;border:none;background:none;
+    border-radius:var(--radius);transition:var(--transition);color:var(--text-tertiary);
+    font-size:11px;line-height:1;padding:0}
+  .breadcrumb-chevron:hover{color:var(--text-primary);background:var(--bg-raised)}
+  .breadcrumb-segment.open .breadcrumb-chevron{transform:rotate(180deg);color:var(--text-primary)}
+  .breadcrumb-dropdown{position:absolute;top:calc(100% + 4px);left:0;min-width:240px;
+    background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);
+    box-shadow:0 8px 24px rgba(0,0,0,.5);z-index:300;display:none;padding:4px 0;
+    animation:dropIn 120ms ease}
+  .breadcrumb-segment.open .breadcrumb-dropdown{display:block}
+  @keyframes dropIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+  .breadcrumb-option{display:flex;justify-content:space-between;align-items:center;
+    padding:7px 12px;font-size:11px;color:var(--text-secondary);cursor:pointer;
+    transition:var(--transition);font-family:var(--font-mono);gap:12px}
+  .breadcrumb-option:hover{background:var(--bg-card-hover);color:var(--text-primary)}
+  .breadcrumb-option.active-option{color:var(--accent)}
+  .breadcrumb-option .opt-detail{font-size:10px;color:var(--text-tertiary);white-space:nowrap}
+  .breadcrumb-option .opt-status{font-size:9px;font-weight:500;text-transform:uppercase;
+    letter-spacing:.06em;padding:1px 5px;border-radius:2px}
+  .opt-s-active{color:var(--green);background:var(--green-dim)}
+  .opt-s-done{color:var(--text-tertiary);background:var(--bg)}
+  .opt-s-planned{color:var(--blue);background:var(--blue-dim)}
+  .opt-s-running{color:var(--green);background:var(--green-dim)}
+  .opt-s-blocked{color:var(--amber);background:var(--amber-dim)}
+  .opt-s-idle{color:var(--text-tertiary);background:var(--bg)}
+  .dropdown-overlay{position:fixed;top:0;left:0;right:0;bottom:0;z-index:299;display:none}
+  .dropdown-overlay.visible{display:block}
+
+  /* ═══ Views ═════════════════════════════════════ */
+  .view{display:none}.view.visible{display:block}
+
+  /* ═══ Dashboard ═════════════════════════════════ */
+  .dashboard{padding:24px}
+  .page-title{font-family:var(--font-serif);font-size:20px;font-weight:600;margin-bottom:4px}
+  .page-subtitle{font-size:11px;color:var(--text-tertiary);margin-bottom:16px}
+  .dashboard-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px}
+  .project-card{background:var(--bg-card);border:1px solid var(--border-subtle);
+    border-radius:var(--radius);padding:16px;cursor:pointer;transition:var(--transition)}
+  .project-card:hover{border-color:var(--border);background:var(--bg-card-hover)}
+  .pc-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px}
+  .pc-name{font-family:var(--font-serif);font-size:15px;font-weight:600}
+  .pc-status{font-size:9px;font-weight:500;text-transform:uppercase;letter-spacing:.08em;padding:2px 6px;border-radius:2px}
+  .s-running{color:var(--green);background:var(--green-dim)}
+  .s-idle{color:var(--text-tertiary);background:var(--bg)}
+  .s-blocked{color:var(--amber);background:var(--amber-dim)}
+  .pc-sprint{font-size:11px;color:var(--text-secondary);margin-bottom:10px}
+  .pc-tasks{display:flex;gap:8px;font-size:10px;color:var(--text-tertiary);margin-bottom:8px}
+  .pc-tasks .n{color:var(--text-secondary);font-weight:500}
+  .progress-bar{display:flex;height:3px;border-radius:1px;overflow:hidden;gap:1px}
+  .p-done{background:var(--green)}.p-wip{background:var(--accent)}
+  .p-blocked{background:var(--red)}.p-todo{background:var(--border)}
+  .pc-footer{display:flex;justify-content:space-between;align-items:center;font-size:10px;
+    color:var(--text-tertiary);padding-top:8px;border-top:1px solid var(--border-subtle);font-variant-numeric:tabular-nums}
+  .pc-footer span.v{color:var(--text-secondary)}
+
+  /* ═══ Project (sprint views) ═════════════════════ */
+  .project-view{padding:24px}
+  .project-info{margin-bottom:16px}
+  .project-info h1{font-family:var(--font-serif);font-size:20px;font-weight:600;margin-bottom:4px}
+  .project-meta{display:flex;gap:20px;font-size:11px;color:var(--text-tertiary);margin-bottom:4px}
+  .project-meta .v{color:var(--text-secondary)}
+  .project-badges{display:flex;gap:8px;margin-top:6px}
+  .badge{font-size:10px;font-weight:500;padding:3px 8px;border-radius:2px;letter-spacing:.06em;text-transform:uppercase}
+  .badge-warn{background:var(--amber-dim);color:var(--amber);border:1px solid #c9033}
+
+  /* Toolbar */
+  .sprint-toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:12px}
+  .sprint-toolbar-left{display:flex;align-items:center;gap:8px}
+  .sprint-toolbar-right{display:flex;align-items:center;gap:6px}
+  .filter-btn{font-family:var(--font-mono);font-size:10px;padding:4px 10px;border-radius:2px;
+    border:1px solid var(--border);background:none;color:var(--text-tertiary);cursor:pointer;
+    transition:var(--transition);letter-spacing:.02em}
+  .filter-btn:hover{border-color:var(--text-tertiary);color:var(--text-secondary)}
+  .filter-btn.active{border-color:var(--accent);color:var(--accent);background:var(--accent-dim)}
+  .filter-sep{width:1px;height:16px;background:var(--border);margin:0 4px}
+  .view-toggle{display:flex;border:1px solid var(--border);border-radius:2px;overflow:hidden}
+  .view-toggle-btn{font-family:var(--font-mono);font-size:10px;padding:4px 10px;
+    border:none;background:none;color:var(--text-tertiary);cursor:pointer;transition:var(--transition)}
+  .view-toggle-btn:hover{color:var(--text-secondary);background:var(--bg-raised)}
+  .view-toggle-btn.active{color:var(--text-primary);background:var(--bg-card)}
+  .sort-btn{font-family:var(--font-mono);font-size:10px;padding:4px 10px;border-radius:2px;
+    border:1px solid var(--border);background:none;color:var(--text-tertiary);cursor:pointer;transition:var(--transition)}
+  .sort-btn:hover{border-color:var(--text-tertiary);color:var(--text-secondary)}
+
+  /* List view — compact rows */
+  .sprint-list{display:flex;flex-direction:column;gap:2px}
+  .sprint-card{background:var(--bg-card);border:1px solid var(--border-subtle);border-radius:var(--radius);
+    padding:8px 14px;display:grid;grid-template-columns:60px 1fr 240px 100px;gap:12px;align-items:center;
+    cursor:pointer;transition:var(--transition)}
+  .sprint-card:hover{border-color:var(--border);background:var(--bg-card-hover)}
+  .sprint-card.active-sprint{border-left:2px solid var(--green)}
+  .sc-status{font-size:9px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+    padding:2px 6px;border-radius:2px;text-align:center;white-space:nowrap}
+  .sc-active{color:var(--green);background:var(--green-dim)}
+  .sc-completed{color:var(--text-tertiary);background:var(--bg)}
+  .sc-planned{color:var(--blue);background:var(--blue-dim)}
+  .sc-body{display:flex;align-items:center;gap:10px;min-width:0;overflow:hidden}
+  .sc-title{font-size:12px;font-weight:500;white-space:nowrap;flex-shrink:0}
+  .sc-goal{font-size:11px;color:var(--text-tertiary);font-family:var(--font-serif);font-style:italic;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+  .sc-tasks-inline{display:flex;gap:8px;font-size:10px;color:var(--text-tertiary);
+    white-space:nowrap;align-items:center}
+  .sc-tasks-inline .n{color:var(--text-secondary);font-weight:500}
+  .sc-progress-inline{width:80px;flex-shrink:0}
+  .sc-stats-inline{display:flex;gap:10px;font-size:10px;color:var(--text-tertiary);
+    font-variant-numeric:tabular-nums;white-space:nowrap;justify-content:flex-end}
+  .sc-stats-inline span span{color:var(--text-secondary);font-weight:500}
+
+  /* Kanban view — vertical columns by status */
+  .sprint-kanban{display:none;gap:12px}
+  .sprint-kanban.visible{display:grid;grid-template-columns:repeat(3,1fr)}
+  .sk-column{display:flex;flex-direction:column;gap:6px;min-height:0}
+  .sk-col-header{display:flex;align-items:center;justify-content:space-between;
+    padding:0 0 6px;border-bottom:1px solid var(--border-subtle);margin-bottom:2px}
+  .sk-col-title{font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text-tertiary)}
+  .sk-col-count{font-size:10px;color:var(--text-tertiary);background:var(--bg);padding:1px 6px;border-radius:2px}
+  .sk-card{background:var(--bg-card);border:1px solid var(--border-subtle);border-radius:var(--radius);
+    padding:12px;cursor:pointer;transition:var(--transition)}
+  .sk-card:hover{border-color:var(--border);background:var(--bg-card-hover)}
+  .sk-card.active-sprint{border-left:2px solid var(--green)}
+  .sk-card-title{font-size:12px;font-weight:500;margin-bottom:4px}
+  .sk-card-goal{font-size:10px;color:var(--text-tertiary);font-family:var(--font-serif);font-style:italic;
+    margin-bottom:6px;line-height:1.4}
+  .sk-card-footer{display:flex;justify-content:space-between;align-items:center;font-size:10px;
+    color:var(--text-tertiary);font-variant-numeric:tabular-nums}
+  .sk-card-tasks{display:flex;gap:6px}
+  .sk-card-tasks .n{color:var(--text-secondary);font-weight:500}
+
+  /* ═══ Sprint (kanban + activity) ════════════════ */
+  .sprint-view-inner{display:flex;flex-direction:column;height:calc(100vh - 48px)}
+  .sprint-header{padding:12px 24px;border-bottom:1px solid var(--border-subtle);
+    display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
+  .sprint-header-left{display:flex;align-items:center;gap:16px}
+  .sprint-name{font-size:14px;font-weight:500}
+  .sprint-goal-text{font-size:11px;color:var(--text-tertiary);font-family:var(--font-serif);font-style:italic}
+  .sprint-header-right{display:flex;align-items:center;gap:12px}
+  .sprint-stat{font-size:11px;color:var(--text-tertiary);font-variant-numeric:tabular-nums}
+  .sprint-stat .sv{color:var(--text-secondary);font-weight:500}
+  .btn-stop{color:var(--red);border-color:#c5533;background:var(--red-dim);
+    font-family:var(--font-mono);font-size:11px;font-weight:500;padding:5px 12px;
+    border-radius:var(--radius);border:1px solid;cursor:pointer;transition:var(--transition);
+    display:flex;align-items:center;gap:5px}
+  .btn-stop:hover{background:#c5533;color:var(--text-primary)}
+  .btn-stop svg{width:9px;height:9px;fill:currentColor;stroke:none}
+
+  .sprint-body{display:grid;grid-template-columns:1fr;flex:1;min-height:0;transition:grid-template-columns 250ms ease}
+  .sprint-body.with-activity{grid-template-columns:1fr 400px}
+
+  .board{padding:16px 24px;overflow-y:auto}
+  .sprint-body.with-activity .board{border-right:1px solid var(--border-subtle)}
+  .board-columns{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;height:100%}
+  .column{display:flex;flex-direction:column;gap:8px;min-height:0}
+  .col-header{display:flex;align-items:center;justify-content:space-between;
+    padding:0 0 8px;border-bottom:1px solid var(--border-subtle);margin-bottom:4px}
+  .col-title{font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text-tertiary)}
+  .col-count{font-size:10px;color:var(--text-tertiary);background:var(--bg);padding:1px 6px;border-radius:2px}
+  .col-cards{display:flex;flex-direction:column;gap:6px;overflow-y:auto;flex:1}
+
+  .card{background:var(--bg-card);border:1px solid var(--border-subtle);border-radius:var(--radius);
+    padding:12px;cursor:pointer;transition:var(--transition)}
+  .card:hover{background:var(--bg-card-hover);border-color:var(--border)}
+  .card.selected{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent-dim)}
+  .card-title{font-size:12px;font-weight:500;margin-bottom:8px;line-height:1.4}
+  .card-meta{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+  .card-tag{font-size:9px;font-weight:500;padding:2px 6px;border-radius:2px;letter-spacing:.06em;text-transform:uppercase}
+  .tag-feature{background:var(--blue-dim);color:var(--blue)}
+  .card-tokens{font-size:10px;color:var(--text-tertiary);margin-left:auto;font-variant-numeric:tabular-nums}
+  .card-branch{font-size:10px;color:var(--text-tertiary);margin-top:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .card-role{font-size:10px;color:var(--text-tertiary);margin-top:4px}
+  .card-blocked{border-left:2px solid var(--amber)}
+  .card-blocked-reason{font-size:10px;color:var(--amber);margin-top:6px;padding:4px 6px;background:var(--amber-dim);border-radius:2px}
+  .card-actions{display:flex;gap:4px;margin-top:8px}
+  .card-actions .btn{font-size:10px;padding:3px 8px}
+  .btn{font-family:var(--font-mono);font-size:11px;font-weight:500;padding:6px 14px;
+    border-radius:var(--radius);border:1px solid var(--border);background:var(--bg-card);
+    color:var(--text-secondary);cursor:pointer;transition:var(--transition)}
+  .btn:hover{background:var(--bg-card-hover);color:var(--text-primary);border-color:var(--text-tertiary)}
+  .btn-approve{color:var(--green);border-color:#4a933;background:var(--green-dim)}
+  .btn-approve:hover{background:#4a933}
+  .btn-deny{color:var(--red);border-color:#c5533;background:var(--red-dim)}
+  .btn-deny:hover{background:#c5533}
+
+  /* Activity */
+  .activity{display:flex;flex-direction:column;height:100%;overflow:hidden}
+  .activity-header{padding:8px 12px;border-bottom:1px solid var(--border-subtle);
+    display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+  .activity-header-left{display:flex;align-items:center;gap:10px}
+  .activity-title{font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text-tertiary)}
+  .activity-collapse{background:none;border:none;color:var(--text-tertiary);cursor:pointer;
+    font-family:var(--font-mono);font-size:14px;padding:2px 6px;transition:var(--transition);line-height:1}
+  .activity-collapse:hover{color:var(--text-primary)}
+  .activity-filter{font-size:10px;color:var(--text-tertiary);background:none;border:1px solid var(--border);
+    padding:3px 8px;border-radius:2px;font-family:var(--font-mono);cursor:pointer;transition:var(--transition)}
+  .activity-filter:hover{border-color:var(--text-tertiary);color:var(--text-secondary)}
+  .activity-stream{flex:1;overflow-y:auto;padding:8px 0}
+  .event-row{display:grid;grid-template-columns:56px 20px 1fr;gap:8px;padding:5px 16px;
+    align-items:start;font-size:11px;transition:var(--transition);cursor:default;min-height:28px}
+  .event-row:hover{background:var(--bg-raised)}
+  .event-time{color:var(--text-tertiary);font-size:10px;text-align:right;padding-top:1px;font-variant-numeric:tabular-nums}
+  .event-icon{width:16px;height:16px;display:flex;align-items:center;justify-content:center;margin-top:1px}
+  .event-dot{width:5px;height:5px;border-radius:50%}
+  .dot-command{background:var(--accent)}.dot-file{background:var(--blue)}
+  .dot-message{background:var(--text-tertiary)}.dot-workflow{background:var(--green)}
+  .dot-signal{background:#a7a}.dot-review{background:var(--amber)}.dot-human{background:var(--text-primary)}
+  .event-body{color:var(--text-secondary);line-height:1.4}
+  .event-body .event-label{color:var(--text-tertiary);font-size:10px}
+  .event-body code{color:var(--text-primary);font-size:11px}
+  .event-body .event-steer{color:var(--amber)}
+  .event-human-msg{color:var(--text-primary);background:#e8e6e308;border-left:2px solid var(--text-secondary);
+    padding:4px 8px;margin-top:2px;font-size:11px;line-height:1.5}
+  .event-divider{display:flex;align-items:center;gap:8px;padding:8px 16px;font-size:9px;
+    color:var(--text-tertiary);letter-spacing:.06em;text-transform:uppercase}
+  .event-divider::after{content:'';flex:1;height:1px;background:var(--border-subtle)}
+  .activity-input{flex-shrink:0;padding:10px 12px;border-top:1px solid var(--border-subtle);display:flex;gap:8px;align-items:flex-end}
+  .activity-input textarea{flex:1;background:var(--bg-input);border:1px solid var(--border);
+    border-radius:var(--radius);color:var(--text-primary);font-family:var(--font-mono);
+    font-size:11px;padding:8px 10px;resize:none;line-height:1.5;min-height:36px;max-height:120px;transition:var(--transition)}
+  .activity-input textarea::placeholder{color:var(--text-tertiary)}
+  .activity-input textarea:focus{outline:none;border-color:var(--text-tertiary)}
+  .activity-input button{font-family:var(--font-mono);font-size:10px;font-weight:600;padding:8px 14px;
+    border-radius:var(--radius);border:1px solid var(--border);background:var(--bg-card);
+    color:var(--text-secondary);cursor:pointer;transition:var(--transition);letter-spacing:.04em;
+    text-transform:uppercase;white-space:nowrap;height:36px}
+  .activity-input button:hover{background:var(--bg-card-hover);color:var(--text-primary);border-color:var(--text-tertiary)}
+
+  .activity-tab{display:none;writing-mode:vertical-rl;text-orientation:mixed;padding:16px 8px;
+    font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--text-tertiary);border-left:1px solid var(--border-subtle);cursor:pointer;
+    transition:var(--transition);background:var(--bg);user-select:none}
+  .activity-tab:hover{color:var(--text-secondary);background:var(--bg-raised)}
+  .sprint-body.activity-hidden .activity-tab{display:flex;align-items:center}
+  .sprint-body.activity-hidden .activity{display:none}
+  .sprint-body.activity-hidden{grid-template-columns:1fr 32px}
+
+  /* ═══ Detail panel ══════════════════════════════ */
+  .detail-overlay{position:fixed;top:0;right:0;bottom:0;width:520px;background:var(--bg-raised);
+    border-left:1px solid var(--border);z-index:200;display:flex;flex-direction:column;
+    box-shadow:-20px 0 60px rgba(0,0,0,.5);animation:slideIn 200ms ease}
+  @keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
+  .detail-header{padding:16px 20px;border-bottom:1px solid var(--border-subtle);
+    display:flex;justify-content:space-between;align-items:flex-start;flex-shrink:0}
+  .detail-header h2{font-family:var(--font-serif);font-size:16px;font-weight:600;line-height:1.4;margin-bottom:6px}
+  .detail-close{background:none;border:none;color:var(--text-tertiary);cursor:pointer;
+    font-size:16px;font-family:var(--font-mono);padding:4px 8px;transition:var(--transition)}
+  .detail-close:hover{color:var(--text-primary)}
+  .detail-body{flex:1;overflow-y:auto;padding:16px 20px}
+  .detail-section{margin-bottom:20px}
+  .detail-section-title{font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--text-tertiary);margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid var(--border-subtle)}
+  .detail-field{display:flex;justify-content:space-between;padding:3px 0;font-size:11px}
+  .detail-field-label{color:var(--text-tertiary)}.detail-field-value{color:var(--text-secondary);text-align:right;font-variant-numeric:tabular-nums}
+  .detail-criteria{font-size:11px;color:var(--text-secondary);line-height:1.5;font-family:var(--font-serif);padding:8px 0}
+  .run-timeline{display:flex;flex-direction:column;gap:2px}
+  .run-entry{display:grid;grid-template-columns:52px 1fr auto;gap:10px;padding:8px;font-size:11px;
+    border-radius:var(--radius);cursor:pointer;transition:var(--transition)}
+  .run-entry:hover{background:var(--bg-card)}
+  .run-role{color:var(--text-tertiary);font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.04em}
+  .run-detail-text{color:var(--text-secondary)}
+  .run-outcome{font-size:10px;font-weight:500;padding:1px 6px;border-radius:2px}
+  .outcome-done{color:var(--green);background:var(--green-dim)}
+  .outcome-steer{color:var(--amber);background:var(--amber-dim)}
+  .run-tokens{font-size:10px;color:var(--text-tertiary);text-align:right;font-variant-numeric:tabular-nums}
+
+  /* ═══ Tag variants ══════════════════════════════ */
+  .tag-bug{background:var(--red-dim);color:var(--red)}
+  .tag-refactor{background:#a7a22;color:#a7a}
+  .tag-hotfix{background:var(--amber-dim);color:var(--amber)}
+  .tag-chore{background:var(--bg);color:var(--text-tertiary);border:1px solid var(--border)}
+
+  /* ═══ Action buttons ════════════════════════════ */
+  .btn-action{font-family:var(--font-mono);font-size:10px;font-weight:500;padding:4px 12px;
+    border-radius:var(--radius);border:1px solid var(--border);background:var(--bg-card);
+    color:var(--text-secondary);cursor:pointer;transition:var(--transition);
+    display:flex;align-items:center;gap:5px;white-space:nowrap}
+  .btn-action:hover{background:var(--bg-card-hover);color:var(--text-primary);border-color:var(--text-tertiary)}
+  .btn-action .plus{font-size:13px;line-height:1;font-weight:300}
+
+  /* ═══ Modal ═════════════════════════════════════ */
+  .modal-backdrop{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);
+    z-index:400;display:none;align-items:center;justify-content:center}
+  .modal-backdrop.visible{display:flex}
+  .modal{background:var(--bg-raised);border:1px solid var(--border);border-radius:var(--radius);
+    width:480px;max-height:80vh;display:flex;flex-direction:column;
+    box-shadow:0 20px 60px rgba(0,0,0,.5);animation:modalIn 150ms ease}
+  @keyframes modalIn{from{opacity:0;transform:translateY(-8px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
+  .modal-header{padding:14px 20px;border-bottom:1px solid var(--border-subtle);
+    display:flex;justify-content:space-between;align-items:center}
+  .modal-header h3{font-family:var(--font-serif);font-size:15px;font-weight:600}
+  .modal-close{background:none;border:none;color:var(--text-tertiary);cursor:pointer;
+    font-size:16px;font-family:var(--font-mono);padding:4px 8px;transition:var(--transition)}
+  .modal-close:hover{color:var(--text-primary)}
+  .modal-body{padding:16px 20px;overflow-y:auto;display:flex;flex-direction:column;gap:14px}
+  .modal-footer{padding:12px 20px;border-top:1px solid var(--border-subtle);
+    display:flex;justify-content:flex-end;gap:8px}
+  .form-group{display:flex;flex-direction:column;gap:4px}
+  .form-label{font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text-tertiary)}
+  .form-input{background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius);
+    color:var(--text-primary);font-family:var(--font-mono);font-size:11px;padding:8px 10px;
+    transition:var(--transition);line-height:1.5}
+  .form-input:focus{outline:none;border-color:var(--text-tertiary)}
+  .form-input::placeholder{color:var(--text-tertiary)}
+  textarea.form-input{resize:vertical;min-height:60px}
+  select.form-input{cursor:pointer;appearance:none;
+    background-image:url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%235a5a5e' fill='none' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat:no-repeat;background-position:right 10px center;padding-right:28px}
+  .form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .form-chips{display:flex;gap:4px;flex-wrap:wrap}
+  .form-chip{font-family:var(--font-mono);font-size:10px;padding:4px 10px;border-radius:2px;
+    border:1px solid var(--border);background:none;color:var(--text-tertiary);cursor:pointer;
+    transition:var(--transition)}
+  .form-chip:hover{border-color:var(--text-tertiary);color:var(--text-secondary)}
+  .form-chip.selected{border-color:var(--accent);color:var(--accent);background:var(--accent-dim)}
+  .btn-primary{font-family:var(--font-mono);font-size:11px;font-weight:600;padding:7px 18px;
+    border-radius:var(--radius);border:1px solid var(--accent);background:var(--accent-dim);
+    color:var(--accent);cursor:pointer;transition:var(--transition);letter-spacing:.04em}
+  .btn-primary:hover{background:var(--accent);color:var(--bg)}
+  .btn-cancel{font-family:var(--font-mono);font-size:11px;font-weight:500;padding:7px 18px;
+    border-radius:var(--radius);border:1px solid var(--border);background:none;
+    color:var(--text-tertiary);cursor:pointer;transition:var(--transition)}
+  .btn-cancel:hover{color:var(--text-secondary);border-color:var(--text-tertiary)}
+
+  /* ═══ Inline task entries (sprint creation) ═════ */
+  .task-entries{display:flex;flex-direction:column;gap:8px}
+  .task-entry{background:var(--bg-card);border:1px solid var(--border-subtle);border-radius:var(--radius);overflow:hidden}
+  .task-entry-header{display:flex;align-items:center;justify-content:space-between;
+    padding:8px 12px;cursor:pointer;transition:var(--transition);gap:8px}
+  .task-entry-header:hover{background:var(--bg-card-hover)}
+  .task-entry-num{font-size:10px;color:var(--text-tertiary);font-weight:500;flex-shrink:0}
+  .task-entry-preview{font-size:11px;color:var(--text-secondary);flex:1;min-width:0;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .task-entry-preview.empty{color:var(--text-tertiary);font-style:italic}
+  .task-entry-actions{display:flex;gap:2px;flex-shrink:0}
+  .task-entry-btn{background:none;border:none;color:var(--text-tertiary);cursor:pointer;
+    font-family:var(--font-mono);font-size:12px;padding:2px 6px;transition:var(--transition);
+    border-radius:2px;line-height:1}
+  .task-entry-btn:hover{color:var(--text-primary);background:var(--bg-raised)}
+  .task-entry-body{padding:0 12px 12px;display:flex;flex-direction:column;gap:10px}
+  .task-entry.collapsed .task-entry-body{display:none}
+  .task-entry-chevron{font-size:9px;color:var(--text-tertiary);transition:transform 150ms ease;flex-shrink:0}
+  .task-entry.collapsed .task-entry-chevron{transform:rotate(-90deg)}
+  .btn-add-task{font-family:var(--font-mono);font-size:10px;padding:6px 0;
+    border:1px dashed var(--border);border-radius:var(--radius);background:none;
+    color:var(--text-tertiary);cursor:pointer;transition:var(--transition);
+    width:100%;text-align:center;display:flex;align-items:center;justify-content:center;gap:4px}
+  .btn-add-task:hover{border-color:var(--text-tertiary);color:var(--text-secondary);background:var(--bg-card)}
+  .btn-add-task .plus{font-size:13px;line-height:1;font-weight:300}
+
+  /* ═══ Settings panel (slide-over) ═══════════════ */
+  .settings-overlay{position:fixed;top:0;right:0;bottom:0;width:460px;background:var(--bg-raised);
+    border-left:1px solid var(--border);z-index:250;display:none;flex-direction:column;
+    box-shadow:-20px 0 60px rgba(0,0,0,.5);animation:slideIn 200ms ease}
+  .settings-overlay.visible{display:flex}
+  .settings-header{padding:14px 20px;border-bottom:1px solid var(--border-subtle);
+    display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
+  .settings-header h3{font-family:var(--font-serif);font-size:15px;font-weight:600}
+  .settings-body{flex:1;overflow-y:auto;padding:16px 20px}
+  .settings-section{margin-bottom:24px}
+  .settings-section-title{font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--text-tertiary);margin-bottom:10px;padding-bottom:4px;border-bottom:1px solid var(--border-subtle)}
+  .settings-row{display:flex;justify-content:space-between;align-items:center;
+    padding:8px 0;min-height:36px}
+  .settings-row + .settings-row{border-top:1px solid var(--border-subtle)}
+  .settings-label{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}
+  .settings-label-text{font-size:11px;color:var(--text-primary)}
+  .settings-label-desc{font-size:10px;color:var(--text-tertiary);line-height:1.4}
+
+  /* Toggle switch */
+  .toggle{position:relative;width:34px;height:18px;flex-shrink:0;margin-left:12px}
+  .toggle input{opacity:0;width:0;height:0}
+  .toggle-track{position:absolute;inset:0;border-radius:9px;background:var(--border);
+    cursor:pointer;transition:var(--transition)}
+  .toggle-track::after{content:'';position:absolute;top:2px;left:2px;width:14px;height:14px;
+    border-radius:50%;background:var(--text-tertiary);transition:var(--transition)}
+  .toggle input:checked + .toggle-track{background:var(--accent-dim);border:1px solid var(--accent)}
+  .toggle input:checked + .toggle-track::after{transform:translateX(16px);background:var(--accent)}
+  .settings-backdrop{position:fixed;top:0;left:0;right:0;bottom:0;z-index:249;display:none}
+  .settings-backdrop.visible{display:block}
+
+  ::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:transparent}
+  ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+  ::-webkit-scrollbar-thumb:hover{background:var(--text-tertiary)}
+</style>
+</head>
+<body>
+
+<div class="dropdown-overlay" id="dropdownOverlay" onclick="closeAllDropdowns()"></div>
+
+<!-- ═══ Topbar ════════════════════════════════════════ -->
+<div class="topbar">
+  <div class="topbar-left">
+    <div class="logo" onclick="navigate('dashboard')">Foreman</div>
+    <div class="breadcrumb" id="breadcrumb"></div>
+  </div>
+  <div class="topbar-right">
+    <div class="topbar-tokens" id="topbarTokens">sprint <span>124k</span> &middot; project <span>892k</span> tokens</div>
+    <div class="engine-status running"><span class="dot"></span> Running</div>
+    <button class="topbar-btn" title="Settings" onclick="toggleSettings()">
+      <svg viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 00-2 2v.18a2 2 0 01-1 1.73l-.43.25a2 2 0 01-2 0l-.15-.08a2 2 0 00-2.73.73l-.22.38a2 2 0 00.73 2.73l.15.1a2 2 0 011 1.72v.51a2 2 0 01-1 1.74l-.15.09a2 2 0 00-.73 2.73l.22.38a2 2 0 002.73.73l.15-.08a2 2 0 012 0l.43.25a2 2 0 011 1.73V20a2 2 0 002 2h.44a2 2 0 002-2v-.18a2 2 0 011-1.73l.43-.25a2 2 0 012 0l.15.08a2 2 0 002.73-.73l.22-.39a2 2 0 00-.73-2.73l-.15-.08a2 2 0 01-1-1.74v-.5a2 2 0 011-1.74l.15-.09a2 2 0 00.73-2.73l-.22-.38a2 2 0 00-2.73-.73l-.15.08a2 2 0 01-2 0l-.43-.25a2 2 0 01-1-1.73V4a2 2 0 00-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+    </button>
+  </div>
+</div>
+
+<!-- ═══ Level 1: Dashboard ════════════════════════════ -->
+<div class="view visible" id="view-dashboard">
+  <div class="dashboard">
+    <div class="page-title">Projects</div>
+    <div class="page-subtitle">3 projects &middot; 1 running &middot; 1 needs attention</div>
+    <div class="dashboard-grid">
+      <div class="project-card" onclick="navigate('project','apparatus')">
+        <div class="pc-header"><div class="pc-name">Apparatus</div><div class="pc-status s-blocked"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--amber);margin-right:4px"></span>Blocked</div></div>
+        <div class="pc-sprint">Sprint 3 &mdash; Claim ledger and review workflows</div>
+        <div class="pc-tasks"><span><span class="n">2</span> done</span><span><span class="n">1</span> in progress</span><span><span class="n">1</span> blocked</span><span><span class="n">2</span> todo</span></div>
+        <div class="progress-bar" style="width:100%;margin-bottom:10px"><div class="p-done" style="flex:2"></div><div class="p-wip" style="flex:1"></div><div class="p-blocked" style="flex:1"></div><div class="p-todo" style="flex:2"></div></div>
+        <div class="pc-footer"><div class="pc-tokens">sprint <span class="v">124k</span> tokens</div><div>autonomous &middot; development</div></div>
+      </div>
+      <div class="project-card" onclick="navigate('project','predictive')">
+        <div class="pc-header"><div class="pc-name">Predictive Controls</div><div class="pc-status s-running">Running</div></div>
+        <div class="pc-sprint">Sprint 1 &mdash; Data pipeline and model baseline</div>
+        <div class="pc-tasks"><span><span class="n">4</span> done</span><span><span class="n">1</span> in progress</span><span><span class="n">3</span> todo</span></div>
+        <div class="progress-bar" style="width:100%;margin-bottom:10px"><div class="p-done" style="flex:4"></div><div class="p-wip" style="flex:1"></div><div class="p-todo" style="flex:3"></div></div>
+        <div class="pc-footer"><div class="pc-tokens">sprint <span class="v">487k</span> tokens</div><div>directed &middot; development</div></div>
+      </div>
+      <div class="project-card">
+        <div class="pc-header"><div class="pc-name">Client Portal</div><div class="pc-status s-idle">Idle</div></div>
+        <div class="pc-sprint">Sprint 2 completed &mdash; No active sprint</div>
+        <div class="pc-tasks"><span><span class="n">8</span> done</span><span><span class="n">1</span> cancelled</span></div>
+        <div class="progress-bar" style="width:100%;margin-bottom:10px"><div class="p-done" style="flex:8"></div></div>
+        <div class="pc-footer"><div class="pc-tokens">total <span class="v">281k</span> tokens</div><div>directed &middot; development_secure</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ Level 2: Project ══════════════════════════════ -->
+<div class="view" id="view-project">
+  <div class="project-view">
+    <div class="project-info">
+      <h1 id="projectTitle">Apparatus</h1>
+      <div class="project-meta">
+        <span>workflow <span class="v">development</span></span>
+        <span>merge target <span class="v">main</span></span>
+        <span>spec <span class="v">docs/specs/spec-v0.3.md</span></span>
+      </div>
+      <div class="project-badges"><span class="badge badge-warn">1 awaiting approval</span></div>
+    </div>
+
+    <div class="sprint-toolbar">
+      <div class="sprint-toolbar-left">
+        <button class="filter-btn active" data-filter="all" onclick="filterSprints('all',this)">All</button>
+        <button class="filter-btn" data-filter="active" onclick="filterSprints('active',this)">Active</button>
+        <button class="filter-btn" data-filter="done" onclick="filterSprints('done',this)">Done</button>
+        <button class="filter-btn" data-filter="planned" onclick="filterSprints('planned',this)">Planned</button>
+        <div class="filter-sep"></div>
+        <button class="sort-btn" id="sortBtn" onclick="toggleSort()">Newest first</button>
+      </div>
+      <div class="sprint-toolbar-right">
+        <div class="view-toggle">
+          <button class="view-toggle-btn active" id="vtList" onclick="setSprintView('list')">List</button>
+          <button class="view-toggle-btn" id="vtKanban" onclick="setSprintView('kanban')">Board</button>
+        </div>
+        <button class="btn-action" onclick="openModal('newSprint')"><span class="plus">+</span> New sprint</button>
+      </div>
+    </div>
+
+    <!-- List view -->
+    <div class="sprint-list" id="sprintListView">
+      <div class="sprint-card active-sprint" data-status="active" data-order="3" onclick="navigate('sprint','sprint-3')">
+        <div class="sc-status sc-active">Active</div>
+        <div class="sc-body">
+          <span class="sc-title">Sprint 3</span>
+          <span class="sc-goal">Claim ledger and review workflows</span>
+        </div>
+        <div class="sc-tasks-inline">
+          <span><span class="n">2</span>/<span class="n">6</span> done</span>
+          <div class="progress-bar sc-progress-inline"><div class="p-done" style="flex:2"></div><div class="p-wip" style="flex:1"></div><div class="p-blocked" style="flex:1"></div><div class="p-todo" style="flex:2"></div></div>
+        </div>
+        <div class="sc-stats-inline"><span><span>124k</span> tok</span><span><span>8</span> runs</span></div>
+      </div>
+      <div class="sprint-card" data-status="done" data-order="2" onclick="navigate('sprint','sprint-2')">
+        <div class="sc-status sc-completed">Done</div>
+        <div class="sc-body">
+          <span class="sc-title">Sprint 2</span>
+          <span class="sc-goal">Graph schema, export model, and provider routing ADRs</span>
+        </div>
+        <div class="sc-tasks-inline">
+          <span><span class="n">5</span>/<span class="n">5</span> done</span>
+          <div class="progress-bar sc-progress-inline"><div class="p-done" style="flex:5"></div></div>
+        </div>
+        <div class="sc-stats-inline"><span><span>310k</span> tok</span><span><span>12</span> runs</span></div>
+      </div>
+      <div class="sprint-card" data-status="done" data-order="1" onclick="navigate('sprint','sprint-1')">
+        <div class="sc-status sc-completed">Done</div>
+        <div class="sc-body">
+          <span class="sc-title">Sprint 1</span>
+          <span class="sc-goal">Ingestion pipeline and source normalization</span>
+        </div>
+        <div class="sc-tasks-inline">
+          <span><span class="n">4</span>/<span class="n">4</span> done</span>
+          <div class="progress-bar sc-progress-inline"><div class="p-done" style="flex:4"></div></div>
+        </div>
+        <div class="sc-stats-inline"><span><span>458k</span> tok</span><span><span>9</span> runs</span></div>
+      </div>
+      <div class="sprint-card" data-status="planned" data-order="4">
+        <div class="sc-status sc-planned">Planned</div>
+        <div class="sc-body">
+          <span class="sc-title">Sprint 4</span>
+          <span class="sc-goal">Research actions and grounded outline generation</span>
+        </div>
+        <div class="sc-tasks-inline">
+          <span><span class="n">0</span>/<span class="n">3</span> tasks</span>
+          <div class="progress-bar sc-progress-inline"><div class="p-todo" style="flex:3"></div></div>
+        </div>
+        <div class="sc-stats-inline"><span>&mdash;</span><span>&nbsp;</span></div>
+      </div>
+    </div>
+
+    <!-- Kanban view -->
+    <div class="sprint-kanban" id="sprintKanbanView">
+      <div class="sk-column">
+        <div class="sk-col-header"><span class="sk-col-title">Active</span><span class="sk-col-count">1</span></div>
+        <div class="sk-card active-sprint" data-status="active" onclick="navigate('sprint','sprint-3')">
+          <div class="sk-card-title">Sprint 3</div>
+          <div class="sk-card-goal">Claim ledger and review workflows</div>
+          <div class="sk-card-footer">
+            <div class="sk-card-tasks"><span><span class="n">2</span> done</span><span><span class="n">1</span> wip</span><span><span class="n">1</span> blocked</span></div>
+            <span><span class="n">124k</span> tok</span>
+          </div>
+          <div class="progress-bar" style="margin-top:6px"><div class="p-done" style="flex:2"></div><div class="p-wip" style="flex:1"></div><div class="p-blocked" style="flex:1"></div><div class="p-todo" style="flex:2"></div></div>
+        </div>
+      </div>
+      <div class="sk-column">
+        <div class="sk-col-header"><span class="sk-col-title">Done</span><span class="sk-col-count">2</span></div>
+        <div class="sk-card" data-status="done" onclick="navigate('sprint','sprint-2')">
+          <div class="sk-card-title">Sprint 2</div>
+          <div class="sk-card-goal">Graph schema, export model, and provider routing ADRs</div>
+          <div class="sk-card-footer"><div class="sk-card-tasks"><span><span class="n">5</span>/<span class="n">5</span> done</span></div><span><span class="n">310k</span> tok</span></div>
+        </div>
+        <div class="sk-card" data-status="done" onclick="navigate('sprint','sprint-1')">
+          <div class="sk-card-title">Sprint 1</div>
+          <div class="sk-card-goal">Ingestion pipeline and source normalization</div>
+          <div class="sk-card-footer"><div class="sk-card-tasks"><span><span class="n">4</span>/<span class="n">4</span> done</span></div><span><span class="n">458k</span> tok</span></div>
+        </div>
+      </div>
+      <div class="sk-column">
+        <div class="sk-col-header"><span class="sk-col-title">Planned</span><span class="sk-col-count">1</span></div>
+        <div class="sk-card" data-status="planned">
+          <div class="sk-card-title">Sprint 4</div>
+          <div class="sk-card-goal">Research actions and grounded outline generation</div>
+          <div class="sk-card-footer"><div class="sk-card-tasks"><span><span class="n">0</span>/<span class="n">3</span> tasks</span></div><span>&mdash;</span></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══ Level 3: Sprint ═══════════════════════════════ -->
+<div class="view" id="view-sprint">
+  <div class="sprint-view-inner">
+    <div class="sprint-header">
+      <div class="sprint-header-left">
+        <span class="sprint-name">Sprint 3</span>
+        <span class="sprint-goal-text">Claim ledger and review workflows</span>
+      </div>
+      <div class="sprint-header-right">
+        <div class="progress-bar" style="width:80px"><div class="p-done" style="flex:2"></div><div class="p-wip" style="flex:1"></div><div class="p-blocked" style="flex:1"></div><div class="p-todo" style="flex:2"></div></div>
+        <span class="sprint-stat"><span class="sv">2</span>/6 done</span>
+        <span class="sprint-stat"><span class="sv">124k</span> tokens</span>
+        <span class="sprint-stat"><span class="sv">8</span> runs</span>
+        <button class="btn-action" onclick="openModal('newTask')"><span class="plus">+</span> New task</button>
+        <button class="btn-stop" onclick="alert('Stop signal sent')"><svg viewBox="0 0 10 10"><rect x="0" y="0" width="10" height="10" rx="1"/></svg>Stop agent</button>
+      </div>
+    </div>
+    <div class="sprint-body with-activity" id="sprintBody">
+      <div class="board">
+        <div class="board-columns">
+          <div class="column"><div class="col-header"><span class="col-title">Todo</span><span class="col-count">4</span></div>
+            <div class="col-cards">
+              <div class="card"><div class="card-title">Research-action runtime and execution traces</div><div class="card-meta"><span class="card-tag tag-feature">feature</span></div></div>
+              <div class="card"><div class="card-title">Grounded outline generation from approved claims</div><div class="card-meta"><span class="card-tag tag-feature">feature</span></div></div>
+              <div class="card"><div class="card-title">Claim dedup fails on unicode source anchors</div><div class="card-meta"><span class="card-tag tag-bug">bug</span></div></div>
+              <div class="card"><div class="card-title">Extract shared validation into claims.utils</div><div class="card-meta"><span class="card-tag tag-refactor">refactor</span></div></div>
+            </div></div>
+          <div class="column"><div class="col-header"><span class="col-title">In Progress</span><span class="col-count">1</span></div>
+            <div class="col-cards">
+              <div class="card selected" onclick="showDetail()"><div class="card-title">Provider-routed claim extraction</div><div class="card-meta"><span class="card-tag tag-feature">feature</span><span class="card-tokens">38k tok</span></div><div class="card-branch">feat/provider-routed-claim-extraction</div><div class="card-role">developer &middot; visit 2</div></div>
+            </div></div>
+          <div class="column"><div class="col-header"><span class="col-title">Blocked</span><span class="col-count">1</span></div>
+            <div class="col-cards">
+              <div class="card card-blocked"><div class="card-title">Claim review workflow design</div><div class="card-meta"><span class="card-tag tag-feature">feature</span><span class="card-tokens">52k tok</span></div><div class="card-blocked-reason">Awaiting human approval</div><div class="card-actions"><button class="btn btn-approve">Approve</button><button class="btn btn-deny">Deny</button></div></div>
+            </div></div>
+          <div class="column"><div class="col-header"><span class="col-title">Done</span><span class="col-count">2</span></div>
+            <div class="col-cards">
+              <div class="card" style="opacity:.6"><div class="card-title">Claim ledger with lifecycle enforcement</div><div class="card-meta"><span class="card-tag tag-feature">feature</span><span class="card-tokens">21k tok</span></div><div class="card-branch">feat/claim-ledger-runtime</div></div>
+              <div class="card" style="opacity:.6"><div class="card-title">Provider-router scaffold and policy</div><div class="card-meta"><span class="card-tag tag-feature">feature</span><span class="card-tokens">13k tok</span></div><div class="card-branch">feat/provider-router-scaffold</div></div>
+            </div></div>
+        </div>
+      </div>
+      <div class="activity" id="activityPanel">
+        <div class="activity-header">
+          <div class="activity-header-left"><span class="activity-title">Activity</span><button class="activity-collapse" onclick="toggleActivity()" title="Collapse">&raquo;</button></div>
+          <button class="activity-filter">All events</button>
+        </div>
+        <div class="activity-stream">
+          <div class="event-row"><span class="event-time">12:34</span><span class="event-icon"><span class="event-dot dot-command"></span></span><span class="event-body"><span class="event-label">command</span> <code>./venv/bin/python -m unittest tests.test_claim_extraction</code></span></div>
+          <div class="event-row"><span class="event-time">12:33</span><span class="event-icon"><span class="event-dot dot-file"></span></span><span class="event-body"><span class="event-label">write</span> <code>tests/test_claim_extraction_service.py</code></span></div>
+          <div class="event-row"><span class="event-time">12:32</span><span class="event-icon"><span class="event-dot dot-file"></span></span><span class="event-body"><span class="event-label">write</span> <code>apparatus/claim_extraction/service.py</code></span></div>
+          <div class="event-row"><span class="event-time">12:31</span><span class="event-icon"><span class="event-dot dot-message"></span></span><span class="event-body"><span class="event-label">developer</span> Adding extraction trace persistence with routed provider metadata...</span></div>
+          <div class="event-row"><span class="event-time">12:28</span><span class="event-icon"><span class="event-dot dot-file"></span></span><span class="event-body"><span class="event-label">write</span> <code>apparatus/claim_extraction/models.py</code></span></div>
+          <div class="event-divider">Steering loop &middot; visit 2</div>
+          <div class="event-row"><span class="event-time">12:23</span><span class="event-icon"><span class="event-dot dot-human"></span></span><span class="event-body"><span class="event-label">you</span><div class="event-human-msg">Make sure extraction validates anchor IDs against the normalized document before creating claims.</div></span></div>
+          <div class="event-row"><span class="event-time">12:22</span><span class="event-icon"><span class="event-dot dot-workflow"></span></span><span class="event-body"><span class="event-label">transition</span> review &rarr; develop <span class="event-steer">(steer)</span></span></div>
+          <div class="event-row"><span class="event-time">12:21</span><span class="event-icon"><span class="event-dot dot-review"></span></span><span class="event-body"><span class="event-label">reviewer</span> <span class="event-steer">STEER:</span> Persist routing snapshot, not just selected provider ID.</span></div>
+          <div class="event-row"><span class="event-time">12:20</span><span class="event-icon"><span class="event-dot dot-workflow"></span></span><span class="event-body"><span class="event-label">step</span> review started <span style="color:var(--text-tertiary)">(visit 1)</span></span></div>
+          <div class="event-row"><span class="event-time">12:18</span><span class="event-icon"><span class="event-dot dot-signal"></span></span><span class="event-body"><span class="event-label">signal</span> completion &middot; "Added extraction package with provider routing"</span></div>
+          <div class="event-divider">Task started &middot; visit 1</div>
+          <div class="event-row"><span class="event-time">11:52</span><span class="event-icon"><span class="event-dot dot-signal"></span></span><span class="event-body"><span class="event-label">signal</span> task_started &middot; "Provider-routed claim extraction"</span></div>
+          <div class="event-row"><span class="event-time">11:51</span><span class="event-icon"><span class="event-dot dot-workflow"></span></span><span class="event-body"><span class="event-label">step</span> develop started <span style="color:var(--text-tertiary)">(visit 1)</span></span></div>
+        </div>
+        <div class="activity-input">
+          <textarea rows="1" placeholder="Steer the agent..." id="humanInput" oninput="autoResize(this)"></textarea>
+          <button onclick="sendMessage()">Send</button>
+        </div>
+      </div>
+      <div class="activity-tab" onclick="toggleActivity()">Activity</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ Detail panel ══════════════════════════════════ -->
+<div class="detail-overlay" id="detail-panel" style="display:none">
+  <div class="detail-header">
+    <div><h2>Provider-routed claim extraction</h2><div style="display:flex;gap:8px;align-items:center;margin-top:4px"><span class="card-tag tag-feature" style="font-size:10px">feature</span><span style="font-size:11px;color:var(--text-tertiary)">in progress &middot; visit 2</span></div></div>
+    <button class="detail-close" onclick="hideDetail()">&times;</button>
+  </div>
+  <div class="detail-body">
+    <div class="detail-section"><div class="detail-section-title">Details</div>
+      <div class="detail-field"><span class="detail-field-label">Branch</span><span class="detail-field-value">feat/provider-routed-claim-extraction</span></div>
+      <div class="detail-field"><span class="detail-field-label">Created by</span><span class="detail-field-value">agent:developer</span></div>
+      <div class="detail-field"><span class="detail-field-label">Started</span><span class="detail-field-value">11:51 today</span></div>
+      <div class="detail-field"><span class="detail-field-label">Tokens</span><span class="detail-field-value">38,420</span></div>
+      <div class="detail-field"><span class="detail-field-label">Step visits</span><span class="detail-field-value">develop: 2, review: 1</span></div></div>
+    <div class="detail-section"><div class="detail-section-title">Acceptance Criteria</div>
+      <div class="detail-criteria">Route claim_extraction through project provider policy. Persist immutable extraction traces. Candidate claims written through the existing claim ledger. Blocked routes produce no claims.</div></div>
+    <div class="detail-section"><div class="detail-section-title">Run History</div>
+      <div class="run-timeline">
+        <div class="run-entry"><span class="run-role">dev</span><span class="run-detail-text">develop &middot; visit 1 &middot; 26 min</span><span><span class="run-outcome outcome-done">done</span><div class="run-tokens">24,200 tok</div></span></div>
+        <div class="run-entry"><span class="run-role">review</span><span class="run-detail-text">review &middot; visit 1 &middot; 3 min</span><span><span class="run-outcome outcome-steer">steer</span><div class="run-tokens">4,820 tok</div></span></div>
+        <div class="run-entry" style="background:var(--bg-card)"><span class="run-role">dev</span><span class="run-detail-text">develop &middot; visit 2 &middot; running...</span><span><span class="run-outcome" style="color:var(--accent)">active</span><div class="run-tokens">9,400 tok</div></span></div>
+      </div></div>
+    <div class="detail-section"><div class="detail-section-title">Files Changed (this run)</div>
+      <div style="font-size:11px;color:var(--text-secondary);line-height:1.8"><div><code>apparatus/claim_extraction/__init__.py</code></div><div><code>apparatus/claim_extraction/models.py</code></div><div><code>apparatus/claim_extraction/service.py</code></div><div><code>apparatus/claim_extraction/store.py</code></div><div><code>tests/test_claim_extraction_service.py</code></div></div></div>
+    <div class="detail-section"><div class="detail-section-title">Reviewer Feedback (visit 1)</div>
+      <div style="font-size:11px;color:var(--amber);line-height:1.5;padding:8px;background:var(--amber-dim);border-radius:var(--radius);border:1px solid #c9033">STEER: Extraction traces should persist the routing snapshot, not just the selected provider ID.</div></div>
+    <div class="detail-section"><div class="detail-section-title">Human Messages</div>
+      <div style="font-size:11px;color:var(--text-secondary);line-height:1.5;padding:8px;background:#e8e6e308;border-left:2px solid var(--text-secondary);border-radius:0 var(--radius) var(--radius) 0"><div style="font-size:10px;color:var(--text-tertiary);margin-bottom:4px">12:23 &middot; during develop visit 2</div>Make sure extraction validates anchor IDs against the normalized document before creating claims.</div></div>
+  </div>
+</div>
+
+<!-- ═══ New Sprint modal ══════════════════════════════ -->
+<div class="modal-backdrop" id="modal-newSprint" onclick="closeModal(event,'newSprint')">
+  <div class="modal" style="width:540px" onclick="event.stopPropagation()">
+    <div class="modal-header"><h3>New Sprint</h3><button class="modal-close" onclick="closeModalDirect('newSprint')">&times;</button></div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Name</label>
+        <input class="form-input" type="text" placeholder="Sprint 5">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Goal</label>
+        <textarea class="form-input" style="min-height:48px" placeholder="What should this sprint accomplish?"></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Tasks</label>
+        <div class="task-entries" id="sprintTaskEntries">
+          <div class="task-entry" id="taskEntry0">
+            <div class="task-entry-header" onclick="toggleTaskEntry('taskEntry0')">
+              <span class="task-entry-num">1</span>
+              <span class="task-entry-preview empty" id="taskPreview0">Untitled task</span>
+              <span class="task-entry-chevron">&#9662;</span>
+              <div class="task-entry-actions">
+                <button class="task-entry-btn" title="Remove" onclick="event.stopPropagation();removeTaskEntry('taskEntry0')">&#215;</button>
+              </div>
+            </div>
+            <div class="task-entry-body">
+              <div class="form-group">
+                <label class="form-label">Title</label>
+                <input class="form-input" type="text" placeholder="Short description" oninput="updateTaskPreview(this,'taskPreview0')">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Acceptance criteria</label>
+                <textarea class="form-input" style="min-height:48px" placeholder="What must be true for this task to be done?"></textarea>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Context (optional)</label>
+                <textarea class="form-input" style="min-height:48px" placeholder="Relevant files, reproduction steps, references..."></textarea>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Label (optional)</label>
+                <div class="form-chips">
+                  <button class="form-chip" onclick="toggleChip(this)">feature</button>
+                  <button class="form-chip" onclick="toggleChip(this)">bug</button>
+                  <button class="form-chip" onclick="toggleChip(this)">refactor</button>
+                  <button class="form-chip" onclick="toggleChip(this)">chore</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <button class="btn-add-task" onclick="addTaskEntry()"><span class="plus">+</span> Add task</button>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-cancel" onclick="closeModalDirect('newSprint')">Cancel</button>
+      <button class="btn-primary" onclick="closeModalDirect('newSprint')">Create sprint</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ New Task modal (simplified) ══════════════════ -->
+<div class="modal-backdrop" id="modal-newTask" onclick="closeModal(event,'newTask')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header"><h3>New Task</h3><button class="modal-close" onclick="closeModalDirect('newTask')">&times;</button></div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Title</label>
+        <input class="form-input" type="text" placeholder="Short description of the task">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Acceptance criteria</label>
+        <textarea class="form-input" placeholder="What must be true for this task to be done?"></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Context (optional)</label>
+        <textarea class="form-input" placeholder="Relevant files, reproduction steps, references..."></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Label (optional)</label>
+        <div class="form-chips">
+          <button class="form-chip" onclick="toggleChip(this)">feature</button>
+          <button class="form-chip" onclick="toggleChip(this)">bug</button>
+          <button class="form-chip" onclick="toggleChip(this)">refactor</button>
+          <button class="form-chip" onclick="toggleChip(this)">chore</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-cancel" onclick="closeModalDirect('newTask')">Cancel</button>
+      <button class="btn-primary" onclick="closeModalDirect('newTask')">Create task</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ Settings panel ═══════════════════════════════ -->
+<div class="settings-backdrop" id="settingsBackdrop" onclick="closeSettings()"></div>
+<div class="settings-overlay" id="settingsPanel">
+  <div class="settings-header">
+    <h3>Project Settings</h3>
+    <button class="modal-close" onclick="closeSettings()">&times;</button>
+  </div>
+  <div class="settings-body">
+
+    <div class="settings-section">
+      <div class="settings-section-title">Supervision</div>
+
+      <div class="settings-row">
+        <div class="settings-label">
+          <span class="settings-label-text">Approve merges</span>
+          <span class="settings-label-desc">Require human approval before merging to target branch</span>
+        </div>
+        <label class="toggle"><input type="checkbox" checked><span class="toggle-track"></span></label>
+      </div>
+
+      <div class="settings-row">
+        <div class="settings-label">
+          <span class="settings-label-text">Approve task completion</span>
+          <span class="settings-label-desc">Require human confirmation before marking a task done</span>
+        </div>
+        <label class="toggle"><input type="checkbox"><span class="toggle-track"></span></label>
+      </div>
+
+      <div class="settings-row">
+        <div class="settings-label">
+          <span class="settings-label-text">Approve sprint completion</span>
+          <span class="settings-label-desc">Require human to close sprints manually</span>
+        </div>
+        <label class="toggle"><input type="checkbox" checked><span class="toggle-track"></span></label>
+      </div>
+
+      <div class="settings-row">
+        <div class="settings-label">
+          <span class="settings-label-text">Allow autonomous task selection</span>
+          <span class="settings-label-desc">Engine picks the next task instead of waiting for assignment</span>
+        </div>
+        <label class="toggle"><input type="checkbox" checked><span class="toggle-track"></span></label>
+      </div>
+
+      <div class="settings-row">
+        <div class="settings-label">
+          <span class="settings-label-text">Allow agent to create tasks</span>
+          <span class="settings-label-desc">Agent can add tasks it discovers during development</span>
+        </div>
+        <label class="toggle"><input type="checkbox" checked><span class="toggle-track"></span></label>
+      </div>
+
+      <div class="settings-row">
+        <div class="settings-label">
+          <span class="settings-label-text">Approve architect plans</span>
+          <span class="settings-label-desc">Require human approval of design decisions before implementation</span>
+        </div>
+        <label class="toggle"><input type="checkbox" checked><span class="toggle-track"></span></label>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-title">Workflow</div>
+
+      <div class="form-group" style="margin-bottom:12px">
+        <label class="form-label">Default workflow</label>
+        <select class="form-input">
+          <option>development</option>
+          <option>development_with_architect</option>
+          <option>development_secure</option>
+        </select>
+      </div>
+
+      <div class="form-group" style="margin-bottom:12px">
+        <label class="form-label">Merge target</label>
+        <input class="form-input" type="text" value="main">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Spec file</label>
+        <input class="form-input" type="text" value="docs/specs/spec-v0.3.md">
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-title">Resource Limits</div>
+
+      <div class="form-group" style="margin-bottom:12px">
+        <label class="form-label">Max tokens per task</label>
+        <input class="form-input" type="text" value="200000" style="font-variant-numeric:tabular-nums">
+      </div>
+
+      <div class="form-group" style="margin-bottom:12px">
+        <label class="form-label">Max step visits (loop limit)</label>
+        <input class="form-input" type="text" value="5">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Max retries on infrastructure error</label>
+        <input class="form-input" type="text" value="3">
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  const PROJECTS = [
+    {id:'apparatus', name:'Apparatus', status:'blocked'},
+    {id:'predictive', name:'Predictive Controls', status:'running'},
+    {id:'portal', name:'Client Portal', status:'idle'},
+  ];
+  const SPRINTS = {
+    apparatus: [
+      {id:'sprint-3', name:'Sprint 3', status:'active', goal:'Claim ledger and review workflows'},
+      {id:'sprint-2', name:'Sprint 2', status:'done', goal:'Graph schema and ADRs'},
+      {id:'sprint-1', name:'Sprint 1', status:'done', goal:'Ingestion pipeline'},
+      {id:'sprint-4', name:'Sprint 4', status:'planned', goal:'Research actions'},
+    ],
+    predictive: [
+      {id:'p-sprint-1', name:'Sprint 1', status:'active', goal:'Data pipeline and model baseline'},
+    ],
+    portal: [
+      {id:'c-sprint-2', name:'Sprint 2', status:'done', goal:'Auth and dashboard'},
+      {id:'c-sprint-1', name:'Sprint 1', status:'done', goal:'Project setup'},
+    ],
+  };
+
+  let currentProject = null;
+  let currentSprint = null;
+  let openDropdown = null;
+
+  function navigate(view, id) {
+    closeAllDropdowns();
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('visible'));
+    document.getElementById('detail-panel').style.display = 'none';
+
+    if (view === 'dashboard') {
+      currentProject = null; currentSprint = null;
+      document.getElementById('view-dashboard').classList.add('visible');
+    } else if (view === 'project') {
+      currentProject = id; currentSprint = null;
+      document.getElementById('view-project').classList.add('visible');
+    } else if (view === 'sprint') {
+      currentSprint = id;
+      document.getElementById('view-sprint').classList.add('visible');
+    }
+    updateBreadcrumb();
+  }
+
+  function updateBreadcrumb() {
+    const bc = document.getElementById('breadcrumb');
+    let html = '';
+
+    if (currentProject) {
+      const proj = PROJECTS.find(p => p.id === currentProject);
+      const projName = proj ? proj.name : currentProject;
+
+      html += '<span class="breadcrumb-sep">/</span>';
+      html += '<div class="breadcrumb-segment" id="seg-project">';
+      html += `<span class="breadcrumb-link ${currentSprint ? '' : 'current'}" onclick="${currentSprint ? "navigate('project','"+currentProject+"')" : ''}">${projName}</span>`;
+      html += `<button class="breadcrumb-chevron" onclick="toggleDropdown(event,'seg-project')">&#9662;</button>`;
+      html += '<div class="breadcrumb-dropdown">';
+      PROJECTS.forEach(p => {
+        const statusClass = p.status === 'running' ? 'opt-s-running' : p.status === 'blocked' ? 'opt-s-blocked' : 'opt-s-idle';
+        const active = p.id === currentProject ? ' active-option' : '';
+        html += `<div class="breadcrumb-option${active}" onclick="switchProject('${p.id}')"><span>${p.name}</span><span class="opt-status ${statusClass}">${p.status}</span></div>`;
+      });
+      html += '</div></div>';
+    }
+
+    if (currentSprint && currentProject) {
+      const sprints = SPRINTS[currentProject] || [];
+      const sprint = sprints.find(s => s.id === currentSprint);
+      const sprintName = sprint ? sprint.name : currentSprint;
+
+      html += '<span class="breadcrumb-sep">/</span>';
+      html += '<div class="breadcrumb-segment" id="seg-sprint">';
+      html += `<span class="breadcrumb-link current">${sprintName}</span>`;
+      html += `<button class="breadcrumb-chevron" onclick="toggleDropdown(event,'seg-sprint')">&#9662;</button>`;
+      html += '<div class="breadcrumb-dropdown">';
+      sprints.forEach(s => {
+        const statusClass = s.status === 'active' ? 'opt-s-active' : s.status === 'done' ? 'opt-s-done' : 'opt-s-planned';
+        const active = s.id === currentSprint ? ' active-option' : '';
+        html += `<div class="breadcrumb-option${active}" onclick="switchSprint('${s.id}')"><span>${s.name}</span><span class="opt-status ${statusClass}">${s.status}</span></div>`;
+      });
+      html += '</div></div>';
+    }
+
+    bc.innerHTML = html;
+  }
+
+  function toggleDropdown(e, segId) {
+    e.stopPropagation();
+    const seg = document.getElementById(segId);
+    const wasOpen = seg.classList.contains('open');
+    closeAllDropdowns();
+    if (!wasOpen) {
+      seg.classList.add('open');
+      document.getElementById('dropdownOverlay').classList.add('visible');
+      openDropdown = segId;
+    }
+  }
+
+  function closeAllDropdowns() {
+    document.querySelectorAll('.breadcrumb-segment').forEach(s => s.classList.remove('open'));
+    document.getElementById('dropdownOverlay').classList.remove('visible');
+    openDropdown = null;
+  }
+
+  function switchProject(id) {
+    closeAllDropdowns();
+    if (currentSprint) {
+      // We're at sprint level — switch project and go to project view
+      navigate('project', id);
+    } else {
+      navigate('project', id);
+    }
+  }
+
+  function switchSprint(id) {
+    closeAllDropdowns();
+    currentSprint = id;
+    // In a real app this would load the sprint's tasks. For the mockup we stay on the same view.
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('visible'));
+    document.getElementById('view-sprint').classList.add('visible');
+    updateBreadcrumb();
+  }
+
+  function showDetail() { document.getElementById('detail-panel').style.display = 'flex'; }
+  function hideDetail() { document.getElementById('detail-panel').style.display = 'none'; }
+
+  function openModal(id) { document.getElementById('modal-' + id).classList.add('visible'); }
+  function closeModal(e, id) { if (e.target === e.currentTarget) closeModalDirect(id); }
+  function closeModalDirect(id) { document.getElementById('modal-' + id).classList.remove('visible'); }
+  function toggleChip(el) {
+    // Labels are optional — clicking a selected chip deselects it, only one active at a time
+    const wasSelected = el.classList.contains('selected');
+    el.parentElement.querySelectorAll('.form-chip').forEach(c => c.classList.remove('selected'));
+    if (!wasSelected) el.classList.add('selected');
+  }
+
+  function toggleSettings() {
+    const panel = document.getElementById('settingsPanel');
+    const backdrop = document.getElementById('settingsBackdrop');
+    const isOpen = panel.classList.contains('visible');
+    panel.classList.toggle('visible', !isOpen);
+    backdrop.classList.toggle('visible', !isOpen);
+  }
+  function closeSettings() {
+    document.getElementById('settingsPanel').classList.remove('visible');
+    document.getElementById('settingsBackdrop').classList.remove('visible');
+  }
+
+  // ═══ Inline task entries in sprint creation ═══
+  let taskEntryCounter = 1;
+
+  function addTaskEntry() {
+    const id = 'taskEntry' + taskEntryCounter;
+    const previewId = 'taskPreview' + taskEntryCounter;
+    const num = document.querySelectorAll('#sprintTaskEntries .task-entry').length + 1;
+    const entry = document.createElement('div');
+    entry.className = 'task-entry';
+    entry.id = id;
+    entry.innerHTML = `
+      <div class="task-entry-header" onclick="toggleTaskEntry('${id}')">
+        <span class="task-entry-num">${num}</span>
+        <span class="task-entry-preview empty" id="${previewId}">Untitled task</span>
+        <span class="task-entry-chevron">&#9662;</span>
+        <div class="task-entry-actions">
+          <button class="task-entry-btn" title="Remove" onclick="event.stopPropagation();removeTaskEntry('${id}')">&#215;</button>
+        </div>
+      </div>
+      <div class="task-entry-body">
+        <div class="form-group">
+          <label class="form-label">Title</label>
+          <input class="form-input" type="text" placeholder="Short description" oninput="updateTaskPreview(this,'${previewId}')">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Acceptance criteria</label>
+          <textarea class="form-input" style="min-height:48px" placeholder="What must be true for this task to be done?"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Context (optional)</label>
+          <textarea class="form-input" style="min-height:48px" placeholder="Relevant files, reproduction steps, references..."></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Label (optional)</label>
+          <div class="form-chips">
+            <button class="form-chip" onclick="toggleChip(this)">feature</button>
+            <button class="form-chip" onclick="toggleChip(this)">bug</button>
+            <button class="form-chip" onclick="toggleChip(this)">refactor</button>
+            <button class="form-chip" onclick="toggleChip(this)">chore</button>
+          </div>
+        </div>
+      </div>`;
+    document.getElementById('sprintTaskEntries').appendChild(entry);
+    taskEntryCounter++;
+    // Collapse previous entries
+    document.querySelectorAll('#sprintTaskEntries .task-entry').forEach((e, i, all) => {
+      if (i < all.length - 1) e.classList.add('collapsed');
+      else e.classList.remove('collapsed');
+    });
+    renumberTaskEntries();
+  }
+
+  function removeTaskEntry(id) {
+    const el = document.getElementById(id);
+    if (el) el.remove();
+    renumberTaskEntries();
+    // If none left, no action needed — the "+ Add task" button remains
+  }
+
+  function toggleTaskEntry(id) {
+    document.getElementById(id).classList.toggle('collapsed');
+  }
+
+  function updateTaskPreview(input, previewId) {
+    const preview = document.getElementById(previewId);
+    const val = input.value.trim();
+    if (val) {
+      preview.textContent = val;
+      preview.classList.remove('empty');
+    } else {
+      preview.textContent = 'Untitled task';
+      preview.classList.add('empty');
+    }
+  }
+
+  function renumberTaskEntries() {
+    document.querySelectorAll('#sprintTaskEntries .task-entry').forEach((e, i) => {
+      const num = e.querySelector('.task-entry-num');
+      if (num) num.textContent = i + 1;
+    });
+  }
+
+  function toggleActivity() {
+    const body = document.getElementById('sprintBody');
+    body.classList.toggle('activity-hidden');
+    body.classList.toggle('with-activity');
+  }
+
+  function autoResize(el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 120) + 'px'; }
+  function sendMessage() {
+    const input = document.getElementById('humanInput');
+    const text = input.value.trim();
+    if (!text) return;
+    const stream = document.querySelector('.activity-stream');
+    const now = new Date();
+    const time = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
+    const row = document.createElement('div');
+    row.className = 'event-row';
+    row.innerHTML = `<span class="event-time">${time}</span><span class="event-icon"><span class="event-dot dot-human"></span></span><span class="event-body"><span class="event-label">you</span><div class="event-human-msg">${text.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div></span>`;
+    stream.insertBefore(row, stream.firstChild);
+    input.value = ''; input.style.height = 'auto';
+  }
+  document.getElementById('humanInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  });
+
+  // ═══ Sprint view: list/kanban toggle, filters, sort ═══
+  let sprintViewMode = 'list';
+  let activeFilter = 'all';
+  let sortNewest = true;
+
+  function setSprintView(mode) {
+    sprintViewMode = mode;
+    document.getElementById('vtList').classList.toggle('active', mode === 'list');
+    document.getElementById('vtKanban').classList.toggle('active', mode === 'kanban');
+    document.getElementById('sprintListView').style.display = mode === 'list' ? 'flex' : 'none';
+    const kb = document.getElementById('sprintKanbanView');
+    if (mode === 'kanban') { kb.style.display = 'grid'; kb.classList.add('visible'); }
+    else { kb.style.display = 'none'; kb.classList.remove('visible'); }
+    applyFilters();
+  }
+
+  function filterSprints(status, btn) {
+    activeFilter = status;
+    document.querySelectorAll('.sprint-toolbar-left .filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    applyFilters();
+  }
+
+  function toggleSort() {
+    sortNewest = !sortNewest;
+    document.getElementById('sortBtn').textContent = sortNewest ? 'Newest first' : 'Oldest first';
+    applyFilters();
+  }
+
+  function applyFilters() {
+    // List view
+    const listCards = Array.from(document.querySelectorAll('#sprintListView .sprint-card'));
+    listCards.forEach(c => {
+      const s = c.dataset.status;
+      c.style.display = (activeFilter === 'all' || s === activeFilter) ? '' : 'none';
+    });
+    const listContainer = document.getElementById('sprintListView');
+    const sorted = listCards.slice().sort((a, b) => {
+      const oa = parseInt(a.dataset.order || 0);
+      const ob = parseInt(b.dataset.order || 0);
+      return sortNewest ? ob - oa : oa - ob;
+    });
+    sorted.forEach(c => listContainer.appendChild(c));
+
+    // Kanban view
+    document.querySelectorAll('#sprintKanbanView .sk-card').forEach(c => {
+      const s = c.dataset.status;
+      c.style.display = (activeFilter === 'all' || s === activeFilter) ? '' : 'none';
+    });
+    document.querySelectorAll('#sprintKanbanView .sk-column').forEach(col => {
+      const visible = col.querySelectorAll('.sk-card:not([style*="display: none"])').length;
+      col.style.display = visible > 0 ? '' : 'none';
+    });
+  }
+
+  updateBreadcrumb();
+</script>
+</body>
+</html>

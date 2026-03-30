@@ -1,0 +1,33 @@
+# RELEASES
+
+## Current state
+
+Foreman is pre-release. The repository is still being bootstrapped from spec
+and mockup into an executable product.
+
+## Near-term policy
+
+Until the first runnable CLI and store slice exists:
+
+- use tags only for meaningful checkpoints,
+- prefer sprint-completion checkpoints over frequent versioning,
+- pair every notable tag with a checkpoint note in `docs/checkpoints/`.
+
+## What should trigger a checkpoint
+
+- first runnable `foreman` CLI
+- first persisted SQLite project state
+- first orchestrator workflow execution
+- first native Claude or Codex runner
+- first dashboard implementation milestone
+
+## Before creating a release tag
+
+Confirm:
+
+1. relevant tests pass
+2. `docs/STATUS.md` is current
+3. sprint state is current
+4. `CHANGELOG.md` is updated
+5. open risks are documented
+6. a checkpoint note exists if the milestone matters long-term
