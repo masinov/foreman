@@ -6,11 +6,18 @@ from collections.abc import Iterator
 import json
 from pathlib import Path
 import shlex
+import shutil
 import subprocess
 import time
 from typing import Any
 
-from .base import AgentEvent, AgentRunConfig, AgentRunner, InfrastructureError
+from .base import (
+    AgentEvent,
+    AgentRunConfig,
+    AgentRunner,
+    InfrastructureError,
+    PreflightError,
+)
 from .signals import extract_signal_events
 
 _FILE_TOOLS = {"Read", "Write", "Edit", "NotebookEdit"}
@@ -25,10 +32,12 @@ class ClaudeCodeRunner(AgentRunner):
         *,
         popen_factory: Any = subprocess.Popen,
         clock: Any = time.monotonic,
+        which: Any = shutil.which,
     ) -> None:
         self.executable = executable
         self._popen_factory = popen_factory
         self._clock = clock
+        self._which = which
 
     def build_command(self, config: AgentRunConfig) -> list[str]:
         """Build the Claude CLI command for one run."""
@@ -56,6 +65,7 @@ class ClaudeCodeRunner(AgentRunner):
     def run(self, config: AgentRunConfig) -> Iterator[AgentEvent]:
         """Run Claude Code and yield normalized agent events."""
 
+        self._preflight()
         command = self.build_command(config)
         try:
             proc = self._popen_factory(
@@ -68,7 +78,9 @@ class ClaudeCodeRunner(AgentRunner):
                 bufsize=1,
             )
         except OSError as exc:
-            raise InfrastructureError(f"Failed to launch Claude Code: {exc}") from exc
+            raise PreflightError(
+                f"Claude Code preflight failed: unable to launch `{self.executable}`: {exc}"
+            ) from exc
 
         assert proc.stdin is not None
         assert proc.stdout is not None
@@ -84,7 +96,9 @@ class ClaudeCodeRunner(AgentRunner):
                 proc.kill()
             except OSError:
                 pass
-            raise InfrastructureError(f"Failed to write prompt to Claude Code: {exc}") from exc
+            raise PreflightError(
+                f"Claude Code preflight failed: unable to write the initial prompt: {exc}"
+            ) from exc
 
         yield AgentEvent(
             "agent.started",
@@ -131,6 +145,12 @@ class ClaudeCodeRunner(AgentRunner):
             detail = stderr or f"Claude Code exited with code {proc.returncode}."
             raise InfrastructureError(detail)
         raise InfrastructureError("Claude Code stream ended without a terminal result event.")
+
+    def _preflight(self) -> None:
+        if self._which(self.executable) is None:
+            raise PreflightError(
+                f"Claude Code preflight failed: executable `{self.executable}` was not found in PATH."
+            )
 
     def _parse_stream_line(
         self,

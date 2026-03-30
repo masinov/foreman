@@ -40,8 +40,9 @@ The integrated pre-release baseline now contains:
 - persisted human-gate approval and denial flows with deferred or immediate
   native resume depending on runtime availability,
 - native Claude Code and Codex runners with structured event capture, retry
-  normalization, approval-policy handling, and persisted session reuse across
-  fresh orchestrator invocations for persistent roles,
+  normalization, explicit startup preflight checks, approval-policy handling,
+  and persisted session reuse across fresh orchestrator invocations for
+  persistent roles,
 - an opt-in `development_secure` workflow that now runs end to end through
   code review, security review, test, and merge with durable carry-output
   semantics,
@@ -73,6 +74,23 @@ Example:
 ./venv/bin/foreman init /path/to/repo --name "Secure Project" --spec docs/spec.md --workflow development_secure
 ```
 
+## Native backend preflight
+
+Foreman now validates native backend prerequisites before long-running agent
+execution starts.
+
+- Claude Code requires a `claude` executable in `PATH`.
+- Codex requires a `codex` executable in `PATH` plus a working app-server
+  initialize and thread-start handshake.
+- Preflight failures stop before `agent.started`, produce one explicit failed
+  run, and do not consume infrastructure retries.
+
+Operator recovery:
+
+1. install or repair the missing backend executable,
+2. verify the backend manually from the shell,
+3. rerun the blocked task or project once the backend startup path is healthy.
+
 ## Autonomous entry points
 
 Run all Python commands through the repo virtual environment:
@@ -101,12 +119,12 @@ Both wrappers expect these files to be current:
 
 ## Next implementation slice
 
-The current sprint is `sprint-17-native-backend-preflight-checks`.
+The current sprint is `sprint-18-event-retention-pruning`.
 
 The next recommended task is:
 
-- add explicit preflight validation for required Claude Code and Codex native
-  backend prerequisites before long-running orchestrator work starts.
+- implement spec-aligned pruning for old event rows while preserving events
+  attached to blocked or in-progress tasks.
 
 That work is recorded in `docs/sprints/current.md`, so a fresh agent can pick
 it up without reconstructing branch history first.

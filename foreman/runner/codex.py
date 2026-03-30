@@ -7,11 +7,18 @@ from collections.abc import Iterator
 import json
 from pathlib import Path
 import shlex
+import shutil
 import subprocess
 import time
 from typing import Any
 
-from .base import AgentEvent, AgentRunConfig, AgentRunner, InfrastructureError
+from .base import (
+    AgentEvent,
+    AgentRunConfig,
+    AgentRunner,
+    InfrastructureError,
+    PreflightError,
+)
 from .signals import extract_signal_events
 
 _WRITE_TOOL_NAMES = {"Write", "Edit", "NotebookEdit"}
@@ -26,10 +33,12 @@ class CodexRunner(AgentRunner):
         *,
         popen_factory: Any = subprocess.Popen,
         clock: Any = time.monotonic,
+        which: Any = shutil.which,
     ) -> None:
         self.executable = executable
         self._popen_factory = popen_factory
         self._clock = clock
+        self._which = which
 
     def build_command(self) -> list[str]:
         """Build the Codex app-server command."""
@@ -39,18 +48,21 @@ class CodexRunner(AgentRunner):
     def run(self, config: AgentRunConfig) -> Iterator[AgentEvent]:
         """Run one Codex turn and yield normalized agent events."""
 
-        client = _JsonRpcClient(
-            self.build_command(),
-            cwd=config.working_dir,
-            popen_factory=self._popen_factory,
-        )
+        self._preflight()
+        client: _JsonRpcClient | None = None
         start_time = self._clock()
         thread_id: str | None = None
         token_count = 0
         saw_terminal_event = False
         message_buffers: dict[str, list[str]] = {}
+        started = False
 
         try:
+            client = _JsonRpcClient(
+                self.build_command(),
+                cwd=config.working_dir,
+                popen_factory=self._popen_factory,
+            )
             thread_method, thread_params = _build_thread_request(config)
             thread_result = client.call(thread_method, thread_params)
             thread = thread_result.get("thread")
@@ -85,6 +97,7 @@ class CodexRunner(AgentRunner):
                     "session_id": thread_id,
                 },
             )
+            started = True
 
             while True:
                 message = client.next_message()
@@ -183,15 +196,26 @@ class CodexRunner(AgentRunner):
                 if gate_event is not None:
                     yield gate_event
                     return
-        except OSError as exc:
-            raise InfrastructureError(f"Failed to launch Codex app server: {exc}") from exc
+        except InfrastructureError as exc:
+            if started:
+                raise
+            raise PreflightError(f"Codex preflight failed: {exc}") from exc
         except RuntimeError as exc:
-            raise InfrastructureError(str(exc)) from exc
+            if started:
+                raise InfrastructureError(str(exc)) from exc
+            raise PreflightError(f"Codex preflight failed: {exc}") from exc
         finally:
-            client.close()
+            if client is not None:
+                client.close()
 
         if not saw_terminal_event:
             raise InfrastructureError("Codex turn ended without a terminal result notification.")
+
+    def _preflight(self) -> None:
+        if self._which(self.executable) is None:
+            raise PreflightError(
+                f"Codex preflight failed: executable `{self.executable}` was not found in PATH."
+            )
 
     def _parse_item_event(
         self,

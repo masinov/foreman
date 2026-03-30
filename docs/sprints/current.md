@@ -1,44 +1,40 @@
 # Current Sprint
 
-- Sprint: `sprint-17-native-backend-preflight-checks`
+- Sprint: `sprint-18-event-retention-pruning`
 - Status: active
-- Goal: fail fast when required Claude Code or Codex native backend
-  prerequisites are unavailable or misconfigured
+- Goal: implement spec-aligned pruning for old event rows without deleting
+  history that still belongs to blocked or in-progress work
 - Primary references:
   - `docs/specs/engine-design-v3.md`
   - `docs/STATUS.md`
-  - `foreman/runner/claude_code.py`
-  - `foreman/runner/codex.py`
+  - `foreman/store.py`
   - `foreman/orchestrator.py`
-  - `tests/test_runner_claude.py`
-  - `tests/test_runner_codex.py`
+  - `tests/test_store.py`
   - `tests/test_orchestrator.py`
 
 ## Included tasks
 
-1. `[todo]` Validate native backend availability before execution
-   Deliverable: Claude Code and Codex runs fail with explicit preflight errors
-   when required executables or startup contracts are missing.
+1. `[todo]` Add store support for spec-aligned event pruning
+   Deliverable: the store can delete old events by project and cutoff while
+   preserving events attached to blocked or in-progress tasks.
 
-2. `[todo]` Persist and surface preflight failures cleanly
-   Deliverable: orchestrator and runner-facing error paths distinguish
-   backend preflight failure from mid-run agent failure.
+2. `[todo]` Run retention pruning from orchestrator startup
+   Deliverable: project startup honors `event_retention_days` and emits
+   `engine.event_pruned` when old events are removed.
 
-3. `[todo]` Document backend startup assumptions and operator recovery
-   Deliverable: repo docs explain required binaries, startup assumptions, and
-   what operators should do when preflight fails.
+3. `[todo]` Document retention behavior and operator expectations
+   Deliverable: repo docs explain cutoff semantics, preserved-task exceptions,
+   and what operators should expect when pruning runs.
 
 ## Excluded from this sprint
 
-- event-retention pruning
 - multi-user dashboard concerns
 - `foreman watch` live-tail alignment
 - migration framework work
+- backend auth and service-reachability health checks
 
 ## Acceptance criteria
 
-- missing or misconfigured native backends fail before long-running execution
-  begins
-- automated tests cover Claude Code and Codex preflight failure modes
-- docs explain backend assumptions and operator recovery steps clearly enough
-  for fresh agents and operators
+- old events are pruned according to `event_retention_days`
+- events for blocked or in-progress tasks are preserved regardless of age
+- automated tests and docs make the retention boundary explicit for operators

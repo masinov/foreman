@@ -13,7 +13,7 @@ from foreman.orchestrator import (
     AgentExecutionResult,
     ForemanOrchestrator,
 )
-from foreman.runner.base import AgentEvent, AgentRunConfig, InfrastructureError
+from foreman.runner.base import AgentEvent, AgentRunConfig, InfrastructureError, PreflightError
 from foreman.roles import default_roles_dir, load_roles
 from foreman.store import ForemanStore
 from foreman.workflows import (
@@ -1323,6 +1323,60 @@ class ForemanOrchestratorTests(unittest.TestCase):
             self.assertEqual(len(runs), 1)
             self.assertEqual(runs[0].status, "failed")
             self.assertEqual(runs[0].outcome, "error")
+
+    def test_native_runner_preflight_failure_is_not_retried(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(
+                store,
+                repo_path=repo_path,
+                task_title="Handle missing Claude executable",
+            )
+            project.settings["default_model"] = "claude-sonnet-4-6"
+            project.settings["max_infra_retries"] = 2
+            store.save_project(project)
+            runner = ScriptedNativeRunner(
+                {
+                    1: PreflightError(
+                        "Claude Code preflight failed: executable `claude` was not found in PATH."
+                    ),
+                }
+            )
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=self.roles,
+                workflows=self.workflows,
+                agent_runners={"claude_code": runner},
+                runner_sleep=lambda _: None,
+            )
+
+            result = orchestrator.run_project(project.id)
+
+            self.assertEqual(result.stop_reason, "blocked")
+            self.assertEqual(runner.call_count, 1)
+            blocked_task = store.get_task(task.id)
+            self.assertIsNotNone(blocked_task)
+            assert blocked_task is not None
+            self.assertEqual(blocked_task.status, "blocked")
+            self.assertEqual(
+                blocked_task.blocked_reason,
+                "Unhandled workflow outcome. Requires human review.",
+            )
+
+            events = store.list_events(task_id=task.id)
+            self.assertNotIn("agent.infra_error", [event.event_type for event in events])
+            error_events = [event for event in events if event.event_type == "agent.error"]
+            self.assertEqual(len(error_events), 1)
+            self.assertTrue(error_events[0].payload["preflight_failed"])
+            self.assertIn("executable `claude` was not found in PATH", error_events[0].payload["error"])
+            runs = store.list_runs(task_id=task.id)
+            self.assertEqual(len(runs), 1)
+            self.assertEqual(runs[0].status, "failed")
+            self.assertEqual(runs[0].outcome, "error")
+            self.assertIn("preflight failed", runs[0].outcome_detail.lower())
 
     def test_native_runner_executes_codex_roles_without_an_injected_executor(self) -> None:
         repo_path, db_path = self.create_workspace()

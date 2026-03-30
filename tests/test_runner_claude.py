@@ -7,7 +7,13 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from foreman.runner import AgentRunConfig, ClaudeCodeRunner, InfrastructureError, run_with_retry
+from foreman.runner import (
+    AgentRunConfig,
+    ClaudeCodeRunner,
+    InfrastructureError,
+    PreflightError,
+    run_with_retry,
+)
 from foreman.runner.base import AgentEvent
 
 
@@ -171,7 +177,11 @@ class ClaudeCodeRunnerTests(unittest.TestCase):
             ]
         )
         popen = _PopenRecorder(process)
-        runner = ClaudeCodeRunner(popen_factory=popen, clock=lambda: 0.0)
+        runner = ClaudeCodeRunner(
+            popen_factory=popen,
+            clock=lambda: 0.0,
+            which=lambda _: "/usr/bin/claude",
+        )
 
         events = list(runner.run(config))
 
@@ -204,12 +214,33 @@ class ClaudeCodeRunnerTests(unittest.TestCase):
         self.assertEqual(events[8].payload["duration_ms"], 1234)
         self.assertEqual(events[8].payload["token_count"], 321)
 
+    def test_run_raises_preflight_error_when_executable_is_missing(self) -> None:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        config = self.create_config(Path(temp_dir.name))
+        popen = _PopenRecorder(_FakeProcess(lines=[]))
+        runner = ClaudeCodeRunner(
+            popen_factory=popen,
+            clock=lambda: 0.0,
+            which=lambda _: None,
+        )
+
+        with self.assertRaises(PreflightError) as exc:
+            list(runner.run(config))
+
+        self.assertIn("executable `claude` was not found in PATH", str(exc.exception))
+        self.assertEqual(popen.calls, [])
+
     def test_run_raises_infrastructure_error_when_process_exits_without_terminal_result(self) -> None:
         temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(temp_dir.cleanup)
         config = self.create_config(Path(temp_dir.name))
         process = _FakeProcess(lines=[], returncode=2, stderr="provider crashed")
-        runner = ClaudeCodeRunner(popen_factory=_PopenRecorder(process), clock=lambda: 0.0)
+        runner = ClaudeCodeRunner(
+            popen_factory=_PopenRecorder(process),
+            clock=lambda: 0.0,
+            which=lambda _: "/usr/bin/claude",
+        )
 
         with self.assertRaises(InfrastructureError) as exc:
             list(runner.run(config))

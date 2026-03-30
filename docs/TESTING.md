@@ -33,15 +33,16 @@ The current suite covers:
   rendering
 - `tests/test_orchestrator.py` for workflow execution, dependency-aware task
   selection, test failure carry-output, secure workflow approval and denial
-  loops, native runner execution, human-gate resume, retry persistence, and
-  fresh-process native session reuse
+  loops, native runner execution, preflight no-retry behavior, human-gate
+  resume, retry persistence, and fresh-process native session reuse
 - `tests/test_cli.py` for CLI smoke paths, repo-local DB discovery, explicit
   override semantics, secure workflow initialization, and monitoring command
   subprocess behavior
-- `tests/test_runner_claude.py` for Claude Code command construction, event
-  mapping, signal extraction, and failure handling
+- `tests/test_runner_claude.py` for Claude Code command construction, startup
+  preflight, event mapping, signal extraction, and failure handling
 - `tests/test_runner_codex.py` for Codex app-server startup, thread start or
-  resume, approval responses, streamed event mapping, and failure handling
+  resume, startup preflight, approval responses, streamed event mapping, and
+  failure handling
 - `tests/test_dashboard.py` for dashboard HTML shell rendering, SQLite-backed
   API reads, task detail data, human message affordances, activity filtering,
   project switching, incremental sprint-event serialization, and approve or
@@ -78,7 +79,7 @@ Runner smoke tests:
 
 - Claude Code runner wiring
 - Codex runner wiring
-- event capture and retry behavior
+- preflight classification plus event capture and retry behavior
 
 UI validation:
 

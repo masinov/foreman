@@ -43,8 +43,8 @@ The first dashboard implementation checkpoint is recorded in
 
 ## Near-term policy
 
-While backend preflight checks and event-retention pruning are still
-incomplete:
+While event-retention pruning and `foreman watch` live-tail alignment are
+still incomplete:
 
 - use tags only for meaningful checkpoints,
 - prefer sprint-completion checkpoints over frequent versioning,

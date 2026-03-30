@@ -41,6 +41,10 @@ class InfrastructureError(ForemanError):
     """Raised when the agent backend fails at the process or transport layer."""
 
 
+class PreflightError(InfrastructureError):
+    """Raised when the agent backend is unavailable before a run can start."""
+
+
 class AgentRunner(Protocol):
     """Protocol shared by native agent backends."""
 
@@ -60,6 +64,15 @@ def run_with_retry(
     for attempt in range(max_retries + 1):
         try:
             yield from runner.run(config)
+            return
+        except PreflightError as exc:
+            yield AgentEvent(
+                "agent.error",
+                payload={
+                    "error": str(exc),
+                    "preflight_failed": True,
+                },
+            )
             return
         except InfrastructureError as exc:
             if attempt == max_retries:

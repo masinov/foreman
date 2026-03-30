@@ -257,13 +257,34 @@ Target deliverables:
 
 Status:
 
-- current sprint is `sprint-17-native-backend-preflight-checks`
+- completed on `feat/native-backend-preflight-checks`
+- Claude Code and Codex now validate executable availability before
+  long-running execution starts
+- malformed Codex startup responses now surface as explicit preflight
+  failures instead of retryable runtime crashes
+- preflight failures now record one explicit error without consuming
+  infrastructure retries
+
+## Milestone 13: Event retention pruning
+
+Goal: bring event retention behavior in line with the spec while preserving
+history that still belongs to active work.
+
+Target deliverables:
+
+- store support for deleting old events by project and cutoff
+- orchestrator startup pruning when `event_retention_days` is configured
+- protection for events attached to blocked or in-progress tasks
+- tests and docs for retention behavior and operator expectations
+
+Status:
+
+- current sprint is `sprint-18-event-retention-pruning`
 
 ## Near-term priorities
 
-1. add explicit native backend preflight checks so runtime failures surface
-   before long-running orchestrator work starts
-2. implement spec-aligned event-retention pruning after the backend bootstrap
-   gap is closed
-3. align `foreman watch` with the dashboard live transport and the spec's
+1. implement spec-aligned event-retention pruning while preserving active-work
+   history
+2. align `foreman watch` with the dashboard live transport and the spec's
    live-tail intent
+3. introduce a migration framework once retention and watch gaps are closed

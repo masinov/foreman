@@ -7,7 +7,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from foreman.runner import AgentRunConfig, CodexRunner, InfrastructureError
+from foreman.runner import AgentRunConfig, CodexRunner, InfrastructureError, PreflightError
 
 
 class _FakeInput:
@@ -245,7 +245,11 @@ class CodexRunnerTests(unittest.TestCase):
             ]
         )
         popen = _PopenRecorder(process)
-        runner = CodexRunner(popen_factory=popen, clock=lambda: 0.0)
+        runner = CodexRunner(
+            popen_factory=popen,
+            clock=lambda: 0.0,
+            which=lambda _: "/usr/bin/codex",
+        )
 
         events = list(runner.run(config))
 
@@ -348,7 +352,11 @@ class CodexRunnerTests(unittest.TestCase):
                 + "\n",
             ]
         )
-        runner = CodexRunner(popen_factory=_PopenRecorder(process), clock=lambda: 0.0)
+        runner = CodexRunner(
+            popen_factory=_PopenRecorder(process),
+            clock=lambda: 0.0,
+            which=lambda _: "/usr/bin/codex",
+        )
 
         events = list(runner.run(config))
 
@@ -363,6 +371,46 @@ class CodexRunnerTests(unittest.TestCase):
         self.assertEqual(requests[1]["params"]["threadId"], "thread-123")
         self.assertEqual(requests[-1]["id"], "req-1")
         self.assertEqual(requests[-1]["result"], {"decision": "decline"})
+
+    def test_run_raises_preflight_error_when_executable_is_missing(self) -> None:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        repo_path = Path(temp_dir.name)
+        config = self.create_config(repo_path)
+        popen = _PopenRecorder(_FakeProcess(lines=[]))
+        runner = CodexRunner(
+            popen_factory=popen,
+            clock=lambda: 0.0,
+            which=lambda _: None,
+        )
+
+        with self.assertRaises(PreflightError) as exc:
+            list(runner.run(config))
+
+        self.assertIn("executable `codex` was not found in PATH", str(exc.exception))
+        self.assertEqual(popen.calls, [])
+
+    def test_run_raises_preflight_error_when_thread_start_response_is_malformed(self) -> None:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        repo_path = Path(temp_dir.name)
+        config = self.create_config(repo_path)
+        process = _FakeProcess(
+            lines=[
+                json.dumps({"jsonrpc": "2.0", "id": 1, "result": {"userAgent": "codex-tests"}}) + "\n",
+                json.dumps({"jsonrpc": "2.0", "id": 2, "result": {"approvalPolicy": "on-request"}}) + "\n",
+            ]
+        )
+        runner = CodexRunner(
+            popen_factory=_PopenRecorder(process),
+            clock=lambda: 0.0,
+            which=lambda _: "/usr/bin/codex",
+        )
+
+        with self.assertRaises(PreflightError) as exc:
+            list(runner.run(config))
+
+        self.assertIn("thread start response did not include thread metadata", str(exc.exception))
 
     def test_run_raises_infrastructure_error_when_app_server_exits_early(self) -> None:
         temp_dir = tempfile.TemporaryDirectory()
@@ -394,7 +442,11 @@ class CodexRunnerTests(unittest.TestCase):
             returncode=2,
             stderr="app server crashed",
         )
-        runner = CodexRunner(popen_factory=_PopenRecorder(process), clock=lambda: 0.0)
+        runner = CodexRunner(
+            popen_factory=_PopenRecorder(process),
+            clock=lambda: 0.0,
+            which=lambda _: "/usr/bin/codex",
+        )
 
         with self.assertRaises(InfrastructureError) as exc:
             list(runner.run(config))

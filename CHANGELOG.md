@@ -36,6 +36,7 @@ memory changes rather than versioned product releases.
 - `foreman/executor.py` and `tests/test_executor.py`
 - end-to-end runtime coverage for the opt-in `development_secure` workflow
   plus secure workflow initialization coverage in the CLI
+- explicit native backend preflight validation for Claude Code and Codex
 
 ### Changed
 
@@ -65,6 +66,8 @@ memory changes rather than versioned product releases.
   memory to the security review workflow sprint
 - completed `sprint-16-security-review-workflow`, archived it, and advanced
   project memory to the native backend preflight sprint
+- completed `sprint-17-native-backend-preflight-checks`, archived it, and
+  advanced project memory to the event-retention pruning sprint
 - reconciled the loose feature and recovery branches into an integrated
   mainline candidate and restored missing repo-memory artifacts from the
   runner-session ADR branch

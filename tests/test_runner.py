@@ -9,6 +9,7 @@ from foreman.runner.base import (
     AgentEvent,
     AgentRunConfig,
     InfrastructureError,
+    PreflightError,
     run_with_retry,
 )
 from foreman.runner.claude_code import ClaudeCodeRunner
@@ -181,6 +182,33 @@ class RunWithRetryTests(unittest.TestCase):
         self.assertEqual(len(events), 3)  # 2 infra_error + 1 completed
         self.assertEqual(events[-1].event_type, "agent.completed")
         self.assertEqual(len(sleep_calls), 2)  # 2 retries
+
+    def test_does_not_retry_preflight_error(self) -> None:
+        """Preflight failures should fail fast without infrastructure retries."""
+        runner = MagicMock()
+        runner.run.side_effect = PreflightError("Claude Code preflight failed")
+        config = AgentRunConfig(
+            backend="claude_code",
+            prompt="test",
+            working_dir=Path("/tmp"),
+            session_id=None,
+            permission_mode="auto",
+            model=None,
+        )
+
+        sleep_calls = []
+        events = list(
+            run_with_retry(
+                runner,
+                config,
+                max_retries=3,
+                sleep=lambda seconds: sleep_calls.append(seconds),
+            )
+        )
+
+        self.assertEqual([event.event_type for event in events], ["agent.error"])
+        self.assertTrue(events[0].payload["preflight_failed"])
+        self.assertEqual(sleep_calls, [])
 
 
 class ClaudeCodeRunnerTests(unittest.TestCase):

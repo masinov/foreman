@@ -105,6 +105,7 @@ The current runtime supports:
 
 - Claude Code via `stream-json`,
 - Codex via `codex app-server` JSON-RPC,
+- explicit non-retryable backend preflight before `agent.started`,
 - normalized event capture into Foreman `events`,
 - role-level approval policy and disallowed-tool handling,
 - persisted `session_id`, `token_count`, `cost_usd`, and `duration_ms`.
@@ -157,6 +158,9 @@ The current dashboard baseline includes:
 - Immediate human-gate resume re-checks out the task branch before native
   execution, while still deferring safely when the next backend or repo
   runtime is unavailable.
+- backend preflight failures now fail once before `agent.started`, while
+  post-start transport and process failures remain retryable infrastructure
+  errors.
 - `session_persistence` is a role-level policy with scope `task + role +
   backend`, and fresh orchestrator invocations now reload the last compatible
   persisted session from SQLite for persistent roles.
@@ -172,10 +176,8 @@ The current dashboard baseline includes:
 
 ## Next architectural slice
 
-The next slice should make native backend startup assumptions explicit:
+The next slice should bring event retention in line with the spec:
 
-- validate required `claude` and `codex` executables before long-running
-  orchestrator work starts,
-- distinguish backend preflight failures from mid-run agent failures in
-  persisted task and run state,
-- document the operator recovery path for failed backend preflight checks.
+- prune old events when `event_retention_days` is configured,
+- preserve events that still belong to blocked or in-progress work,
+- emit durable pruning records without breaking monitoring expectations.

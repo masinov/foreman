@@ -2,15 +2,16 @@
 
 ## Current sprint
 
-- Sprint: `sprint-17-native-backend-preflight-checks`
+- Sprint: `sprint-18-event-retention-pruning`
 - Status: active
-- Goal: fail fast when required Claude Code or Codex native backend
-  prerequisites are unavailable or misconfigured
+- Goal: implement spec-aligned pruning for old event rows without deleting
+  history that still belongs to blocked or in-progress work
 
 ## Active branches
 
 - no long-lived feature branch should remain loose after the engine DB
-  discovery and security-review slices; start sprint-17 work from `main`
+  discovery, security-review, and backend-preflight slices; start sprint-18
+  work from `main`
 
 ## Completed this week
 
@@ -36,6 +37,12 @@
   including carry-output back into development after a denial
 - documented how bootstrap project initialization should opt into
   `development_secure`
+- completed `sprint-17-native-backend-preflight-checks`
+- added explicit native backend preflight failure handling for missing Claude
+  or Codex executables and malformed Codex startup responses
+- made backend preflight failures fail once before `agent.started` instead of
+  consuming infrastructure retries
+- documented backend prerequisites and recovery expectations for operators
 
 ## Current repo state
 
@@ -52,8 +59,9 @@
   - the opt-in `development_secure` workflow executing code review, security
     review, test, and merge with durable transition state,
   - native Claude Code and Codex runners with structured event capture,
-    approval-policy handling, retry normalization, and persisted session reuse
-    across fresh orchestrator invocations for persistent roles,
+    explicit startup preflight checks, approval-policy handling, retry
+    normalization, and persisted session reuse across fresh orchestrator
+    invocations for persistent roles,
   - monitoring CLI surfaces for board, history, cost, and bounded watch
     snapshots,
   - accepted ADRs for runner session semantics and dashboard data access,
@@ -71,12 +79,11 @@
 
 ## Ready next
 
-1. validate `claude` and `codex` executable availability before native runs
-   start
-2. surface backend preflight failures as explicit operator-facing errors
-   instead of generic runtime crashes
-3. document backend startup assumptions and recovery steps for bootstrap
-   operators
+1. add store support for deleting old events by project and cutoff while
+   preserving events for blocked and in-progress tasks
+2. run event pruning from orchestrator startup when
+   `event_retention_days` is configured
+3. document retention behavior, cutoff semantics, and operator expectations
 
 ## Open risks
 
@@ -88,9 +95,9 @@
   out-of-repo inspection still requires explicit `--db`.
 - `foreman watch` still relies on bounded polling snapshots even though the
   dashboard now uses a dedicated live event stream.
-- The native Claude and Codex runners assume working `claude` and `codex`
-  executables in PATH and currently rely on runtime process errors rather than
-  explicit preflight health checks.
+- Native backend preflight now validates executable presence and Codex startup
+  handshake assumptions, but it does not yet prove downstream auth or service
+  reachability beyond startup.
 - The Codex app-server protocol exposes token usage but not USD pricing, so
   Codex runs currently persist `token_count` accurately while `cost_usd`
   remains `0.0`.
@@ -117,6 +124,10 @@
 - The spec describes `foreman watch` as a live event tail. The current
   bootstrap CLI still renders bounded polling snapshots, while the dashboard
   now uses a dedicated event stream for live activity.
+- The spec's retry pseudocode retries every `InfrastructureError`. The current
+  runtime now treats backend preflight failures as explicit non-retryable
+  startup errors so missing executables or malformed startup handshakes fail
+  once before `agent.started`.
 
 ## Open decisions
 
@@ -126,5 +137,7 @@
   long-term or give way to a broader engine-instance configuration model
 - whether project `default_model` should be validated against the selected
   backend instead of being passed through verbatim at runtime
+- whether backend preflight should eventually expand beyond executable and
+  startup-contract checks into authentication or service reachability checks
 - whether the secure workflow should remain an explicit opt-in at init time or
   be selected automatically from project policy in a later slice
