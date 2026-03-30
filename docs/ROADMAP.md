@@ -111,10 +111,11 @@ Target deliverables:
 
 Status:
 
-- partially completed on `feat/claude-runner`
-- the shared runner protocol, Claude Code backend, retry normalization, and
-  orchestrator integration now exist
-- Codex backend support remains
+- completed on `feat/codex-runner`
+- the shared runner protocol, Claude Code backend, Codex backend, retry
+  normalization, and orchestrator integration now exist
+- native human-gate resume now proceeds immediately when the next backend and
+  repo are available, while still persisting deferred state when they are not
 
 ## Milestone 6: Monitoring surfaces
 
@@ -129,7 +130,6 @@ Target deliverables:
 
 ## Near-term priorities
 
-1. add the first native Codex runner backend
-2. expose project state through the monitoring CLI surfaces
-3. capture the first ADR for runner session handling and backend contracts
-4. build the first dashboard slice aligned to the mockup
+1. expose project state through the monitoring CLI surfaces
+2. capture the first ADR for runner session handling and backend contracts
+3. build the first dashboard slice aligned to the mockup

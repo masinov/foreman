@@ -43,6 +43,8 @@ scaffold changes rather than product releases.
   `tests/test_cli.py`
 - the first native Claude runner in `foreman/runner/claude_code.py`
 - runner coverage in `tests/test_runner_claude.py`
+- the first native Codex runner in `foreman/runner/codex.py`
+- runner coverage in `tests/test_runner_codex.py`
 
 ### Changed
 
@@ -80,3 +82,8 @@ scaffold changes rather than product releases.
   native runner path with retry normalization and session reuse
 - completed `sprint-06-claude-runner`, archived it, and advanced project
   memory to the Codex runner sprint
+- taught the orchestrator to execute Codex-backed roles through the native
+  runner path and to resume human-gate approvals immediately when the native
+  backend and repo are available
+- completed `sprint-07-codex-runner`, archived it, and advanced project
+  memory to the monitoring CLI sprint

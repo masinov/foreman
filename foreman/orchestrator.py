@@ -14,7 +14,7 @@ from .context import ProjectContextProjection, build_project_context, relative_p
 from .errors import ForemanError
 from .git import GitError, changed_files, checkout_branch, recent_commits, status_text
 from .models import Event, Project, Run, Task, utc_now_text
-from .runner import AgentRunConfig, ClaudeCodeRunner, run_with_retry
+from .runner import AgentRunConfig, ClaudeCodeRunner, CodexRunner, run_with_retry
 from .runner.base import AgentRunner as NativeAgentRunner
 from .roles import RoleDefinition, default_roles_dir, load_roles
 from .store import ForemanStore
@@ -128,7 +128,10 @@ class ForemanOrchestrator:
         self.agent_runners = (
             dict(agent_runners)
             if agent_runners is not None
-            else {"claude_code": ClaudeCodeRunner()}
+            else {
+                "claude_code": ClaudeCodeRunner(),
+                "codex": CodexRunner(),
+            }
         )
         self.builtin_executor = builtin_executor or BuiltinExecutor()
         self.runner_sleep = runner_sleep
@@ -353,10 +356,21 @@ class ForemanOrchestrator:
         decision_detail = note or (
             "Approved by human." if outcome == "approve" else "Denied by human."
         )
-        deferred = (
-            not next_step.role.startswith("_builtin:")
-            and self.agent_executor is None
-        )
+        deferred = False
+        if not next_step.role.startswith("_builtin:"):
+            next_role = self.roles.get(next_step.role)
+            if next_role is None:
+                raise OrchestratorError(
+                    f"Workflow {workflow.id!r} references unknown role {next_step.role!r}."
+                )
+            native_backend_available = (
+                next_role.agent.backend in self.agent_runners
+                and Path(project.repo_path).is_dir()
+            )
+            deferred = (
+                self.agent_executor is None
+                and not native_backend_available
+            )
         decision_run = self._create_system_run(
             current_task,
             workflow_step=paused_step.id,
@@ -411,6 +425,17 @@ class ForemanOrchestrator:
                 deferred=True,
                 carried_output=carried_output,
                 note=note,
+            )
+
+        if str(project.settings.get("task_selection_mode", "directed")) == "directed":
+            current_task.branch_name = current_task.branch_name or generate_branch_name(
+                current_task
+            )
+            checkout_branch(
+                project.repo_path,
+                current_task.branch_name,
+                create=True,
+                base_branch=project.default_branch,
             )
 
         self.run_workflow_from_step(
@@ -1374,4 +1399,3 @@ def _extract_json_block(text: str) -> str | None:
     if match is None:
         return None
     return match.group(1).strip() or None
-

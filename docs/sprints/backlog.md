@@ -2,11 +2,12 @@
 
 ## Next up after the current sprint
 
-### `todo` Monitoring CLI
+### `todo` Runner session and backend ADR
 
-- Add `foreman board`, `foreman watch`, `foreman history`, and `foreman cost`.
-- Visible deliverable: operators can inspect project state without opening the
-  database manually.
+- Capture the first ADR for runner session handling, approval policy, and
+  backend contract boundaries now that both native backends exist.
+- Visible deliverable: an accepted ADR in `docs/adr/` that future runner and
+  monitoring work can rely on.
 
 ### `todo` Dashboard implementation
 
@@ -17,8 +18,6 @@
 
 ## Parking lot
 
-- first ADR for runner session handling and backend contracts after Codex
-  parity lands
 - security review workflow variant
 - optional PR summary and checkpoint automation
 - event-retention pruning

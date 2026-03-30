@@ -240,6 +240,18 @@ The eighth implementation slice has now landed:
   `tests/test_orchestrator.py` now verifies native runner execution, retry
   persistence, and developer session reuse.
 
+The ninth implementation slice has now landed:
+
+- `foreman.runner.codex` now launches `codex app-server` over stdio, starts or
+  resumes threads through JSON-RPC, maps streamed Codex items into Foreman
+  agent events, and auto-responds to tool approval requests from role policy,
+- `foreman.orchestrator` now includes both native backends by default and can
+  resume human-gate approvals immediately for native backends when the repo
+  runtime is available,
+- `tests/test_runner_codex.py` adds direct Codex runner coverage, and
+  `tests/test_orchestrator.py` now verifies Codex success, session reuse, and
+  native human-gate resume behavior.
+
 Current runtime constraints worth preserving:
 
 - every workflow step persists a `runs` row, including built-ins, so workflow
@@ -258,11 +270,18 @@ Current runtime constraints worth preserving:
   `workflow_current_step` points at the next step to execute, and task
   selection now prioritizes that persisted resume point before untouched todo
   tasks,
-- the first shipped native runner backend is Claude Code; unsupported backends
-  still need explicit runner implementations before the orchestrator can
-  execute them directly,
+- Foreman now ships native Claude Code and Codex runners; unsupported
+  backends still need explicit runner implementations before the orchestrator
+  can execute them directly,
+- immediate human-gate resume now re-checks out the task branch before native
+  execution, while still deferring safely when the next backend or repo
+  runtime is unavailable,
+- Codex token usage is persisted through native runner events, but the current
+  app-server contract does not expose USD pricing so Codex `cost_usd` remains
+  zero for now,
 - `.foreman/status.md` currently emits an explicit open-decisions placeholder
   because the SQLite schema does not yet persist those records.
 
-The next implementation slice should implement the native Codex runner so both
-first-class agent backends from the spec share the same orchestration model.
+The next implementation slice should expose monitoring CLI surfaces so
+operators can inspect board state, history, and cost data directly from the
+store.
