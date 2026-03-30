@@ -206,6 +206,21 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     color:var(--text-tertiary);letter-spacing:.06em;text-transform:uppercase}
   .event-divider::after{content:'';flex:1;height:1px;background:var(--border-subtle)}
 
+  /* Activity input */
+  .activity-input{flex-shrink:0;padding:10px 12px;border-top:1px solid var(--border-subtle);display:flex;gap:8px;align-items:flex-end}
+  .activity-input textarea{flex:1;background:var(--bg-input);border:1px solid var(--border);
+    border-radius:var(--radius);color:var(--text-primary);font-family:var(--font-mono);
+    font-size:11px;padding:8px 10px;resize:none;line-height:1.5;min-height:36px;max-height:120px;transition:var(--transition)}
+  .activity-input textarea::placeholder{color:var(--text-tertiary)}
+  .activity-input textarea:focus{outline:none;border-color:var(--text-tertiary)}
+  .activity-input button{font-family:var(--font-mono);font-size:10px;font-weight:600;padding:8px 14px;
+    border-radius:var(--radius);border:1px solid var(--border);background:var(--bg-card);
+    color:var(--text-secondary);cursor:pointer;transition:var(--transition);letter-spacing:.04em;
+    text-transform:uppercase;white-space:nowrap;height:36px}
+  .activity-input button:hover{background:var(--bg-card-hover);color:var(--text-primary);border-color:var(--text-tertiary)}
+  .activity-input.disabled{opacity:0.5;pointer-events:none}
+  .activity-context{font-size:10px;color:var(--text-tertiary);padding:4px 12px;border-top:1px solid var(--border-subtle)}
+
   .done-card{opacity:.6}
 
   /* Detail panel */
@@ -309,6 +324,13 @@ DASHBOARD_HTML = """<!DOCTYPE html>
           <div class="activity-header-left"><span class="activity-title">Activity</span></div>
         </div>
         <div class="activity-stream" id="activityStream"></div>
+        <div class="activity-context" id="activityContext" style="display:none">
+          Sending to: <span id="activityContextTask"></span>
+        </div>
+        <div class="activity-input disabled" id="activityInput">
+          <textarea rows="1" placeholder="Select a task to send a message..." id="humanInput" oninput="autoResize(this)"></textarea>
+          <button onclick="sendHumanMessage()">Send</button>
+        </div>
       </div>
     </div>
   </div>
@@ -789,6 +811,14 @@ async function showTaskDetail(taskId, event) {
 
     document.getElementById('detail-panel').style.display = 'flex';
 
+    // Enable activity input for this task
+    const activityInput = document.getElementById('activityInput');
+    activityInput.classList.remove('disabled');
+    document.getElementById('humanInput').placeholder = 'Send a message to guide the agent...';
+    const contextEl = document.getElementById('activityContext');
+    contextEl.style.display = 'block';
+    document.getElementById('activityContextTask').textContent = data.title;
+
   } catch (e) {
     console.error('Failed to load task detail:', e);
   }
@@ -797,6 +827,47 @@ async function showTaskDetail(taskId, event) {
 function hideDetail() {
   document.getElementById('detail-panel').style.display = 'none';
   currentDetailTask = null;
+  // Disable activity input when no task selected
+  document.getElementById('activityInput').classList.add('disabled');
+  document.getElementById('humanInput').placeholder = 'Select a task to send a message...';
+  document.getElementById('activityContext').style.display = 'none';
+}
+
+function autoResize(el) {
+  el.style.height = '36px';
+  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+}
+
+async function sendHumanMessage() {
+  const input = document.getElementById('humanInput');
+  const text = input.value.trim();
+  if (!text || !currentDetailTask) return;
+
+  const btn = input.parentElement.querySelector('button');
+  btn.disabled = true;
+  btn.textContent = 'Sending...';
+
+  try {
+    const resp = await fetch(`/api/tasks/${currentDetailTask}/messages`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({text: text})
+    });
+    const data = await resp.json();
+    input.value = '';
+    autoResize(input);
+    // Reload activity to show the new message
+    if (currentSprint) {
+      const eventsResp = await fetch(`/api/sprints/${currentSprint}/events?limit=50`);
+      const eventsData = await eventsResp.json();
+      renderActivity(eventsData.events || []);
+    }
+  } catch (e) {
+    console.error('Failed to send message:', e);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Send';
+  }
 }
 
 // Initialize
@@ -1083,6 +1154,55 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             if len(parts) == 4 and parts[1] == "api" and parts[2] == "tasks":
                 task_id = parts[3]
                 self._send_json({"status": "denied", "task_id": task_id})
+                return
+
+        # API: Send human message to task
+        if path.endswith("/messages"):
+            parts = path.split("/")
+            if len(parts) == 5 and parts[1] == "api" and parts[2] == "tasks":
+                task_id = parts[3]
+                task = self.store.get_task(task_id)
+                if task is None:
+                    self._send_error(f"Task not found: {task_id}")
+                    return
+
+                # Read JSON body
+                content_length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(content_length)
+                try:
+                    data = json.loads(body)
+                except json.JSONDecodeError:
+                    self._send_error("Invalid JSON", 400)
+                    return
+
+                text = data.get("text", "").strip()
+                if not text:
+                    self._send_error("Message text required", 400)
+                    return
+
+                # Get the latest run for this task to associate the message
+                runs = self.store.list_runs(task_id=task_id)
+                run_id = runs[0].id if runs else "none"
+
+                # Create human message event
+                from datetime import datetime, timezone
+                event = Event(
+                    id=f"evt-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{task_id[:8]}",
+                    run_id=run_id,
+                    task_id=task_id,
+                    project_id=task.project_id,
+                    event_type="human.message",
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                    role_id="human",
+                    payload={"text": text},
+                )
+                self.store.save_event(event)
+
+                self._send_json({
+                    "status": "sent",
+                    "event_id": event.id,
+                    "task_id": task_id,
+                })
                 return
 
         self._send_error("Not found", 404)
