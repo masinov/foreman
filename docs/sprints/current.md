@@ -32,6 +32,6 @@
 
 ## Acceptance criteria
 
-- clicking approve on a human-gate task resumes the workflow
-- clicking deny on a human-gate task resumes the workflow with steer outcome
-- dashboard reflects the updated task status immediately
+- [x] clicking approve on a human-gate task resumes the workflow
+- [x] clicking deny on a human-gate task resumes the workflow with steer outcome
+- [x] dashboard reflects the updated task status immediately (verified by integration tests)

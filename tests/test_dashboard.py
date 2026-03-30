@@ -396,3 +396,125 @@ class DashboardHandlerTests(unittest.TestCase):
         self.assertIn("projectSwitcherMenu", DASHBOARD_HTML)
         self.assertIn("switchProject", DASHBOARD_HTML)
         self.assertIn("toggleProjectSwitcher", DASHBOARD_HTML)
+
+
+class DashboardApproveDenyIntegrationTests(unittest.TestCase):
+    """Integration tests for dashboard approve/deny with orchestrator."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.temp_dir = tempfile.TemporaryDirectory()
+        cls.db_path = Path(cls.temp_dir.name) / "foreman.db"
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.temp_dir.cleanup()
+
+    def test_approve_endpoint_calls_resume_human_gate(self):
+        """Approve endpoint calls orchestrator.resume_human_gate."""
+        store = ForemanStore(self.db_path)
+        store.initialize()
+
+        # Use development_with_architect workflow which has human_approval step
+        project = Project(
+            id="proj-approve-test",
+            name="Test Project",
+            repo_path="/tmp/test-project",
+            workflow_id="development_with_architect",
+        )
+        store.save_project(project)
+
+        sprint = Sprint(
+            id="sprint-approve-test",
+            project_id=project.id,
+            title="Test Sprint",
+            status="active",
+        )
+        store.save_sprint(sprint)
+
+        task = Task(
+            id="task-approve-test",
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="Blocked task for approval",
+            status="blocked",
+            task_type="feature",
+            blocked_reason="Awaiting human approval",
+            workflow_current_step="human_approval",
+        )
+        store.save_task(task)
+
+        # Verify initial state
+        self.assertEqual(task.status, "blocked")
+        self.assertEqual(task.workflow_current_step, "human_approval")
+
+        # Call the orchestrator to resume
+        from foreman.orchestrator import ForemanOrchestrator
+
+        orchestrator = ForemanOrchestrator(store)
+        result = orchestrator.resume_human_gate(
+            task.id,
+            outcome="approve",
+        )
+
+        # Verify the result
+        self.assertEqual(result.task.status, "in_progress")
+        self.assertEqual(result.next_step, "develop")
+        self.assertTrue(result.deferred)  # No native runner available
+
+        store.close()
+
+    def test_deny_endpoint_calls_resume_human_gate(self):
+        """Deny endpoint calls orchestrator.resume_human_gate."""
+        store = ForemanStore(self.db_path)
+        store.initialize()
+
+        # Use development_with_architect workflow which has human_approval step
+        project = Project(
+            id="proj-deny-test",
+            name="Test Project",
+            repo_path="/tmp/test-project",
+            workflow_id="development_with_architect",
+        )
+        store.save_project(project)
+
+        sprint = Sprint(
+            id="sprint-deny-test",
+            project_id=project.id,
+            title="Test Sprint",
+            status="active",
+        )
+        store.save_sprint(sprint)
+
+        task = Task(
+            id="task-deny-test",
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="Blocked task for denial",
+            status="blocked",
+            task_type="feature",
+            blocked_reason="Awaiting human approval",
+            workflow_current_step="human_approval",
+        )
+        store.save_task(task)
+
+        # Verify initial state
+        self.assertEqual(task.status, "blocked")
+        self.assertEqual(task.workflow_current_step, "human_approval")
+
+        # Call the orchestrator to resume
+        from foreman.orchestrator import ForemanOrchestrator
+
+        orchestrator = ForemanOrchestrator(store)
+        result = orchestrator.resume_human_gate(
+            task.id,
+            outcome="deny",
+            note="Needs more work",
+        )
+
+        # Verify the result
+        self.assertEqual(result.task.status, "in_progress")
+        self.assertEqual(result.next_step, "plan")  # Deny goes back to plan
+        self.assertTrue(result.deferred)  # No native runner available
+
+        store.close()
