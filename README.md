@@ -95,8 +95,9 @@ Both wrappers expect these files to be current:
 
 The next recommended task is:
 
-- build the first dashboard implementation aligned to
-  `docs/mockups/foreman-mockup-v6.html` while honoring
+- build the first interactive dashboard slice aligned to
+  `docs/mockups/foreman-mockup-v6.html` using persisted Foreman project,
+  sprint, task, run, and event state while honoring
   `docs/adr/ADR-0001-runner-session-backend-contract.md`.
 
 That task is already recorded in `docs/sprints/current.md`, so a fresh agent
