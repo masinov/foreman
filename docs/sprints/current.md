@@ -22,7 +22,7 @@
    Deliverable: selecting a task reveals branch, role, status, token, and
    recent event context aligned to the mockup's board and activity hierarchy.
 
-3. `[todo]` Define the first dashboard data-access boundary
+3. `[done]` Define the first dashboard data-access boundary
    Deliverable: the UI reuses SQLite-backed read models or thin projections
    instead of hardcoded mock data, and the chosen boundary is documented in
    repo memory.

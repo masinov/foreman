@@ -20,6 +20,7 @@
 - `docs/sprints/current.md` — updated task status for dashboard sprint
 - `docs/STATUS.md` — updated active branch, current state
 - `docs/checkpoints/dashboard-slice.md` — new checkpoint file
+- `docs/adr/ADR-0002-dashboard-data-access-boundary.md` — documents direct store access pattern
 
 ## Review history
 - Initial submission: missing dashboard_parser in build_parser()
@@ -53,10 +54,10 @@ Press Ctrl+C to stop.
 - [x] tests pass
 
 ## follow-ups
-- define the first dashboard data-access boundary
 - implement streaming transport (currently polling)
 - implement approve/deny button actions in UI
 - add human message input functionality
+- consider read-model projections if dashboard performance degrades
 
 ## PR notes
 This is the first slice of the dashboard implementation. It establishes:

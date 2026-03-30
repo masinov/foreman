@@ -115,6 +115,11 @@
 - added `foreman dashboard --db <path>` CLI command to start the web server
 - added dashboard unit tests for project status detection, API data access,
   and HTML content verification
+- added task detail panel with run history, acceptance criteria, and step
+  visit counts
+- accepted `ADR-0002-dashboard-data-access-boundary` documenting that the
+  dashboard uses direct `ForemanStore` read-model access without a separate
+  query layer or projection tables
 
 ## Current repo state
 
