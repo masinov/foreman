@@ -1,42 +1,45 @@
 # Current Sprint
 
-- Sprint: `sprint-15-engine-db-discovery`
+- Sprint: `sprint-16-security-review-workflow`
 - Status: active
-- Goal: remove the bootstrap requirement to pass explicit `--db` paths for
-  normal SQLite-backed CLI flows
+- Goal: make the shipped secure workflow variant execute end to end with
+  orchestrator and CLI coverage
 - Primary references:
   - `docs/specs/engine-design-v3.md`
   - `docs/STATUS.md`
+  - `roles/security_reviewer.toml`
+  - `workflows/development_secure.toml`
+  - `foreman/orchestrator.py`
   - `foreman/cli.py`
-  - `foreman/store.py`
-  - `scripts/reviewed_codex.py`
-  - `scripts/reviewed_claude.py`
+  - `tests/test_orchestrator.py`
 
 ## Included tasks
 
-1. `[todo]` Add engine-level database discovery
-   Deliverable: Foreman resolves a default SQLite path for normal repo-local
-   usage without requiring `--db` on every command.
+1. `[todo]` Execute the shipped secure workflow variant end to end
+   Deliverable: the `development_secure` workflow can run through
+   `security_review` with durable orchestrator state instead of existing only
+   as a loaded configuration artifact.
 
-2. `[todo]` Wire CLI flows to discovery with explicit override semantics
-   Deliverable: inspection, monitoring, and human-gate resume commands work
-   without explicit `--db`, while `--db PATH` still overrides discovery
-   deterministically.
+2. `[todo]` Add security review outcome coverage
+   Deliverable: approve and deny paths from the security-review step are
+   covered by orchestrator tests and produce the expected workflow
+   transitions.
 
-3. `[todo]` Document discovery and fallback behavior
-   Deliverable: repo docs explain how Foreman finds or creates the active
-   engine database and how that interacts with bootstrap initialization.
+3. `[todo]` Document secure workflow selection in bootstrap flows
+   Deliverable: repo docs explain when to choose `development_secure` during
+   project initialization and what behavior it currently adds over the default
+   workflow.
 
 ## Excluded from this sprint
 
-- a migration framework for schema evolution
-- remote or multi-host engine discovery
-- security review workflow implementation
-- dashboard authentication and multi-user concerns
+- backend preflight health checks
+- event-retention pruning
+- multi-user dashboard concerns
+- migration framework work
 
 ## Acceptance criteria
 
-- normal SQLite-backed CLI flows work without explicit `--db`
-- `--db PATH` remains a deterministic override
-- docs and tests explain the discovery boundary clearly enough for autonomous
-  supervisors to continue without reconstructing prior chat context
+- `development_secure` is exercised by automated runtime tests, not just loader
+  tests
+- security review approval and denial semantics are explicit in tests and docs
+- bootstrap project initialization docs clearly explain secure workflow usage

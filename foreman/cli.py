@@ -14,6 +14,7 @@ from .models import Project, utc_now_text
 from .orchestrator import ForemanOrchestrator, OrchestratorError
 from .roles import RoleLoadError, default_roles_dir, load_roles
 from .scaffold import (
+    DEFAULT_DB_FILENAME,
     DEFAULT_DEFAULT_BRANCH,
     DEFAULT_TEST_COMMAND,
     DEFAULT_WORKFLOW_ID,
@@ -30,11 +31,8 @@ CLI_DESCRIPTION = (
     "Foreman is an autonomous development engine for spec-driven software delivery."
 )
 CLI_SHELL_NOTE = "This command surface is still incomplete while Foreman is under active development."
-STORE_OPTION_NOTE = (
-    "SQLite-backed inspection is available now via `--db PATH` for `projects`, `status`, `board`, `history`, `watch`, and `cost`."
-)
-STORE_FOLLOWUP_NOTE = (
-    "Project creation is available via `foreman init --db PATH`; paused human-gate tasks can now be resumed with `foreman approve --db PATH` and `foreman deny --db PATH`."
+DB_OPTION_NOTE = (
+    f"Defaults to repo-local `{DEFAULT_DB_FILENAME}` discovery; pass `--db PATH` to override."
 )
 BOARD_STATUS_SECTIONS: tuple[tuple[str, str], ...] = (
     ("todo", "Todo"),
@@ -47,6 +45,10 @@ BOARD_STATUS_SECTIONS: tuple[tuple[str, str], ...] = (
 Handler = Callable[[argparse.Namespace], int]
 
 
+class CliResolutionError(ValueError):
+    """Raised when CLI runtime inputs cannot be resolved safely."""
+
+
 def _print_lines(*lines: str) -> None:
     for line in lines:
         print(line)
@@ -56,13 +58,83 @@ def _add_db_option(
     parser: argparse.ArgumentParser,
     *,
     required: bool = False,
-    help_text: str = "Path to the SQLite store to inspect.",
+    help_text: str = f"Path to the SQLite store. {DB_OPTION_NOTE}",
 ) -> None:
     parser.add_argument(
         "--db",
         required=required,
         help=help_text,
     )
+
+
+def _iter_parent_paths(start_path: Path) -> tuple[Path, ...]:
+    resolved = start_path.expanduser().resolve()
+    return (resolved, *resolved.parents)
+
+
+def _discover_repo_local_db_path(start_path: Path | None = None) -> Path | None:
+    base = start_path or Path.cwd()
+    for candidate in _iter_parent_paths(base):
+        db_path = candidate / DEFAULT_DB_FILENAME
+        if db_path.is_file():
+            return db_path
+    return None
+
+
+def _looks_like_repo_root(path: Path) -> bool:
+    return (
+        (path / "AGENTS.md").is_file()
+        or (path / ".git").exists()
+        or (path / ".foreman").exists()
+    )
+
+
+def _discover_repo_root(start_path: Path | None = None) -> Path | None:
+    base = start_path or Path.cwd()
+    for candidate in _iter_parent_paths(base):
+        if _looks_like_repo_root(candidate):
+            return candidate
+    return None
+
+
+def _resolve_db_path(
+    explicit_db: str | None,
+    *,
+    repo_path: str | Path | None = None,
+) -> Path:
+    if explicit_db:
+        return Path(explicit_db).expanduser().resolve()
+
+    if repo_path is not None:
+        return Path(repo_path).expanduser().resolve() / DEFAULT_DB_FILENAME
+
+    discovered_db = _discover_repo_local_db_path()
+    if discovered_db is not None:
+        return discovered_db
+
+    repo_root = _discover_repo_root()
+    if repo_root is not None:
+        raise CliResolutionError(
+            f"No repo-local Foreman database found at {repo_root / DEFAULT_DB_FILENAME}. "
+            "Run `foreman init <repo_path> --name <name> --spec <path>` or pass `--db PATH`."
+        )
+
+    raise CliResolutionError(
+        "Could not discover a Foreman repository from the current directory. "
+        "Run the command from a Foreman repo or pass `--db PATH`."
+    )
+
+
+def _resolve_db_path_or_print(
+    explicit_db: str | None,
+    *,
+    repo_path: str | Path | None = None,
+) -> str | None:
+    try:
+        return str(_resolve_db_path(explicit_db, repo_path=repo_path))
+    except CliResolutionError as exc:
+        print(str(exc), file=sys.stderr)
+        return None
 
 
 def _format_task_counts(counts: dict[str, int]) -> str:
@@ -158,7 +230,11 @@ def _render_board_task_line(task_id: str, title: str, task_type: str, details: l
 def handle_board(args: argparse.Namespace) -> int:
     """Handle ``foreman board``."""
 
-    with ForemanStore(args.db) as store:
+    db_path = _resolve_db_path_or_print(args.db)
+    if db_path is None:
+        return 1
+
+    with ForemanStore(db_path) as store:
         store.initialize()
         project = store.get_project(args.project_id)
         if project is None:
@@ -236,7 +312,11 @@ def handle_board(args: argparse.Namespace) -> int:
 def handle_history(args: argparse.Namespace) -> int:
     """Handle ``foreman history``."""
 
-    with ForemanStore(args.db) as store:
+    db_path = _resolve_db_path_or_print(args.db)
+    if db_path is None:
+        return 1
+
+    with ForemanStore(db_path) as store:
         store.initialize()
         task = store.get_task(args.task_id)
         if task is None:
@@ -314,7 +394,11 @@ def handle_history(args: argparse.Namespace) -> int:
 def handle_cost(args: argparse.Namespace) -> int:
     """Handle ``foreman cost``."""
 
-    with ForemanStore(args.db) as store:
+    db_path = _resolve_db_path_or_print(args.db)
+    if db_path is None:
+        return 1
+
+    with ForemanStore(db_path) as store:
         store.initialize()
         project = store.get_project(args.project_id)
         if project is None:
@@ -400,8 +484,12 @@ def handle_watch(args: argparse.Namespace) -> int:
         print("--limit must be at least 1.", file=sys.stderr)
         return 1
 
+    db_path = _resolve_db_path_or_print(args.db)
+    if db_path is None:
+        return 1
+
     lines: list[str] = ["Watch"]
-    with ForemanStore(args.db) as store:
+    with ForemanStore(db_path) as store:
         store.initialize()
         if args.run:
             run = store.get_run(args.run)
@@ -501,6 +589,9 @@ def handle_init(args: argparse.Namespace) -> int:
     roles_dir = default_roles_dir()
     workflows_dir = default_workflows_dir()
     repo_path = Path(args.repo_path).expanduser().resolve()
+    db_path = _resolve_db_path_or_print(args.db, repo_path=repo_path)
+    if db_path is None:
+        return 1
     try:
         roles = load_roles(roles_dir)
         workflows = load_workflows(workflows_dir, available_role_ids=set(roles))
@@ -509,7 +600,7 @@ def handle_init(args: argparse.Namespace) -> int:
         print(f"Failed to initialize project: {exc}", file=sys.stderr)
         return 1
 
-    with ForemanStore(args.db) as store:
+    with ForemanStore(db_path) as store:
         store.initialize()
         existing = store.find_project_by_repo_path(str(repo_path))
         workflow_id = args.workflow or (
@@ -583,17 +674,11 @@ def handle_init(args: argparse.Namespace) -> int:
 def handle_projects(args: argparse.Namespace) -> int:
     """Handle ``foreman projects``."""
 
-    if not args.db:
-        _print_lines(
-            "Projects",
-            "No projects are tracked yet.",
-            CLI_SHELL_NOTE,
-            STORE_OPTION_NOTE,
-            STORE_FOLLOWUP_NOTE,
-        )
-        return 0
+    db_path = _resolve_db_path_or_print(args.db)
+    if db_path is None:
+        return 1
 
-    with ForemanStore(args.db) as store:
+    with ForemanStore(db_path) as store:
         store.initialize()
         projects = store.list_projects()
 
@@ -602,7 +687,7 @@ def handle_projects(args: argparse.Namespace) -> int:
             lines.extend(
                 [
                     "No projects are tracked yet.",
-                    "Use `foreman init --db PATH` to register a project, or seed the store through the Python API in the meantime.",
+                    f"Use `foreman init <repo_path> --name <name> --spec <path>` to create the default `{DEFAULT_DB_FILENAME}`, or pass `--db PATH` to inspect another store.",
                 ]
             )
         else:
@@ -629,17 +714,11 @@ def handle_projects(args: argparse.Namespace) -> int:
 def handle_status(args: argparse.Namespace) -> int:
     """Handle ``foreman status``."""
 
-    if not args.db:
-        _print_lines(
-            "Status",
-            "No active projects or sprints.",
-            CLI_SHELL_NOTE,
-            STORE_OPTION_NOTE,
-            STORE_FOLLOWUP_NOTE,
-        )
-        return 0
+    db_path = _resolve_db_path_or_print(args.db)
+    if db_path is None:
+        return 1
 
-    with ForemanStore(args.db) as store:
+    with ForemanStore(db_path) as store:
         store.initialize()
         project_count = store.count_projects()
         active_sprint_count = store.count_active_sprints()
@@ -731,9 +810,13 @@ def handle_stub(args: argparse.Namespace) -> int:
 def handle_dashboard(args: argparse.Namespace) -> int:
     """Handle ``foreman dashboard``."""
 
+    db_path = _resolve_db_path_or_print(args.db)
+    if db_path is None:
+        return 1
+
     try:
         run_dashboard(
-            db_path=args.db,
+            db_path=db_path,
             host=args.host,
             port=args.port,
         )
@@ -770,8 +853,7 @@ def build_parser() -> argparse.ArgumentParser:
     init_parser.add_argument("--spec", required=True, help="Path to the project spec.")
     _add_db_option(
         init_parser,
-        required=True,
-        help_text="Path to the SQLite store to initialize or update.",
+        help_text=f"Path to the SQLite store to initialize or update. Defaults to <repo>/{DEFAULT_DB_FILENAME}.",
     )
     init_parser.add_argument(
         "--workflow",
@@ -886,8 +968,7 @@ def build_parser() -> argparse.ArgumentParser:
     board_parser.add_argument("project_id", help="Project identifier.")
     _add_db_option(
         board_parser,
-        required=True,
-        help_text="Path to the SQLite store containing the project board state.",
+        help_text=f"Path to the SQLite store containing the project board state. {DB_OPTION_NOTE}",
     )
     _set_handler(board_parser, handle_board, "board")
 
@@ -914,8 +995,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_db_option(
         watch_parser,
-        required=True,
-        help_text="Path to the SQLite store containing project or run activity.",
+        help_text=f"Path to the SQLite store containing project or run activity. {DB_OPTION_NOTE}",
     )
     _set_handler(watch_parser, handle_watch, "watch")
 
@@ -924,8 +1004,7 @@ def build_parser() -> argparse.ArgumentParser:
     cost_parser.add_argument("--sprint", help="Sprint identifier.")
     _add_db_option(
         cost_parser,
-        required=True,
-        help_text="Path to the SQLite store containing project run totals.",
+        help_text=f"Path to the SQLite store containing project run totals. {DB_OPTION_NOTE}",
     )
     _set_handler(cost_parser, handle_cost, "cost")
 
@@ -936,8 +1015,7 @@ def build_parser() -> argparse.ArgumentParser:
     history_parser.add_argument("task_id", help="Task identifier.")
     _add_db_option(
         history_parser,
-        required=True,
-        help_text="Path to the SQLite store containing task history.",
+        help_text=f"Path to the SQLite store containing task history. {DB_OPTION_NOTE}",
     )
     _set_handler(history_parser, handle_history, "history")
 
@@ -946,8 +1024,7 @@ def build_parser() -> argparse.ArgumentParser:
     approve_parser.add_argument("--note", help="Optional approval note.")
     _add_db_option(
         approve_parser,
-        required=True,
-        help_text="Path to the SQLite store containing the paused task.",
+        help_text=f"Path to the SQLite store containing the paused task. {DB_OPTION_NOTE}",
     )
     _set_handler(approve_parser, handle_approve, "approve")
 
@@ -956,8 +1033,7 @@ def build_parser() -> argparse.ArgumentParser:
     deny_parser.add_argument("--note", help="Optional denial note.")
     _add_db_option(
         deny_parser,
-        required=True,
-        help_text="Path to the SQLite store containing the paused task.",
+        help_text=f"Path to the SQLite store containing the paused task. {DB_OPTION_NOTE}",
     )
     _set_handler(deny_parser, handle_deny, "deny")
 
@@ -988,8 +1064,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_db_option(
         dashboard_parser,
-        required=True,
-        help_text="Path to the SQLite store for dashboard data.",
+        help_text=f"Path to the SQLite store for dashboard data. {DB_OPTION_NOTE}",
     )
     dashboard_parser.add_argument(
         "--host",
@@ -1048,7 +1123,11 @@ def _allocate_project_id(
 
 
 def _handle_human_gate_decision(args: argparse.Namespace, *, outcome: str) -> int:
-    with ForemanStore(args.db) as store:
+    db_path = _resolve_db_path_or_print(args.db)
+    if db_path is None:
+        return 1
+
+    with ForemanStore(db_path) as store:
         store.initialize()
         orchestrator = ForemanOrchestrator(store)
         try:

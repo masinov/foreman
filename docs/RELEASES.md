@@ -43,8 +43,8 @@ The first dashboard implementation checkpoint is recorded in
 
 ## Near-term policy
 
-While persistent-session reload and live dashboard transport are still
-incomplete:
+While the security review workflow runtime and backend preflight checks are
+still incomplete:
 
 - use tags only for meaningful checkpoints,
 - prefer sprint-completion checkpoints over frequent versioning,

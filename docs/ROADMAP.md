@@ -216,15 +216,35 @@ Target deliverables:
 
 Status:
 
-- current sprint is `sprint-15-engine-db-discovery`
-- implementation is not started yet; normal CLI flows still require explicit
-  `--db`
+- completed on `feat/engine-db-discovery`
+- normal repo-local CLI flows now discover an existing `.foreman.db` by
+  walking up from the current working directory
+- `foreman init` now defaults to `<repo>/.foreman.db` while `--db` remains a
+  deterministic override
+- scaffolded repos now keep the default DB file gitignored
+
+## Milestone 11: Security review workflow runtime
+
+Goal: make the shipped secure workflow variant execute end to end with
+orchestrator and CLI coverage.
+
+Target deliverables:
+
+- orchestrator coverage for `development_secure` through `security_review`
+- explicit approve and deny outcome tests for the security review step
+- docs for when bootstrap project initialization should choose the secure
+  workflow variant
+
+Status:
+
+- current sprint is `sprint-16-security-review-workflow`
+- workflow and role definitions already exist, but runtime coverage is still
+  missing
 
 ## Near-term priorities
 
-1. remove the bootstrap requirement for explicit `--db` paths in normal CLI
-   flows
-2. add the security review workflow variant after the database-discovery gap is
-   closed
-3. add explicit native backend preflight checks so runtime failures surface
+1. add runtime coverage for the shipped security review workflow variant
+2. add explicit native backend preflight checks so runtime failures surface
    before long-running orchestrator work starts
+3. implement spec-aligned event-retention pruning after the workflow and
+   backend bootstrap gaps are closed

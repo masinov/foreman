@@ -18,8 +18,9 @@ memory changes rather than versioned product releases.
   projects, sprints, tasks, runs, and events
 - shipped declarative `roles/*.toml` and `workflows/*.toml` defaults
 - a persisted orchestrator loop plus explicit built-in execution seams
-- `foreman init --db <path>` for repo scaffold generation and persisted project
-  initialization
+- repo-local `.foreman.db` discovery with explicit `--db` override support
+- `foreman init` defaulting to `<repo>/.foreman.db` for repo scaffold
+  generation and persisted project initialization
 - runtime context projection in `.foreman/context.md` and `.foreman/status.md`
 - persisted human-gate approve and deny commands
 - native Claude Code and Codex runners in `foreman/runner/`
@@ -58,6 +59,8 @@ memory changes rather than versioned product releases.
   project memory to the dashboard streaming transport sprint
 - completed `sprint-14-dashboard-streaming-transport`, archived it, and
   advanced project memory to the engine DB discovery sprint
+- completed `sprint-15-engine-db-discovery`, archived it, and advanced project
+  memory to the security review workflow sprint
 - reconciled the loose feature and recovery branches into an integrated
   mainline candidate and restored missing repo-memory artifacts from the
   runner-session ADR branch

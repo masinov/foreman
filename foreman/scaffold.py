@@ -13,6 +13,7 @@ from .errors import ForemanError
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _TEMPLATES_DIR = _REPO_ROOT / "templates"
 DEFAULT_CONTEXT_DIR = ".foreman"
+DEFAULT_DB_FILENAME = ".foreman.db"
 DEFAULT_TEST_COMMAND = "./venv/bin/python -m unittest discover -s tests"
 DEFAULT_DEFAULT_BRANCH = "main"
 DEFAULT_DEFAULT_MODEL = "claude-sonnet-4-6"
@@ -174,20 +175,26 @@ def _ensure_directory(path: Path) -> ArtifactAction:
 
 
 def _ensure_gitignore_entry(path: Path) -> ArtifactAction:
-    entry = f"{DEFAULT_CONTEXT_DIR}/"
+    entries = (f"{DEFAULT_CONTEXT_DIR}/", DEFAULT_DB_FILENAME)
     if not path.exists():
-        path.write_text(f"{entry}\n", encoding="utf-8")
+        path.write_text("".join(f"{entry}\n" for entry in entries), encoding="utf-8")
         return "created"
 
     existing_lines = path.read_text(encoding="utf-8").splitlines()
     normalized = {line.strip() for line in existing_lines}
-    if entry in normalized or DEFAULT_CONTEXT_DIR in normalized:
+    missing_entries = [
+        entry
+        for entry in entries
+        if entry not in normalized and entry.rstrip("/") not in normalized
+    ]
+    if not missing_entries:
         return "unchanged"
 
     text = path.read_text(encoding="utf-8")
     if text and not text.endswith("\n"):
         text = f"{text}\n"
-    text = f"{text}{entry}\n"
+    additions = "".join(f"{entry}\n" for entry in missing_entries)
+    text = f"{text}{additions}"
     path.write_text(text, encoding="utf-8")
     return "updated"
 

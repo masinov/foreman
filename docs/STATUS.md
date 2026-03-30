@@ -2,30 +2,33 @@
 
 ## Current sprint
 
-- Sprint: `sprint-15-engine-db-discovery`
+- Sprint: `sprint-16-security-review-workflow`
 - Status: active
-- Goal: remove the bootstrap requirement to pass explicit `--db` paths for
-  normal SQLite-backed CLI flows
+- Goal: make the shipped secure workflow variant execute end to end with
+  orchestrator and CLI coverage
 
 ## Active branches
 
-- no long-lived feature branch should remain loose after the dashboard
-  streaming slice; start sprint-15 work from `main`
+- no long-lived feature branch should remain loose after the engine DB
+  discovery slice; start sprint-16 work from `main`
 
 ## Completed this week
 
 - reconciled the previously loose feature and recovery histories into one
   integrated mainline and pushed the result to `origin/main`
-- completed `sprint-13-persistent-session-reload`
-- implemented cross-invocation native session reuse for persistent roles by
-  reloading the latest compatible `session_id` from SQLite
 - completed `sprint-14-dashboard-streaming-transport`
 - added a dedicated dashboard sprint event stream with incremental persisted
   event delivery
 - switched the dashboard activity panel to a live subscription path and
   debounced task-state refresh on incoming events
-- moved the dashboard server to a threaded HTTP boundary so long-lived
-  activity streams do not block approve or deny or message requests
+- completed `sprint-15-engine-db-discovery`
+- added repo-local SQLite discovery using a hidden `.foreman.db` file
+- made `foreman init` default to `<repo>/.foreman.db` while keeping `--db` as
+  a deterministic override
+- wired `projects`, `status`, monitoring commands, approve or deny, and the
+  dashboard CLI entrypoint to use repo-local DB discovery without explicit
+  flags
+- updated scaffold generation so the default `.foreman.db` stays gitignored
 
 ## Current repo state
 
@@ -35,6 +38,8 @@
     orchestrator,
   - runtime `.foreman/context.md` and `.foreman/status.md` projection from
     SQLite,
+  - repo-local `.foreman.db` discovery for normal CLI usage with `--db` still
+    available as an explicit override,
   - persisted human-gate approval and denial commands with deferred or
     immediate native resume behavior,
   - native Claude Code and Codex runners with structured event capture,
@@ -48,7 +53,7 @@
     approve or deny actions that resume the workflow, and a dedicated sprint
     event stream that keeps activity current without full-list polling,
   - unit and integration coverage across store, CLI, orchestrator, runners,
-    dashboard, and executor seams,
+    dashboard, scaffold, and executor seams,
   - repo-memory docs that are intended to let a fresh agent continue from the
     next slice without reconstructing prior branch history.
 - The temporary markdown sprint and status workflow remains intentional
@@ -57,20 +62,19 @@
 
 ## Ready next
 
-1. add engine-level database discovery for repo-local CLI usage
-2. keep explicit `--db` as a deterministic override while normal flows resolve
-   the active engine database automatically
-3. document how database discovery interacts with init, monitoring, and
-   human-gate resume commands
+1. execute the shipped `development_secure` workflow variant end to end
+2. add orchestrator coverage for security-review approval and denial outcomes
+3. document how secure workflow selection should be used during bootstrap
+   project initialization
 
 ## Open risks
 
 - `reviewed_codex.py` and `reviewed_claude.py` are bootstrap supervisors, not
   the Foreman product itself; their behavior should not accidentally become the
   long-term architecture.
-- The bootstrap CLI still requires explicit `--db PATH` selection for
-  SQLite-backed lifecycle, inspection, monitoring, and human-gate commands
-  because engine-instance configuration does not exist yet.
+- Repo-local discovery currently depends on an existing `.foreman.db` in the
+  current repo lineage or on `foreman init` creating one; cross-repo and
+  out-of-repo inspection still requires explicit `--db`.
 - `foreman watch` still relies on bounded polling snapshots even though the
   dashboard now uses a dedicated live event stream.
 - The native Claude and Codex runners assume working `claude` and `codex`
@@ -88,10 +92,10 @@
   any missing transition. The current implementation treats a step that sets
   task status to `done` as successful workflow termination and records that
   nuance here until the spec text is clarified.
-- The spec's CLI examples omit explicit database selection, while the bootstrap
-  CLI currently requires `--db PATH` for SQLite-backed init, inspection,
-  monitoring, and human-gate commands because engine-level DB discovery has
-  not been implemented yet.
+- The spec's CLI examples omit explicit database selection and do not define a
+  bootstrap discovery path. The current runtime defaults to repo-local
+  `.foreman.db` discovery for normal flows and keeps `--db PATH` as an
+  explicit override until engine-instance configuration exists.
 - The spec expects `.foreman/status.md` to list open decisions, but the current
   SQLite schema has no structured decision records yet. The runtime projection
   currently emits an explicit placeholder until those records exist.
@@ -107,9 +111,9 @@
 
 - whether `foreman watch` should converge on the dashboard's dedicated
   streaming transport or remain a separate CLI-tail implementation
+- whether the bootstrap repo-local `.foreman.db` location should remain
+  long-term or give way to a broader engine-instance configuration model
 - whether project `default_model` should be validated against the selected
   backend instead of being passed through verbatim at runtime
-- whether engine-level database discovery should replace the current explicit
-  `--db` requirement
-- whether the security review flow should be implemented as a separate shipped
-  workflow or as a parameterized branch of the default workflow
+- whether the secure workflow should remain an explicit opt-in at init time or
+  be selected automatically from project policy in a later slice

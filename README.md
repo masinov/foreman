@@ -33,8 +33,10 @@ The integrated pre-release baseline now contains:
   prompt-rendering support,
 - an orchestrator with built-ins for tests, merge, mark-done, human gates, and
   runtime context projection into `.foreman/`,
-- `foreman init --db <path>` for project scaffold generation and persisted
-  project initialization,
+- repo-local `.foreman.db` discovery for normal CLI usage plus optional `--db`
+  override semantics,
+- `foreman init` defaulting to `<repo>/.foreman.db` for project scaffold
+  generation and persisted project initialization,
 - persisted human-gate approval and denial flows with deferred or immediate
   native resume depending on runtime availability,
 - native Claude Code and Codex runners with structured event capture, retry
@@ -83,12 +85,12 @@ Both wrappers expect these files to be current:
 
 ## Next implementation slice
 
-The current sprint is `sprint-15-engine-db-discovery`.
+The current sprint is `sprint-16-security-review-workflow`.
 
 The next recommended task is:
 
-- remove the bootstrap requirement to pass explicit `--db` paths for normal
-  SQLite-backed CLI inspection and resume flows.
+- make the shipped `development_secure` workflow variant execute end to end
+  with orchestrator and CLI coverage.
 
 That work is recorded in `docs/sprints/current.md`, so a fresh agent can pick
 it up without reconstructing branch history first.

@@ -142,8 +142,12 @@ The current dashboard baseline includes:
   successful workflow termination instead of a fallback block.
 - `foreman init` never overwrites a repo's existing `AGENTS.md`; generated
   instructions remain a one-time scaffold that the user owns afterward.
-- The bootstrap CLI still requires explicit `--db PATH` selection for
-  SQLite-backed lifecycle, inspection, monitoring, and human-gate commands.
+- Repo-local CLI discovery uses a hidden `.foreman.db` file and walks up from
+  the current working directory to find an existing database.
+- `foreman init` defaults to `<repo>/.foreman.db`, and scaffolded repos keep
+  that file gitignored.
+- `--db PATH` remains the explicit override for alternate stores and
+  out-of-repo inspection.
 - Deferred human-gate resume is represented by an `in_progress` task whose
   `workflow_current_step` points at the next step to execute.
 - Immediate human-gate resume re-checks out the task branch before native
@@ -164,11 +168,9 @@ The current dashboard baseline includes:
 
 ## Next architectural slice
 
-The next slice should define the engine-level database discovery boundary:
+The next slice should make the shipped security workflow runtime-real:
 
-- choose and implement the default SQLite location for repo-local Foreman
-  usage,
-- wire normal CLI flows to discovery while keeping `--db` as an explicit
-  override,
-- document how discovery interacts with initialization, monitoring, and
-  human-gate resume behavior.
+- execute `development_secure` end to end through the orchestrator,
+- cover security-review approval and denial outcomes explicitly in tests,
+- document when bootstrap project initialization should choose the secure
+  workflow variant.

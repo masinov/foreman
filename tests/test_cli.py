@@ -53,6 +53,15 @@ class ForemanCLISmokeTests(unittest.TestCase):
             check=False,
         )
 
+    def run_cli_in(self, cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [str(FOREMAN), *args],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
     def create_store(self) -> tuple[ForemanStore, Path]:
         temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(temp_dir.cleanup)
@@ -61,6 +70,22 @@ class ForemanCLISmokeTests(unittest.TestCase):
         self.addCleanup(store.close)
         store.initialize()
         return store, db_path
+
+    def create_repo_path(self) -> Path:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        repo_path = Path(temp_dir.name) / "repo"
+        repo_path.mkdir(parents=True)
+        return repo_path
+
+    def create_repo_store(self) -> tuple[ForemanStore, Path, Path]:
+        repo_path = self.create_repo_path()
+        (repo_path / "AGENTS.md").write_text("# Repo Instructions\n", encoding="utf-8")
+        db_path = repo_path / ".foreman.db"
+        store = ForemanStore(db_path)
+        self.addCleanup(store.close)
+        store.initialize()
+        return store, db_path, repo_path
 
     def seed_monitoring_state(self, store: ForemanStore) -> dict[str, str]:
         project = Project(
@@ -320,23 +345,25 @@ class ForemanCLISmokeTests(unittest.TestCase):
         self.assertIn("status", result.stdout)
         self.assertIn("init", result.stdout)
 
-    def test_projects_command_reports_empty_bootstrap_state(self) -> None:
-        result = self.run_cli("projects")
+    def test_projects_command_reports_discovery_error_outside_repo(self) -> None:
+        cwd = self.create_repo_path().parent
+        result = self.run_cli_in(cwd, "projects")
 
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("Projects", result.stdout)
-        self.assertIn("No projects are tracked yet.", result.stdout)
-        self.assertIn("SQLite-backed inspection is available now via `--db PATH`", result.stdout)
-        self.assertIn("Project creation is available via `foreman init --db PATH`", result.stdout)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Could not discover a Foreman repository", result.stderr)
+        self.assertEqual(result.stdout, "")
 
-    def test_status_command_reports_empty_bootstrap_state(self) -> None:
-        result = self.run_cli("status")
+    def test_status_command_reports_missing_repo_local_db(self) -> None:
+        repo_path = self.create_repo_path()
+        (repo_path / "AGENTS.md").write_text("# Repo Instructions\n", encoding="utf-8")
+        result = self.run_cli_in(repo_path, "status")
 
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("Status", result.stdout)
-        self.assertIn("No active projects or sprints.", result.stdout)
-        self.assertIn("SQLite-backed inspection is available now via `--db PATH`", result.stdout)
-        self.assertIn("Project creation is available via `foreman init --db PATH`", result.stdout)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(
+            f"No repo-local Foreman database found at {repo_path / '.foreman.db'}",
+            result.stderr,
+        )
+        self.assertEqual(result.stdout, "")
 
     def test_init_command_scaffolds_repo_and_persists_project_with_db_path(self) -> None:
         temp_dir = tempfile.TemporaryDirectory()
@@ -372,7 +399,10 @@ class ForemanCLISmokeTests(unittest.TestCase):
         self.assertTrue((repo_path / "AGENTS.md").is_file())
         self.assertTrue((repo_path / "docs" / "adr").is_dir())
         self.assertTrue((repo_path / ".foreman").is_dir())
-        self.assertEqual((repo_path / ".gitignore").read_text(encoding="utf-8"), ".foreman/\n")
+        self.assertEqual(
+            (repo_path / ".gitignore").read_text(encoding="utf-8"),
+            ".foreman/\n.foreman.db\n",
+        )
         self.assertIn("Project: Sample Project", (repo_path / "AGENTS.md").read_text(encoding="utf-8"))
 
         with ForemanStore(db_path) as store:
@@ -390,6 +420,35 @@ class ForemanCLISmokeTests(unittest.TestCase):
             project.settings["test_command"],
             "./venv/bin/python -m unittest discover -s tests",
         )
+
+    def test_init_command_defaults_to_repo_local_db_when_db_is_omitted(self) -> None:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        repo_path = Path(temp_dir.name) / "target-repo"
+        repo_path.mkdir()
+        spec_path = repo_path / "docs" / "spec.md"
+        spec_path.parent.mkdir(parents=True)
+        spec_path.write_text("# Spec\n", encoding="utf-8")
+        default_db_path = repo_path / ".foreman.db"
+
+        result = self.run_cli(
+            "init",
+            str(repo_path),
+            "--name",
+            "Sample Project",
+            "--spec",
+            "docs/spec.md",
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(f"Database: {default_db_path}", result.stdout)
+        self.assertTrue(default_db_path.is_file())
+
+        with ForemanStore(default_db_path) as store:
+            store.initialize()
+            project = store.find_project_by_repo_path(str(repo_path))
+
+        self.assertIsNotNone(project)
 
     def test_init_command_preserves_existing_agents_and_updates_existing_project(self) -> None:
         temp_dir = tempfile.TemporaryDirectory()
@@ -446,6 +505,10 @@ class ForemanCLISmokeTests(unittest.TestCase):
         self.assertEqual(projects[0].workflow_id, "development_with_architect")
         self.assertEqual(projects[0].default_branch, "trunk")
         self.assertEqual(projects[0].settings["test_command"], "pytest -q")
+        self.assertEqual(
+            (repo_path / ".gitignore").read_text(encoding="utf-8"),
+            ".foreman/\n.foreman.db\n",
+        )
 
     def test_projects_command_can_read_store_with_db_path(self) -> None:
         store, db_path = self.create_store()
@@ -485,6 +548,69 @@ class ForemanCLISmokeTests(unittest.TestCase):
         self.assertIn(f"Database: {db_path}", result.stdout)
         self.assertIn("project-1 | Foreman Demo | workflow=development | active_sprint=Sprint 1", result.stdout)
         self.assertIn("repo=/tmp/foreman-demo | todo=0 in_progress=1 blocked=0 done=0 cancelled=0", result.stdout)
+
+    def test_projects_command_can_discover_repo_local_db_from_nested_cwd(self) -> None:
+        store, db_path, repo_path = self.create_repo_store()
+        project = Project(
+            id="project-1",
+            name="Foreman Demo",
+            repo_path=str(repo_path),
+            workflow_id="development",
+            created_at="2026-03-30T09:00:00Z",
+            updated_at="2026-03-30T09:00:00Z",
+        )
+        sprint = Sprint(
+            id="sprint-1",
+            project_id=project.id,
+            title="Sprint 1",
+            goal="Bootstrap persistence",
+            status="active",
+            order_index=1,
+            created_at="2026-03-30T09:05:00Z",
+            started_at="2026-03-30T09:10:00Z",
+        )
+        store.save_project(project)
+        store.save_sprint(sprint)
+        nested_cwd = repo_path / "src" / "module"
+        nested_cwd.mkdir(parents=True)
+
+        result = self.run_cli_in(nested_cwd, "projects")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(f"Database: {db_path}", result.stdout)
+        self.assertIn("project-1 | Foreman Demo | workflow=development | active_sprint=Sprint 1", result.stdout)
+
+    def test_projects_command_explicit_db_overrides_repo_local_discovery(self) -> None:
+        discovered_store, discovered_db_path, repo_path = self.create_repo_store()
+        discovered_store.save_project(
+            Project(
+                id="project-discovered",
+                name="Discovered Project",
+                repo_path=str(repo_path),
+                workflow_id="development",
+                created_at="2026-03-30T09:00:00Z",
+                updated_at="2026-03-30T09:00:00Z",
+            )
+        )
+
+        override_store, override_db_path = self.create_store()
+        override_store.save_project(
+            Project(
+                id="project-override",
+                name="Override Project",
+                repo_path="/tmp/override",
+                workflow_id="development_secure",
+                created_at="2026-03-30T09:00:00Z",
+                updated_at="2026-03-30T09:00:00Z",
+            )
+        )
+
+        result = self.run_cli_in(repo_path, "projects", "--db", str(override_db_path))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(f"Database: {override_db_path}", result.stdout)
+        self.assertIn("project-override | Override Project | workflow=development_secure", result.stdout)
+        self.assertNotIn("project-discovered", result.stdout)
 
     def test_status_command_can_read_store_with_db_path(self) -> None:
         store, db_path = self.create_store()
@@ -568,6 +694,17 @@ class ForemanCLISmokeTests(unittest.TestCase):
         self.assertIn("reason=Awaiting human approval", result.stdout)
         self.assertIn("Done (1)", result.stdout)
         self.assertIn("task-done | refactor | Land store summaries", result.stdout)
+
+    def test_board_command_can_discover_repo_local_db_without_flag(self) -> None:
+        store, db_path, repo_path = self.create_repo_store()
+        fixture = self.seed_monitoring_state(store)
+
+        result = self.run_cli_in(repo_path, "board", fixture["project_id"])
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(f"Database: {db_path}", result.stdout)
+        self.assertIn("Board", result.stdout)
+        self.assertIn("Sprint: sprint-1 | Monitoring Sprint", result.stdout)
 
     def test_history_command_shows_runs_and_events_for_one_task(self) -> None:
         store, db_path = self.create_store()
@@ -764,6 +901,52 @@ class ForemanCLISmokeTests(unittest.TestCase):
         self.assertEqual(refreshed.workflow_current_step, "develop")
         self.assertIsNone(refreshed.workflow_carried_output)
         self.assertIsNone(refreshed.blocked_reason)
+
+    def test_approve_command_can_discover_repo_local_db_without_flag(self) -> None:
+        store, db_path, repo_path = self.create_repo_store()
+        project = Project(
+            id="project-1",
+            name="Foreman Demo",
+            repo_path="/tmp/foreman-demo",
+            workflow_id="development_with_architect",
+            default_branch="main",
+            settings={"task_selection_mode": "directed"},
+            created_at="2026-03-30T09:00:00Z",
+            updated_at="2026-03-30T09:00:00Z",
+        )
+        sprint = Sprint(
+            id="sprint-1",
+            project_id=project.id,
+            title="Sprint 1",
+            goal="Resume paused work",
+            status="active",
+            order_index=1,
+            created_at="2026-03-30T09:05:00Z",
+            started_at="2026-03-30T09:10:00Z",
+        )
+        task = Task(
+            id="task-1",
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="Approve the architect plan",
+            status="blocked",
+            task_type="feature",
+            branch_name="feat/task-1-approve-the-architect-plan",
+            blocked_reason="Awaiting human approval",
+            workflow_current_step="human_approval",
+            created_at="2026-03-30T09:15:00Z",
+            started_at="2026-03-30T09:16:00Z",
+        )
+        store.save_project(project)
+        store.save_sprint(sprint)
+        store.save_task(task)
+
+        result = self.run_cli_in(repo_path, "approve", "task-1")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(f"Database: {db_path}", result.stdout)
+        self.assertIn("Approved task", result.stdout)
+        self.assertIn("Persisted step: develop", result.stdout)
 
     def test_deny_command_carries_the_note_into_the_deferred_resume_state(self) -> None:
         store, db_path = self.create_store()

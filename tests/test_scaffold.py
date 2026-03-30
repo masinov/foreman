@@ -38,7 +38,10 @@ class ScaffoldGenerationTests(unittest.TestCase):
         )
         self.assertTrue((repo_path / "docs" / "adr").is_dir())
         self.assertTrue((repo_path / ".foreman").is_dir())
-        self.assertEqual((repo_path / ".gitignore").read_text(encoding="utf-8"), ".foreman/\n")
+        self.assertEqual(
+            (repo_path / ".gitignore").read_text(encoding="utf-8"),
+            ".foreman/\n.foreman.db\n",
+        )
 
         agents_text = (repo_path / "AGENTS.md").read_text(encoding="utf-8")
         self.assertIn("Project: Sample Project", agents_text)
@@ -73,7 +76,7 @@ class ScaffoldGenerationTests(unittest.TestCase):
         self.assertEqual((repo_path / "AGENTS.md").read_text(encoding="utf-8"), "# Custom Instructions\n")
         self.assertEqual(
             (repo_path / ".gitignore").read_text(encoding="utf-8"),
-            "node_modules/\n.foreman/\n",
+            "node_modules/\n.foreman/\n.foreman.db\n",
         )
         self.assertEqual(
             [(artifact.path, artifact.action) for artifact in first.artifacts],

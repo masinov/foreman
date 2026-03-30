@@ -27,15 +27,16 @@ The current suite covers:
 - `tests/test_roles.py` and `tests/test_workflows.py` for shipped declarative
   configuration loading and validation
 - `tests/test_scaffold.py` for generated `AGENTS.md`, idempotent `.gitignore`
-  updates, and repo re-initialization behavior
+  updates, default `.foreman.db` ignore behavior, and repo re-initialization
+  behavior
 - `tests/test_context.py` for `.foreman/context.md` and `.foreman/status.md`
   rendering
 - `tests/test_orchestrator.py` for workflow execution, dependency-aware task
   selection, test failure carry-output, review denial loops, native runner
   execution, human-gate resume, retry persistence, and fresh-process native
   session reuse
-- `tests/test_cli.py` for CLI smoke paths plus monitoring command subprocess
-  behavior
+- `tests/test_cli.py` for CLI smoke paths, repo-local DB discovery, explicit
+  override semantics, and monitoring command subprocess behavior
 - `tests/test_runner_claude.py` for Claude Code command construction, event
   mapping, signal extraction, and failure handling
 - `tests/test_runner_codex.py` for Codex app-server startup, thread start or
