@@ -78,6 +78,7 @@ class ForemanCLISmokeTests(unittest.TestCase):
         self.assertIn("Projects", result.stdout)
         self.assertIn("No projects are tracked yet.", result.stdout)
         self.assertIn("SQLite-backed inspection is available now via `--db PATH`", result.stdout)
+        self.assertIn("Project creation is available via `foreman init --db PATH`", result.stdout)
 
     def test_status_command_reports_empty_bootstrap_state(self) -> None:
         result = self.run_cli("status")
@@ -86,6 +87,116 @@ class ForemanCLISmokeTests(unittest.TestCase):
         self.assertIn("Status", result.stdout)
         self.assertIn("No active projects or sprints.", result.stdout)
         self.assertIn("SQLite-backed inspection is available now via `--db PATH`", result.stdout)
+        self.assertIn("Project creation is available via `foreman init --db PATH`", result.stdout)
+
+    def test_init_command_scaffolds_repo_and_persists_project_with_db_path(self) -> None:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        repo_path = Path(temp_dir.name) / "target-repo"
+        repo_path.mkdir()
+        spec_path = repo_path / "docs" / "spec.md"
+        spec_path.parent.mkdir(parents=True)
+        spec_path.write_text("# Spec\n", encoding="utf-8")
+        db_path = Path(temp_dir.name) / "foreman.db"
+
+        result = self.run_cli(
+            "init",
+            str(repo_path),
+            "--name",
+            "Sample Project",
+            "--spec",
+            "docs/spec.md",
+            "--workflow",
+            "development",
+            "--db",
+            str(db_path),
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Initialized project", result.stdout)
+        self.assertIn(f"Database: {db_path}", result.stdout)
+        self.assertIn("Project ID: sample-project", result.stdout)
+        self.assertIn("AGENTS.md | created", result.stdout)
+        self.assertIn("docs/adr/ | created", result.stdout)
+        self.assertIn(".foreman/ | created", result.stdout)
+        self.assertIn(".gitignore | created", result.stdout)
+        self.assertTrue((repo_path / "AGENTS.md").is_file())
+        self.assertTrue((repo_path / "docs" / "adr").is_dir())
+        self.assertTrue((repo_path / ".foreman").is_dir())
+        self.assertEqual((repo_path / ".gitignore").read_text(encoding="utf-8"), ".foreman/\n")
+        self.assertIn("Project: Sample Project", (repo_path / "AGENTS.md").read_text(encoding="utf-8"))
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project = store.find_project_by_repo_path(str(repo_path))
+
+        self.assertIsNotNone(project)
+        assert project is not None
+        self.assertEqual(project.id, "sample-project")
+        self.assertEqual(project.spec_path, "docs/spec.md")
+        self.assertEqual(project.workflow_id, "development")
+        self.assertEqual(project.default_branch, "main")
+        self.assertEqual(project.settings["context_dir"], ".foreman")
+        self.assertEqual(
+            project.settings["test_command"],
+            "./venv/bin/python -m unittest discover -s tests",
+        )
+
+    def test_init_command_preserves_existing_agents_and_updates_existing_project(self) -> None:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        repo_path = Path(temp_dir.name) / "target-repo"
+        repo_path.mkdir()
+        spec_path = repo_path / "docs" / "spec.md"
+        spec_path.parent.mkdir(parents=True)
+        spec_path.write_text("# Spec\n", encoding="utf-8")
+        (repo_path / "AGENTS.md").write_text("# Custom Instructions\n", encoding="utf-8")
+        db_path = Path(temp_dir.name) / "foreman.db"
+
+        first = self.run_cli(
+            "init",
+            str(repo_path),
+            "--name",
+            "Sample Project",
+            "--spec",
+            "docs/spec.md",
+            "--db",
+            str(db_path),
+        )
+        second = self.run_cli(
+            "init",
+            str(repo_path),
+            "--name",
+            "Sample Project Renamed",
+            "--spec",
+            "docs/spec.md",
+            "--workflow",
+            "development_with_architect",
+            "--default-branch",
+            "trunk",
+            "--test-command",
+            "pytest -q",
+            "--db",
+            str(db_path),
+        )
+
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertIn("Updated project", second.stdout)
+        self.assertIn("AGENTS.md | unchanged", second.stdout)
+        self.assertIn(".gitignore | unchanged", second.stdout)
+        self.assertEqual((repo_path / "AGENTS.md").read_text(encoding="utf-8"), "# Custom Instructions\n")
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            projects = store.list_projects()
+
+        self.assertEqual(len(projects), 1)
+        self.assertEqual(projects[0].id, "sample-project")
+        self.assertEqual(projects[0].name, "Sample Project Renamed")
+        self.assertEqual(projects[0].workflow_id, "development_with_architect")
+        self.assertEqual(projects[0].default_branch, "trunk")
+        self.assertEqual(projects[0].settings["test_command"], "pytest -q")
 
     def test_projects_command_can_read_store_with_db_path(self) -> None:
         store, db_path = self.create_store()

@@ -2,16 +2,16 @@
 
 ## Current sprint
 
-- Sprint: `sprint-03-scaffold`
+- Sprint: `sprint-04-context-projection`
 - Status: active
-- Goal: make `foreman init` create a spec-driven repo scaffold and persist the
-  initialized project cleanly
+- Goal: project runtime context from SQLite into `.foreman/context.md` and
+  `.foreman/status.md` before and after workflow activity
 
 ## Active branches
 
-- `feat/orchestrator-main-loop` — land the first persisted orchestrator loop,
-  workflow built-ins, git execution helpers, and integration coverage for the
-  shipped development workflow
+- `feat/init-scaffold-generator` — land `foreman init`, repo scaffold
+  generation, persisted project initialization, and repo-memory rollover into
+  the context projection sprint
 
 ## Completed this week
 
@@ -48,6 +48,14 @@
   failure carry-output loops, and fallback blocking
 - completed `sprint-02-orchestrator` and rolled repo memory forward to
   `sprint-03-scaffold`
+- implemented `foreman.scaffold` with generated `AGENTS.md` rendering,
+  idempotent `.gitignore` updates, and minimal target-repo scaffold creation
+- added `foreman init --db <path>` so the CLI can create or update persisted
+  projects directly in SQLite
+- added scaffold generation coverage plus store lookup by repo path for
+  re-initialization behavior
+- completed `sprint-03-scaffold` and rolled repo memory forward to
+  `sprint-04-context-projection`
 
 ## Current repo state
 
@@ -59,8 +67,11 @@
   - shipped default role and workflow definitions with loader validation,
   - a persisted orchestrator loop that can execute the shipped development
     workflow through agent and built-in steps,
+  - a working `foreman init` path that scaffolds `AGENTS.md`, `docs/adr/`,
+    `.foreman/`, and `.gitignore` updates in a target repo,
+  - persisted project initialization and update behavior keyed by repo path,
   - smoke tests for the CLI bootstrap slice plus store, loader, and
-    orchestrator coverage,
+    orchestrator, and scaffold coverage,
   - regression coverage for the reviewed Codex supervisor flow,
   - the Codex and Claude supervisor scripts,
   - repo-memory docs that define the next engineering slices.
@@ -70,12 +81,12 @@
 
 ## Ready next
 
-1. implement `foreman init` so it scaffolds `AGENTS.md`, `docs/adr/`,
-   `.foreman/`, and `.gitignore` updates in a target repo
-2. persist initialized projects directly into the SQLite store from the CLI
-3. project `.foreman/context.md` and `.foreman/status.md` from the store before
-   workflow runs
-4. define the first ADR once the scaffold or orchestrator runtime constraints
+1. implement `foreman approve` and `foreman deny` so paused human gates can
+   resume the workflow cleanly
+2. add the first native Claude Code runner backend
+3. add the first native Codex runner backend
+4. define the first ADR once the context projection or human-gate runtime
+   constraints
    stop being hypothetical
 
 ## Open risks
@@ -83,9 +94,12 @@
 - `reviewed_codex.py` and `reviewed_claude.py` are bootstrap supervisors, not
   the Foreman product itself; their behavior should not accidentally become the
   long-term architecture.
-- The package now has a real store, loader, and orchestrator layer, but
-  project initialization, context projection, human-gate resume commands, and
+- The package now has a real store, loader, orchestrator, and project
+  initialization path, but context projection, human-gate resume commands, and
   native runners are still unimplemented.
+- The bootstrap CLI currently requires explicit `--db PATH` selection for
+  project lifecycle commands because engine-instance configuration does not
+  exist yet.
 - editable installs are now validated with
   `./venv/bin/pip install -e . --no-build-isolation`, so fresh environments
   still need the repo venv to include the packaging toolchain declared in
@@ -104,6 +118,10 @@
   any missing transition. The current implementation treats a step that sets
   task status to `done` as successful workflow termination and records that
   nuance here until the spec text is clarified.
+- The spec's CLI examples omit explicit database selection, while the bootstrap
+  CLI currently requires `--db PATH` for `foreman init`, `foreman projects`,
+  and `foreman status` because engine-level DB discovery has not been
+  implemented yet.
 
 ## Open decisions
 
