@@ -1,7 +1,7 @@
 # Current Sprint
 
 - Sprint: `sprint-11-multi-project-dashboard-polish`
-- Status: active
+- Status: complete
 - Goal: polish the dashboard for multi-project navigation, improve activity
   stream filtering, and add human message input capability
 - Primary references:
@@ -12,15 +12,15 @@
 
 ## Included tasks
 
-1. `[todo]` Add human message input to dashboard activity panel
+1. `[done]` Add human message input to dashboard activity panel
    Deliverable: activity panel includes a text input and send button that POSTs
    to a new `/api/tasks/{id}/message` endpoint.
 
-2. `[todo]` Improve activity stream filtering
+2. `[done]` Improve activity stream filtering
    Deliverable: activity filter dropdown allows filtering by event type or by
    task, matching the mockup's activity filter affordance.
 
-3. `[todo]` Add project switcher to dashboard topbar
+3. `[done]` Add project switcher to dashboard topbar
    Deliverable: topbar shows current project with a dropdown to switch between
    projects when multiple exist.
 
