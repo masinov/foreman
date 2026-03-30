@@ -1,7 +1,7 @@
 # Current Sprint
 
 - Sprint: `sprint-12-dashboard-approve-deny-integration`
-- Status: active
+- Status: complete
 - Goal: wire dashboard approve/deny buttons to the orchestrator so human-gate
   decisions actually resume workflow execution
 - Primary references:
