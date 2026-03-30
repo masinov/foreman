@@ -2,15 +2,15 @@
 
 ## Current sprint
 
-- Sprint: `sprint-07-codex-runner`
+- Sprint: `sprint-08-monitoring-cli`
 - Status: active
-- Goal: execute shipped Codex roles through a native Foreman runner with
-  persisted run metadata, session handling, and structured events
+- Goal: expose active project state through CLI board, history, watch, and
+  cost surfaces without opening SQLite manually
 
 ## Active branches
 
-- `feat/claude-runner` — land the first native Claude Code runner, native
-  orchestrator integration, and repo-memory rollover into the Codex runner
+- `feat/codex-runner` — land the native Codex runner, fix immediate native
+  human-gate resume behavior, and roll repo memory into the monitoring CLI
   sprint
 
 ## Completed this week
@@ -84,6 +84,16 @@
   session reuse, and native orchestrator execution
 - completed `sprint-06-claude-runner` and rolled repo memory forward to
   `sprint-07-codex-runner`
+- implemented the native Codex JSON-RPC runner through `codex app-server`
+  with thread start or resume, streamed item mapping, and tool-approval
+  responses
+- taught the orchestrator to execute Codex-backed roles through the native
+  runner path and to resume human-gate approvals immediately when the native
+  backend and repo are available
+- added Codex runner unit coverage plus orchestrator integration coverage for
+  Codex success, review denial session reuse, and native human-gate resume
+- completed `sprint-07-codex-runner` and rolled repo memory forward to
+  `sprint-08-monitoring-cli`
 
 ## Current repo state
 
@@ -103,9 +113,16 @@
     history and deferred-next-step support when no native runner is available,
   - the first native Claude Code runner with stream-json parsing, structured
     event mapping, infrastructure retries, and developer session reuse,
+  - a native Codex runner with JSON-RPC thread start or resume, automatic
+    approval handling, token-usage capture, and persistent thread reuse for
+    Codex-backed roles,
+  - immediate native human-gate resume when the next backend is available and
+    the project repo exists, with deferred persistence retained for missing
+    backends or missing repo paths,
   - persisted project initialization and update behavior keyed by repo path,
   - smoke tests for the CLI bootstrap slice plus store, loader, and
-    orchestrator, scaffold, and context projection coverage,
+    orchestrator, scaffold, context projection, Claude runner, and Codex
+    runner coverage,
   - regression coverage for the reviewed Codex supervisor flow,
   - the Codex and Claude supervisor scripts,
   - repo-memory docs that define the next engineering slices.
@@ -115,11 +132,10 @@
 
 ## Ready next
 
-1. add the first native Codex runner backend
-2. expose project state through the monitoring CLI surfaces
-3. define the first ADR now that runner session handling is an active runtime
-   constraint
-4. build the dashboard implementation aligned to the mockup
+1. expose project state through the monitoring CLI surfaces
+2. define the first ADR now that runner session handling and backend
+   contracts are active runtime constraints
+3. build the dashboard implementation aligned to the mockup
 
 ## Open risks
 
@@ -127,15 +143,18 @@
   the Foreman product itself; their behavior should not accidentally become the
   long-term architecture.
 - The package now has a real store, loader, orchestrator, project
-  initialization path, human-gate resume commands, and a native Claude runner,
-  but the Codex backend is still missing so Foreman does not yet satisfy the
-  full dual-backend product commitment.
+  initialization path, human-gate resume commands, and native Claude and
+  Codex runners, but the monitoring CLI and dashboard surfaces are still
+  missing.
 - The bootstrap CLI currently requires explicit `--db PATH` selection for
   project lifecycle commands because engine-instance configuration does not
   exist yet.
-- The native Claude runner assumes a working `claude` executable in PATH and
-  currently relies on runtime process errors rather than an explicit preflight
-  health check.
+- The native Claude and Codex runners assume working `claude` and `codex`
+  executables in PATH and currently rely on runtime process errors rather than
+  explicit preflight health checks.
+- The Codex app-server protocol exposes token usage but not USD pricing, so
+  Codex runs currently persist `token_count` accurately while `cost_usd`
+  remains `0.0`.
 - editable installs are now validated with
   `./venv/bin/pip install -e . --no-build-isolation`, so fresh environments
   still need the repo venv to include the packaging toolchain declared in
@@ -162,9 +181,10 @@
   SQLite schema has no structured decision records yet. The runtime projection
   currently emits an explicit placeholder until those records exist.
 - The spec describes `foreman approve` and `foreman deny` as immediately
-  resuming workflow execution. The current runtime now does that for
-  Claude-backed steps, but it still persists a deferred next step when the
-  resumed workflow needs a backend that Foreman cannot run yet.
+  resuming workflow execution. The current runtime now does that for both
+  Claude-backed and Codex-backed next steps when a native runner is available
+  and the repo path exists, but it still persists a deferred next step when
+  the resumed workflow cannot execute safely yet.
 
 ## Open decisions
 
@@ -174,3 +194,5 @@
   runners exist
 - whether project `default_model` should be validated against the selected
   agent backend instead of being passed through verbatim at runtime
+- whether the shipped role pack should stay Claude-first or grow a parallel
+  Codex-native default role set now that both backends exist

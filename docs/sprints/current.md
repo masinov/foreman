@@ -1,53 +1,53 @@
 # Current Sprint
 
-- Sprint: `sprint-07-codex-runner`
+- Sprint: `sprint-08-monitoring-cli`
 - Status: active
-- Goal: execute shipped Codex roles through a native Foreman runner with
-  persisted runs, sessions, and structured events
+- Goal: expose active Foreman state through CLI board, history, watch, and
+  cost surfaces without opening SQLite manually
 - Primary references:
   - `docs/specs/engine-design-v3.md`
   - `docs/mockups/foreman-mockup-v6.html`
 
 ## Included tasks
 
-1. `[todo]` Implement the first concrete Codex runner backend
-   Deliverable: `foreman/runner/codex.py` can execute one role prompt, return
-   normalized run results, and preserve session IDs for persistent roles.
+1. `[todo]` Add `foreman board --db <path>` for current sprint task inspection
+   Deliverable: operators can list active sprint tasks grouped by status with
+   task type, branch, assigned role, and blocked reason context.
 
-2. `[todo]` Integrate native Codex runner selection into the orchestrator path
-   Deliverable: Foreman can execute Codex-backed roles without an injected
-   scripted test executor while preserving run, event, and retry semantics.
+2. `[todo]` Add `foreman history --db <path>` and `foreman cost --db <path>`
+   for run and event inspection
+   Deliverable: operators can inspect recent task history plus persisted cost
+   or token summaries from SQLite without manual queries.
 
-3. `[todo]` Add runner coverage for success, session reuse, approval handling,
-   and infrastructure failure behavior
-   Deliverable: tests prove the Codex runner returns normalized results and
-   integrates cleanly with orchestrator execution alongside the existing
-   Claude backend.
+3. `[todo]` Add `foreman watch --db <path>` as a polling activity snapshot
+   Deliverable: the CLI can refresh task counts and recent activity in a
+   mockup-aligned monitoring view suitable for terminal use.
 
 ## Excluded from this sprint
 
-- monitoring CLI surfaces beyond approve and deny
+- ADR authoring beyond noting the now-active runner questions
 - dashboard and web implementation
 - schema migration framework work
 
 ## Acceptance criteria
 
-- the orchestrator can execute a Codex-backed role through a native runner
-  implementation
-- persistent Codex sessions can be reused across eligible workflow steps
-- runner failures are normalized into durable run and event history
+- `foreman board` exposes the active sprint task board directly from SQLite
+- `foreman history` and `foreman cost` expose recent runs, events, and usage
+  summaries without opening the database manually
+- `foreman watch` provides a useful polling view of active project activity
 - docs and validation remain good enough for a fresh autonomous agent to pick
   the next slice without extra human context
 
 ## Known risks
 
-- the Codex runner must not leak backend-specific quirks into the shared
-  orchestrator model
-- session lifecycle and retry behavior need to line up with the spec without
-  diverging from the now-shipped Claude runner semantics
+- the monitoring commands must stay aligned to the mockup hierarchy without
+  prematurely committing to a full web API boundary
+- Codex runs currently lack USD telemetry, so cost surfaces may need to expose
+  token summaries and explicit placeholders rather than inferred pricing
 
 ## Demo checklist
 
-- show one Codex-backed role executing through the native runner
-- show persisted run metadata and structured events from that execution
-- show repo validation passing after the runner slice lands
+- show one project board view from SQLite
+- show one history or cost query returning persisted run data
+- show the polling watch view refreshing without corrupting state
+- show repo validation passing after the monitoring CLI slice lands

@@ -44,18 +44,22 @@ The bootstrap implementation has started. The repository now contains:
 - human-gate `foreman approve --db <path>` and `foreman deny --db <path>`
   commands that persist explicit approval or denial decisions and resume the
   workflow from the paused step instead of restarting from entry,
-- bootstrap human-gate resume deferral for agent-backed next steps when no
-  native runner is configured yet, while still recording the next workflow
-  step and carried output in SQLite,
+- deferred human-gate resume persistence for agent-backed next steps when the
+  required native backend or repo runtime is unavailable, while still
+  recording the next workflow step and carried output in SQLite,
 - shared native runner primitives plus the first Claude Code stream-json
   backend in `foreman/runner/`,
+- a native Codex JSON-RPC backend in `foreman/runner/` with thread resume,
+  structured event mapping, and automatic tool-approval responses,
 - native orchestrator execution for shipped Claude-backed roles, including
   retry normalization, session reuse for persistent developer roles, and
   structured runner event capture,
+- native orchestrator execution for Codex-backed roles, plus immediate
+  human-gate resume when the next native backend and repo are available,
 - git execution helpers and integration coverage for workflow transitions,
 - scaffold, smoke, integration, and round-trip tests for the CLI shell and
   store,
-- repo-memory docs that point the next slice at the native Codex runner.
+- repo-memory docs that point the next slice at the monitoring CLI surfaces.
 
 The immediate goal is to keep turning this scaffold into the real Foreman
 runtime without carrying over assumptions from the previous project.
@@ -89,8 +93,8 @@ Both wrappers expect these files to be current:
 
 The next recommended task is:
 
-- implement the native Codex runner so Foreman supports both first-class agent
-  backends promised in the spec.
+- implement the monitoring CLI so operators can inspect board state, history,
+  costs, and recent activity without opening SQLite manually.
 
 That task is already recorded in `docs/sprints/current.md`, so a fresh agent
 can continue without additional instructions.
@@ -115,7 +119,7 @@ Current code-level validation also includes:
 ```bash
 ./venv/bin/pip install -e . --no-build-isolation --no-deps
 ./venv/bin/python -m unittest discover -s tests -v
-./venv/bin/python -m unittest tests.test_runner_claude tests.test_orchestrator -v
+./venv/bin/python -m unittest tests.test_runner_codex tests.test_runner_claude tests.test_orchestrator -v
 ./venv/bin/foreman --help
 ./venv/bin/foreman projects
 ./venv/bin/foreman status

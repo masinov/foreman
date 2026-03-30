@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 import subprocess
 import tempfile
@@ -235,6 +235,25 @@ class ForemanOrchestratorTests(unittest.TestCase):
         store.save_sprint(sprint)
         store.save_task(task)
         return project, sprint, task
+
+    def roles_with_backend(
+        self,
+        backend: str,
+        *,
+        role_models: dict[str, str] | None = None,
+    ) -> dict[str, object]:
+        role_models = role_models or {}
+        updated_roles = {}
+        for role_id, role in self.roles.items():
+            updated_roles[role_id] = replace(
+                role,
+                agent=replace(
+                    role.agent,
+                    backend=backend,
+                    model=role_models.get(role_id, role.agent.model),
+                ),
+            )
+        return updated_roles
 
     def test_run_project_advances_one_task_through_the_shipped_workflow(self) -> None:
         repo_path, db_path = self.create_workspace()
@@ -661,7 +680,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 ["done", "paused", "deny", "done", "paused"],
             )
 
-    def test_human_gate_resume_can_be_deferred_until_an_agent_executor_is_available(self) -> None:
+    def test_human_gate_resume_defers_when_the_next_backend_is_unavailable(self) -> None:
         repo_path, db_path = self.create_workspace()
         self.initialize_repo(repo_path)
 
@@ -691,10 +710,11 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 started_at="2026-03-30T12:20:00Z",
             )
             store.save_task(blocked_task)
+            unavailable_roles = self.roles_with_backend("missing_backend")
 
             bootstrap_orchestrator = ForemanOrchestrator(
                 store,
-                roles=self.roles,
+                roles=unavailable_roles,
                 workflows=self.workflows,
             )
             resume_result = bootstrap_orchestrator.resume_human_gate(
@@ -729,7 +749,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
 
             runner_orchestrator = ForemanOrchestrator(
                 store,
-                roles=self.roles,
+                roles=unavailable_roles,
                 workflows=self.workflows,
                 agent_executor=ScriptedAgentExecutor(
                     {
@@ -890,6 +910,170 @@ class ForemanOrchestratorTests(unittest.TestCase):
             self.assertEqual(len(runs), 1)
             self.assertEqual(runs[0].status, "failed")
             self.assertEqual(runs[0].outcome, "error")
+
+    def test_native_runner_executes_codex_roles_without_an_injected_executor(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+            project.settings["default_model"] = "gpt-5.4"
+            store.save_project(project)
+            codex_roles = self.roles_with_backend(
+                "codex",
+                role_models={
+                    "architect": "o3",
+                    "code_reviewer": "gpt-5.4",
+                    "developer": "",
+                    "security_reviewer": "gpt-5.4",
+                },
+            )
+            runner = ScriptedNativeRunner(
+                {
+                    1: lambda config: self._native_developer_success(repo_path, config),
+                    2: lambda config: self._native_reviewer_approve(config),
+                }
+            )
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=codex_roles,
+                workflows=self.workflows,
+                agent_runners={"codex": runner},
+            )
+
+            result = orchestrator.run_project(project.id)
+
+            self.assertEqual(result.executed_task_ids, (task.id,))
+            self.assertEqual(result.stop_reason, "idle")
+            updated_task = store.get_task(task.id)
+            self.assertIsNotNone(updated_task)
+            assert updated_task is not None
+            self.assertEqual(updated_task.status, "done")
+            self.assertEqual(runner.capture(1).model, "gpt-5.4")
+            self.assertEqual(
+                runner.capture(2).disallowed_tools,
+                ("Bash", "Write", "Edit", "NotebookEdit"),
+            )
+
+            runs = store.list_runs(task_id=task.id)
+            self.assertEqual(
+                [run.workflow_step for run in runs],
+                ["develop", "review", "test", "merge", "done"],
+            )
+            self.assertEqual(runs[0].agent_backend, "codex")
+            self.assertEqual(runs[1].agent_backend, "codex")
+            self.assertEqual(runs[0].session_id, "dev-session")
+
+    def test_native_runner_reuses_persistent_codex_sessions_after_review_denial(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+            project.settings["default_model"] = "gpt-5.4"
+            store.save_project(project)
+            codex_roles = self.roles_with_backend(
+                "codex",
+                role_models={
+                    "architect": "o3",
+                    "code_reviewer": "gpt-5.4",
+                    "developer": "",
+                    "security_reviewer": "gpt-5.4",
+                },
+            )
+            runner = ScriptedNativeRunner(
+                {
+                    1: lambda config: self._native_developer_initial_pass(repo_path, config),
+                    2: lambda config: self._native_reviewer_deny(config),
+                    3: lambda config: self._native_developer_followup(repo_path, config),
+                    4: lambda config: self._native_reviewer_approve(config),
+                }
+            )
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=codex_roles,
+                workflows=self.workflows,
+                agent_runners={"codex": runner},
+            )
+
+            result = orchestrator.run_project(project.id)
+
+            self.assertEqual(result.stop_reason, "idle")
+            self.assertEqual(runner.capture(1).session_id, None)
+            self.assertEqual(runner.capture(3).session_id, "dev-session")
+            self.assertIn("Please add the ready marker.", runner.capture(3).prompt)
+            updated_task = store.get_task(task.id)
+            self.assertIsNotNone(updated_task)
+            assert updated_task is not None
+            self.assertEqual(updated_task.status, "done")
+
+    def test_native_runner_executes_codex_resume_after_human_gate_approval(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(
+                store,
+                repo_path=repo_path,
+                workflow_id="development_with_architect",
+            )
+            project.settings["default_model"] = "gpt-5.4"
+            store.save_project(project)
+            blocked_task = Task(
+                id=task.id,
+                sprint_id=task.sprint_id,
+                project_id=task.project_id,
+                title=task.title,
+                description=task.description,
+                status="blocked",
+                task_type=task.task_type,
+                priority=task.priority,
+                order_index=task.order_index,
+                branch_name="feat/task-1-implement-orchestrator-loop",
+                acceptance_criteria=task.acceptance_criteria,
+                blocked_reason="Awaiting human approval",
+                workflow_current_step="human_approval",
+                created_at=task.created_at,
+                started_at="2026-03-30T12:20:00Z",
+            )
+            store.save_task(blocked_task)
+            codex_roles = self.roles_with_backend(
+                "codex",
+                role_models={
+                    "architect": "o3",
+                    "code_reviewer": "gpt-5.4",
+                    "developer": "",
+                    "security_reviewer": "gpt-5.4",
+                },
+            )
+            runner = ScriptedNativeRunner(
+                {
+                    1: lambda config: self._native_developer_success(repo_path, config),
+                    2: lambda config: self._native_reviewer_approve(config),
+                }
+            )
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=codex_roles,
+                workflows=self.workflows,
+                agent_runners={"codex": runner},
+            )
+
+            resume_result = orchestrator.resume_human_gate(task.id, outcome="approve")
+
+            self.assertFalse(resume_result.deferred)
+            self.assertEqual(resume_result.next_step, "develop")
+            self.assertEqual(resume_result.task.status, "done")
+            self.assertEqual(runner.capture(1).model, "gpt-5.4")
+            runs = store.list_runs(task_id=task.id)
+            self.assertEqual(
+                [run.workflow_step for run in runs],
+                ["human_approval", "develop", "review", "test", "merge", "done"],
+            )
+            self.assertEqual(runs[1].agent_backend, "codex")
 
     def _native_developer_success(
         self,

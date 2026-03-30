@@ -29,9 +29,12 @@ The first human-gate resume checkpoint is recorded in
 The first native Claude runner checkpoint is recorded in
 `docs/checkpoints/claude-code-runner.md`.
 
+The first native Codex runner checkpoint is recorded in
+`docs/checkpoints/codex-runner.md`.
+
 ## Near-term policy
 
-While the native runner and monitoring milestones are still incomplete:
+While the monitoring and dashboard milestones are still incomplete:
 
 - use tags only for meaningful checkpoints,
 - prefer sprint-completion checkpoints over frequent versioning,
@@ -45,7 +48,8 @@ While the native runner and monitoring milestones are still incomplete:
 - first orchestrator workflow execution
 - first runtime `.foreman` context projection
 - first persisted human-gate resume path
-- first native Claude or Codex runner
+- first native Claude runner
+- first native Codex runner
 - first dashboard implementation milestone
 
 ## Before creating a release tag

@@ -73,7 +73,8 @@ The context projection slice adds:
 The human-gate resume slice adds:
 
 - orchestrator integration coverage for human-gate approval, denial, persisted
-  resume metadata, and bootstrap deferred resume behavior
+  resume metadata, native immediate resume, and deferred resume when runtime
+  prerequisites are missing
 - subprocess CLI coverage proving `foreman approve --db <path>` and
   `foreman deny --db <path>` update paused tasks and persist the next workflow
   step correctly
@@ -87,6 +88,15 @@ The native Claude runner slice adds:
 - orchestrator integration coverage proving the native runner path executes
   shipped Claude-backed roles, reuses developer session IDs, and persists
   retry-driven runner failures into run and event history
+
+The native Codex runner slice adds:
+
+- `tests/test_runner_codex.py` for Codex app-server startup, thread start or
+  resume, approval-response handling, streamed event mapping, and terminal
+  failure detection
+- orchestrator integration coverage proving Codex-backed roles execute through
+  the native runner path, reuse persistent developer sessions, and resume
+  immediately after human approval when the repo and backend are available
 
 ## Expected testing layers once code lands
 
