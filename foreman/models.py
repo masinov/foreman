@@ -46,12 +46,11 @@ RUN_STATUSES: tuple[RunStatus, ...] = (
 
 
 def utc_now_text() -> str:
-    """Return a stable UTC timestamp string for persisted records."""
+    """Return a stable high-resolution UTC timestamp string for persisted records."""
 
     return (
         datetime.now(timezone.utc)
-        .replace(microsecond=0)
-        .isoformat()
+        .isoformat(timespec="microseconds")
         .replace("+00:00", "Z")
     )
 

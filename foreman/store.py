@@ -455,22 +455,32 @@ class ForemanStore:
         *,
         project_id: str | None = None,
         sprint_id: str | None = None,
+        status: str | None = None,
+        statuses: Sequence[str] | None = None,
     ) -> list[Task]:
         """List tasks filtered by project and or sprint."""
 
         filters: list[str] = []
         params: list[Any] = []
+        if status is not None and statuses is not None:
+            raise ValueError("Provide either status or statuses, not both.")
         if project_id is not None:
             filters.append("project_id = ?")
             params.append(project_id)
         if sprint_id is not None:
             filters.append("sprint_id = ?")
             params.append(sprint_id)
+        if status is not None:
+            statuses = (status,)
+        if statuses is not None:
+            placeholders = ", ".join("?" for _ in statuses)
+            filters.append(f"status IN ({placeholders})")
+            params.extend(statuses)
 
         sql = "SELECT * FROM tasks"
         if filters:
             sql = f"{sql} WHERE {' AND '.join(filters)}"
-        sql = f"{sql} ORDER BY order_index ASC, priority ASC, created_at ASC, id ASC"
+        sql = f"{sql} ORDER BY priority ASC, order_index ASC, created_at ASC, id ASC"
 
         rows = self._connection.execute(sql, tuple(params)).fetchall()
         return [_row_to_task(row) for row in rows]
@@ -547,25 +557,49 @@ class ForemanStore:
         *,
         task_id: str | None = None,
         project_id: str | None = None,
+        status: str | None = None,
+        statuses: Sequence[str] | None = None,
     ) -> list[Run]:
         """List runs filtered by task and or project."""
 
         filters: list[str] = []
         params: list[Any] = []
+        if status is not None and statuses is not None:
+            raise ValueError("Provide either status or statuses, not both.")
         if task_id is not None:
             filters.append("task_id = ?")
             params.append(task_id)
         if project_id is not None:
             filters.append("project_id = ?")
             params.append(project_id)
+        if status is not None:
+            statuses = (status,)
+        if statuses is not None:
+            placeholders = ", ".join("?" for _ in statuses)
+            filters.append(f"status IN ({placeholders})")
+            params.extend(statuses)
 
         sql = "SELECT * FROM runs"
         if filters:
             sql = f"{sql} WHERE {' AND '.join(filters)}"
-        sql = f"{sql} ORDER BY created_at ASC, id ASC"
+        sql = f"{sql} ORDER BY created_at ASC, rowid ASC"
 
         rows = self._connection.execute(sql, tuple(params)).fetchall()
         return [_row_to_run(row) for row in rows]
+
+    def get_latest_run(self, task_id: str) -> Run | None:
+        """Return the most recent run for one task, if it exists."""
+
+        row = self._connection.execute(
+            """
+            SELECT * FROM runs
+            WHERE task_id = ?
+            ORDER BY created_at DESC, rowid DESC
+            LIMIT 1
+            """,
+            (task_id,),
+        ).fetchone()
+        return _row_to_run(row) if row else None
 
     def save_event(self, event: Event) -> Event:
         """Insert or update an event record."""
@@ -633,7 +667,7 @@ class ForemanStore:
         sql = "SELECT * FROM events"
         if filters:
             sql = f"{sql} WHERE {' AND '.join(filters)}"
-        sql = f"{sql} ORDER BY timestamp ASC, id ASC"
+        sql = f"{sql} ORDER BY timestamp ASC, rowid ASC"
         if limit is not None:
             sql = f"{sql} LIMIT ?"
             params.append(limit)

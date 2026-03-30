@@ -25,6 +25,10 @@ scaffold changes rather than product releases.
 - TOML-compatible loader modules in `foreman.roles` and `foreman.workflows`
 - loader tests in `tests/test_roles.py` and `tests/test_workflows.py`
 - CLI inspection commands for `foreman roles` and `foreman workflows`
+- the first persisted orchestrator loop in `foreman.orchestrator` plus
+  explicit built-in execution seams in `foreman.builtins` and git helpers in
+  `foreman.git`
+- orchestrator integration coverage in `tests/test_orchestrator.py`
 
 ### Changed
 
@@ -42,3 +46,7 @@ scaffold changes rather than product releases.
   role and workflow loading
 - completed `sprint-01-foundation`, archived it, and advanced project memory to
   the orchestrator sprint
+- expanded the store query helpers with status filters and stable latest-run or
+  event ordering for orchestrator reads
+- completed `sprint-02-orchestrator`, archived it, and advanced project memory
+  to the scaffold sprint

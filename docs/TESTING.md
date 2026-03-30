@@ -43,6 +43,16 @@ The declarative loader slice adds:
 The bootstrap supervisor path now also has regression coverage for reviewed
 Codex continuation behavior in `tests/test_reviewed_codex.py`.
 
+The orchestrator slice adds:
+
+- `tests/test_orchestrator.py` for the shipped development workflow's happy
+  path, reviewer denial carry-output, test-failure carry-output, workflow
+  fallback blocking, and dependency-aware task selection
+- real temporary git repos inside the integration tests so merge behavior and
+  reviewer prompt context are exercised against actual git state
+- store coverage for status-filtered task and run queries plus stable
+  latest-run lookup behavior
+
 ## Expected testing layers once code lands
 
 Unit tests:

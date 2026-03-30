@@ -175,6 +175,28 @@ The third implementation slice has now landed:
 - `foreman roles` and `foreman workflows` expose the shipped definitions
   through the CLI.
 
-The deeper runtime layers are still placeholders. The next implementation slice
-should implement the orchestrator main loop against the store and loaded
-workflow graph.
+The fourth implementation slice has now landed:
+
+- `foreman.orchestrator` can select the next directed task from persisted
+  sprint state and execute the loaded workflow graph step by step,
+- `foreman.builtins` provides explicit seams for test, merge, mark-done, and
+  human-gate pause behavior,
+- `foreman.git` wraps the branch, merge, status, diff, and commit-history calls
+  needed by workflow execution and reviewer prompts,
+- `tests/test_orchestrator.py` drives the shipped development workflow against
+  a real temporary git repo with a scripted executor.
+
+Current runtime constraints worth preserving:
+
+- every workflow step persists a `runs` row, including built-ins, so workflow
+  and engine events always have a durable `run_id`,
+- the orchestrator uses synthetic orchestrator runs for control-path events
+  such as loop limits and crash recovery because the current schema requires
+  `events.run_id` to be non-null,
+- the shipped workflow TOML treats `_builtin:mark_done` as a terminal step with
+  no outgoing edge, so the runtime currently treats `task.status == "done"` as
+  successful workflow termination instead of a fallback block.
+
+The next implementation slice should implement `foreman init` and scaffold
+generation so initialized projects can move from bootstrap docs into SQLite
+plus repo-local runtime files.

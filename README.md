@@ -34,8 +34,12 @@ The bootstrap implementation has started. The repository now contains:
   tasks, runs, and events,
 - shipped declarative `roles/*.toml` and `workflows/*.toml` definitions,
 - TOML loaders plus prompt rendering and workflow transition validation,
+- an orchestrator loop that can move a persisted task through the shipped
+  development workflow with built-in test, merge, and mark-done steps,
+- git execution helpers and integration coverage for workflow transitions,
 - smoke and round-trip tests for the CLI shell and store,
-- repo-memory docs that point the next slice at the orchestrator loop.
+- repo-memory docs that point the next slice at scaffold generation through
+  `foreman init`.
 
 The immediate goal is to keep turning this scaffold into the real Foreman
 runtime without carrying over assumptions from the previous project.
@@ -69,9 +73,9 @@ Both wrappers expect these files to be current:
 
 The next recommended task is:
 
-- implement the orchestrator main loop so one persisted task can move through
-  the standard development workflow using the loaded role and workflow
-  definitions.
+- implement the `foreman init` scaffold generator so Foreman can create a
+  target repo's `AGENTS.md`, `docs/adr/`, `.foreman/`, `.gitignore` updates,
+  and persisted project record from one command.
 
 That task is already recorded in `docs/sprints/current.md`, so a fresh agent
 can continue without additional instructions.
