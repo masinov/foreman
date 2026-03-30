@@ -2,16 +2,13 @@
 
 ## Current sprint
 
-- Sprint: `sprint-05-human-gates`
+- Sprint: `sprint-06-claude-runner`
 - Status: active
-- Goal: resume paused human-gate tasks through `foreman approve` and
-  `foreman deny` with persisted workflow state
+- Goal: implement the native Claude Code runner backend for Foreman
 
 ## Active branches
 
-- `feat/context-projection-runtime` — land store-driven `.foreman` context
-  projection, builtin context writes, and repo-memory rollover into the human
-  gate sprint
+- None — sprint-05-human-gates merged to main
 
 ## Completed this week
 
@@ -64,6 +61,12 @@
   including gitignored runtime files in temporary repo fixtures
 - completed `sprint-04-context-projection` and rolled repo memory forward to
   `sprint-05-human-gates`
+- implemented `foreman approve` and `foreman deny` CLI commands for human-gate
+  approval and denial
+- added `HumanGateResumeResult` dataclass and `resume_human_gate` method to the
+  orchestrator for resuming paused tasks
+- completed `sprint-05-human-gates` and rolled repo memory forward to
+  `sprint-06-claude-runner`
 
 ## Current repo state
 
@@ -103,8 +106,8 @@
 - `reviewed_codex.py` and `reviewed_claude.py` are bootstrap supervisors, not
   the Foreman product itself; their behavior should not accidentally become the
   long-term architecture.
-- The package now has a real store, loader, orchestrator, and project
-  initialization path, but human-gate resume commands and native runners are
+- The package now has a real store, loader, orchestrator, project
+  initialization path, and human-gate resume commands, but native runners are
   still unimplemented.
 - The bootstrap CLI currently requires explicit `--db PATH` selection for
   project lifecycle commands because engine-instance configuration does not

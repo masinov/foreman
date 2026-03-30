@@ -1,53 +1,50 @@
 # Current Sprint
 
-- Sprint: `sprint-05-human-gates`
+- Sprint: `sprint-06-claude-runner`
 - Status: active
-- Goal: resume paused human-gate tasks through `foreman approve` and
-  `foreman deny` with persisted workflow state
+- Goal: implement the native Claude Code runner backend for Foreman
 - Primary references:
   - `docs/specs/engine-design-v3.md`
   - `docs/mockups/foreman-mockup-v6.html`
 
 ## Included tasks
 
-1. `[done]` Add CLI commands for human-gate approval and denial
-   Deliverable: operators can issue `foreman approve <task-id>` and
-   `foreman deny <task-id>` against paused tasks in the SQLite store.
+1. `[todo]` Define the runner interface contract
+   Deliverable: a `Runner` protocol or ABC that specifies session handling,
+   event capture, and retry behavior for agent backends.
 
-2. `[done]` Integrate workflow resume semantics for paused tasks
-   Deliverable: a task paused by `_builtin:human_gate` can resume from its
-   persisted workflow step with the recorded carried output and decision.
+2. `[todo]` Implement Claude Code runner session handling
+   Deliverable: the Claude Code runner can invoke Claude with a prompt and
+   capture session state for persistence.
 
-3. `[done]` Add coverage for pause, approve, deny, and resume behavior
-   Deliverable: tests prove human-gate tasks block, persist resume metadata,
-   and continue through the workflow after an explicit human decision.
+3. `[todo]` Implement event capture and run persistence
+   Deliverable: a persisted run with structured events from one Claude task
+   execution.
 
 ## Excluded from this sprint
 
-- native Claude Code and Codex runner implementations
-- monitoring CLI surfaces beyond approve and deny
+- native Codex runner implementation
+- monitoring CLI surfaces
 - dashboard and web implementation
 - schema migration framework work
 
 ## Acceptance criteria
 
-- `foreman approve` and `foreman deny` operate on paused human-gate tasks
-- paused tasks resume from persisted workflow state instead of restarting from
-  the workflow entry step
-- approval and denial decisions are persisted with workflow and event history
+- Claude Code runner implements the runner interface
+- Runs are persisted with structured events
+- Session state is captured for retry/resume scenarios
 - docs and validation remain good enough for a fresh autonomous agent to pick
   the next slice without extra human context
 
 ## Known risks
 
-- human-gate resume has to interact cleanly with existing loop counts, carried
-  output, and branch state without duplicating prior workflow steps
-- CLI resume commands should not silently mutate tasks that are blocked for
-  non-human-gate reasons
+- Claude Code API surface may differ from spec assumptions
+- session persistence semantics need clarification against actual Claude
+  behavior
+- event schema may need iteration based on real execution patterns
 
 ## Demo checklist
 
-- show a task pause at `_builtin:human_gate`
-- show `foreman approve` or `foreman deny` resuming that task from persisted
-  state
-- show repo validation passing after the human-gate slice lands
+- show a task executing through the Claude runner
+- show a persisted run with captured events in SQLite
+- show repo validation passing after the runner slice lands
