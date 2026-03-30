@@ -24,16 +24,17 @@ those inputs.
 
 ## Current state
 
-The implementation has not started in earnest yet. What exists today is:
+The bootstrap implementation has started. The repository now contains:
 
 - the product spec,
 - the UI mockup,
 - two supervised autonomous entry points in `scripts/`,
-- repo-memory docs that tell the next agent what to build next.
+- a first `foreman/` package scaffold with a runnable CLI shell,
+- smoke tests for the initial CLI wiring,
+- repo-memory docs that point the next slice at the SQLite store baseline.
 
-The immediate goal is to use this scaffold to start implementing the first
-Foreman runtime slices without carrying over the previous project's identity or
-assumptions.
+The immediate goal is to keep turning this scaffold into the real Foreman
+runtime without carrying over assumptions from the previous project.
 
 ## Autonomous entry points
 
@@ -62,14 +63,13 @@ Both wrappers expect these files to be current:
 
 ## Next implementation slice
 
-The repo is primed for the first real engineering sprint. The next recommended
-task is:
+The next recommended task is:
 
-- bootstrap the Python package, `pyproject.toml`, CLI entrypoint, and initial
-  smoke tests for the `foreman` package.
+- implement the SQLite model and store baseline for projects, sprints, tasks,
+  runs, and events.
 
-That task is already recorded in `docs/sprints/current.md` so a fresh agent can
-start without additional instructions.
+That task is already recorded in `docs/sprints/current.md`, so a fresh agent
+can continue without additional instructions.
 
 ## Validation
 
@@ -85,3 +85,13 @@ Current scaffold validation:
 
 As code lands, these checks should expand into real unit, integration, and UI
 validation aligned to the spec.
+
+Current code-level validation also includes:
+
+```bash
+./venv/bin/pip install -e . --no-build-isolation --no-deps
+./venv/bin/python -m unittest discover -s tests -v
+./venv/bin/foreman --help
+./venv/bin/foreman projects
+./venv/bin/foreman status
+```

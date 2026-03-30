@@ -20,6 +20,7 @@ CLIENT_INFO = {
     "version": "0.1.0",
 }
 TASK_COMPLETE_MARKER = "REVIEWED_CODEX_TASK_COMPLETE"
+SPEC_COMPLETE_MARKER = "REVIEWED_CODEX_SPEC_COMPLETE"
 STATUS_PATH = REPO_ROOT / "docs" / "STATUS.md"
 CURRENT_SPRINT_PATH = REPO_ROOT / "docs" / "sprints" / "current.md"
 BACKLOG_PATH = REPO_ROOT / "docs" / "sprints" / "backlog.md"
@@ -68,18 +69,23 @@ Rules:
 - use only ./venv/bin/python and ./venv/bin/pip for Python work
 - work in one coherent slice at a time
 - keep the repository in a reviewable state
+- NEVER merge to main or commit directly to main while working a slice; the supervisor merges after reviewer approval
 - when you receive reviewer feedback, apply it directly and continue autonomously
 - never bypass a denied or approval-gated operation by editing tool-managed internal state directly
 - use sanctioned commands for branch or repository state changes
 - if a command needs approval and is denied or deferred, wait for supervisor feedback rather than trying to satisfy it by editing internal state files yourself
 - keep working across as many turns as needed until the assigned work is actually complete; an intermediate turn ending does not mean the task is done
 - only when the assigned work is fully complete and ready for final review, end your final message with the exact line `{task_complete_marker}`
+- if after reading docs/sprints/backlog.md and docs/STATUS.md there is genuinely no remaining work, end your message with the exact line `{spec_complete_marker}` instead — do not invent work
 
 If docs/sprints/current.md is done, use docs/sprints/backlog.md and docs/STATUS.md
 to select the next valid slice and update repo state as part of the same flow.
 
 Proceed autonomously.
-""".strip().format(task_complete_marker=TASK_COMPLETE_MARKER)
+""".strip().format(
+    task_complete_marker=TASK_COMPLETE_MARKER,
+    spec_complete_marker=SPEC_COMPLETE_MARKER,
+)
 
 DEFAULT_REVIEWER_INSTRUCTIONS = """
 You are the reviewer/project manager for the Foreman repository.
@@ -397,6 +403,10 @@ def approval_requires_reviewer(method: str, params: Dict[str, Any]) -> bool:
 
 def developer_declared_completion(text: str) -> bool:
     return any(line.strip() == TASK_COMPLETE_MARKER for line in text.splitlines())
+
+
+def developer_declared_spec_complete(text: str) -> bool:
+    return any(line.strip() == SPEC_COMPLETE_MARKER for line in text.splitlines())
 
 
 def truncate_text(text: str, limit: int = 240) -> str:
@@ -731,6 +741,16 @@ def run_git(args: List[str]) -> str:
         check=False,
     )
     return (result.stdout or result.stderr).strip()
+
+
+def run_git_command(args: List[str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", *args],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
 
 
 def current_branch() -> str:
@@ -1181,19 +1201,21 @@ class ReviewedCodex:
             completion_claim=truncate_text(self.last_developer_output, 600) if self.last_developer_output else "(empty)",
         )
 
-    def continue_developer_turn(self, reason: str) -> None:
+    def continue_developer_turn(self, reason: str, *, allow_spec_complete: bool = False) -> None:
         assert self.dev_thread_id is not None
-        prompt = (
-            f"{reason}\n\n"
-            "Continue from the current repository state. Do not restart from scratch. "
-            "Keep working until the assigned work is actually complete. "
-            f"Only end your final completion message with the exact line {TASK_COMPLETE_MARKER}."
-        )
+        prompt = f"{reason}\n\nContinue from the current repository state. Do not restart from scratch. Keep working until the assigned work is actually complete. "
+        if allow_spec_complete:
+            prompt += (
+                f"If there is genuinely no remaining work, end your final message with the exact line {SPEC_COMPLETE_MARKER}. "
+                f"Otherwise, only when the next slice is fully complete, end your final message with the exact line {TASK_COMPLETE_MARKER}."
+            )
+        else:
+            prompt += f"Only end your final completion message with the exact line {TASK_COMPLETE_MARKER}."
         terminal_report(
             "SUPERVISOR",
             "developer-continue",
             "Developer turn ended without completion; starting another turn.",
-            payload={"reason": reason},
+            payload={"reason": reason, "allow_spec_complete": allow_spec_complete},
         )
         self.dev_turn_id = self.start_turn(self.dev_thread_id, prompt)
 
@@ -1325,6 +1347,75 @@ class ReviewedCodex:
             terminal_report("SUPERVISOR", "developer-restart", "Developer turn already completed; starting a new turn.", payload={"decision": decision})
             self.dev_turn_id = self.start_turn(self.dev_thread_id, prompt)
 
+    def merge_branch_into_main(self, branch: str) -> str:
+        if not branch or branch == "main":
+            return ""
+
+        result = run_git_command(["switch", "main"])
+        if result.returncode != 0:
+            error = (result.stderr or result.stdout).strip() or "git switch main failed"
+            terminal_report(
+                "SUPERVISOR",
+                "merge-fail",
+                "Could not switch to main for automatic merge.",
+                payload={"branch": branch, "error": truncate_text(error, 240)},
+            )
+            return error
+
+        result = run_git_command(
+            ["merge", "--no-ff", branch, "-m", f"merge: {branch} into main"]
+        )
+        if result.returncode != 0:
+            error = (result.stderr or result.stdout).strip() or "git merge failed"
+            terminal_report(
+                "SUPERVISOR",
+                "merge-fail",
+                "Automatic merge into main failed.",
+                payload={"branch": branch, "error": truncate_text(error, 240)},
+            )
+            return error
+
+        terminal_report(
+            "SUPERVISOR",
+            "merge-ok",
+            f"Merged {branch} into main.",
+        )
+        return ""
+
+    def handle_approved_completion(self) -> None:
+        branch = current_branch()
+
+        if branch == "main":
+            terminal_report(
+                "SUPERVISOR",
+                "main-violation",
+                "Approved work is currently on main; developer must recover branch isolation before continuing.",
+            )
+            self.continue_developer_turn(
+                "VIOLATION: the approved work is currently on `main`. This is forbidden. "
+                "Create or recover a feature branch containing the approved work, restore `main` to the correct state using sanctioned git commands, "
+                "and continue autonomous development only from a feature branch.",
+                allow_spec_complete=True,
+            )
+            return
+
+        merge_error = self.merge_branch_into_main(branch)
+        if merge_error:
+            self.continue_developer_turn(
+                f"Reviewer approved the completed work but the automatic merge of `{branch}` into `main` failed:\n\n"
+                f"{merge_error}\n\n"
+                "Finalize the approved slice by committing any remaining changes if needed, resolve the branch or merge issue, merge the branch into `main`, "
+                "and then continue autonomous development from the updated repository state.",
+                allow_spec_complete=True,
+            )
+            return
+
+        self.continue_developer_turn(
+            f"Reviewer approved the completed work. Branch `{branch}` has been merged into `main`.\n\n"
+            "Continue autonomous development: read `docs/STATUS.md` and `docs/sprints/backlog.md` to select the next valid slice, update repo state as part of the same flow, and proceed autonomously.",
+            allow_spec_complete=True,
+        )
+
     def loop(self) -> None:
         assert self.dev_thread_id is not None
         terminal_report("SUPERVISOR", "loop", "Entering supervisor event loop.")
@@ -1341,6 +1432,14 @@ class ReviewedCodex:
 
             if method == "turn/completed" and thread_id == self.dev_thread_id:
                 self.last_developer_output = "".join(self.current_developer_output).strip()
+                if developer_declared_spec_complete(self.last_developer_output):
+                    terminal_report(
+                        "SUPERVISOR",
+                        "spec-complete",
+                        "Developer declared the full Foreman backlog complete. Stopping supervision.",
+                        payload={"completion_marker": SPEC_COMPLETE_MARKER},
+                    )
+                    return
                 if not developer_declared_completion(self.last_developer_output):
                     self.continue_developer_turn(
                         "The previous developer turn ended without an explicit completion marker."
@@ -1356,8 +1455,13 @@ class ReviewedCodex:
                 if decision != "APPROVE":
                     self.steer_or_restart_developer(decision)
                 else:
-                    terminal_report("SUPERVISOR", "review-approve", "Reviewer approved the completed developer work.")
-                    return
+                    terminal_report(
+                        "SUPERVISOR",
+                        "review-approve",
+                        "Reviewer approved the current slice; finalizing it and continuing autonomous development.",
+                    )
+                    self.handle_approved_completion()
+                    continue
 
             if method in {
                 "item/commandExecution/requestApproval",

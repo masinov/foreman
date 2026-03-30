@@ -12,6 +12,10 @@ scaffold changes rather than product releases.
 - Foreman-specific repo instructions in `AGENTS.md`
 - active sprint and backlog docs for the first Foreman implementation slice
 - repository templates for PR summaries, checkpoints, and sprint archives
+- `pyproject.toml` and the initial `foreman/` package scaffold
+- a runnable CLI shell covering the spec-aligned command surface
+- CLI smoke tests for `foreman --help`, `foreman projects`, and
+  `foreman status`
 
 ### Changed
 
@@ -21,3 +25,7 @@ scaffold changes rather than product releases.
   `docs/mockups/foreman-mockup-v6.html`
 - reset the roadmap, architecture baseline, and status docs to the actual
   Foreman project
+- expanded repo validation to require the package scaffold and CLI smoke test
+- enhanced `scripts/reviewed_codex.py` so approved slices no longer stop the
+  run immediately; the supervisor now supports explicit full-spec completion,
+  post-approval merge finalization, and continuation to the next slice

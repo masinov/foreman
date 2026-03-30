@@ -14,7 +14,7 @@
    Deliverable: Foreman-specific docs, aligned wrapper scripts, working repo
    validation, and a concrete sprint and backlog state.
 
-2. `[todo]` Bootstrap the Python package and CLI shell
+2. `[done]` Bootstrap the Python package and CLI shell
    Deliverable: `pyproject.toml`, `foreman/` package, CLI entrypoint, and smoke
    tests for `foreman --help`, `foreman projects`, and `foreman status`.
 

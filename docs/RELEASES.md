@@ -5,6 +5,9 @@
 Foreman is pre-release. The repository is still being bootstrapped from spec
 and mockup into an executable product.
 
+The first runnable CLI checkpoint is recorded in
+`docs/checkpoints/first-runnable-foreman-cli.md`.
+
 ## Near-term policy
 
 Until the first runnable CLI and store slice exists:

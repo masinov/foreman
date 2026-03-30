@@ -26,7 +26,7 @@ Deliverables:
 
 Status:
 
-- in progress on `chore/foreman-autonomy-bootstrap`
+- completed on `chore/foreman-autonomy-bootstrap`
 
 ## Milestone 1: Core package and CLI shell
 
@@ -40,6 +40,10 @@ Target deliverables:
 - `foreman init`, `foreman projects`, and `foreman status` command stubs
 - smoke tests for command wiring
 
+Status:
+
+- completed on `feat/cli-package-bootstrap`
+
 ## Milestone 2: Structured store and models
 
 Goal: land the SQLite data model described in the spec.
@@ -50,6 +54,10 @@ Target deliverables:
 - SQLite CRUD layer
 - migration or bootstrap DDL
 - tests for round-trips and query helpers
+
+Status:
+
+- next active slice
 
 ## Milestone 3: Roles, workflows, and scaffold generation
 
@@ -99,8 +107,8 @@ Target deliverables:
 
 ## Near-term priorities
 
-1. land the core Python package and CLI shell
-2. implement the SQLite store and query layer
-3. add TOML-based role and workflow loading
-4. implement project initialization and repo scaffold generation
+1. implement the SQLite store and query layer
+2. add TOML-based role and workflow loading
+3. implement project initialization and repo scaffold generation
+4. replace bootstrap CLI placeholders with store-backed inspection output
 5. define the first ADRs only when runtime decisions stop being hypothetical
