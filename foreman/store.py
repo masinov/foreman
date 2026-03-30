@@ -301,6 +301,15 @@ class ForemanStore:
         ).fetchone()
         return _row_to_project(row) if row else None
 
+    def find_project_by_repo_path(self, repo_path: str) -> Project | None:
+        """Return one project by repository path, if it exists."""
+
+        row = self._connection.execute(
+            "SELECT * FROM projects WHERE repo_path = ? ORDER BY created_at ASC, id ASC LIMIT 1",
+            (repo_path,),
+        ).fetchone()
+        return _row_to_project(row) if row else None
+
     def list_projects(self) -> list[Project]:
         """List persisted projects in stable order."""
 

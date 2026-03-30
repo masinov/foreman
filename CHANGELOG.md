@@ -29,6 +29,11 @@ scaffold changes rather than product releases.
   explicit built-in execution seams in `foreman.builtins` and git helpers in
   `foreman.git`
 - orchestrator integration coverage in `tests/test_orchestrator.py`
+- scaffold generation helpers in `foreman.scaffold` plus the generated
+  `templates/agents_md.md.j2` instruction template
+- `foreman init --db <path>` for repo scaffold generation and persisted project
+  initialization
+- scaffold coverage in `tests/test_scaffold.py`
 
 ### Changed
 
@@ -50,3 +55,7 @@ scaffold changes rather than product releases.
   event ordering for orchestrator reads
 - completed `sprint-02-orchestrator`, archived it, and advanced project memory
   to the scaffold sprint
+- added repo-path project lookup so re-initializing a repo updates the existing
+  project record
+- completed `sprint-03-scaffold`, archived it, and advanced project memory to
+  the context projection sprint

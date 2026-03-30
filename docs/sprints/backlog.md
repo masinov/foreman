@@ -2,11 +2,11 @@
 
 ## Next up after the current sprint
 
-### `todo` Context projection
+### `todo` Human gate commands
 
-- Write `.foreman/context.md` and `.foreman/status.md` before runs.
-- Visible deliverable: task and sprint state is projected from SQLite into the
-  gitignored runtime context path.
+- Implement `foreman approve` and `foreman deny` with persisted pause or resume
+  behavior.
+- Visible deliverable: a paused workflow can resume from a human decision.
 
 ### `todo` Native Claude Code runner
 
@@ -21,12 +21,6 @@
   behavior for Codex.
 - Visible deliverable: a persisted run with structured events from one Codex
   task execution.
-
-### `todo` Human gate commands
-
-- Implement `foreman approve` and `foreman deny` with persisted pause or resume
-  behavior.
-- Visible deliverable: a paused workflow can resume from a human decision.
 
 ### `todo` Monitoring CLI
 
@@ -43,6 +37,7 @@
 
 ## Parking lot
 
+- first ADR once context projection or human-gate semantics harden
 - security review workflow variant
 - optional PR summary and checkpoint automation
 - event-retention pruning

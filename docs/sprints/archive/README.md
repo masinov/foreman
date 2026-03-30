@@ -6,6 +6,7 @@ Recommended filename pattern:
 
 - `sprint-01-foundation.md`
 - `sprint-02-orchestrator.md`
+- `sprint-03-scaffold.md`
 
 Each archived sprint file should preserve:
 

@@ -73,9 +73,9 @@ Target deliverables:
 
 Status:
 
-- partially completed on `feat/role-workflow-loaders`
-- role and workflow loading plus prompt rendering landed
-- scaffold generation and `.gitignore` update helpers remain
+- completed on `feat/init-scaffold-generator`
+- role and workflow loading, prompt rendering, scaffold generation, and
+  `.gitignore` update helpers are now in place
 
 ## Milestone 4: Orchestrator and built-ins
 
@@ -120,7 +120,7 @@ Target deliverables:
 
 ## Near-term priorities
 
-1. implement project initialization and repo scaffold generation
-2. project runtime context into `.foreman/` before orchestrator runs
-3. implement human-gate approve and deny commands against paused tasks
-4. add the first native Claude Code or Codex runner backend
+1. project runtime context into `.foreman/` before and after orchestrator runs
+2. implement human-gate approve and deny commands against paused tasks
+3. add the first native Claude Code or Codex runner backend
+4. expose project state through the monitoring CLI surfaces

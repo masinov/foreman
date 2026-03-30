@@ -123,6 +123,10 @@ class ForemanStoreTests(unittest.TestCase):
             reopened.initialize()
 
             self.assertEqual(reopened.get_project(project.id), project)
+            self.assertEqual(
+                reopened.find_project_by_repo_path(project.repo_path),
+                project,
+            )
             self.assertEqual(reopened.list_projects(), [project])
             self.assertEqual(reopened.get_sprint(sprint.id), sprint)
             self.assertEqual(reopened.list_sprints(project.id), [sprint])
