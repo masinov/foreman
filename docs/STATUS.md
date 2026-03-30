@@ -3,7 +3,7 @@
 ## Current sprint
 
 - Sprint: `sprint-08-monitoring-cli`
-- Status: active
+- Status: complete
 - Goal: expose project state through CLI inspection commands
 
 ## Active branches
@@ -86,6 +86,9 @@
 - integrated CodexRunner into orchestrator default agent_runners
 - added 10 Codex runner tests covering command building and event parsing
 - completed `sprint-07-codex-runner`
+- implemented `foreman board`, `foreman watch`, `foreman history`, and `foreman cost`
+- operators can now inspect project state without opening the database
+- completed `sprint-08-monitoring-cli`
 
 ## Current repo state
 
@@ -117,10 +120,9 @@
 
 ## Ready next
 
-1. expose project state through the monitoring CLI surfaces
-2. define the first ADR now that runner session handling is an active runtime
+1. define the first ADR now that runner session handling is an active runtime
    constraint
-3. build the dashboard implementation aligned to the mockup
+2. build the dashboard implementation aligned to the mockup
 
 ## Open risks
 
