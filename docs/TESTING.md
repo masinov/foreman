@@ -61,6 +61,15 @@ The scaffold slice adds:
   repo, persist a new project, and update that same project on re-run
 - store coverage for repo-path lookup used by project re-initialization
 
+The context projection slice adds:
+
+- `tests/test_context.py` for store-driven `.foreman/context.md` and
+  `.foreman/status.md` rendering plus configurable runtime context directories
+- orchestrator integration coverage proving runtime context is written before
+  agent steps, after task completion, and through `_builtin:context_write`
+- temporary repo fixtures now include `.foreman/` in `.gitignore` so runtime
+  context stays untracked during git-backed workflow tests
+
 ## Expected testing layers once code lands
 
 Unit tests:

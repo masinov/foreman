@@ -2,16 +2,16 @@
 
 ## Current sprint
 
-- Sprint: `sprint-04-context-projection`
+- Sprint: `sprint-05-human-gates`
 - Status: active
-- Goal: project runtime context from SQLite into `.foreman/context.md` and
-  `.foreman/status.md` before and after workflow activity
+- Goal: resume paused human-gate tasks through `foreman approve` and
+  `foreman deny` with persisted workflow state
 
 ## Active branches
 
-- `feat/init-scaffold-generator` — land `foreman init`, repo scaffold
-  generation, persisted project initialization, and repo-memory rollover into
-  the context projection sprint
+- `feat/context-projection-runtime` — land store-driven `.foreman` context
+  projection, builtin context writes, and repo-memory rollover into the human
+  gate sprint
 
 ## Completed this week
 
@@ -56,6 +56,14 @@
   re-initialization behavior
 - completed `sprint-03-scaffold` and rolled repo memory forward to
   `sprint-04-context-projection`
+- implemented `foreman.context` so runtime `.foreman/context.md` and
+  `.foreman/status.md` are rendered from persisted SQLite state
+- added `_builtin:context_write` plus orchestrator-triggered runtime context
+  refresh before agent steps and after task completion
+- added context projection unit and orchestrator integration coverage,
+  including gitignored runtime files in temporary repo fixtures
+- completed `sprint-04-context-projection` and rolled repo memory forward to
+  `sprint-05-human-gates`
 
 ## Current repo state
 
@@ -69,9 +77,11 @@
     workflow through agent and built-in steps,
   - a working `foreman init` path that scaffolds `AGENTS.md`, `docs/adr/`,
     `.foreman/`, and `.gitignore` updates in a target repo,
+  - runtime `.foreman/context.md` and `.foreman/status.md` projection from
+    SQLite before agent execution and after task completion,
   - persisted project initialization and update behavior keyed by repo path,
   - smoke tests for the CLI bootstrap slice plus store, loader, and
-    orchestrator, and scaffold coverage,
+    orchestrator, scaffold, and context projection coverage,
   - regression coverage for the reviewed Codex supervisor flow,
   - the Codex and Claude supervisor scripts,
   - repo-memory docs that define the next engineering slices.
@@ -81,11 +91,10 @@
 
 ## Ready next
 
-1. implement `foreman approve` and `foreman deny` so paused human gates can
-   resume the workflow cleanly
-2. add the first native Claude Code runner backend
-3. add the first native Codex runner backend
-4. define the first ADR once the context projection or human-gate runtime
+1. add the first native Claude Code runner backend
+2. add the first native Codex runner backend
+3. expose project state through the monitoring CLI surfaces
+4. define the first ADR once the human-gate runtime or native runner
    constraints
    stop being hypothetical
 
@@ -95,8 +104,8 @@
   the Foreman product itself; their behavior should not accidentally become the
   long-term architecture.
 - The package now has a real store, loader, orchestrator, and project
-  initialization path, but context projection, human-gate resume commands, and
-  native runners are still unimplemented.
+  initialization path, but human-gate resume commands and native runners are
+  still unimplemented.
 - The bootstrap CLI currently requires explicit `--db PATH` selection for
   project lifecycle commands because engine-instance configuration does not
   exist yet.
@@ -122,6 +131,9 @@
   CLI currently requires `--db PATH` for `foreman init`, `foreman projects`,
   and `foreman status` because engine-level DB discovery has not been
   implemented yet.
+- The spec expects `.foreman/status.md` to list open decisions, but the current
+  SQLite schema has no structured decision records yet. The runtime projection
+  currently emits an explicit placeholder until those records exist.
 
 ## Open decisions
 

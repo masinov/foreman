@@ -10,9 +10,10 @@ from typing import Any, Protocol
 from uuid import uuid4
 
 from .builtins import BuiltinEventRecord, BuiltinExecutor
+from .context import ProjectContextProjection, build_project_context, relative_project_path
 from .errors import ForemanError
 from .git import GitError, changed_files, checkout_branch, recent_commits, status_text
-from .models import Event, Project, Run, Sprint, Task, utc_now_text
+from .models import Event, Project, Run, Task, utc_now_text
 from .roles import RoleDefinition, default_roles_dir, load_roles
 from .store import ForemanStore
 from .workflows import WorkflowDefinition, default_workflows_dir, load_workflows
@@ -238,6 +239,18 @@ class ForemanOrchestrator:
         refreshed = self.store.get_task(current_task.id)
         if refreshed is None:
             raise OrchestratorError(f"Task {current_task.id!r} disappeared during execution.")
+        latest_run = self.store.get_latest_run(refreshed.id)
+        if latest_run is not None:
+            self._write_runtime_context(
+                latest_run,
+                project,
+                context_projection=build_project_context(
+                    self.store,
+                    project,
+                    current_task=refreshed,
+                    carried_output=refreshed.workflow_carried_output,
+                ),
+            )
         return refreshed
 
     def run_workflow_from_step(
@@ -349,6 +362,7 @@ class ForemanOrchestrator:
                     task=current_task,
                     step_id=current_step,
                     carried_output=carried_output,
+                    store=self.store,
                 )
                 self.store.save_task(current_task)
                 self._complete_run(
@@ -383,6 +397,7 @@ class ForemanOrchestrator:
                     task=current_task,
                     step_id=current_step,
                     carried_output=carried_output,
+                    store=self.store,
                 )
                 self.store.save_task(current_task)
                 self._complete_run(
@@ -400,7 +415,19 @@ class ForemanOrchestrator:
                     raise OrchestratorError(f"Unknown role {step_def.role!r}.")
                 current_task.assigned_role = role.id
                 self.store.save_task(current_task)
-                prompt = self._build_prompt(role, project, current_task, carried_output)
+                context_projection = build_project_context(
+                    self.store,
+                    project,
+                    current_task=current_task,
+                    carried_output=carried_output,
+                )
+                prompt = self._build_prompt(
+                    role,
+                    project,
+                    current_task,
+                    carried_output,
+                    context_projection=context_projection,
+                )
                 model = role.agent.model or _string_setting(
                     project,
                     "default_model",
@@ -414,6 +441,11 @@ class ForemanOrchestrator:
                     model=model or None,
                     branch_name=current_task.branch_name,
                     prompt_text=prompt,
+                )
+                self._write_runtime_context(
+                    run,
+                    project,
+                    context_projection=context_projection,
                 )
                 self._emit_event(
                     run,
@@ -567,18 +599,25 @@ class ForemanOrchestrator:
         project: Project,
         task: Task,
         carried_output: str | None,
+        *,
+        context_projection: ProjectContextProjection | None = None,
     ) -> str:
-        sprint = self.store.get_sprint(task.sprint_id)
-        task_rows = self.store.list_tasks(sprint_id=task.sprint_id)
         latest_run = self.store.get_latest_run(task.id)
+        if context_projection is None:
+            context_projection = build_project_context(
+                self.store,
+                project,
+                current_task=task,
+                carried_output=carried_output,
+            )
         context = {
             "task_title": task.title,
             "task_description": task.description or "",
             "task_type": task.task_type,
             "acceptance_criteria": task.acceptance_criteria or "",
             "branch_name": task.branch_name or "",
-            "sprint_context": self._format_sprint_context(sprint, task_rows, task.id),
-            "project_status": self._format_project_status(project),
+            "sprint_context": context_projection.context_markdown,
+            "project_status": context_projection.status_markdown,
             "repo_instructions": self._load_repo_instructions(project.repo_path),
             "spec_path": project.spec_path or "",
             "previous_feedback": carried_output or "",
@@ -592,50 +631,6 @@ class ForemanOrchestrator:
             "recent_commits": self._safe_recent_commits(project.repo_path, task.branch_name),
         }
         return role.render_prompt(context)
-
-    def _format_sprint_context(
-        self,
-        sprint: Sprint | None,
-        tasks: list[Task],
-        current_task_id: str,
-    ) -> str:
-        if sprint is None:
-            return "No active sprint."
-        lines = [
-            f"Sprint: {sprint.title}",
-            f"Status: {sprint.status}",
-        ]
-        if sprint.goal:
-            lines.append(f"Goal: {sprint.goal}")
-        lines.append("Tasks:")
-        for task in tasks:
-            marker = "*" if task.id == current_task_id else "-"
-            lines.append(
-                f"{marker} [{task.status}] {task.title} ({task.id})"
-            )
-        return "\n".join(lines)
-
-    def _format_project_status(self, project: Project) -> str:
-        lines = [
-            f"Project: {project.name}",
-            f"Workflow: {project.workflow_id}",
-            f"Default branch: {project.default_branch}",
-        ]
-        task_counts = self.store.task_counts(project.id)
-        lines.append(
-            "Task counts: "
-            f"todo={task_counts['todo']} "
-            f"in_progress={task_counts['in_progress']} "
-            f"blocked={task_counts['blocked']} "
-            f"done={task_counts['done']} "
-            f"cancelled={task_counts['cancelled']}"
-        )
-        sprints = self.store.list_sprints(project.id)
-        if sprints:
-            lines.append("Sprints:")
-            for sprint in sprints:
-                lines.append(f"- [{sprint.status}] {sprint.title} ({sprint.id})")
-        return "\n".join(lines)
 
     def _load_repo_instructions(self, repo_path: str) -> str:
         agents_path = Path(repo_path) / "AGENTS.md"
@@ -669,6 +664,21 @@ class ForemanOrchestrator:
             return recent_commits(repo_path, branch_name=branch_name)
         except GitError:
             return ""
+
+    def _write_runtime_context(
+        self,
+        run: Run,
+        project: Project,
+        *,
+        context_projection: ProjectContextProjection,
+    ) -> None:
+        context_projection.write()
+        for path in context_projection.written_paths:
+            self._emit_event(
+                run,
+                "engine.context_write",
+                {"path": relative_project_path(project, path)},
+            )
 
     def _execute_agent_step(
         self,

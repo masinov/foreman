@@ -198,6 +198,19 @@ The fifth implementation slice has now landed:
   generation, `.gitignore` behavior, and preservation of user-owned
   `AGENTS.md`.
 
+The sixth implementation slice has now landed:
+
+- `foreman.context` renders runtime `.foreman/context.md` and
+  `.foreman/status.md` from persisted project, sprint, and task records,
+- `foreman.orchestrator` now writes runtime context before agent execution and
+  after task completion while reusing the same rendered content for prompt
+  context injection,
+- `foreman.builtins` now supports `_builtin:context_write` so custom workflows
+  can force an explicit context refresh,
+- `tests/test_context.py` and expanded orchestrator integration coverage verify
+  runtime projection, builtin context writes, and gitignored temp-repo
+  behavior.
+
 Current runtime constraints worth preserving:
 
 - every workflow step persists a `runs` row, including built-ins, so workflow
@@ -211,8 +224,10 @@ Current runtime constraints worth preserving:
 - `foreman init` never overwrites a repo's existing `AGENTS.md`; the generated
   instructions are a one-time scaffold that the user owns afterward,
 - the bootstrap CLI currently requires explicit `--db PATH` selection for
-  project lifecycle commands until engine-level database discovery exists.
+  project lifecycle commands until engine-level database discovery exists,
+- `.foreman/status.md` currently emits an explicit open-decisions placeholder
+  because the SQLite schema does not yet persist those records.
 
-The next implementation slice should project `.foreman/context.md` and
-`.foreman/status.md` from SQLite before and after workflow activity so agents
-receive fresh runtime context from the engine instead of bootstrap docs.
+The next implementation slice should implement `foreman approve` and
+`foreman deny` so tasks paused at `_builtin:human_gate` can resume from the
+persisted workflow step and carried output instead of restarting from entry.

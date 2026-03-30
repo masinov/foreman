@@ -34,6 +34,9 @@ scaffold changes rather than product releases.
 - `foreman init --db <path>` for repo scaffold generation and persisted project
   initialization
 - scaffold coverage in `tests/test_scaffold.py`
+- runtime context projection in `foreman.context` for `.foreman/context.md` and
+  `.foreman/status.md`
+- context projection coverage in `tests/test_context.py`
 
 ### Changed
 
@@ -59,3 +62,7 @@ scaffold changes rather than product releases.
   project record
 - completed `sprint-03-scaffold`, archived it, and advanced project memory to
   the context projection sprint
+- wired orchestrator agent steps and `_builtin:context_write` to share the same
+  runtime context projection path
+- completed `sprint-04-context-projection`, archived it, and advanced project
+  memory to the human-gate sprint

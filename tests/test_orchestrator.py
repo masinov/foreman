@@ -15,7 +15,14 @@ from foreman.orchestrator import (
 )
 from foreman.roles import default_roles_dir, load_roles
 from foreman.store import ForemanStore
-from foreman.workflows import default_workflows_dir, load_workflows
+from foreman.workflows import (
+    WorkflowDefinition,
+    WorkflowFallback,
+    WorkflowStep,
+    WorkflowTransition,
+    default_workflows_dir,
+    load_workflows,
+)
 
 
 @dataclass(slots=True)
@@ -125,6 +132,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
         self.git(repo_path, "config", "user.email", "foreman-tests@example.com")
         self.git(repo_path, "config", "user.name", "Foreman Tests")
         self.write_text(repo_path / "AGENTS.md", "# Local Instructions\nUse tests.\n")
+        self.write_text(repo_path / ".gitignore", ".foreman/\n")
         self.write_text(repo_path / "README.md", "# Temp Repo\n")
         self.commit_all(repo_path, "chore: initial commit")
 
@@ -548,6 +556,172 @@ class ForemanOrchestratorTests(unittest.TestCase):
             self.assertIsNotNone(selected)
             assert selected is not None
             self.assertEqual(selected.id, ready_task.id)
+
+    def test_run_project_writes_runtime_context_before_agent_runs_and_after_task_completion(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, sprint, task = self.seed_project(store, repo_path=repo_path)
+
+            def developer_handler(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
+                del carried_output
+                context_path = repo_path / ".foreman" / "context.md"
+                status_path = repo_path / ".foreman" / "status.md"
+                self.assertTrue(context_path.is_file())
+                self.assertTrue(status_path.is_file())
+                self.assertIn("Sprint: Orchestrator", context_path.read_text(encoding="utf-8"))
+                self.assertIn(
+                    "* [in_progress] Implement orchestrator loop (task-1)",
+                    context_path.read_text(encoding="utf-8"),
+                )
+                self.assertIn("## Current Sprint Detail", status_path.read_text(encoding="utf-8"))
+                self.assertIn("Title: Orchestrator", status_path.read_text(encoding="utf-8"))
+                self.assertIn("# Sprint Context", prompt)
+                self.write_text(repo_path / "feature.txt", "implemented\n")
+                self.write_text(repo_path / "ready.txt", "ready\n")
+                self.commit_all(repo_path, "feat: implement workflow slice")
+                return AgentExecutionResult(
+                    outcome="done",
+                    detail="Implemented the workflow slice.",
+                )
+
+            def reviewer_handler(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
+                del task
+                self.assertIsNone(carried_output)
+                self.assertIn("Implemented the workflow slice.", prompt)
+                return AgentExecutionResult(
+                    outcome="approve",
+                    detail="Approved after review.",
+                )
+
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=self.roles,
+                workflows=self.workflows,
+                agent_executor=ScriptedAgentExecutor(
+                    {
+                        ("developer", 1): developer_handler,
+                        ("code_reviewer", 1): reviewer_handler,
+                    }
+                ),
+            )
+
+            result = orchestrator.run_project(project.id)
+
+            self.assertEqual(result.stop_reason, "idle")
+            context_text = (repo_path / ".foreman" / "context.md").read_text(encoding="utf-8")
+            status_text = (repo_path / ".foreman" / "status.md").read_text(encoding="utf-8")
+            self.assertIn("* [done] Implement orchestrator loop (task-1)", context_text)
+            self.assertIn("Status: done", context_text)
+            self.assertIn(
+                "Task counts: todo=0 in_progress=0 blocked=0 done=1 cancelled=0",
+                status_text,
+            )
+
+            context_events = [
+                event
+                for event in store.list_events(task_id=task.id)
+                if event.event_type == "engine.context_write"
+            ]
+            self.assertGreaterEqual(len(context_events), 4)
+            self.assertIn(
+                {"path": ".foreman/context.md"},
+                [event.payload for event in context_events],
+            )
+            self.assertIn(
+                {"path": ".foreman/status.md"},
+                [event.payload for event in context_events],
+            )
+
+    def test_builtin_context_write_reuses_runtime_projection(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, sprint, task = self.seed_project(store, repo_path=repo_path)
+            workflow = WorkflowDefinition(
+                id="development_with_context_write",
+                name="Development With Context Write",
+                methodology="development",
+                steps=(
+                    WorkflowStep(id="develop", role="developer"),
+                    WorkflowStep(id="sync_context", role="_builtin:context_write"),
+                    WorkflowStep(id="done", role="_builtin:mark_done"),
+                ),
+                transitions=(
+                    WorkflowTransition(
+                        from_step="develop",
+                        trigger="completion:done",
+                        to_step="sync_context",
+                    ),
+                    WorkflowTransition(
+                        from_step="sync_context",
+                        trigger="completion:success",
+                        to_step="done",
+                    ),
+                ),
+                gates=(),
+                fallback=WorkflowFallback(
+                    action="block",
+                    message="Unhandled workflow outcome.",
+                ),
+                source_path=Path("tests"),
+            )
+
+            def developer_handler(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
+                del task
+                del carried_output
+                self.assertIn("# Sprint Context", prompt)
+                self.write_text(repo_path / "feature.txt", "implemented\n")
+                self.commit_all(repo_path, "feat: implement context-write workflow")
+                return AgentExecutionResult(
+                    outcome="done",
+                    detail="Implemented the workflow slice.",
+                )
+
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=self.roles,
+                workflows={workflow.id: workflow},
+                agent_executor=ScriptedAgentExecutor(
+                    {
+                        ("developer", 1): developer_handler,
+                    }
+                ),
+            )
+
+            project.workflow_id = workflow.id
+            store.save_project(project)
+            result = orchestrator.run_project(project.id)
+
+            self.assertEqual(result.executed_task_ids, (task.id,))
+            self.assertTrue((repo_path / ".foreman" / "context.md").is_file())
+            self.assertTrue((repo_path / ".foreman" / "status.md").is_file())
+
+            runs = store.list_runs(task_id=task.id)
+            self.assertEqual(
+                [run.workflow_step for run in runs],
+                ["develop", "sync_context", "done"],
+            )
+            context_events = [
+                event
+                for event in store.list_events(task_id=task.id)
+                if event.event_type == "engine.context_write"
+            ]
+            sync_context_run = next(run for run in runs if run.workflow_step == "sync_context")
+            sync_context_payloads = [
+                event.payload for event in context_events if event.run_id == sync_context_run.id
+            ]
+            self.assertEqual(
+                sync_context_payloads,
+                [
+                    {"path": ".foreman/context.md"},
+                    {"path": ".foreman/status.md"},
+                ],
+            )
 
 
 if __name__ == "__main__":
