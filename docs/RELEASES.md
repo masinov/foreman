@@ -8,9 +8,12 @@ and mockup into an executable product.
 The first runnable CLI checkpoint is recorded in
 `docs/checkpoints/first-runnable-foreman-cli.md`.
 
+The first persisted SQLite store checkpoint is recorded in
+`docs/checkpoints/sqlite-store-baseline.md`.
+
 ## Near-term policy
 
-Until the first runnable CLI and store slice exists:
+Until the first orchestrator slice exists:
 
 - use tags only for meaningful checkpoints,
 - prefer sprint-completion checkpoints over frequent versioning,

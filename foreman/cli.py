@@ -6,15 +6,18 @@ import argparse
 from typing import Callable, Sequence
 
 from . import __version__
+from .store import ForemanStore
 
 CLI_DESCRIPTION = (
     "Foreman is an autonomous development engine for spec-driven software delivery."
 )
-CLI_SHELL_NOTE = (
-    "This command is part of the initial CLI shell; SQLite-backed runtime state "
-    "lands in the next sprint slice."
+CLI_SHELL_NOTE = "This command surface is still incomplete while Foreman is under active development."
+STORE_OPTION_NOTE = (
+    "SQLite-backed inspection is available now via `--db PATH` for `projects` and `status`."
 )
-STORE_SLICE_NOTE = "Next slice: implement the SQLite model and store baseline."
+STORE_FOLLOWUP_NOTE = (
+    "Project creation and richer workflow commands land in later slices."
+)
 
 Handler = Callable[[argparse.Namespace], int]
 
@@ -22,6 +25,24 @@ Handler = Callable[[argparse.Namespace], int]
 def _print_lines(*lines: str) -> None:
     for line in lines:
         print(line)
+
+
+def _add_db_option(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--db",
+        help="Path to the SQLite store to inspect.",
+    )
+
+
+def _format_task_counts(counts: dict[str, int]) -> str:
+    return (
+        "Tasks: "
+        f"todo={counts['todo']} "
+        f"in_progress={counts['in_progress']} "
+        f"blocked={counts['blocked']} "
+        f"done={counts['done']} "
+        f"cancelled={counts['cancelled']}"
+    )
 
 
 def handle_init(args: argparse.Namespace) -> int:
@@ -33,32 +54,87 @@ def handle_init(args: argparse.Namespace) -> int:
         f"Project name: {args.name}",
         f"Spec path: {args.spec}",
         f"Workflow: {args.workflow}",
-        "Planned follow-up: repo scaffold generation after the store and loader foundations land.",
+        "Planned follow-up: repo scaffold generation after the loader foundations land.",
     )
     return 0
 
 
-def handle_projects(_: argparse.Namespace) -> int:
-    """Handle ``foreman projects`` for the bootstrap shell."""
+def handle_projects(args: argparse.Namespace) -> int:
+    """Handle ``foreman projects``."""
 
-    _print_lines(
-        "Projects",
-        "No projects are tracked yet.",
-        CLI_SHELL_NOTE,
-        STORE_SLICE_NOTE,
-    )
+    if not args.db:
+        _print_lines(
+            "Projects",
+            "No projects are tracked yet.",
+            CLI_SHELL_NOTE,
+            STORE_OPTION_NOTE,
+            STORE_FOLLOWUP_NOTE,
+        )
+        return 0
+
+    with ForemanStore(args.db) as store:
+        store.initialize()
+        projects = store.list_projects()
+
+        lines = ["Projects", f"Database: {store.db_path}"]
+        if not projects:
+            lines.extend(
+                [
+                    "No projects are tracked yet.",
+                    "Use `foreman init` once scaffold generation lands, or seed the store through the Python API in the meantime.",
+                ]
+            )
+        else:
+            for project in projects:
+                active_sprint = store.get_active_sprint(project.id)
+                task_counts = store.task_counts(project.id)
+                active_sprint_label = active_sprint.title if active_sprint else "none"
+                lines.append(
+                    f"{project.id} | {project.name} | workflow={project.workflow_id} | active_sprint={active_sprint_label}"
+                )
+                lines.append(
+                    f"repo={project.repo_path} | "
+                    f"todo={task_counts['todo']} "
+                    f"in_progress={task_counts['in_progress']} "
+                    f"blocked={task_counts['blocked']} "
+                    f"done={task_counts['done']} "
+                    f"cancelled={task_counts['cancelled']}"
+                )
+
+    _print_lines(*lines)
     return 0
 
 
-def handle_status(_: argparse.Namespace) -> int:
-    """Handle ``foreman status`` for the bootstrap shell."""
+def handle_status(args: argparse.Namespace) -> int:
+    """Handle ``foreman status``."""
 
-    _print_lines(
-        "Status",
-        "No active projects or sprints.",
-        CLI_SHELL_NOTE,
-        STORE_SLICE_NOTE,
+    if not args.db:
+        _print_lines(
+            "Status",
+            "No active projects or sprints.",
+            CLI_SHELL_NOTE,
+            STORE_OPTION_NOTE,
+            STORE_FOLLOWUP_NOTE,
+        )
+        return 0
+
+    with ForemanStore(args.db) as store:
+        store.initialize()
+        project_count = store.count_projects()
+        active_sprint_count = store.count_active_sprints()
+        task_counts = store.task_counts()
+
+    lines = ["Status", f"Database: {store.db_path}"]
+    if active_sprint_count == 0:
+        lines.append("No active projects or sprints.")
+    lines.extend(
+        [
+            f"Projects: {project_count}",
+            f"Active sprints: {active_sprint_count}",
+            _format_task_counts(task_counts),
+        ]
     )
+    _print_lines(*lines)
     return 0
 
 
@@ -109,6 +185,7 @@ def build_parser() -> argparse.ArgumentParser:
         "projects",
         help="List tracked projects.",
     )
+    _add_db_option(projects_parser)
     _set_handler(projects_parser, handle_projects, "projects")
 
     project_parser = subparsers.add_parser(
@@ -193,6 +270,7 @@ def build_parser() -> argparse.ArgumentParser:
         "status",
         help="Show a cross-project status overview.",
     )
+    _add_db_option(status_parser)
     _set_handler(status_parser, handle_status, "status")
 
     board_parser = subparsers.add_parser("board", help="Show a terminal task board.")

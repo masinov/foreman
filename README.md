@@ -30,8 +30,10 @@ The bootstrap implementation has started. The repository now contains:
 - the UI mockup,
 - two supervised autonomous entry points in `scripts/`,
 - a first `foreman/` package scaffold with a runnable CLI shell,
-- smoke tests for the initial CLI wiring,
-- repo-memory docs that point the next slice at the SQLite store baseline.
+- a SQLite-backed store baseline with typed models for projects, sprints,
+  tasks, runs, and events,
+- smoke and round-trip tests for the CLI shell and store,
+- repo-memory docs that point the next slice at roles and workflow loading.
 
 The immediate goal is to keep turning this scaffold into the real Foreman
 runtime without carrying over assumptions from the previous project.
@@ -65,8 +67,8 @@ Both wrappers expect these files to be current:
 
 The next recommended task is:
 
-- implement the SQLite model and store baseline for projects, sprints, tasks,
-  runs, and events.
+- load declarative roles and workflows from TOML, including transition
+  validation and prompt rendering support.
 
 That task is already recorded in `docs/sprints/current.md`, so a fresh agent
 can continue without additional instructions.
@@ -94,4 +96,6 @@ Current code-level validation also includes:
 ./venv/bin/foreman --help
 ./venv/bin/foreman projects
 ./venv/bin/foreman status
+./venv/bin/foreman projects --db /tmp/foreman.db
+./venv/bin/foreman status --db /tmp/foreman.db
 ```

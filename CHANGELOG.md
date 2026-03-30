@@ -16,6 +16,11 @@ scaffold changes rather than product releases.
 - a runnable CLI shell covering the spec-aligned command surface
 - CLI smoke tests for `foreman --help`, `foreman projects`, and
   `foreman status`
+- typed SQLite models and a spec-shaped `foreman.store` persistence layer for
+  projects, sprints, tasks, runs, and events
+- store round-trip tests in `tests/test_store.py`
+- store-backed `foreman projects --db <path>` and `foreman status --db <path>`
+  inspection paths
 
 ### Changed
 
@@ -29,3 +34,5 @@ scaffold changes rather than product releases.
 - enhanced `scripts/reviewed_codex.py` so approved slices no longer stop the
   run immediately; the supervisor now supports explicit full-spec completion,
   post-approval merge finalization, and continuation to the next slice
+- shifted the active project-memory slice from the SQLite store baseline to
+  role and workflow loading

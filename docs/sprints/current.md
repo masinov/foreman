@@ -18,7 +18,7 @@
    Deliverable: `pyproject.toml`, `foreman/` package, CLI entrypoint, and smoke
    tests for `foreman --help`, `foreman projects`, and `foreman status`.
 
-3. `[todo]` Implement the SQLite model and store baseline
+3. `[done]` Implement the SQLite model and store baseline
    Deliverable: typed project, sprint, task, run, and event models, DDL
    bootstrap, and round-trip tests for core persistence.
 
@@ -51,4 +51,5 @@
 
 - show the repo validation passing
 - show the CLI entrypoint responding
-- show a test proving the SQLite bootstrap path works
+- show `foreman projects --db <path>` or `foreman status --db <path>` reading
+  seeded SQLite state

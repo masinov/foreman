@@ -154,6 +154,16 @@ The first implementation slice has landed:
 - `foreman.cli` exposes the initial command shell,
 - smoke tests cover `python -m foreman --help`, `projects`, and `status`.
 
+The second implementation slice has now landed:
+
+- `foreman.models` defines typed entities for projects, sprints, tasks, runs,
+  and events,
+- `foreman.store` bootstraps the SQLite schema and persists or queries the core
+  entities,
+- `foreman projects --db <path>` and `foreman status --db <path>` can inspect
+  persisted state,
+- round-trip tests cover the store baseline.
+
 The deeper runtime layers are still placeholders. The next implementation slice
-should fill in the SQLite-backed models and store before more orchestration
-behavior lands.
+should load declarative roles and workflows before more orchestration behavior
+lands.
