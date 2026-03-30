@@ -130,15 +130,56 @@ Target deliverables:
 
 Status:
 
-- in progress on `feat/monitoring-cli`
+- completed across `feat/monitoring-cli`, `feat/dashboard-shell`,
+  `chore/sprint-11-multi-project-polish`, and
+  `feat/dashboard-approve-deny-integration`
 - the terminal monitoring CLI now exposes board, history, cost, and bounded
   watch snapshots directly from SQLite
-- project, sprint, and task detail APIs plus the dashboard implementation are
-  still pending
+- the dashboard now exposes project overview, sprint board, task detail,
+  direct SQLite-backed JSON APIs, human message input, activity filtering,
+  project switching, and approve or deny workflow resume actions
+- live transport is still pending; the dashboard currently uses polling
+  snapshots rather than a dedicated stream
+
+## Milestone 7: Runner contract ADR baseline
+
+Goal: accept the first explicit runtime contract for native runner sessions,
+approval boundaries, and backend telemetry.
+
+Target deliverables:
+
+- accepted ADR for session scope and persistence
+- accepted ADR for workflow-versus-runner approval handling
+- accepted ADR for backend telemetry and unsupported-backend behavior
+
+Status:
+
+- completed on `docs/runner-session-backend-adr`
+- `docs/adr/ADR-0001-runner-session-backend-contract.md` is now the active
+  runner contract baseline
+- cross-invocation persistent-session reload remains documented follow-up work
+
+## Milestone 8: Session continuity
+
+Goal: close the documented session-reuse gap from ADR-0001.
+
+Target deliverables:
+
+- reload last compatible native session from SQLite on fresh orchestrator
+  invocations
+- preserve role-level session policy across Claude Code and Codex
+- add regression coverage for cross-invocation reuse and human-gate resume
+
+Status:
+
+- current sprint is `sprint-13-persistent-session-reload`
+- no implementation has landed yet; the gap is documented and actively queued
 
 ## Near-term priorities
 
-1. capture the first ADR for runner session handling and backend contracts
-2. build the first dashboard slice aligned to the mockup
-3. decide how the future dashboard activity feed should relate to the current
+1. reload persisted same-role native sessions from SQLite on fresh
+   orchestrator invocations
+2. decide how the future dashboard activity feed should relate to the current
    polling-based `foreman watch` semantics
+3. add the security review workflow variant after the session continuity work
+   is in place
