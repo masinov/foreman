@@ -147,6 +147,13 @@ Today the repo contains only:
 - bootstrap wrappers,
 - repo-memory docs.
 
-There is no `foreman/` package yet, no `pyproject.toml`, and no test suite for
-runtime code. The first implementation slice should create those foundations
-before deeper architecture work lands.
+The first implementation slice has landed:
+
+- `pyproject.toml` exists,
+- the `foreman/` package scaffold exists,
+- `foreman.cli` exposes the initial command shell,
+- smoke tests cover `python -m foreman --help`, `projects`, and `status`.
+
+The deeper runtime layers are still placeholders. The next implementation slice
+should fill in the SQLite-backed models and store before more orchestration
+behavior lands.

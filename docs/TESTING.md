@@ -16,6 +16,17 @@ scaffold checks:
 - `./venv/bin/python -m py_compile scripts/repo_validation.py`
 - `./venv/bin/python -m py_compile scripts/validate_repo_memory.py`
 
+The first package slice also adds CLI smoke coverage:
+
+- `./venv/bin/pip install -e . --no-build-isolation --no-deps`
+- `./venv/bin/python -m unittest discover -s tests -v`
+- `./venv/bin/foreman --help`
+- `./venv/bin/foreman projects`
+- `./venv/bin/foreman status`
+
+The bootstrap supervisor path now also has regression coverage for reviewed
+Codex continuation behavior in `tests/test_reviewed_codex.py`.
+
 ## Expected testing layers once code lands
 
 Unit tests:

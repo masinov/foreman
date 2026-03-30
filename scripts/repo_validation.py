@@ -13,6 +13,7 @@ REQUIRED_FILES = (
     Path("README.md"),
     Path("CLAUDE.md"),
     Path("CHANGELOG.md"),
+    Path("pyproject.toml"),
     Path("docs/STATUS.md"),
     Path("docs/ROADMAP.md"),
     Path("docs/ARCHITECTURE.md"),
@@ -27,6 +28,10 @@ REQUIRED_FILES = (
     Path("docs/prs/TEMPLATE.md"),
     Path("docs/specs/engine-design-v3.md"),
     Path("docs/mockups/foreman-mockup-v6.html"),
+    Path("foreman/__init__.py"),
+    Path("foreman/__main__.py"),
+    Path("foreman/cli.py"),
+    Path("tests/test_cli.py"),
     Path("scripts/reviewed_codex.py"),
     Path("scripts/reviewed_claude.py"),
     Path("scripts/repo_validation.py"),
@@ -41,7 +46,10 @@ REQUIRED_DIRECTORIES = (
     Path("docs/mockups"),
     Path("docs/sprints"),
     Path("docs/sprints/archive"),
+    Path("foreman"),
+    Path("foreman/runner"),
     Path("scripts"),
+    Path("tests"),
 )
 
 REQUIRED_GITIGNORE_ENTRIES = (
