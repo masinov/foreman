@@ -827,6 +827,5 @@ class ForemanCLISmokeTests(unittest.TestCase):
         self.assertEqual(refreshed.workflow_current_step, "plan")
         self.assertEqual(refreshed.workflow_carried_output, "rethink the approach")
 
-
 if __name__ == "__main__":
     unittest.main()
