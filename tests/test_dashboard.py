@@ -1305,3 +1305,195 @@ class DashboardSprintTaskBacklogTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertTrue(data["has_more"])
+
+
+class DashboardTaskEditingTests(unittest.TestCase):
+    """Tests for sprint-32: task title/type/criteria editing and sprint goal editing."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.temp_dir = tempfile.TemporaryDirectory()
+        cls.db_path = Path(cls.temp_dir.name) / "foreman.db"
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.temp_dir.cleanup()
+
+    _counter = 0
+
+    def _next_id(self, prefix):
+        DashboardTaskEditingTests._counter += 1
+        return f"{prefix}-{DashboardTaskEditingTests._counter}"
+
+    def _request(self, method, url, **kwargs):
+        async def send():
+            app = create_dashboard_app(str(self.db_path))
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(
+                transport=transport,
+                base_url="http://testserver",
+            ) as client:
+                return await client.request(method, url, **kwargs)
+        return asyncio.run(send())
+
+    def _seed(self):
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        project = Project(
+            id=self._next_id("proj-ed"),
+            name="Edit Project",
+            repo_path="/tmp/ed",
+            workflow_id="development",
+        )
+        store.save_project(project)
+        sprint = Sprint(
+            id=self._next_id("sprint-ed"),
+            project_id=project.id,
+            title="Edit Sprint",
+            status="active",
+            goal="Original goal",
+        )
+        store.save_sprint(sprint)
+        task = Task(
+            id=self._next_id("task-ed"),
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="Original title",
+            status="todo",
+            task_type="feature",
+            acceptance_criteria="Original criteria",
+        )
+        store.save_task(task)
+        store.close()
+        return project, sprint, task
+
+    # ── Task field editing ────────────────────────────────────────────────────
+
+    def test_patch_task_title(self):
+        """PATCH /api/tasks/{id} updates title."""
+        _, _, task = self._seed()
+        response = self._request(
+            "PATCH",
+            f"/api/tasks/{task.id}",
+            json={"title": "Renamed title"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["title"], "Renamed title")
+
+    def test_patch_task_title_empty_rejected(self):
+        """PATCH /api/tasks/{id} with empty title returns 400."""
+        _, _, task = self._seed()
+        response = self._request(
+            "PATCH",
+            f"/api/tasks/{task.id}",
+            json={"title": "   "},
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_patch_task_type(self):
+        """PATCH /api/tasks/{id} updates task_type."""
+        _, _, task = self._seed()
+        response = self._request(
+            "PATCH",
+            f"/api/tasks/{task.id}",
+            json={"task_type": "fix"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["task_type"], "fix")
+
+    def test_patch_task_type_invalid_rejected(self):
+        """PATCH /api/tasks/{id} with invalid task_type returns 400."""
+        _, _, task = self._seed()
+        response = self._request(
+            "PATCH",
+            f"/api/tasks/{task.id}",
+            json={"task_type": "invalid_type"},
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_patch_task_acceptance_criteria(self):
+        """PATCH /api/tasks/{id} updates acceptance_criteria."""
+        _, _, task = self._seed()
+        response = self._request(
+            "PATCH",
+            f"/api/tasks/{task.id}",
+            json={"acceptance_criteria": "New criteria text."},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["acceptance_criteria"], "New criteria text.")
+
+    def test_patch_task_acceptance_criteria_clear(self):
+        """PATCH /api/tasks/{id} with null acceptance_criteria clears the field."""
+        _, _, task = self._seed()
+        response = self._request(
+            "PATCH",
+            f"/api/tasks/{task.id}",
+            json={"acceptance_criteria": None},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.json()["acceptance_criteria"])
+
+    def test_patch_task_multiple_fields(self):
+        """PATCH /api/tasks/{id} with title+type+criteria updates all three."""
+        _, _, task = self._seed()
+        response = self._request(
+            "PATCH",
+            f"/api/tasks/{task.id}",
+            json={
+                "title": "Multi-edit title",
+                "task_type": "refactor",
+                "acceptance_criteria": "Multi-edit criteria",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["title"], "Multi-edit title")
+        self.assertEqual(data["task_type"], "refactor")
+        self.assertEqual(data["acceptance_criteria"], "Multi-edit criteria")
+
+    # ── Sprint goal editing ───────────────────────────────────────────────────
+
+    def test_patch_sprint_goal(self):
+        """PATCH /api/sprints/{id} with goal updates the sprint goal."""
+        _, sprint, _ = self._seed()
+        response = self._request(
+            "PATCH",
+            f"/api/sprints/{sprint.id}",
+            json={"goal": "New sprint goal"},
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["goal"], "New sprint goal")
+        self.assertEqual(data["id"], sprint.id)
+
+    def test_patch_sprint_goal_clear(self):
+        """PATCH /api/sprints/{id} with empty goal clears it."""
+        _, sprint, _ = self._seed()
+        response = self._request(
+            "PATCH",
+            f"/api/sprints/{sprint.id}",
+            json={"goal": ""},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.json()["goal"])
+
+    def test_patch_sprint_status_still_works(self):
+        """PATCH /api/sprints/{id} with status key still transitions the sprint."""
+        _, sprint, _ = self._seed()
+        response = self._request(
+            "PATCH",
+            f"/api/sprints/{sprint.id}",
+            json={"status": "completed"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "completed")
+
+    def test_patch_sprint_unknown_field_rejected(self):
+        """PATCH /api/sprints/{id} with unknown field (not status/title/goal) returns 400."""
+        _, sprint, _ = self._seed()
+        response = self._request(
+            "PATCH",
+            f"/api/sprints/{sprint.id}",
+            json={"foo": "bar"},
+        )
+        self.assertEqual(response.status_code, 400)

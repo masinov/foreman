@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useRef, useState } from "react";
+import { startTransition, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import {
   EmptyPanel,
@@ -66,11 +66,15 @@ export default function App({ services, browser }) {
   const [newTaskOpen, setNewTaskOpen] = useState(false);
   const [hasMoreEvents, setHasMoreEvents] = useState(false);
   const [isLoadingMoreEvents, setIsLoadingMoreEvents] = useState(false);
+  const [editingGoal, setEditingGoal] = useState(false);
+  const [goalDraft, setGoalDraft] = useState("");
 
   const refreshTimerRef = useRef(null);
   const routeRef = useRef(route);
   const selectedTaskIdRef = useRef(selectedTaskId);
   const lastStreamEventIdRef = useRef(null);
+  const activityListRef = useRef(null);
+  const atActivityBottomRef = useRef(true);
 
   useEffect(() => {
     routeRef.current = route;
@@ -470,6 +474,38 @@ export default function App({ services, browser }) {
     }
   }
 
+  async function handleSaveTask(taskId, updates) {
+    setErrorMessage("");
+    try {
+      await services.updateTask(taskId, updates);
+      await refreshTaskDetail(taskId);
+      await refreshSprintScope(routeRef.current.sprintId);
+    } catch (error) {
+      setErrorMessage(error.message);
+    }
+  }
+
+  async function handleUpdateSprintGoal(sprintId, goal) {
+    setErrorMessage("");
+    try {
+      await services.updateSprint(sprintId, { goal });
+      setEditingGoal(false);
+      const sprintPayload = await services.getSprint(sprintId);
+      setCurrentSprint(sprintPayload);
+    } catch (error) {
+      setErrorMessage(error.message);
+    }
+  }
+
+  // Auto-scroll activity panel to bottom when new events arrive (if already at bottom)
+  useLayoutEffect(() => {
+    const el = activityListRef.current;
+    if (!el) return;
+    if (atActivityBottomRef.current) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [events]);
+
   const taskIndex = new Map(tasks.map((task) => [task.id, task]));
   const topbarProject = currentProject
     ? {
@@ -528,7 +564,43 @@ export default function App({ services, browser }) {
                     {currentSprint.title}
                     <span className={`sprint-status-badge ss-${currentSprint.status}`}>{currentSprint.status}</span>
                   </div>
-                  <div className="sprint-goal-text">{currentSprint.goal || "No sprint goal recorded."}</div>
+                  {editingGoal ? (
+                    <div className="sprint-goal-edit">
+                      <input
+                        className="sprint-goal-input"
+                        value={goalDraft}
+                        onChange={(e) => setGoalDraft(e.target.value)}
+                        aria-label="Sprint goal"
+                        autoFocus
+                      />
+                      <button
+                        className="btn-save-goal"
+                        type="button"
+                        onClick={() => handleUpdateSprintGoal(currentSprint.id, goalDraft)}
+                      >
+                        Save
+                      </button>
+                      <button
+                        className="btn-cancel-goal"
+                        type="button"
+                        onClick={() => setEditingGoal(false)}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="sprint-goal-text">
+                      {currentSprint.goal || "No sprint goal recorded."}
+                      <button
+                        className="goal-edit-btn"
+                        type="button"
+                        aria-label="Edit sprint goal"
+                        onClick={() => { setGoalDraft(currentSprint.goal || ""); setEditingGoal(true); }}
+                      >
+                        ✎
+                      </button>
+                    </div>
+                  )}
                 </div>
                 <div className="sprint-header-right">
                   <div className="progress-bar" style={{ width: "80px" }} aria-hidden="true">
@@ -648,7 +720,16 @@ export default function App({ services, browser }) {
                       {isLoadingMoreEvents ? "Loading…" : "Load older events"}
                     </button>
                   ) : null}
-                  <EventList events={events} filterKey={activityFilter} taskIndex={taskIndex} />
+                  <EventList
+                    events={events}
+                    filterKey={activityFilter}
+                    taskIndex={taskIndex}
+                    containerRef={activityListRef}
+                    onScroll={(e) => {
+                      const el = e.currentTarget;
+                      atActivityBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 32;
+                    }}
+                  />
                   <div className={`activity-input ${selectedTaskId ? "" : "disabled"}`}>
                     <label className="visually-hidden" htmlFor="human-message">
                       Human guidance
@@ -679,6 +760,7 @@ export default function App({ services, browser }) {
                   onDenyNoteChange={setDenyNote}
                   onDeny={handleDenyTask}
                   onCancel={handleCancelTask}
+                  onSave={handleSaveTask}
                 />
               </div>
             </div>

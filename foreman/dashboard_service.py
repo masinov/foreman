@@ -482,12 +482,29 @@ class DashboardService:
     def update_task_fields(self, task_id: str, *, updates: dict[str, Any]) -> dict[str, Any]:
         """Apply allowed field updates to one task and return its detail payload."""
 
+        from .models import TASK_TYPES
+
         task = self._require_task(task_id)
-        allowed_fields = {"description", "priority"}
+        allowed_fields = {"title", "task_type", "acceptance_criteria", "description", "priority"}
         unknown = set(updates) - allowed_fields
         if unknown:
             raise DashboardValidationError(f"Unknown task fields: {sorted(unknown)}")
 
+        if "title" in updates:
+            value = str(updates["title"]).strip()
+            if not value:
+                raise DashboardValidationError("Task title cannot be empty.")
+            task.title = value
+        if "task_type" in updates:
+            value = str(updates["task_type"])
+            if value not in TASK_TYPES:
+                raise DashboardValidationError(
+                    f"Unsupported task type: {value}. Expected one of: {', '.join(TASK_TYPES)}."
+                )
+            task.task_type = value  # type: ignore[assignment]
+        if "acceptance_criteria" in updates:
+            value = updates["acceptance_criteria"]
+            task.acceptance_criteria = str(value).strip() if value else None
         if "description" in updates:
             value = updates["description"]
             task.description = str(value).strip() if value is not None else None
@@ -499,6 +516,37 @@ class DashboardService:
 
         self.store.save_task(task)
         return self.get_task(task_id)
+
+    def update_sprint_fields(self, sprint_id: str, *, updates: dict[str, Any]) -> dict[str, Any]:
+        """Apply non-lifecycle field updates to one sprint (title, goal)."""
+
+        sprint = self.store.get_sprint(sprint_id)
+        if sprint is None:
+            raise DashboardNotFoundError(f"Sprint not found: {sprint_id}")
+
+        allowed_fields = {"title", "goal"}
+        unknown = set(updates) - allowed_fields
+        if unknown:
+            raise DashboardValidationError(f"Unknown sprint fields: {sorted(unknown)}")
+        if not updates:
+            raise DashboardValidationError("No fields provided for update.")
+
+        if "title" in updates:
+            value = str(updates["title"]).strip()
+            if not value:
+                raise DashboardValidationError("Sprint title cannot be empty.")
+            sprint.title = value
+        if "goal" in updates:
+            value = updates["goal"]
+            sprint.goal = str(value).strip() if value else None
+
+        self.store.save_sprint(sprint)
+        return {
+            "id": sprint.id,
+            "title": sprint.title,
+            "goal": sprint.goal,
+            "status": sprint.status,
+        }
 
     def stop_agent(self, project_id: str) -> dict[str, Any]:
         """Block all in-progress tasks in the active sprint to signal a stop request."""
