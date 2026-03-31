@@ -291,9 +291,28 @@ def create_dashboard_app(
             },
         )
 
+    @app.patch("/api/sprints/{sprint_id}")
+    async def transition_sprint(sprint_id: str, request: Request) -> dict[str, Any]:
+        data = await _read_json_body(request)
+        target_status = data.get("status")
+        if not target_status:
+            raise DashboardValidationError("'status' field is required.")
+        return with_api(
+            lambda api: api.transition_sprint(sprint_id, target_status=str(target_status))
+        )
+
+    @app.post("/api/projects/{project_id}/agent/stop")
+    async def stop_agent(project_id: str) -> dict[str, Any]:
+        return with_api(lambda api: api.stop_agent(project_id))
+
     @app.get("/api/tasks/{task_id}")
     async def get_task(task_id: str) -> dict[str, Any]:
         return with_api(lambda api: api.get_task(task_id))
+
+    @app.patch("/api/tasks/{task_id}")
+    async def update_task(task_id: str, request: Request) -> dict[str, Any]:
+        data = await _read_json_body(request)
+        return with_api(lambda api: api.update_task_fields(task_id, updates=data))
 
     @app.post("/api/tasks/{task_id}/approve")
     async def approve_task(task_id: str) -> dict[str, Any]:

@@ -7,9 +7,16 @@ import unicodedata
 from datetime import datetime, timezone
 from typing import Any, Callable
 
-from .models import Event, Sprint, Task
+from .models import Event, Sprint, SprintStatus, Task
 from .orchestrator import ForemanOrchestrator, OrchestratorError
 from .store import ForemanStore
+
+_VALID_SPRINT_TRANSITIONS: dict[str, tuple[SprintStatus, ...]] = {
+    "planned": ("active", "cancelled"),
+    "active": ("completed", "cancelled"),
+    "completed": (),
+    "cancelled": (),
+}
 
 
 ACTIVITY_EVENT_LIMIT = 50
@@ -239,6 +246,7 @@ class DashboardService:
                     "title": task.title,
                     "status": task.status,
                     "task_type": task.task_type,
+                    "priority": task.priority,
                     "branch_name": task.branch_name,
                     "assigned_role": task.assigned_role,
                     "blocked_reason": task.blocked_reason,
@@ -315,7 +323,11 @@ class DashboardService:
                     "cost_usd": run.cost_usd,
                     "duration_ms": run.duration_ms,
                     "created_at": run.created_at,
+                    "started_at": run.started_at,
+                    "completed_at": run.completed_at,
                     "model": run.model,
+                    "session_id": run.session_id,
+                    "branch_name": run.branch_name,
                 }
             )
 
@@ -324,6 +336,8 @@ class DashboardService:
             "title": task.title,
             "status": task.status,
             "task_type": task.task_type,
+            "description": task.description,
+            "priority": task.priority,
             "branch_name": task.branch_name,
             "assigned_role": task.assigned_role,
             "created_by": task.created_by,
@@ -387,6 +401,97 @@ class DashboardService:
             "acceptance_criteria": task.acceptance_criteria,
             "order_index": task.order_index,
             "created_at": task.created_at,
+        }
+
+    def transition_sprint(self, sprint_id: str, *, target_status: str) -> dict[str, Any]:
+        """Transition one sprint to a new lifecycle status."""
+
+        sprint = self.store.get_sprint(sprint_id)
+        if sprint is None:
+            raise DashboardNotFoundError(f"Sprint not found: {sprint_id}")
+
+        allowed = _VALID_SPRINT_TRANSITIONS.get(sprint.status, ())
+        if target_status not in allowed:
+            raise DashboardValidationError(
+                f"Cannot transition sprint from '{sprint.status}' to '{target_status}'. "
+                f"Allowed: {list(allowed) or 'none'}."
+            )
+
+        now = self._now().isoformat()
+        sprint.status = target_status  # type: ignore[assignment]
+        if target_status == "active" and sprint.started_at is None:
+            sprint.started_at = now
+        if target_status in ("completed", "cancelled"):
+            sprint.completed_at = now
+
+        self.store.save_sprint(sprint)
+        return {
+            "id": sprint.id,
+            "status": sprint.status,
+            "started_at": sprint.started_at,
+            "completed_at": sprint.completed_at,
+        }
+
+    def update_task_fields(self, task_id: str, *, updates: dict[str, Any]) -> dict[str, Any]:
+        """Apply allowed field updates to one task and return its detail payload."""
+
+        task = self._require_task(task_id)
+        allowed_fields = {"description", "priority"}
+        unknown = set(updates) - allowed_fields
+        if unknown:
+            raise DashboardValidationError(f"Unknown task fields: {sorted(unknown)}")
+
+        if "description" in updates:
+            value = updates["description"]
+            task.description = str(value).strip() if value is not None else None
+        if "priority" in updates:
+            try:
+                task.priority = int(updates["priority"])
+            except (TypeError, ValueError) as exc:
+                raise DashboardValidationError("Priority must be an integer.") from exc
+
+        self.store.save_task(task)
+        return self.get_task(task_id)
+
+    def stop_agent(self, project_id: str) -> dict[str, Any]:
+        """Block all in-progress tasks in the active sprint to signal a stop request."""
+
+        project = self.store.get_project(project_id)
+        if project is None:
+            raise DashboardNotFoundError(f"Project not found: {project_id}")
+
+        active_sprint = self.store.get_active_sprint(project_id)
+        if active_sprint is None:
+            return {"stopped": 0, "project_id": project_id}
+
+        now = self._now()
+        tasks = self.store.list_tasks(sprint_id=active_sprint.id)
+        stopped = 0
+        for task in tasks:
+            if task.status != "in_progress":
+                continue
+            task.status = "blocked"
+            task.blocked_reason = "Stop requested from dashboard."
+            self.store.save_task(task)
+
+            runs = self.store.list_runs(task_id=task.id)
+            event = Event(
+                id=f"evt-{now.strftime('%Y%m%d%H%M%S%f')}-stop-{task.id[:8]}",
+                run_id=runs[0].id if runs else "none",
+                task_id=task.id,
+                project_id=project_id,
+                event_type="human.stop_requested",
+                timestamp=now.isoformat(),
+                role_id="human",
+                payload={"reason": "Stop requested from dashboard."},
+            )
+            self.store.save_event(event)
+            stopped += 1
+
+        return {
+            "stopped": stopped,
+            "project_id": project_id,
+            "sprint_id": active_sprint.id,
         }
 
     def approve_task(self, task_id: str) -> dict[str, Any]:

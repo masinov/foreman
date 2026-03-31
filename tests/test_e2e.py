@@ -189,10 +189,11 @@ class TestProjectNavigation:
     def test_sprint_card_navigates_to_board(self, dashboard_page: Page) -> None:
         dashboard_page.get_by_role("button", name="Open project E2E Test Project").click()
         dashboard_page.get_by_role("button", name="Open sprint E2E Sprint One").click()
-        # The sprint board shows task status column headers.
-        expect(dashboard_page.get_by_text("Todo")).to_be_visible()
-        expect(dashboard_page.get_by_text("In Progress")).to_be_visible()
-        expect(dashboard_page.get_by_text("Blocked")).to_be_visible()
+        # The sprint board shows task status column headers (scoped to .col-title
+        # so we don't collide with the task detail status span).
+        expect(dashboard_page.locator(".col-title", has_text="Todo")).to_be_visible()
+        expect(dashboard_page.locator(".col-title", has_text="In Progress")).to_be_visible()
+        expect(dashboard_page.locator(".col-title", has_text="Blocked")).to_be_visible()
 
     def test_sprint_board_shows_seeded_tasks(self, dashboard_page: Page) -> None:
         dashboard_page.get_by_role("button", name="Open project E2E Test Project").click()
@@ -224,7 +225,7 @@ class TestTaskDetail:
         # The in_progress task detail drawer opens automatically — check its title.
         detail = dashboard_page.get_by_role("complementary", name="Task detail")
         expect(detail).to_be_visible()
-        expect(detail.locator(".detail-title")).to_be_visible()
+        expect(detail.locator("h2")).to_be_visible()
 
     def test_task_detail_shows_acceptance_criteria(self, dashboard_page: Page) -> None:
         self._navigate_to_board(dashboard_page)
