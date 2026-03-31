@@ -30,3 +30,12 @@ foreman = [
   "dashboard_frontend_dist/*.html",
   "dashboard_frontend_dist/assets/*",
 ]
+
+[project.optional-dependencies]
+e2e = [
+  "playwright>=1.40,<2",
+  "pytest-playwright>=0.5,<1",
+]
+
+[tool.pytest.ini_options]
+addopts = ""

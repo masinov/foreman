@@ -2,10 +2,11 @@
 
 ## Current sprint
 
-- Sprint: `sprint-26-history-lifecycle-expansion`
+- Sprint: `sprint-27-e2e-dashboard-validation`
 - Status: done
-- Goal: extend retention and cleanup policy beyond `events` to cover `runs`
-  and stored prompt text, using the migration framework as the safe upgrade path
+- Goal: add browser-driven end-to-end validation of the Foreman dashboard
+  through a real Chromium browser against a live FastAPI server and seeded
+  SQLite database
 
 ## Active branches
 
@@ -134,6 +135,14 @@
   alongside the existing `event_retention_days`; emits `engine.run_pruned` and
   `engine.prompt_stripped` lifecycle events
 - 19 new tests in `tests/test_run_retention.py`; 188 tests pass total
+- completed `sprint-27-e2e-dashboard-validation`
+- installed `playwright` and `pytest-playwright`; Chromium browser binaries available
+- added `tests/test_e2e.py` with 20 Playwright E2E tests driven against a real
+  uvicorn dashboard server and seeded SQLite database; covers dashboard load,
+  project/sprint navigation, task detail drawer, settings panel, sprint
+  creation, and task creation end to end
+- E2E tests skip gracefully when Playwright is not installed
+- 208 tests pass total (20 new E2E + 188 prior)
 
 ## Current repo state
 
@@ -182,6 +191,8 @@
   - run and prompt retention via `ForemanStore.prune_old_runs()` and
     `ForemanStore.strip_old_run_prompts()`, wired into orchestrator startup
     via `prune_old_history()`,
+  - 20 browser-driven E2E tests in `tests/test_e2e.py` covering the full
+    FastAPI + SQLite + React dashboard stack via Playwright and Chromium,
   - repo-memory docs that are intended to let a fresh agent continue from the
     next slice without reconstructing prior branch history.
 - The temporary markdown sprint and status workflow remains intentional
@@ -190,9 +201,8 @@
 
 ## Ready next
 
-1. add browser-driven end-to-end dashboard validation
-2. implement `task_selection_mode="autonomous"` in the orchestrator
-3. add `foreman db migrate` CLI surface for operators to inspect schema version
+1. implement `task_selection_mode="autonomous"` in the orchestrator
+2. add `foreman db migrate` CLI surface for operators to inspect schema version
    and apply pending migrations explicitly
 
 ## Open risks
@@ -203,12 +213,9 @@
 - Repo-local discovery currently depends on an existing `.foreman.db` in the
   current repo lineage or on `foreman init` creating one; cross-repo and
   out-of-repo inspection still requires explicit `--db`.
-- the dashboard now has component-level frontend coverage and bundle delivery
-  checks, but it still lacks browser-driven end-to-end validation.
 - the committed dashboard build output in `foreman/dashboard_frontend_dist/`
-  must stay in sync with the source app in `frontend/`.
-- local dashboard development now has a sane Vite-plus-FastAPI loop, but it
-  still lacks browser-driven end-to-end validation.
+  must stay in sync with the source app in `frontend/`; E2E tests will fail
+  if the build is stale.
 - the sprint SSE path still polls SQLite directly inside the FastAPI stream
   loop; that is acceptable for now, but it is not a final transport design.
 - Native backend preflight now validates executable presence and Codex startup
@@ -225,8 +232,8 @@
   if sprint ownership changes mid-tail, operators currently need to restart
   the command to follow the new sprint.
 - dashboard validation now covers the extracted service layer, FastAPI
-  delivery, and React component behavior, but there is still no browser-driven
-  end-to-end coverage.
+  delivery, React component behavior, and browser-driven E2E flows via
+  Playwright and Chromium.
 
 ## Documented conflicts
 
