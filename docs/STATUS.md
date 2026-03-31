@@ -2,11 +2,11 @@
 
 ## Current sprint
 
-- Sprint: `sprint-30-wire-dead-surfaces`
+- Sprint: `sprint-31-backlog-items`
 - Status: done
-- Goal: wire the most visible dead dashboard surfaces — Stop agent button, sprint
-  lifecycle transitions, task field exposure (description, priority), and complete
-  run serialization
+- Goal: clear the sprint-30 backlog — sprint creation with inline tasks, task
+  cancellation, task dependencies display, event log load-more, and cancelled
+  sprint filter
 
 ## Active branches
 
@@ -162,6 +162,18 @@
 - changed `ForemanStore.initialize()` to return `list[int]` (applied migration
   versions); backward-compatible since callers ignored the prior `None` return
 - 7 new tests in `DbCommandTests`; 203 non-E2E tests pass total
+- completed `sprint-31-backlog-items`
+- sprint creation modal now accepts inline task entries; tasks are created
+  atomically with the sprint via `initial_tasks` in the API body
+- task cancellation: `POST /api/tasks/{id}/cancel` + Cancel task button in the
+  detail drawer; rejects done/already-cancelled tasks with 400
+- task dependencies: `depends_on_task_ids` now included in `get_task()` response;
+  detail drawer renders a Dependencies section with chips
+- event log load-more: `before_event_id` cursor in store and service; `has_more`
+  flag on all `list_sprint_events` responses; "Load older events" button in UI
+- cancelled sprint filter: added to `STATUS_FILTER_OPTIONS`; kanban Done column
+  includes cancelled sprints
+- 8 new tests in `DashboardSprintTaskBacklogTests`; 221 non-E2E, 20 E2E tests
 - completed `sprint-30-wire-dead-surfaces`
 - wired `Stop agent` button to `POST /api/projects/{id}/agent/stop`; blocks all
   in-progress tasks in the active sprint and emits `human.stop_requested` events

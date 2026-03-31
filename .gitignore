@@ -214,3 +214,4 @@ __marimo__/
 # Frontend workspace
 frontend/node_modules/
 frontend/.vite/
+.foreman.db

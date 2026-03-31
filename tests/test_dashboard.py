@@ -1039,3 +1039,269 @@ class DashboardSprintLifecycleTests(unittest.TestCase):
         self.assertEqual(r["branch_name"], "feat/run-serial")
         self.assertEqual(r["started_at"], "2026-03-31T10:00:00Z")
         self.assertEqual(r["completed_at"], "2026-03-31T10:30:00Z")
+
+
+class DashboardSprintTaskBacklogTests(unittest.TestCase):
+    """Tests for sprint-31 backlog items: cancel task, inline tasks, dependencies, load-more."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.temp_dir = tempfile.TemporaryDirectory()
+        cls.db_path = Path(cls.temp_dir.name) / "foreman.db"
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.temp_dir.cleanup()
+
+    _counter = 0
+
+    def _next_id(self, prefix):
+        DashboardSprintTaskBacklogTests._counter += 1
+        return f"{prefix}-{DashboardSprintTaskBacklogTests._counter}"
+
+    def _request(self, method, url, **kwargs):
+        async def send():
+            app = create_dashboard_app(str(self.db_path))
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(
+                transport=transport,
+                base_url="http://testserver",
+            ) as client:
+                return await client.request(method, url, **kwargs)
+        return asyncio.run(send())
+
+    def _seed_active(self):
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        project = Project(
+            id=self._next_id("proj-bl"),
+            name="Backlog Project",
+            repo_path="/tmp/bl",
+            workflow_id="development",
+        )
+        store.save_project(project)
+        sprint = Sprint(
+            id=self._next_id("sprint-bl"),
+            project_id=project.id,
+            title="Backlog Sprint",
+            status="active",
+            started_at="2026-03-31T09:00:00Z",
+        )
+        store.save_sprint(sprint)
+        task = Task(
+            id=self._next_id("task-bl"),
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="Backlog task",
+            status="in_progress",
+            task_type="feature",
+        )
+        store.save_task(task)
+        store.close()
+        return project, sprint, task
+
+    # ── Cancel task ──────────────────────────────────────────────────────────
+
+    def test_cancel_task_sets_cancelled_status(self):
+        """POST /api/tasks/{id}/cancel marks task as cancelled."""
+        _, _, task = self._seed_active()
+        response = self._request("POST", f"/api/tasks/{task.id}/cancel")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "cancelled")
+
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        updated = store.get_task(task.id)
+        self.assertEqual(updated.status, "cancelled")
+        store.close()
+
+    def test_cancel_task_rejects_done_task(self):
+        """POST /api/tasks/{id}/cancel returns 400 when task is already done."""
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        _, sprint, _ = self._seed_active()
+        done_task = Task(
+            id=self._next_id("task-done"),
+            sprint_id=sprint.id,
+            project_id=sprint.project_id,
+            title="Done task",
+            status="done",
+            task_type="feature",
+        )
+        store.save_task(done_task)
+        store.close()
+        response = self._request("POST", f"/api/tasks/{done_task.id}/cancel")
+        self.assertEqual(response.status_code, 400)
+
+    def test_cancel_task_returns_404_for_unknown_task(self):
+        """POST /api/tasks/{id}/cancel returns 404 for nonexistent task."""
+        response = self._request("POST", "/api/tasks/nonexistent/cancel")
+        self.assertEqual(response.status_code, 404)
+
+    # ── Sprint creation with initial tasks ───────────────────────────────────
+
+    def test_create_sprint_with_initial_tasks(self):
+        """POST /api/projects/{id}/sprints creates tasks when initial_tasks provided."""
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        project = Project(
+            id=self._next_id("proj-init"),
+            name="Init Tasks Project",
+            repo_path="/tmp/it",
+            workflow_id="development",
+        )
+        store.save_project(project)
+        store.close()
+
+        response = self._request(
+            "POST",
+            f"/api/projects/{project.id}/sprints",
+            json={
+                "title": "Sprint With Tasks",
+                "goal": "Ship features",
+                "initial_tasks": [
+                    {"title": "First task", "task_type": "feature"},
+                    {"title": "Second task", "task_type": "bug"},
+                ],
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["tasks_created"], 2)
+
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        tasks = store.list_tasks(sprint_id=data["id"])
+        self.assertEqual(len(tasks), 2)
+        self.assertEqual(tasks[0].title, "First task")
+        self.assertEqual(tasks[1].title, "Second task")
+        store.close()
+
+    def test_create_sprint_without_initial_tasks_still_works(self):
+        """POST /api/projects/{id}/sprints without initial_tasks creates no tasks."""
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        project = Project(
+            id=self._next_id("proj-noinit"),
+            name="No Init Tasks Project",
+            repo_path="/tmp/nit",
+            workflow_id="development",
+        )
+        store.save_project(project)
+        store.close()
+
+        response = self._request(
+            "POST",
+            f"/api/projects/{project.id}/sprints",
+            json={"title": "Bare Sprint"},
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["tasks_created"], 0)
+
+    # ── Task dependencies in detail payload ──────────────────────────────────
+
+    def test_get_task_includes_depends_on_task_ids(self):
+        """GET /api/tasks/{id} returns depends_on_task_ids field."""
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        _, sprint, blocker = self._seed_active()
+        dependent = Task(
+            id=self._next_id("task-dep"),
+            sprint_id=sprint.id,
+            project_id=sprint.project_id,
+            title="Dependent task",
+            status="todo",
+            task_type="feature",
+            depends_on_task_ids=[blocker.id],
+        )
+        store.save_task(dependent)
+        store.close()
+
+        response = self._request("GET", f"/api/tasks/{dependent.id}")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("depends_on_task_ids", data)
+        self.assertEqual(data["depends_on_task_ids"], [blocker.id])
+
+    # ── Event load-more (before_event_id) ────────────────────────────────────
+
+    def test_list_sprint_events_before_cursor_returns_older_events(self):
+        """GET /api/sprints/{id}/events?before=X returns events older than X."""
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        _, sprint, task = self._seed_active()
+        run = Run(
+            id=self._next_id("run-evts"),
+            task_id=task.id,
+            project_id=sprint.project_id,
+            role_id="developer",
+            workflow_step="develop",
+            agent_backend="claude",
+            status="running",
+        )
+        store.save_run(run)
+        # Create 4 events with distinct timestamps so pagination is deterministic.
+        for i in range(4):
+            event = Event(
+                id=self._next_id("evt-pg"),
+                run_id=run.id,
+                task_id=task.id,
+                project_id=sprint.project_id,
+                event_type="agent.message",
+                timestamp=f"2026-03-31T10:0{i}:00Z",
+                payload={"seq": i},
+            )
+            store.save_event(event)
+        all_events = store.list_recent_sprint_events(sprint.id, limit=50)
+        store.close()
+        self.assertEqual(len(all_events), 4)
+
+        # Fetch only events before the 3rd event — should return events 0 and 1.
+        cursor_id = all_events[2].id
+        response = self._request(
+            "GET",
+            f"/api/sprints/{sprint.id}/events?before={cursor_id}&limit=10",
+        )
+        self.assertEqual(response.status_code, 200)
+        returned = response.json()["events"]
+        self.assertEqual(len(returned), 2)
+        self.assertEqual(returned[0]["id"], all_events[0].id)
+        self.assertEqual(returned[1]["id"], all_events[1].id)
+
+    def test_list_sprint_events_has_more_flag_set_when_result_full(self):
+        """GET /api/sprints/{id}/events returns has_more=True when limit is reached."""
+        _, sprint, task = self._seed_active()
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        run = Run(
+            id=self._next_id("run-hm"),
+            task_id=task.id,
+            project_id=sprint.project_id,
+            role_id="developer",
+            workflow_step="develop",
+            agent_backend="claude",
+            status="running",
+        )
+        store.save_run(run)
+        for i in range(3):
+            event = Event(
+                id=self._next_id("evt-hm"),
+                run_id=run.id,
+                task_id=task.id,
+                project_id=sprint.project_id,
+                event_type="agent.message",
+                timestamp=f"2026-03-31T11:0{i}:00Z",
+                payload={},
+            )
+            store.save_event(event)
+        store.close()
+
+        # Limit=2 with 3 events → has_more should be True.
+        response = self._request(
+            "GET",
+            f"/api/sprints/{sprint.id}/events?limit=2",
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["has_more"])

@@ -64,6 +64,8 @@ export default function App({ services, browser }) {
   const [projectSettings, setProjectSettings] = useState(null);
   const [newSprintOpen, setNewSprintOpen] = useState(false);
   const [newTaskOpen, setNewTaskOpen] = useState(false);
+  const [hasMoreEvents, setHasMoreEvents] = useState(false);
+  const [isLoadingMoreEvents, setIsLoadingMoreEvents] = useState(false);
 
   const refreshTimerRef = useRef(null);
   const routeRef = useRef(route);
@@ -147,6 +149,7 @@ export default function App({ services, browser }) {
     setCurrentSprint(sprintPayload);
     setTasks(nextTasks);
     setEvents(nextEvents);
+    setHasMoreEvents(eventPayload.has_more ?? false);
     setStreamSeedEventId(lastEventId);
     lastStreamEventIdRef.current = lastEventId;
     setSelectedTaskId((currentValue) => {
@@ -383,15 +386,51 @@ export default function App({ services, browser }) {
     }
   }
 
-  async function handleCreateSprint({ title, goal }) {
+  async function handleCreateSprint({ title, goal, initialTasks }) {
     if (!route.projectId) return;
     setErrorMessage("");
     try {
-      await services.createSprint(route.projectId, { title, goal });
+      await services.createSprint(route.projectId, { title, goal, initialTasks });
       setNewSprintOpen(false);
       await refreshAllVisibleState({ keepSelectedTask: false });
     } catch (error) {
       setErrorMessage(error.message);
+    }
+  }
+
+  async function handleLoadMoreEvents() {
+    if (!route.sprintId || events.length === 0) return;
+    setIsLoadingMoreEvents(true);
+    try {
+      const oldestEventId = events[0].id;
+      const payload = await services.listSprintEvents(route.sprintId, {
+        beforeEventId: oldestEventId,
+        limit: INITIAL_EVENTS_LIMIT,
+      });
+      if (payload.events.length > 0) {
+        setEvents((prev) => [...payload.events, ...prev]);
+        setHasMoreEvents(payload.has_more ?? false);
+      } else {
+        setHasMoreEvents(false);
+      }
+    } catch (error) {
+      setErrorMessage(error.message);
+    } finally {
+      setIsLoadingMoreEvents(false);
+    }
+  }
+
+  async function handleCancelTask(taskId) {
+    setIsActionPending(true);
+    setErrorMessage("");
+    try {
+      await services.cancelTask(taskId);
+      setSelectedTaskId(null);
+      await refreshAllVisibleState({ keepSelectedTask: false });
+    } catch (error) {
+      setErrorMessage(error.message);
+    } finally {
+      setIsActionPending(false);
     }
   }
 
@@ -599,6 +638,16 @@ export default function App({ services, browser }) {
                       </select>
                     </label>
                   </div>
+                  {hasMoreEvents ? (
+                    <button
+                      className="load-more-btn"
+                      type="button"
+                      disabled={isLoadingMoreEvents}
+                      onClick={handleLoadMoreEvents}
+                    >
+                      {isLoadingMoreEvents ? "Loading…" : "Load older events"}
+                    </button>
+                  ) : null}
                   <EventList events={events} filterKey={activityFilter} taskIndex={taskIndex} />
                   <div className={`activity-input ${selectedTaskId ? "" : "disabled"}`}>
                     <label className="visually-hidden" htmlFor="human-message">
@@ -623,11 +672,13 @@ export default function App({ services, browser }) {
                 ) : null}
                 <TaskDetailDrawer
                   task={taskDetail}
+                  taskIndex={taskIndex}
                   denyNote={denyNote}
                   onClose={() => setSelectedTaskId(null)}
                   onApprove={handleApproveTask}
                   onDenyNoteChange={setDenyNote}
                   onDeny={handleDenyTask}
+                  onCancel={handleCancelTask}
                 />
               </div>
             </div>
