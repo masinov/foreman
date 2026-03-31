@@ -1,4 +1,4 @@
-"""Dashboard backend API contract for Foreman."""
+"""Dashboard service layer for Foreman."""
 
 from __future__ import annotations
 
@@ -16,24 +16,24 @@ STREAM_HEARTBEAT_SECONDS = 10.0
 STREAM_POLL_INTERVAL_SECONDS = 0.5
 
 
-class DashboardAPIError(Exception):
-    """Base error for dashboard API contract failures."""
+class DashboardServiceError(Exception):
+    """Base error for dashboard service failures."""
 
 
-class DashboardNotFoundError(DashboardAPIError):
+class DashboardNotFoundError(DashboardServiceError):
     """Raised when one requested dashboard resource does not exist."""
 
 
-class DashboardValidationError(DashboardAPIError):
+class DashboardValidationError(DashboardServiceError):
     """Raised when one dashboard request payload is invalid."""
 
 
-class DashboardActionError(DashboardAPIError):
+class DashboardActionError(DashboardServiceError):
     """Raised when one dashboard action cannot be completed."""
 
 
-class DashboardAPI:
-    """Store-backed contract used by the current dashboard shell and future UI clients."""
+class DashboardService:
+    """Store-backed dashboard service used by FastAPI transport and UI clients."""
 
     def __init__(
         self,

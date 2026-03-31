@@ -8,25 +8,28 @@ known bootstrap-era shortcuts that should not remain in the product.
 ## Highest-priority findings
 
 1. Dashboard architecture is wrong for a production product.
-   Current state: the dashboard is embedded in `foreman/dashboard.py` as HTML,
-   CSS, JavaScript, API handlers, and SSE transport in one Python module.
+   State at the time of the audit: the dashboard was embedded in
+   `foreman/dashboard.py` as HTML, CSS, JavaScript, API handlers, and SSE
+   transport in one Python module.
 
 2. No dedicated frontend architecture exists.
-   Current state: there is no frontend app, no build pipeline, and no browser
-   test stack for product UI work.
+   State at the time of the audit: there was no frontend app, no build
+   pipeline, and no browser test stack for product UI work.
 
 3. Schema evolution is still unsafe.
-   Current state: SQLite bootstraps from `CREATE TABLE IF NOT EXISTS` DDL with
-   no migration metadata or ordered upgrades.
+   State at the time of the audit: SQLite bootstrapped from
+   `CREATE TABLE IF NOT EXISTS` DDL with no migration metadata or ordered
+   upgrades.
 
 4. Some product surfaces are still stubs or incomplete.
-   Current state: several CLI commands still route through `handle_stub`, and
-   `task_selection_mode="autonomous"` is exposed but not implemented.
+   State at the time of the audit: several CLI commands still routed through
+   `handle_stub`, and `task_selection_mode="autonomous"` was exposed but not
+   implemented.
 
 5. Validation is weaker than it should be for finished UI surfaces.
-   Current state: dashboard coverage is useful, but it leans heavily on API
-   checks and string assertions instead of a dedicated frontend or browser
-   validation stack.
+   State at the time of the audit: dashboard coverage was useful, but it
+   leaned heavily on API checks and string assertions instead of a dedicated
+   frontend or browser validation stack.
 
 ## Ordered remediation plan
 

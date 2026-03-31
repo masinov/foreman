@@ -4,8 +4,9 @@
 
 - Sprint: `sprint-24-product-surface-hardening`
 - Status: active
-- Goal: remove or finish placeholder product surfaces now that the dedicated
-  React dashboard and FastAPI backend boundary are in place
+- Goal: close the remaining visible product-surface gaps and strengthen
+  validation now that the dedicated React dashboard and FastAPI backend
+  boundary are in place
 
 ## Active branches
 
@@ -66,9 +67,10 @@
   migration work, and broader product-surface remediation
 - completed `sprint-21-dashboard-api-extraction`
 - extracted dashboard reads, task actions, and streaming payload assembly into
-  `foreman/dashboard_api.py`
-- reduced `foreman/dashboard.py` to a thinner HTTP adapter over the extracted
-  backend contract while preserving the legacy dashboard shell
+  what is now `foreman/dashboard_service.py`
+- reduced the old `foreman/dashboard.py` module into a thinner HTTP adapter
+  over the extracted backend contract while preserving the legacy dashboard
+  shell during the transition
 - strengthened dashboard regression coverage around API and SSE payload
   contracts to prepare the React handoff
 - completed `sprint-22-dashboard-backend-foundation`
@@ -88,6 +90,19 @@
   existing dashboard API and FastAPI regression suite
 - pruned redundant dashboard transition checkpoint and PR-summary docs that no
   longer add repo-memory value after the React cutover
+- clarified the live dashboard module split by renaming the runtime wrapper to
+  `foreman/dashboard_runtime.py` and the service layer to
+  `foreman/dashboard_service.py`
+- added frontend-dev support to `foreman dashboard`, Vite `/api` proxying, and
+  a one-command `npm --prefix frontend run dev:full` launcher for local
+  dashboard work
+- implemented the remaining shipped CLI product commands instead of routing
+  them through `handle_stub`
+- added real project, sprint, task, run, and config command behavior for the
+  shipped CLI surface, including repo-local DB discovery support and stateful
+  task or sprint transitions
+- expanded CLI subprocess coverage to validate the hardened command surface
+  end to end
 
 ## Current repo state
 
@@ -115,16 +130,19 @@
   - accepted ADRs for runner session semantics, dashboard data access, the
     dedicated product web UI boundary, and the FastAPI dashboard backend
     framework,
-  - an extracted dashboard backend contract in `foreman/dashboard_api.py`
-    covering project, sprint, task, action, and incremental streaming
-    payloads,
+  - a dashboard service layer in `foreman/dashboard_service.py` covering
+    project, sprint, task, action, and incremental streaming payloads,
   - a FastAPI transport layer in `foreman/dashboard_backend.py` that serves
     the current dashboard routes, built frontend shell, and SSE stream through
     an actual ASGI app,
   - a dedicated React dashboard frontend in `frontend/` plus built assets in
     `foreman/dashboard_frontend_dist/`,
-  - `foreman/dashboard.py` reduced to asset checks and the uvicorn entrypoint
-    for `foreman dashboard`,
+  - `foreman/dashboard_runtime.py` as the asset-aware uvicorn entrypoint for
+    `foreman dashboard`, with an explicit frontend-dev mode that no longer
+    requires built assets,
+  - `frontend/vite.config.js` proxying `/api` to the local FastAPI backend and
+    `scripts/dashboard_dev.py` providing a one-command frontend plus backend
+    dev loop,
   - unit and integration coverage across store, CLI, orchestrator, runners,
     dashboard, the React frontend, scaffold, and executor seams,
   - repo-memory docs that are intended to let a fresh agent continue from the
@@ -135,9 +153,10 @@
 
 ## Ready next
 
-1. remove or implement remaining stub CLI product surfaces
-2. close known product-surface and validation gaps exposed by the dedicated
+1. close known product-surface and validation gaps exposed by the dedicated
    dashboard frontend cutover
+2. strengthen product-surface validation above the current CLI, API, and React
+   component layers
 3. resume lower-level infrastructure detours with the migration framework
    slice after product-surface hardening
 
@@ -153,6 +172,8 @@
   checks, but it still lacks browser-driven end-to-end validation.
 - the committed dashboard build output in `foreman/dashboard_frontend_dist/`
   must stay in sync with the source app in `frontend/`.
+- local dashboard development now has a sane Vite-plus-FastAPI loop, but it
+  still lacks browser-driven end-to-end validation.
 - the sprint SSE path still polls SQLite directly inside the FastAPI stream
   loop; that is acceptable for now, but it is not a final transport design.
 - Native backend preflight now validates executable presence and Codex startup
@@ -161,8 +182,6 @@
 - The Codex app-server protocol exposes token usage but not USD pricing, so
   Codex runs currently persist `token_count` accurately while `cost_usd`
   remains `0.0`.
-- multiple CLI product surfaces still route through `handle_stub`, including
-  project, sprint, task, run, and config commands.
 - `task_selection_mode=\"autonomous\"` is still not implemented in the
   orchestrator even though the project settings model exposes it.
 - Event retention currently prunes only `events`; `runs` rows and stored

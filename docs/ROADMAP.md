@@ -345,10 +345,10 @@ Target deliverables:
 Status:
 
 - completed on `refactor/dashboard-api-extraction`
-- `foreman/dashboard_api.py` now owns dashboard reads, actions, and
+- `foreman/dashboard_service.py` now owns dashboard reads, actions, and
   incremental stream payload assembly
-- the legacy `foreman/dashboard.py` shell now routes through the extracted API
-  contract instead of assembling backend responses inline
+- the dashboard runtime wrapper now delegates backend behavior through that
+  service layer instead of assembling responses inline
 
 ## Milestone 17: Dashboard backend foundation
 
@@ -382,7 +382,8 @@ Status:
 
 - completed on `feat/react-dashboard-foundation`
 - `frontend/` now contains the dedicated React and Vite dashboard app
-- `foreman/dashboard.py` no longer embeds product HTML, CSS, or browser logic
+- `foreman/dashboard_runtime.py` no longer embeds product HTML, CSS, or
+  browser logic
 - `foreman/dashboard_backend.py` now serves the built frontend assets while
   preserving the existing JSON and SSE backend contract
 - frontend component tests and bundle-build validation now accompany the
@@ -402,6 +403,13 @@ Target deliverables:
 Status:
 
 - current sprint is `sprint-24-product-surface-hardening`
+- dashboard runtime and service naming are now explicit through
+  `foreman/dashboard_runtime.py` and `foreman/dashboard_service.py`
+- local dashboard development now has Vite `/api` proxying plus
+  `npm --prefix frontend run dev:full` for a combined frontend and backend
+  loop
+- shipped CLI product commands no longer depend on the generic `handle_stub`
+  fallback for project, sprint, task, run, or config flows
 
 ## Milestone 20: Migration framework bootstrap
 
@@ -435,8 +443,9 @@ Status:
 
 ## Near-term priorities
 
-1. remove or finish known stub and placeholder product surfaces
-2. strengthen product-surface validation above the current API and component
-   layers
+1. finish the remaining visible product-surface gaps after the CLI stub
+   cleanup
+2. strengthen product-surface validation above the current CLI, API, and
+   component layers
 3. resume migration work once the product-surface boundary is corrected
 4. expand lifecycle cleanup after migrations exist

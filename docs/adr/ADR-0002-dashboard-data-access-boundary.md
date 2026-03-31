@@ -18,7 +18,8 @@ Options considered:
 
 The dashboard uses **direct store access** through `ForemanStore` read methods.
 
-The `DashboardHandler` class in `foreman/dashboard.py` calls `ForemanStore` methods:
+The current dashboard service layer in `foreman/dashboard_service.py` calls
+`ForemanStore` methods:
 - `list_projects()`, `get_project()`
 - `list_sprints()`, `get_sprint()`, `get_active_sprint()`
 - `list_tasks()`, `get_task()`
@@ -46,6 +47,6 @@ No separate read-model layer or projection tables exist. The JSON API endpoints 
 
 ## References
 
-- `foreman/dashboard.py` — DashboardHandler.do_GET() implementation
+- `foreman/dashboard_service.py` — store-backed dashboard service methods
 - `foreman/store.py` — ForemanStore read methods
 - `docs/mockups/foreman-mockup-v6.html` — UI hierarchy reference

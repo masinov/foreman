@@ -20,6 +20,7 @@ repo-memory validation and code-level regression coverage:
 - `./venv/bin/pip install -e . --no-build-isolation`
 - `npm --prefix frontend test`
 - `npm --prefix frontend run build`
+- `./venv/bin/python scripts/dashboard_dev.py --help`
 - `./venv/bin/python -m unittest discover -s tests -v`
 
 ## Slice coverage that exists today
@@ -42,17 +43,18 @@ The current suite covers:
   resume, event-retention startup behavior, retry persistence, and
   fresh-process native session reuse
 - `tests/test_cli.py` for CLI smoke paths, repo-local DB discovery, explicit
-  override semantics, secure workflow initialization, live watch tails, and
-  monitoring command subprocess behavior
+  override semantics, secure workflow initialization, live watch tails,
+  monitoring command subprocess behavior, and the shipped project, sprint,
+  task, run, and config command flows
 - `tests/test_runner_claude.py` for Claude Code command construction, startup
   preflight, event mapping, signal extraction, and failure handling
 - `tests/test_runner_codex.py` for Codex app-server startup, thread start or
   resume, startup preflight, approval responses, streamed event mapping, and
   failure handling
-- `tests/test_dashboard.py` for the extracted dashboard API contract, FastAPI
-  HTTP routes, built frontend shell delivery, task detail data, human message
-  persistence, incremental sprint-event stream payloads, and approve or deny
-  integration behavior
+- `tests/test_dashboard.py` for the extracted dashboard service contract,
+  FastAPI HTTP routes, built frontend shell delivery, frontend-dev redirect
+  behavior, task detail data, human message persistence, incremental
+  sprint-event stream payloads, and approve or deny integration behavior
 - `frontend/src/App.test.jsx` for React dashboard navigation, message
   submission, and stream-driven activity updates
 - `tests/test_executor.py` for runner-backed execution config, event
@@ -68,9 +70,10 @@ Unit tests:
 - SQLite store round-trips
 - role and workflow parsing
 - signal parsing
-- dashboard API contract payloads and action behavior
+- dashboard service payloads and action behavior
 - dashboard FastAPI route behavior over ASGI transport
 - dashboard shell and asset delivery over the dedicated frontend boundary
+- dashboard frontend-dev redirect behavior and local proxy assumptions
 - dashboard live transport serialization
 - git helper behavior that can be isolated
 - frontend component behavior in the dedicated React app
@@ -88,6 +91,7 @@ Integration tests:
 - cross-invocation native session reuse for Claude Code, Codex, and
   non-persistent reviewer roles
 - dashboard API contract behavior independent of the frontend implementation
+- local dashboard dev-runner smoke behavior where practical
 
 Runner smoke tests:
 

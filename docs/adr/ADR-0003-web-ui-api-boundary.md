@@ -6,9 +6,8 @@ Accepted
 
 ## Context
 
-Foreman currently ships a dashboard surface from
-`foreman/dashboard.py` as embedded HTML, CSS, and browser JavaScript served by
-the Python backend itself.
+Foreman originally shipped a dashboard surface from one Python module as
+embedded HTML, CSS, and browser JavaScript served by the backend itself.
 
 That implementation was fast to land, but it creates structural problems:
 
@@ -37,8 +36,8 @@ The boundary is:
 - substantial product UI markup must not live as embedded strings inside
   backend Python modules.
 
-The existing `foreman/dashboard.py` implementation is now treated as
-transitional debt to be replaced, not a baseline to extend indefinitely.
+That original monolithic implementation is now treated as transitional debt
+that has been removed, not as a baseline to extend indefinitely.
 
 ## Consequences
 
@@ -67,6 +66,8 @@ transitional debt to be replaced, not a baseline to extend indefinitely.
 ## References
 
 - `docs/mockups/foreman-mockup-v6.html`
-- `foreman/dashboard.py`
+- `foreman/dashboard_runtime.py`
+- `foreman/dashboard_service.py`
+- `foreman/dashboard_backend.py`
 - `docs/ARCHITECTURE.md`
 - `docs/STATUS.md`

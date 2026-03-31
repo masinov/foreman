@@ -4,14 +4,19 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+import json
 from pathlib import Path
 import sys
 import time
-from typing import Callable, Sequence
+from typing import Any, Callable, Sequence
 
 from . import __version__
-from .dashboard import STREAM_POLL_INTERVAL_SECONDS, run_dashboard
-from .models import Event, Project, utc_now_text
+from .dashboard_runtime import (
+    DEFAULT_FRONTEND_DEV_URL,
+    STREAM_POLL_INTERVAL_SECONDS,
+    run_dashboard_server,
+)
+from .models import Event, Project, Sprint, TASK_TYPES, Task, utc_now_text
 from .orchestrator import ForemanOrchestrator, OrchestratorError
 from .roles import RoleLoadError, default_roles_dir, load_roles
 from .scaffold import (
@@ -31,7 +36,6 @@ from .workflows import WorkflowLoadError, default_workflows_dir, load_workflows
 CLI_DESCRIPTION = (
     "Foreman is an autonomous development engine for spec-driven software delivery."
 )
-CLI_SHELL_NOTE = "This command surface is still incomplete while Foreman is under active development."
 DB_OPTION_NOTE = (
     f"Defaults to repo-local `{DEFAULT_DB_FILENAME}` discovery; pass `--db PATH` to override."
 )
@@ -164,6 +168,15 @@ def _format_task_counts(counts: dict[str, int]) -> str:
     )
 
 
+def _format_run_totals(totals: dict[str, int | float]) -> str:
+    return (
+        f"Activity: runs={totals['run_count']} | "
+        f"tokens={totals['total_token_count']} | "
+        f"cost_usd={_format_usd(float(totals['total_cost_usd']))} | "
+        f"duration_ms={totals['total_duration_ms']}"
+    )
+
+
 def _format_usd(value: float) -> str:
     return f"${value:.2f}"
 
@@ -250,11 +263,103 @@ def _render_board_task_line(task_id: str, title: str, task_type: str, details: l
 
 
 def _format_watch_activity_totals(totals: dict[str, int | float]) -> str:
-    return (
-        f"Activity: runs={totals['run_count']} | "
-        f"tokens={totals['total_token_count']} | "
-        f"cost_usd={_format_usd(float(totals['total_cost_usd']))}"
-    )
+    return _format_run_totals(totals)
+
+
+def _format_setting_value(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    return json.dumps(value, sort_keys=True)
+
+
+def _parse_config_value(raw_value: str) -> Any:
+    normalized = raw_value.strip()
+    lowered = normalized.lower()
+    if lowered == "true":
+        return True
+    if lowered == "false":
+        return False
+    if lowered in {"null", "none"}:
+        return None
+    try:
+        return int(normalized)
+    except ValueError:
+        pass
+    try:
+        return float(normalized)
+    except ValueError:
+        pass
+    if normalized.startswith(("{", "[", '"')):
+        try:
+            return json.loads(normalized)
+        except json.JSONDecodeError:
+            pass
+    return raw_value
+
+
+def _parse_config_assignment(raw_assignment: str) -> tuple[str, Any]:
+    if "=" not in raw_assignment:
+        raise CliResolutionError("Configuration assignment must use key=value syntax.")
+
+    key, raw_value = raw_assignment.split("=", 1)
+    key = key.strip()
+    if not key:
+        raise CliResolutionError("Configuration key cannot be empty.")
+    return key, _parse_config_value(raw_value)
+
+
+def _allocate_entity_id(
+    prefix: str,
+    title: str,
+    *,
+    exists: Callable[[str], object | None],
+) -> str:
+    base_slug = generate_project_id(title, title)
+    candidate = base_slug if base_slug.startswith(f"{prefix}-") else f"{prefix}-{base_slug}"
+    suffix = 2
+    while exists(candidate) is not None:
+        suffixed = f"{base_slug}-{suffix}"
+        candidate = suffixed if suffixed.startswith(f"{prefix}-") else f"{prefix}-{suffixed}"
+        suffix += 1
+    return candidate
+
+
+def _next_order_index(values: Sequence[int]) -> int:
+    return max(values, default=-1) + 1
+
+
+def _resolve_project_or_print(store: ForemanStore, project_id: str) -> Project | None:
+    project = store.get_project(project_id)
+    if project is None:
+        print(f"Unknown project: {project_id}", file=sys.stderr)
+        return None
+    return project
+
+
+def _resolve_sprint_or_print(store: ForemanStore, sprint_id: str) -> Sprint | None:
+    sprint = store.get_sprint(sprint_id)
+    if sprint is None:
+        print(f"Unknown sprint: {sprint_id}", file=sys.stderr)
+        return None
+    return sprint
+
+
+def _resolve_task_or_print(store: ForemanStore, task_id: str) -> Task | None:
+    task = store.get_task(task_id)
+    if task is None:
+        print(f"Unknown task: {task_id}", file=sys.stderr)
+        return None
+    return task
+
+
+def _select_task_creation_sprint(store: ForemanStore, project_id: str) -> Sprint | None:
+    active_sprint = store.get_active_sprint(project_id)
+    if active_sprint is not None:
+        return active_sprint
+    planned_sprints = [
+        sprint for sprint in store.list_sprints(project_id) if sprint.status == "planned"
+    ]
+    return planned_sprints[0] if planned_sprints else None
 
 
 def _build_run_watch_plan(store: ForemanStore, run_id: str, *, limit: int) -> WatchStreamPlan | None:
@@ -899,14 +1004,519 @@ def handle_workflows(_: argparse.Namespace) -> int:
     return 0
 
 
-def handle_stub(args: argparse.Namespace) -> int:
-    """Handle commands whose wiring exists before their implementation."""
+def handle_project(args: argparse.Namespace) -> int:
+    """Handle ``foreman project``."""
+
+    db_path = _resolve_db_path_or_print(args.db)
+    if db_path is None:
+        return 1
+
+    with ForemanStore(db_path) as store:
+        store.initialize()
+        project = _resolve_project_or_print(store, args.project_id)
+        if project is None:
+            return 1
+
+        active_sprint = store.get_active_sprint(project.id)
+        task_counts = store.task_counts(project_id=project.id)
+        totals = store.run_totals(project_id=project.id)
+        project_sprints = store.list_sprints(project.id)
+        db_path = store.db_path
+
+    lines = [
+        "Project",
+        f"Database: {db_path}",
+        f"Project: {project.id} | {project.name}",
+        f"Repo: {project.repo_path}",
+        f"Spec: {project.spec_path or 'n/a'}",
+        (
+            f"Workflow: {project.workflow_id} | methodology={project.methodology} | "
+            f"default_branch={project.default_branch}"
+        ),
+        (
+            f"Active sprint: {active_sprint.id} | {active_sprint.title}"
+            if active_sprint is not None
+            else "Active sprint: none"
+        ),
+        f"Sprints: {len(project_sprints)}",
+        _format_task_counts(task_counts),
+        _format_run_totals(totals),
+        "Settings:",
+    ]
+    if not project.settings:
+        lines.append("- none")
+    else:
+        for key in sorted(project.settings):
+            lines.append(f"- {key}={_format_setting_value(project.settings[key])}")
+    _print_lines(*lines)
+    return 0
+
+
+def handle_sprint_add(args: argparse.Namespace) -> int:
+    """Handle ``foreman sprint add``."""
+
+    db_path = _resolve_db_path_or_print(args.db)
+    if db_path is None:
+        return 1
+
+    with ForemanStore(db_path) as store:
+        store.initialize()
+        project = _resolve_project_or_print(store, args.project_id)
+        if project is None:
+            return 1
+
+        sprints = store.list_sprints(project.id)
+        sprint = Sprint(
+            id=_allocate_entity_id("sprint", args.title, exists=store.get_sprint),
+            project_id=project.id,
+            title=args.title,
+            goal=args.goal,
+            status="planned",
+            order_index=_next_order_index([item.order_index for item in sprints]),
+        )
+        store.save_sprint(sprint)
+        db_path = store.db_path
 
     _print_lines(
-        f"foreman {args.command_path} is not implemented yet.",
-        "This CLI shell defines the canonical command surface from the product spec.",
-        CLI_SHELL_NOTE,
+        "Created sprint",
+        f"Database: {db_path}",
+        f"Project: {project.id} | {project.name}",
+        f"Sprint: {sprint.id} | {sprint.title}",
+        f"Goal: {sprint.goal or 'n/a'}",
+        f"Status: {sprint.status}",
+        f"Order: {sprint.order_index}",
     )
+    return 0
+
+
+def handle_sprint_activate(args: argparse.Namespace) -> int:
+    """Handle ``foreman sprint activate``."""
+
+    db_path = _resolve_db_path_or_print(args.db)
+    if db_path is None:
+        return 1
+
+    with ForemanStore(db_path) as store:
+        store.initialize()
+        sprint = _resolve_sprint_or_print(store, args.sprint_id)
+        if sprint is None:
+            return 1
+        if sprint.status in {"completed", "cancelled"}:
+            print(
+                f"Sprint {sprint.id} cannot be activated from status {sprint.status}.",
+                file=sys.stderr,
+            )
+            return 1
+
+        active_sprint = store.get_active_sprint(sprint.project_id)
+        if active_sprint is not None and active_sprint.id != sprint.id:
+            print(
+                f"Project {sprint.project_id} already has active sprint {active_sprint.id}.",
+                file=sys.stderr,
+            )
+            return 1
+
+        if sprint.status != "active":
+            sprint.status = "active"
+            sprint.started_at = sprint.started_at or utc_now_text()
+            sprint.completed_at = None
+            store.save_sprint(sprint)
+        db_path = store.db_path
+        project = store.get_project(sprint.project_id)
+
+    _print_lines(
+        "Activated sprint",
+        f"Database: {db_path}",
+        f"Project: {sprint.project_id} | {project.name if project is not None else 'unknown'}",
+        f"Sprint: {sprint.id} | {sprint.title}",
+        f"Status: {sprint.status}",
+    )
+    return 0
+
+
+def handle_sprint_list(args: argparse.Namespace) -> int:
+    """Handle ``foreman sprint list``."""
+
+    db_path = _resolve_db_path_or_print(args.db)
+    if db_path is None:
+        return 1
+
+    with ForemanStore(db_path) as store:
+        store.initialize()
+        project = _resolve_project_or_print(store, args.project_id)
+        if project is None:
+            return 1
+        sprints = store.list_sprints(project.id)
+        db_path = store.db_path
+
+        lines = [
+            "Sprints",
+            f"Database: {db_path}",
+            f"Project: {project.id} | {project.name}",
+        ]
+        if not sprints:
+            lines.append("No sprints are defined for this project.")
+        else:
+            for sprint in sprints:
+                counts = store.task_counts(sprint_id=sprint.id)
+                totals = store.run_totals(project_id=project.id, sprint_id=sprint.id)
+                lines.append(
+                    f"{sprint.id} | status={sprint.status} | order={sprint.order_index} | title={sprint.title}"
+                )
+                lines.append(
+                    f"goal={sprint.goal or 'n/a'} | {_format_task_counts(counts)} | {_format_run_totals(totals)}"
+                )
+
+    _print_lines(*lines)
+    return 0
+
+
+def handle_sprint_complete(args: argparse.Namespace) -> int:
+    """Handle ``foreman sprint complete``."""
+
+    db_path = _resolve_db_path_or_print(args.db)
+    if db_path is None:
+        return 1
+
+    with ForemanStore(db_path) as store:
+        store.initialize()
+        sprint = _resolve_sprint_or_print(store, args.sprint_id)
+        if sprint is None:
+            return 1
+        if sprint.status == "cancelled":
+            print(f"Sprint {sprint.id} is cancelled and cannot be completed.", file=sys.stderr)
+            return 1
+
+        unresolved = [
+            task.id
+            for task in store.list_tasks(sprint_id=sprint.id)
+            if task.status not in {"done", "cancelled"}
+        ]
+        if unresolved:
+            print(
+                "Sprint cannot be completed while unresolved tasks remain: "
+                + ", ".join(unresolved),
+                file=sys.stderr,
+            )
+            return 1
+
+        if sprint.status != "completed":
+            completion_time = utc_now_text()
+            sprint.status = "completed"
+            sprint.started_at = sprint.started_at or completion_time
+            sprint.completed_at = completion_time
+            store.save_sprint(sprint)
+        project = store.get_project(sprint.project_id)
+        db_path = store.db_path
+
+    _print_lines(
+        "Completed sprint",
+        f"Database: {db_path}",
+        f"Project: {sprint.project_id} | {project.name if project is not None else 'unknown'}",
+        f"Sprint: {sprint.id} | {sprint.title}",
+        f"Status: {sprint.status}",
+        f"Completed at: {sprint.completed_at}",
+    )
+    return 0
+
+
+def handle_task_add(args: argparse.Namespace) -> int:
+    """Handle ``foreman task add``."""
+
+    if args.task_type not in TASK_TYPES:
+        print(
+            f"Unsupported task type: {args.task_type}. Expected one of: {', '.join(TASK_TYPES)}.",
+            file=sys.stderr,
+        )
+        return 1
+
+    db_path = _resolve_db_path_or_print(args.db)
+    if db_path is None:
+        return 1
+
+    with ForemanStore(db_path) as store:
+        store.initialize()
+        project = _resolve_project_or_print(store, args.project_id)
+        if project is None:
+            return 1
+
+        sprint = _select_task_creation_sprint(store, project.id)
+        if sprint is None:
+            print(
+                f"Project {project.id} has no active or planned sprint. Create one with `foreman sprint add` first.",
+                file=sys.stderr,
+            )
+            return 1
+
+        existing_tasks = store.list_tasks(sprint_id=sprint.id)
+        task = Task(
+            id=_allocate_entity_id("task", args.title, exists=store.get_task),
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title=args.title,
+            task_type=args.task_type,
+            acceptance_criteria=args.criteria,
+            order_index=_next_order_index([item.order_index for item in existing_tasks]),
+        )
+        store.save_task(task)
+        db_path = store.db_path
+
+    _print_lines(
+        "Created task",
+        f"Database: {db_path}",
+        f"Project: {project.id} | {project.name}",
+        f"Sprint: {sprint.id} | {sprint.title}",
+        f"Task: {task.id} | {task.title}",
+        f"Type: {task.task_type}",
+        f"Criteria: {task.acceptance_criteria or 'n/a'}",
+        f"Status: {task.status}",
+    )
+    return 0
+
+
+def handle_task_list(args: argparse.Namespace) -> int:
+    """Handle ``foreman task list``."""
+
+    db_path = _resolve_db_path_or_print(args.db)
+    if db_path is None:
+        return 1
+
+    with ForemanStore(db_path) as store:
+        store.initialize()
+        project = _resolve_project_or_print(store, args.project_id)
+        if project is None:
+            return 1
+
+        sprints = store.list_sprints(project.id)
+        tasks = store.list_tasks(project_id=project.id)
+        totals_by_task = {
+            str(row["task_id"]): row for row in store.task_run_totals(project_id=project.id)
+        }
+        tasks_by_sprint: dict[str, list[Task]] = {}
+        for task in tasks:
+            tasks_by_sprint.setdefault(task.sprint_id, []).append(task)
+
+        lines = [
+            "Tasks",
+            f"Database: {store.db_path}",
+            f"Project: {project.id} | {project.name}",
+        ]
+        if not tasks:
+            lines.append("No tasks are defined for this project.")
+        else:
+            for sprint in sprints:
+                sprint_tasks = tasks_by_sprint.get(sprint.id, [])
+                if not sprint_tasks:
+                    continue
+                lines.append(
+                    f"Sprint: {sprint.id} | {sprint.title} | status={sprint.status}"
+                )
+                for task in sprint_tasks:
+                    totals = totals_by_task.get(task.id, {})
+                    lines.append(
+                        f"- {task.id} | {task.task_type} | {task.title} | status={task.status} | "
+                        f"runs={totals.get('run_count', 0)} | "
+                        f"tokens={totals.get('total_token_count', 0)} | "
+                        f"cost_usd={_format_usd(float(totals.get('total_cost_usd', 0.0)))}"
+                    )
+
+    _print_lines(*lines)
+    return 0
+
+
+def handle_task_block(args: argparse.Namespace) -> int:
+    """Handle ``foreman task block``."""
+
+    db_path = _resolve_db_path_or_print(args.db)
+    if db_path is None:
+        return 1
+
+    with ForemanStore(db_path) as store:
+        store.initialize()
+        task = _resolve_task_or_print(store, args.task_id)
+        if task is None:
+            return 1
+        if task.status in {"done", "cancelled"}:
+            print(
+                f"Task {task.id} cannot be blocked from status {task.status}.",
+                file=sys.stderr,
+            )
+            return 1
+
+        task.status = "blocked"
+        task.blocked_reason = args.reason
+        task.completed_at = None
+        store.save_task(task)
+        db_path = store.db_path
+
+    _print_lines(
+        "Blocked task",
+        f"Database: {db_path}",
+        f"Task: {task.id} | {task.title}",
+        f"Status: {task.status}",
+        f"Reason: {task.blocked_reason}",
+    )
+    return 0
+
+
+def handle_task_unblock(args: argparse.Namespace) -> int:
+    """Handle ``foreman task unblock``."""
+
+    db_path = _resolve_db_path_or_print(args.db)
+    if db_path is None:
+        return 1
+
+    with ForemanStore(db_path) as store:
+        store.initialize()
+        task = _resolve_task_or_print(store, args.task_id)
+        if task is None:
+            return 1
+        if task.status != "blocked":
+            print(f"Task {task.id} is not blocked.", file=sys.stderr)
+            return 1
+        if task.workflow_current_step is not None:
+            print(
+                f"Task {task.id} is paused at a workflow gate; use `foreman approve` or `foreman deny` instead.",
+                file=sys.stderr,
+            )
+            return 1
+
+        task.status = "todo"
+        task.blocked_reason = None
+        task.workflow_current_step = None
+        task.workflow_carried_output = None
+        task.step_visit_counts = {}
+        task.completed_at = None
+        store.save_task(task)
+        db_path = store.db_path
+
+    _print_lines(
+        "Unblocked task",
+        f"Database: {db_path}",
+        f"Task: {task.id} | {task.title}",
+        f"Status: {task.status}",
+        "Step visits reset: yes",
+    )
+    return 0
+
+
+def handle_task_cancel(args: argparse.Namespace) -> int:
+    """Handle ``foreman task cancel``."""
+
+    db_path = _resolve_db_path_or_print(args.db)
+    if db_path is None:
+        return 1
+
+    with ForemanStore(db_path) as store:
+        store.initialize()
+        task = _resolve_task_or_print(store, args.task_id)
+        if task is None:
+            return 1
+        if task.status == "done":
+            print(f"Task {task.id} is already done and cannot be cancelled.", file=sys.stderr)
+            return 1
+
+        if task.status != "cancelled":
+            task.status = "cancelled"
+            task.blocked_reason = None
+            task.workflow_current_step = None
+            task.workflow_carried_output = None
+            task.completed_at = utc_now_text()
+            store.save_task(task)
+        db_path = store.db_path
+
+    _print_lines(
+        "Cancelled task",
+        f"Database: {db_path}",
+        f"Task: {task.id} | {task.title}",
+        f"Status: {task.status}",
+        f"Completed at: {task.completed_at}",
+    )
+    return 0
+
+
+def handle_run(args: argparse.Namespace) -> int:
+    """Handle ``foreman run``."""
+
+    db_path = _resolve_db_path_or_print(args.db)
+    if db_path is None:
+        return 1
+
+    with ForemanStore(db_path) as store:
+        store.initialize()
+        project = _resolve_project_or_print(store, args.project_id)
+        if project is None:
+            return 1
+
+        orchestrator = ForemanOrchestrator(store)
+        try:
+            result = orchestrator.run_project(project.id, task_id=args.task)
+        except OrchestratorError as exc:
+            print(f"Failed to run project: {exc}", file=sys.stderr)
+            return 1
+        db_path = store.db_path
+
+    _print_lines(
+        "Run",
+        f"Database: {db_path}",
+        f"Project: {project.id} | {project.name}",
+        (f"Scope: task {args.task}" if args.task is not None else "Scope: project"),
+        (
+            "Executed tasks: " + ", ".join(result.executed_task_ids)
+            if result.executed_task_ids
+            else "Executed tasks: none"
+        ),
+        (
+            "Blocked tasks: " + ", ".join(result.blocked_task_ids)
+            if result.blocked_task_ids
+            else "Blocked tasks: none"
+        ),
+        f"Stop reason: {result.stop_reason}",
+    )
+    return 0
+
+
+def handle_config(args: argparse.Namespace) -> int:
+    """Handle ``foreman config``."""
+
+    db_path = _resolve_db_path_or_print(args.db)
+    if db_path is None:
+        return 1
+
+    with ForemanStore(db_path) as store:
+        store.initialize()
+        project = _resolve_project_or_print(store, args.project_id)
+        if project is None:
+            return 1
+
+        assignment_summary = None
+        if args.config_set:
+            try:
+                key, value = _parse_config_assignment(args.config_set)
+            except CliResolutionError as exc:
+                print(str(exc), file=sys.stderr)
+                return 1
+            project.settings[key] = value
+            project.updated_at = utc_now_text()
+            store.save_project(project)
+            assignment_summary = f"{key}={_format_setting_value(value)}"
+        db_path = store.db_path
+
+    lines = [
+        "Updated config" if assignment_summary is not None else "Config",
+        f"Database: {db_path}",
+        f"Project: {project.id} | {project.name}",
+        f"Workflow: {project.workflow_id} | default_branch={project.default_branch}",
+    ]
+    if assignment_summary is not None:
+        lines.append(f"Changed: {assignment_summary}")
+    lines.append("Settings:")
+    if not project.settings:
+        lines.append("- none")
+    else:
+        for key in sorted(project.settings):
+            lines.append(f"- {key}={_format_setting_value(project.settings[key])}")
+    _print_lines(*lines)
     return 0
 
 
@@ -918,10 +1528,13 @@ def handle_dashboard(args: argparse.Namespace) -> int:
         return 1
 
     try:
-        run_dashboard(
+        run_dashboard_server(
             db_path=db_path,
             host=args.host,
             port=args.port,
+            frontend_mode=args.frontend_mode,
+            frontend_dev_url=args.frontend_dev_url,
+            reload=args.reload,
         )
     except (OSError, RuntimeError) as exc:
         print(f"Failed to start dashboard: {exc}", file=sys.stderr)
@@ -987,7 +1600,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Inspect one project.",
     )
     project_parser.add_argument("project_id", help="Project identifier.")
-    _set_handler(project_parser, handle_stub, "project")
+    _add_db_option(
+        project_parser,
+        help_text=f"Path to the SQLite store containing the project. {DB_OPTION_NOTE}",
+    )
+    _set_handler(project_parser, handle_project, "project")
 
     sprint_parser = subparsers.add_parser(
         "sprint",
@@ -1002,25 +1619,41 @@ def build_parser() -> argparse.ArgumentParser:
     sprint_add.add_argument("project_id", help="Project identifier.")
     sprint_add.add_argument("--title", required=True, help="Sprint title.")
     sprint_add.add_argument("--goal", required=True, help="Sprint goal.")
-    _set_handler(sprint_add, handle_stub, "sprint add")
+    _add_db_option(
+        sprint_add,
+        help_text=f"Path to the SQLite store containing the project. {DB_OPTION_NOTE}",
+    )
+    _set_handler(sprint_add, handle_sprint_add, "sprint add")
 
     sprint_activate = sprint_commands.add_parser(
         "activate",
         help="Activate a sprint.",
     )
     sprint_activate.add_argument("sprint_id", help="Sprint identifier.")
-    _set_handler(sprint_activate, handle_stub, "sprint activate")
+    _add_db_option(
+        sprint_activate,
+        help_text=f"Path to the SQLite store containing the sprint. {DB_OPTION_NOTE}",
+    )
+    _set_handler(sprint_activate, handle_sprint_activate, "sprint activate")
 
     sprint_list = sprint_commands.add_parser("list", help="List project sprints.")
     sprint_list.add_argument("project_id", help="Project identifier.")
-    _set_handler(sprint_list, handle_stub, "sprint list")
+    _add_db_option(
+        sprint_list,
+        help_text=f"Path to the SQLite store containing the project. {DB_OPTION_NOTE}",
+    )
+    _set_handler(sprint_list, handle_sprint_list, "sprint list")
 
     sprint_complete = sprint_commands.add_parser(
         "complete",
         help="Complete a sprint.",
     )
     sprint_complete.add_argument("sprint_id", help="Sprint identifier.")
-    _set_handler(sprint_complete, handle_stub, "sprint complete")
+    _add_db_option(
+        sprint_complete,
+        help_text=f"Path to the SQLite store containing the sprint. {DB_OPTION_NOTE}",
+    )
+    _set_handler(sprint_complete, handle_sprint_complete, "sprint complete")
 
     task_parser = subparsers.add_parser(
         "task",
@@ -1034,31 +1667,55 @@ def build_parser() -> argparse.ArgumentParser:
     task_add = task_commands.add_parser("add", help="Create a task.")
     task_add.add_argument("project_id", help="Project identifier.")
     task_add.add_argument("--title", required=True, help="Task title.")
-    task_add.add_argument("--type", default="feature", help="Task type.")
+    task_add.add_argument("--type", dest="task_type", default="feature", help="Task type.")
     task_add.add_argument("--criteria", required=True, help="Acceptance criteria.")
-    _set_handler(task_add, handle_stub, "task add")
+    _add_db_option(
+        task_add,
+        help_text=f"Path to the SQLite store containing the project. {DB_OPTION_NOTE}",
+    )
+    _set_handler(task_add, handle_task_add, "task add")
 
     task_list = task_commands.add_parser("list", help="List project tasks.")
     task_list.add_argument("project_id", help="Project identifier.")
-    _set_handler(task_list, handle_stub, "task list")
+    _add_db_option(
+        task_list,
+        help_text=f"Path to the SQLite store containing the project. {DB_OPTION_NOTE}",
+    )
+    _set_handler(task_list, handle_task_list, "task list")
 
     task_block = task_commands.add_parser("block", help="Block a task.")
     task_block.add_argument("task_id", help="Task identifier.")
     task_block.add_argument("--reason", required=True, help="Blocking reason.")
-    _set_handler(task_block, handle_stub, "task block")
+    _add_db_option(
+        task_block,
+        help_text=f"Path to the SQLite store containing the task. {DB_OPTION_NOTE}",
+    )
+    _set_handler(task_block, handle_task_block, "task block")
 
     task_unblock = task_commands.add_parser("unblock", help="Unblock a task.")
     task_unblock.add_argument("task_id", help="Task identifier.")
-    _set_handler(task_unblock, handle_stub, "task unblock")
+    _add_db_option(
+        task_unblock,
+        help_text=f"Path to the SQLite store containing the task. {DB_OPTION_NOTE}",
+    )
+    _set_handler(task_unblock, handle_task_unblock, "task unblock")
 
     task_cancel = task_commands.add_parser("cancel", help="Cancel a task.")
     task_cancel.add_argument("task_id", help="Task identifier.")
-    _set_handler(task_cancel, handle_stub, "task cancel")
+    _add_db_option(
+        task_cancel,
+        help_text=f"Path to the SQLite store containing the task. {DB_OPTION_NOTE}",
+    )
+    _set_handler(task_cancel, handle_task_cancel, "task cancel")
 
     run_parser = subparsers.add_parser("run", help="Run Foreman against a project.")
     run_parser.add_argument("project_id", help="Project identifier.")
     run_parser.add_argument("--task", help="Single task identifier to run.")
-    _set_handler(run_parser, handle_stub, "run")
+    _add_db_option(
+        run_parser,
+        help_text=f"Path to the SQLite store containing the project workflow state. {DB_OPTION_NOTE}",
+    )
+    _set_handler(run_parser, handle_run, "run")
 
     status_parser = subparsers.add_parser(
         "status",
@@ -1153,7 +1810,11 @@ def build_parser() -> argparse.ArgumentParser:
         dest="config_set",
         help="Configuration assignment in key=value form.",
     )
-    _set_handler(config_parser, handle_stub, "config")
+    _add_db_option(
+        config_parser,
+        help_text=f"Path to the SQLite store containing the project. {DB_OPTION_NOTE}",
+    )
+    _set_handler(config_parser, handle_config, "config")
 
     dashboard_parser = subparsers.add_parser(
         "dashboard",
@@ -1173,6 +1834,28 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=8080,
         help="Port to listen on (default: 8080).",
+    )
+    dashboard_parser.add_argument(
+        "--frontend-mode",
+        choices=("dist", "dev"),
+        default="dist",
+        help=(
+            "Frontend delivery mode. Use `dist` for the shipped built React app "
+            "and `dev` when a Vite dev server will serve the frontend shell."
+        ),
+    )
+    dashboard_parser.add_argument(
+        "--frontend-dev-url",
+        default=DEFAULT_FRONTEND_DEV_URL,
+        help=(
+            "Origin for the frontend dev server when `--frontend-mode dev` is used "
+            f"(default: {DEFAULT_FRONTEND_DEV_URL})."
+        ),
+    )
+    dashboard_parser.add_argument(
+        "--reload",
+        action="store_true",
+        help="Enable uvicorn reload support for local dashboard backend development.",
     )
     _set_handler(dashboard_parser, handle_dashboard, "dashboard")
 

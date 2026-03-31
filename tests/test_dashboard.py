@@ -1,4 +1,4 @@
-"""Tests for the Foreman dashboard API, FastAPI transport, and React shell."""
+"""Tests for the Foreman dashboard service, FastAPI transport, and React shell."""
 
 from __future__ import annotations
 
@@ -11,14 +11,14 @@ import tempfile
 
 import httpx
 
-from foreman.dashboard_api import DashboardAPI
+from foreman.dashboard_service import DashboardService
 from foreman.dashboard_backend import create_dashboard_app
 from foreman.models import Event, Project, Run, Sprint, Task
 from foreman.store import ForemanStore
 
 
 class DashboardBackendTests(unittest.TestCase):
-    """Test the extracted dashboard API, FastAPI backend, and React shell."""
+    """Test the extracted dashboard service, FastAPI backend, and React shell."""
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -156,10 +156,10 @@ class DashboardBackendTests(unittest.TestCase):
             event_type="agent.file_change",
             timestamp="2026-03-30T12:20:00Z",
             role_id="developer",
-            payload={"path": "foreman/dashboard.py"},
+            payload={"path": "foreman/dashboard_runtime.py"},
         )
         cls.store.save_event(cls.event_2)
-        cls.api = DashboardAPI(
+        cls.api = DashboardService(
             cls.store,
             now_factory=lambda: datetime(
                 2026,
@@ -274,7 +274,7 @@ class DashboardBackendTests(unittest.TestCase):
         self.assertIn("agent.file_change", event_types)
 
     def test_dashboard_api_serializes_incremental_sprint_events(self):
-        """Dashboard API can serialize sprint event batches after a known event."""
+        """Dashboard service can serialize sprint event batches after a known event."""
         events = self.api.list_sprint_events(
             "sprint-1",
             limit=10,
@@ -284,7 +284,7 @@ class DashboardBackendTests(unittest.TestCase):
         self.assertEqual(events[0]["task_id"], "task-2")
 
     def test_dashboard_api_wraps_stream_messages_for_sse(self):
-        """Dashboard API exposes the SSE payload contract separately from HTTP transport."""
+        """Dashboard service exposes the SSE payload contract separately from HTTP transport."""
         messages = self.api.list_sprint_stream_messages(
             "sprint-1",
             limit=10,
@@ -297,7 +297,7 @@ class DashboardBackendTests(unittest.TestCase):
 
     def test_dashboard_frontend_build_exists(self):
         """The built React dashboard assets are present for FastAPI to serve."""
-        from foreman.dashboard import DASHBOARD_ASSETS_DIR, DASHBOARD_INDEX_PATH
+        from foreman.dashboard_runtime import DASHBOARD_ASSETS_DIR, DASHBOARD_INDEX_PATH
 
         self.assertTrue(DASHBOARD_INDEX_PATH.is_file())
         self.assertTrue(DASHBOARD_ASSETS_DIR.is_dir())
@@ -348,8 +348,21 @@ class DashboardBackendTests(unittest.TestCase):
         self.assertIn("text/html", response.headers["content-type"])
         self.assertIn("<div id=\"root\"></div>", response.body.decode("utf-8"))
 
+    def test_fastapi_dev_mode_redirects_dashboard_shell_to_vite(self):
+        """Frontend dev mode redirects dashboard shell routes to the Vite server."""
+        app = create_dashboard_app(
+            str(self.db_path),
+            frontend_mode="dev",
+            frontend_dev_url="http://127.0.0.1:5173",
+        )
+        route = next(route for route in app.routes if getattr(route, "path", None) == "/dashboard")
+
+        response = asyncio.run(route.endpoint())
+        self.assertEqual(response.status_code, 307)
+        self.assertEqual(response.headers["location"], "http://127.0.0.1:5173/dashboard")
+
     def test_human_message_event_storage(self):
-        """Human guidance messages are persisted through the dashboard API contract."""
+        """Human guidance messages are persisted through the dashboard service contract."""
         result = self.api.create_human_message(
             self.in_progress_task.id,
             text="Please add more tests",

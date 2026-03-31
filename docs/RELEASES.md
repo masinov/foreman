@@ -48,6 +48,10 @@ The first dedicated React dashboard frontend checkpoint is recorded in
 The production-hardening reset checkpoint is recorded in
 `docs/checkpoints/production-hardening-audit.md`.
 
+The dashboard runtime and local development workflow cleanup is currently
+tracked in `docs/prs/refactor-dashboard-runtime-dev-workflow.md` as part of
+the active product-surface hardening sprint.
+
 ## Near-term policy
 
 While product-surface hardening and migration bootstrap are still incomplete:

@@ -11,14 +11,18 @@
   - `docs/ARCHITECTURE.md`
   - `docs/ROADMAP.md`
   - `foreman/cli.py`
+  - `foreman/dashboard_runtime.py`
+  - `foreman/dashboard_service.py`
   - `foreman/dashboard_backend.py`
   - `frontend/src/App.jsx`
+  - `frontend/vite.config.js`
+  - `scripts/dashboard_dev.py`
   - `tests/test_cli.py`
   - `tests/test_dashboard.py`
 
 ## Included tasks
 
-1. `[todo]` Remove or implement the remaining stub CLI product surfaces
+1. `[done]` Remove or implement the remaining stub CLI product surfaces
    Deliverable: user-facing commands no longer fall through the generic
    placeholder handler where real product behavior is expected.
 
@@ -30,6 +34,11 @@
 3. `[todo]` Strengthen product-surface validation
    Deliverable: validation now covers the hardened CLI and dashboard paths
    above the current API and component-level checks.
+
+4. `[done]` Clarify the dashboard runtime split and local development workflow
+   Deliverable: runtime, service, and backend module roles are explicit and
+   the React frontend can run in Vite dev mode against the FastAPI backend
+   without relying on built assets.
 
 ## Excluded from this sprint
 

@@ -44,9 +44,9 @@ The current codebase maps closely onto that split:
 - `foreman/roles.py` and `foreman/workflows.py` own declarative configuration,
 - `foreman/orchestrator.py` owns workflow execution and durable transitions,
 - `foreman/runner/` owns backend-specific transport and event normalization,
-- `foreman/cli.py`, `foreman/dashboard.py`, `foreman/dashboard_api.py`,
-  `foreman/dashboard_backend.py`, and `frontend/` expose inspection and
-  control surfaces.
+- `foreman/cli.py`, `foreman/dashboard_runtime.py`,
+  `foreman/dashboard_service.py`, `foreman/dashboard_backend.py`, and
+  `frontend/` expose inspection and control surfaces.
 
 ## Source of truth
 
@@ -123,9 +123,10 @@ The current runtime supports:
 Foreman now exposes two first-class observation surfaces:
 
 - CLI inspection commands: `board`, `history`, `cost`, and live `watch`
-- a dashboard service contract in `foreman/dashboard_api.py`, a FastAPI
+- a dashboard service layer in `foreman/dashboard_service.py`, a FastAPI
   transport layer in `foreman/dashboard_backend.py`, a React frontend
-  workspace in `frontend/`, and a runtime entrypoint in `foreman/dashboard.py`
+  workspace in `frontend/`, and a runtime entrypoint in
+  `foreman/dashboard_runtime.py`
 
 Per ADR-0002, the dashboard currently reads directly from `ForemanStore`
 read-model helpers rather than going through a separate query service or
@@ -143,15 +144,19 @@ Per ADR-0004, the product backend transport for the dashboard is now:
 
 - FastAPI for routing and HTTP behavior,
 - uvicorn for the runtime server boundary,
-- `dashboard_api.py` as the service layer under those routes.
+- `dashboard_service.py` as the store-backed service layer under those routes,
+- `dashboard_runtime.py` as the product runtime entrypoint and asset or
+  frontend-dev launcher for `foreman dashboard`.
 
 The current dashboard baseline includes:
 
 - extracted backend responses for project, sprint, task, action, and
-  streaming contracts in `foreman/dashboard_api.py`,
+  streaming contracts in `foreman/dashboard_service.py`,
 - FastAPI route delivery in `foreman/dashboard_backend.py`,
 - a dedicated React and Vite frontend source workspace in `frontend/`,
 - built frontend assets in `foreman/dashboard_frontend_dist/`,
+- Vite dev-mode `/api` proxying plus a combined local dashboard dev launcher
+  in `scripts/dashboard_dev.py`,
 - project overview and multi-project switching,
 - sprint board grouped by task status,
 - task detail with run history, acceptance criteria, and step visit counts,
@@ -167,6 +172,8 @@ The current implementation debt in this area is explicit:
 - there is still no browser-driven end-to-end dashboard test stack,
 - the committed built frontend assets must stay synchronized with the source
   app in `frontend/`,
+- the local Vite-plus-FastAPI development loop now exists, but it still lacks
+  browser-driven end-to-end validation,
 - the SSE transport still polls SQLite directly inside the FastAPI stream
   loop.
 
@@ -221,7 +228,7 @@ The current CLI watch baseline now includes:
   contract does not expose USD pricing, so Codex `cost_usd` remains zero.
 - the dashboard live transport currently uses server-sent events through the
   FastAPI backend, with store polling inside the stream loop and the
-  extracted `foreman.dashboard_api` contract acting as the service boundary
+  extracted `foreman.dashboard_service` layer acting as the service boundary
   under the shipped React frontend.
 - `foreman watch` now shares the dashboard's persisted-event cursor boundary
   but stays on a direct store-read loop instead of going through the HTTP SSE
@@ -234,8 +241,9 @@ The current CLI watch baseline now includes:
 The next slice should harden the product surface now that the dashboard split
 is in place:
 
-- remove or implement the remaining stub CLI product commands,
 - close the most visible dashboard and settings gaps exposed by the new
   frontend baseline,
+- keep widening validation so the shipped CLI surface is exercised as real
+  product behavior instead of placeholder wiring,
 - add stronger product-surface validation above the current API and component
   layers.

@@ -57,8 +57,8 @@ The integrated pre-release baseline now contains:
   (`ADR-0001`), dashboard data access (`ADR-0002`), and the product web UI
   and API boundary (`ADR-0003`), plus the dashboard backend framework
   (`ADR-0004`),
-- an extracted dashboard backend contract in `foreman/dashboard_api.py` for
-  project, sprint, task, action, and streaming payloads,
+- a dashboard service layer in `foreman/dashboard_service.py` for project,
+  sprint, task, action, and streaming payloads,
 - a FastAPI dashboard backend in `foreman/dashboard_backend.py` served by
   uvicorn,
 - a dedicated React dashboard frontend in `frontend/` with project overview,
@@ -67,8 +67,8 @@ The integrated pre-release baseline now contains:
   activity updates,
 - built dashboard assets in `foreman/dashboard_frontend_dist/` served by the
   FastAPI backend,
-- `foreman/dashboard.py` reduced to the dashboard runtime entrypoint and
-  frontend asset guard,
+- `foreman/dashboard_runtime.py` as the dashboard runtime entrypoint and
+  frontend asset guard plus dev-mode launch support,
 - unit and integration coverage across store, CLI, orchestrator, runners,
   dashboard, the React frontend, and runner-backed executor seams.
 
@@ -148,12 +148,33 @@ rendering repeated snapshots.
 The product dashboard now ships through the accepted architecture:
 
 - Python backend modules expose JSON and streaming APIs through
-  `foreman/dashboard_api.py` and `foreman/dashboard_backend.py`,
+  `foreman/dashboard_service.py` and `foreman/dashboard_backend.py`,
 - the dedicated React frontend in `frontend/` owns product UI rendering and
   client state,
 - built frontend assets are served by FastAPI from
   `foreman/dashboard_frontend_dist/`,
 - mockup alignment remains mandatory for hierarchy and interaction behavior.
+
+## Local dashboard development
+
+Use the shipped runtime when you want the packaged product surface:
+
+```bash
+./venv/bin/foreman dashboard
+```
+
+Use the dedicated frontend workflow when you want Vite HMR against the live
+FastAPI backend:
+
+```bash
+npm --prefix frontend run dev:full
+```
+
+That command starts the backend on `http://127.0.0.1:8080` and the frontend on
+`http://127.0.0.1:5173/dashboard`.
+
+If you only want the frontend dev server, `npm --prefix frontend run dev` now
+proxies `/api` requests to `http://127.0.0.1:8080` by default.
 
 ## Autonomous entry points
 
@@ -187,9 +208,9 @@ The current sprint is `sprint-24-product-surface-hardening`.
 
 The next recommended task is:
 
-- remove or implement the remaining stub CLI product surfaces and strengthen
-  product-surface validation now that the dedicated React dashboard is in
-  place.
+- close the most visible remaining product-surface gaps and strengthen
+  validation now that the shipped CLI commands no longer depend on placeholder
+  handlers.
 
 That work is recorded in `docs/sprints/current.md`, so a fresh agent can pick
 it up without reconstructing branch history first.
@@ -212,6 +233,7 @@ Current code-level validation also includes:
 ./venv/bin/pip install -e . --no-build-isolation
 npm --prefix frontend test
 npm --prefix frontend run build
+./venv/bin/python scripts/dashboard_dev.py --help
 ./venv/bin/python -m unittest discover -s tests -v
 ./venv/bin/foreman --help
 ./venv/bin/foreman projects
@@ -225,4 +247,5 @@ npm --prefix frontend run build
 ./venv/bin/foreman cost --help
 ./venv/bin/foreman watch --help
 ./venv/bin/foreman dashboard --help
+./venv/bin/python scripts/dashboard_dev.py --help
 ```

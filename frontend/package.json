@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:full": "../venv/bin/python ../scripts/dashboard_dev.py",
     "build": "vite build",
     "test": "vitest run"
   },

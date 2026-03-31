@@ -44,8 +44,10 @@ memory changes rather than versioned product releases.
 - `docs/adr/ADR-0003-web-ui-api-boundary.md`
 - `docs/adr/ADR-0004-dashboard-backend-framework.md`
 - production-hardening audit and detour planning docs
-- `foreman/dashboard_api.py` as the extracted dashboard backend contract
+- `foreman/dashboard_service.py` as the extracted dashboard service layer
 - `foreman/dashboard_backend.py` as the FastAPI dashboard transport
+- `scripts/dashboard_dev.py` as the combined local dashboard frontend and
+  backend launcher
 - `frontend/src/App.test.jsx` and the frontend bundle build validation path
 - dashboard transition checkpoint notes while the embedded shell was being
   replaced
@@ -105,6 +107,17 @@ memory changes rather than versioned product releases.
 - pruned redundant dashboard transition checkpoint and PR-summary files now
   that sprint archives and the dedicated frontend checkpoint are the durable
   history
+- renamed the dashboard runtime wrapper to `foreman/dashboard_runtime.py` and
+  the extracted dashboard service layer to `foreman/dashboard_service.py`
+- added frontend-dev support to `foreman dashboard`, Vite `/api` proxying for
+  `npm --prefix frontend run dev`, and a one-command
+  `npm --prefix frontend run dev:full` workflow
+- removed the remaining `handle_stub` product-surface fallbacks by
+  implementing the shipped `project`, `sprint`, `task`, `run`, and `config`
+  CLI behaviors with direct store or orchestrator integration
+- expanded CLI subprocess coverage around sprint activation and completion,
+  task lifecycle operations, project inspection, config updates, and direct
+  run invocation
 - reconciled the loose feature and recovery branches into an integrated
   mainline candidate and restored missing repo-memory artifacts from the
   runner-session ADR branch

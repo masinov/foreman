@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import mimetypes
+import os
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -14,17 +15,19 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 
-from .dashboard import (
+from .dashboard_runtime import (
     DASHBOARD_ASSETS_DIR,
     DASHBOARD_INDEX_PATH,
+    build_frontend_dev_redirect_url,
     ensure_dashboard_assets,
+    normalize_frontend_dev_url,
 )
-from .dashboard_api import (
+from .dashboard_service import (
     ACTIVITY_EVENT_LIMIT,
     STREAM_BATCH_LIMIT,
     STREAM_HEARTBEAT_SECONDS,
     STREAM_POLL_INTERVAL_SECONDS,
-    DashboardAPI,
+    DashboardService,
     DashboardActionError,
     DashboardNotFoundError,
     DashboardValidationError,
@@ -73,16 +76,32 @@ async def _read_json_body(request: Request) -> dict[str, Any]:
     return data
 
 
-def create_dashboard_app(db_path: str) -> FastAPI:
+def create_dashboard_app(
+    db_path: str,
+    *,
+    frontend_mode: str = "dist",
+    frontend_dev_url: str | None = None,
+) -> FastAPI:
     """Create the FastAPI application used for dashboard delivery."""
 
-    ensure_dashboard_assets()
+    if frontend_mode == "dist":
+        ensure_dashboard_assets()
+    elif frontend_mode == "dev":
+        if frontend_dev_url is None:
+            raise RuntimeError("Frontend dev mode requires a frontend dev URL.")
+        frontend_dev_url = normalize_frontend_dev_url(frontend_dev_url)
+    else:
+        raise RuntimeError(
+            f"Unsupported dashboard frontend mode: {frontend_mode}. Expected `dist` or `dev`."
+        )
 
     app = FastAPI(
         title="Foreman Dashboard API",
         version="0.1.0",
     )
     app.state.db_path = db_path
+    app.state.frontend_mode = frontend_mode
+    app.state.frontend_dev_url = frontend_dev_url
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -104,9 +123,13 @@ def create_dashboard_app(db_path: str) -> FastAPI:
 
     def with_api(callback):
         with _open_store(db_path) as store:
-            return callback(DashboardAPI(store))
+            return callback(DashboardService(store))
 
-    dashboard_html = DASHBOARD_INDEX_PATH.read_text(encoding="utf-8")
+    dashboard_html = (
+        DASHBOARD_INDEX_PATH.read_text(encoding="utf-8")
+        if frontend_mode == "dist"
+        else None
+    )
 
     def _resolve_asset_path(asset_path: str) -> Path | None:
         candidate = (DASHBOARD_ASSETS_DIR / asset_path).resolve()
@@ -120,10 +143,16 @@ def create_dashboard_app(db_path: str) -> FastAPI:
 
     @app.get("/", include_in_schema=False)
     async def dashboard_root() -> RedirectResponse:
+        if frontend_mode == "dev":
+            return RedirectResponse(
+                url=build_frontend_dev_redirect_url(frontend_dev_url, "/dashboard")
+            )
         return RedirectResponse(url="/dashboard")
 
     @app.get("/assets/{asset_path:path}", include_in_schema=False)
     async def dashboard_asset(asset_path: str) -> Response:
+        if frontend_mode != "dist":
+            return Response(status_code=404)
         asset_file = _resolve_asset_path(asset_path)
         if asset_file is None:
             return Response(status_code=404)
@@ -132,7 +161,14 @@ def create_dashboard_app(db_path: str) -> FastAPI:
 
     @app.get("/dashboard", response_class=HTMLResponse, include_in_schema=False)
     @app.get("/dashboard/{path:path}", response_class=HTMLResponse, include_in_schema=False)
-    async def dashboard_shell(path: str = "") -> HTMLResponse:
+    async def dashboard_shell(path: str = "") -> Response:
+        if frontend_mode == "dev":
+            route_path = "/dashboard"
+            if path:
+                route_path = f"{route_path}/{path}"
+            return RedirectResponse(
+                url=build_frontend_dev_redirect_url(frontend_dev_url, route_path)
+            )
         return HTMLResponse(dashboard_html)
 
     @app.get("/api/projects")
@@ -187,7 +223,7 @@ def create_dashboard_app(db_path: str) -> FastAPI:
             yield b"retry: 1000\n\n"
 
             with _open_store(db_path) as store:
-                api = DashboardAPI(store)
+                api = DashboardService(store)
                 while True:
                     if await request.is_disconnected():
                         break
@@ -241,3 +277,19 @@ def create_dashboard_app(db_path: str) -> FastAPI:
         )
 
     return app
+
+
+def create_dashboard_app_from_env() -> FastAPI:
+    """Create the dashboard app from environment for uvicorn reload mode."""
+
+    db_path = os.environ.get("FOREMAN_DASHBOARD_DB_PATH")
+    if not db_path:
+        raise RuntimeError("FOREMAN_DASHBOARD_DB_PATH is required for dashboard reload mode.")
+
+    frontend_mode = os.environ.get("FOREMAN_DASHBOARD_FRONTEND_MODE", "dist")
+    frontend_dev_url = os.environ.get("FOREMAN_DASHBOARD_FRONTEND_DEV_URL")
+    return create_dashboard_app(
+        db_path,
+        frontend_mode=frontend_mode,
+        frontend_dev_url=frontend_dev_url,
+    )

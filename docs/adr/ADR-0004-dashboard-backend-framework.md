@@ -11,8 +11,8 @@ real web backend.
 
 After `sprint-21-dashboard-api-extraction`, the repo had:
 
-- an extracted dashboard service layer in `foreman/dashboard_api.py`,
-- a legacy inline shell still living in `foreman/dashboard.py`,
+- an extracted dashboard service layer in `foreman/dashboard_service.py`,
+- a runtime wrapper still coupled to the legacy dashboard shell behavior,
 - raw HTTP delivery built on `SimpleHTTPRequestHandler` and
   `ThreadingHTTPServer`.
 
@@ -34,12 +34,12 @@ Foreman's dashboard backend will use **FastAPI** as its HTTP framework and
 
 The active backend split is:
 
-- `foreman/dashboard_api.py` owns store-backed dashboard reads, actions, and
+- `foreman/dashboard_service.py` owns store-backed dashboard reads, actions, and
   stream payload shaping,
 - `foreman/dashboard_backend.py` owns FastAPI routing, request parsing,
   response delivery, and SSE transport,
-- `foreman/dashboard.py` remains a temporary legacy shell holder and CLI
-  entrypoint until the React frontend replaces the inline markup.
+- `foreman/dashboard_runtime.py` owns the CLI runtime entrypoint, built-asset
+  guard, and frontend-dev launch behavior for `foreman dashboard`.
 
 New dashboard backend work should target the FastAPI application, not new
 stdlib handlers or ad hoc HTTP transport code.
@@ -57,7 +57,8 @@ stdlib handlers or ad hoc HTTP transport code.
 ### Negative
 
 - adds new runtime dependencies to the Python package
-- leaves a temporary period where FastAPI still serves an inline legacy shell
+- leaves a temporary period where backend runtime and frontend workflow still
+  need explicit development ergonomics after the transport migration
 - does not by itself solve frontend architecture or browser-level validation
 
 ## Follow-through requirements
@@ -65,14 +66,14 @@ stdlib handlers or ad hoc HTTP transport code.
 - keep dashboard HTTP behavior on FastAPI while React work proceeds
 - avoid adding new product routes through raw stdlib server patterns
 - add backend-facing HTTP tests when dashboard transport behavior changes
-- treat the inline shell in `foreman/dashboard.py` as transitional debt to
-  remove in the React sprint
+- keep the runtime wrapper thin and avoid moving dashboard product behavior
+  back into it now that React owns rendering
 
 ## References
 
 - `docs/adr/ADR-0003-web-ui-api-boundary.md`
-- `foreman/dashboard.py`
-- `foreman/dashboard_api.py`
+- `foreman/dashboard_runtime.py`
+- `foreman/dashboard_service.py`
 - `foreman/dashboard_backend.py`
 - `docs/ARCHITECTURE.md`
 - `docs/STATUS.md`

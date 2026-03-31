@@ -14,6 +14,7 @@ from foreman.store import ForemanStore
 REPO_ROOT = Path(__file__).resolve().parents[1]
 VENV_BIN = REPO_ROOT / "venv" / "bin"
 PIP = VENV_BIN / "pip"
+PYTHON = VENV_BIN / "python"
 FOREMAN = VENV_BIN / "foreman"
 
 
@@ -70,6 +71,15 @@ class ForemanCLISmokeTests(unittest.TestCase):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+        )
+
+    def run_python(self, *args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [str(PYTHON), *args],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
         )
 
     def create_store(self) -> tuple[ForemanStore, Path]:
@@ -354,6 +364,302 @@ class ForemanCLISmokeTests(unittest.TestCase):
         self.assertIn("projects", result.stdout)
         self.assertIn("status", result.stdout)
         self.assertIn("init", result.stdout)
+
+    def test_project_command_shows_project_details(self) -> None:
+        store, db_path = self.create_store()
+        project = Project(
+            id="project-1",
+            name="Foreman Demo",
+            repo_path="/tmp/foreman-demo",
+            spec_path="docs/spec.md",
+            workflow_id="development",
+            settings={"default_model": "claude-sonnet-4-6", "max_step_visits": 5},
+        )
+        sprint = Sprint(
+            id="sprint-1",
+            project_id=project.id,
+            title="CLI hardening",
+            status="active",
+        )
+        task = Task(
+            id="task-1",
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="Ship the project command",
+            status="todo",
+        )
+        store.save_project(project)
+        store.save_sprint(sprint)
+        store.save_task(task)
+
+        result = self.run_cli("project", project.id, "--db", str(db_path))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Project: project-1 | Foreman Demo", result.stdout)
+        self.assertIn("Active sprint: sprint-1 | CLI hardening", result.stdout)
+        self.assertIn("default_model=claude-sonnet-4-6", result.stdout)
+
+    def test_sprint_commands_can_add_activate_list_and_complete_sprints(self) -> None:
+        store, db_path = self.create_store()
+        project = Project(
+            id="project-1",
+            name="Foreman Demo",
+            repo_path="/tmp/foreman-demo",
+            workflow_id="development",
+        )
+        store.save_project(project)
+
+        add_result = self.run_cli(
+            "sprint",
+            "add",
+            project.id,
+            "--title",
+            "Sprint 1",
+            "--goal",
+            "Ship CLI hardening",
+            "--db",
+            str(db_path),
+        )
+
+        self.assertEqual(add_result.returncode, 0, add_result.stderr)
+        sprint = store.list_sprints(project.id)[0]
+        self.assertEqual(sprint.status, "planned")
+
+        list_result = self.run_cli("sprint", "list", project.id, "--db", str(db_path))
+        self.assertEqual(list_result.returncode, 0, list_result.stderr)
+        self.assertIn(sprint.id, list_result.stdout)
+        self.assertIn("status=planned", list_result.stdout)
+
+        activate_result = self.run_cli("sprint", "activate", sprint.id, "--db", str(db_path))
+        self.assertEqual(activate_result.returncode, 0, activate_result.stderr)
+        sprint = store.get_sprint(sprint.id)
+        assert sprint is not None
+        self.assertEqual(sprint.status, "active")
+        self.assertIsNotNone(sprint.started_at)
+
+        complete_result = self.run_cli("sprint", "complete", sprint.id, "--db", str(db_path))
+        self.assertEqual(complete_result.returncode, 0, complete_result.stderr)
+        sprint = store.get_sprint(sprint.id)
+        assert sprint is not None
+        self.assertEqual(sprint.status, "completed")
+        self.assertIsNotNone(sprint.completed_at)
+
+    def test_task_commands_can_add_list_block_unblock_and_cancel_tasks(self) -> None:
+        store, db_path = self.create_store()
+        project = Project(
+            id="project-1",
+            name="Foreman Demo",
+            repo_path="/tmp/foreman-demo",
+            workflow_id="development",
+        )
+        sprint = Sprint(
+            id="sprint-1",
+            project_id=project.id,
+            title="CLI hardening",
+            status="active",
+        )
+        store.save_project(project)
+        store.save_sprint(sprint)
+
+        add_result = self.run_cli(
+            "task",
+            "add",
+            project.id,
+            "--title",
+            "Implement the task command",
+            "--type",
+            "feature",
+            "--criteria",
+            "Task surfaces are real.",
+            "--db",
+            str(db_path),
+        )
+        self.assertEqual(add_result.returncode, 0, add_result.stderr)
+        task = store.list_tasks(sprint_id=sprint.id)[0]
+
+        list_result = self.run_cli("task", "list", project.id, "--db", str(db_path))
+        self.assertEqual(list_result.returncode, 0, list_result.stderr)
+        self.assertIn(task.id, list_result.stdout)
+        self.assertIn("Implement the task command", list_result.stdout)
+
+        block_result = self.run_cli(
+            "task",
+            "block",
+            task.id,
+            "--reason",
+            "needs design review",
+            "--db",
+            str(db_path),
+        )
+        self.assertEqual(block_result.returncode, 0, block_result.stderr)
+        task = store.get_task(task.id)
+        assert task is not None
+        self.assertEqual(task.status, "blocked")
+        self.assertEqual(task.blocked_reason, "needs design review")
+
+        task.step_visit_counts = {"review": 3}
+        store.save_task(task)
+
+        unblock_result = self.run_cli("task", "unblock", task.id, "--db", str(db_path))
+        self.assertEqual(unblock_result.returncode, 0, unblock_result.stderr)
+        task = store.get_task(task.id)
+        assert task is not None
+        self.assertEqual(task.status, "todo")
+        self.assertEqual(task.step_visit_counts, {})
+
+        cancel_result = self.run_cli("task", "cancel", task.id, "--db", str(db_path))
+        self.assertEqual(cancel_result.returncode, 0, cancel_result.stderr)
+        task = store.get_task(task.id)
+        assert task is not None
+        self.assertEqual(task.status, "cancelled")
+        self.assertIsNotNone(task.completed_at)
+
+    def test_task_unblock_rejects_human_gate_tasks(self) -> None:
+        store, db_path = self.create_store()
+        project = Project(
+            id="project-1",
+            name="Foreman Demo",
+            repo_path="/tmp/foreman-demo",
+            workflow_id="development",
+        )
+        sprint = Sprint(
+            id="sprint-1",
+            project_id=project.id,
+            title="CLI hardening",
+            status="active",
+        )
+        task = Task(
+            id="task-1",
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="Paused review",
+            status="blocked",
+            blocked_reason="Awaiting human approval",
+            workflow_current_step="human_approval",
+        )
+        store.save_project(project)
+        store.save_sprint(sprint)
+        store.save_task(task)
+
+        result = self.run_cli("task", "unblock", task.id, "--db", str(db_path))
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("use `foreman approve` or `foreman deny`", result.stderr)
+
+    def test_run_command_reports_idle_when_no_runnable_tasks_remain(self) -> None:
+        store, db_path = self.create_store()
+        project = Project(
+            id="project-1",
+            name="Foreman Demo",
+            repo_path="/tmp/foreman-demo",
+            workflow_id="development",
+        )
+        sprint = Sprint(
+            id="sprint-1",
+            project_id=project.id,
+            title="CLI hardening",
+            status="active",
+        )
+        store.save_project(project)
+        store.save_sprint(sprint)
+
+        result = self.run_cli("run", project.id, "--db", str(db_path))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Executed tasks: none", result.stdout)
+        self.assertIn("Stop reason: idle", result.stdout)
+
+    def test_run_command_can_target_one_done_task(self) -> None:
+        store, db_path = self.create_store()
+        project = Project(
+            id="project-1",
+            name="Foreman Demo",
+            repo_path="/tmp/foreman-demo",
+            workflow_id="development",
+        )
+        sprint = Sprint(
+            id="sprint-1",
+            project_id=project.id,
+            title="CLI hardening",
+            status="active",
+        )
+        task = Task(
+            id="task-done",
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="Already done",
+            status="done",
+        )
+        store.save_project(project)
+        store.save_sprint(sprint)
+        store.save_task(task)
+
+        result = self.run_cli("run", project.id, "--task", task.id, "--db", str(db_path))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Executed tasks: task-done", result.stdout)
+        self.assertIn("Stop reason: task_complete", result.stdout)
+
+    def test_config_command_can_show_and_update_project_settings(self) -> None:
+        store, db_path = self.create_store()
+        project = Project(
+            id="project-1",
+            name="Foreman Demo",
+            repo_path="/tmp/foreman-demo",
+            workflow_id="development",
+            settings={
+                "default_model": "claude-sonnet-4-6",
+                "max_step_visits": 5,
+                "write_pr_summaries": False,
+            },
+        )
+        store.save_project(project)
+
+        show_result = self.run_cli("config", project.id, "--db", str(db_path))
+        self.assertEqual(show_result.returncode, 0, show_result.stderr)
+        self.assertIn("max_step_visits=5", show_result.stdout)
+        self.assertIn("write_pr_summaries=false", show_result.stdout.lower())
+
+        update_int_result = self.run_cli(
+            "config",
+            project.id,
+            "--set",
+            "max_step_visits=8",
+            "--db",
+            str(db_path),
+        )
+        self.assertEqual(update_int_result.returncode, 0, update_int_result.stderr)
+        project = store.get_project(project.id)
+        assert project is not None
+        self.assertEqual(project.settings["max_step_visits"], 8)
+
+        update_bool_result = self.run_cli(
+            "config",
+            project.id,
+            "--set",
+            "write_pr_summaries=true",
+            "--db",
+            str(db_path),
+        )
+        self.assertEqual(update_bool_result.returncode, 0, update_bool_result.stderr)
+        project = store.get_project(project.id)
+        assert project is not None
+        self.assertTrue(project.settings["write_pr_summaries"])
+
+    def test_dashboard_help_lists_frontend_dev_options(self) -> None:
+        result = self.run_cli("dashboard", "--help")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--frontend-mode {dist,dev}", result.stdout)
+        self.assertIn("--frontend-dev-url FRONTEND_DEV_URL", result.stdout)
+        self.assertIn("--reload", result.stdout)
+
+    def test_dashboard_dev_script_help_is_available(self) -> None:
+        result = self.run_python("scripts/dashboard_dev.py", "--help")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Run the Foreman dashboard backend and Vite frontend together.", result.stdout)
+        self.assertIn("--backend-reload", result.stdout)
 
     def test_projects_command_reports_discovery_error_outside_repo(self) -> None:
         cwd = self.create_repo_path().parent
