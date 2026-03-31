@@ -2,11 +2,10 @@
 
 ## Current sprint
 
-- Sprint: `sprint-24-product-surface-hardening`
-- Status: active
-- Goal: close the remaining visible product-surface gaps and strengthen
-  validation now that the dedicated React dashboard and FastAPI backend
-  boundary are in place
+- Sprint: `sprint-25-migration-framework-bootstrap`
+- Status: done
+- Goal: introduce an explicit schema migration path for store evolution and
+  retention-safe upgrades
 
 ## Active branches
 
@@ -112,6 +111,17 @@
 - strengthened product-surface validation with 15 new integration tests
   covering settings read/update, sprint creation, and task creation through
   both the service layer and FastAPI transport
+- completed `sprint-25-migration-framework-bootstrap`
+- replaced bootstrap DDL with a version-tracked migration framework in
+  `foreman/migrations.py` and `foreman/store.py`
+- `ForemanStore.initialize()` now creates a `schema_migrations` table and
+  applies any unapplied migrations in version order; idempotent on repeat calls
+- `ForemanStore.schema_version()` returns the highest applied migration version
+- migration 1 is the current baseline schema; appending to `MIGRATIONS` is the
+  only step required to add a schema change in future sprints
+- 17 new tests in `tests/test_migrations.py` cover list integrity, fresh
+  install, idempotency, incremental upgrade, and version tracking
+- accepted `docs/adr/ADR-0005-schema-migration-strategy.md`
 
 ## Current repo state
 
@@ -154,6 +164,9 @@
     dev loop,
   - unit and integration coverage across store, CLI, orchestrator, runners,
     dashboard, the React frontend, scaffold, and executor seams,
+  - a version-tracked schema migration framework (`foreman/migrations.py`,
+    `schema_migrations` table, `ForemanStore.migrate()`,
+    `ForemanStore.schema_version()`),
   - repo-memory docs that are intended to let a fresh agent continue from the
     next slice without reconstructing prior branch history.
 - The temporary markdown sprint and status workflow remains intentional
@@ -162,8 +175,9 @@
 
 ## Ready next
 
-1. resume lower-level infrastructure detours with the migration framework
-   slice after product-surface hardening
+1. `sprint-26-history-lifecycle-expansion` — extend retention and cleanup
+   policy beyond `events`; `runs` and stored prompts can now gain new columns
+   safely via the migration framework
 2. add browser-driven end-to-end dashboard validation
 3. implement `task_selection_mode="autonomous"` in the orchestrator
 
@@ -193,7 +207,7 @@
   orchestrator even though the project settings model exposes it.
 - Event retention currently prunes only `events`; `runs` rows and stored
   prompts continue to accumulate until a later lifecycle or migration slice.
-- The SQLite layer still uses bootstrap DDL without a migration framework.
+- The migration framework covers DDL changes but does not yet provide a down/rollback path; adding that is deferred until a rollback scenario is observed in practice.
 - project-scoped `foreman watch` resolves the active sprint once at startup;
   if sprint ownership changes mid-tail, operators currently need to restart
   the command to follow the new sprint.

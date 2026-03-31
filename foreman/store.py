@@ -4,107 +4,21 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
 
+from .migrations import MIGRATIONS
 from .models import Event, Project, Run, Sprint, TASK_STATUSES, Task
 
 _PRUNE_PROTECTED_TASK_STATUSES = ("blocked", "in_progress")
 
-SCHEMA_SQL = """
-CREATE TABLE IF NOT EXISTS projects (
-    id              TEXT PRIMARY KEY,
-    name            TEXT NOT NULL,
-    repo_path       TEXT NOT NULL,
-    spec_path       TEXT,
-    methodology     TEXT NOT NULL DEFAULT 'development',
-    workflow_id     TEXT NOT NULL,
-    default_branch  TEXT NOT NULL DEFAULT 'main',
-    settings_json   TEXT NOT NULL DEFAULT '{}',
-    created_at      TEXT NOT NULL,
-    updated_at      TEXT NOT NULL
+_SCHEMA_MIGRATIONS_DDL = """
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    version     INTEGER PRIMARY KEY,
+    description TEXT NOT NULL,
+    applied_at  TEXT NOT NULL
 );
-
-CREATE TABLE IF NOT EXISTS sprints (
-    id              TEXT PRIMARY KEY,
-    project_id      TEXT NOT NULL REFERENCES projects(id),
-    title           TEXT NOT NULL,
-    goal            TEXT,
-    status          TEXT NOT NULL DEFAULT 'planned',
-    order_index     INTEGER NOT NULL DEFAULT 0,
-    created_at      TEXT NOT NULL,
-    started_at      TEXT,
-    completed_at    TEXT
-);
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_sprints_active_project
-ON sprints(project_id) WHERE status = 'active';
-
-CREATE TABLE IF NOT EXISTS tasks (
-    id                      TEXT PRIMARY KEY,
-    sprint_id               TEXT NOT NULL REFERENCES sprints(id),
-    project_id              TEXT NOT NULL REFERENCES projects(id),
-    title                   TEXT NOT NULL,
-    description             TEXT,
-    status                  TEXT NOT NULL DEFAULT 'todo',
-    task_type               TEXT NOT NULL DEFAULT 'feature',
-    priority                INTEGER NOT NULL DEFAULT 0,
-    order_index             INTEGER NOT NULL DEFAULT 0,
-    branch_name             TEXT,
-    assigned_role           TEXT,
-    acceptance_criteria     TEXT,
-    blocked_reason          TEXT,
-    created_by              TEXT NOT NULL DEFAULT 'human',
-    depends_on_task_ids     TEXT NOT NULL DEFAULT '[]',
-    workflow_current_step   TEXT,
-    workflow_carried_output TEXT,
-    step_visit_counts       TEXT NOT NULL DEFAULT '{}',
-    created_at              TEXT NOT NULL,
-    started_at              TEXT,
-    completed_at            TEXT
-);
-
-CREATE TABLE IF NOT EXISTS runs (
-    id              TEXT PRIMARY KEY,
-    task_id         TEXT NOT NULL REFERENCES tasks(id),
-    project_id      TEXT NOT NULL REFERENCES projects(id),
-    role_id         TEXT NOT NULL,
-    workflow_step   TEXT NOT NULL,
-    status          TEXT NOT NULL DEFAULT 'pending',
-    outcome         TEXT,
-    outcome_detail  TEXT,
-    agent_backend   TEXT NOT NULL,
-    model           TEXT,
-    session_id      TEXT,
-    branch_name     TEXT,
-    prompt_text     TEXT,
-    cost_usd        REAL DEFAULT 0.0,
-    token_count     INTEGER DEFAULT 0,
-    duration_ms     INTEGER,
-    retry_count     INTEGER DEFAULT 0,
-    started_at      TEXT,
-    completed_at    TEXT,
-    created_at      TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS events (
-    id              TEXT PRIMARY KEY,
-    run_id          TEXT NOT NULL REFERENCES runs(id),
-    task_id         TEXT NOT NULL,
-    project_id      TEXT NOT NULL,
-    event_type      TEXT NOT NULL,
-    role_id         TEXT,
-    timestamp       TEXT NOT NULL,
-    payload_json    TEXT NOT NULL DEFAULT '{}'
-);
-
-CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
-CREATE INDEX IF NOT EXISTS idx_tasks_sprint ON tasks(sprint_id);
-CREATE INDEX IF NOT EXISTS idx_runs_task ON runs(task_id, created_at);
-CREATE INDEX IF NOT EXISTS idx_runs_project ON runs(project_id, created_at);
-CREATE INDEX IF NOT EXISTS idx_events_run ON events(run_id, timestamp);
-CREATE INDEX IF NOT EXISTS idx_events_project ON events(project_id, timestamp);
-CREATE INDEX IF NOT EXISTS idx_events_type ON events(event_type, timestamp);
 """
 
 
@@ -253,10 +167,47 @@ class ForemanStore:
         self._connection.close()
 
     def initialize(self) -> None:
-        """Create the baseline schema when it does not exist yet."""
+        """Create or upgrade the schema to the latest migration version."""
 
         with self._connection:
-            self._connection.executescript(SCHEMA_SQL)
+            self._connection.executescript(_SCHEMA_MIGRATIONS_DDL)
+        self.migrate()
+
+    def schema_version(self) -> int:
+        """Return the highest migration version applied to this database, or 0."""
+
+        row = self._connection.execute(
+            "SELECT MAX(version) AS v FROM schema_migrations"
+        ).fetchone()
+        if row is None or row["v"] is None:
+            return 0
+        return int(row["v"])
+
+    def migrate(self) -> list[int]:
+        """Apply all unapplied migrations in version order.
+
+        Returns the list of version numbers that were applied in this call.
+        Calling migrate() on an up-to-date database is a no-op that returns an
+        empty list.
+        """
+
+        current = self.schema_version()
+        applied: list[int] = []
+        now = datetime.now(timezone.utc).isoformat()
+
+        for version, description, sql in sorted(MIGRATIONS, key=lambda m: m[0]):
+            if version <= current:
+                continue
+            with self._connection:
+                self._connection.executescript(sql)
+                self._connection.execute(
+                    "INSERT INTO schema_migrations (version, description, applied_at)"
+                    " VALUES (?, ?, ?)",
+                    (version, description, now),
+                )
+            applied.append(version)
+
+        return applied
 
     def save_project(self, project: Project) -> Project:
         """Insert or update a project record."""

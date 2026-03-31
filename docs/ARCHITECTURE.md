@@ -238,12 +238,13 @@ The current CLI watch baseline now includes:
 
 ## Next architectural slice
 
-The next slice should harden the product surface now that the dashboard split
-is in place:
+The next slice should extend history lifecycle management now that the
+migration framework exists:
 
-- close the most visible dashboard and settings gaps exposed by the new
-  frontend baseline,
-- keep widening validation so the shipped CLI surface is exercised as real
-  product behavior instead of placeholder wiring,
-- add stronger product-surface validation above the current API and component
-  layers.
+- add migration 2 in `foreman/migrations.py` for any new columns on `runs`
+  or `events` needed by retention or lifecycle policy,
+- implement retention and cleanup behavior beyond `events` so `runs` and
+  stored prompts can be pruned safely,
+- the dormant `test_partial_db_upgraded_to_latest` test in
+  `tests/test_migrations.py` activates automatically when migration 2 lands
+  and validates the incremental upgrade path end to end.

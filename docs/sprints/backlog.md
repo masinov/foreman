@@ -2,11 +2,10 @@
 
 ## Next up after current sprint
 
-- `sprint-25-migration-framework-bootstrap` — introduce an explicit schema
-  migration path for store evolution and retention-safe upgrades
 - `sprint-26-history-lifecycle-expansion` — extend retention and cleanup
   policy beyond `events` so `runs`, stored prompts, and related history can
-  evolve safely on top of the migration framework
+  evolve safely on top of the migration framework (migration 2 also activates
+  the currently-skipped incremental-upgrade test in `tests/test_migrations.py`)
 
 ## Parking lot
 
