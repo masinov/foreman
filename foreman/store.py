@@ -695,35 +695,76 @@ class ForemanStore:
         sprint_id: str,
         *,
         after_event_id: str | None = None,
+        before_event_id: str | None = None,
         limit: int | None = None,
     ) -> list[Event]:
-        """List sprint-scoped events in display order, optionally after one known event."""
+        """List sprint-scoped events in display order.
+
+        Pass ``after_event_id`` to fetch events newer than a known cursor
+        (used by the SSE stream to deliver incremental updates).
+        Pass ``before_event_id`` to fetch events older than a known cursor
+        (used by the activity panel load-more control).
+        """
 
         params: list[Any] = [sprint_id]
-        sql = """
-            SELECT e.*
-            FROM events e
-            INNER JOIN tasks t ON t.id = e.task_id
-            WHERE t.sprint_id = ?
-        """
 
         if after_event_id is not None:
             marker = self._get_event_cursor_marker(after_event_id)
             if marker is None:
                 return []
-            sql += """
+            sql = """
+                SELECT e.*
+                FROM events e
+                INNER JOIN tasks t ON t.id = e.task_id
+                WHERE t.sprint_id = ?
                 AND (
                     e.timestamp > ?
                     OR (e.timestamp = ? AND e.rowid > ?)
                 )
+                ORDER BY e.timestamp ASC, e.rowid ASC
             """
             params.extend([marker["timestamp"], marker["timestamp"], marker["rowid"]])
+            if limit is not None:
+                sql += " LIMIT ?"
+                params.append(limit)
+            rows = self._connection.execute(sql, tuple(params)).fetchall()
+            return [_row_to_event(row) for row in rows]
 
-        sql += " ORDER BY e.timestamp ASC, e.rowid ASC"
+        if before_event_id is not None:
+            marker = self._get_event_cursor_marker(before_event_id)
+            if marker is None:
+                return []
+            sql = """
+                SELECT e.*
+                FROM events e
+                INNER JOIN tasks t ON t.id = e.task_id
+                WHERE t.sprint_id = ?
+                AND (
+                    e.timestamp < ?
+                    OR (e.timestamp = ? AND e.rowid < ?)
+                )
+                ORDER BY e.timestamp DESC, e.rowid DESC
+            """
+            params.extend([marker["timestamp"], marker["timestamp"], marker["rowid"]])
+            if limit is not None:
+                sql += " LIMIT ?"
+                params.append(limit)
+            rows = self._connection.execute(sql, tuple(params)).fetchall()
+            events = [_row_to_event(row) for row in rows]
+            events.reverse()
+            return events
+
+        # No cursor — return all events in display order, optionally limited.
+        sql = """
+            SELECT e.*
+            FROM events e
+            INNER JOIN tasks t ON t.id = e.task_id
+            WHERE t.sprint_id = ?
+            ORDER BY e.timestamp ASC, e.rowid ASC
+        """
         if limit is not None:
             sql += " LIMIT ?"
             params.append(limit)
-
         rows = self._connection.execute(sql, tuple(params)).fetchall()
         return [_row_to_event(row) for row in rows]
 

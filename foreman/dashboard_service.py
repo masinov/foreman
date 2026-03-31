@@ -194,14 +194,17 @@ class DashboardService:
         *,
         title: str,
         goal: str | None = None,
+        initial_tasks: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        """Create one sprint for a project."""
+        """Create one sprint for a project, optionally with an initial task list."""
 
         project = self.store.get_project(project_id)
         if project is None:
             raise DashboardNotFoundError(f"Project not found: {project_id}")
         if not title.strip():
             raise DashboardValidationError("Sprint title is required.")
+
+        from .models import TASK_TYPES
 
         sprints = self.store.list_sprints(project_id)
         sprint_id = f"sprint-{_stable_slug(title)}"
@@ -221,6 +224,33 @@ class DashboardService:
             created_at=now,
         )
         self.store.save_sprint(sprint)
+
+        created_tasks = []
+        for i, task_data in enumerate(initial_tasks or []):
+            task_title = str(task_data.get("title", "")).strip()
+            if not task_title:
+                continue
+            task_type = str(task_data.get("task_type", "feature"))
+            if task_type not in TASK_TYPES:
+                task_type = "feature"
+            task_id = f"task-{_stable_slug(task_title)}"
+            dedup = 2
+            while self.store.get_task(task_id) is not None:
+                task_id = f"task-{_stable_slug(task_title)}-{dedup}"
+                dedup += 1
+            task = Task(
+                id=task_id,
+                sprint_id=sprint_id,
+                project_id=project_id,
+                title=task_title,
+                task_type=task_type,
+                order_index=i,
+                created_by="human",
+                created_at=now,
+            )
+            self.store.save_task(task)
+            created_tasks.append({"id": task.id, "title": task.title, "task_type": task.task_type})
+
         return {
             "id": sprint.id,
             "title": sprint.title,
@@ -228,6 +258,7 @@ class DashboardService:
             "status": sprint.status,
             "order_index": sprint.order_index,
             "created_at": sprint.created_at,
+            "tasks_created": len(created_tasks),
         }
 
     def list_sprint_tasks(self, sprint_id: str) -> dict[str, Any]:
@@ -266,8 +297,14 @@ class DashboardService:
         *,
         limit: int = ACTIVITY_EVENT_LIMIT,
         after_event_id: str | None = None,
+        before_event_id: str | None = None,
     ) -> dict[str, Any]:
-        """Return the sprint activity batch payload."""
+        """Return the sprint activity batch payload.
+
+        With no cursor: returns the most recent ``limit`` events.
+        With ``after_event_id``: returns events newer than that cursor (SSE).
+        With ``before_event_id``: returns events older than that cursor (load-more).
+        """
 
         if after_event_id:
             events = self.store.list_sprint_events(
@@ -275,9 +312,18 @@ class DashboardService:
                 after_event_id=after_event_id,
                 limit=limit,
             )
+        elif before_event_id:
+            events = self.store.list_sprint_events(
+                sprint_id,
+                before_event_id=before_event_id,
+                limit=limit,
+            )
         else:
             events = self.store.list_recent_sprint_events(sprint_id, limit=limit)
-        return {"events": [self._serialize_event(event) for event in events]}
+        return {
+            "events": [self._serialize_event(event) for event in events],
+            "has_more": len(events) == limit,
+        }
 
     def list_sprint_stream_messages(
         self,
@@ -345,6 +391,7 @@ class DashboardService:
             "acceptance_criteria": task.acceptance_criteria,
             "workflow_current_step": task.workflow_current_step,
             "step_visit_counts": task.step_visit_counts or {},
+            "depends_on_task_ids": task.depends_on_task_ids or [],
             "totals": self.store.run_totals(task_id=task_id),
             "runs": runs_data,
         }
@@ -493,6 +540,18 @@ class DashboardService:
             "project_id": project_id,
             "sprint_id": active_sprint.id,
         }
+
+    def cancel_task(self, task_id: str) -> dict[str, Any]:
+        """Cancel one task that is not already done or cancelled."""
+
+        task = self._require_task(task_id)
+        if task.status in ("done", "cancelled"):
+            raise DashboardValidationError(
+                f"Cannot cancel a task with status '{task.status}'."
+            )
+        task.status = "cancelled"
+        self.store.save_task(task)
+        return {"status": "cancelled", "task_id": task_id}
 
     def approve_task(self, task_id: str) -> dict[str, Any]:
         """Resume one human gate with an approval outcome."""

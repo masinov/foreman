@@ -230,6 +230,7 @@ const STATUS_FILTER_OPTIONS = [
   { key: "active", label: "Active" },
   { key: "done", label: "Done" },
   { key: "planned", label: "Planned" },
+  { key: "cancelled", label: "Cancelled" },
 ];
 
 const KANBAN_COLUMNS = [
@@ -400,8 +401,8 @@ export function SprintList({ project, sprints, onSelectSprint, onOpenNewSprint, 
           {KANBAN_COLUMNS.map((col) => {
             const colSprints = sprints.filter((s) => {
               if (col.key === "active") return s.status === "active";
-              if (col.key === "done") return s.status === "done" || s.status === "completed";
-              return s.status === "planned" || s.status === "paused";
+              if (col.key === "done") return s.status === "done" || s.status === "completed" || s.status === "cancelled";
+              return s.status === "planned";
             });
             return (
               <div key={col.key} className="sk-column">
@@ -527,11 +528,13 @@ export function EventList({ events, filterKey, taskIndex }) {
 
 export function TaskDetailDrawer({
   task,
+  taskIndex,
   denyNote,
   onClose,
   onApprove,
   onDenyNoteChange,
   onDeny,
+  onCancel,
 }) {
   if (!task) {
     return null;
@@ -583,6 +586,21 @@ export function TaskDetailDrawer({
             <span className="detail-field-value">{formatWorkflowCounts(task.step_visit_counts)}</span>
           </div>
         </div>
+        {task.depends_on_task_ids && task.depends_on_task_ids.length > 0 ? (
+          <div className="detail-section">
+            <div className="detail-section-title">Dependencies</div>
+            <div className="detail-deps">
+              {task.depends_on_task_ids.map((depId) => {
+                const depTask = taskIndex?.get(depId);
+                return (
+                  <span key={depId} className="dep-chip">
+                    {depTask ? depTask.title : depId}
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
         {task.acceptance_criteria ? (
           <div className="detail-section">
             <div className="detail-section-title">Acceptance Criteria</div>
@@ -614,6 +632,17 @@ export function TaskDetailDrawer({
               onChange={(event) => onDenyNoteChange(event.target.value)}
               placeholder="Explain what needs to change before this task can continue."
             />
+          </div>
+        ) : null}
+        {onCancel && task.status !== "done" && task.status !== "cancelled" ? (
+          <div className="detail-section">
+            <button
+              className="btn btn-cancel-task"
+              type="button"
+              onClick={() => onCancel(task.id)}
+            >
+              Cancel task
+            </button>
           </div>
         ) : null}
         <div className="detail-section">
@@ -851,11 +880,35 @@ function SettingsToggle({ label, description, checked, onChange }) {
 export function NewSprintModal({ onSubmit, onClose }) {
   const [title, setTitle] = useState("");
   const [goal, setGoal] = useState("");
+  const [pendingTasks, setPendingTasks] = useState([]);
+  const [taskInput, setTaskInput] = useState("");
+
+  function addTask() {
+    const trimmed = taskInput.trim();
+    if (!trimmed) return;
+    setPendingTasks((prev) => [...prev, { title: trimmed, task_type: "feature" }]);
+    setTaskInput("");
+  }
+
+  function removeTask(index) {
+    setPendingTasks((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function handleTaskKeyDown(e) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      addTask();
+    }
+  }
 
   function handleSubmit(e) {
     e.preventDefault();
     if (!title.trim()) return;
-    onSubmit({ title: title.trim(), goal: goal.trim() || undefined });
+    onSubmit({
+      title: title.trim(),
+      goal: goal.trim() || undefined,
+      initialTasks: pendingTasks.length > 0 ? pendingTasks : undefined,
+    });
   }
 
   return (
@@ -874,6 +927,44 @@ export function NewSprintModal({ onSubmit, onClose }) {
             <div className="form-group">
               <label className="form-label">Goal</label>
               <textarea className="form-input" style={{ minHeight: "48px" }} value={goal} onChange={(e) => setGoal(e.target.value)} placeholder="What should this sprint accomplish?" />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Initial tasks (optional)</label>
+              <div className="task-entry-row">
+                <input
+                  className="form-input"
+                  type="text"
+                  value={taskInput}
+                  onChange={(e) => setTaskInput(e.target.value)}
+                  onKeyDown={handleTaskKeyDown}
+                  placeholder="Task title — press Enter or Add"
+                />
+                <button
+                  className="btn-action"
+                  type="button"
+                  onClick={addTask}
+                  disabled={!taskInput.trim()}
+                >
+                  Add
+                </button>
+              </div>
+              {pendingTasks.length > 0 ? (
+                <ul className="pending-tasks">
+                  {pendingTasks.map((t, i) => (
+                    <li key={i} className="pending-task-item">
+                      <span>{t.title}</span>
+                      <button
+                        className="pending-task-remove"
+                        type="button"
+                        onClick={() => removeTask(i)}
+                        aria-label={`Remove task ${t.title}`}
+                      >
+                        ×
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
             </div>
           </div>
           <div className="modal-footer">

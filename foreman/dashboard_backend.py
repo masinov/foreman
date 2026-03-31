@@ -198,11 +198,15 @@ def create_dashboard_app(
     @app.post("/api/projects/{project_id}/sprints")
     async def create_sprint(project_id: str, request: Request) -> dict[str, Any]:
         data = await _read_json_body(request)
+        initial_tasks = data.get("initial_tasks")
+        if initial_tasks is not None and not isinstance(initial_tasks, list):
+            raise DashboardValidationError("'initial_tasks' must be a list.")
         return with_api(
             lambda api: api.create_sprint(
                 project_id,
                 title=str(data.get("title", "")),
                 goal=data.get("goal"),
+                initial_tasks=initial_tasks,
             )
         )
 
@@ -231,6 +235,7 @@ def create_dashboard_app(
         sprint_id: str,
         limit: str = str(ACTIVITY_EVENT_LIMIT),
         after: str | None = None,
+        before: str | None = None,
     ) -> dict[str, Any]:
         try:
             parsed_limit = int(limit)
@@ -241,6 +246,7 @@ def create_dashboard_app(
                 sprint_id,
                 limit=parsed_limit,
                 after_event_id=after,
+                before_event_id=before,
             )
         )
 
@@ -313,6 +319,10 @@ def create_dashboard_app(
     async def update_task(task_id: str, request: Request) -> dict[str, Any]:
         data = await _read_json_body(request)
         return with_api(lambda api: api.update_task_fields(task_id, updates=data))
+
+    @app.post("/api/tasks/{task_id}/cancel")
+    async def cancel_task(task_id: str) -> dict[str, Any]:
+        return with_api(lambda api: api.cancel_task(task_id))
 
     @app.post("/api/tasks/{task_id}/approve")
     async def approve_task(task_id: str) -> dict[str, Any]:

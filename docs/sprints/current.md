@@ -1,82 +1,61 @@
 # Current Sprint
 
-- Sprint: `sprint-30-wire-dead-surfaces`
+- Sprint: `sprint-31-backlog-items`
 - Status: done
-- Goal: wire the most visible dead surfaces — Stop agent button, sprint lifecycle
-  transitions, task field exposure (description, priority), and complete run
-  serialization
-- Branch: `feat/sprint-30-wire-dead-surfaces`
+- Goal: clear the sprint-30 backlog — sprint creation with inline tasks, task
+  cancellation, task dependencies display, event log load-more pagination, and
+  sprint status filter for cancelled sprints
+- Branch: `feat/sprint-31-backlog-items`
 - Primary references:
+  - `foreman/store.py`
   - `foreman/dashboard_service.py`
   - `foreman/dashboard_backend.py`
   - `frontend/src/App.jsx`
   - `frontend/src/components.jsx`
   - `frontend/src/api.js`
+  - `frontend/src/styles.css`
   - `tests/test_dashboard.py`
-  - `tests/test_e2e.py`
 
 ## Included tasks
 
-1. `[done]` Add `transition_sprint()` to `DashboardService` and
-   `PATCH /api/sprints/{sprint_id}` to the FastAPI backend
-   Deliverable: planned→active, active→completed/cancelled transitions persist
-   `started_at`/`completed_at` and reject invalid paths with 400.
+1. `[done]` Sprint creation with inline task entry
+   Deliverable: `NewSprintModal` has a task-entry row (input + Add button, Enter
+   shortcut, removable pending list); `create_sprint` service and
+   `POST /api/projects/{id}/sprints` accept `initial_tasks`; tasks are created
+   atomically with the sprint and reported in `tasks_created`.
 
-2. `[done]` Add `update_task_fields()` to `DashboardService` and
-   `PATCH /api/tasks/{task_id}` to the FastAPI backend
-   Deliverable: `description` and `priority` can be updated through the API;
-   unknown fields are rejected with 400.
+2. `[done]` Task cancellation
+   Deliverable: `cancel_task()` service method + `POST /api/tasks/{id}/cancel`;
+   rejects done/already-cancelled tasks with 400; Cancel task button in
+   `TaskDetailDrawer` for non-terminal tasks; cancelled task deselected and board
+   refreshed.
 
-3. `[done]` Add `stop_agent()` to `DashboardService` and
-   `POST /api/projects/{project_id}/agent/stop` to the FastAPI backend
-   Deliverable: marks all in-progress tasks in the active sprint as blocked,
-   emits `human.stop_requested` events, returns count of affected tasks.
+3. `[done]` Task dependencies display
+   Deliverable: `depends_on_task_ids` added to `get_task()` response;
+   `TaskDetailDrawer` shows a Dependencies section with dep-chip elements
+   resolved against the current sprint's taskIndex.
 
-4. `[done]` Extend run serialization in `get_task()` to include `session_id`,
-   `branch_name`, `started_at`, `completed_at`
-   Deliverable: run detail payload exposes all four fields; test confirms values
-   round-trip correctly.
+4. `[done]` Event log load-more pagination
+   Deliverable: `store.list_sprint_events()` extended with `before_event_id`
+   cursor (DESC query, reversed to ASC); service `list_sprint_events()` supports
+   `before_event_id` and now returns `has_more` flag on all responses;
+   `GET /api/sprints/{id}/events` accepts `before` query param; frontend shows
+   "Load older events" button at top of activity panel when `has_more` is true.
 
-5. `[done]` Expose `description` and `priority` in `get_task()` and
-   `list_sprint_tasks()` responses
-   Deliverable: task detail drawer shows description section and priority field
-   when non-default values are present.
+5. `[done]` Sprint status filter for cancelled
+   Deliverable: "Cancelled" filter added to `STATUS_FILTER_OPTIONS` in
+   `SprintList`; kanban board's Done column now includes cancelled sprints.
 
-6. `[done]` Wire Stop agent button `onClick` in `App.jsx`
-   Deliverable: clicking Stop agent calls `POST /api/projects/{id}/agent/stop`
-   and refreshes state; button is disabled during pending actions.
-
-7. `[done]` Add sprint status badge + transition buttons in sprint view header
-   Deliverable: sprint view header shows current status badge; planned sprints
-   show "Start sprint"; active sprints show "Complete sprint".
-
-8. `[done]` Add lifecycle action buttons to sprint list cards in `SprintList`
-   Deliverable: each sprint card in the list view shows Start/Complete/Cancel
-   buttons depending on current status; kanban board cards do the same.
-
-9. `[done]` Fix E2E test regressions from previous session's dashboard overhaul
-   Deliverable: `test_sprint_card_navigates_to_board` scoped to `.col-title`
-   to avoid strict-mode collision with `detail-status` span;
-   `test_task_detail_shows_title` updated from `.detail-title` to `h2`.
-
-10. `[done]` Add 10 new tests in `DashboardSprintLifecycleTests`; full non-E2E
-    suite is 213 tests; E2E suite is 20 tests.
+6. `[done]` 8 new tests in `DashboardSprintTaskBacklogTests`
 
 ## Acceptance criteria
 
-- `PATCH /api/sprints/{id}` with `{"status":"active"}` on a planned sprint
-  returns 200 with `started_at` set
-- `PATCH /api/sprints/{id}` with an invalid transition returns 400
-- `PATCH /api/tasks/{id}` with `{"description":"...","priority":2}` returns
-  updated task detail
-- `PATCH /api/tasks/{id}` with `{"status":"done"}` returns 400
-- `POST /api/projects/{id}/agent/stop` with an in-progress task returns
-  `stopped: 1`; task is blocked; `human.stop_requested` event is persisted
-- `GET /api/tasks/{id}` returns `session_id`, `branch_name`, `started_at`,
-  `completed_at` on run objects
-- Stop agent button in sprint header has working `onClick`; disabled while action
-  is pending
-- Sprint header shows current status badge; planned sprint shows "Start sprint"
-  button; active sprint shows "Complete sprint" button
-- Sprint list cards show Start/Complete/Cancel action buttons per status
-- 213 non-E2E tests pass; 20 E2E tests pass
+- `POST /api/projects/{id}/sprints` with `initial_tasks` creates tasks and
+  returns `tasks_created` count
+- `POST /api/tasks/{id}/cancel` marks task cancelled; returns 400 for done tasks
+- `GET /api/tasks/{id}` returns `depends_on_task_ids`
+- `GET /api/sprints/{id}/events?before=X` returns events older than X in
+  display order
+- `GET /api/sprints/{id}/events?limit=N` returns `has_more: true` when there
+  are more than N events
+- 221 non-E2E tests pass; 20 E2E tests pass

@@ -56,14 +56,11 @@ export function createDashboardServices({
     listSprintTasks(sprintId) {
       return requestJson(fetchImpl, `/api/sprints/${encodeURIComponent(sprintId)}/tasks`);
     },
-    listSprintEvents(sprintId, { afterEventId, limit } = {}) {
+    listSprintEvents(sprintId, { afterEventId, beforeEventId, limit } = {}) {
       const params = new URLSearchParams();
-      if (afterEventId) {
-        params.set("after", afterEventId);
-      }
-      if (typeof limit === "number") {
-        params.set("limit", String(limit));
-      }
+      if (afterEventId) params.set("after", afterEventId);
+      if (beforeEventId) params.set("before", beforeEventId);
+      if (typeof limit === "number") params.set("limit", String(limit));
       const suffix = params.size > 0 ? `?${params.toString()}` : "";
       return requestJson(fetchImpl, `/api/sprints/${encodeURIComponent(sprintId)}/events${suffix}`);
     },
@@ -90,10 +87,15 @@ export function createDashboardServices({
         body: updates,
       });
     },
-    createSprint(projectId, { title, goal }) {
+    createSprint(projectId, { title, goal, initialTasks }) {
       return requestJson(fetchImpl, `/api/projects/${encodeURIComponent(projectId)}/sprints`, {
         method: "POST",
-        body: { title, goal },
+        body: { title, goal, initial_tasks: initialTasks || undefined },
+      });
+    },
+    cancelTask(taskId) {
+      return requestJson(fetchImpl, `/api/tasks/${encodeURIComponent(taskId)}/cancel`, {
+        method: "POST",
       });
     },
     createTask(sprintId, { title, taskType, acceptanceCriteria }) {
