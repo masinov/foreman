@@ -4,6 +4,7 @@ import {
   EmptyPanel,
   ErrorBanner,
   EventList,
+  NewProjectModal,
   NewSprintModal,
   NewTaskModal,
   ProjectOverview,
@@ -64,6 +65,7 @@ export default function App({ services, browser }) {
   const [projectSettings, setProjectSettings] = useState(null);
   const [newSprintOpen, setNewSprintOpen] = useState(false);
   const [newTaskOpen, setNewTaskOpen] = useState(false);
+  const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [hasMoreEvents, setHasMoreEvents] = useState(false);
   const [isLoadingMoreEvents, setIsLoadingMoreEvents] = useState(false);
   const [editingGoal, setEditingGoal] = useState(false);
@@ -464,6 +466,32 @@ export default function App({ services, browser }) {
     }
   }
 
+  async function handleStartAgent() {
+    if (!route.projectId) return;
+    setIsActionPending(true);
+    setErrorMessage("");
+    try {
+      await services.startAgent(route.projectId);
+      await refreshAllVisibleState();
+    } catch (error) {
+      setErrorMessage(error.message);
+    } finally {
+      setIsActionPending(false);
+    }
+  }
+
+  async function handleCreateProject({ name, repoPath, workflowId }) {
+    setErrorMessage("");
+    try {
+      const payload = await services.createProject({ name, repoPath, workflowId });
+      setNewProjectOpen(false);
+      await refreshProjects();
+      navigateTo(buildProjectPath(payload.id));
+    } catch (error) {
+      setErrorMessage(error.message);
+    }
+  }
+
   async function handleTransitionSprint(sprintId, status) {
     setErrorMessage("");
     try {
@@ -539,6 +567,7 @@ export default function App({ services, browser }) {
         <ProjectOverview
           projects={projects}
           onSelectProject={(projectId) => navigateTo(buildProjectPath(projectId))}
+          onNewProject={() => setNewProjectOpen(true)}
         />
       ) : null}
       {!isBootstrapping && route.view === "project" ? (
@@ -641,17 +670,30 @@ export default function App({ services, browser }) {
                       Complete sprint
                     </button>
                   ) : null}
-                  <button
-                    className="btn-stop"
-                    type="button"
-                    title="Stop agent"
-                    aria-label="Stop agent"
-                    disabled={isActionPending}
-                    onClick={handleStopAgent}
-                  >
-                    <svg viewBox="0 0 16 16" width="12" height="12"><rect x="3" y="3" width="10" height="10" rx="1"/></svg>
-                    Stop agent
-                  </button>
+                  {topbarProject?.status === "running" ? (
+                    <button
+                      className="btn-stop"
+                      type="button"
+                      title="Stop agent"
+                      aria-label="Stop agent"
+                      disabled={isActionPending}
+                      onClick={handleStopAgent}
+                    >
+                      <svg viewBox="0 0 16 16" width="12" height="12"><rect x="3" y="3" width="10" height="10" rx="1"/></svg>
+                      Stop agent
+                    </button>
+                  ) : (
+                    <button
+                      className="btn-action"
+                      type="button"
+                      title="Run agent"
+                      aria-label="Run agent"
+                      disabled={isActionPending}
+                      onClick={handleStartAgent}
+                    >
+                      ▶ Run
+                    </button>
+                  )}
                 </div>
               </header>
               <div className={`sprint-body ${activityCollapsed ? "activity-hidden" : "with-activity"}`}>
@@ -774,6 +816,12 @@ export default function App({ services, browser }) {
           settings={projectSettings}
           onUpdate={handleUpdateSettings}
           onClose={() => setSettingsOpen(false)}
+        />
+      ) : null}
+      {newProjectOpen ? (
+        <NewProjectModal
+          onSubmit={handleCreateProject}
+          onClose={() => setNewProjectOpen(false)}
         />
       ) : null}
       {newSprintOpen ? (

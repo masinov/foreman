@@ -2542,6 +2542,49 @@ select.form-input {
   border-color: var(--text-tertiary);
 }
 
+/* ═══ Workflow step on task card ════════════════════ */
+.card-step {
+  font-size: 10px;
+  color: var(--accent);
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.detail-step {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+/* ═══ Dashboard overview header ═════════════════════ */
+.dashboard-overview-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.dashboard-overview-header .page-subtitle {
+  margin-bottom: 0;
+}
+
+/* ═══ Form hint ══════════════════════════════════════ */
+.form-hint {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  background: var(--bg-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+.form-hint code {
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+}
+
 /* ═══ Responsive ════════════════════════════════════ */
 @media (max-width: 1240px) {
   .sprint-body,

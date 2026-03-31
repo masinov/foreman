@@ -131,6 +131,22 @@ export function createDashboardServices({
         method: "POST",
       });
     },
+    startAgent(projectId, { taskId } = {}) {
+      return requestJson(fetchImpl, `/api/projects/${encodeURIComponent(projectId)}/agent/start`, {
+        method: "POST",
+        body: { task_id: taskId || undefined },
+      });
+    },
+    createProject({ name, repoPath, workflowId }) {
+      return requestJson(fetchImpl, "/api/projects", {
+        method: "POST",
+        body: {
+          name,
+          repo_path: repoPath,
+          workflow_id: workflowId || "development",
+        },
+      });
+    },
     createHumanMessage(taskId, text) {
       return requestJson(fetchImpl, `/api/tasks/${encodeURIComponent(taskId)}/messages`, {
         method: "POST",

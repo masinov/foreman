@@ -32,7 +32,6 @@ from .dashboard_service import (
     DashboardNotFoundError,
     DashboardValidationError,
 )
-from .scaffold import generate_project_id
 from .store import ForemanStore
 
 
@@ -176,6 +175,17 @@ def create_dashboard_app(
     async def list_projects() -> dict[str, Any]:
         return with_api(lambda api: api.list_projects())
 
+    @app.post("/api/projects")
+    async def create_project(request: Request) -> dict[str, Any]:
+        data = await _read_json_body(request)
+        return with_api(
+            lambda api: api.create_project(
+                name=str(data.get("name", "")),
+                repo_path=str(data.get("repo_path", "")),
+                workflow_id=str(data.get("workflow_id", "development")),
+            )
+        )
+
     @app.get("/api/projects/{project_id}")
     async def get_project(project_id: str) -> dict[str, Any]:
         return with_api(lambda api: api.get_project(project_id))
@@ -311,6 +321,12 @@ def create_dashboard_app(
     @app.post("/api/projects/{project_id}/agent/stop")
     async def stop_agent(project_id: str) -> dict[str, Any]:
         return with_api(lambda api: api.stop_agent(project_id))
+
+    @app.post("/api/projects/{project_id}/agent/start")
+    async def start_agent(project_id: str, request: Request) -> dict[str, Any]:
+        data = await _read_json_body(request)
+        task_id = data.get("task_id") or None
+        return with_api(lambda api: api.start_agent(project_id, task_id=task_id))
 
     @app.get("/api/tasks/{task_id}")
     async def get_task(task_id: str) -> dict[str, Any]:

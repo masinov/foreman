@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import re
+import subprocess
+import sys
+import threading
 import unicodedata
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Callable
 
-from .models import Event, Sprint, SprintStatus, Task
+from .models import Event, Project, Sprint, SprintStatus, Task
 from .orchestrator import ForemanOrchestrator, OrchestratorError
+from .scaffold import generate_project_id
 from .store import ForemanStore
 
 _VALID_SPRINT_TRANSITIONS: dict[str, tuple[SprintStatus, ...]] = {
@@ -59,6 +64,7 @@ class DashboardService:
     ) -> None:
         self.store = store
         self._now = now_factory or (lambda: datetime.now(timezone.utc))
+        self._running_procs: dict[str, subprocess.Popen[bytes]] = {}
 
     def list_projects(self) -> dict[str, Any]:
         """Return the project summary collection used by the dashboard landing screen."""
@@ -151,6 +157,86 @@ class DashboardService:
         project.updated_at = self._now().isoformat()
         self.store.save_project(project)
         return self.get_project_settings(project_id)
+
+    def create_project(
+        self,
+        *,
+        name: str,
+        repo_path: str,
+        workflow_id: str = "development",
+    ) -> dict[str, Any]:
+        """Register a new project record in the dashboard."""
+
+        name = name.strip()
+        if not name:
+            raise DashboardValidationError("Project name cannot be empty.")
+        repo_path = repo_path.strip()
+        if not repo_path:
+            raise DashboardValidationError("Repo path cannot be empty.")
+        workflow_id = (workflow_id or "development").strip()
+        if not workflow_id:
+            raise DashboardValidationError("Workflow ID cannot be empty.")
+
+        base_id = generate_project_id(name, repo_path)
+        project_id = base_id
+        suffix = 2
+        while self.store.get_project(project_id) is not None:
+            project_id = f"{base_id}-{suffix}"
+            suffix += 1
+
+        project = Project(
+            id=project_id,
+            name=name,
+            repo_path=repo_path,
+            workflow_id=workflow_id,
+        )
+        self.store.save_project(project)
+        return {
+            "id": project.id,
+            "name": project.name,
+            "repo_path": project.repo_path,
+            "workflow_id": project.workflow_id,
+            "status": "idle",
+        }
+
+    def start_agent(
+        self,
+        project_id: str,
+        *,
+        task_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Spawn a ``foreman run`` subprocess for the given project."""
+
+        project = self.store.get_project(project_id)
+        if project is None:
+            raise DashboardNotFoundError(f"Project not found: {project_id}")
+
+        existing = self._running_procs.get(project_id)
+        if existing is not None and existing.poll() is None:
+            raise DashboardValidationError(
+                f"Agent is already running for project {project_id}."
+            )
+
+        foreman_bin = str(Path(sys.executable).parent / "foreman")
+        cmd = [foreman_bin, "run", "--project", project_id, "--db", self.store.db_path]
+        if task_id is not None:
+            cmd.extend(["--task", task_id])
+
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        self._running_procs[project_id] = proc
+
+        def _cleanup() -> None:
+            proc.wait()
+            if self._running_procs.get(project_id) is proc:
+                self._running_procs.pop(project_id, None)
+
+        threading.Thread(target=_cleanup, daemon=True).start()
+
+        return {"started": True, "project_id": project_id}
 
     def list_project_sprints(self, project_id: str) -> dict[str, Any]:
         """Return sprint summaries for one project."""
@@ -282,6 +368,7 @@ class DashboardService:
                     "assigned_role": task.assigned_role,
                     "blocked_reason": task.blocked_reason,
                     "acceptance_criteria": task.acceptance_criteria,
+                    "workflow_current_step": task.workflow_current_step,
                     "totals": {
                         "total_token_count": metrics.get("total_token_count", 0),
                         "total_cost_usd": metrics.get("total_cost_usd", 0.0),

@@ -170,12 +170,21 @@ export function Topbar({
   );
 }
 
-export function ProjectOverview({ projects, onSelectProject }) {
+export function ProjectOverview({ projects, onSelectProject, onNewProject }) {
   return (
     <section className="dashboard view visible">
-      <div className="page-title">Projects</div>
-      <div className="page-subtitle">
-        SQLite-backed project state, active sprint summaries, and aggregate engine totals.
+      <div className="dashboard-overview-header">
+        <div>
+          <div className="page-title">Projects</div>
+          <div className="page-subtitle">
+            SQLite-backed project state, active sprint summaries, and aggregate engine totals.
+          </div>
+        </div>
+        {onNewProject ? (
+          <button className="btn-action" type="button" onClick={onNewProject}>
+            + New project
+          </button>
+        ) : null}
       </div>
       <div className="dashboard-grid">
         {projects.map((project) => {
@@ -474,6 +483,9 @@ export function TaskCard({ task, selected, onSelect, onApprove, onDeny }) {
         <span className={`card-tag ${getTaskTypeClass(task.task_type)}`}>{task.task_type}</span>
         <span className="card-tokens">{formatTokenCount(task.totals.total_token_count)}</span>
       </div>
+      {task.status === "in_progress" && task.workflow_current_step ? (
+        <div className="card-step">step: {task.workflow_current_step}</div>
+      ) : null}
       {task.branch_name ? <div className="card-branch">{task.branch_name}</div> : null}
       {task.assigned_role ? <div className="card-role">Role: {task.assigned_role}</div> : null}
       {task.blocked_reason ? <div className="card-blocked-reason">{task.blocked_reason}</div> : null}
@@ -635,6 +647,12 @@ export function TaskDetailDrawer({
         ) : null}
         <div className="detail-section">
           <div className="detail-section-title">Details</div>
+          {task.workflow_current_step ? (
+            <div className="detail-field">
+              <span className="detail-field-label">Step</span>
+              <span className="detail-field-value detail-step">{task.workflow_current_step}</span>
+            </div>
+          ) : null}
           <div className="detail-field">
             <span className="detail-field-label">Branch</span>
             <span className="detail-field-value">{task.branch_name || "—"}</span>
@@ -1116,6 +1134,79 @@ export function NewTaskModal({ onSubmit, onClose }) {
           <div className="modal-footer">
             <button className="btn-cancel" type="button" onClick={onClose}>Cancel</button>
             <button className="btn-primary" type="submit" disabled={!title.trim()}>Create task</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+export function NewProjectModal({ onSubmit, onClose }) {
+  const [name, setName] = useState("");
+  const [repoPath, setRepoPath] = useState("");
+  const [workflowId, setWorkflowId] = useState("development");
+
+  function handleSubmit(e) {
+    e.preventDefault();
+    if (!name.trim() || !repoPath.trim()) return;
+    onSubmit({ name: name.trim(), repoPath: repoPath.trim(), workflowId });
+  }
+
+  return (
+    <div className="modal-backdrop visible" onClick={onClose}>
+      <div className="modal" style={{ width: "480px" }} onClick={(e) => e.stopPropagation()}>
+        <form onSubmit={handleSubmit}>
+          <div className="modal-header">
+            <h3>Register Project</h3>
+            <button className="modal-close" type="button" onClick={onClose}>×</button>
+          </div>
+          <div className="modal-body">
+            <div className="form-hint">
+              Registers a project in the dashboard database. Use <code>foreman init</code> to scaffold CLAUDE.md and workflow files in the repo.
+            </div>
+            <div className="form-group">
+              <label className="form-label">Project name</label>
+              <input
+                className="form-input"
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="My project"
+                autoFocus
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Repo path</label>
+              <input
+                className="form-input"
+                type="text"
+                value={repoPath}
+                onChange={(e) => setRepoPath(e.target.value)}
+                placeholder="/path/to/repo"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Workflow</label>
+              <select
+                className="form-input"
+                value={workflowId}
+                onChange={(e) => setWorkflowId(e.target.value)}
+              >
+                {WORKFLOW_OPTIONS.map((w) => (
+                  <option key={w.value} value={w.value}>{w.label}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="modal-footer">
+            <button className="btn-cancel" type="button" onClick={onClose}>Cancel</button>
+            <button
+              className="btn-primary"
+              type="submit"
+              disabled={!name.trim() || !repoPath.trim()}
+            >
+              Register project
+            </button>
           </div>
         </form>
       </div>
