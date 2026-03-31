@@ -138,3 +138,14 @@ memory changes rather than versioned product releases.
   integrity, fresh install, idempotency on both in-memory and file databases,
   incremental upgrade from a partially-migrated store, and schema version
   accuracy
+- added migration 2 (`idx_runs_project_completed`) enabling efficient run
+  retention queries; `test_partial_db_upgraded_to_latest` now passes
+- added `ForemanStore.prune_old_runs()` to hard-delete terminal runs and their
+  cascaded events older than a cutoff while protecting blocked/in-progress tasks
+- added `ForemanStore.strip_old_run_prompts()` to null out `prompt_text` on old
+  terminal runs while preserving run records and telemetry
+- expanded orchestrator startup pruning via `prune_old_history()` reading
+  `run_retention_days` and `prompt_retention_days` project settings; emits
+  `engine.run_pruned` and `engine.prompt_stripped` lifecycle events
+- added `tests/test_run_retention.py` with 19 tests covering deletion,
+  active-work protection, cascade event removal, and prompt stripping

@@ -809,6 +809,96 @@ class ForemanStore:
             )
         return int(cursor.rowcount)
 
+    _PRUNE_TERMINAL_RUN_STATUSES: tuple[str, ...] = (
+        "completed",
+        "failed",
+        "killed",
+        "timeout",
+    )
+
+    def prune_old_runs(
+        self,
+        *,
+        project_id: str,
+        older_than: str,
+    ) -> int:
+        """Delete terminal runs older than one cutoff and their dependent events.
+
+        Runs whose task is still blocked or in_progress are preserved regardless
+        of age.  Events attached to the deleted runs are removed first to satisfy
+        the foreign-key constraint on events.run_id.  Both deletes execute inside
+        a single transaction.
+
+        Returns the number of run rows deleted.
+        """
+
+        qualifying_sql = """
+            SELECT id FROM runs
+            WHERE project_id = ?
+              AND completed_at < ?
+              AND status IN ({statuses})
+              AND NOT EXISTS (
+                  SELECT 1 FROM tasks
+                  WHERE tasks.id = runs.task_id
+                    AND tasks.status IN ({protected})
+              )
+        """.format(
+            statuses=", ".join("?" for _ in self._PRUNE_TERMINAL_RUN_STATUSES),
+            protected=", ".join("?" for _ in _PRUNE_PROTECTED_TASK_STATUSES),
+        )
+        qualifying_params = (
+            project_id,
+            older_than,
+            *self._PRUNE_TERMINAL_RUN_STATUSES,
+            *_PRUNE_PROTECTED_TASK_STATUSES,
+        )
+
+        with self._connection:
+            self._connection.execute(
+                f"DELETE FROM events WHERE run_id IN ({qualifying_sql})",
+                qualifying_params,
+            )
+            cursor = self._connection.execute(
+                f"DELETE FROM runs WHERE id IN ({qualifying_sql})",
+                qualifying_params,
+            )
+        return int(cursor.rowcount)
+
+    def strip_old_run_prompts(
+        self,
+        *,
+        project_id: str,
+        older_than: str,
+    ) -> int:
+        """Null out prompt_text on terminal runs older than one cutoff.
+
+        The run record, telemetry, and status are preserved; only the stored
+        prompt text is removed to reduce storage.  Active-work protection is not
+        applied here because stripping text from a run record is non-destructive.
+
+        Returns the number of run rows updated.
+        """
+
+        with self._connection:
+            cursor = self._connection.execute(
+                """
+                UPDATE runs
+                SET prompt_text = NULL
+                WHERE project_id = ?
+                  AND completed_at < ?
+                  AND prompt_text IS NOT NULL
+                  AND status IN ({statuses})
+                """.format(
+                    statuses=", ".join("?" for _ in self._PRUNE_TERMINAL_RUN_STATUSES)
+                ),
+                (
+                    project_id,
+                    older_than,
+                    *self._PRUNE_TERMINAL_RUN_STATUSES,
+                ),
+            )
+        return int(cursor.rowcount)
+
     def run_totals(
         self,
         *,

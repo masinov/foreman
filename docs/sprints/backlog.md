@@ -2,10 +2,10 @@
 
 ## Next up after current sprint
 
-- `sprint-26-history-lifecycle-expansion` — extend retention and cleanup
-  policy beyond `events` so `runs`, stored prompts, and related history can
-  evolve safely on top of the migration framework (migration 2 also activates
-  the currently-skipped incremental-upgrade test in `tests/test_migrations.py`)
+- browser-driven end-to-end dashboard validation
+- `task_selection_mode="autonomous"` orchestrator implementation
+- `foreman db migrate` CLI surface for operators to inspect schema version and
+  apply pending migrations explicitly
 
 ## Parking lot
 

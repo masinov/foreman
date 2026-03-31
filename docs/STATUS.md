@@ -2,10 +2,10 @@
 
 ## Current sprint
 
-- Sprint: `sprint-25-migration-framework-bootstrap`
+- Sprint: `sprint-26-history-lifecycle-expansion`
 - Status: done
-- Goal: introduce an explicit schema migration path for store evolution and
-  retention-safe upgrades
+- Goal: extend retention and cleanup policy beyond `events` to cover `runs`
+  and stored prompt text, using the migration framework as the safe upgrade path
 
 ## Active branches
 
@@ -122,6 +122,18 @@
 - 17 new tests in `tests/test_migrations.py` cover list integrity, fresh
   install, idempotency, incremental upgrade, and version tracking
 - accepted `docs/adr/ADR-0005-schema-migration-strategy.md`
+- completed `sprint-26-history-lifecycle-expansion`
+- added migration 2 (`idx_runs_project_completed`) — `test_partial_db_upgraded_to_latest`
+  now passes (was previously skipped)
+- added `ForemanStore.prune_old_runs()`: hard-deletes terminal runs and their
+  cascaded events older than a cutoff; protects blocked/in-progress task runs
+- added `ForemanStore.strip_old_run_prompts()`: nulls `prompt_text` on old
+  terminal runs without deleting the run record or its telemetry
+- expanded orchestrator startup pruning via `prune_old_history()` which reads
+  `run_retention_days` and `prompt_retention_days` from project settings
+  alongside the existing `event_retention_days`; emits `engine.run_pruned` and
+  `engine.prompt_stripped` lifecycle events
+- 19 new tests in `tests/test_run_retention.py`; 188 tests pass total
 
 ## Current repo state
 
@@ -167,6 +179,9 @@
   - a version-tracked schema migration framework (`foreman/migrations.py`,
     `schema_migrations` table, `ForemanStore.migrate()`,
     `ForemanStore.schema_version()`),
+  - run and prompt retention via `ForemanStore.prune_old_runs()` and
+    `ForemanStore.strip_old_run_prompts()`, wired into orchestrator startup
+    via `prune_old_history()`,
   - repo-memory docs that are intended to let a fresh agent continue from the
     next slice without reconstructing prior branch history.
 - The temporary markdown sprint and status workflow remains intentional
@@ -175,11 +190,10 @@
 
 ## Ready next
 
-1. `sprint-26-history-lifecycle-expansion` — extend retention and cleanup
-   policy beyond `events`; `runs` and stored prompts can now gain new columns
-   safely via the migration framework
-2. add browser-driven end-to-end dashboard validation
-3. implement `task_selection_mode="autonomous"` in the orchestrator
+1. add browser-driven end-to-end dashboard validation
+2. implement `task_selection_mode="autonomous"` in the orchestrator
+3. add `foreman db migrate` CLI surface for operators to inspect schema version
+   and apply pending migrations explicitly
 
 ## Open risks
 
@@ -205,8 +219,7 @@
   remains `0.0`.
 - `task_selection_mode=\"autonomous\"` is still not implemented in the
   orchestrator even though the project settings model exposes it.
-- Event retention currently prunes only `events`; `runs` rows and stored
-  prompts continue to accumulate until a later lifecycle or migration slice.
+- Run and prompt retention are controlled by optional project settings; if neither `run_retention_days` nor `prompt_retention_days` is set, old runs and prompts accumulate indefinitely.
 - The migration framework covers DDL changes but does not yet provide a down/rollback path; adding that is deferred until a rollback scenario is observed in practice.
 - project-scoped `foreman watch` resolves the active sprint once at startup;
   if sprint ownership changes mid-tail, operators currently need to restart
@@ -255,8 +268,7 @@
   backend instead of being passed through verbatim at runtime
 - whether backend preflight should eventually expand beyond executable and
   startup-contract checks into authentication or service reachability checks
-- whether retention should later prune `runs`, stored prompts, or other
-  history surfaces in addition to `events`
+- whether run and prompt retention thresholds should have product-level defaults rather than requiring explicit project settings
 - whether the secure workflow should remain an explicit opt-in at init time or
   be selected automatically from project policy in a later slice
 - whether project-scoped watch should eventually auto-rebind if a different

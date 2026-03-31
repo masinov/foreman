@@ -451,11 +451,19 @@ Target deliverables:
 
 Status:
 
-- planned in `sprint-26-history-lifecycle-expansion`
+- completed on `feat/history-lifecycle-expansion`
+- migration 2 adds `idx_runs_project_completed`; `test_partial_db_upgraded_to_latest`
+  now passes
+- `ForemanStore.prune_old_runs()` hard-deletes terminal runs and cascades to
+  their events; protects runs on blocked/in-progress tasks
+- `ForemanStore.strip_old_run_prompts()` nulls prompt text on old terminal
+  runs while preserving run records and telemetry
+- orchestrator `prune_old_history()` reads `run_retention_days` and
+  `prompt_retention_days` from project settings alongside `event_retention_days`
 
 ## Near-term priorities
 
-1. `sprint-26-history-lifecycle-expansion` — extend retention and cleanup
-   beyond `events` now that the migration framework is in place
-2. add browser-driven end-to-end dashboard validation
-3. implement `task_selection_mode="autonomous"` in the orchestrator
+1. add browser-driven end-to-end dashboard validation
+2. implement `task_selection_mode="autonomous"` in the orchestrator
+3. add `foreman db migrate` CLI surface for schema inspection and explicit
+   migration application
