@@ -461,8 +461,27 @@ Status:
 - orchestrator `prune_old_history()` reads `run_retention_days` and
   `prompt_retention_days` from project settings alongside `event_retention_days`
 
+## Milestone 22: Autonomous task selection
+
+Goal: implement `task_selection_mode="autonomous"` in the orchestrator so the
+engine can create and execute tasks without human task assignment.
+
+Target deliverables:
+
+- `_select_next_task_autonomous()` in `ForemanOrchestrator`
+- placeholder task creation persisted to SQLite with `created_by="orchestrator"`
+- per-sprint `max_autonomous_tasks` safety bound (default 5, configurable)
+- agent populates task via existing `signal.task_started` handler
+- 8 new regression tests in `AutonomousTaskSelectionTests`
+
+Status:
+
+- completed on `feat/autonomous-task-selection`
+- `select_next_task()` now dispatches to `_select_next_task_autonomous()` for
+  autonomous projects; resumes in-progress tasks first, then creates placeholder
+  tasks up to the per-sprint limit
+
 ## Near-term priorities
 
-1. implement `task_selection_mode="autonomous"` in the orchestrator
-2. add `foreman db migrate` CLI surface for schema inspection and explicit
+1. add `foreman db migrate` CLI surface for schema inspection and explicit
    migration application

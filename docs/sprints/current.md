@@ -1,45 +1,47 @@
 # Current Sprint
 
-- Sprint: `sprint-27-e2e-dashboard-validation`
+- Sprint: `sprint-28-autonomous-task-selection`
 - Status: done
-- Goal: add browser-driven end-to-end validation of the Foreman dashboard,
-  exercising the full stack through a real Chromium browser against a live
-  FastAPI server and seeded SQLite database
+- Goal: implement `task_selection_mode="autonomous"` in the orchestrator so the
+  engine can create and execute tasks without human task assignment
 - Primary references:
   - `docs/specs/engine-design-v3.md`
-  - `docs/mockups/foreman-mockup-v6.html`
   - `docs/STATUS.md`
-  - `foreman/dashboard_backend.py`
-  - `frontend/src/App.jsx`
-  - `frontend/src/components.jsx`
-  - `tests/test_e2e.py`
+  - `foreman/orchestrator.py`
+  - `tests/test_orchestrator.py`
 
 ## Included tasks
 
-1. `[done]` Install Playwright and pytest-playwright; install Chromium binaries
-   Deliverable: `playwright` and `pytest-playwright` available in the venv;
-   Chromium browser binaries installed; `pyproject.toml` records the `e2e`
-   optional dependency group.
+1. `[done]` Implement `_select_next_task_autonomous()` in `ForemanOrchestrator`
+   Deliverable: `select_next_task()` dispatches to `_select_next_task_autonomous()`
+   for `task_selection_mode="autonomous"` projects; resumes in-progress tasks
+   first, then creates placeholder tasks persisted to SQLite with
+   `created_by="orchestrator"`; returns `None` when the per-sprint
+   `max_autonomous_tasks` limit (default 5) is reached or no active sprint exists.
 
-2. `[done]` Write live-server pytest fixture
-   Deliverable: `live_dashboard_url` session-scoped fixture starts a real
-   uvicorn server with a seeded SQLite database and waits for it to accept
-   connections; skips gracefully if Playwright or built frontend assets are
-   absent.
+2. `[done]` Write regression tests
+   Deliverable: 8 new tests in `AutonomousTaskSelectionTests` covering placeholder
+   creation, in-progress resume, no-sprint, limit enforcement (custom and
+   default), human-task exclusion from limit count, directed-mode unchanged, and
+   unknown-mode error.
 
-3. `[done]` Write E2E test suite
-   Deliverable: 20 Playwright tests in `tests/test_e2e.py` covering dashboard
-   load, project navigation, sprint board, task detail drawer, settings panel
-   (open, field change, save), new sprint modal (open, disabled state, create),
-   and new task modal (open, disabled state, create).
+3. `[done]` Update all repo-memory docs
+   Deliverable: `docs/STATUS.md`, `docs/ARCHITECTURE.md`, `docs/ROADMAP.md`,
+   `docs/sprints/current.md`, `docs/sprints/backlog.md`, `CHANGELOG.md`, and
+   sprint archive written.
 
 ## Excluded from this sprint
 
-- `task_selection_mode="autonomous"` orchestrator implementation
 - `foreman db migrate` CLI surface
+- autonomous agent execution integration (depends on a live agent runner in test
+  context)
 
 ## Acceptance criteria
 
-- 20 E2E tests pass against the full stack: Chromium → FastAPI → SQLite
-- E2E tests skip cleanly when Playwright is not installed
-- full pytest suite (208 tests) passes with no regressions
+- `select_next_task()` returns a placeholder task for an autonomous project with
+  an active sprint and no in-progress task
+- `select_next_task()` resumes an in-progress task before creating a new one
+- limit is enforced: returns `None` when `max_autonomous_tasks` orchestrator
+  tasks exist in the sprint
+- directed mode and unknown-mode error paths are unchanged
+- 8 new tests pass; full non-E2E suite (204 tests) passes with no regressions

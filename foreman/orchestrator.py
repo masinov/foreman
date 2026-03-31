@@ -205,9 +205,11 @@ class ForemanOrchestrator:
         """Return the next runnable task for one project."""
 
         selection_mode = str(project.settings.get("task_selection_mode", "directed"))
+        if selection_mode == "autonomous":
+            return self._select_next_task_autonomous(project)
         if selection_mode != "directed":
             raise OrchestratorError(
-                f"Task selection mode {selection_mode!r} is not implemented yet."
+                f"Task selection mode {selection_mode!r} is not implemented."
             )
 
         sprint = self.store.get_active_sprint(project.id)
@@ -224,6 +226,47 @@ class ForemanOrchestrator:
             if self._dependencies_satisfied(task, tasks_by_id):
                 return task
         return None
+
+    _MAX_AUTONOMOUS_TASKS_DEFAULT = 5
+
+    def _select_next_task_autonomous(self, project: Project) -> Task | None:
+        """Select the next task in autonomous mode.
+
+        Resumes an in-progress task if one exists.  Otherwise creates a new
+        placeholder task for the agent to populate via ``signal.task_started``.
+        Returns ``None`` when there is no active sprint or the autonomous task
+        limit for this sprint has been reached.
+        """
+        sprint = self.store.get_active_sprint(project.id)
+        if sprint is None:
+            return None
+
+        sprint_tasks = self.store.list_tasks(sprint_id=sprint.id)
+
+        # Resume an in-progress task that has a persisted workflow position.
+        for task in sprint_tasks:
+            if task.status == "in_progress" and task.workflow_current_step:
+                return task
+
+        # Check the per-sprint autonomous task limit.
+        max_tasks = int(
+            project.settings.get("max_autonomous_tasks", self._MAX_AUTONOMOUS_TASKS_DEFAULT)
+        )
+        orchestrator_tasks = [t for t in sprint_tasks if t.created_by == "orchestrator"]
+        if len(orchestrator_tasks) >= max_tasks:
+            return None
+
+        # Create a new placeholder task for the agent to populate.
+        placeholder = Task(
+            id=str(uuid4()),
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="[autonomous] new task",
+            status="todo",
+            created_by="orchestrator",
+        )
+        self.store.save_task(placeholder)
+        return placeholder
 
     def run_task(
         self,

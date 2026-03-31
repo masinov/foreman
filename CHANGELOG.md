@@ -155,3 +155,10 @@ memory changes rather than versioned product releases.
   creation end to end against a live FastAPI server and seeded SQLite database
 - added `playwright` and `pytest-playwright` to `pyproject.toml` as optional
   `e2e` dependencies
+- implemented `task_selection_mode="autonomous"` in `ForemanOrchestrator`:
+  `select_next_task()` now dispatches to `_select_next_task_autonomous()` for
+  autonomous projects; resumes in-progress tasks, then creates placeholder tasks
+  up to the per-sprint `max_autonomous_tasks` limit (default 5)
+- added 8 tests in `AutonomousTaskSelectionTests` covering placeholder creation,
+  in-progress resume, no-sprint, limit enforcement, human-task exclusion,
+  directed-mode unchanged, and unknown-mode error

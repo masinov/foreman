@@ -2,11 +2,10 @@
 
 ## Current sprint
 
-- Sprint: `sprint-27-e2e-dashboard-validation`
+- Sprint: `sprint-28-autonomous-task-selection`
 - Status: done
-- Goal: add browser-driven end-to-end validation of the Foreman dashboard
-  through a real Chromium browser against a live FastAPI server and seeded
-  SQLite database
+- Goal: implement `task_selection_mode="autonomous"` in the orchestrator so the
+  engine can create and execute tasks without human task assignment
 
 ## Active branches
 
@@ -143,6 +142,16 @@
   creation, and task creation end to end
 - E2E tests skip gracefully when Playwright is not installed
 - 208 tests pass total (20 new E2E + 188 prior)
+- completed `sprint-28-autonomous-task-selection`
+- implemented `task_selection_mode="autonomous"` in `ForemanOrchestrator`:
+  `select_next_task()` dispatches to `_select_next_task_autonomous()` which
+  resumes in-progress tasks first, then creates placeholder tasks up to a
+  per-sprint `max_autonomous_tasks` limit (default 5, configurable via project
+  settings)
+- the placeholder task (`created_by="orchestrator"`, `title="[autonomous] new
+  task"`) is persisted to SQLite; the agent populates it via the existing
+  `signal.task_started` handler
+- 8 new tests in `AutonomousTaskSelectionTests`; 204 non-E2E tests pass total
 
 ## Current repo state
 
@@ -201,8 +210,7 @@
 
 ## Ready next
 
-1. implement `task_selection_mode="autonomous"` in the orchestrator
-2. add `foreman db migrate` CLI surface for operators to inspect schema version
+1. add `foreman db migrate` CLI surface for operators to inspect schema version
    and apply pending migrations explicitly
 
 ## Open risks
@@ -224,8 +232,9 @@
 - The Codex app-server protocol exposes token usage but not USD pricing, so
   Codex runs currently persist `token_count` accurately while `cost_usd`
   remains `0.0`.
-- `task_selection_mode=\"autonomous\"` is still not implemented in the
-  orchestrator even though the project settings model exposes it.
+- `task_selection_mode="autonomous"` is now implemented; the agent must emit
+  `signal.task_started` to populate placeholder tasks or they remain with the
+  default title.
 - Run and prompt retention are controlled by optional project settings; if neither `run_retention_days` nor `prompt_retention_days` is set, old runs and prompts accumulate indefinitely.
 - The migration framework covers DDL changes but does not yet provide a down/rollback path; adding that is deferred until a rollback scenario is observed in practice.
 - project-scoped `foreman watch` resolves the active sprint once at startup;
