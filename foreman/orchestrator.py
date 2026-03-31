@@ -151,7 +151,7 @@ class ForemanOrchestrator:
         if project is None:
             raise OrchestratorError(f"Unknown project {project_id!r}.")
         workflow = self._load_workflow_for_project(project)
-        self.prune_old_events(project)
+        self.prune_old_history(project)
         self.recover_orphaned_tasks(project.id)
 
         executed_task_ids: list[str] = []
@@ -807,46 +807,87 @@ class ForemanOrchestrator:
             task.step_visit_counts = {}
             self.store.save_task(task)
 
-    def prune_old_events(self, project: Project) -> int:
-        """Prune old project events when retention is configured."""
+    def prune_old_history(self, project: Project) -> dict[str, int]:
+        """Prune old project history according to per-type retention settings.
 
-        retention_days = _coerce_int_value(
-            project.settings.get("event_retention_days"),
-            default=None,
+        Reads three optional integer project settings:
+
+        - ``event_retention_days`` — hard-delete old events (existing behavior)
+        - ``run_retention_days`` — hard-delete old terminal runs and their events
+        - ``prompt_retention_days`` — null out prompt_text on old terminal runs
+
+        Each setting is independent.  Omitting a key disables that pruning type.
+        Returns a dict with counts for each type that was actually pruned.
+        """
+
+        counts: dict[str, int] = {}
+
+        event_days = _coerce_int_value(
+            project.settings.get("event_retention_days"), default=None
         )
-        if retention_days is None:
-            return 0
+        if event_days is not None:
+            cutoff = self._retention_cutoff(event_days)
+            n = self.store.prune_old_events(project_id=project.id, older_than=cutoff)
+            if n > 0:
+                counts["events"] = n
+                self._emit_pruned_event(project, "engine.event_pruned", n, cutoff)
 
-        cutoff = (
-            self.utc_now() - timedelta(days=retention_days)
+        run_days = _coerce_int_value(
+            project.settings.get("run_retention_days"), default=None
+        )
+        if run_days is not None:
+            cutoff = self._retention_cutoff(run_days)
+            n = self.store.prune_old_runs(project_id=project.id, older_than=cutoff)
+            if n > 0:
+                counts["runs"] = n
+                self._emit_pruned_event(project, "engine.run_pruned", n, cutoff)
+
+        prompt_days = _coerce_int_value(
+            project.settings.get("prompt_retention_days"), default=None
+        )
+        if prompt_days is not None:
+            cutoff = self._retention_cutoff(prompt_days)
+            n = self.store.strip_old_run_prompts(project_id=project.id, older_than=cutoff)
+            if n > 0:
+                counts["prompts"] = n
+                self._emit_pruned_event(project, "engine.prompt_stripped", n, cutoff)
+
+        return counts
+
+    def _retention_cutoff(self, days: int) -> str:
+        """Return an ISO 8601 UTC timestamp ``days`` before now."""
+
+        return (
+            self.utc_now() - timedelta(days=days)
         ).isoformat(timespec="microseconds").replace("+00:00", "Z")
-        pruned_count = self.store.prune_old_events(
-            project_id=project.id,
-            older_than=cutoff,
-        )
-        if pruned_count <= 0:
-            return 0
+
+    def _emit_pruned_event(
+        self,
+        project: Project,
+        event_type: str,
+        count: int,
+        older_than: str,
+    ) -> None:
+        """Emit a project-scoped lifecycle event for a completed pruning operation."""
 
         task = self._select_project_system_task(project.id)
         if task is None:
-            return pruned_count
-
-        detail = f"Pruned {pruned_count} old events older than {cutoff}."
+            return
         run = self._create_system_run(
             task,
             workflow_step="orchestrator",
             outcome="success",
-            detail=detail,
+            detail=f"{event_type}: {count} rows older than {older_than}.",
         )
-        self._emit_event(
-            run,
-            "engine.event_pruned",
-            {
-                "count": pruned_count,
-                "older_than": cutoff,
-            },
-        )
-        return pruned_count
+        self._emit_event(run, event_type, {"count": count, "older_than": older_than})
+
+    # Keep the old name as a thin delegate so any existing call sites outside
+    # this class continue to work during the transition period.
+    def prune_old_events(self, project: Project) -> int:
+        """Prune old project events only.  Prefer prune_old_history() for new code."""
+
+        result = self.prune_old_history(project)
+        return result.get("events", 0)
 
     def _select_project_system_task(self, project_id: str) -> Task | None:
         """Choose a stable task for project-scoped synthetic orchestrator events."""

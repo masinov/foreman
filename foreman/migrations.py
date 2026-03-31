@@ -118,4 +118,12 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         CREATE INDEX IF NOT EXISTS idx_events_type ON events(event_type, timestamp);
         """,
     ),
+    (
+        2,
+        "add idx_runs_project_completed for efficient run retention queries",
+        """
+        CREATE INDEX IF NOT EXISTS idx_runs_project_completed
+        ON runs(project_id, completed_at);
+        """,
+    ),
 ]

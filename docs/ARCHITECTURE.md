@@ -238,13 +238,11 @@ The current CLI watch baseline now includes:
 
 ## Next architectural slice
 
-The next slice should extend history lifecycle management now that the
-migration framework exists:
+The next slice should focus on validation depth and orchestrator completeness:
 
-- add migration 2 in `foreman/migrations.py` for any new columns on `runs`
-  or `events` needed by retention or lifecycle policy,
-- implement retention and cleanup behavior beyond `events` so `runs` and
-  stored prompts can be pruned safely,
-- the dormant `test_partial_db_upgraded_to_latest` test in
-  `tests/test_migrations.py` activates automatically when migration 2 lands
-  and validates the incremental upgrade path end to end.
+- add browser-driven end-to-end dashboard validation so the React frontend
+  and FastAPI backend are tested together through a real browser,
+- implement `task_selection_mode="autonomous"` in the orchestrator so the
+  engine can select and execute tasks without human task assignment,
+- add a `foreman db migrate` CLI surface for operators to inspect schema
+  version and apply pending migrations explicitly.
