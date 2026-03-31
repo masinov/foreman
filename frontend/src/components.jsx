@@ -1,10 +1,9 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import {
   eventMatchesFilter,
   formatCompactCount,
   formatCount,
-  formatCurrency,
   formatDuration,
   formatEventSummary,
   formatEventTime,
@@ -21,7 +20,6 @@ export const STATUS_COLUMNS = [
   { key: "in_progress", label: "In Progress" },
   { key: "blocked", label: "Blocked" },
   { key: "done", label: "Done" },
-  { key: "cancelled", label: "Cancelled" },
 ];
 
 export const EVENT_FILTERS = [
@@ -33,105 +31,131 @@ export const EVENT_FILTERS = [
   { key: "review", label: "Review" },
 ];
 
-function totalsSummaryLine(totals) {
-  if (!totals) {
-    return "No run totals yet";
+function totalsSummaryLine(sprintTotals, projectTotals) {
+  const sprint = sprintTotals?.total_token_count ? formatCompactCount(sprintTotals.total_token_count) : null;
+  const project = projectTotals?.total_token_count ? formatCompactCount(projectTotals.total_token_count) : null;
+  if (sprint && project) {
+    return `sprint ${sprint} · project ${project} tokens`;
   }
-  return `${formatCount(totals.run_count)} runs • ${formatTokenCount(totals.total_token_count)} • ${formatCurrency(totals.total_cost_usd)}`;
+  if (project) {
+    return `project ${project} tokens`;
+  }
+  return "No run totals yet";
+}
+
+function projectStatusClass(status) {
+  switch (status) {
+    case "running": return "opt-s-running";
+    case "active": return "opt-s-active";
+    case "idle": return "opt-s-idle";
+    case "done": return "opt-s-done";
+    case "planned": return "opt-s-planned";
+    case "blocked": return "opt-s-blocked";
+    default: return "opt-s-idle";
+  }
 }
 
 export function Topbar({
   projects,
   currentProject,
   currentSprint,
-  totals,
+  sprintTotals,
+  projectTotals,
   projectStatus,
   onOpenDashboard,
   onSelectProject,
   onSelectSprint,
   onToggleSettings,
 }) {
-  const [projectMenuOpen, setProjectMenuOpen] = useState(false);
-  const [sprintMenuOpen, setSprintMenuOpen] = useState(false);
+  const [openSegment, setOpenSegment] = useState(null);
+
+  function toggleSegment(name) {
+    setOpenSegment((prev) => (prev === name ? null : name));
+  }
+
+  function closeAll() {
+    setOpenSegment(null);
+  }
 
   return (
     <header className="topbar">
+      {openSegment ? <div className="dropdown-overlay visible" onClick={closeAll} /> : null}
       <div className="topbar-left">
         <button className="logo-button" type="button" onClick={onOpenDashboard}>
           <span className="logo">FOREMAN</span>
         </button>
         <nav className="breadcrumb" aria-label="Breadcrumb">
-          <button className="breadcrumb-link current" type="button" onClick={onOpenDashboard}>
-            Projects
-          </button>
           {currentProject ? (
             <>
               <span className="breadcrumb-sep">/</span>
-              <div className="switcher">
-                <button
-                  className="breadcrumb-link"
-                  type="button"
-                  onClick={() => setProjectMenuOpen((open) => !open)}
+              <div className={`breadcrumb-segment ${openSegment === "project" ? "open" : ""}`}>
+                <span
+                  className={`breadcrumb-link ${!currentSprint ? "current" : ""}`}
+                  onClick={currentSprint ? () => { closeAll(); onSelectProject(currentProject.id); } : undefined}
+                  style={{ cursor: currentSprint ? "pointer" : "default" }}
                 >
                   {currentProject.name}
+                </span>
+                <button
+                  className="breadcrumb-chevron"
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); toggleSegment("project"); }}
+                >
+                  &#9662;
                 </button>
-                {projectMenuOpen ? (
-                  <div className="switcher-menu" role="menu">
-                    {projects.map((project) => (
-                      <button
-                        key={project.id}
-                        className={`switcher-item ${project.id === currentProject.id ? "current" : ""}`}
-                        type="button"
-                        onClick={() => {
-                          setProjectMenuOpen(false);
-                          onSelectProject(project.id);
-                        }}
-                      >
-                        <span>{project.name}</span>
-                        <span className={`ps-status s-${project.status}`}>{formatProjectStatus(project.status)}</span>
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
+                <div className="breadcrumb-dropdown">
+                  {projects.map((project) => (
+                    <div
+                      key={project.id}
+                      className={`breadcrumb-option ${project.id === currentProject.id ? "active-option" : ""}`}
+                      onClick={() => { closeAll(); onSelectProject(project.id); }}
+                    >
+                      <span>{project.name}</span>
+                      <span className={`opt-status ${projectStatusClass(project.status)}`}>
+                        {formatProjectStatus(project.status)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
             </>
           ) : null}
           {currentSprint ? (
             <>
               <span className="breadcrumb-sep">/</span>
-              <div className="switcher">
+              <div className={`breadcrumb-segment ${openSegment === "sprint" ? "open" : ""}`}>
+                <span className="breadcrumb-link current">{currentSprint.title}</span>
                 <button
-                  className="breadcrumb-link current"
+                  className="breadcrumb-chevron"
                   type="button"
-                  onClick={() => setSprintMenuOpen((open) => !open)}
+                  onClick={(e) => { e.stopPropagation(); toggleSegment("sprint"); }}
                 >
-                  {currentSprint.title}
+                  &#9662;
                 </button>
-                {sprintMenuOpen ? (
-                  <div className="switcher-menu" role="menu">
-                    {(currentProject?.sprints || []).map((sprint) => (
-                      <button
+                <div className="breadcrumb-dropdown">
+                  {(currentProject?.sprints || []).map((sprint) => {
+                    const statusClass = sprint.status === "active" ? "opt-s-active"
+                      : sprint.status === "done" ? "opt-s-done"
+                      : "opt-s-planned";
+                    return (
+                      <div
                         key={sprint.id}
-                        className={`switcher-item ${sprint.id === currentSprint.id ? "current" : ""}`}
-                        type="button"
-                        onClick={() => {
-                          setSprintMenuOpen(false);
-                          onSelectSprint(sprint.id);
-                        }}
+                        className={`breadcrumb-option ${sprint.id === currentSprint.id ? "active-option" : ""}`}
+                        onClick={() => { closeAll(); onSelectSprint(sprint.id); }}
                       >
                         <span>{sprint.title}</span>
-                        <span className={`ps-status sc-${sprint.status}`}>{sprint.status}</span>
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
+                        <span className={`opt-status ${statusClass}`}>{sprint.status}</span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </>
           ) : null}
         </nav>
       </div>
       <div className="topbar-right">
-        <div className="topbar-tokens">{totalsSummaryLine(totals)}</div>
+        <div className="topbar-tokens">{totalsSummaryLine(sprintTotals, projectTotals)}</div>
         <div className={`engine-status ${projectStatus || "idle"}`}>
           <span className="dot" />
           <span>{formatProjectStatus(projectStatus || "idle")}</span>
@@ -155,7 +179,6 @@ export function ProjectOverview({ projects, onSelectProject }) {
       </div>
       <div className="dashboard-grid">
         {projects.map((project) => {
-          const totalTasks = Object.values(project.task_counts || {}).reduce((sum, value) => sum + value, 0);
           return (
             <button
               key={project.id}
@@ -169,41 +192,30 @@ export function ProjectOverview({ projects, onSelectProject }) {
                 <div className={`pc-status s-${project.status}`}>{formatProjectStatus(project.status)}</div>
               </div>
               <div className="pc-sprint">
-                {project.active_sprint ? `Active sprint: ${project.active_sprint.title}` : "No active sprint"}
+                {project.active_sprint
+                  ? `${project.active_sprint.title}${project.active_sprint.goal ? ` \u2014 ${project.active_sprint.goal}` : ""}`
+                  : "No active sprint"}
               </div>
               <div className="pc-tasks">
-                <span>
-                  <span className="n">{formatCount(project.task_counts.todo)}</span> todo
-                </span>
-                <span>
-                  <span className="n">{formatCount(project.task_counts.in_progress)}</span> in progress
-                </span>
-                <span>
-                  <span className="n">{formatCount(project.task_counts.blocked)}</span> blocked
-                </span>
-                <span>
-                  <span className="n">{formatCount(project.task_counts.done)}</span> done
-                </span>
+                <span><span className="n">{formatCount(project.task_counts.done)}</span> done</span>
+                <span><span className="n">{formatCount(project.task_counts.in_progress)}</span> in progress</span>
+                {project.task_counts.blocked > 0 ? (
+                  <span><span className="n">{formatCount(project.task_counts.blocked)}</span> blocked</span>
+                ) : null}
+                <span><span className="n">{formatCount(project.task_counts.todo)}</span> todo</span>
               </div>
               <div className="progress-bar" aria-hidden="true">
-                <span className="p-todo" style={{ flex: project.task_counts.todo || 0 }} />
+                <span className="p-done" style={{ flex: project.task_counts.done || 0 }} />
                 <span className="p-wip" style={{ flex: project.task_counts.in_progress || 0 }} />
                 <span className="p-blocked" style={{ flex: project.task_counts.blocked || 0 }} />
-                <span className="p-done" style={{ flex: project.task_counts.done || 0 }} />
+                <span className="p-todo" style={{ flex: project.task_counts.todo || 0 }} />
               </div>
               <div className="pc-footer">
-                <span>
-                  Runs <span className="v">{formatCount(project.totals.run_count)}</span>
-                </span>
-                <span>
-                  Tokens <span className="v">{formatCompactCount(project.totals.total_token_count)}</span>
-                </span>
-                <span>
-                  Cost <span className="v">{formatCurrency(project.totals.total_cost_usd)}</span>
-                </span>
-                <span>
-                  Tasks <span className="v">{formatCount(totalTasks)}</span>
-                </span>
+                <div className="pc-tokens">
+                  {project.active_sprint ? "sprint" : "total"}{" "}
+                  <span className="v">{formatCompactCount(project.totals?.total_token_count)} tokens</span>
+                </div>
+                <div>{project.settings?.task_selection_mode || "directed"} · {project.workflow_id || "development"}</div>
               </div>
             </button>
           );
@@ -213,7 +225,33 @@ export function ProjectOverview({ projects, onSelectProject }) {
   );
 }
 
-export function SprintList({ project, sprints, onSelectSprint, onOpenNewSprint }) {
+const STATUS_FILTER_OPTIONS = [
+  { key: "all", label: "All" },
+  { key: "active", label: "Active" },
+  { key: "done", label: "Done" },
+  { key: "planned", label: "Planned" },
+];
+
+const KANBAN_COLUMNS = [
+  { key: "active", label: "Active" },
+  { key: "done", label: "Done" },
+  { key: "planned", label: "Planned" },
+];
+
+export function SprintList({ project, sprints, onSelectSprint, onOpenNewSprint, onTransitionSprint }) {
+  const [filterKey, setFilterKey] = useState("all");
+  const [newestFirst, setNewestFirst] = useState(true);
+  const [viewMode, setViewMode] = useState("list");
+
+  const visibleSprints = useMemo(() => {
+    const filtered = filterKey === "all" ? sprints : sprints.filter((s) => s.status === filterKey);
+    return filtered.slice().sort((a, b) => {
+      const orderA = a.order ?? 0;
+      const orderB = b.order ?? 0;
+      return newestFirst ? orderB - orderA : orderA - orderB;
+    });
+  }, [sprints, filterKey, newestFirst]);
+
   return (
     <section className="project-view view visible">
       <div className="project-info">
@@ -229,61 +267,187 @@ export function SprintList({ project, sprints, onSelectSprint, onOpenNewSprint }
             Repo <span className="v">{project.repo_path}</span>
           </span>
         </div>
-      </div>
-      <div className="sprint-toolbar">
-        <div className="sprint-toolbar-left">
-          <div className="page-subtitle">Sprints are ordered and backed by persisted SQLite state.</div>
-        </div>
-        {onOpenNewSprint ? (
-          <div className="sprint-toolbar-right">
-            <button className="btn-action" type="button" onClick={onOpenNewSprint}>
-              <span className="plus">+</span> New sprint
-            </button>
+        {project.task_counts?.blocked > 0 ? (
+          <div className="project-badges">
+            <span className="badge badge-warn">{project.task_counts.blocked} awaiting approval</span>
           </div>
         ) : null}
       </div>
-      <div className="sprint-list">
-        {sprints.map((sprint) => (
-          <button
-            key={sprint.id}
-            className={`sprint-card ${sprint.status === "active" ? "active-sprint" : ""}`}
-            type="button"
-            aria-label={`Open sprint ${sprint.title}`}
-            onClick={() => onSelectSprint(sprint.id)}
-          >
-            <div className={`sc-status sc-${sprint.status}`}>{sprint.status}</div>
-            <div className="sc-body">
-              <div className="sc-title">{sprint.title}</div>
-              <div className="sc-goal">{sprint.goal || "No goal recorded."}</div>
-            </div>
-            <div className="sc-tasks-inline">
-              <span>
-                <span className="n">{formatCount(sprint.task_counts.todo)}</span> todo
-              </span>
-              <span>
-                <span className="n">{formatCount(sprint.task_counts.in_progress)}</span> in progress
-              </span>
-              <span>
-                <span className="n">{formatCount(sprint.task_counts.blocked)}</span> blocked
-              </span>
-              <span>
-                <span className="n">{formatCount(sprint.task_counts.done)}</span> done
-              </span>
-            </div>
-            <div className="sc-stats-inline">
-              <span>
-                runs <span>{formatCount(sprint.totals.run_count)}</span>
-              </span>
-              <span>
-                tokens <span>{formatCompactCount(sprint.totals.total_token_count)}</span>
-              </span>
-              <span>
-                cost <span>{formatCurrency(sprint.totals.total_cost_usd)}</span>
-              </span>
-            </div>
+      <div className="sprint-toolbar">
+        <div className="sprint-toolbar-left">
+          {STATUS_FILTER_OPTIONS.map((opt) => (
+            <button
+              key={opt.key}
+              className={`filter-btn ${filterKey === opt.key ? "active" : ""}`}
+              type="button"
+              onClick={() => setFilterKey(opt.key)}
+            >
+              {opt.label}
+            </button>
+          ))}
+          <div className="filter-sep" />
+          <button className="sort-btn" type="button" onClick={() => setNewestFirst((v) => !v)}>
+            {newestFirst ? "Newest first" : "Oldest first"}
           </button>
-        ))}
+        </div>
+        <div className="sprint-toolbar-right">
+          <div className="view-toggle">
+            <button
+              className={`view-toggle-btn ${viewMode === "list" ? "active" : ""}`}
+              type="button"
+              onClick={() => setViewMode("list")}
+            >List</button>
+            <button
+              className={`view-toggle-btn ${viewMode === "board" ? "active" : ""}`}
+              type="button"
+              onClick={() => setViewMode("board")}
+            >Board</button>
+          </div>
+          {onOpenNewSprint ? (
+            <button className="btn-action" type="button" onClick={onOpenNewSprint}>
+              <span className="plus">+</span> New sprint
+            </button>
+          ) : null}
+        </div>
       </div>
+
+      {viewMode === "list" ? (
+        <div className="sprint-list">
+          {visibleSprints.map((sprint) => {
+            const counts = sprint.task_counts || {};
+            const total = (counts.todo || 0) + (counts.in_progress || 0) + (counts.blocked || 0) + (counts.done || 0);
+            const done = counts.done || 0;
+            const statusClass = sprint.status === "active" ? "sc-active"
+              : sprint.status === "done" ? "sc-completed"
+              : sprint.status === "planned" ? "sc-planned"
+              : `sc-${sprint.status}`;
+            return (
+              <div
+                key={sprint.id}
+                className={`sprint-card ${sprint.status === "active" ? "active-sprint" : ""}`}
+              >
+                <button
+                  className="sc-main"
+                  type="button"
+                  aria-label={`Open sprint ${sprint.title}`}
+                  onClick={() => onSelectSprint(sprint.id)}
+                >
+                  <div className={`sc-status ${statusClass}`}>{sprint.status}</div>
+                  <div className="sc-body">
+                    <span className="sc-title">{sprint.title}</span>
+                    <span className="sc-goal">{sprint.goal || "No goal recorded."}</span>
+                  </div>
+                  <div className="sc-tasks-inline">
+                    <span>
+                      <span className="n">{done}</span>/<span className="n">{total}</span>{" "}
+                      {total === done && total > 0 ? "done" : "tasks"}
+                    </span>
+                    <div className="progress-bar sc-progress-inline" aria-hidden="true">
+                      <span className="p-done" style={{ flex: done }} />
+                      <span className="p-wip" style={{ flex: counts.in_progress || 0 }} />
+                      <span className="p-blocked" style={{ flex: counts.blocked || 0 }} />
+                      <span className="p-todo" style={{ flex: counts.todo || 0 }} />
+                    </div>
+                  </div>
+                  <div className="sc-stats-inline">
+                    {sprint.totals?.total_token_count > 0 ? (
+                      <>
+                        <span><span>{formatCompactCount(sprint.totals.total_token_count)}</span> tok</span>
+                        <span><span>{formatCount(sprint.totals.run_count)}</span> runs</span>
+                      </>
+                    ) : (
+                      <span>—</span>
+                    )}
+                  </div>
+                </button>
+                {onTransitionSprint ? (
+                  <div className="sc-actions" onClick={(e) => e.stopPropagation()}>
+                    {sprint.status === "planned" ? (
+                      <button
+                        className="sc-action-btn"
+                        type="button"
+                        onClick={() => onTransitionSprint(sprint.id, "active")}
+                      >
+                        Start
+                      </button>
+                    ) : null}
+                    {sprint.status === "active" ? (
+                      <button
+                        className="sc-action-btn"
+                        type="button"
+                        onClick={() => onTransitionSprint(sprint.id, "completed")}
+                      >
+                        Complete
+                      </button>
+                    ) : null}
+                    {sprint.status === "planned" || sprint.status === "active" ? (
+                      <button
+                        className="sc-action-btn sc-action-danger"
+                        type="button"
+                        onClick={() => onTransitionSprint(sprint.id, "cancelled")}
+                      >
+                        Cancel
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="sprint-kanban">
+          {KANBAN_COLUMNS.map((col) => {
+            const colSprints = sprints.filter((s) => {
+              if (col.key === "active") return s.status === "active";
+              if (col.key === "done") return s.status === "done" || s.status === "completed";
+              return s.status === "planned" || s.status === "paused";
+            });
+            return (
+              <div key={col.key} className="sk-column">
+                <div className="sk-col-header">
+                  <span className="sk-col-title">{col.label}</span>
+                  <span className="sk-col-count">{colSprints.length}</span>
+                </div>
+                {colSprints.map((sprint) => {
+                  const counts = sprint.task_counts || {};
+                  const total = (counts.todo || 0) + (counts.in_progress || 0) + (counts.blocked || 0) + (counts.done || 0);
+                  const done = counts.done || 0;
+                  return (
+                    <button
+                      key={sprint.id}
+                      className={`sk-card ${sprint.status === "active" ? "active-sprint" : ""}`}
+                      type="button"
+                      onClick={() => onSelectSprint(sprint.id)}
+                    >
+                      <div className="sk-card-title">{sprint.title}</div>
+                      <div className="sk-card-goal">{sprint.goal || "No goal recorded."}</div>
+                      <div className="sk-card-footer">
+                        <div className="sk-card-tasks">
+                          <span><span className="n">{done}</span> done</span>
+                          {counts.in_progress > 0 ? <span><span className="n">{counts.in_progress}</span> wip</span> : null}
+                          {counts.blocked > 0 ? <span><span className="n">{counts.blocked}</span> blocked</span> : null}
+                        </div>
+                        {sprint.totals?.total_token_count > 0 ? (
+                          <span><span className="n">{formatCompactCount(sprint.totals.total_token_count)}</span> tok</span>
+                        ) : <span>—</span>}
+                      </div>
+                      {sprint.status === "active" ? (
+                        <div className="progress-bar" style={{ marginTop: "6px" }} aria-hidden="true">
+                          <span className="p-done" style={{ flex: done }} />
+                          <span className="p-wip" style={{ flex: counts.in_progress || 0 }} />
+                          <span className="p-blocked" style={{ flex: counts.blocked || 0 }} />
+                          <span className="p-todo" style={{ flex: counts.todo || 0 }} />
+                        </div>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </section>
   );
 }
@@ -333,21 +497,25 @@ export function EventList({ events, filterKey, taskIndex }) {
       {filteredEvents.length === 0 ? (
         <div className="empty-panel">No matching activity yet.</div>
       ) : (
-        filteredEvents.map((event) => {
+        filteredEvents.map((event, index) => {
           const category = getEventCategory(event.event_type);
           const taskTitle = taskIndex.get(event.task_id)?.title;
+          const isStepStart = event.event_type && event.event_type.includes("step_started");
           return (
-            <div key={event.id} className="event-row">
-              <div className="event-time">{formatEventTime(event.timestamp)}</div>
-              <div className="event-icon">
-                <span className={`event-dot dot-${category}`} />
-              </div>
-              <div className="event-body">
-                <div className="event-label">
-                  {event.event_type}
-                  {taskTitle ? ` • ${taskTitle}` : ""}
+            <div key={event.id}>
+              {isStepStart && index > 0 ? <div className="event-divider" /> : null}
+              <div className="event-row">
+                <div className="event-time">{formatEventTime(event.timestamp)}</div>
+                <div className="event-icon">
+                  <span className={`event-dot dot-${category}`} />
                 </div>
-                <div>{formatEventSummary(event)}</div>
+                <div className="event-body">
+                  <div className="event-label">
+                    {event.event_type}
+                    {taskTitle ? ` • ${taskTitle}` : ""}
+                  </div>
+                  <div>{formatEventSummary(event)}</div>
+                </div>
               </div>
             </div>
           );
@@ -373,101 +541,101 @@ export function TaskDetailDrawer({
     <aside className="detail-overlay" id="detail-panel" aria-label="Task detail">
       <div className="detail-header">
         <div>
-          <div className="detail-kicker">{formatTaskStatus(task.status)}</div>
-          <h2 className="detail-title">{task.title}</h2>
+          <h2>{task.title}</h2>
+          <div className="detail-kicker">
+            <span className={`card-tag ${getTaskTypeClass(task.task_type)}`}>{task.task_type}</span>
+            <span className="detail-status">{formatTaskStatus(task.status)}</span>
+          </div>
         </div>
         <button className="detail-close" type="button" onClick={onClose} aria-label="Close task detail">
           ×
         </button>
       </div>
-      <div className="detail-section">
-        <div className="detail-grid">
-          <div>
-            <div className="detail-label">Type</div>
-            <div className="detail-value">{task.task_type}</div>
+      <div className="detail-body">
+        {task.description ? (
+          <div className="detail-section">
+            <div className="detail-section-title">Description</div>
+            <div className="detail-text">{task.description}</div>
           </div>
-          <div>
-            <div className="detail-label">Role</div>
-            <div className="detail-value">{task.assigned_role || "Unassigned"}</div>
-          </div>
-          <div>
-            <div className="detail-label">Branch</div>
-            <div className="detail-value">{task.branch_name || "None"}</div>
-          </div>
-          <div>
-            <div className="detail-label">Step visits</div>
-            <div className="detail-value">{formatWorkflowCounts(task.step_visit_counts)}</div>
-          </div>
-          <div>
-            <div className="detail-label">Runs</div>
-            <div className="detail-value">{formatCount(task.totals.run_count)}</div>
-          </div>
-          <div>
-            <div className="detail-label">Tokens</div>
-            <div className="detail-value">{formatTokenCount(task.totals.total_token_count)}</div>
-          </div>
-        </div>
-      </div>
-      <div className="detail-section">
-        <div className="detail-section-title">Acceptance Criteria</div>
-        <div className="detail-text">
-          {task.acceptance_criteria || "No acceptance criteria recorded."}
-        </div>
-      </div>
-      {task.blocked_reason ? (
+        ) : null}
         <div className="detail-section">
-          <div className="detail-section-title">Blocked Reason</div>
-          <div className="detail-text blocked-text">{task.blocked_reason}</div>
-        </div>
-      ) : null}
-      {task.status === "blocked" ? (
-        <div className="detail-section">
-          <div className="detail-section-title">Human Gate</div>
-          <div className="detail-actions">
-            <button className="btn btn-approve" type="button" onClick={() => onApprove(task.id)}>
-              Approve
-            </button>
-            <button className="btn btn-deny" type="button" onClick={() => onDeny(task.id)}>
-              Deny
-            </button>
+          <div className="detail-section-title">Details</div>
+          <div className="detail-field">
+            <span className="detail-field-label">Branch</span>
+            <span className="detail-field-value">{task.branch_name || "—"}</span>
           </div>
-          <label className="detail-label" htmlFor="deny-note">
-            Denial note
-          </label>
-          <textarea
-            id="deny-note"
-            className="detail-textarea"
-            value={denyNote}
-            onChange={(event) => onDenyNoteChange(event.target.value)}
-            placeholder="Explain what needs to change before this task can continue."
-          />
+          <div className="detail-field">
+            <span className="detail-field-label">Role</span>
+            <span className="detail-field-value">{task.assigned_role || "Unassigned"}</span>
+          </div>
+          {task.priority > 0 ? (
+            <div className="detail-field">
+              <span className="detail-field-label">Priority</span>
+              <span className="detail-field-value">{task.priority}</span>
+            </div>
+          ) : null}
+          <div className="detail-field">
+            <span className="detail-field-label">Tokens</span>
+            <span className="detail-field-value">{formatTokenCount(task.totals.total_token_count)}</span>
+          </div>
+          <div className="detail-field">
+            <span className="detail-field-label">Step visits</span>
+            <span className="detail-field-value">{formatWorkflowCounts(task.step_visit_counts)}</span>
+          </div>
         </div>
-      ) : null}
-      <div className="detail-section detail-section-scroll">
-        <div className="detail-section-title">Run History</div>
-        <div className="run-list">
-          {task.runs.length === 0 ? (
-            <div className="empty-panel">No runs recorded for this task yet.</div>
-          ) : (
-            task.runs.map((run) => (
-              <div key={run.id} className="run-card">
-                <div className="run-card-header">
-                  <div className="run-title">
-                    {run.role_id} / {run.workflow_step}
-                  </div>
-                  <div className={`run-status run-${run.status}`}>{run.status}</div>
+        {task.acceptance_criteria ? (
+          <div className="detail-section">
+            <div className="detail-section-title">Acceptance Criteria</div>
+            <div className="detail-criteria">{task.acceptance_criteria}</div>
+          </div>
+        ) : null}
+        {task.blocked_reason ? (
+          <div className="detail-section">
+            <div className="detail-section-title">Blocked Reason</div>
+            <div className="detail-text blocked-text">{task.blocked_reason}</div>
+          </div>
+        ) : null}
+        {task.status === "blocked" ? (
+          <div className="detail-section">
+            <div className="detail-section-title">Human Gate</div>
+            <div className="detail-actions">
+              <button className="btn btn-approve" type="button" onClick={() => onApprove(task.id)}>
+                Approve
+              </button>
+              <button className="btn btn-deny" type="button" onClick={() => onDeny(task.id)}>
+                Deny
+              </button>
+            </div>
+            <label className="detail-label" htmlFor="deny-note">Denial note</label>
+            <textarea
+              id="deny-note"
+              className="detail-textarea"
+              value={denyNote}
+              onChange={(event) => onDenyNoteChange(event.target.value)}
+              placeholder="Explain what needs to change before this task can continue."
+            />
+          </div>
+        ) : null}
+        <div className="detail-section">
+          <div className="detail-section-title">Run History</div>
+          <div className="run-timeline">
+            {task.runs.length === 0 ? (
+              <div className="empty-panel">No runs recorded for this task yet.</div>
+            ) : (
+              task.runs.map((run) => (
+                <div key={run.id} className="run-entry">
+                  <span className="run-role">{run.role_id}</span>
+                  <span className="run-detail-text">
+                    {run.workflow_step}{run.duration_ms ? ` · ${formatDuration(run.duration_ms)}` : ""}
+                  </span>
+                  <span className="run-entry-right">
+                    <span className={`run-outcome outcome-${run.status}`}>{run.status}</span>
+                    <div className="run-tokens">{formatTokenCount(run.token_count)}</div>
+                  </span>
                 </div>
-                <div className="run-meta">
-                  <span>{run.agent_backend}</span>
-                  <span>{run.model || "default model"}</span>
-                  <span>{formatTokenCount(run.token_count)}</span>
-                  <span>{formatCurrency(run.cost_usd)}</span>
-                  <span>{formatDuration(run.duration_ms)}</span>
-                </div>
-                {run.outcome_detail ? <div className="detail-text">{run.outcome_detail}</div> : null}
-              </div>
-            ))
-          )}
+              ))
+            )}
+          </div>
         </div>
       </div>
     </aside>
@@ -502,6 +670,7 @@ const WORKFLOW_OPTIONS = [
   { value: "development_with_architect", label: "development_with_architect" },
   { value: "development_secure", label: "development_secure" },
 ];
+
 
 export function SettingsPanel({ settings, onUpdate, onClose }) {
   const [draft, setDraft] = useState(null);
@@ -543,6 +712,45 @@ export function SettingsPanel({ settings, onUpdate, onClose }) {
         </div>
         <div className="settings-body">
           <div className="settings-section">
+            <div className="settings-section-title">Supervision</div>
+            <SettingsToggle
+              label="Approve merges"
+              description="Require human approval before merging to target branch"
+              checked={innerSettings.approve_merges ?? true}
+              onChange={(checked) => handleChange("approve_merges", checked)}
+            />
+            <SettingsToggle
+              label="Approve task completion"
+              description="Require human sign-off before marking a task done"
+              checked={innerSettings.approve_task_completion ?? true}
+              onChange={(checked) => handleChange("approve_task_completion", checked)}
+            />
+            <SettingsToggle
+              label="Approve sprint completion"
+              description="Require human sign-off before closing a sprint"
+              checked={innerSettings.approve_sprint_completion ?? true}
+              onChange={(checked) => handleChange("approve_sprint_completion", checked)}
+            />
+            <SettingsToggle
+              label="Allow autonomous task selection"
+              description="Engine picks the next task instead of waiting for assignment"
+              checked={innerSettings.task_selection_mode === "autonomous"}
+              onChange={(checked) => handleChange("task_selection_mode", checked ? "autonomous" : "directed")}
+            />
+            <SettingsToggle
+              label="Allow agent to create tasks"
+              description="Engine may add tasks to the sprint during a run"
+              checked={innerSettings.agent_can_create_tasks ?? true}
+              onChange={(checked) => handleChange("agent_can_create_tasks", checked)}
+            />
+            <SettingsToggle
+              label="Approve architect plans"
+              description="Require human approval of architect-generated plans"
+              checked={innerSettings.approve_architect_plans ?? true}
+              onChange={(checked) => handleChange("approve_architect_plans", checked)}
+            />
+          </div>
+          <div className="settings-section">
             <div className="settings-section-title">Workflow</div>
             <div className="form-group">
               <label className="form-label">Default workflow</label>
@@ -576,16 +784,18 @@ export function SettingsPanel({ settings, onUpdate, onClose }) {
             </div>
           </div>
           <div className="settings-section">
-            <div className="settings-section-title">Supervision</div>
-            <SettingsToggle
-              label="Allow autonomous task selection"
-              description="Engine picks the next task instead of waiting for assignment"
-              checked={innerSettings.task_selection_mode === "autonomous"}
-              onChange={(checked) => handleChange("task_selection_mode", checked ? "autonomous" : "directed")}
-            />
-          </div>
-          <div className="settings-section">
             <div className="settings-section-title">Resource Limits</div>
+            <div className="form-group">
+              <label className="form-label">Max tokens per task</label>
+              <input
+                className="form-input"
+                type="number"
+                min="0"
+                style={{ fontVariantNumeric: "tabular-nums" }}
+                value={innerSettings.max_tokens_per_task ?? 200000}
+                onChange={(e) => handleChange("max_tokens_per_task", Number(e.target.value))}
+              />
+            </div>
             <div className="form-group">
               <label className="form-label">Max step visits (loop limit)</label>
               <input
@@ -650,7 +860,7 @@ export function NewSprintModal({ onSubmit, onClose }) {
 
   return (
     <div className="modal-backdrop visible" onClick={onClose}>
-      <div className="modal" style={{ width: "480px" }} onClick={(e) => e.stopPropagation()}>
+      <div className="modal" style={{ width: "540px" }} onClick={(e) => e.stopPropagation()}>
         <form onSubmit={handleSubmit}>
           <div className="modal-header">
             <h3>New Sprint</h3>
@@ -676,10 +886,13 @@ export function NewSprintModal({ onSubmit, onClose }) {
   );
 }
 
+const TASK_TYPE_CHIPS = ["feature", "bug", "refactor", "chore"];
+
 export function NewTaskModal({ onSubmit, onClose }) {
   const [title, setTitle] = useState("");
   const [taskType, setTaskType] = useState("feature");
   const [criteria, setCriteria] = useState("");
+  const [context, setContext] = useState("");
 
   function handleSubmit(e) {
     e.preventDefault();
@@ -688,6 +901,7 @@ export function NewTaskModal({ onSubmit, onClose }) {
       title: title.trim(),
       taskType,
       acceptanceCriteria: criteria.trim() || undefined,
+      context: context.trim() || undefined,
     });
   }
 
@@ -705,19 +919,27 @@ export function NewTaskModal({ onSubmit, onClose }) {
               <input className="form-input" type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Short description of the task" autoFocus />
             </div>
             <div className="form-group">
-              <label className="form-label">Type</label>
-              <select className="form-input" value={taskType} onChange={(e) => setTaskType(e.target.value)}>
-                <option value="feature">feature</option>
-                <option value="fix">fix</option>
-                <option value="refactor">refactor</option>
-                <option value="docs">docs</option>
-                <option value="spike">spike</option>
-                <option value="chore">chore</option>
-              </select>
-            </div>
-            <div className="form-group">
               <label className="form-label">Acceptance criteria</label>
               <textarea className="form-input" style={{ minHeight: "48px" }} value={criteria} onChange={(e) => setCriteria(e.target.value)} placeholder="What must be true for this task to be done?" />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Context (optional)</label>
+              <textarea className="form-input" style={{ minHeight: "48px" }} value={context} onChange={(e) => setContext(e.target.value)} placeholder="Relevant files, reproduction steps, references..." />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Label (optional)</label>
+              <div className="form-chips">
+                {TASK_TYPE_CHIPS.map((type) => (
+                  <button
+                    key={type}
+                    type="button"
+                    className={`form-chip ${taskType === type ? "selected" : ""}`}
+                    onClick={() => setTaskType(type)}
+                  >
+                    {type}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
           <div className="modal-footer">

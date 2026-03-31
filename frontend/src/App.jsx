@@ -14,7 +14,7 @@ import {
   TaskDetailDrawer,
   Topbar,
 } from "./components";
-import { formatCompactCount, formatCount, formatCurrency, formatTokenCount } from "./format";
+import { formatCompactCount, formatCount } from "./format";
 import { buildDashboardPath, buildProjectPath, buildSprintPath, parseRoute } from "./routing";
 
 const INITIAL_EVENTS_LIMIT = 50;
@@ -24,7 +24,7 @@ function pickDefaultTaskId(tasks) {
   if (tasks.length === 0) {
     return null;
   }
-  const preferred = ["in_progress", "blocked", "todo", "done", "cancelled"];
+  const preferred = ["in_progress", "blocked", "todo", "done"];
   for (const status of preferred) {
     const task = tasks.find((item) => item.status === status);
     if (task) {
@@ -407,7 +407,30 @@ export default function App({ services, browser }) {
     }
   }
 
-  const selectedTask = tasks.find((task) => task.id === selectedTaskId) || null;
+  async function handleStopAgent() {
+    if (!route.projectId) return;
+    setIsActionPending(true);
+    setErrorMessage("");
+    try {
+      await services.stopAgent(route.projectId);
+      await refreshAllVisibleState();
+    } catch (error) {
+      setErrorMessage(error.message);
+    } finally {
+      setIsActionPending(false);
+    }
+  }
+
+  async function handleTransitionSprint(sprintId, status) {
+    setErrorMessage("");
+    try {
+      await services.transitionSprint(sprintId, status);
+      await refreshAllVisibleState({ keepSelectedTask: false });
+    } catch (error) {
+      setErrorMessage(error.message);
+    }
+  }
+
   const taskIndex = new Map(tasks.map((task) => [task.id, task]));
   const topbarProject = currentProject
     ? {
@@ -416,11 +439,8 @@ export default function App({ services, browser }) {
       }
     : null;
 
-  const topbarTotals =
-    currentSprint?.totals ||
-    currentSprints.find((sprint) => sprint.status === "active")?.totals ||
-    projects.find((project) => project.id === route.projectId)?.totals ||
-    null;
+  const topbarSprintTotals = currentSprint?.totals || currentSprints.find((s) => s.status === "active")?.totals || null;
+  const topbarProjectTotals = projects.find((p) => p.id === route.projectId)?.totals || null;
 
   return (
     <div className="app-shell">
@@ -428,7 +448,8 @@ export default function App({ services, browser }) {
         projects={projects}
         currentProject={topbarProject}
         currentSprint={currentSprint}
-        totals={topbarTotals}
+        sprintTotals={topbarSprintTotals}
+        projectTotals={topbarProjectTotals}
         projectStatus={projects.find((project) => project.id === route.projectId)?.status}
         onOpenDashboard={() => navigateTo(buildDashboardPath())}
         onSelectProject={(projectId) => navigateTo(buildProjectPath(projectId))}
@@ -452,6 +473,7 @@ export default function App({ services, browser }) {
             sprints={currentSprints}
             onSelectSprint={(sprintId) => navigateTo(buildSprintPath(route.projectId, sprintId))}
             onOpenNewSprint={() => setNewSprintOpen(true)}
+            onTransitionSprint={handleTransitionSprint}
           />
         ) : (
           <EmptyPanel title="Project not found" message="The requested project could not be loaded." />
@@ -463,21 +485,61 @@ export default function App({ services, browser }) {
             <div className="sprint-view-inner">
               <header className="sprint-header">
                 <div className="sprint-header-left">
-                  <div className="sprint-name">{currentSprint.title}</div>
+                  <div className="sprint-name">
+                    {currentSprint.title}
+                    <span className={`sprint-status-badge ss-${currentSprint.status}`}>{currentSprint.status}</span>
+                  </div>
                   <div className="sprint-goal-text">{currentSprint.goal || "No sprint goal recorded."}</div>
                 </div>
                 <div className="sprint-header-right">
-                  <div className="sprint-stat">
-                    runs <span className="sv">{formatCount(currentSprint.totals.run_count)}</span>
+                  <div className="progress-bar" style={{ width: "80px" }} aria-hidden="true">
+                    <span className="p-done" style={{ flex: currentSprint.task_counts?.done || 0 }} />
+                    <span className="p-wip" style={{ flex: currentSprint.task_counts?.in_progress || 0 }} />
+                    <span className="p-blocked" style={{ flex: currentSprint.task_counts?.blocked || 0 }} />
+                    <span className="p-todo" style={{ flex: currentSprint.task_counts?.todo || 0 }} />
                   </div>
-                  <div className="sprint-stat">
-                    tokens <span className="sv">{formatCompactCount(currentSprint.totals.total_token_count)}</span>
-                  </div>
-                  <div className="sprint-stat">
-                    cost <span className="sv">{formatCurrency(currentSprint.totals.total_cost_usd)}</span>
-                  </div>
+                  <span className="sprint-stat">
+                    <span className="sv">{formatCount(currentSprint.task_counts?.done || 0)}</span>/{formatCount((currentSprint.task_counts?.done || 0) + (currentSprint.task_counts?.in_progress || 0) + (currentSprint.task_counts?.blocked || 0) + (currentSprint.task_counts?.todo || 0))} done
+                  </span>
+                  <span className="sprint-stat">
+                    <span className="sv">{formatCompactCount(currentSprint.totals.total_token_count)}</span> tokens
+                  </span>
+                  <span className="sprint-stat">
+                    <span className="sv">{formatCount(currentSprint.totals.run_count)}</span> runs
+                  </span>
                   <button className="btn-action" type="button" onClick={() => setNewTaskOpen(true)}>
                     <span className="plus">+</span> New task
+                  </button>
+                  {currentSprint.status === "planned" ? (
+                    <button
+                      className="btn-action"
+                      type="button"
+                      disabled={isActionPending}
+                      onClick={() => handleTransitionSprint(currentSprint.id, "active")}
+                    >
+                      Start sprint
+                    </button>
+                  ) : null}
+                  {currentSprint.status === "active" ? (
+                    <button
+                      className="btn-secondary"
+                      type="button"
+                      disabled={isActionPending}
+                      onClick={() => handleTransitionSprint(currentSprint.id, "completed")}
+                    >
+                      Complete sprint
+                    </button>
+                  ) : null}
+                  <button
+                    className="btn-stop"
+                    type="button"
+                    title="Stop agent"
+                    aria-label="Stop agent"
+                    disabled={isActionPending}
+                    onClick={handleStopAgent}
+                  >
+                    <svg viewBox="0 0 16 16" width="12" height="12"><rect x="3" y="3" width="10" height="10" rx="1"/></svg>
+                    Stop agent
                   </button>
                 </div>
               </header>
@@ -553,11 +615,6 @@ export default function App({ services, browser }) {
                       Send
                     </button>
                   </div>
-                  <div className="activity-context">
-                    {selectedTask
-                      ? `Selected task: ${selectedTask.title}`
-                      : "Select one task to inspect detail and send guidance."}
-                  </div>
                 </aside>
                 {activityCollapsed ? (
                   <button className="activity-tab" type="button" onClick={() => setActivityCollapsed(false)}>
@@ -598,10 +655,6 @@ export default function App({ services, browser }) {
           onClose={() => setNewTaskOpen(false)}
         />
       ) : null}
-      <footer className="footer-note">
-        FastAPI transports the dashboard API. React owns rendering, client state, and live activity UX.
-        {selectedTask ? ` Selected task tokens: ${formatTokenCount(selectedTask.totals.total_token_count)}.` : ""}
-      </footer>
     </div>
   );
 }

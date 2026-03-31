@@ -798,3 +798,244 @@ class DashboardSettingsTests(unittest.TestCase):
         with self.assertRaises(DashboardValidationError):
             api.update_project_settings(project.id, updates={"settings": "not a dict"})
         store.close()
+
+
+class DashboardSprintLifecycleTests(unittest.TestCase):
+    """Tests for sprint status transitions, task field updates, and stop-agent endpoint."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.temp_dir = tempfile.TemporaryDirectory()
+        cls.db_path = Path(cls.temp_dir.name) / "foreman.db"
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.temp_dir.cleanup()
+
+    def _request(self, method, url, **kwargs):
+        async def send():
+            app = create_dashboard_app(str(self.db_path))
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(
+                transport=transport,
+                base_url="http://testserver",
+            ) as client:
+                return await client.request(method, url, **kwargs)
+        return asyncio.run(send())
+
+    _counter = 0
+
+    def _next_id(self, prefix):
+        DashboardSprintLifecycleTests._counter += 1
+        return f"{prefix}-{DashboardSprintLifecycleTests._counter}"
+
+    def _seed_planned_project(self):
+        """Seed a project with only a planned sprint (no active sprint)."""
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        project = Project(
+            id=self._next_id("proj-lc-p"),
+            name="Lifecycle Project (planned)",
+            repo_path="/tmp/lc-p",
+            workflow_id="development",
+        )
+        store.save_project(project)
+        planned = Sprint(
+            id=self._next_id("sprint-lc-planned"),
+            project_id=project.id,
+            title="Planned Sprint",
+            status="planned",
+            order_index=0,
+        )
+        store.save_sprint(planned)
+        store.close()
+        return project, planned
+
+    def _seed_active_project(self):
+        """Seed a project with one active sprint containing one in-progress task."""
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        project = Project(
+            id=self._next_id("proj-lc-a"),
+            name="Lifecycle Project (active)",
+            repo_path="/tmp/lc-a",
+            workflow_id="development",
+        )
+        store.save_project(project)
+        active = Sprint(
+            id=self._next_id("sprint-lc-active"),
+            project_id=project.id,
+            title="Active Sprint",
+            status="active",
+            order_index=0,
+            started_at="2026-03-31T09:00:00Z",
+        )
+        store.save_sprint(active)
+        task = Task(
+            id=self._next_id("task-lc-ip"),
+            sprint_id=active.id,
+            project_id=project.id,
+            title="Running task",
+            status="in_progress",
+            task_type="feature",
+        )
+        store.save_task(task)
+        run = Run(
+            id=self._next_id("run-lc"),
+            task_id=task.id,
+            project_id=project.id,
+            role_id="developer",
+            workflow_step="develop",
+            agent_backend="claude",
+            status="running",
+        )
+        store.save_run(run)
+        store.close()
+        return project, active, task
+
+    def test_transition_planned_to_active(self):
+        """PATCH /api/sprints/{id} transitions planned → active and sets started_at."""
+        _, planned = self._seed_planned_project()
+        response = self._request("PATCH", f"/api/sprints/{planned.id}", json={"status": "active"})
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["status"], "active")
+        self.assertIsNotNone(data["started_at"])
+        self.assertIsNone(data["completed_at"])
+
+    def test_transition_active_to_completed(self):
+        """PATCH /api/sprints/{id} transitions active → completed and sets completed_at."""
+        _, active, _ = self._seed_active_project()
+        response = self._request("PATCH", f"/api/sprints/{active.id}", json={"status": "completed"})
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["status"], "completed")
+        self.assertIsNotNone(data["completed_at"])
+
+    def test_transition_rejects_invalid_path(self):
+        """PATCH /api/sprints/{id} rejects an invalid status transition."""
+        _, active, _ = self._seed_active_project()
+        response = self._request("PATCH", f"/api/sprints/{active.id}", json={"status": "planned"})
+        self.assertEqual(response.status_code, 400)
+
+    def test_transition_rejects_missing_status(self):
+        """PATCH /api/sprints/{id} returns 400 when status field is absent."""
+        _, planned = self._seed_planned_project()
+        response = self._request("PATCH", f"/api/sprints/{planned.id}", json={})
+        self.assertEqual(response.status_code, 400)
+
+    def test_transition_returns_404_for_unknown_sprint(self):
+        """PATCH /api/sprints/{id} returns 404 for nonexistent sprint."""
+        response = self._request("PATCH", "/api/sprints/nonexistent", json={"status": "active"})
+        self.assertEqual(response.status_code, 404)
+
+    def test_update_task_description_and_priority(self):
+        """PATCH /api/tasks/{id} updates description and priority fields."""
+        _, _, task = self._seed_active_project()
+        response = self._request(
+            "PATCH",
+            f"/api/tasks/{task.id}",
+            json={"description": "Detailed description.", "priority": 2},
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["description"], "Detailed description.")
+        self.assertEqual(data["priority"], 2)
+
+    def test_update_task_rejects_unknown_field(self):
+        """PATCH /api/tasks/{id} returns 400 for fields not in the allowed set."""
+        _, _, task = self._seed_active_project()
+        response = self._request(
+            "PATCH",
+            f"/api/tasks/{task.id}",
+            json={"status": "done"},
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_stop_agent_blocks_in_progress_tasks(self):
+        """POST /api/projects/{id}/agent/stop marks in-progress tasks as blocked."""
+        project, _, task = self._seed_active_project()
+        response = self._request("POST", f"/api/projects/{project.id}/agent/stop")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["stopped"], 1)
+        self.assertEqual(data["project_id"], project.id)
+
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        updated = store.get_task(task.id)
+        self.assertEqual(updated.status, "blocked")
+        self.assertIn("Stop requested", updated.blocked_reason)
+        events = store.list_events(task_id=task.id)
+        self.assertTrue(any(e.event_type == "human.stop_requested" for e in events))
+        store.close()
+
+    def test_stop_agent_returns_zero_when_no_active_sprint(self):
+        """POST /api/projects/{id}/agent/stop returns stopped=0 when no active sprint."""
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        idle_project = Project(
+            id="proj-lc-idle",
+            name="Idle Project",
+            repo_path="/tmp/idle",
+            workflow_id="development",
+        )
+        store.save_project(idle_project)
+        store.close()
+
+        response = self._request("POST", f"/api/projects/{idle_project.id}/agent/stop")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["stopped"], 0)
+
+    def test_run_serialization_includes_timing_fields(self):
+        """GET /api/tasks/{id} returns started_at, completed_at, session_id, branch_name on runs."""
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        project = Project(
+            id="proj-run-serial",
+            name="Run Serial",
+            repo_path="/tmp/rs",
+            workflow_id="development",
+        )
+        store.save_project(project)
+        sprint = Sprint(
+            id="sprint-run-serial",
+            project_id=project.id,
+            title="Sprint",
+            status="active",
+        )
+        store.save_sprint(sprint)
+        task = Task(
+            id="task-run-serial",
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="Serialization task",
+            status="in_progress",
+            task_type="feature",
+        )
+        store.save_task(task)
+        run = Run(
+            id="run-serial",
+            task_id=task.id,
+            project_id=project.id,
+            role_id="developer",
+            workflow_step="develop",
+            agent_backend="claude",
+            status="completed",
+            session_id="sess-abc123",
+            branch_name="feat/run-serial",
+            started_at="2026-03-31T10:00:00Z",
+            completed_at="2026-03-31T10:30:00Z",
+        )
+        store.save_run(run)
+        store.close()
+
+        response = self._request("GET", f"/api/tasks/{task.id}")
+        self.assertEqual(response.status_code, 200)
+        runs = response.json()["runs"]
+        self.assertEqual(len(runs), 1)
+        r = runs[0]
+        self.assertEqual(r["session_id"], "sess-abc123")
+        self.assertEqual(r["branch_name"], "feat/run-serial")
+        self.assertEqual(r["started_at"], "2026-03-31T10:00:00Z")
+        self.assertEqual(r["completed_at"], "2026-03-31T10:30:00Z")

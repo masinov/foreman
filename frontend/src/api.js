@@ -106,6 +106,23 @@ export function createDashboardServices({
         },
       });
     },
+    transitionSprint(sprintId, status) {
+      return requestJson(fetchImpl, `/api/sprints/${encodeURIComponent(sprintId)}`, {
+        method: "PATCH",
+        body: { status },
+      });
+    },
+    updateTask(taskId, updates) {
+      return requestJson(fetchImpl, `/api/tasks/${encodeURIComponent(taskId)}`, {
+        method: "PATCH",
+        body: updates,
+      });
+    },
+    stopAgent(projectId) {
+      return requestJson(fetchImpl, `/api/projects/${encodeURIComponent(projectId)}/agent/stop`, {
+        method: "POST",
+      });
+    },
     createHumanMessage(taskId, text) {
       return requestJson(fetchImpl, `/api/tasks/${encodeURIComponent(taskId)}/messages`, {
         method: "POST",

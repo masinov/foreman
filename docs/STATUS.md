@@ -2,10 +2,11 @@
 
 ## Current sprint
 
-- Sprint: `sprint-29-db-migrate-cli`
+- Sprint: `sprint-30-wire-dead-surfaces`
 - Status: done
-- Goal: add `foreman db migrate` and `foreman db version` CLI surfaces for
-  operators to inspect schema version and apply pending migrations explicitly
+- Goal: wire the most visible dead dashboard surfaces — Stop agent button, sprint
+  lifecycle transitions, task field exposure (description, priority), and complete
+  run serialization
 
 ## Active branches
 
@@ -161,6 +162,21 @@
 - changed `ForemanStore.initialize()` to return `list[int]` (applied migration
   versions); backward-compatible since callers ignored the prior `None` return
 - 7 new tests in `DbCommandTests`; 203 non-E2E tests pass total
+- completed `sprint-30-wire-dead-surfaces`
+- wired `Stop agent` button to `POST /api/projects/{id}/agent/stop`; blocks all
+  in-progress tasks in the active sprint and emits `human.stop_requested` events
+- added `PATCH /api/sprints/{sprint_id}` endpoint with valid lifecycle transitions
+  (planned→active, active→completed/cancelled); sets `started_at`/`completed_at`
+- added `PATCH /api/tasks/{task_id}` endpoint for `description` and `priority`
+  field updates; unknown fields rejected with 400
+- extended run serialization in `get_task()` to include `session_id`,
+  `branch_name`, `started_at`, `completed_at`
+- exposed `description` and `priority` in `get_task()` and `list_sprint_tasks()`
+  responses; task detail drawer shows both when non-default
+- added sprint status badge + Start/Complete sprint buttons to sprint view header
+- added Start/Complete/Cancel action buttons to sprint list cards
+- fixed two E2E test regressions from previous dashboard overhaul session
+- 10 new tests in `DashboardSprintLifecycleTests`; 213 non-E2E, 20 E2E tests pass
 
 ## Current repo state
 
@@ -219,8 +235,8 @@
 
 ## Ready next
 
-- no prioritised backlog items; define next slice from spec gaps or operator
-  feedback
+- no prioritised backlog items; remaining gap-analysis items from sprint-30 audit
+  are in the backlog
 
 ## Open risks
 
