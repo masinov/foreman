@@ -2,16 +2,16 @@
 
 ## Current sprint
 
-- Sprint: `sprint-23-react-dashboard-foundation`
+- Sprint: `sprint-24-product-surface-hardening`
 - Status: active
-- Goal: replace the legacy inline dashboard shell with a dedicated React
-  frontend on top of the FastAPI backend foundation
+- Goal: remove or finish placeholder product surfaces now that the dedicated
+  React dashboard and FastAPI backend boundary are in place
 
 ## Active branches
 
 - no long-lived feature branch should remain loose after the engine DB
   discovery, security-review, backend-preflight, and retention slices; start
-  dashboard hardening work from `main`
+  product-surface hardening work from `main`
 
 ## Completed this week
 
@@ -78,6 +78,14 @@
   the transitional dashboard shell and current JSON plus SSE routes
 - added ASGI-backed dashboard HTTP tests so the backend is validated as a real
   app, not only as a service layer
+- completed `sprint-23-react-dashboard-foundation`
+- added a dedicated React and Vite frontend workspace in `frontend/` for the
+  shipped dashboard surfaces
+- removed the embedded dashboard HTML, CSS, and browser logic from Python and
+  switched FastAPI to serve built frontend assets from
+  `foreman/dashboard_frontend_dist/`
+- added frontend component tests and bundle-build validation alongside the
+  existing dashboard API and FastAPI regression suite
 
 ## Current repo state
 
@@ -109,14 +117,14 @@
     covering project, sprint, task, action, and incremental streaming
     payloads,
   - a FastAPI transport layer in `foreman/dashboard_backend.py` that serves
-    the current dashboard routes and SSE stream through an actual ASGI app,
-  - a legacy dashboard shell in `foreman/dashboard.py` that still delivers
-    project overview, sprint board, task detail, activity feed, human message
-    input, activity filtering, project switching, approve or deny actions,
-    and a dedicated sprint event stream, but is now explicitly transitional
-    and must be replaced,
+    the current dashboard routes, built frontend shell, and SSE stream through
+    an actual ASGI app,
+  - a dedicated React dashboard frontend in `frontend/` plus built assets in
+    `foreman/dashboard_frontend_dist/`,
+  - `foreman/dashboard.py` reduced to asset checks and the uvicorn entrypoint
+    for `foreman dashboard`,
   - unit and integration coverage across store, CLI, orchestrator, runners,
-    dashboard, scaffold, and executor seams,
+    dashboard, the React frontend, scaffold, and executor seams,
   - repo-memory docs that are intended to let a fresh agent continue from the
     next slice without reconstructing prior branch history.
 - The temporary markdown sprint and status workflow remains intentional
@@ -125,10 +133,9 @@
 
 ## Ready next
 
-1. replace the legacy dashboard shell with a dedicated React frontend on top
-   of the FastAPI backend and extracted dashboard service layer
-2. remove or implement remaining stub and placeholder product surfaces once
-   the new frontend is in place
+1. remove or implement remaining stub CLI product surfaces
+2. close known product-surface and validation gaps exposed by the dedicated
+   dashboard frontend cutover
 3. resume lower-level infrastructure detours with the migration framework
    slice after product-surface hardening
 
@@ -140,9 +147,10 @@
 - Repo-local discovery currently depends on an existing `.foreman.db` in the
   current repo lineage or on `foreman init` creating one; cross-repo and
   out-of-repo inspection still requires explicit `--db`.
-- the current dashboard still ships through a legacy inline shell in
-  `foreman/dashboard.py`; the FastAPI backend foundation is in place, but the
-  React replacement has not landed yet.
+- the dashboard now has component-level frontend coverage and bundle delivery
+  checks, but it still lacks browser-driven end-to-end validation.
+- the committed dashboard build output in `foreman/dashboard_frontend_dist/`
+  must stay in sync with the source app in `frontend/`.
 - the sprint SSE path still polls SQLite directly inside the FastAPI stream
   loop; that is acceptable for now, but it is not a final transport design.
 - Native backend preflight now validates executable presence and Codex startup
@@ -161,9 +169,9 @@
 - project-scoped `foreman watch` resolves the active sprint once at startup;
   if sprint ownership changes mid-tail, operators currently need to restart
   the command to follow the new sprint.
-- dashboard validation now covers the extracted service layer and FastAPI
-  routes directly, but there is still no dedicated frontend test stack or
-  end-to-end browser coverage.
+- dashboard validation now covers the extracted service layer, FastAPI
+  delivery, and React component behavior, but there is still no browser-driven
+  end-to-end coverage.
 
 ## Documented conflicts
 
@@ -182,7 +190,8 @@
 - The mockup is a static HTML interaction reference, not a frontend stack
   specification. The previous implementation treated that as enough license to
   embed the dashboard directly into a Python module; the active architecture
-  direction now rejects that interpretation.
+  direction now rejects that interpretation, and the shipped dashboard now
+  follows the React plus FastAPI split.
 - The spec describes `foreman approve` and `foreman deny` as immediately
   resuming workflow execution. The current runtime does that when the next
   backend and repo are available, but it still persists a deferred next step

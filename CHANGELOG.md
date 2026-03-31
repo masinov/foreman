@@ -20,6 +20,7 @@ memory changes rather than versioned product releases.
 - a persisted orchestrator loop plus explicit built-in execution seams
 - repo-local `.foreman.db` discovery with explicit `--db` override support
 - FastAPI, uvicorn, and HTTP client dependencies for the dashboard backend
+- a dedicated React and Vite dashboard frontend workspace in `frontend/`
 - `foreman init` defaulting to `<repo>/.foreman.db` for repo scaffold
   generation and persisted project initialization
 - runtime context projection in `.foreman/context.md` and `.foreman/status.md`
@@ -45,8 +46,10 @@ memory changes rather than versioned product releases.
 - production-hardening audit and detour planning docs
 - `foreman/dashboard_api.py` as the extracted dashboard backend contract
 - `foreman/dashboard_backend.py` as the FastAPI dashboard transport
+- `frontend/src/App.test.jsx` and the frontend bundle build validation path
 - `docs/checkpoints/dashboard-api-boundary.md`
 - `docs/checkpoints/dashboard-backend-foundation.md`
+- `docs/checkpoints/react-dashboard-foundation.md`
 
 ### Changed
 
@@ -95,6 +98,10 @@ memory changes rather than versioned product releases.
   advanced project memory to the React dashboard foundation sprint
 - replaced the raw dashboard stdlib server with a uvicorn-backed FastAPI
   backend while preserving the current shell and route surface
+- completed `sprint-23-react-dashboard-foundation`, archived it, and advanced
+  project memory to the product-surface hardening sprint
+- replaced the embedded dashboard shell with a dedicated React frontend,
+  built asset delivery, and frontend-aware dashboard validation
 - reconciled the loose feature and recovery branches into an integrated
   mainline candidate and restored missing repo-memory artifacts from the
   runner-session ADR branch

@@ -380,7 +380,13 @@ Target deliverables:
 
 Status:
 
-- current sprint is `sprint-23-react-dashboard-foundation`
+- completed on `feat/react-dashboard-foundation`
+- `frontend/` now contains the dedicated React and Vite dashboard app
+- `foreman/dashboard.py` no longer embeds product HTML, CSS, or browser logic
+- `foreman/dashboard_backend.py` now serves the built frontend assets while
+  preserving the existing JSON and SSE backend contract
+- frontend component tests and bundle-build validation now accompany the
+  existing dashboard backend regression suite
 
 ## Milestone 19: Product surface hardening
 
@@ -395,7 +401,7 @@ Target deliverables:
 
 Status:
 
-- planned in `sprint-24-product-surface-hardening`
+- current sprint is `sprint-24-product-surface-hardening`
 
 ## Milestone 20: Migration framework bootstrap
 
@@ -429,7 +435,8 @@ Status:
 
 ## Near-term priorities
 
-1. replace the embedded dashboard shell with a dedicated React frontend
-2. remove or finish known stub and placeholder product surfaces
+1. remove or finish known stub and placeholder product surfaces
+2. strengthen product-surface validation above the current API and component
+   layers
 3. resume migration work once the product-surface boundary is corrected
 4. expand lifecycle cleanup after migrations exist

@@ -44,8 +44,9 @@ The current codebase maps closely onto that split:
 - `foreman/roles.py` and `foreman/workflows.py` own declarative configuration,
 - `foreman/orchestrator.py` owns workflow execution and durable transitions,
 - `foreman/runner/` owns backend-specific transport and event normalization,
-- `foreman/cli.py`, `foreman/dashboard.py`, `foreman/dashboard_api.py`, and
-  `foreman/dashboard_backend.py` expose inspection and control surfaces.
+- `foreman/cli.py`, `foreman/dashboard.py`, `foreman/dashboard_api.py`,
+  `foreman/dashboard_backend.py`, and `frontend/` expose inspection and
+  control surfaces.
 
 ## Source of truth
 
@@ -123,8 +124,8 @@ Foreman now exposes two first-class observation surfaces:
 
 - CLI inspection commands: `board`, `history`, `cost`, and live `watch`
 - a dashboard service contract in `foreman/dashboard_api.py`, a FastAPI
-  transport layer in `foreman/dashboard_backend.py`, and a legacy web shell
-  in `foreman/dashboard.py`
+  transport layer in `foreman/dashboard_backend.py`, a React frontend
+  workspace in `frontend/`, and a runtime entrypoint in `foreman/dashboard.py`
 
 Per ADR-0002, the dashboard currently reads directly from `ForemanStore`
 read-model helpers rather than going through a separate query service or
@@ -149,6 +150,8 @@ The current dashboard baseline includes:
 - extracted backend responses for project, sprint, task, action, and
   streaming contracts in `foreman/dashboard_api.py`,
 - FastAPI route delivery in `foreman/dashboard_backend.py`,
+- a dedicated React and Vite frontend source workspace in `frontend/`,
+- built frontend assets in `foreman/dashboard_frontend_dist/`,
 - project overview and multi-project switching,
 - sprint board grouped by task status,
 - task detail with run history, acceptance criteria, and step visit counts,
@@ -161,11 +164,11 @@ The current dashboard baseline includes:
 
 The current implementation debt in this area is explicit:
 
-- the legacy dashboard HTML, CSS, and browser logic are still embedded into
-  one Python module,
-- the backend transport is now a real FastAPI app, but the legacy shell still
-  ships from the same module as the inline markup,
-- there is no dedicated frontend build, component, or end-to-end test stack.
+- there is still no browser-driven end-to-end dashboard test stack,
+- the committed built frontend assets must stay synchronized with the source
+  app in `frontend/`,
+- the SSE transport still polls SQLite directly inside the FastAPI stream
+  loop.
 
 The current CLI watch baseline now includes:
 
@@ -219,7 +222,7 @@ The current CLI watch baseline now includes:
 - the dashboard live transport currently uses server-sent events through the
   FastAPI backend, with store polling inside the stream loop and the
   extracted `foreman.dashboard_api` contract acting as the service boundary
-  for the upcoming React frontend.
+  under the shipped React frontend.
 - `foreman watch` now shares the dashboard's persisted-event cursor boundary
   but stays on a direct store-read loop instead of going through the HTTP SSE
   transport.
@@ -228,11 +231,11 @@ The current CLI watch baseline now includes:
 
 ## Next architectural slice
 
-The next slice should replace the legacy dashboard shell:
+The next slice should harden the product surface now that the dashboard split
+is in place:
 
-- introduce the dedicated React frontend on top of the FastAPI backend and
-  extracted dashboard service layer,
-- preserve the current dashboard behavior while moving rendering and client
-  state out of Python,
-- add frontend-aware validation so the product UI is not judged only through
-  backend HTML-string assertions.
+- remove or implement the remaining stub CLI product commands,
+- close the most visible dashboard and settings gaps exposed by the new
+  frontend baseline,
+- add stronger product-surface validation above the current API and component
+  layers.

@@ -4,15 +4,21 @@ from __future__ import annotations
 
 import asyncio
 import json
+import mimetypes
 import time
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Any, Iterator
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 
-from .dashboard import DASHBOARD_HTML
+from .dashboard import (
+    DASHBOARD_ASSETS_DIR,
+    DASHBOARD_INDEX_PATH,
+    ensure_dashboard_assets,
+)
 from .dashboard_api import (
     ACTIVITY_EVENT_LIMIT,
     STREAM_BATCH_LIMIT,
@@ -70,6 +76,8 @@ async def _read_json_body(request: Request) -> dict[str, Any]:
 def create_dashboard_app(db_path: str) -> FastAPI:
     """Create the FastAPI application used for dashboard delivery."""
 
+    ensure_dashboard_assets()
+
     app = FastAPI(
         title="Foreman Dashboard API",
         version="0.1.0",
@@ -98,13 +106,34 @@ def create_dashboard_app(db_path: str) -> FastAPI:
         with _open_store(db_path) as store:
             return callback(DashboardAPI(store))
 
-    @app.get("/", response_class=HTMLResponse)
-    async def dashboard_root() -> HTMLResponse:
-        return HTMLResponse(DASHBOARD_HTML)
+    dashboard_html = DASHBOARD_INDEX_PATH.read_text(encoding="utf-8")
 
-    @app.get("/dashboard", response_class=HTMLResponse)
-    async def dashboard_shell() -> HTMLResponse:
-        return HTMLResponse(DASHBOARD_HTML)
+    def _resolve_asset_path(asset_path: str) -> Path | None:
+        candidate = (DASHBOARD_ASSETS_DIR / asset_path).resolve()
+        try:
+            candidate.relative_to(DASHBOARD_ASSETS_DIR.resolve())
+        except ValueError:
+            return None
+        if not candidate.is_file():
+            return None
+        return candidate
+
+    @app.get("/", include_in_schema=False)
+    async def dashboard_root() -> RedirectResponse:
+        return RedirectResponse(url="/dashboard")
+
+    @app.get("/assets/{asset_path:path}", include_in_schema=False)
+    async def dashboard_asset(asset_path: str) -> Response:
+        asset_file = _resolve_asset_path(asset_path)
+        if asset_file is None:
+            return Response(status_code=404)
+        media_type = mimetypes.guess_type(asset_file.name)[0] or "application/octet-stream"
+        return Response(asset_file.read_bytes(), media_type=media_type)
+
+    @app.get("/dashboard", response_class=HTMLResponse, include_in_schema=False)
+    @app.get("/dashboard/{path:path}", response_class=HTMLResponse, include_in_schema=False)
+    async def dashboard_shell(path: str = "") -> HTMLResponse:
+        return HTMLResponse(dashboard_html)
 
     @app.get("/api/projects")
     async def list_projects() -> dict[str, Any]:

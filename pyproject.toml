@@ -24,3 +24,9 @@ foreman = "foreman.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["foreman*"]
+
+[tool.setuptools.package-data]
+foreman = [
+  "dashboard_frontend_dist/*.html",
+  "dashboard_frontend_dist/assets/*",
+]

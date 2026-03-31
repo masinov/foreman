@@ -1,8 +1,9 @@
-"""Tests for the Foreman dashboard backend and legacy shell."""
+"""Tests for the Foreman dashboard API, FastAPI transport, and React shell."""
 
 from __future__ import annotations
 
 import asyncio
+import re
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,7 +18,7 @@ from foreman.store import ForemanStore
 
 
 class DashboardBackendTests(unittest.TestCase):
-    """Test the extracted dashboard API, FastAPI backend, and legacy shell."""
+    """Test the extracted dashboard API, FastAPI backend, and React shell."""
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -191,6 +192,14 @@ class DashboardBackendTests(unittest.TestCase):
 
         return asyncio.run(send())
 
+    def call_route(self, route_path: str, **kwargs):
+        """Call one FastAPI endpoint directly for routes that do not need a Request object."""
+
+        route = next(
+            route for route in self.app.routes if getattr(route, "path", None) == route_path
+        )
+        return asyncio.run(route.endpoint(**kwargs))
+
     def test_project_status_detection(self):
         """Project status is derived from task states."""
         self.assertEqual(self.api.get_project_status("proj-1"), "running")
@@ -286,19 +295,20 @@ class DashboardBackendTests(unittest.TestCase):
         self.assertEqual(messages[0]["payload"]["type"], "event")
         self.assertEqual(messages[0]["payload"]["event"]["id"], "event-2")
 
-    def test_dashboard_html_content(self):
-        """Dashboard HTML contains expected elements."""
-        from foreman.dashboard import DASHBOARD_HTML
-        self.assertIn("<title>Foreman Dashboard</title>", DASHBOARD_HTML)
-        self.assertIn("Projects", DASHBOARD_HTML)
-        self.assertIn("api/projects", DASHBOARD_HTML)
+    def test_dashboard_frontend_build_exists(self):
+        """The built React dashboard assets are present for FastAPI to serve."""
+        from foreman.dashboard import DASHBOARD_ASSETS_DIR, DASHBOARD_INDEX_PATH
+
+        self.assertTrue(DASHBOARD_INDEX_PATH.is_file())
+        self.assertTrue(DASHBOARD_ASSETS_DIR.is_dir())
 
     def test_fastapi_dashboard_shell_route_returns_html(self):
-        """FastAPI serves the current legacy dashboard shell."""
-        response = self.request("GET", "/dashboard")
+        """FastAPI serves the built React dashboard index."""
+        response = self.call_route("/dashboard")
         self.assertEqual(response.status_code, 200)
         self.assertIn("text/html", response.headers["content-type"])
-        self.assertIn("Foreman Dashboard", response.text)
+        self.assertIn("<div id=\"root\"></div>", response.body.decode("utf-8"))
+        self.assertIn("<title>Foreman Dashboard</title>", response.body.decode("utf-8"))
 
     def test_fastapi_projects_endpoint_returns_json(self):
         """FastAPI serves the project list over HTTP."""
@@ -331,23 +341,12 @@ class DashboardBackendTests(unittest.TestCase):
         self.assertEqual(task["runs"][0]["token_count"], 15000)
         self.assertIn("total_token_count", task["totals"])
 
-    def test_dashboard_detail_panel_html(self):
-        """Dashboard HTML contains detail panel elements."""
-        from foreman.dashboard import DASHBOARD_HTML
-        self.assertIn("detail-panel", DASHBOARD_HTML)
-        self.assertIn("detail-overlay", DASHBOARD_HTML)
-        self.assertIn("showTaskDetail", DASHBOARD_HTML)
-        self.assertIn("hideDetail", DASHBOARD_HTML)
-        self.assertIn("Run History", DASHBOARD_HTML)
-        self.assertIn("Acceptance Criteria", DASHBOARD_HTML)
-
-    def test_dashboard_activity_input_html(self):
-        """Dashboard HTML contains activity input elements."""
-        from foreman.dashboard import DASHBOARD_HTML
-        self.assertIn("activity-input", DASHBOARD_HTML)
-        self.assertIn("humanInput", DASHBOARD_HTML)
-        self.assertIn("sendHumanMessage", DASHBOARD_HTML)
-        self.assertIn("autoResize", DASHBOARD_HTML)
+    def test_fastapi_dashboard_nested_route_returns_html(self):
+        """Nested dashboard routes fall back to the React entrypoint."""
+        response = self.call_route("/dashboard/{path:path}", path="projects/proj-1/sprints/sprint-1")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("text/html", response.headers["content-type"])
+        self.assertIn("<div id=\"root\"></div>", response.body.decode("utf-8"))
 
     def test_human_message_event_storage(self):
         """Human guidance messages are persisted through the dashboard API contract."""
@@ -366,29 +365,16 @@ class DashboardBackendTests(unittest.TestCase):
             "evt-20260330140000123456-task-2",
         )
 
-    def test_dashboard_activity_filter_html(self):
-        """Dashboard HTML contains activity filter elements."""
-        from foreman.dashboard import DASHBOARD_HTML
-        self.assertIn("activity-filter", DASHBOARD_HTML)
-        self.assertIn("activityFilterMenu", DASHBOARD_HTML)
-        self.assertIn("filterEvents", DASHBOARD_HTML)
-        self.assertIn("toggleFilterMenu", DASHBOARD_HTML)
+    def test_fastapi_dashboard_assets_route_returns_built_bundle(self):
+        """FastAPI serves the built JavaScript bundle referenced by the React shell."""
+        dashboard_html = self.call_route("/dashboard").body.decode("utf-8")
+        match = re.search(r'src="(?P<path>/assets/[^"]+\.js)"', dashboard_html)
+        self.assertIsNotNone(match)
 
-    def test_dashboard_streaming_transport_html(self):
-        """Dashboard HTML wires the activity feed to the sprint event stream."""
-        from foreman.dashboard import DASHBOARD_HTML
-        self.assertIn("EventSource", DASHBOARD_HTML)
-        self.assertIn("/api/sprints/${sprintId}/stream", DASHBOARD_HTML)
-        self.assertIn("openSprintStream", DASHBOARD_HTML)
-        self.assertIn("queueSprintRefresh", DASHBOARD_HTML)
-
-    def test_dashboard_project_switcher_html(self):
-        """Dashboard HTML contains project switcher elements."""
-        from foreman.dashboard import DASHBOARD_HTML
-        self.assertIn("project-switcher", DASHBOARD_HTML)
-        self.assertIn("projectSwitcherMenu", DASHBOARD_HTML)
-        self.assertIn("switchProject", DASHBOARD_HTML)
-        self.assertIn("toggleProjectSwitcher", DASHBOARD_HTML)
+        asset_response = self.call_route("/assets/{asset_path:path}", asset_path=match.group("path").replace("/assets/", "", 1))
+        self.assertEqual(asset_response.status_code, 200)
+        self.assertIn("javascript", asset_response.headers["content-type"])
+        self.assertIn("createRoot", asset_response.body.decode("utf-8"))
 
 
 class DashboardApproveDenyIntegrationTests(unittest.TestCase):

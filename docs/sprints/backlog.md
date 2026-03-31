@@ -2,8 +2,6 @@
 
 ## Next up after current sprint
 
-- `sprint-24-product-surface-hardening` — remove stub CLI surfaces, close
-  known mockup and settings gaps, and strengthen product-surface validation
 - `sprint-25-migration-framework-bootstrap` — introduce an explicit schema
   migration path for store evolution and retention-safe upgrades
 - `sprint-26-history-lifecycle-expansion` — extend retention and cleanup

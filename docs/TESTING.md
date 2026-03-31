@@ -18,6 +18,8 @@ repo-memory validation and code-level regression coverage:
 - `./venv/bin/python -m py_compile scripts/repo_validation.py`
 - `./venv/bin/python -m py_compile scripts/validate_repo_memory.py`
 - `./venv/bin/pip install -e . --no-build-isolation`
+- `npm --prefix frontend test`
+- `npm --prefix frontend run build`
 - `./venv/bin/python -m unittest discover -s tests -v`
 
 ## Slice coverage that exists today
@@ -48,9 +50,11 @@ The current suite covers:
   resume, startup preflight, approval responses, streamed event mapping, and
   failure handling
 - `tests/test_dashboard.py` for the extracted dashboard API contract, FastAPI
-  HTTP routes, legacy dashboard HTML shell rendering, task detail data, human
-  message persistence, incremental sprint-event stream payloads, and approve
-  or deny integration behavior
+  HTTP routes, built frontend shell delivery, task detail data, human message
+  persistence, incremental sprint-event stream payloads, and approve or deny
+  integration behavior
+- `frontend/src/App.test.jsx` for React dashboard navigation, message
+  submission, and stream-driven activity updates
 - `tests/test_executor.py` for runner-backed execution config, event
   translation, completion handling, and infrastructure-error behavior in
   `foreman.executor`
@@ -66,9 +70,10 @@ Unit tests:
 - signal parsing
 - dashboard API contract payloads and action behavior
 - dashboard FastAPI route behavior over ASGI transport
+- dashboard shell and asset delivery over the dedicated frontend boundary
 - dashboard live transport serialization
 - git helper behavior that can be isolated
-- frontend component behavior once the React dashboard exists
+- frontend component behavior in the dedicated React app
 
 Integration tests:
 
@@ -98,7 +103,7 @@ UI validation:
 - activity feed behavior and live stream updates
 - alignment between dashboard sprint streaming and CLI watch tailing
 - human message, filter, and approve or deny flows
-- browser-driven validation for the dedicated frontend once it lands
+- browser-driven validation for the dedicated frontend
 
 ## Definition of done
 
@@ -109,8 +114,8 @@ Do not mark a task done unless:
 - user-visible changes include validation notes,
 - the docs reflect the new reality.
 
-For product UI work, "done" should eventually include API contract coverage,
-frontend behavior coverage, and browser-level validation rather than only
+For product UI work, "done" should include API contract coverage, frontend
+behavior coverage, and browser or bundle-level validation rather than only
 backend tests that inspect HTML strings.
 
 If a slice cannot reasonably add tests yet, explain why in the PR summary and

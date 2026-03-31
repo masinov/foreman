@@ -61,13 +61,16 @@ The integrated pre-release baseline now contains:
   project, sprint, task, action, and streaming payloads,
 - a FastAPI dashboard backend in `foreman/dashboard_backend.py` served by
   uvicorn,
-- a current legacy dashboard shell in `foreman/dashboard.py` with project
-  overview, sprint board, task detail, activity feed, human message input,
-  activity filtering, project switching, approve or deny actions wired into
-  orchestrator resume, and a dedicated sprint event stream for live activity
-  updates,
+- a dedicated React dashboard frontend in `frontend/` with project overview,
+  sprint board, task detail, activity feed, human message input, activity
+  filtering, project switching, approve or deny actions, and live sprint
+  activity updates,
+- built dashboard assets in `foreman/dashboard_frontend_dist/` served by the
+  FastAPI backend,
+- `foreman/dashboard.py` reduced to the dashboard runtime entrypoint and
+  frontend asset guard,
 - unit and integration coverage across store, CLI, orchestrator, runners,
-  dashboard, and runner-backed executor seams.
+  dashboard, the React frontend, and runner-backed executor seams.
 
 The current repo-memory goal is to keep that baseline coherent while moving
 into the next implementation gap rather than leaving finished work stranded on
@@ -142,14 +145,14 @@ rendering repeated snapshots.
 
 ## Dashboard direction
 
-The current inline shell in `foreman/dashboard.py` is now treated as a legacy
-delivery path, not the desired product architecture.
-
-The accepted direction is:
+The product dashboard now ships through the accepted architecture:
 
 - Python backend modules expose JSON and streaming APIs through
   `foreman/dashboard_api.py` and `foreman/dashboard_backend.py`,
-- a dedicated React frontend owns product UI rendering and state management,
+- the dedicated React frontend in `frontend/` owns product UI rendering and
+  client state,
+- built frontend assets are served by FastAPI from
+  `foreman/dashboard_frontend_dist/`,
 - mockup alignment remains mandatory for hierarchy and interaction behavior.
 
 ## Autonomous entry points
@@ -180,12 +183,13 @@ Both wrappers expect these files to be current:
 
 ## Next implementation slice
 
-The current sprint is `sprint-23-react-dashboard-foundation`.
+The current sprint is `sprint-24-product-surface-hardening`.
 
 The next recommended task is:
 
-- replace the legacy inline dashboard shell with a dedicated React frontend
-  that consumes the FastAPI backend and extracted dashboard service layer.
+- remove or implement the remaining stub CLI product surfaces and strengthen
+  product-surface validation now that the dedicated React dashboard is in
+  place.
 
 That work is recorded in `docs/sprints/current.md`, so a fresh agent can pick
 it up without reconstructing branch history first.
@@ -206,6 +210,8 @@ Current code-level validation also includes:
 
 ```bash
 ./venv/bin/pip install -e . --no-build-isolation
+npm --prefix frontend test
+npm --prefix frontend run build
 ./venv/bin/python -m unittest discover -s tests -v
 ./venv/bin/foreman --help
 ./venv/bin/foreman projects
