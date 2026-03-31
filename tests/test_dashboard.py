@@ -1497,3 +1497,205 @@ class DashboardTaskEditingTests(unittest.TestCase):
             json={"foo": "bar"},
         )
         self.assertEqual(response.status_code, 400)
+
+
+class DashboardTier2Tests(unittest.TestCase):
+    """Tests for sprint-33 Tier 2: project creation, start_agent, workflow_current_step."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.temp_dir = tempfile.TemporaryDirectory()
+        cls.db_path = Path(cls.temp_dir.name) / "foreman.db"
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.temp_dir.cleanup()
+
+    _counter = 0
+
+    def _next_id(self, prefix):
+        DashboardTier2Tests._counter += 1
+        return f"{prefix}-{DashboardTier2Tests._counter}"
+
+    def _request(self, method, url, **kwargs):
+        async def send():
+            app = create_dashboard_app(str(self.db_path))
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(
+                transport=transport,
+                base_url="http://testserver",
+            ) as client:
+                return await client.request(method, url, **kwargs)
+        return asyncio.run(send())
+
+    # ── Project creation ──────────────────────────────────────────────────────
+
+    def test_create_project_returns_200(self):
+        """POST /api/projects creates a project and returns it."""
+        response = self._request(
+            "POST",
+            "/api/projects",
+            json={"name": "New Dashboard Project", "repo_path": "/tmp/ndp"},
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["name"], "New Dashboard Project")
+        self.assertEqual(data["repo_path"], "/tmp/ndp")
+        self.assertEqual(data["workflow_id"], "development")
+        self.assertIn("id", data)
+
+    def test_create_project_custom_workflow(self):
+        """POST /api/projects accepts workflow_id."""
+        response = self._request(
+            "POST",
+            "/api/projects",
+            json={
+                "name": "Secure Project",
+                "repo_path": "/tmp/sec",
+                "workflow_id": "development_secure",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["workflow_id"], "development_secure")
+
+    def test_create_project_empty_name_rejected(self):
+        """POST /api/projects with empty name returns 400."""
+        response = self._request(
+            "POST",
+            "/api/projects",
+            json={"name": "  ", "repo_path": "/tmp/x"},
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_create_project_empty_repo_path_rejected(self):
+        """POST /api/projects with empty repo_path returns 400."""
+        response = self._request(
+            "POST",
+            "/api/projects",
+            json={"name": "Valid Name", "repo_path": ""},
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_create_project_appears_in_list(self):
+        """Project created via POST /api/projects appears in GET /api/projects."""
+        response = self._request(
+            "POST",
+            "/api/projects",
+            json={"name": "Listed Project", "repo_path": "/tmp/lp"},
+        )
+        project_id = response.json()["id"]
+        list_response = self._request("GET", "/api/projects")
+        ids = [p["id"] for p in list_response.json()["projects"]]
+        self.assertIn(project_id, ids)
+
+    # ── Workflow step visibility ───────────────────────────────────────────────
+
+    def test_list_sprint_tasks_includes_workflow_current_step(self):
+        """GET /api/sprints/{id}/tasks includes workflow_current_step on each task."""
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        project = Project(
+            id=self._next_id("proj-wcs"),
+            name="WCS Project",
+            repo_path="/tmp/wcs",
+            workflow_id="development",
+        )
+        store.save_project(project)
+        sprint = Sprint(
+            id=self._next_id("sprint-wcs"),
+            project_id=project.id,
+            title="WCS Sprint",
+            status="active",
+        )
+        store.save_sprint(sprint)
+        task = Task(
+            id=self._next_id("task-wcs"),
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="Step task",
+            status="in_progress",
+            task_type="feature",
+            workflow_current_step="develop",
+        )
+        store.save_task(task)
+        store.close()
+
+        response = self._request("GET", f"/api/sprints/{sprint.id}/tasks")
+        self.assertEqual(response.status_code, 200)
+        tasks = response.json()["tasks"]
+        self.assertEqual(len(tasks), 1)
+        self.assertEqual(tasks[0]["workflow_current_step"], "develop")
+
+    def test_get_task_includes_workflow_current_step(self):
+        """GET /api/tasks/{id} includes workflow_current_step."""
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        project = Project(
+            id=self._next_id("proj-gtwcs"),
+            name="GT WCS",
+            repo_path="/tmp/gtwcs",
+            workflow_id="development",
+        )
+        store.save_project(project)
+        sprint = Sprint(
+            id=self._next_id("sprint-gtwcs"),
+            project_id=project.id,
+            title="Sprint",
+            status="active",
+        )
+        store.save_sprint(sprint)
+        task = Task(
+            id=self._next_id("task-gtwcs"),
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="Detail step task",
+            status="in_progress",
+            task_type="feature",
+            workflow_current_step="review",
+        )
+        store.save_task(task)
+        store.close()
+
+        response = self._request("GET", f"/api/tasks/{task.id}")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["workflow_current_step"], "review")
+
+    # ── Start agent ────────────────────────────────────────────────────────────
+
+    def test_start_agent_returns_404_for_unknown_project(self):
+        """POST /api/projects/{id}/agent/start returns 404 for unknown project."""
+        response = self._request(
+            "POST",
+            "/api/projects/does-not-exist/agent/start",
+            json={},
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_start_agent_launched_for_known_project(self):
+        """POST /api/projects/{id}/agent/start spawns a subprocess and returns started=true."""
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        project = Project(
+            id=self._next_id("proj-sa"),
+            name="Start Agent Project",
+            repo_path="/tmp/sa",
+            workflow_id="development",
+        )
+        store.save_project(project)
+        store.close()
+
+        import unittest.mock as mock
+        with mock.patch("subprocess.Popen") as mock_popen:
+            mock_proc = mock.MagicMock()
+            mock_proc.poll.return_value = None
+            mock_popen.return_value = mock_proc
+
+            response = self._request(
+                "POST",
+                f"/api/projects/{project.id}/agent/start",
+                json={},
+            )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["started"])
+        self.assertEqual(data["project_id"], project.id)
