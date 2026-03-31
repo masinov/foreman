@@ -298,14 +298,15 @@ def create_dashboard_app(
         )
 
     @app.patch("/api/sprints/{sprint_id}")
-    async def transition_sprint(sprint_id: str, request: Request) -> dict[str, Any]:
+    async def patch_sprint(sprint_id: str, request: Request) -> dict[str, Any]:
         data = await _read_json_body(request)
-        target_status = data.get("status")
-        if not target_status:
-            raise DashboardValidationError("'status' field is required.")
-        return with_api(
-            lambda api: api.transition_sprint(sprint_id, target_status=str(target_status))
-        )
+        if "status" in data:
+            target_status = data["status"]
+            return with_api(
+                lambda api: api.transition_sprint(sprint_id, target_status=str(target_status))
+            )
+        field_updates = {k: v for k, v in data.items()}
+        return with_api(lambda api: api.update_sprint_fields(sprint_id, updates=field_updates))
 
     @app.post("/api/projects/{project_id}/agent/stop")
     async def stop_agent(project_id: str) -> dict[str, Any]:

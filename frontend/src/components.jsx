@@ -491,10 +491,10 @@ export function TaskCard({ task, selected, onSelect, onApprove, onDeny }) {
   );
 }
 
-export function EventList({ events, filterKey, taskIndex }) {
+export function EventList({ events, filterKey, taskIndex, containerRef, onScroll }) {
   const filteredEvents = events.filter((event) => eventMatchesFilter(event, filterKey));
   return (
-    <div className="activity-stream" aria-live="polite">
+    <div className="activity-stream" aria-live="polite" ref={containerRef} onScroll={onScroll}>
       {filteredEvents.length === 0 ? (
         <div className="empty-panel">No matching activity yet.</div>
       ) : (
@@ -526,6 +526,8 @@ export function EventList({ events, filterKey, taskIndex }) {
   );
 }
 
+const TASK_TYPE_OPTIONS = ["feature", "fix", "refactor", "docs", "spike", "chore"];
+
 export function TaskDetailDrawer({
   task,
   taskIndex,
@@ -535,25 +537,95 @@ export function TaskDetailDrawer({
   onDenyNoteChange,
   onDeny,
   onCancel,
+  onSave,
 }) {
+  const [editing, setEditing] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
+  const [taskTypeDraft, setTaskTypeDraft] = useState("");
+  const [criteriaDraft, setCriteriaDraft] = useState("");
+
   if (!task) {
     return null;
+  }
+
+  function startEditing() {
+    setTitleDraft(task.title);
+    setTaskTypeDraft(task.task_type);
+    setCriteriaDraft(task.acceptance_criteria || "");
+    setEditing(true);
+  }
+
+  function cancelEditing() {
+    setEditing(false);
+  }
+
+  async function saveEditing() {
+    if (!titleDraft.trim()) return;
+    await onSave(task.id, {
+      title: titleDraft.trim(),
+      task_type: taskTypeDraft,
+      acceptance_criteria: criteriaDraft.trim() || null,
+    });
+    setEditing(false);
   }
 
   return (
     <aside className="detail-overlay" id="detail-panel" aria-label="Task detail">
       <div className="detail-header">
-        <div>
-          <h2>{task.title}</h2>
-          <div className="detail-kicker">
-            <span className={`card-tag ${getTaskTypeClass(task.task_type)}`}>{task.task_type}</span>
-            <span className="detail-status">{formatTaskStatus(task.status)}</span>
-          </div>
+        <div className="detail-header-title-row">
+          {editing ? (
+            <input
+              className="detail-title-input"
+              value={titleDraft}
+              onChange={(e) => setTitleDraft(e.target.value)}
+              aria-label="Task title"
+            />
+          ) : (
+            <h2>{task.title}</h2>
+          )}
+          {onSave && !editing ? (
+            <button className="detail-edit-btn" type="button" onClick={startEditing} aria-label="Edit task">
+              ✎
+            </button>
+          ) : null}
         </div>
-        <button className="detail-close" type="button" onClick={onClose} aria-label="Close task detail">
-          ×
-        </button>
+        <div className="detail-kicker">
+          {editing ? (
+            <div className="detail-type-chips">
+              {TASK_TYPE_OPTIONS.map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  className={`card-tag type-chip ${getTaskTypeClass(t)} ${taskTypeDraft === t ? "chip-selected" : ""}`}
+                  onClick={() => setTaskTypeDraft(t)}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <>
+              <span className={`card-tag ${getTaskTypeClass(task.task_type)}`}>{task.task_type}</span>
+              <span className="detail-status">{formatTaskStatus(task.status)}</span>
+            </>
+          )}
+        </div>
+        {!editing ? (
+          <button className="detail-close" type="button" onClick={onClose} aria-label="Close task detail">
+            ×
+          </button>
+        ) : null}
       </div>
+      {editing ? (
+        <div className="detail-edit-actions">
+          <button className="btn btn-save-edit" type="button" onClick={saveEditing} disabled={!titleDraft.trim()}>
+            Save
+          </button>
+          <button className="btn btn-cancel-edit" type="button" onClick={cancelEditing}>
+            Cancel
+          </button>
+        </div>
+      ) : null}
       <div className="detail-body">
         {task.description ? (
           <div className="detail-section">
@@ -601,12 +673,20 @@ export function TaskDetailDrawer({
             </div>
           </div>
         ) : null}
-        {task.acceptance_criteria ? (
-          <div className="detail-section">
-            <div className="detail-section-title">Acceptance Criteria</div>
-            <div className="detail-criteria">{task.acceptance_criteria}</div>
-          </div>
-        ) : null}
+        <div className="detail-section">
+          <div className="detail-section-title">Acceptance Criteria</div>
+          {editing ? (
+            <textarea
+              className="detail-textarea"
+              value={criteriaDraft}
+              onChange={(e) => setCriteriaDraft(e.target.value)}
+              placeholder="Describe what done looks like."
+              rows={4}
+            />
+          ) : (
+            <div className="detail-criteria">{task.acceptance_criteria || <span className="detail-empty">None specified.</span>}</div>
+          )}
+        </div>
         {task.blocked_reason ? (
           <div className="detail-section">
             <div className="detail-section-title">Blocked Reason</div>

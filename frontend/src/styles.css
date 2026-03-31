@@ -1861,6 +1861,193 @@ button {
   border-color: var(--text-tertiary);
 }
 
+/* ═══ Task detail editing ═════════════════════════ */
+.detail-header-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  flex: 1;
+}
+
+.detail-header-title-row h2 {
+  flex: 1;
+  margin: 0;
+}
+
+.detail-title-input {
+  flex: 1;
+  background: var(--bg-card);
+  border: 1px solid var(--text-tertiary);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+  padding: 4px 8px;
+  font-family: inherit;
+}
+
+.detail-title-input:focus {
+  outline: none;
+  border-color: var(--text-secondary);
+}
+
+.detail-edit-btn {
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 4px;
+  line-height: 1;
+  transition: var(--transition);
+  flex-shrink: 0;
+}
+
+.detail-edit-btn:hover {
+  color: var(--text-primary);
+}
+
+.detail-type-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.type-chip {
+  cursor: pointer;
+  border: 1px solid transparent;
+  opacity: 0.5;
+  transition: var(--transition);
+}
+
+.type-chip.chip-selected {
+  opacity: 1;
+  border-color: currentColor;
+}
+
+.type-chip:hover {
+  opacity: 0.85;
+}
+
+.detail-edit-actions {
+  display: flex;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.btn-save-edit {
+  background: var(--accent);
+  color: #000;
+  border: none;
+  border-radius: var(--radius);
+  padding: 5px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.btn-save-edit:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-cancel-edit {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  padding: 5px 14px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.btn-cancel-edit:hover {
+  border-color: var(--text-tertiary);
+  color: var(--text-primary);
+}
+
+.detail-empty {
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+/* ═══ Sprint goal inline edit ═════════════════════ */
+.sprint-goal-text {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.goal-edit-btn {
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 1px 4px;
+  line-height: 1;
+  transition: var(--transition);
+  flex-shrink: 0;
+}
+
+.goal-edit-btn:hover {
+  color: var(--text-primary);
+}
+
+.sprint-goal-edit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sprint-goal-input {
+  background: var(--bg-card);
+  border: 1px solid var(--text-tertiary);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-size: 12px;
+  padding: 4px 8px;
+  font-family: inherit;
+  min-width: 240px;
+}
+
+.sprint-goal-input:focus {
+  outline: none;
+  border-color: var(--text-secondary);
+}
+
+.btn-save-goal,
+.btn-cancel-goal {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  font-size: 11px;
+  padding: 3px 10px;
+  cursor: pointer;
+  transition: var(--transition);
+  flex-shrink: 0;
+}
+
+.btn-save-goal {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #000;
+  font-weight: 600;
+}
+
+.btn-save-goal:hover {
+  opacity: 0.85;
+}
+
+.btn-cancel-goal:hover {
+  border-color: var(--text-tertiary);
+  color: var(--text-primary);
+}
+
 /* ═══ Run timeline ════════════════════════════════ */
 .run-timeline {
   display: flex;

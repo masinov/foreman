@@ -114,6 +114,12 @@ export function createDashboardServices({
         body: { status },
       });
     },
+    updateSprint(sprintId, updates) {
+      return requestJson(fetchImpl, `/api/sprints/${encodeURIComponent(sprintId)}`, {
+        method: "PATCH",
+        body: updates,
+      });
+    },
     updateTask(taskId, updates) {
       return requestJson(fetchImpl, `/api/tasks/${encodeURIComponent(taskId)}`, {
         method: "PATCH",
