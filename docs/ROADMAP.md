@@ -402,7 +402,7 @@ Target deliverables:
 
 Status:
 
-- current sprint is `sprint-24-product-surface-hardening`
+- completed on `feat/dashboard-settings-and-creation`
 - dashboard runtime and service naming are now explicit through
   `foreman/dashboard_runtime.py` and `foreman/dashboard_service.py`
 - local dashboard development now has Vite `/api` proxying plus
@@ -410,6 +410,10 @@ Status:
   loop
 - shipped CLI product commands no longer depend on the generic `handle_stub`
   fallback for project, sprint, task, run, or config flows
+- settings panel, sprint creation, and task creation now run end-to-end from
+  React components through FastAPI endpoints to SQLite persistence
+- 15 integration tests cover settings read/update, sprint creation, and task
+  creation through both the service layer and FastAPI transport
 
 ## Milestone 20: Migration framework bootstrap
 
@@ -424,7 +428,15 @@ Target deliverables:
 
 Status:
 
-- planned in `sprint-25-migration-framework-bootstrap`
+- completed on `feat/store-migration-framework`
+- `foreman/migrations.py` owns the append-only `MIGRATIONS` list; migration 1
+  is the current baseline schema
+- `ForemanStore.initialize()` creates a `schema_migrations` tracking table and
+  applies any unapplied migrations in version order via `migrate()`
+- `ForemanStore.schema_version()` returns the highest applied version
+- 17 tests in `tests/test_migrations.py` cover integrity, fresh install,
+  idempotency, and incremental upgrade
+- `docs/adr/ADR-0005-schema-migration-strategy.md` accepted
 
 ## Milestone 21: History lifecycle expansion
 
@@ -443,9 +455,7 @@ Status:
 
 ## Near-term priorities
 
-1. finish the remaining visible product-surface gaps after the CLI stub
-   cleanup
-2. strengthen product-surface validation above the current CLI, API, and
-   component layers
-3. resume migration work once the product-surface boundary is corrected
-4. expand lifecycle cleanup after migrations exist
+1. `sprint-26-history-lifecycle-expansion` — extend retention and cleanup
+   beyond `events` now that the migration framework is in place
+2. add browser-driven end-to-end dashboard validation
+3. implement `task_selection_mode="autonomous"` in the orchestrator
