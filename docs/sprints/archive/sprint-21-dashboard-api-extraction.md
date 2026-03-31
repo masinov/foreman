@@ -37,7 +37,7 @@
   route data assembly
 - dashboard tests shifted toward API-contract coverage rather than only
   reconstructing handler internals
-- repo-memory rollover from API extraction to React dashboard foundation
+- repo-memory rollover from API extraction to dashboard backend foundation
 
 ## Demo notes
 
@@ -47,7 +47,7 @@
 
 ## Follow-ups moved forward
 
-- `sprint-22-react-dashboard-foundation`: replace the legacy shell with a
-  dedicated React frontend consuming the extracted API
-- `sprint-23-product-surface-hardening`: remove or finish remaining stub and
-  structurally weak product surfaces
+- `sprint-22-dashboard-backend-foundation`: replace the raw stdlib dashboard
+  server with a real backend framework before the frontend rewrite
+- `sprint-23-react-dashboard-foundation`: replace the legacy shell with a
+  dedicated React frontend consuming the backend foundation

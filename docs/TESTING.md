@@ -17,7 +17,7 @@ repo-memory validation and code-level regression coverage:
 - `./venv/bin/python -m py_compile scripts/reviewed_claude.py`
 - `./venv/bin/python -m py_compile scripts/repo_validation.py`
 - `./venv/bin/python -m py_compile scripts/validate_repo_memory.py`
-- `./venv/bin/pip install -e . --no-build-isolation --no-deps`
+- `./venv/bin/pip install -e . --no-build-isolation`
 - `./venv/bin/python -m unittest discover -s tests -v`
 
 ## Slice coverage that exists today
@@ -47,10 +47,10 @@ The current suite covers:
 - `tests/test_runner_codex.py` for Codex app-server startup, thread start or
   resume, startup preflight, approval responses, streamed event mapping, and
   failure handling
-- `tests/test_dashboard.py` for the extracted dashboard API contract, legacy
-  dashboard HTML shell rendering, task detail data, human message
-  persistence, incremental sprint-event stream payloads, and approve or deny
-  integration behavior
+- `tests/test_dashboard.py` for the extracted dashboard API contract, FastAPI
+  HTTP routes, legacy dashboard HTML shell rendering, task detail data, human
+  message persistence, incremental sprint-event stream payloads, and approve
+  or deny integration behavior
 - `tests/test_executor.py` for runner-backed execution config, event
   translation, completion handling, and infrastructure-error behavior in
   `foreman.executor`
@@ -65,6 +65,7 @@ Unit tests:
 - role and workflow parsing
 - signal parsing
 - dashboard API contract payloads and action behavior
+- dashboard FastAPI route behavior over ASGI transport
 - dashboard live transport serialization
 - git helper behavior that can be isolated
 - frontend component behavior once the React dashboard exists

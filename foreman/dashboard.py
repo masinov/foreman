@@ -1,22 +1,12 @@
-"""Dashboard web server for Foreman."""
+"""Legacy dashboard shell and runtime entrypoint for Foreman."""
 
 from __future__ import annotations
-
-import json
-import time
-from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any
-from urllib.parse import parse_qs, urlparse
 
 from .dashboard_api import (
     ACTIVITY_EVENT_LIMIT,
     STREAM_BATCH_LIMIT,
     STREAM_HEARTBEAT_SECONDS,
     STREAM_POLL_INTERVAL_SECONDS,
-    DashboardAPI,
-    DashboardActionError,
-    DashboardNotFoundError,
-    DashboardValidationError,
 )
 from .store import ForemanStore
 
@@ -1156,284 +1146,33 @@ navigate('dashboard');
 """
 
 
-class DashboardHandler(SimpleHTTPRequestHandler):
-    """HTTP request handler for the Foreman dashboard."""
-
-    protocol_version = "HTTP/1.1"
-    store: ForemanStore | None = None
-    db_path: str | None = None
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        owns_store = False
-        if self.db_path is not None and self.store is None:
-            self.store = ForemanStore(self.db_path)
-            self.store.initialize()
-            owns_store = True
-        try:
-            super().__init__(*args, directory=None, **kwargs)
-        finally:
-            if owns_store and self.store is not None:
-                self.store.close()
-
-    def _api(self) -> DashboardAPI:
-        if self.store is None:
-            raise RuntimeError("Store not configured")
-        return DashboardAPI(self.store)
-
-    def _send_json(self, data: dict[str, Any], status: int = 200) -> None:
-        body = json.dumps(data).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.end_headers()
-        self.wfile.write(body)
-
-    def _send_html(self, html: str, status: int = 200) -> None:
-        body = html.encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def _send_error(self, message: str, status: int = 404) -> None:
-        self._send_json({"error": message}, status)
-
-    def _read_json_body(self) -> dict[str, Any]:
-        content_length = int(self.headers.get("Content-Length", 0))
-        if content_length <= 0:
-            return {}
-        body = self.rfile.read(content_length)
-        try:
-            data = json.loads(body)
-        except json.JSONDecodeError as exc:
-            raise DashboardValidationError("Invalid JSON") from exc
-        if not isinstance(data, dict):
-            raise DashboardValidationError("JSON object required")
-        return data
-
-    def _list_sprint_event_payloads(
-        self,
-        sprint_id: str,
-        *,
-        limit: int = ACTIVITY_EVENT_LIMIT,
-        after_event_id: str | None = None,
-    ) -> list[dict[str, Any]]:
-        return self._api().list_sprint_events(
-            sprint_id,
-            limit=limit,
-            after_event_id=after_event_id,
-        )["events"]
-
-    def _send_event_stream_headers(self) -> None:
-        self.send_response(200)
-        self.send_header("Content-Type", "text/event-stream")
-        self.send_header("Cache-Control", "no-cache")
-        self.send_header("Connection", "keep-alive")
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.end_headers()
-
-    def _write_sse_message(
-        self,
-        payload: dict[str, Any],
-        *,
-        event_id: str | None = None,
-        event_name: str | None = None,
-    ) -> None:
-        chunks: list[str] = []
-        if event_id:
-            chunks.append(f"id: {event_id}")
-        if event_name:
-            chunks.append(f"event: {event_name}")
-        data = json.dumps(payload)
-        for line in data.splitlines():
-            chunks.append(f"data: {line}")
-        chunks.append("")
-        chunks.append("")
-        self.wfile.write("\n".join(chunks).encode("utf-8"))
-        self.wfile.flush()
-
-    def _write_sse_comment(self, message: str) -> None:
-        self.wfile.write(f": {message}\n\n".encode("utf-8"))
-        self.wfile.flush()
-
-    def _stream_sprint_events(self, sprint_id: str, *, after_event_id: str | None = None) -> None:
-        api = self._api()
-        self._send_event_stream_headers()
-        self.wfile.write(b"retry: 1000\n\n")
-        self.wfile.flush()
-
-        last_event_id = after_event_id
-        last_heartbeat_at = time.monotonic()
-
-        while True:
-            messages = api.list_sprint_stream_messages(
-                sprint_id,
-                limit=STREAM_BATCH_LIMIT,
-                after_event_id=last_event_id,
-            )
-            if messages:
-                for message in messages:
-                    last_event_id = str(message["event_id"])
-                    self._write_sse_message(
-                        message["payload"],
-                        event_id=last_event_id,
-                    )
-                last_heartbeat_at = time.monotonic()
-            elif time.monotonic() - last_heartbeat_at >= STREAM_HEARTBEAT_SECONDS:
-                self._write_sse_comment("keepalive")
-                last_heartbeat_at = time.monotonic()
-
-            time.sleep(STREAM_POLL_INTERVAL_SECONDS)
-
-    def _get_project_status(self, project_id: str) -> str:
-        return self._api().get_project_status(project_id)
-
-    @staticmethod
-    def _path_parts(path: str) -> list[str]:
-        return [part for part in path.split("/") if part]
-
-    def do_GET(self) -> None:
-        if self.store is None:
-            self._send_error("Store not configured", 500)
-            return
-
-        parsed = urlparse(self.path)
-        path = parsed.path
-        query = parse_qs(parsed.query)
-        parts = self._path_parts(path)
-
-        if path == "/" or path == "/dashboard":
-            self._send_html(DASHBOARD_HTML)
-            return
-
-        try:
-            api = self._api()
-
-            if parts == ["api", "projects"]:
-                self._send_json(api.list_projects())
-                return
-
-            if len(parts) == 3 and parts[:2] == ["api", "projects"]:
-                self._send_json(api.get_project(parts[2]))
-                return
-
-            if len(parts) == 4 and parts[:2] == ["api", "projects"] and parts[3] == "sprints":
-                self._send_json(api.list_project_sprints(parts[2]))
-                return
-
-            if len(parts) == 3 and parts[:2] == ["api", "sprints"]:
-                self._send_json(api.get_sprint(parts[2]))
-                return
-
-            if len(parts) == 4 and parts[:2] == ["api", "sprints"] and parts[3] == "tasks":
-                self._send_json(api.list_sprint_tasks(parts[2]))
-                return
-
-            if len(parts) == 4 and parts[:2] == ["api", "sprints"] and parts[3] == "stream":
-                api.get_sprint(parts[2])
-                after_event_id = self.headers.get("Last-Event-ID") or query.get("after", [None])[0]
-                try:
-                    self._stream_sprint_events(parts[2], after_event_id=after_event_id)
-                except (BrokenPipeError, ConnectionResetError):
-                    pass
-                return
-
-            if len(parts) == 4 and parts[:2] == ["api", "sprints"] and parts[3] == "events":
-                try:
-                    limit = int(query.get("limit", [str(ACTIVITY_EVENT_LIMIT)])[0])
-                except ValueError as exc:
-                    raise DashboardValidationError("Invalid limit") from exc
-                after_event_id = query.get("after", [None])[0]
-                self._send_json(
-                    api.list_sprint_events(
-                        parts[2],
-                        limit=limit,
-                        after_event_id=after_event_id,
-                    )
-                )
-                return
-
-            if len(parts) == 3 and parts[:2] == ["api", "tasks"]:
-                self._send_json(api.get_task(parts[2]))
-                return
-        except DashboardNotFoundError as exc:
-            self._send_error(str(exc), 404)
-            return
-        except DashboardValidationError as exc:
-            self._send_error(str(exc), 400)
-            return
-
-        self._send_error("Not found", 404)
-
-    def do_POST(self) -> None:
-        if self.store is None:
-            self._send_error("Store not configured", 500)
-            return
-
-        parsed = urlparse(self.path)
-        path = parsed.path
-        parts = self._path_parts(path)
-
-        try:
-            api = self._api()
-
-            if len(parts) == 4 and parts[:2] == ["api", "tasks"] and parts[3] == "approve":
-                self._send_json(api.approve_task(parts[2]))
-                return
-
-            if len(parts) == 4 and parts[:2] == ["api", "tasks"] and parts[3] == "deny":
-                note = self._read_json_body().get("note")
-                self._send_json(api.deny_task(parts[2], note=note))
-                return
-
-            if len(parts) == 4 and parts[:2] == ["api", "tasks"] and parts[3] == "messages":
-                data = self._read_json_body()
-                self._send_json(api.create_human_message(parts[2], text=str(data.get("text", ""))))
-                return
-        except DashboardNotFoundError as exc:
-            self._send_error(str(exc), 404)
-            return
-        except DashboardValidationError as exc:
-            self._send_error(str(exc), 400)
-            return
-        except DashboardActionError as exc:
-            self._send_error(str(exc), 500)
-            return
-
-        self._send_error("Not found", 404)
-
-    def log_message(self, format: str, *args: Any) -> None:
-        # Suppress default logging
-        pass
-
-
 def run_dashboard(db_path: str, host: str = "localhost", port: int = 8080) -> None:
-    """Run the dashboard web server.
+    """Run the dashboard web server through the FastAPI backend.
 
     Args:
         db_path: Path to the SQLite database.
         host: Host address to bind to.
         port: Port number to listen on.
     """
-    # Set db_path on handler class so each request can create its own store.
-    DashboardHandler.db_path = db_path
-    DashboardHandler.store = None
+    from .dashboard_backend import create_dashboard_app
 
-    # Pre-initialize store to verify database is accessible
+    try:
+        import uvicorn
+    except ImportError as exc:
+        raise RuntimeError(
+            "Dashboard backend dependencies are missing; install FastAPI and uvicorn."
+        ) from exc
+
     init_store = ForemanStore(db_path)
     init_store.initialize()
     init_store.close()
 
-    server = ThreadingHTTPServer((host, port), DashboardHandler)
     print(f"Foreman dashboard running at http://{host}:{port}/")
     print(f"Database: {db_path}")
     print("Press Ctrl+C to stop.")
-
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        print("\nShutting down...")
-    finally:
-        server.shutdown()
+    uvicorn.run(
+        create_dashboard_app(db_path),
+        host=host,
+        port=port,
+        log_level="warning",
+    )

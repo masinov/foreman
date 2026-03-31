@@ -55,9 +55,12 @@ The integrated pre-release baseline now contains:
   live `watch` across project, sprint, and run scopes,
 - accepted ADRs for runner session and backend contract boundaries
   (`ADR-0001`), dashboard data access (`ADR-0002`), and the product web UI
-  and API boundary (`ADR-0003`),
+  and API boundary (`ADR-0003`), plus the dashboard backend framework
+  (`ADR-0004`),
 - an extracted dashboard backend contract in `foreman/dashboard_api.py` for
   project, sprint, task, action, and streaming payloads,
+- a FastAPI dashboard backend in `foreman/dashboard_backend.py` served by
+  uvicorn,
 - a current legacy dashboard shell in `foreman/dashboard.py` with project
   overview, sprint board, task detail, activity feed, human message input,
   activity filtering, project switching, approve or deny actions wired into
@@ -145,7 +148,7 @@ delivery path, not the desired product architecture.
 The accepted direction is:
 
 - Python backend modules expose JSON and streaming APIs through
-  `foreman/dashboard_api.py`,
+  `foreman/dashboard_api.py` and `foreman/dashboard_backend.py`,
 - a dedicated React frontend owns product UI rendering and state management,
 - mockup alignment remains mandatory for hierarchy and interaction behavior.
 
@@ -177,12 +180,12 @@ Both wrappers expect these files to be current:
 
 ## Next implementation slice
 
-The current sprint is `sprint-22-react-dashboard-foundation`.
+The current sprint is `sprint-23-react-dashboard-foundation`.
 
 The next recommended task is:
 
-- replace the legacy Python-served dashboard shell with a dedicated React
-  frontend that consumes the extracted API and streaming boundary.
+- replace the legacy inline dashboard shell with a dedicated React frontend
+  that consumes the FastAPI backend and extracted dashboard service layer.
 
 That work is recorded in `docs/sprints/current.md`, so a fresh agent can pick
 it up without reconstructing branch history first.
@@ -202,7 +205,7 @@ Current repo-memory validation:
 Current code-level validation also includes:
 
 ```bash
-./venv/bin/pip install -e . --no-build-isolation --no-deps
+./venv/bin/pip install -e . --no-build-isolation
 ./venv/bin/python -m unittest discover -s tests -v
 ./venv/bin/foreman --help
 ./venv/bin/foreman projects

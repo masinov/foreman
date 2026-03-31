@@ -9,6 +9,7 @@
   - `docs/adr/ADR-0001-runner-session-backend-contract.md`
   - `docs/adr/ADR-0002-dashboard-data-access-boundary.md`
   - `docs/adr/ADR-0003-web-ui-api-boundary.md`
+  - `docs/adr/ADR-0004-dashboard-backend-framework.md`
 
 This document records the active architectural baseline for Foreman as it
 exists after reconciling the completed feature branches. It documents the
@@ -43,8 +44,8 @@ The current codebase maps closely onto that split:
 - `foreman/roles.py` and `foreman/workflows.py` own declarative configuration,
 - `foreman/orchestrator.py` owns workflow execution and durable transitions,
 - `foreman/runner/` owns backend-specific transport and event normalization,
-- `foreman/cli.py`, `foreman/dashboard.py`, and `foreman/dashboard_api.py`
-  expose inspection and control surfaces.
+- `foreman/cli.py`, `foreman/dashboard.py`, `foreman/dashboard_api.py`, and
+  `foreman/dashboard_backend.py` expose inspection and control surfaces.
 
 ## Source of truth
 
@@ -121,8 +122,9 @@ The current runtime supports:
 Foreman now exposes two first-class observation surfaces:
 
 - CLI inspection commands: `board`, `history`, `cost`, and live `watch`
-- a dashboard backend contract in `foreman/dashboard_api.py` plus a legacy web
-  shell in `foreman/dashboard.py`
+- a dashboard service contract in `foreman/dashboard_api.py`, a FastAPI
+  transport layer in `foreman/dashboard_backend.py`, and a legacy web shell
+  in `foreman/dashboard.py`
 
 Per ADR-0002, the dashboard currently reads directly from `ForemanStore`
 read-model helpers rather than going through a separate query service or
@@ -136,10 +138,17 @@ Per ADR-0003, the product direction is now:
 - embedding substantial product UI markup inside backend Python modules is
   treated as debt to remove, not as an acceptable steady-state design.
 
+Per ADR-0004, the product backend transport for the dashboard is now:
+
+- FastAPI for routing and HTTP behavior,
+- uvicorn for the runtime server boundary,
+- `dashboard_api.py` as the service layer under those routes.
+
 The current dashboard baseline includes:
 
 - extracted backend responses for project, sprint, task, action, and
   streaming contracts in `foreman/dashboard_api.py`,
+- FastAPI route delivery in `foreman/dashboard_backend.py`,
 - project overview and multi-project switching,
 - sprint board grouped by task status,
 - task detail with run history, acceptance criteria, and step visit counts,
@@ -154,8 +163,8 @@ The current implementation debt in this area is explicit:
 
 - the legacy dashboard HTML, CSS, and browser logic are still embedded into
   one Python module,
-- the backend API is extracted, but the legacy HTTP shell still ships from the
-  same module as the inline markup,
+- the backend transport is now a real FastAPI app, but the legacy shell still
+  ships from the same module as the inline markup,
 - there is no dedicated frontend build, component, or end-to-end test stack.
 
 The current CLI watch baseline now includes:
@@ -207,10 +216,10 @@ The current CLI watch baseline now includes:
   persisted session from SQLite for persistent roles.
 - Codex token usage is persisted accurately, but the current app-server
   contract does not expose USD pricing, so Codex `cost_usd` remains zero.
-- the dashboard live transport currently uses server-sent events over a
-  threaded HTTP server, with store polling inside the transport loop and the
-  extracted `foreman.dashboard_api` contract now acting as the backend
-  boundary for the upcoming React frontend.
+- the dashboard live transport currently uses server-sent events through the
+  FastAPI backend, with store polling inside the stream loop and the
+  extracted `foreman.dashboard_api` contract acting as the service boundary
+  for the upcoming React frontend.
 - `foreman watch` now shares the dashboard's persisted-event cursor boundary
   but stays on a direct store-read loop instead of going through the HTTP SSE
   transport.
@@ -221,7 +230,8 @@ The current CLI watch baseline now includes:
 
 The next slice should replace the legacy dashboard shell:
 
-- introduce the dedicated React frontend on top of the extracted backend API,
+- introduce the dedicated React frontend on top of the FastAPI backend and
+  extracted dashboard service layer,
 - preserve the current dashboard behavior while moving rendering and client
   state out of Python,
 - add frontend-aware validation so the product UI is not judged only through

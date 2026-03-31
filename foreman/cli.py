@@ -923,7 +923,7 @@ def handle_dashboard(args: argparse.Namespace) -> int:
             host=args.host,
             port=args.port,
         )
-    except OSError as exc:
+    except (OSError, RuntimeError) as exc:
         print(f"Failed to start dashboard: {exc}", file=sys.stderr)
         return 1
     return 0

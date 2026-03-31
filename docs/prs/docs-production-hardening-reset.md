@@ -59,5 +59,6 @@
 ## Follow-ups
 
 - implement `sprint-21-dashboard-api-extraction`
-- implement `sprint-22-react-dashboard-foundation`
-- implement `sprint-23-product-surface-hardening`
+- implement `sprint-22-dashboard-backend-foundation`
+- implement `sprint-23-react-dashboard-foundation`
+- implement `sprint-24-product-surface-hardening`

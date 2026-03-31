@@ -350,7 +350,25 @@ Status:
 - the legacy `foreman/dashboard.py` shell now routes through the extracted API
   contract instead of assembling backend responses inline
 
-## Milestone 17: React dashboard foundation
+## Milestone 17: Dashboard backend foundation
+
+Goal: replace the raw stdlib dashboard server with an actual product backend
+foundation.
+
+Target deliverables:
+
+- FastAPI app and uvicorn runtime for the dashboard
+- preserved current JSON and SSE route behavior on the new backend
+- backend tests that hit the ASGI app directly
+
+Status:
+
+- completed on `feat/dashboard-backend-foundation`
+- `foreman/dashboard_backend.py` now owns FastAPI routing and SSE delivery
+- `foreman dashboard` now runs through uvicorn instead of stdlib HTTP server
+- the legacy shell is still present, but it now rides on the real backend
+
+## Milestone 18: React dashboard foundation
 
 Goal: replace the embedded dashboard shell with a dedicated React frontend.
 
@@ -358,13 +376,13 @@ Target deliverables:
 
 - frontend app scaffold and build pipeline
 - initial React implementation of current dashboard surfaces
-- integration with the extracted dashboard API and streaming boundary
+- integration with the FastAPI backend and extracted dashboard service layer
 
 Status:
 
-- current sprint is `sprint-22-react-dashboard-foundation`
+- current sprint is `sprint-23-react-dashboard-foundation`
 
-## Milestone 18: Product surface hardening
+## Milestone 19: Product surface hardening
 
 Goal: remove or finish known placeholder and structurally weak product
 surfaces.
@@ -377,9 +395,9 @@ Target deliverables:
 
 Status:
 
-- planned in `sprint-23-product-surface-hardening`
+- planned in `sprint-24-product-surface-hardening`
 
-## Milestone 19: Migration framework bootstrap
+## Milestone 20: Migration framework bootstrap
 
 Goal: introduce an explicit schema migration path for future SQLite
 evolution.
@@ -392,9 +410,9 @@ Target deliverables:
 
 Status:
 
-- planned in `sprint-24-migration-framework-bootstrap`
+- planned in `sprint-25-migration-framework-bootstrap`
 
-## Milestone 20: History lifecycle expansion
+## Milestone 21: History lifecycle expansion
 
 Goal: extend retention and cleanup beyond `events` after migration support
 exists.
@@ -407,11 +425,11 @@ Target deliverables:
 
 Status:
 
-- planned in `sprint-25-history-lifecycle-expansion`
+- planned in `sprint-26-history-lifecycle-expansion`
 
 ## Near-term priorities
 
-1. extract the dashboard into an explicit Python API boundary
-2. replace the embedded dashboard with a dedicated React frontend
-3. remove or finish known stub and placeholder product surfaces
-4. resume migration work once the product-surface boundary is corrected
+1. replace the embedded dashboard shell with a dedicated React frontend
+2. remove or finish known stub and placeholder product surfaces
+3. resume migration work once the product-surface boundary is corrected
+4. expand lifecycle cleanup after migrations exist

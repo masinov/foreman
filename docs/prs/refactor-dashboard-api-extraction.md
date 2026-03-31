@@ -4,7 +4,8 @@
 
 - extract the dashboard backend contract into a dedicated API module
 - reduce the legacy dashboard handler to an HTTP adapter over that contract
-- roll repo memory forward from API extraction to React dashboard foundation
+- roll repo memory forward from API extraction to the dashboard backend
+  foundation
 
 ## Scope
 
@@ -67,6 +68,7 @@
 
 ## Follow-ups
 
-- implement `sprint-22-react-dashboard-foundation`
+- implement `sprint-22-dashboard-backend-foundation`
+- implement `sprint-23-react-dashboard-foundation`
 - decide whether the sprint SSE loop should stay on direct SQLite polling or
   move to a separate transport mechanism after the React frontend lands

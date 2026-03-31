@@ -43,6 +43,7 @@
 ## Follow-ups moved forward
 
 - `sprint-21-dashboard-api-extraction`
-- `sprint-22-react-dashboard-foundation`
-- `sprint-23-product-surface-hardening`
-- `sprint-24-migration-framework-bootstrap`
+- `sprint-22-dashboard-backend-foundation`
+- `sprint-23-react-dashboard-foundation`
+- `sprint-24-product-surface-hardening`
+- `sprint-25-migration-framework-bootstrap`

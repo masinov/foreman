@@ -34,18 +34,22 @@ known bootstrap-era shortcuts that should not remain in the product.
    Extract dashboard reads, actions, and streaming into explicit backend API
    modules.
 
-2. `sprint-22-react-dashboard-foundation`
-   Build a dedicated React frontend that consumes the extracted API and
-   replaces the embedded Python-served UI.
+2. `sprint-22-dashboard-backend-foundation`
+   Replace the raw stdlib dashboard server with an actual backend framework
+   before starting the frontend rewrite.
 
-3. `sprint-23-product-surface-hardening`
+3. `sprint-23-react-dashboard-foundation`
+   Build a dedicated React frontend that consumes the extracted API and
+   backend foundation and replaces the embedded Python-served UI.
+
+4. `sprint-24-product-surface-hardening`
    Remove stub CLI surfaces, close important mockup and settings gaps, and
    strengthen validation for shipped product surfaces.
 
-4. `sprint-24-migration-framework-bootstrap`
+5. `sprint-25-migration-framework-bootstrap`
    Introduce a versioned migration system for SQLite schema evolution.
 
-5. `sprint-25-history-lifecycle-expansion`
+6. `sprint-26-history-lifecycle-expansion`
    Extend retention and cleanup beyond `events` once migrations exist.
 
 ## Decisions recorded here

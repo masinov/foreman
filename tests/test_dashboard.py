@@ -1,53 +1,23 @@
-"""Tests for the Foreman dashboard web server."""
+"""Tests for the Foreman dashboard backend and legacy shell."""
 
 from __future__ import annotations
 
-import json
+import asyncio
 import unittest
 from datetime import datetime, timezone
-from io import BytesIO
 from pathlib import Path
 import tempfile
-from unittest.mock import MagicMock
 
-from foreman.dashboard import DashboardHandler
+import httpx
+
 from foreman.dashboard_api import DashboardAPI
+from foreman.dashboard_backend import create_dashboard_app
 from foreman.models import Event, Project, Run, Sprint, Task
 from foreman.store import ForemanStore
 
 
-class MockRequest:
-    """Mock HTTP request for testing handler methods."""
-
-    def __init__(self, path: str, method: str = "GET"):
-        self.path = path
-        self.method = method
-        self.request_version = "HTTP/1.1"
-        self.headers = {}
-        self.rfile = BytesIO()
-        self.wfile = BytesIO()
-        self._response_code = None
-        self._response_headers = {}
-        self._response_body = b""
-
-    def makefile(self):
-        return BytesIO()
-
-    def send_response(self, code: int, message: str = "") -> None:
-        self._response_code = code
-
-    def send_header(self, key: str, value: str) -> None:
-        self._response_headers[key] = value
-
-    def end_headers(self) -> None:
-        pass
-
-    def wfile_write(self, data: bytes) -> None:
-        self._response_body += data
-
-
-class DashboardHandlerTests(unittest.TestCase):
-    """Test the extracted dashboard API contract and HTML shell."""
+class DashboardBackendTests(unittest.TestCase):
+    """Test the extracted dashboard API, FastAPI backend, and legacy shell."""
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -201,29 +171,25 @@ class DashboardHandlerTests(unittest.TestCase):
                 tzinfo=timezone.utc,
             ),
         )
+        cls.app = create_dashboard_app(str(cls.db_path))
 
     @classmethod
     def tearDownClass(cls) -> None:
         cls.store.close()
         cls.temp_dir.cleanup()
 
-    def create_handler(self, path: str = "/") -> DashboardHandler:
-        """Create a handler with mock request setup."""
+    def request(self, method: str, url: str, **kwargs):
+        """Send one request to the ASGI app without a live network server."""
 
-        handler = DashboardHandler.__new__(DashboardHandler)
-        handler.store = self.store
-        handler.path = path
-        handler.request_version = "HTTP/1.1"
-        handler.command = "GET"
-        handler.rfile = BytesIO()
-        handler.wfile = BytesIO()
-        handler._response_code = None
-        handler._response_headers = {}
-        handler._response_body = b""
-        handler._headers_buffer = []
-        handler._headers_sent = False
-        handler._wbuffer = []
-        return handler
+        async def send():
+            transport = httpx.ASGITransport(app=self.app)
+            async with httpx.AsyncClient(
+                transport=transport,
+                base_url="http://testserver",
+            ) as client:
+                return await client.request(method, url, **kwargs)
+
+        return asyncio.run(send())
 
     def test_project_status_detection(self):
         """Project status is derived from task states."""
@@ -327,6 +293,32 @@ class DashboardHandlerTests(unittest.TestCase):
         self.assertIn("Projects", DASHBOARD_HTML)
         self.assertIn("api/projects", DASHBOARD_HTML)
 
+    def test_fastapi_dashboard_shell_route_returns_html(self):
+        """FastAPI serves the current legacy dashboard shell."""
+        response = self.request("GET", "/dashboard")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("text/html", response.headers["content-type"])
+        self.assertIn("Foreman Dashboard", response.text)
+
+    def test_fastapi_projects_endpoint_returns_json(self):
+        """FastAPI serves the project list over HTTP."""
+        response = self.request("GET", "/api/projects")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("application/json", response.headers["content-type"])
+        data = response.json()
+        project = next(item for item in data["projects"] if item["id"] == "proj-1")
+        self.assertEqual(project["name"], "Test Project")
+        self.assertEqual(project["status"], "running")
+
+    def test_fastapi_task_detail_endpoint_returns_json(self):
+        """FastAPI serves task detail over HTTP."""
+        response = self.request("GET", "/api/tasks/task-2")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["title"], "In progress task")
+        self.assertEqual(data["assigned_role"], "developer")
+        self.assertEqual(len(data["runs"]), 1)
+
     def test_api_task_detail(self):
         """API returns task details with runs."""
         task = self.api.get_task("task-2")
@@ -400,7 +392,7 @@ class DashboardHandlerTests(unittest.TestCase):
 
 
 class DashboardApproveDenyIntegrationTests(unittest.TestCase):
-    """Integration tests for dashboard action endpoints and orchestrator wiring."""
+    """Integration tests for dashboard FastAPI endpoints and orchestrator wiring."""
 
     @classmethod
     def setUpClass(cls):
@@ -411,8 +403,21 @@ class DashboardApproveDenyIntegrationTests(unittest.TestCase):
     def tearDownClass(cls):
         cls.temp_dir.cleanup()
 
+    def request(self, method: str, url: str, **kwargs):
+        """Send one request to a fresh app bound to the test database."""
+
+        async def send():
+            transport = httpx.ASGITransport(app=create_dashboard_app(str(self.db_path)))
+            async with httpx.AsyncClient(
+                transport=transport,
+                base_url="http://testserver",
+            ) as client:
+                return await client.request(method, url, **kwargs)
+
+        return asyncio.run(send())
+
     def test_approve_action_calls_resume_human_gate(self):
-        """Approve action delegates through the extracted dashboard API."""
+        """Approve endpoint resumes the human gate through FastAPI."""
         store = ForemanStore(self.db_path)
         store.initialize()
 
@@ -449,20 +454,25 @@ class DashboardApproveDenyIntegrationTests(unittest.TestCase):
         self.assertEqual(task.status, "blocked")
         self.assertEqual(task.workflow_current_step, "human_approval")
 
-        api = DashboardAPI(store)
-        result = api.approve_task(task.id)
-        updated_task = store.get_task(task.id)
+        store.close()
 
+        response = self.request("POST", f"/api/tasks/{task.id}/approve")
+        updated_store = ForemanStore(self.db_path)
+        updated_store.initialize()
+        updated_task = updated_store.get_task(task.id)
+
+        self.assertEqual(response.status_code, 200)
+        result = response.json()
         self.assertIsNotNone(updated_task)
         self.assertEqual(updated_task.status, "in_progress")
         self.assertEqual(result["status"], "approved")
         self.assertEqual(result["next_step"], "develop")
         self.assertTrue(result["deferred"])  # No native runner available
 
-        store.close()
+        updated_store.close()
 
     def test_deny_action_calls_resume_human_gate(self):
-        """Deny action delegates through the extracted dashboard API."""
+        """Deny endpoint resumes the human gate through FastAPI."""
         store = ForemanStore(self.db_path)
         store.initialize()
 
@@ -499,14 +509,91 @@ class DashboardApproveDenyIntegrationTests(unittest.TestCase):
         self.assertEqual(task.status, "blocked")
         self.assertEqual(task.workflow_current_step, "human_approval")
 
-        api = DashboardAPI(store)
-        result = api.deny_task(task.id, note="Needs more work")
-        updated_task = store.get_task(task.id)
+        store.close()
 
+        response = self.request(
+            "POST",
+            f"/api/tasks/{task.id}/deny",
+            json={"note": "Needs more work"},
+        )
+        updated_store = ForemanStore(self.db_path)
+        updated_store.initialize()
+        updated_task = updated_store.get_task(task.id)
+
+        self.assertEqual(response.status_code, 200)
+        result = response.json()
         self.assertIsNotNone(updated_task)
         self.assertEqual(updated_task.status, "in_progress")
         self.assertEqual(result["status"], "denied")
         self.assertEqual(result["next_step"], "plan")  # Deny goes back to plan
         self.assertTrue(result["deferred"])  # No native runner available
 
+        updated_store.close()
+
+    def test_message_endpoint_persists_human_message(self):
+        """Human message endpoint stores one event through FastAPI."""
+        store = ForemanStore(self.db_path)
+        store.initialize()
+
+        project = Project(
+            id="proj-message-test",
+            name="Test Project",
+            repo_path="/tmp/test-project",
+            workflow_id="development",
+        )
+        store.save_project(project)
+
+        sprint = Sprint(
+            id="sprint-message-test",
+            project_id=project.id,
+            title="Test Sprint",
+            status="active",
+        )
+        store.save_sprint(sprint)
+
+        task = Task(
+            id="task-message-test",
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="Task for human guidance",
+            status="in_progress",
+            task_type="feature",
+        )
+        store.save_task(task)
+
+        run = Run(
+            id="run-message-test",
+            task_id=task.id,
+            project_id=project.id,
+            role_id="developer",
+            workflow_step="develop",
+            agent_backend="claude",
+            status="running",
+        )
+        store.save_run(run)
         store.close()
+
+        response = self.request(
+            "POST",
+            f"/api/tasks/{task.id}/messages",
+            json={"text": "Please handle the edge case."},
+        )
+
+        updated_store = ForemanStore(self.db_path)
+        updated_store.initialize()
+        events = updated_store.list_events(task_id=task.id)
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "sent")
+        self.assertEqual(payload["task_id"], task.id)
+        self.assertTrue(any(event.event_type == "human.message" for event in events))
+        self.assertTrue(
+            any(
+                event.event_type == "human.message"
+                and event.payload.get("text") == "Please handle the edge case."
+                for event in events
+            )
+        )
+
+        updated_store.close()

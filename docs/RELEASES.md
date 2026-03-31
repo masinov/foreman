@@ -44,13 +44,16 @@ The first dashboard implementation checkpoint is recorded in
 The first extracted dashboard API boundary checkpoint is recorded in
 `docs/checkpoints/dashboard-api-boundary.md`.
 
+The first dashboard backend foundation checkpoint is recorded in
+`docs/checkpoints/dashboard-backend-foundation.md`.
+
 The production-hardening reset checkpoint is recorded in
 `docs/checkpoints/production-hardening-audit.md`.
 
 ## Near-term policy
 
-While dashboard API extraction, React dashboard foundation, product-surface
-hardening, and migration bootstrap are still incomplete:
+While React dashboard foundation, product-surface hardening, and migration
+bootstrap are still incomplete:
 
 - use tags only for meaningful checkpoints,
 - prefer sprint-completion checkpoints over frequent versioning,
@@ -70,6 +73,7 @@ hardening, and migration bootstrap are still incomplete:
 - first accepted runner contract ADR
 - first dashboard implementation milestone
 - first extracted dashboard API boundary
+- first real dashboard backend foundation
 - first dedicated frontend milestone
 
 ## Before creating a release tag
