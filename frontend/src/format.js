@@ -99,7 +99,7 @@ export function getEventCategory(eventType) {
   if (eventType.startsWith("agent.file")) {
     return "file";
   }
-  if (eventType === "human.message") {
+  if (eventType.startsWith("human.")) {
     return "human";
   }
   if (eventType.startsWith("workflow.") || eventType.startsWith("engine.")) {
@@ -134,6 +134,10 @@ export function formatEventSummary(event) {
   }
   if (event.event_type === "human.message") {
     return String(payload.text || "(no message text)");
+  }
+  if (event.event_type === "human.task_edited") {
+    const fields = payload.changed_fields ? Object.keys(payload.changed_fields).join(", ") : "fields";
+    return `Task edited: ${fields}`;
   }
   if (event.event_type === "workflow.resumed") {
     const details = [];

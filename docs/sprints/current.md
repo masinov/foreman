@@ -1,44 +1,33 @@
 # Current Sprint
 
-- Sprint: `sprint-33-tier2-gaps`
+- Sprint: `sprint-34-task-edit-enforcement`
 - Status: done
-- Goal: close the three Tier 2 product gaps — workflow step visibility, project
-  creation from dashboard, and `foreman run` integration via dashboard Run button
-- Branch: `feat/sprint-33-tier2-gaps`
+- Goal: close the Tier 3 task-editing enforcement gap — emit `human.task_edited`
+  events when in-progress or blocked tasks are edited from the dashboard
+- Branch: `feat/sprint-34-task-edit-enforcement`
 - Primary references:
   - `foreman/dashboard_service.py`
-  - `foreman/dashboard_backend.py`
-  - `frontend/src/App.jsx`
-  - `frontend/src/components.jsx`
-  - `frontend/src/api.js`
-  - `frontend/src/styles.css`
+  - `frontend/src/format.js`
   - `tests/test_dashboard.py`
 
 ## Included tasks
 
-1. `[done]` Workflow step visibility
-   Deliverable: `workflow_current_step` added to `list_sprint_tasks()` response.
-   `TaskCard` shows a `card-step` badge (accent colour) for in-progress tasks.
-   `TaskDetailDrawer` Details section shows current step field.
+1. `[done]` Task editing enforcement
+   Deliverable: `update_task_fields()` tracks actually-changed fields; for
+   `in_progress` and `blocked` tasks with at least one real change, emits a
+   `human.task_edited` event with `changed_fields` payload. Synthetic run
+   created if task has no run history. `todo`/`done`/`cancelled` edits remain
+   silent. Frontend `getEventCategory` broadened to `human.*` prefix so all
+   human events appear under the "Human" filter.
 
-2. `[done]` Project creation from dashboard
-   Deliverable: `POST /api/projects` endpoint + `create_project()` service method.
-   `NewProjectModal` in dashboard overview with name, repo_path, workflow selector,
-   and a hint that `foreman init` handles file scaffolding. Navigates to the new
-   project after creation. Duplicate-slug guard appends numeric suffix.
-
-3. `[done]` `foreman run` dashboard integration
-   Deliverable: `POST /api/projects/{id}/agent/start` endpoint + `start_agent()`
-   service method. Spawns `foreman run` subprocess using venv-local `foreman` CLI.
-   Background thread cleans up proc tracking when process exits. Prevents
-   double-starts. Sprint header shows ▶ Run button when project is idle and
-   ■ Stop agent when running.
-
-4. `[done]` 9 new tests in `DashboardTier2Tests`
+2. `[done]` 6 new tests in `DashboardTaskEditEventTests`
 
 ## Acceptance criteria
 
-- `GET /api/sprints/{id}/tasks` returns `workflow_current_step` on each task
-- `POST /api/projects` with name+repo_path creates a project record; empty name/path → 400
-- `POST /api/projects/{id}/agent/start` returns `{started: true}` for known project; 404 for unknown
-- 72 non-E2E tests pass; 20 E2E tests pass
+- PATCH in-progress task title → `human.task_edited` event with `title` in
+  `changed_fields`
+- PATCH blocked task criteria → `human.task_edited` event with
+  `acceptance_criteria` in `changed_fields`
+- PATCH todo task → no event emitted
+- PATCH with no actual change → no event emitted
+- 78 dashboard tests pass; 20 E2E tests pass

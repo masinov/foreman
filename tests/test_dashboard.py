@@ -1699,3 +1699,128 @@ class DashboardTier2Tests(unittest.TestCase):
         data = response.json()
         self.assertTrue(data["started"])
         self.assertEqual(data["project_id"], project.id)
+
+
+class DashboardTaskEditEventTests(unittest.TestCase):
+    """Tests for sprint-34: human.task_edited event emission on active/blocked task edits."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.temp_dir = tempfile.TemporaryDirectory()
+        cls.db_path = Path(cls.temp_dir.name) / "foreman.db"
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.temp_dir.cleanup()
+
+    _counter = 0
+
+    def _next_id(self, prefix):
+        DashboardTaskEditEventTests._counter += 1
+        return f"{prefix}-{DashboardTaskEditEventTests._counter}"
+
+    def _request(self, method, url, **kwargs):
+        async def send():
+            app = create_dashboard_app(str(self.db_path))
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(
+                transport=transport,
+                base_url="http://testserver",
+            ) as client:
+                return await client.request(method, url, **kwargs)
+        return asyncio.run(send())
+
+    def _seed_task(self, status):
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        project = Project(
+            id=self._next_id("proj-tee"),
+            name="Edit Event Project",
+            repo_path="/tmp/tee",
+            workflow_id="development",
+        )
+        store.save_project(project)
+        sprint = Sprint(
+            id=self._next_id("sprint-tee"),
+            project_id=project.id,
+            title="Edit Event Sprint",
+            status="active",
+        )
+        store.save_sprint(sprint)
+        task = Task(
+            id=self._next_id("task-tee"),
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="Original title",
+            status=status,
+            task_type="feature",
+            acceptance_criteria="Original criteria",
+        )
+        store.save_task(task)
+        store.close()
+        return project, sprint, task
+
+    def _get_events(self, sprint_id):
+        response = self._request("GET", f"/api/sprints/{sprint_id}/events")
+        return response.json()["events"]
+
+    # ── Event emitted for active/blocked tasks ────────────────────────────────
+
+    def test_edit_inprogress_task_emits_event(self):
+        """Editing an in_progress task emits a human.task_edited event."""
+        _, sprint, task = self._seed_task("in_progress")
+        self._request("PATCH", f"/api/tasks/{task.id}", json={"title": "Updated title"})
+        events = self._get_events(sprint.id)
+        edit_events = [e for e in events if e["event_type"] == "human.task_edited"]
+        self.assertEqual(len(edit_events), 1)
+        self.assertIn("title", edit_events[0]["payload"]["changed_fields"])
+
+    def test_edit_blocked_task_emits_event(self):
+        """Editing a blocked task emits a human.task_edited event."""
+        _, sprint, task = self._seed_task("blocked")
+        self._request("PATCH", f"/api/tasks/{task.id}", json={"acceptance_criteria": "New criteria"})
+        events = self._get_events(sprint.id)
+        edit_events = [e for e in events if e["event_type"] == "human.task_edited"]
+        self.assertEqual(len(edit_events), 1)
+        self.assertIn("acceptance_criteria", edit_events[0]["payload"]["changed_fields"])
+
+    def test_edit_todo_task_does_not_emit_event(self):
+        """Editing a todo task does not emit any event."""
+        _, sprint, task = self._seed_task("todo")
+        self._request("PATCH", f"/api/tasks/{task.id}", json={"title": "New title"})
+        events = self._get_events(sprint.id)
+        edit_events = [e for e in events if e["event_type"] == "human.task_edited"]
+        self.assertEqual(len(edit_events), 0)
+
+    def test_edit_done_task_does_not_emit_event(self):
+        """Editing a done task does not emit any event."""
+        _, sprint, task = self._seed_task("done")
+        self._request("PATCH", f"/api/tasks/{task.id}", json={"title": "New title"})
+        events = self._get_events(sprint.id)
+        edit_events = [e for e in events if e["event_type"] == "human.task_edited"]
+        self.assertEqual(len(edit_events), 0)
+
+    def test_no_change_does_not_emit_event(self):
+        """Patching a task with its existing values does not emit an event."""
+        _, sprint, task = self._seed_task("in_progress")
+        # Patch with the same title — no change
+        self._request("PATCH", f"/api/tasks/{task.id}", json={"title": "Original title"})
+        events = self._get_events(sprint.id)
+        edit_events = [e for e in events if e["event_type"] == "human.task_edited"]
+        self.assertEqual(len(edit_events), 0)
+
+    def test_event_payload_lists_all_changed_fields(self):
+        """human.task_edited payload enumerates every changed field."""
+        _, sprint, task = self._seed_task("blocked")
+        self._request(
+            "PATCH",
+            f"/api/tasks/{task.id}",
+            json={"title": "Changed", "task_type": "fix", "priority": 3},
+        )
+        events = self._get_events(sprint.id)
+        edit_events = [e for e in events if e["event_type"] == "human.task_edited"]
+        self.assertEqual(len(edit_events), 1)
+        changed = edit_events[0]["payload"]["changed_fields"]
+        self.assertIn("title", changed)
+        self.assertIn("task_type", changed)
+        self.assertIn("priority", changed)

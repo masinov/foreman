@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from .models import Event, Project, Sprint, SprintStatus, Task
+from .models import Event, Project, Run, Sprint, SprintStatus, Task
 from .orchestrator import ForemanOrchestrator, OrchestratorError
 from .scaffold import generate_project_id
 from .store import ForemanStore
@@ -567,7 +567,12 @@ class DashboardService:
         }
 
     def update_task_fields(self, task_id: str, *, updates: dict[str, Any]) -> dict[str, Any]:
-        """Apply allowed field updates to one task and return its detail payload."""
+        """Apply allowed field updates to one task and return its detail payload.
+
+        Emits a ``human.task_edited`` event when the task is in-progress or
+        blocked so the change is visible in the activity stream and the agent
+        can account for it on its next run.
+        """
 
         from .models import TASK_TYPES
 
@@ -577,10 +582,14 @@ class DashboardService:
         if unknown:
             raise DashboardValidationError(f"Unknown task fields: {sorted(unknown)}")
 
+        changed: dict[str, Any] = {}
+
         if "title" in updates:
             value = str(updates["title"]).strip()
             if not value:
                 raise DashboardValidationError("Task title cannot be empty.")
+            if value != task.title:
+                changed["title"] = value
             task.title = value
         if "task_type" in updates:
             value = str(updates["task_type"])
@@ -588,20 +597,66 @@ class DashboardService:
                 raise DashboardValidationError(
                     f"Unsupported task type: {value}. Expected one of: {', '.join(TASK_TYPES)}."
                 )
+            if value != task.task_type:
+                changed["task_type"] = value
             task.task_type = value  # type: ignore[assignment]
         if "acceptance_criteria" in updates:
             value = updates["acceptance_criteria"]
-            task.acceptance_criteria = str(value).strip() if value else None
+            normalised = str(value).strip() if value else None
+            if normalised != task.acceptance_criteria:
+                changed["acceptance_criteria"] = normalised
+            task.acceptance_criteria = normalised
         if "description" in updates:
             value = updates["description"]
-            task.description = str(value).strip() if value is not None else None
+            normalised = str(value).strip() if value is not None else None
+            if normalised != task.description:
+                changed["description"] = normalised
+            task.description = normalised
         if "priority" in updates:
             try:
-                task.priority = int(updates["priority"])
+                int_value = int(updates["priority"])
             except (TypeError, ValueError) as exc:
                 raise DashboardValidationError("Priority must be an integer.") from exc
+            if int_value != task.priority:
+                changed["priority"] = int_value
+            task.priority = int_value
 
         self.store.save_task(task)
+
+        if changed and task.status in {"in_progress", "blocked"}:
+            now = self._now()
+            now_text = now.isoformat()
+            runs = self.store.list_runs(task_id=task_id)
+            if runs:
+                run_id = runs[0].id
+            else:
+                synthetic_run = Run(
+                    id=f"run-edit-{now.strftime('%Y%m%d%H%M%S%f')}-{task_id[:8]}",
+                    task_id=task_id,
+                    project_id=task.project_id,
+                    role_id="human",
+                    workflow_step="edit",
+                    agent_backend="dashboard",
+                    status="completed",
+                    outcome="edit",
+                    started_at=now_text,
+                    completed_at=now_text,
+                    created_at=now_text,
+                )
+                self.store.save_run(synthetic_run)
+                run_id = synthetic_run.id
+            event = Event(
+                id=f"evt-{now.strftime('%Y%m%d%H%M%S%f')}-edit-{task_id[:8]}",
+                run_id=run_id,
+                task_id=task_id,
+                project_id=task.project_id,
+                event_type="human.task_edited",
+                timestamp=now_text,
+                role_id="human",
+                payload={"changed_fields": changed},
+            )
+            self.store.save_event(event)
+
         return self.get_task(task_id)
 
     def update_sprint_fields(self, sprint_id: str, *, updates: dict[str, Any]) -> dict[str, Any]:
