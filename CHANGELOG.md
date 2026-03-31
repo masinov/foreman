@@ -127,3 +127,14 @@ memory changes rather than versioned product releases.
 - added 15 integration tests covering settings read/update validation, sprint
   creation, and task creation through both the service layer and FastAPI
   transport
+- introduced an explicit schema migration framework in `foreman/migrations.py`
+  and `foreman/store.py`: version-tracked migrations replace the old bootstrap
+  DDL, `initialize()` now upgrades existing databases to the latest schema
+  version automatically
+- added `docs/adr/ADR-0005-schema-migration-strategy.md` documenting the
+  append-only migration list, `schema_migrations` tracking table, and
+  `ForemanStore.migrate()` / `schema_version()` API
+- added `tests/test_migrations.py` with 17 tests covering migration list
+  integrity, fresh install, idempotency on both in-memory and file databases,
+  incremental upgrade from a partially-migrated store, and schema version
+  accuracy

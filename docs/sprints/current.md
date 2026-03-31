@@ -1,59 +1,57 @@
 # Current Sprint
 
-- Sprint: `sprint-24-product-surface-hardening`
-- Status: active
-- Goal: remove or finish placeholder product surfaces and strengthen product
-  validation now that the dedicated dashboard frontend is in place
+- Sprint: `sprint-25-migration-framework-bootstrap`
+- Status: done
+- Goal: introduce an explicit schema migration path for store evolution and
+  retention-safe upgrades
 - Primary references:
   - `docs/specs/engine-design-v3.md`
-  - `docs/mockups/foreman-mockup-v6.html`
   - `docs/STATUS.md`
-  - `docs/ARCHITECTURE.md`
-  - `docs/ROADMAP.md`
-  - `foreman/cli.py`
-  - `foreman/dashboard_runtime.py`
-  - `foreman/dashboard_service.py`
-  - `foreman/dashboard_backend.py`
-  - `frontend/src/App.jsx`
-  - `frontend/vite.config.js`
-  - `scripts/dashboard_dev.py`
-  - `tests/test_cli.py`
-  - `tests/test_dashboard.py`
+  - `foreman/store.py`
+  - `foreman/migrations.py`
+  - `tests/test_migrations.py`
 
 ## Included tasks
 
-1. `[done]` Remove or implement the remaining stub CLI product surfaces
-   Deliverable: user-facing commands no longer fall through the generic
-   placeholder handler where real product behavior is expected.
+1. `[done]` Introduce `foreman/migrations.py` with an ordered
+   `MIGRATIONS` list that owns the full schema history.
+   Deliverable: baseline schema expressed as migration 1; list enforces
+   consecutive versions starting at 1.
 
-2. `[done]` Close the most visible product-surface gaps after the dashboard
-   frontend cutover
-   Deliverable: the shipped dashboard now has a settings panel, sprint
-   creation, and task creation backed by real FastAPI endpoints.
+2. `[done]` Replace bootstrap DDL in `store.py` with a migration runner.
+   Deliverable: `ForemanStore.initialize()` creates the `schema_migrations`
+   tracking table then calls `migrate()`; `migrate()` applies any unapplied
+   migrations in order and records each in `schema_migrations`; calling either
+   method on an already-up-to-date database is a no-op.
 
-3. `[done]` Strengthen product-surface validation
-   Deliverable: 15 new integration tests cover settings read/update, sprint
-   creation, and task creation through both the service layer and FastAPI
-   transport.
+3. `[done]` Add `ForemanStore.schema_version()`.
+   Deliverable: returns the highest applied migration version, or 0 for a
+   database that has never been migrated.
 
-4. `[done]` Clarify the dashboard runtime split and local development workflow
-   Deliverable: runtime, service, and backend module roles are explicit and
-   the React frontend can run in Vite dev mode against the FastAPI backend
-   without relying on built assets.
+4. `[done]` Add `tests/test_migrations.py` with full migration framework coverage.
+   Deliverable: 17 tests covering list integrity, fresh install, idempotency on
+   in-memory and file databases, incremental upgrade from a partially-migrated
+   store, and schema version accuracy.
+
+5. `[done]` Write `docs/adr/ADR-0005-schema-migration-strategy.md`.
+   Deliverable: accepted ADR documents the append-only list, tracking table,
+   and the zero-external-dependency design decision.
 
 ## Excluded from this sprint
 
-- schema migration framework work
+- actual new columns or table changes (those land in sprint-26 on top of this
+  framework)
 - retention expansion beyond `events`
 - autonomous task-selection mode
 - authentication and multi-user concerns
 
 ## Acceptance criteria
 
-- user-facing commands listed in the shipped CLI surface no longer depend on a
-  generic stub fallback unless they fail explicitly as an intentional product
-  boundary
-- the dashboard and adjacent product seams no longer expose the most visible
-  half-implemented flows left over from the bootstrap phase
-- automated validation covers the hardened product paths beyond isolated API
-  and component checks
+- `ForemanStore.initialize()` on a fresh database produces a schema that is
+  functionally identical to the old bootstrap DDL path
+- calling `initialize()` or `migrate()` multiple times on the same database is
+  a no-op with no duplicate rows or errors
+- `schema_version()` returns the correct highest-applied version
+- all 168 tests pass (16 new migration tests, existing 152 unchanged)
+- `test_partial_db_upgraded_to_latest` activates automatically when a second
+  migration is added in sprint-26
