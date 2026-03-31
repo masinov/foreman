@@ -238,7 +238,6 @@ The current CLI watch baseline now includes:
 
 ## Next architectural slice
 
-The next slice should focus on operator tooling:
-
-- add a `foreman db migrate` CLI surface for operators to inspect schema
-  version and apply pending migrations explicitly.
+No outstanding architectural gaps in the current baseline.  The next slice
+should be driven by spec coverage gaps (e.g. remaining orchestrator modes) or
+operator-facing tooling needs identified from real usage.

@@ -481,7 +481,29 @@ Status:
   autonomous projects; resumes in-progress tasks first, then creates placeholder
   tasks up to the per-sprint limit
 
+## Milestone 23: `foreman db` CLI surface
+
+Goal: expose schema version inspection and explicit migration application
+through the CLI so operators can manage database schema without calling Python
+directly.
+
+Target deliverables:
+
+- `foreman db version` — report current schema version; warn when
+  `schema_migrations` table is absent
+- `foreman db migrate` — apply pending migrations, report each by version and
+  description; confirm when already up to date
+- `ForemanStore.initialize()` returns `list[int]` of applied versions
+- 7 new tests in `DbCommandTests`
+
+Status:
+
+- completed on `feat/db-migrate-cli`
+- `foreman db version` and `foreman db migrate` are now shipped CLI surfaces
+- the `--db` discovery chain applies to both, consistent with all other
+  database-backed commands
+
 ## Near-term priorities
 
-1. add `foreman db migrate` CLI surface for schema inspection and explicit
-   migration application
+- no prioritised backlog items; define next slice from spec gaps or operator
+  feedback

@@ -162,3 +162,9 @@ memory changes rather than versioned product releases.
 - added 8 tests in `AutonomousTaskSelectionTests` covering placeholder creation,
   in-progress resume, no-sprint, limit enforcement, human-task exclusion,
   directed-mode unchanged, and unknown-mode error
+- added `foreman db version` — shows current schema version; handles missing
+  `schema_migrations` table on pre-migration-framework databases
+- added `foreman db migrate` — applies pending schema migrations via
+  `store.initialize()` and reports each applied version with description
+- changed `ForemanStore.initialize()` to return `list[int]` (backward-compatible)
+- added 7 tests in `DbCommandTests`

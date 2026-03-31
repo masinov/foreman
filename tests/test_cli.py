@@ -1422,5 +1422,82 @@ class ForemanCLISmokeTests(unittest.TestCase):
         self.assertEqual(refreshed.workflow_current_step, "plan")
         self.assertEqual(refreshed.workflow_carried_output, "rethink the approach")
 
+class DbCommandTests(unittest.TestCase):
+    """Tests for ``foreman db version`` and ``foreman db migrate``."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.db_path = Path(self._tmp.name) / "foreman.db"
+
+    def run_cli(self, *args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [str(FOREMAN), *args],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    # ------------------------------------------------------------------
+    # db migrate
+    # ------------------------------------------------------------------
+
+    def test_db_migrate_applies_all_migrations_on_fresh_database(self) -> None:
+        result = self.run_cli("db", "migrate", "--db", str(self.db_path))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Applied", result.stdout)
+        self.assertIn("[1]", result.stdout)
+        self.assertIn("[2]", result.stdout)
+
+    def test_db_migrate_reports_up_to_date_when_already_applied(self) -> None:
+        self.run_cli("db", "migrate", "--db", str(self.db_path))
+        result = self.run_cli("db", "migrate", "--db", str(self.db_path))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("already up to date", result.stdout)
+
+    def test_db_migrate_is_idempotent(self) -> None:
+        for _ in range(3):
+            result = self.run_cli("db", "migrate", "--db", str(self.db_path))
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_db_migrate_persists_schema_version(self) -> None:
+        self.run_cli("db", "migrate", "--db", str(self.db_path))
+        with ForemanStore(str(self.db_path)) as store:
+            version = store.schema_version()
+        self.assertGreater(version, 0)
+
+    # ------------------------------------------------------------------
+    # db version
+    # ------------------------------------------------------------------
+
+    def test_db_version_shows_version_after_migration(self) -> None:
+        self.run_cli("db", "migrate", "--db", str(self.db_path))
+        result = self.run_cli("db", "version", "--db", str(self.db_path))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Schema version:", result.stdout)
+        self.assertIn("up to date", result.stdout)
+
+    def test_db_version_on_uninitialised_database_returns_zero(self) -> None:
+        import sqlite3 as _sqlite3
+        conn = _sqlite3.connect(str(self.db_path))
+        conn.execute("CREATE TABLE stub (id INTEGER)")
+        conn.close()
+
+        result = self.run_cli("db", "version", "--db", str(self.db_path))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("0", result.stdout)
+        self.assertIn("foreman db migrate", result.stdout)
+
+    # ------------------------------------------------------------------
+    # help
+    # ------------------------------------------------------------------
+
+    def test_db_help_lists_subcommands(self) -> None:
+        result = self.run_cli("db", "--help")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("version", result.stdout)
+        self.assertIn("migrate", result.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -166,12 +166,16 @@ class ForemanStore:
 
         self._connection.close()
 
-    def initialize(self) -> None:
-        """Create or upgrade the schema to the latest migration version."""
+    def initialize(self) -> list[int]:
+        """Create or upgrade the schema to the latest migration version.
+
+        Returns the list of migration version numbers applied in this call.
+        An already up-to-date database returns an empty list.
+        """
 
         with self._connection:
             self._connection.executescript(_SCHEMA_MIGRATIONS_DDL)
-        self.migrate()
+        return self.migrate()
 
     def schema_version(self) -> int:
         """Return the highest migration version applied to this database, or 0."""

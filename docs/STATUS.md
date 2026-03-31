@@ -2,10 +2,10 @@
 
 ## Current sprint
 
-- Sprint: `sprint-28-autonomous-task-selection`
+- Sprint: `sprint-29-db-migrate-cli`
 - Status: done
-- Goal: implement `task_selection_mode="autonomous"` in the orchestrator so the
-  engine can create and execute tasks without human task assignment
+- Goal: add `foreman db migrate` and `foreman db version` CLI surfaces for
+  operators to inspect schema version and apply pending migrations explicitly
 
 ## Active branches
 
@@ -152,6 +152,15 @@
   task"`) is persisted to SQLite; the agent populates it via the existing
   `signal.task_started` handler
 - 8 new tests in `AutonomousTaskSelectionTests`; 204 non-E2E tests pass total
+- completed `sprint-29-db-migrate-cli`
+- added `foreman db version` — reports current schema version; warns when
+  `schema_migrations` table is absent (pre-migration-framework databases)
+- added `foreman db migrate` — calls `store.initialize()` (idempotent); reports
+  each applied migration with version number and description, or confirms the
+  schema is already up to date
+- changed `ForemanStore.initialize()` to return `list[int]` (applied migration
+  versions); backward-compatible since callers ignored the prior `None` return
+- 7 new tests in `DbCommandTests`; 203 non-E2E tests pass total
 
 ## Current repo state
 
@@ -210,8 +219,8 @@
 
 ## Ready next
 
-1. add `foreman db migrate` CLI surface for operators to inspect schema version
-   and apply pending migrations explicitly
+- no prioritised backlog items; define next slice from spec gaps or operator
+  feedback
 
 ## Open risks
 

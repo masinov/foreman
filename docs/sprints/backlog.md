@@ -2,8 +2,7 @@
 
 ## Next up after current sprint
 
-- `foreman db migrate` CLI surface for operators to inspect schema version and
-  apply pending migrations explicitly
+- no prioritised backlog items remaining; pull from parking lot or define next slice
 
 ## Parking lot
 

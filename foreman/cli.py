@@ -6,11 +6,13 @@ import argparse
 from dataclasses import dataclass
 import json
 from pathlib import Path
+import sqlite3
 import sys
 import time
 from typing import Any, Callable, Sequence
 
 from . import __version__
+from .migrations import MIGRATIONS
 from .dashboard_runtime import (
     DEFAULT_FRONTEND_DEV_URL,
     STREAM_POLL_INTERVAL_SECONDS,
@@ -1520,6 +1522,53 @@ def handle_config(args: argparse.Namespace) -> int:
     return 0
 
 
+def handle_db_version(args: argparse.Namespace) -> int:
+    """Handle ``foreman db version``."""
+
+    db_path = _resolve_db_path_or_print(args.db)
+    if db_path is None:
+        return 1
+
+    with ForemanStore(db_path) as store:
+        try:
+            version = store.schema_version()
+        except sqlite3.OperationalError:
+            print(
+                "Schema version: 0 "
+                "(schema_migrations table not present — run `foreman db migrate`)"
+            )
+            return 0
+
+    latest = max((v for v, _, _ in MIGRATIONS), default=0)
+    if version == latest:
+        print(f"Schema version: {version} (up to date)")
+    else:
+        print(f"Schema version: {version} (latest available: {latest})")
+    return 0
+
+
+def handle_db_migrate(args: argparse.Namespace) -> int:
+    """Handle ``foreman db migrate``."""
+
+    db_path = _resolve_db_path_or_print(args.db)
+    if db_path is None:
+        return 1
+
+    with ForemanStore(db_path) as store:
+        applied = store.initialize()
+        current_version = store.schema_version()
+
+    if not applied:
+        print(f"Schema is already up to date at version {current_version}.")
+        return 0
+
+    descriptions = {v: desc for v, desc, _ in MIGRATIONS}
+    print(f"Applied {len(applied)} migration(s):")
+    for v in applied:
+        print(f"  [{v}] {descriptions.get(v, '(no description)')}")
+    return 0
+
+
 def handle_dashboard(args: argparse.Namespace) -> int:
     """Handle ``foreman dashboard``."""
 
@@ -1815,6 +1864,23 @@ def build_parser() -> argparse.ArgumentParser:
         help_text=f"Path to the SQLite store containing the project. {DB_OPTION_NOTE}",
     )
     _set_handler(config_parser, handle_config, "config")
+
+    db_parser = subparsers.add_parser("db", help="Database management commands.")
+    db_commands = db_parser.add_subparsers(dest="db_command", metavar="db_command")
+
+    db_version_parser = db_commands.add_parser(
+        "version",
+        help="Show the current schema version.",
+    )
+    _add_db_option(db_version_parser)
+    _set_handler(db_version_parser, handle_db_version, "db version")
+
+    db_migrate_parser = db_commands.add_parser(
+        "migrate",
+        help="Apply pending schema migrations.",
+    )
+    _add_db_option(db_migrate_parser)
+    _set_handler(db_migrate_parser, handle_db_migrate, "db migrate")
 
     dashboard_parser = subparsers.add_parser(
         "dashboard",
