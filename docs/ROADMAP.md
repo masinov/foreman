@@ -463,7 +463,6 @@ Status:
 
 ## Near-term priorities
 
-1. add browser-driven end-to-end dashboard validation
-2. implement `task_selection_mode="autonomous"` in the orchestrator
-3. add `foreman db migrate` CLI surface for schema inspection and explicit
+1. implement `task_selection_mode="autonomous"` in the orchestrator
+2. add `foreman db migrate` CLI surface for schema inspection and explicit
    migration application

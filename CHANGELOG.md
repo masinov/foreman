@@ -149,3 +149,9 @@ memory changes rather than versioned product releases.
   `engine.run_pruned` and `engine.prompt_stripped` lifecycle events
 - added `tests/test_run_retention.py` with 19 tests covering deletion,
   active-work protection, cascade event removal, and prompt stripping
+- added browser-driven E2E dashboard validation via Playwright and Chromium:
+  `tests/test_e2e.py` with 20 tests covering dashboard load, project and sprint
+  navigation, task detail drawer, settings panel, sprint creation, and task
+  creation end to end against a live FastAPI server and seeded SQLite database
+- added `playwright` and `pytest-playwright` to `pyproject.toml` as optional
+  `e2e` dependencies

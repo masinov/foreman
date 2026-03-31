@@ -238,10 +238,8 @@ The current CLI watch baseline now includes:
 
 ## Next architectural slice
 
-The next slice should focus on validation depth and orchestrator completeness:
+The next slice should focus on orchestrator completeness:
 
-- add browser-driven end-to-end dashboard validation so the React frontend
-  and FastAPI backend are tested together through a real browser,
 - implement `task_selection_mode="autonomous"` in the orchestrator so the
   engine can select and execute tasks without human task assignment,
 - add a `foreman db migrate` CLI surface for operators to inspect schema
