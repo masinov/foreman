@@ -81,6 +81,31 @@ export function createDashboardServices({
         body: { note },
       });
     },
+    getProjectSettings(projectId) {
+      return requestJson(fetchImpl, `/api/projects/${encodeURIComponent(projectId)}/settings`);
+    },
+    updateProjectSettings(projectId, updates) {
+      return requestJson(fetchImpl, `/api/projects/${encodeURIComponent(projectId)}/settings`, {
+        method: "PATCH",
+        body: updates,
+      });
+    },
+    createSprint(projectId, { title, goal }) {
+      return requestJson(fetchImpl, `/api/projects/${encodeURIComponent(projectId)}/sprints`, {
+        method: "POST",
+        body: { title, goal },
+      });
+    },
+    createTask(sprintId, { title, taskType, acceptanceCriteria }) {
+      return requestJson(fetchImpl, `/api/sprints/${encodeURIComponent(sprintId)}/tasks`, {
+        method: "POST",
+        body: {
+          title,
+          task_type: taskType || "feature",
+          acceptance_criteria: acceptanceCriteria || undefined,
+        },
+      });
+    },
     createHumanMessage(taskId, text) {
       return requestJson(fetchImpl, `/api/tasks/${encodeURIComponent(taskId)}/messages`, {
         method: "POST",

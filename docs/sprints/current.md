@@ -26,14 +26,15 @@
    Deliverable: user-facing commands no longer fall through the generic
    placeholder handler where real product behavior is expected.
 
-2. `[todo]` Close the most visible product-surface gaps after the dashboard
+2. `[done]` Close the most visible product-surface gaps after the dashboard
    frontend cutover
-   Deliverable: the shipped dashboard and adjacent settings or CLI seams no
-   longer leave obvious half-implemented flows in place.
+   Deliverable: the shipped dashboard now has a settings panel, sprint
+   creation, and task creation backed by real FastAPI endpoints.
 
-3. `[todo]` Strengthen product-surface validation
-   Deliverable: validation now covers the hardened CLI and dashboard paths
-   above the current API and component-level checks.
+3. `[done]` Strengthen product-surface validation
+   Deliverable: 15 new integration tests cover settings read/update, sprint
+   creation, and task creation through both the service layer and FastAPI
+   transport.
 
 4. `[done]` Clarify the dashboard runtime split and local development workflow
    Deliverable: runtime, service, and backend module roles are explicit and

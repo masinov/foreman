@@ -11,7 +11,10 @@ import tempfile
 
 import httpx
 
-from foreman.dashboard_service import DashboardService
+from foreman.dashboard_service import (
+    DashboardService,
+    DashboardValidationError,
+)
 from foreman.dashboard_backend import create_dashboard_app
 from foreman.models import Event, Project, Run, Sprint, Task
 from foreman.store import ForemanStore
@@ -596,3 +599,202 @@ class DashboardApproveDenyIntegrationTests(unittest.TestCase):
         )
 
         updated_store.close()
+
+
+class DashboardSettingsTests(unittest.TestCase):
+    """Integration tests for dashboard settings, sprint creation, and task creation."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.temp_dir = tempfile.TemporaryDirectory()
+        cls.db_path = Path(cls.temp_dir.name) / "foreman.db"
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.temp_dir.cleanup()
+
+    def _seed_project(self, project_id=None):
+        """Seed a project with an active sprint and return (project, sprint)."""
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        pid = project_id or f"proj-settings-{id(self)}"
+        project = Project(
+            id=pid,
+            name="Settings Test Project",
+            repo_path="/tmp/settings-test",
+            workflow_id="development",
+        )
+        store.save_project(project)
+        sprint = Sprint(
+            id=f"sprint-settings-{id(self)}",
+            project_id=project.id,
+            title="Active Sprint",
+            status="active",
+        )
+        store.save_sprint(sprint)
+        store.close()
+        return project, sprint
+
+    def _request(self, method, url, **kwargs):
+        async def send():
+            app = create_dashboard_app(str(self.db_path))
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(
+                transport=transport,
+                base_url="http://testserver",
+            ) as client:
+                return await client.request(method, url, **kwargs)
+        return asyncio.run(send())
+
+    def test_get_project_settings_returns_current_state(self):
+        project, _ = self._seed_project()
+        response = self._request("GET", f"/api/projects/{project.id}/settings")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["project_id"], project.id)
+        self.assertEqual(data["workflow_id"], "development")
+        self.assertEqual(data["default_branch"], "main")
+        self.assertIn("settings", data)
+        self.assertIsInstance(data["settings"], dict)
+
+    def test_patch_project_settings_updates_nested_settings(self):
+        project, _ = self._seed_project()
+        response = self._request(
+            "PATCH",
+            f"/api/projects/{project.id}/settings",
+            json={"settings": {"max_step_visits": 10, "custom_key": "value"}},
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["settings"]["max_step_visits"], 10)
+        self.assertEqual(data["settings"]["custom_key"], "value")
+
+    def test_patch_project_settings_rejects_unknown_top_level(self):
+        project, _ = self._seed_project()
+        response = self._request(
+            "PATCH",
+            f"/api/projects/{project.id}/settings",
+            json={"unknown_field": "value"},
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_patch_project_settings_updates_workflow_id(self):
+        project, _ = self._seed_project()
+        response = self._request(
+            "PATCH",
+            f"/api/projects/{project.id}/settings",
+            json={"workflow_id": "development_secure"},
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["workflow_id"], "development_secure")
+
+    def test_settings_endpoint_returns_404_for_unknown_project(self):
+        self._seed_project()
+        response = self._request("GET", "/api/projects/nonexistent/settings")
+        self.assertEqual(response.status_code, 404)
+
+    def test_create_sprint_endpoint_creates_planned_sprint(self):
+        project, _ = self._seed_project()
+        response = self._request(
+            "POST",
+            f"/api/projects/{project.id}/sprints",
+            json={"title": "New Sprint", "goal": "Ship features"},
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("sprint-", data["id"])
+        self.assertEqual(data["title"], "New Sprint")
+        self.assertEqual(data["goal"], "Ship features")
+        self.assertEqual(data["status"], "planned")
+
+    def test_create_sprint_rejects_empty_title(self):
+        project, _ = self._seed_project()
+        response = self._request(
+            "POST",
+            f"/api/projects/{project.id}/sprints",
+            json={"title": "", "goal": "No title"},
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_create_sprint_returns_404_for_unknown_project(self):
+        self._seed_project()
+        response = self._request(
+            "POST",
+            "/api/projects/nonexistent/sprints",
+            json={"title": "Test"},
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_create_task_endpoint_creates_todo_task(self):
+        project, sprint = self._seed_project()
+        response = self._request(
+            "POST",
+            f"/api/sprints/{sprint.id}/tasks",
+            json={"title": "New Feature", "task_type": "feature", "acceptance_criteria": "Must pass tests"},
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("task-", data["id"])
+        self.assertEqual(data["title"], "New Feature")
+        self.assertEqual(data["task_type"], "feature")
+        self.assertEqual(data["acceptance_criteria"], "Must pass tests")
+        self.assertEqual(data["status"], "todo")
+
+    def test_create_task_rejects_empty_title(self):
+        _, sprint = self._seed_project()
+        response = self._request(
+            "POST",
+            f"/api/sprints/{sprint.id}/tasks",
+            json={"title": ""},
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_create_task_rejects_invalid_type(self):
+        _, sprint = self._seed_project()
+        response = self._request(
+            "POST",
+            f"/api/sprints/{sprint.id}/tasks",
+            json={"title": "Bad type", "task_type": "invalid"},
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_create_task_returns_404_for_unknown_sprint(self):
+        self._seed_project()
+        response = self._request(
+            "POST",
+            "/api/sprints/nonexistent/tasks",
+            json={"title": "Test"},
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_service_create_sprint_generates_stable_id(self):
+        project, _ = self._seed_project()
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        api = DashboardService(store)
+        result = api.create_sprint(project.id, title="My Sprint", goal="Do things")
+        self.assertTrue(result["id"].startswith("sprint-"))
+        self.assertIn("my-sprint", result["id"])
+        self.assertEqual(result["status"], "planned")
+        store.close()
+
+    def test_service_create_task_generates_stable_id(self):
+        _, sprint = self._seed_project()
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        api = DashboardService(store)
+        result = api.create_task(sprint.id, title="Fix bug", task_type="fix", acceptance_criteria="No crash")
+        self.assertTrue(result["id"].startswith("task-"))
+        self.assertIn("fix-bug", result["id"])
+        self.assertEqual(result["task_type"], "fix")
+        store.close()
+
+    def test_service_update_settings_rejects_non_dict_settings(self):
+        project, _ = self._seed_project()
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        api = DashboardService(store)
+        with self.assertRaises(DashboardValidationError):
+            api.update_project_settings(project.id, updates={"settings": "not a dict"})
+        store.close()

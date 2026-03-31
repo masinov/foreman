@@ -4,7 +4,10 @@ import {
   EmptyPanel,
   ErrorBanner,
   EventList,
+  NewSprintModal,
+  NewTaskModal,
   ProjectOverview,
+  SettingsPanel,
   SprintList,
   STATUS_COLUMNS,
   TaskCard,
@@ -57,6 +60,10 @@ export default function App({ services, browser }) {
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const [isActionPending, setIsActionPending] = useState(false);
   const [streamSeedEventId, setStreamSeedEventId] = useState(undefined);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [projectSettings, setProjectSettings] = useState(null);
+  const [newSprintOpen, setNewSprintOpen] = useState(false);
+  const [newTaskOpen, setNewTaskOpen] = useState(false);
 
   const refreshTimerRef = useRef(null);
   const routeRef = useRef(route);
@@ -352,6 +359,54 @@ export default function App({ services, browser }) {
     }
   }
 
+  async function handleOpenSettings() {
+    if (!route.projectId) return;
+    setErrorMessage("");
+    try {
+      const payload = await services.getProjectSettings(route.projectId);
+      setProjectSettings(payload);
+      setSettingsOpen(true);
+    } catch (error) {
+      setErrorMessage(error.message);
+    }
+  }
+
+  async function handleUpdateSettings(updates) {
+    if (!route.projectId) return;
+    setErrorMessage("");
+    try {
+      const payload = await services.updateProjectSettings(route.projectId, updates);
+      setProjectSettings(payload);
+      await refreshAllVisibleState({ keepSelectedTask: false });
+    } catch (error) {
+      setErrorMessage(error.message);
+    }
+  }
+
+  async function handleCreateSprint({ title, goal }) {
+    if (!route.projectId) return;
+    setErrorMessage("");
+    try {
+      await services.createSprint(route.projectId, { title, goal });
+      setNewSprintOpen(false);
+      await refreshAllVisibleState({ keepSelectedTask: false });
+    } catch (error) {
+      setErrorMessage(error.message);
+    }
+  }
+
+  async function handleCreateTask({ title, taskType, acceptanceCriteria }) {
+    if (!route.sprintId) return;
+    setErrorMessage("");
+    try {
+      await services.createTask(route.sprintId, { title, taskType, acceptanceCriteria });
+      setNewTaskOpen(false);
+      await refreshAllVisibleState();
+    } catch (error) {
+      setErrorMessage(error.message);
+    }
+  }
+
   const selectedTask = tasks.find((task) => task.id === selectedTaskId) || null;
   const taskIndex = new Map(tasks.map((task) => [task.id, task]));
   const topbarProject = currentProject
@@ -378,6 +433,7 @@ export default function App({ services, browser }) {
         onOpenDashboard={() => navigateTo(buildDashboardPath())}
         onSelectProject={(projectId) => navigateTo(buildProjectPath(projectId))}
         onSelectSprint={(sprintId) => navigateTo(buildSprintPath(route.projectId, sprintId))}
+        onToggleSettings={route.projectId ? handleOpenSettings : undefined}
       />
       <ErrorBanner message={errorMessage} onDismiss={() => setErrorMessage("")} />
       {isBootstrapping ? (
@@ -395,6 +451,7 @@ export default function App({ services, browser }) {
             project={currentProject}
             sprints={currentSprints}
             onSelectSprint={(sprintId) => navigateTo(buildSprintPath(route.projectId, sprintId))}
+            onOpenNewSprint={() => setNewSprintOpen(true)}
           />
         ) : (
           <EmptyPanel title="Project not found" message="The requested project could not be loaded." />
@@ -419,6 +476,9 @@ export default function App({ services, browser }) {
                   <div className="sprint-stat">
                     cost <span className="sv">{formatCurrency(currentSprint.totals.total_cost_usd)}</span>
                   </div>
+                  <button className="btn-action" type="button" onClick={() => setNewTaskOpen(true)}>
+                    <span className="plus">+</span> New task
+                  </button>
                 </div>
               </header>
               <div className={`sprint-body ${activityCollapsed ? "activity-hidden" : "with-activity"}`}>
@@ -518,6 +578,25 @@ export default function App({ services, browser }) {
         ) : (
           <EmptyPanel title="Sprint not found" message="The requested sprint could not be loaded." />
         )
+      ) : null}
+      {settingsOpen ? (
+        <SettingsPanel
+          settings={projectSettings}
+          onUpdate={handleUpdateSettings}
+          onClose={() => setSettingsOpen(false)}
+        />
+      ) : null}
+      {newSprintOpen ? (
+        <NewSprintModal
+          onSubmit={handleCreateSprint}
+          onClose={() => setNewSprintOpen(false)}
+        />
+      ) : null}
+      {newTaskOpen ? (
+        <NewTaskModal
+          onSubmit={handleCreateTask}
+          onClose={() => setNewTaskOpen(false)}
+        />
       ) : null}
       <footer className="footer-note">
         FastAPI transports the dashboard API. React owns rendering, client state, and live activity UX.

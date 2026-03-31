@@ -103,6 +103,15 @@
   task or sprint transitions
 - expanded CLI subprocess coverage to validate the hardened command surface
   end to end
+- closed the most visible product-surface gaps after the dashboard frontend
+  cutover
+- added a settings panel, sprint creation, and task creation backed by real
+  FastAPI endpoints and the dashboard service layer
+- added `SettingsPanel`, `NewSprintModal`, and `NewTaskModal` React components
+  wired into the dashboard app with validation and error handling
+- strengthened product-surface validation with 15 new integration tests
+  covering settings read/update, sprint creation, and task creation through
+  both the service layer and FastAPI transport
 
 ## Current repo state
 
@@ -153,12 +162,10 @@
 
 ## Ready next
 
-1. close known product-surface and validation gaps exposed by the dedicated
-   dashboard frontend cutover
-2. strengthen product-surface validation above the current CLI, API, and React
-   component layers
-3. resume lower-level infrastructure detours with the migration framework
+1. resume lower-level infrastructure detours with the migration framework
    slice after product-surface hardening
+2. add browser-driven end-to-end dashboard validation
+3. implement `task_selection_mode="autonomous"` in the orchestrator
 
 ## Open risks
 

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import re
+import unicodedata
 from datetime import datetime, timezone
 from typing import Any, Callable
 
-from .models import Event
+from .models import Event, Sprint, Task
 from .orchestrator import ForemanOrchestrator, OrchestratorError
 from .store import ForemanStore
 
@@ -32,6 +34,13 @@ class DashboardActionError(DashboardServiceError):
     """Raised when one dashboard action cannot be completed."""
 
 
+def _stable_slug(text: str) -> str:
+    """Return a filesystem-safe ASCII slug from arbitrary text."""
+    normalized = unicodedata.normalize("NFKD", text.strip().lower())
+    slug = re.sub(r"[^a-z0-9]+", "-", normalized).strip("-")
+    return slug[:48] or "untitled"
+
+
 class DashboardService:
     """Store-backed dashboard service used by FastAPI transport and UI clients."""
 
@@ -42,7 +51,7 @@ class DashboardService:
         now_factory: Callable[[], datetime] | None = None,
     ) -> None:
         self.store = store
-        self._now_factory = now_factory or (lambda: datetime.now(timezone.utc))
+        self._now = now_factory or (lambda: datetime.now(timezone.utc))
 
     def list_projects(self) -> dict[str, Any]:
         """Return the project summary collection used by the dashboard landing screen."""
@@ -86,6 +95,56 @@ class DashboardService:
             "methodology": project.methodology,
         }
 
+    def get_project_settings(self, project_id: str) -> dict[str, Any]:
+        """Return settings for one project."""
+
+        project = self.store.get_project(project_id)
+        if project is None:
+            raise DashboardNotFoundError(f"Project not found: {project_id}")
+        return {
+            "project_id": project.id,
+            "workflow_id": project.workflow_id,
+            "default_branch": project.default_branch,
+            "spec_path": project.spec_path or "",
+            "settings": dict(project.settings),
+        }
+
+    def update_project_settings(
+        self,
+        project_id: str,
+        *,
+        updates: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Apply one partial settings update and return the current state."""
+
+        project = self.store.get_project(project_id)
+        if project is None:
+            raise DashboardNotFoundError(f"Project not found: {project_id}")
+
+        allowed_top_level = {"workflow_id", "default_branch", "spec_path"}
+        for key in updates:
+            if key == "settings":
+                continue
+            if key not in allowed_top_level:
+                raise DashboardValidationError(f"Unknown setting: {key}")
+
+        settings_updates = updates.get("settings")
+        if settings_updates is not None:
+            if not isinstance(settings_updates, dict):
+                raise DashboardValidationError("Settings must be a JSON object.")
+            project.settings.update(settings_updates)
+
+        if "workflow_id" in updates:
+            project.workflow_id = str(updates["workflow_id"])
+        if "default_branch" in updates:
+            project.default_branch = str(updates["default_branch"])
+        if "spec_path" in updates:
+            project.spec_path = str(updates["spec_path"])
+
+        project.updated_at = self._now().isoformat()
+        self.store.save_project(project)
+        return self.get_project_settings(project_id)
+
     def list_project_sprints(self, project_id: str) -> dict[str, Any]:
         """Return sprint summaries for one project."""
 
@@ -120,6 +179,48 @@ class DashboardService:
             "status": sprint.status,
             "task_counts": self.store.task_counts(sprint_id=sprint.id),
             "totals": self.store.run_totals(sprint_id=sprint.id),
+        }
+
+    def create_sprint(
+        self,
+        project_id: str,
+        *,
+        title: str,
+        goal: str | None = None,
+    ) -> dict[str, Any]:
+        """Create one sprint for a project."""
+
+        project = self.store.get_project(project_id)
+        if project is None:
+            raise DashboardNotFoundError(f"Project not found: {project_id}")
+        if not title.strip():
+            raise DashboardValidationError("Sprint title is required.")
+
+        sprints = self.store.list_sprints(project_id)
+        sprint_id = f"sprint-{_stable_slug(title)}"
+        suffix = 2
+        while self.store.get_sprint(sprint_id) is not None:
+            sprint_id = f"sprint-{_stable_slug(title)}-{suffix}"
+            suffix += 1
+
+        now = self._now().isoformat()
+        sprint = Sprint(
+            id=sprint_id,
+            project_id=project_id,
+            title=title.strip(),
+            goal=goal.strip() if goal else None,
+            status="planned",
+            order_index=max((s.order_index for s in sprints), default=-1) + 1,
+            created_at=now,
+        )
+        self.store.save_sprint(sprint)
+        return {
+            "id": sprint.id,
+            "title": sprint.title,
+            "goal": sprint.goal,
+            "status": sprint.status,
+            "order_index": sprint.order_index,
+            "created_at": sprint.created_at,
         }
 
     def list_sprint_tasks(self, sprint_id: str) -> dict[str, Any]:
@@ -234,6 +335,60 @@ class DashboardService:
             "runs": runs_data,
         }
 
+    def create_task(
+        self,
+        sprint_id: str,
+        *,
+        title: str,
+        task_type: str = "feature",
+        acceptance_criteria: str | None = None,
+    ) -> dict[str, Any]:
+        """Create one task in a sprint."""
+
+        sprint = self.store.get_sprint(sprint_id)
+        if sprint is None:
+            raise DashboardNotFoundError(f"Sprint not found: {sprint_id}")
+        if not title.strip():
+            raise DashboardValidationError("Task title is required.")
+
+        from .models import TASK_TYPES
+
+        if task_type not in TASK_TYPES:
+            raise DashboardValidationError(
+                f"Unsupported task type: {task_type}. "
+                f"Expected one of: {', '.join(TASK_TYPES)}."
+            )
+
+        existing_tasks = self.store.list_tasks(sprint_id=sprint_id)
+        task_id = f"task-{_stable_slug(title)}"
+        suffix = 2
+        while self.store.get_task(task_id) is not None:
+            task_id = f"task-{_stable_slug(title)}-{suffix}"
+            suffix += 1
+
+        now = self._now().isoformat()
+        task = Task(
+            id=task_id,
+            sprint_id=sprint_id,
+            project_id=sprint.project_id,
+            title=title.strip(),
+            task_type=task_type,
+            acceptance_criteria=acceptance_criteria.strip() if acceptance_criteria else None,
+            order_index=max((t.order_index for t in existing_tasks), default=-1) + 1,
+            created_by="human",
+            created_at=now,
+        )
+        self.store.save_task(task)
+        return {
+            "id": task.id,
+            "title": task.title,
+            "status": task.status,
+            "task_type": task.task_type,
+            "acceptance_criteria": task.acceptance_criteria,
+            "order_index": task.order_index,
+            "created_at": task.created_at,
+        }
+
     def approve_task(self, task_id: str) -> dict[str, Any]:
         """Resume one human gate with an approval outcome."""
 
@@ -275,7 +430,7 @@ class DashboardService:
             raise DashboardValidationError("Message text required")
 
         runs = self.store.list_runs(task_id=task_id)
-        now = self._now_factory()
+        now = self._now()
         event = Event(
             id=f"evt-{now.strftime('%Y%m%d%H%M%S%f')}-{task_id[:8]}",
             run_id=runs[0].id if runs else "none",

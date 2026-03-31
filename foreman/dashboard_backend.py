@@ -32,6 +32,7 @@ from .dashboard_service import (
     DashboardNotFoundError,
     DashboardValidationError,
 )
+from .scaffold import generate_project_id
 from .store import ForemanStore
 
 
@@ -179,9 +180,31 @@ def create_dashboard_app(
     async def get_project(project_id: str) -> dict[str, Any]:
         return with_api(lambda api: api.get_project(project_id))
 
+    @app.get("/api/projects/{project_id}/settings")
+    async def get_project_settings(project_id: str) -> dict[str, Any]:
+        return with_api(lambda api: api.get_project_settings(project_id))
+
+    @app.patch("/api/projects/{project_id}/settings")
+    async def update_project_settings(project_id: str, request: Request) -> dict[str, Any]:
+        data = await _read_json_body(request)
+        return with_api(
+            lambda api: api.update_project_settings(project_id, updates=data)
+        )
+
     @app.get("/api/projects/{project_id}/sprints")
     async def list_project_sprints(project_id: str) -> dict[str, Any]:
         return with_api(lambda api: api.list_project_sprints(project_id))
+
+    @app.post("/api/projects/{project_id}/sprints")
+    async def create_sprint(project_id: str, request: Request) -> dict[str, Any]:
+        data = await _read_json_body(request)
+        return with_api(
+            lambda api: api.create_sprint(
+                project_id,
+                title=str(data.get("title", "")),
+                goal=data.get("goal"),
+            )
+        )
 
     @app.get("/api/sprints/{sprint_id}")
     async def get_sprint(sprint_id: str) -> dict[str, Any]:
@@ -190,6 +213,18 @@ def create_dashboard_app(
     @app.get("/api/sprints/{sprint_id}/tasks")
     async def list_sprint_tasks(sprint_id: str) -> dict[str, Any]:
         return with_api(lambda api: api.list_sprint_tasks(sprint_id))
+
+    @app.post("/api/sprints/{sprint_id}/tasks")
+    async def create_task(sprint_id: str, request: Request) -> dict[str, Any]:
+        data = await _read_json_body(request)
+        return with_api(
+            lambda api: api.create_task(
+                sprint_id,
+                title=str(data.get("title", "")),
+                task_type=str(data.get("task_type", "feature")),
+                acceptance_criteria=data.get("acceptance_criteria"),
+            )
+        )
 
     @app.get("/api/sprints/{sprint_id}/events")
     async def list_sprint_events(

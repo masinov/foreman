@@ -121,3 +121,9 @@ memory changes rather than versioned product releases.
 - reconciled the loose feature and recovery branches into an integrated
   mainline candidate and restored missing repo-memory artifacts from the
   runner-session ADR branch
+- closed the most visible product-surface gaps: settings panel, sprint
+  creation, and task creation now run end-to-end from React components
+  through FastAPI endpoints to SQLite persistence
+- added 15 integration tests covering settings read/update validation, sprint
+  creation, and task creation through both the service layer and FastAPI
+  transport
