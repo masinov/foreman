@@ -86,6 +86,8 @@
   `foreman/dashboard_frontend_dist/`
 - added frontend component tests and bundle-build validation alongside the
   existing dashboard API and FastAPI regression suite
+- pruned redundant dashboard transition checkpoint and PR-summary docs that no
+  longer add repo-memory value after the React cutover
 
 ## Current repo state
 

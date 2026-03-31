@@ -38,14 +38,9 @@ The first monitoring CLI checkpoint is recorded in
 The first runner contract ADR checkpoint is recorded in
 `docs/checkpoints/runner-session-backend-contract.md`.
 
-The first dashboard implementation checkpoint is recorded in
-`docs/checkpoints/dashboard-slice.md`.
-
-The first extracted dashboard API boundary checkpoint is recorded in
-`docs/checkpoints/dashboard-api-boundary.md`.
-
-The first dashboard backend foundation checkpoint is recorded in
-`docs/checkpoints/dashboard-backend-foundation.md`.
+The dashboard transition history from the embedded shell through the FastAPI
+backend rewrite is preserved in the sprint archives under
+`docs/sprints/archive/`.
 
 The first dedicated React dashboard frontend checkpoint is recorded in
 `docs/checkpoints/react-dashboard-foundation.md`.
@@ -73,9 +68,6 @@ While product-surface hardening and migration bootstrap are still incomplete:
 - first native Codex runner
 - first monitoring CLI milestone
 - first accepted runner contract ADR
-- first dashboard implementation milestone
-- first extracted dashboard API boundary
-- first real dashboard backend foundation
 - first dedicated frontend milestone
 
 ## Before creating a release tag
