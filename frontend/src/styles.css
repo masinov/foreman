@@ -1816,6 +1816,24 @@ button {
   white-space: nowrap;
 }
 
+.btn-stop-task {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  font-weight: 500;
+  padding: 4px 12px;
+  border-radius: var(--radius);
+  border: 1px solid rgba(204, 153, 0, 0.3);
+  background: transparent;
+  color: var(--amber);
+  cursor: pointer;
+  transition: var(--transition);
+  width: 100%;
+}
+
+.btn-stop-task:hover {
+  background: var(--amber-dim);
+}
+
 .btn-cancel-task {
   font-size: 10px;
   font-family: var(--font-mono);

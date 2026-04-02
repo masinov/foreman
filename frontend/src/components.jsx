@@ -255,8 +255,12 @@ export function SprintList({ project, sprints, onSelectSprint, onOpenNewSprint, 
   const [viewMode, setViewMode] = useState("list");
 
   const visibleSprints = useMemo(() => {
+    const STATUS_RANK = { active: 0, completed: 1, done: 1, cancelled: 2, planned: 3 };
     const filtered = filterKey === "all" ? sprints : sprints.filter((s) => s.status === filterKey);
     return filtered.slice().sort((a, b) => {
+      const rankA = STATUS_RANK[a.status] ?? 3;
+      const rankB = STATUS_RANK[b.status] ?? 3;
+      if (rankA !== rankB) return rankA - rankB;
       const orderA = a.order_index ?? 0;
       const orderB = b.order_index ?? 0;
       return newestFirst ? orderB - orderA : orderA - orderB;
@@ -452,9 +456,9 @@ export function SprintList({ project, sprints, onSelectSprint, onOpenNewSprint, 
 
         return (
           <div className="sprint-list">
-            {plannedSprints.map((sprint) => renderCard(sprint, { reorderable: true }))}
-            {showDivider ? <div className="sprint-list-divider"><span>completed &amp; active</span></div> : null}
             {otherSprints.map((sprint) => renderCard(sprint, { reorderable: false }))}
+            {showDivider ? <div className="sprint-list-divider"><span>planned</span></div> : null}
+            {plannedSprints.map((sprint) => renderCard(sprint, { reorderable: true }))}
           </div>
         );
       })() : (
@@ -514,7 +518,7 @@ export function SprintList({ project, sprints, onSelectSprint, onOpenNewSprint, 
   );
 }
 
-export function TaskCard({ task, selected, onSelect, onApprove, onDeny }) {
+export function TaskCard({ task, selected, onSelect, onApprove, onDeny, onStop }) {
   function handleKeyDown(event) {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
@@ -541,6 +545,13 @@ export function TaskCard({ task, selected, onSelect, onApprove, onDeny }) {
       {task.branch_name ? <div className="card-branch">{task.branch_name}</div> : null}
       {task.assigned_role ? <div className="card-role">Role: {task.assigned_role}</div> : null}
       {task.blocked_reason ? <div className="card-blocked-reason">{task.blocked_reason}</div> : null}
+      {task.status === "in_progress" && onStop ? (
+        <div className="card-actions" onClick={(event) => event.stopPropagation()}>
+          <button className="btn btn-stop-task" type="button" onClick={() => onStop(task.id)}>
+            Stop
+          </button>
+        </div>
+      ) : null}
       {task.status === "blocked" ? (
         <div className="card-actions" onClick={(event) => event.stopPropagation()}>
           <button className="btn btn-approve" type="button" onClick={() => onApprove(task.id)}>
@@ -600,6 +611,7 @@ export function TaskDetailDrawer({
   onApprove,
   onDenyNoteChange,
   onDeny,
+  onStop,
   onCancel,
   onSave,
   onDelete,
@@ -783,6 +795,17 @@ export function TaskDetailDrawer({
               onChange={(event) => onDenyNoteChange(event.target.value)}
               placeholder="Explain what needs to change before this task can continue."
             />
+          </div>
+        ) : null}
+        {onStop && task.status === "in_progress" ? (
+          <div className="detail-section">
+            <button
+              className="btn btn-stop-task"
+              type="button"
+              onClick={() => onStop(task.id)}
+            >
+              Stop task
+            </button>
           </div>
         ) : null}
         {onCancel && task.status !== "done" && task.status !== "cancelled" ? (

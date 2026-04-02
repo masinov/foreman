@@ -214,3 +214,11 @@ memory changes rather than versioned product releases.
   added; dates shown on sprint cards and in sprint header stats; 18 new tests
   across `DashboardDeleteTests` and `DashboardSprintOrderTests`; 95 dashboard
   tests and 20 E2E tests all passing
+- completed `sprint-36-intervention-and-ordering`: sprint list ordering fixed
+  (active/completed above planned); `POST /api/tasks/{id}/stop` route for
+  stopping individual in-progress tasks; Stop button on task cards and in
+  task detail drawer; Cancel sprint button in sprint view header for active
+  and planned sprints; board column equal-width fix (`minmax(0, 1fr)`);
+  custom scrollbar styling; duplicate branch name generation fixed in
+  orchestrator; 6 new tests in `DashboardInterventionTests`; 95 dashboard
+  tests passing

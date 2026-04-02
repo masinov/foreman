@@ -771,6 +771,52 @@ class DashboardService:
             "sprint_id": active_sprint.id,
         }
 
+    def stop_task(self, task_id: str) -> dict[str, Any]:
+        """Block one in-progress task to signal a stop request."""
+
+        task = self._require_task(task_id)
+        if task.status != "in_progress":
+            raise DashboardValidationError(
+                f"Cannot stop a task with status '{task.status}'; only in_progress tasks can be stopped."
+            )
+        task.status = "blocked"
+        task.blocked_reason = "Stop requested from dashboard."
+        self.store.save_task(task)
+
+        now = self._now()
+        now_text = now.isoformat()
+        runs = self.store.list_runs(task_id=task.id)
+        if runs:
+            run_id = runs[0].id
+        else:
+            synthetic_run = Run(
+                id=f"run-stop-{now.strftime('%Y%m%d%H%M%S%f')}-{task.id[:8]}",
+                task_id=task.id,
+                project_id=task.project_id,
+                role_id="human",
+                workflow_step="stop",
+                agent_backend="dashboard",
+                status="completed",
+                outcome="stopped",
+                started_at=now_text,
+                completed_at=now_text,
+                created_at=now_text,
+            )
+            self.store.save_run(synthetic_run)
+            run_id = synthetic_run.id
+        event = Event(
+            id=f"evt-{now.strftime('%Y%m%d%H%M%S%f')}-stop-{task.id[:8]}",
+            run_id=run_id,
+            task_id=task.id,
+            project_id=task.project_id,
+            event_type="human.stop_requested",
+            timestamp=now_text,
+            role_id="human",
+            payload={"reason": "Stop requested from dashboard."},
+        )
+        self.store.save_event(event)
+        return {"status": "blocked", "task_id": task_id}
+
     def cancel_task(self, task_id: str) -> dict[str, Any]:
         """Cancel one task that is not already done or cancelled."""
 

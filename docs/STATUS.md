@@ -2,13 +2,13 @@
 
 ## Current sprint
 
-- Sprint: none active (between sprints)
-- Last completed: `sprint-35-dashboard-crud-polish` (2026-04-01)
-- See `docs/sprints/current.md` for recently completed sprint list
+- Sprint: `sprint-36-intervention-and-ordering` (completed 2026-04-02)
+- Branch: `feat/sprint-36-intervention-and-ordering`
 
 ## Active branches
 
-- no active feature branches; sprints 32–35 all landed to `main`
+- `feat/sprint-36-intervention-and-ordering` — sprint list ordering,
+  manual intervention controls, board layout fixes
 
 ## Completed this session (sprints 30–35)
 
@@ -36,6 +36,12 @@
   with FK-safe cascade in store; sprint title inline editing; sprint ordering
   (`order_index` in API, ↑/↓ reorder buttons); `started_at`/`completed_at`
   exposed in sprint responses; date display on cards and sprint header
+- completed `sprint-36-intervention-and-ordering`
+- sprint list ordering fixed: active/completed sprints above planned; stop
+  individual task (`POST /api/tasks/{id}/stop`) with Stop button on cards and
+  drawer; Cancel sprint button in sprint view header for active and planned
+  sprints; board column equal-width fix; custom scrollbar styling; duplicate
+  branch name generation fixed in orchestrator
 
 ## Previously completed (sprints 1–29)
 
