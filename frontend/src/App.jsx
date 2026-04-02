@@ -575,8 +575,10 @@ export default function App({ services, browser }) {
     setErrorMessage("");
     try {
       await services.deleteSprint(sprintId);
+      setCurrentSprint(null);
       if (routeRef.current.sprintId === sprintId) {
         navigateTo(buildProjectPath(routeRef.current.projectId));
+        await refreshProjectScope(routeRef.current.projectId);
       } else {
         await refreshAllVisibleState({ keepSelectedTask: false });
       }
