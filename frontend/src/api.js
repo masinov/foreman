@@ -147,6 +147,16 @@ export function createDashboardServices({
         },
       });
     },
+    deleteTask(taskId) {
+      return requestJson(fetchImpl, `/api/tasks/${encodeURIComponent(taskId)}`, {
+        method: "DELETE",
+      });
+    },
+    deleteSprint(sprintId) {
+      return requestJson(fetchImpl, `/api/sprints/${encodeURIComponent(sprintId)}`, {
+        method: "DELETE",
+      });
+    },
     createHumanMessage(taskId, text) {
       return requestJson(fetchImpl, `/api/tasks/${encodeURIComponent(taskId)}/messages`, {
         method: "POST",

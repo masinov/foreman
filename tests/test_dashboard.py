@@ -1824,3 +1824,128 @@ class DashboardTaskEditEventTests(unittest.TestCase):
         self.assertIn("title", changed)
         self.assertIn("task_type", changed)
         self.assertIn("priority", changed)
+
+
+class DashboardRolesTests(unittest.TestCase):
+    """Tests for GET /api/roles and PATCH /api/roles/{role_id} (sprint-36)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.temp_dir = tempfile.TemporaryDirectory()
+        cls.db_path = Path(cls.temp_dir.name) / "foreman.db"
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.temp_dir.cleanup()
+
+    def _request(self, method, url, **kwargs):
+        async def send():
+            app = create_dashboard_app(str(self.db_path))
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(
+                transport=transport,
+                base_url="http://testserver",
+            ) as client:
+                return await client.request(method, url, **kwargs)
+
+        return asyncio.run(send())
+
+    # ── GET /api/roles ────────────────────────────────────────────────────────
+
+    def test_list_roles_returns_200_with_roles_array(self):
+        """GET /api/roles returns 200 with a non-empty roles list."""
+        resp = self._request("GET", "/api/roles")
+        self.assertEqual(resp.status_code, 200)
+        body = resp.json()
+        self.assertIn("roles", body)
+        self.assertIsInstance(body["roles"], list)
+        self.assertGreater(len(body["roles"]), 0)
+
+    def test_list_roles_items_have_required_fields(self):
+        """Each role item has the fields needed by the UI."""
+        resp = self._request("GET", "/api/roles")
+        self.assertEqual(resp.status_code, 200)
+        roles = resp.json()["roles"]
+        required = {"id", "name", "description", "backend", "model", "permission_mode",
+                    "session_persistence", "timeout_minutes", "max_cost_usd", "source_path"}
+        for role in roles:
+            for field_name in required:
+                self.assertIn(field_name, role, msg=f"Missing {field_name!r} in role {role.get('id')}")
+
+    def test_list_roles_includes_developer_role(self):
+        """The developer role shipped with the repo is present."""
+        resp = self._request("GET", "/api/roles")
+        ids = {r["id"] for r in resp.json()["roles"]}
+        self.assertIn("developer", ids)
+
+    # ── PATCH /api/roles/{role_id} ────────────────────────────────────────────
+
+    def test_patch_unknown_role_returns_404(self):
+        """PATCH on a non-existent role returns 404."""
+        resp = self._request("PATCH", "/api/roles/no-such-role", json={"model": "x"})
+        self.assertEqual(resp.status_code, 404)
+
+    def test_patch_unknown_field_returns_400(self):
+        """PATCH with an unknown field returns 400."""
+        resp = self._request("PATCH", "/api/roles/developer", json={"prompt_template": "x"})
+        self.assertEqual(resp.status_code, 400)
+
+    def test_patch_invalid_timeout_type_returns_400(self):
+        """PATCH with a float timeout_minutes returns 400."""
+        resp = self._request("PATCH", "/api/roles/developer", json={"timeout_minutes": 1.5})
+        self.assertEqual(resp.status_code, 400)
+
+    def test_patch_negative_timeout_returns_400(self):
+        """PATCH with a non-positive timeout_minutes returns 400."""
+        resp = self._request("PATCH", "/api/roles/developer", json={"timeout_minutes": 0})
+        self.assertEqual(resp.status_code, 400)
+
+    def test_patch_invalid_cost_type_returns_400(self):
+        """PATCH with a string max_cost_usd returns 400."""
+        resp = self._request("PATCH", "/api/roles/developer", json={"max_cost_usd": "free"})
+        self.assertEqual(resp.status_code, 400)
+
+    def test_patch_empty_body_returns_role_unchanged(self):
+        """PATCH with no fields returns 200 with the current role state."""
+        resp = self._request("PATCH", "/api/roles/developer", json={})
+        self.assertEqual(resp.status_code, 200)
+        role = resp.json()
+        self.assertEqual(role["id"], "developer")
+
+    def test_patch_model_updates_and_persists(self):
+        """PATCH model on a role writes to TOML and returns the updated value."""
+        # Read current model value
+        resp = self._request("GET", "/api/roles")
+        developer = next(r for r in resp.json()["roles"] if r["id"] == "developer")
+        original_model = developer["model"]
+
+        new_model = "claude-test-model"
+        resp = self._request("PATCH", "/api/roles/developer", json={"model": new_model})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["model"], new_model)
+
+        # Re-read to confirm persistence
+        resp2 = self._request("GET", "/api/roles")
+        developer2 = next(r for r in resp2.json()["roles"] if r["id"] == "developer")
+        self.assertEqual(developer2["model"], new_model)
+
+        # Restore original value so we don't pollute other tests
+        self._request("PATCH", "/api/roles/developer", json={"model": original_model})
+
+    def test_patch_invalid_json_returns_400(self):
+        """PATCH with malformed JSON returns 400."""
+        async def send():
+            app = create_dashboard_app(str(self.db_path))
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(
+                transport=transport,
+                base_url="http://testserver",
+            ) as client:
+                return await client.patch(
+                    "/api/roles/developer",
+                    content=b"not-json",
+                    headers={"content-type": "application/json"},
+                )
+
+        resp = asyncio.run(send())
+        self.assertEqual(resp.status_code, 400)

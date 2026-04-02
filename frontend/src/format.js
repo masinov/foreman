@@ -4,6 +4,12 @@ const eventTimeFormatter = new Intl.DateTimeFormat(undefined, {
   second: "2-digit",
 });
 
+const dateFormatter = new Intl.DateTimeFormat(undefined, {
+  year: "numeric",
+  month: "short",
+  day: "numeric",
+});
+
 const numberFormatter = new Intl.NumberFormat();
 const compactNumberFormatter = new Intl.NumberFormat(undefined, {
   notation: "compact",
@@ -49,6 +55,13 @@ export function formatEventTime(value) {
     return "--:--:--";
   }
   return eventTimeFormatter.format(new Date(value));
+}
+
+export function formatDate(value) {
+  if (!value) {
+    return "—";
+  }
+  return dateFormatter.format(new Date(value));
 }
 
 export function formatProjectStatus(status) {

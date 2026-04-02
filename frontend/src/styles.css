@@ -46,6 +46,30 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* ═══ Custom scrollbars ═════════════════════════════ */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--text-tertiary);
+}
+
 button,
 input,
 select,
@@ -676,6 +700,26 @@ button {
   gap: 2px;
 }
 
+.sprint-list-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0 8px;
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.sprint-list-divider::before,
+.sprint-list-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border-subtle);
+}
+
 .sprint-card {
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
@@ -745,6 +789,24 @@ button {
   color: var(--red);
 }
 
+.sc-action-order {
+  color: var(--text-tertiary);
+  padding: 2px 6px;
+}
+
+.sc-action-order:hover {
+  color: var(--text-primary);
+}
+
+.sc-dates {
+  display: flex;
+  gap: 10px;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  margin-top: 2px;
+}
+
 .active-sprint {
   border-left: 2px solid var(--green);
 }
@@ -776,6 +838,14 @@ button {
 }
 
 .sc-body {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.sc-body-main {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -943,6 +1013,8 @@ button {
   justify-content: space-between;
   align-items: center;
   flex-shrink: 0;
+  overflow: hidden;
+  gap: 16px;
 }
 
 .sprint-header-left {
@@ -1007,6 +1079,9 @@ button {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .sprint-stat {
@@ -1023,8 +1098,10 @@ button {
 .sprint-body {
   display: grid;
   grid-template-columns: 1fr;
+  grid-template-rows: minmax(0, 1fr);
   flex: 1;
   min-height: 0;
+  overflow: hidden;
   transition: grid-template-columns 250ms ease;
 }
 
@@ -1040,6 +1117,7 @@ button {
 .board {
   padding: 16px 24px;
   overflow-y: auto;
+  min-height: 0;
 }
 
 .sprint-body.with-activity .board {
@@ -1048,15 +1126,16 @@ button {
 
 .board-columns {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
-  height: 100%;
+  align-items: start;
 }
 
 .column {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-width: 0;
   min-height: 0;
 }
 
@@ -1089,8 +1168,6 @@ button {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  overflow-y: auto;
-  flex: 1;
 }
 
 /* ═══ Task cards ════════════════════════════════════ */
@@ -1102,6 +1179,8 @@ button {
   cursor: pointer;
   transition: var(--transition);
   width: 100%;
+  min-width: 0;
+  overflow: hidden;
   text-align: left;
 }
 
@@ -1198,6 +1277,7 @@ button {
   padding: 4px 6px;
   background: var(--amber-dim);
   border-radius: 2px;
+  overflow-wrap: break-word;
 }
 
 .done-card {
@@ -1412,6 +1492,7 @@ button {
 .activity-stream {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 8px 0;
 }
 
@@ -1465,6 +1546,8 @@ button {
 .event-body {
   color: var(--text-secondary);
   line-height: 1.4;
+  min-width: 0;
+  overflow-wrap: break-word;
 }
 
 .event-label {
@@ -1751,6 +1834,41 @@ button {
   background: var(--red-dim);
 }
 
+.btn-delete-task {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  font-weight: 500;
+  padding: 4px 12px;
+  border-radius: var(--radius);
+  border: 1px solid rgba(204, 85, 85, 0.5);
+  background: transparent;
+  color: var(--red);
+  cursor: pointer;
+  transition: var(--transition);
+  width: 100%;
+}
+
+.btn-delete-task:hover {
+  background: var(--red-dim);
+}
+
+.btn-danger-sm {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: var(--radius);
+  border: 1px solid rgba(204, 85, 85, 0.4);
+  background: transparent;
+  color: var(--red);
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.btn-danger-sm:hover {
+  background: var(--red-dim);
+}
+
 .load-more-btn {
   display: block;
   width: 100%;
@@ -1997,10 +2115,28 @@ button {
   color: var(--text-primary);
 }
 
-.sprint-goal-edit {
+.sprint-goal-edit,
+.sprint-title-edit {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.sprint-title-input {
+  background: var(--bg-card);
+  border: 1px solid var(--text-tertiary);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+  padding: 4px 8px;
+  font-family: inherit;
+  min-width: 280px;
+}
+
+.sprint-title-input:focus {
+  outline: none;
+  border-color: var(--text-secondary);
 }
 
 .sprint-goal-input {

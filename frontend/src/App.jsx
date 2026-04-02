@@ -70,6 +70,8 @@ export default function App({ services, browser }) {
   const [isLoadingMoreEvents, setIsLoadingMoreEvents] = useState(false);
   const [editingGoal, setEditingGoal] = useState(false);
   const [goalDraft, setGoalDraft] = useState("");
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
 
   const refreshTimerRef = useRef(null);
   const routeRef = useRef(route);
@@ -525,6 +527,75 @@ export default function App({ services, browser }) {
     }
   }
 
+  async function handleUpdateSprintTitle(sprintId, title) {
+    if (!title.trim()) return;
+    setErrorMessage("");
+    try {
+      await services.updateSprint(sprintId, { title: title.trim() });
+      setEditingTitle(false);
+      const sprintPayload = await services.getSprint(sprintId);
+      setCurrentSprint(sprintPayload);
+      await refreshProjectScope(routeRef.current.projectId);
+    } catch (error) {
+      setErrorMessage(error.message);
+    }
+  }
+
+  async function handleDeleteTask(taskId) {
+    if (!window.confirm("Delete this task? All run history will be removed. This cannot be undone.")) return;
+    setIsActionPending(true);
+    setErrorMessage("");
+    try {
+      await services.deleteTask(taskId);
+      setSelectedTaskId(null);
+      await refreshAllVisibleState({ keepSelectedTask: false });
+    } catch (error) {
+      setErrorMessage(error.message);
+    } finally {
+      setIsActionPending(false);
+    }
+  }
+
+  async function handleDeleteSprint(sprintId) {
+    if (!window.confirm("Delete this sprint and all its tasks? This cannot be undone.")) return;
+    setIsActionPending(true);
+    setErrorMessage("");
+    try {
+      await services.deleteSprint(sprintId);
+      if (routeRef.current.sprintId === sprintId) {
+        navigateTo(buildProjectPath(routeRef.current.projectId));
+      } else {
+        await refreshAllVisibleState({ keepSelectedTask: false });
+      }
+    } catch (error) {
+      setErrorMessage(error.message);
+    } finally {
+      setIsActionPending(false);
+    }
+  }
+
+  async function handleReorderSprint(sprintId, direction) {
+    const sorted = [...currentSprints]
+      .filter((s) => s.status === "planned")
+      .sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
+    const idx = sorted.findIndex((s) => s.id === sprintId);
+    const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= sorted.length) return;
+    const other = sorted[swapIdx];
+    const thisOrder = sorted[idx].order_index ?? 0;
+    const otherOrder = other.order_index ?? 0;
+    setErrorMessage("");
+    try {
+      await Promise.all([
+        services.updateSprint(sprintId, { order_index: otherOrder }),
+        services.updateSprint(other.id, { order_index: thisOrder }),
+      ]);
+      await refreshProjectScope(routeRef.current.projectId);
+    } catch (error) {
+      setErrorMessage(error.message);
+    }
+  }
+
   // Auto-scroll activity panel to bottom when new events arrive (if already at bottom)
   useLayoutEffect(() => {
     const el = activityListRef.current;
@@ -578,6 +649,8 @@ export default function App({ services, browser }) {
             onSelectSprint={(sprintId) => navigateTo(buildSprintPath(route.projectId, sprintId))}
             onOpenNewSprint={() => setNewSprintOpen(true)}
             onTransitionSprint={handleTransitionSprint}
+            onDeleteSprint={handleDeleteSprint}
+            onReorderSprint={handleReorderSprint}
           />
         ) : (
           <EmptyPanel title="Project not found" message="The requested project could not be loaded." />
@@ -590,8 +663,45 @@ export default function App({ services, browser }) {
               <header className="sprint-header">
                 <div className="sprint-header-left">
                   <div className="sprint-name">
-                    {currentSprint.title}
-                    <span className={`sprint-status-badge ss-${currentSprint.status}`}>{currentSprint.status}</span>
+                    {editingTitle ? (
+                      <div className="sprint-title-edit">
+                        <input
+                          className="sprint-title-input"
+                          value={titleDraft}
+                          onChange={(e) => setTitleDraft(e.target.value)}
+                          aria-label="Sprint title"
+                          autoFocus
+                        />
+                        <button
+                          className="btn-save-goal"
+                          type="button"
+                          onClick={() => handleUpdateSprintTitle(currentSprint.id, titleDraft)}
+                          disabled={!titleDraft.trim()}
+                        >
+                          Save
+                        </button>
+                        <button
+                          className="btn-cancel-goal"
+                          type="button"
+                          onClick={() => setEditingTitle(false)}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        {currentSprint.title}
+                        <span className={`sprint-status-badge ss-${currentSprint.status}`}>{currentSprint.status}</span>
+                        <button
+                          className="goal-edit-btn"
+                          type="button"
+                          aria-label="Edit sprint title"
+                          onClick={() => { setTitleDraft(currentSprint.title); setEditingTitle(true); }}
+                        >
+                          ✎
+                        </button>
+                      </>
+                    )}
                   </div>
                   {editingGoal ? (
                     <div className="sprint-goal-edit">
@@ -670,6 +780,15 @@ export default function App({ services, browser }) {
                       Complete sprint
                     </button>
                   ) : null}
+                  <button
+                    className="btn-danger-sm"
+                    type="button"
+                    disabled={isActionPending}
+                    onClick={() => handleDeleteSprint(currentSprint.id)}
+                    title="Delete sprint"
+                  >
+                    Delete sprint
+                  </button>
                   {topbarProject?.status === "running" ? (
                     <button
                       className="btn-stop"
@@ -803,6 +922,7 @@ export default function App({ services, browser }) {
                   onDeny={handleDenyTask}
                   onCancel={handleCancelTask}
                   onSave={handleSaveTask}
+                  onDelete={handleDeleteTask}
                 />
               </div>
             </div>

@@ -1062,6 +1062,37 @@ class ForemanStore:
             for row in rows
         ]
 
+    def delete_task(self, task_id: str) -> None:
+        """Delete a task and all its runs and events (cascade)."""
+
+        with self._connection:
+            self._connection.execute(
+                "DELETE FROM events WHERE run_id IN"
+                " (SELECT id FROM runs WHERE task_id = ?)",
+                (task_id,),
+            )
+            self._connection.execute("DELETE FROM runs WHERE task_id = ?", (task_id,))
+            self._connection.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+
+    def delete_sprint(self, sprint_id: str) -> None:
+        """Delete a sprint and all its tasks, runs, and events (cascade)."""
+
+        with self._connection:
+            self._connection.execute(
+                "DELETE FROM events WHERE run_id IN"
+                " (SELECT r.id FROM runs r"
+                "  JOIN tasks t ON t.id = r.task_id"
+                "  WHERE t.sprint_id = ?)",
+                (sprint_id,),
+            )
+            self._connection.execute(
+                "DELETE FROM runs WHERE task_id IN"
+                " (SELECT id FROM tasks WHERE sprint_id = ?)",
+                (sprint_id,),
+            )
+            self._connection.execute("DELETE FROM tasks WHERE sprint_id = ?", (sprint_id,))
+            self._connection.execute("DELETE FROM sprints WHERE id = ?", (sprint_id,))
+
     def count_projects(self) -> int:
         """Return the number of tracked projects."""
 
