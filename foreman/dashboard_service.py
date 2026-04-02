@@ -146,6 +146,7 @@ class DashboardService:
             "repo_path": project.repo_path,
             "spec_path": project.spec_path,
             "methodology": project.methodology,
+            "totals": self.store.run_totals(project_id=project_id),
         }
 
     def get_project_settings(self, project_id: str) -> dict[str, Any]:
