@@ -628,7 +628,7 @@ export default function App({ services, browser }) {
       }
     : null;
 
-  const topbarProjectTotals = projects.find((p) => p.id === route.projectId)?.totals || null;
+  const topbarProjectTotals = currentProject?.totals || projects.find((p) => p.id === route.projectId)?.totals || null;
 
   return (
     <div className="app-shell">
