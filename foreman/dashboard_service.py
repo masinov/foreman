@@ -817,6 +817,16 @@ class DashboardService:
         self.store.save_event(event)
         return {"status": "blocked", "task_id": task_id}
 
+    def delete_sprint(self, sprint_id: str) -> dict[str, Any]:
+        """Delete a sprint and all its tasks, runs, and events."""
+
+        sprint = self.store.get_sprint(sprint_id)
+        if sprint is None:
+            raise DashboardNotFoundError(f"Sprint not found: {sprint_id}")
+        project_id = sprint.project_id
+        self.store.delete_sprint(sprint_id)
+        return {"ok": "deleted", "sprint_id": sprint_id, "project_id": project_id}
+
     def cancel_task(self, task_id: str) -> dict[str, Any]:
         """Cancel one task that is not already done or cancelled."""
 

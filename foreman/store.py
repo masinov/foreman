@@ -1062,7 +1062,7 @@ class ForemanStore:
             for row in rows
         ]
 
-    def delete_task(self, task_id: str) -> None:
+    def delete_task(self, task_id: str) -> dict[str, str]:
         """Delete a task and all its runs and events (cascade)."""
 
         with self._connection:
@@ -1073,8 +1073,9 @@ class ForemanStore:
             )
             self._connection.execute("DELETE FROM runs WHERE task_id = ?", (task_id,))
             self._connection.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+        return {"ok": "deleted"}
 
-    def delete_sprint(self, sprint_id: str) -> None:
+    def delete_sprint(self, sprint_id: str) -> dict[str, str]:
         """Delete a sprint and all its tasks, runs, and events (cascade)."""
 
         with self._connection:
@@ -1092,6 +1093,7 @@ class ForemanStore:
             )
             self._connection.execute("DELETE FROM tasks WHERE sprint_id = ?", (sprint_id,))
             self._connection.execute("DELETE FROM sprints WHERE id = ?", (sprint_id,))
+        return {"ok": "deleted"}
 
     def count_projects(self) -> int:
         """Return the number of tracked projects."""

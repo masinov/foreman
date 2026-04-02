@@ -32,14 +32,10 @@ export const EVENT_FILTERS = [
   { key: "review", label: "Review" },
 ];
 
-function totalsSummaryLine(sprintTotals, projectTotals) {
-  const sprint = sprintTotals?.total_token_count ? formatCompactCount(sprintTotals.total_token_count) : null;
+function totalsSummaryLine(projectTotals, currentProject) {
   const project = projectTotals?.total_token_count ? formatCompactCount(projectTotals.total_token_count) : null;
-  if (sprint && project) {
-    return `sprint ${sprint} · project ${project} tokens`;
-  }
   if (project) {
-    return `project ${project} tokens`;
+    return `${project} tokens`;
   }
   return "No run totals yet";
 }
@@ -60,7 +56,6 @@ export function Topbar({
   projects,
   currentProject,
   currentSprint,
-  sprintTotals,
   projectTotals,
   projectStatus,
   onOpenDashboard,
@@ -156,7 +151,7 @@ export function Topbar({
         </nav>
       </div>
       <div className="topbar-right">
-        <div className="topbar-tokens">{totalsSummaryLine(sprintTotals, projectTotals)}</div>
+        <div className="topbar-tokens">{totalsSummaryLine(projectTotals)}</div>
         <div className={`engine-status ${projectStatus || "idle"}`}>
           <span className="dot" />
           <span>{formatProjectStatus(projectStatus || "idle")}</span>

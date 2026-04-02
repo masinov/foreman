@@ -13,6 +13,8 @@ import httpx
 
 from foreman.dashboard_service import (
     DashboardService,
+    DashboardActionError,
+    DashboardNotFoundError,
     DashboardValidationError,
 )
 from foreman.dashboard_backend import create_dashboard_app
@@ -2092,6 +2094,48 @@ class DashboardInterventionTests(unittest.TestCase):
             resp = asyncio.run(send())
             self.assertEqual(resp.status_code, 200)
             self.assertEqual(resp.json()["status"], "blocked")
+
+
+class DashboardDeleteSprintTests(unittest.TestCase):
+    """Tests for sprint deletion."""
+
+    def _api(self):
+        temp_dir = tempfile.TemporaryDirectory()
+        db_path = Path(temp_dir.name) / "foreman.db"
+        store = ForemanStore(db_path)
+        store.initialize()
+        store.save_project(Project(
+            id="proj-del",
+            name="Deletion Test",
+            repo_path="/tmp/del",
+            workflow_id="development",
+        ))
+        return store, temp_dir, DashboardService(store)
+
+    def test_delete_sprint_exists(self):
+        store, temp_dir, api = self._api()
+        sprint = Sprint(
+            id="spr-del",
+            project_id="proj-del",
+            title="To Delete",
+            status="planned",
+            order_index=0,
+            created_at=datetime.now(timezone.utc).isoformat(),
+        )
+        store.save_sprint(sprint)
+
+        result = api.delete_sprint("spr-del")
+        self.assertEqual(result["ok"], "deleted")
+        self.assertIsNone(store.get_sprint("spr-del"))
+
+        store.close()
+        temp_dir.cleanup()
+
+    def test_delete_sprint_not_found(self):
+        _, temp_dir, api = self._api()
+        with self.assertRaises(DashboardNotFoundError):
+            api.delete_sprint("nonexistent")
+        temp_dir.cleanup()
 
     def test_cancel_sprint_from_active(self):
         self._create_sprint("spr-cancel-active", status="active")

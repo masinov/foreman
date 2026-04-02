@@ -720,6 +720,55 @@ button {
   background: var(--border-subtle);
 }
 
+/* ═══ Sprint status bar (bottom) ════════════════════ */
+.sprint-statusbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 6px 24px;
+  border-top: 1px solid var(--border-subtle);
+  font-size: 11px;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  background: var(--bg);
+}
+
+.sprint-statusbar .sv {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.sprint-statusbar-sep {
+  color: var(--text-tertiary);
+  opacity: 0.5;
+}
+
+.sprint-statusbar .sprint-status-badge {
+  font-size: 9px;
+}
+
+/* ═══ New task button in TODO column ═══════════════ */
+.btn-new-task-col {
+  width: 100%;
+  padding: 8px;
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  transition: var(--transition);
+  margin-top: auto;
+}
+
+.btn-new-task-col:hover {
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+  background: var(--bg);
+}
+
 .sprint-card {
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);

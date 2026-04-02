@@ -626,7 +626,6 @@ export default function App({ services, browser }) {
       }
     : null;
 
-  const topbarSprintTotals = currentSprint?.totals || currentSprints.find((s) => s.status === "active")?.totals || null;
   const topbarProjectTotals = projects.find((p) => p.id === route.projectId)?.totals || null;
 
   return (
@@ -635,7 +634,6 @@ export default function App({ services, browser }) {
         projects={projects}
         currentProject={topbarProject}
         currentSprint={currentSprint}
-        sprintTotals={topbarSprintTotals}
         projectTotals={topbarProjectTotals}
         projectStatus={projects.find((project) => project.id === route.projectId)?.status}
         onOpenDashboard={() => navigateTo(buildDashboardPath())}
@@ -739,24 +737,6 @@ export default function App({ services, browser }) {
                   )}
                 </div>
                 <div className="sprint-header-right">
-                  <div className="progress-bar" style={{ width: "80px" }} aria-hidden="true">
-                    <span className="p-done" style={{ flex: currentSprint.task_counts?.done || 0 }} />
-                    <span className="p-wip" style={{ flex: currentSprint.task_counts?.in_progress || 0 }} />
-                    <span className="p-blocked" style={{ flex: currentSprint.task_counts?.blocked || 0 }} />
-                    <span className="p-todo" style={{ flex: currentSprint.task_counts?.todo || 0 }} />
-                  </div>
-                  <span className="sprint-stat">
-                    <span className="sv">{formatCount(currentSprint.task_counts?.done || 0)}</span>/{formatCount((currentSprint.task_counts?.done || 0) + (currentSprint.task_counts?.in_progress || 0) + (currentSprint.task_counts?.blocked || 0) + (currentSprint.task_counts?.todo || 0))} done
-                  </span>
-                  <span className="sprint-stat">
-                    <span className="sv">{formatCompactCount(currentSprint.totals.total_token_count)}</span> tokens
-                  </span>
-                  <span className="sprint-stat">
-                    <span className="sv">{formatCount(currentSprint.totals.run_count)}</span> runs
-                  </span>
-                  <button className="btn-action" type="button" onClick={() => setNewTaskOpen(true)}>
-                    <span className="plus">+</span> New task
-                  </button>
                   {currentSprint.status === "planned" ? (
                     <button
                       className="btn-action"
@@ -764,7 +744,7 @@ export default function App({ services, browser }) {
                       disabled={isActionPending}
                       onClick={() => handleTransitionSprint(currentSprint.id, "active")}
                     >
-                      Start sprint
+                      Start
                     </button>
                   ) : null}
                   {currentSprint.status === "active" ? (
@@ -807,7 +787,7 @@ export default function App({ services, browser }) {
                     onClick={() => handleDeleteSprint(currentSprint.id)}
                     title="Delete sprint"
                   >
-                    Delete sprint
+                    Delete
                   </button>
                   {topbarProject?.status === "running" ? (
                     <button
@@ -819,7 +799,7 @@ export default function App({ services, browser }) {
                       onClick={handleStopAgent}
                     >
                       <svg viewBox="0 0 16 16" width="12" height="12"><rect x="3" y="3" width="10" height="10" rx="1"/></svg>
-                      Stop agent
+                      Stop
                     </button>
                   ) : (
                     <button
@@ -862,6 +842,15 @@ export default function App({ services, browser }) {
                                 />
                               ))
                             )}
+                            {column.key === "todo" ? (
+                              <button
+                                className="btn-new-task-col"
+                                type="button"
+                                onClick={() => setNewTaskOpen(true)}
+                              >
+                                + New task
+                              </button>
+                            ) : null}
                           </div>
                         </div>
                       );
@@ -947,6 +936,21 @@ export default function App({ services, browser }) {
                   onDelete={handleDeleteTask}
                 />
               </div>
+              <footer className="sprint-statusbar">
+                <span className="sprint-stat">
+                  <span className="sv">{formatCompactCount(currentSprint.totals.total_token_count)}</span> tokens
+                </span>
+                <span className="sprint-stat">
+                  <span className="sv">{formatCount(currentSprint.totals.run_count)}</span> runs
+                </span>
+                <span className="sprint-stat">
+                  <span className="sv">{formatCount(currentSprint.task_counts?.done || 0)}</span>/{formatCount((currentSprint.task_counts?.done || 0) + (currentSprint.task_counts?.in_progress || 0) + (currentSprint.task_counts?.blocked || 0) + (currentSprint.task_counts?.todo || 0))} tasks
+                </span>
+                <span className="sprint-statusbar-sep" aria-hidden="true">·</span>
+                <span className="sprint-stat">
+                  <span className={`sprint-status-badge ss-${currentSprint.status}`}>{currentSprint.status}</span>
+                </span>
+              </footer>
             </div>
           </section>
         ) : (
