@@ -428,6 +428,19 @@ export default function App({ services, browser }) {
     }
   }
 
+  async function handleStopTask(taskId) {
+    setIsActionPending(true);
+    setErrorMessage("");
+    try {
+      await services.stopTask(taskId);
+      await refreshAllVisibleState();
+    } catch (error) {
+      setErrorMessage(error.message);
+    } finally {
+      setIsActionPending(false);
+    }
+  }
+
   async function handleCancelTask(taskId) {
     setIsActionPending(true);
     setErrorMessage("");
@@ -771,13 +784,33 @@ export default function App({ services, browser }) {
                     </button>
                   ) : null}
                   {currentSprint.status === "active" ? (
+                    <>
+                      <button
+                        className="btn-secondary"
+                        type="button"
+                        disabled={isActionPending}
+                        onClick={() => handleTransitionSprint(currentSprint.id, "completed")}
+                      >
+                        Complete sprint
+                      </button>
+                      <button
+                        className="btn-danger-sm"
+                        type="button"
+                        disabled={isActionPending}
+                        onClick={() => handleTransitionSprint(currentSprint.id, "cancelled")}
+                      >
+                        Cancel sprint
+                      </button>
+                    </>
+                  ) : null}
+                  {currentSprint.status === "planned" ? (
                     <button
-                      className="btn-secondary"
+                      className="btn-danger-sm"
                       type="button"
                       disabled={isActionPending}
-                      onClick={() => handleTransitionSprint(currentSprint.id, "completed")}
+                      onClick={() => handleTransitionSprint(currentSprint.id, "cancelled")}
                     >
-                      Complete sprint
+                      Cancel sprint
                     </button>
                   ) : null}
                   <button
@@ -838,6 +871,7 @@ export default function App({ services, browser }) {
                                   onSelect={setSelectedTaskId}
                                   onApprove={handleApproveTask}
                                   onDeny={handleDenyTask}
+                                  onStop={handleStopTask}
                                 />
                               ))
                             )}
@@ -920,6 +954,7 @@ export default function App({ services, browser }) {
                   onApprove={handleApproveTask}
                   onDenyNoteChange={setDenyNote}
                   onDeny={handleDenyTask}
+                  onStop={handleStopTask}
                   onCancel={handleCancelTask}
                   onSave={handleSaveTask}
                   onDelete={handleDeleteTask}

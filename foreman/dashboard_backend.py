@@ -345,6 +345,10 @@ def create_dashboard_app(
         data = await _read_json_body(request)
         return with_api(lambda api: api.update_task_fields(task_id, updates=data))
 
+    @app.post("/api/tasks/{task_id}/stop")
+    async def stop_task(task_id: str) -> dict[str, Any]:
+        return with_api(lambda api: api.stop_task(task_id))
+
     @app.post("/api/tasks/{task_id}/cancel")
     async def cancel_task(task_id: str) -> dict[str, Any]:
         return with_api(lambda api: api.cancel_task(task_id))

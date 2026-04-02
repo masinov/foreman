@@ -93,6 +93,11 @@ export function createDashboardServices({
         body: { title, goal, initial_tasks: initialTasks || undefined },
       });
     },
+    stopTask(taskId) {
+      return requestJson(fetchImpl, `/api/tasks/${encodeURIComponent(taskId)}/stop`, {
+        method: "POST",
+      });
+    },
     cancelTask(taskId) {
       return requestJson(fetchImpl, `/api/tasks/${encodeURIComponent(taskId)}/cancel`, {
         method: "POST",

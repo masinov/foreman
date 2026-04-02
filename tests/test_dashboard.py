@@ -1949,3 +1949,156 @@ class DashboardRolesTests(unittest.TestCase):
 
         resp = asyncio.run(send())
         self.assertEqual(resp.status_code, 400)
+
+
+class DashboardInterventionTests(unittest.TestCase):
+    """Tests for sprint-36 intervention and ordering features."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.temp_dir = tempfile.TemporaryDirectory()
+        cls.db_path = Path(cls.temp_dir.name) / "foreman.db"
+        cls.store = ForemanStore(cls.db_path)
+        cls.store.initialize()
+
+        cls.project = Project(
+            id="proj-intervention",
+            name="Intervention Test",
+            repo_path="/tmp/intervention",
+            workflow_id="development",
+            default_branch="main",
+        )
+        cls.store.save_project(cls.project)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls.store.close()
+        cls.temp_dir.cleanup()
+
+    def _api(self):
+        return DashboardService(self.store)
+
+    def _create_sprint(self, sprint_id, status="planned", order_index=0):
+        sprint = Sprint(
+            id=sprint_id,
+            project_id="proj-intervention",
+            title=sprint_id,
+            goal="test",
+            status=status,
+            order_index=order_index,
+            created_at=datetime.now(timezone.utc).isoformat(),
+        )
+        self.store.save_sprint(sprint)
+        return sprint
+
+    def _create_task(self, task_id, sprint_id, status="todo"):
+        task = Task(
+            id=task_id,
+            project_id="proj-intervention",
+            sprint_id=sprint_id,
+            title=task_id,
+            task_type="feature",
+            status=status,
+            priority=0,
+            order_index=0,
+            created_at=datetime.now(timezone.utc).isoformat(),
+        )
+        self.store.save_task(task)
+        return task
+
+    def test_stop_task_blocks_in_progress(self):
+        sprint = self._create_sprint("spr-stop-1", status="active")
+        self._create_task("task-stop-1", sprint.id, status="in_progress")
+
+        result = self._api().stop_task("task-stop-1")
+        self.assertEqual(result["status"], "blocked")
+
+        updated = self.store.get_task("task-stop-1")
+        self.assertEqual(updated.status, "blocked")
+        self.assertIn("Stop requested", updated.blocked_reason)
+
+    def test_stop_task_rejects_non_in_progress(self):
+        self._create_task("task-stop-2", "spr-stop-1", status="todo")
+
+        with self.assertRaises(DashboardValidationError):
+            self._api().stop_task("task-stop-2")
+
+    def test_stop_task_emits_event(self):
+        # Reuse the sprint from test_stop_task_blocks_in_progress (spr-stop-1 is already active)
+        self._create_task("task-stop-3", "spr-stop-1", status="in_progress")
+        run = Run(
+            id="run-stop-3",
+            task_id="task-stop-3",
+            project_id="proj-intervention",
+            role_id="developer",
+            workflow_step="develop",
+            agent_backend="claude",
+            status="running",
+            started_at=datetime.now(timezone.utc).isoformat(),
+        )
+        self.store.save_run(run)
+
+        self._api().stop_task("task-stop-3")
+
+        events = self.store.list_events(task_id="task-stop-3")
+        stop_events = [e for e in events if e.event_type == "human.stop_requested"]
+        self.assertEqual(len(stop_events), 1)
+        self.assertEqual(stop_events[0].run_id, "run-stop-3")
+
+    def test_stop_task_api_route(self):
+        # Use a separate DB for the API route test to avoid connection sharing
+        with tempfile.TemporaryDirectory() as td:
+            api_db = Path(td) / "api.db"
+            store = ForemanStore(api_db)
+            store.initialize()
+            store.save_project(Project(
+                id="proj-api",
+                name="API Test",
+                repo_path="/tmp/api",
+                workflow_id="development",
+            ))
+            store.save_sprint(Sprint(
+                id="spr-stop-api",
+                project_id="proj-api",
+                title="stop-api",
+                goal="test",
+                status="active",
+                order_index=0,
+                created_at=datetime.now(timezone.utc).isoformat(),
+            ))
+            store.save_task(Task(
+                id="task-stop-api",
+                project_id="proj-api",
+                sprint_id="spr-stop-api",
+                title="stop-api-task",
+                task_type="feature",
+                status="in_progress",
+                priority=0,
+                order_index=0,
+                created_at=datetime.now(timezone.utc).isoformat(),
+            ))
+            store.close()
+
+            app = create_dashboard_app(str(api_db))
+            transport = httpx.ASGITransport(app=app)
+
+            async def send():
+                async with httpx.AsyncClient(
+                    transport=transport,
+                    base_url="http://testserver",
+                ) as client:
+                    return await client.post("/api/tasks/task-stop-api/stop")
+
+            resp = asyncio.run(send())
+            self.assertEqual(resp.status_code, 200)
+            self.assertEqual(resp.json()["status"], "blocked")
+
+    def test_cancel_sprint_from_active(self):
+        self._create_sprint("spr-cancel-active", status="active")
+        result = self._api().transition_sprint("spr-cancel-active", target_status="cancelled")
+        self.assertEqual(result["status"], "cancelled")
+
+    def test_cancel_sprint_from_planned(self):
+        self._create_sprint("spr-cancel-planned", status="planned")
+        result = self._api().transition_sprint("spr-cancel-planned", target_status="cancelled")
+        self.assertEqual(result["status"], "cancelled")
