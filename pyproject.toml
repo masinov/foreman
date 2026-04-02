@@ -17,6 +17,7 @@ dependencies = [
   "uvicorn>=0.30,<1",
   "httpx>=0.27,<1",
   "tomli>=2.0.1; python_version < '3.11'",
+  "tomlkit>=0.12",
 ]
 
 [project.scripts]

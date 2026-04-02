@@ -46,6 +46,46 @@ class DashboardActionError(DashboardServiceError):
     """Raised when one dashboard action cannot be completed."""
 
 
+_ALLOWED_ROLE_FIELDS: frozenset[str] = frozenset(
+    {"backend", "model", "permission_mode", "timeout_minutes", "max_cost_usd"}
+)
+
+
+def _validate_role_updates(updates: dict[str, Any]) -> None:
+    """Raise DashboardValidationError when any role field value is invalid."""
+
+    for field_name in ("backend", "model", "permission_mode"):
+        if field_name in updates and not isinstance(updates[field_name], str):
+            raise DashboardValidationError(f"'{field_name}' must be a string.")
+
+    if "timeout_minutes" in updates:
+        value = updates["timeout_minutes"]
+        if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+            raise DashboardValidationError("'timeout_minutes' must be a positive integer.")
+
+    if "max_cost_usd" in updates:
+        value = updates["max_cost_usd"]
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or float(value) <= 0:
+            raise DashboardValidationError("'max_cost_usd' must be a positive number.")
+
+
+def _serialize_role(role: "Any") -> dict[str, Any]:
+    """Serialize one RoleDefinition to a JSON-friendly dict."""
+
+    return {
+        "id": role.id,
+        "name": role.name,
+        "description": role.description,
+        "backend": role.agent.backend,
+        "model": role.agent.model,
+        "permission_mode": role.agent.permission_mode,
+        "session_persistence": role.agent.session_persistence,
+        "timeout_minutes": role.completion.timeout_minutes,
+        "max_cost_usd": role.completion.max_cost_usd,
+        "source_path": str(role.source_path),
+    }
+
+
 def _stable_slug(text: str) -> str:
     """Return a filesystem-safe ASCII slug from arbitrary text."""
     normalized = unicodedata.normalize("NFKD", text.strip().lower())
@@ -801,6 +841,69 @@ class DashboardService:
             "event_id": event.id,
             "task_id": task_id,
         }
+
+    def list_roles(self) -> dict[str, Any]:
+        """Return all available role definitions."""
+
+        from .roles import RoleLoadError, load_roles
+
+        try:
+            roles = load_roles()
+        except RoleLoadError as exc:
+            raise DashboardActionError(f"Failed to load roles: {exc}") from exc
+        return {"roles": [_serialize_role(role) for role in roles.values()]}
+
+    def update_role(self, role_id: str, *, updates: dict[str, Any]) -> dict[str, Any]:
+        """Apply allowed field updates to one role TOML file and return the updated role.
+
+        Allowed fields: backend, model, permission_mode, timeout_minutes, max_cost_usd.
+        Unknown role returns DashboardNotFoundError; validation failures raise
+        DashboardValidationError.
+        """
+
+        from .roles import RoleLoadError, load_role, load_roles
+
+        try:
+            roles = load_roles()
+        except RoleLoadError as exc:
+            raise DashboardActionError(f"Failed to load roles: {exc}") from exc
+
+        if role_id not in roles:
+            raise DashboardNotFoundError(f"Role not found: {role_id}")
+
+        unknown = set(updates) - _ALLOWED_ROLE_FIELDS
+        if unknown:
+            raise DashboardValidationError(
+                f"Unknown role fields: {', '.join(sorted(unknown))}"
+            )
+
+        if not updates:
+            return _serialize_role(roles[role_id])
+
+        _validate_role_updates(updates)
+
+        import tomlkit
+
+        role = roles[role_id]
+        with open(role.source_path, encoding="utf-8") as fh:
+            doc = tomlkit.load(fh)
+
+        for key, value in updates.items():
+            if key in ("backend", "model", "permission_mode"):
+                doc["agent"][key] = value
+            elif key == "timeout_minutes":
+                doc["completion"]["timeout_minutes"] = int(value)
+            elif key == "max_cost_usd":
+                doc["completion"]["max_cost_usd"] = float(value)
+
+        with open(role.source_path, "w", encoding="utf-8") as fh:
+            tomlkit.dump(doc, fh)
+
+        try:
+            updated_role = load_role(role.source_path)
+        except RoleLoadError as exc:
+            raise DashboardActionError(f"Failed to reload role after update: {exc}") from exc
+        return _serialize_role(updated_role)
 
     def get_project_status(self, project_id: str) -> str:
         """Derive one project status from its task states."""

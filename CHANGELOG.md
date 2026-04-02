@@ -168,3 +168,49 @@ memory changes rather than versioned product releases.
   `store.initialize()` and reports each applied version with description
 - changed `ForemanStore.initialize()` to return `list[int]` (backward-compatible)
 - added 7 tests in `DbCommandTests`
+- completed `sprint-30-wire-dead-surfaces`: wired Stop agent button to
+  `POST /api/projects/{id}/agent/stop`; added `PATCH /api/sprints/{id}` for
+  lifecycle transitions (planned→active, active→completed/cancelled) with
+  `started_at`/`completed_at` timestamps; added `PATCH /api/tasks/{id}` for
+  `description` and `priority` updates; extended `get_task` run serialization;
+  added sprint status badge and Start/Complete buttons in sprint view header;
+  10 tests in `DashboardSprintLifecycleTests`
+- completed `sprint-31-backlog-items`: sprint creation with inline initial tasks
+  via `initial_tasks` in API body; task cancellation (`POST /api/tasks/{id}/cancel`,
+  Cancel task button in drawer); task dependency display in drawer via
+  `depends_on_task_ids`; event log load-more with `before_event_id` cursor and
+  `has_more` flag; cancelled sprint filter in list and kanban Done column;
+  8 tests in `DashboardSprintTaskBacklogTests`
+- completed `sprint-32-tier1-editing`: task field editing in `TaskDetailDrawer`
+  (title, type, acceptance criteria) via edit mode with chip selector and
+  textarea; sprint goal inline editing in sprint header via `update_sprint_fields`;
+  activity panel auto-scroll using `useLayoutEffect` and scroll-position tracking;
+  `containerRef`/`onScroll` props on `EventList`; 11 tests in
+  `DashboardTaskEditingTests`
+- completed `sprint-33-tier2-gaps`: `workflow_current_step` added to
+  `list_sprint_tasks` response and shown as badge on in-progress task cards and
+  in detail drawer; project creation from dashboard via `POST /api/projects` and
+  `NewProjectModal`; `foreman run` from dashboard via
+  `POST /api/projects/{id}/agent/start` spawning a `foreman run` subprocess with
+  double-start prevention; Run ▶ / Stop ■ toggle in sprint header; 9 tests in
+  `DashboardTier2Tests`
+- completed `sprint-34-task-edit-enforcement`: `update_task_fields` now tracks
+  which fields actually changed; emits `human.task_edited` event with
+  `changed_fields` payload for `in_progress` and `blocked` tasks; creates a
+  synthetic dashboard/edit run if no run history exists (FK safety);
+  `getEventCategory` broadened from exact `human.message` match to `human.*`
+  prefix; `formatEventSummary` handles `human.task_edited`; 6 tests in
+  `DashboardTaskEditEventTests`
+- completed `sprint-35-dashboard-crud-polish`: fixed board-view filter leak
+  (status filter buttons and sort conditioned on list view mode); added
+  `ForemanStore.delete_task()` and `delete_sprint()` with FK-safe cascade
+  (events → runs → tasks → sprint); `DELETE /api/tasks/{id}` and
+  `DELETE /api/sprints/{id}` routes; delete buttons in `TaskDetailDrawer` and
+  on sprint cards with confirm guard; sprint title inline editing in sprint
+  header; `order_index`, `started_at`, `completed_at` added to all sprint API
+  responses; `order_index` editable via `PATCH /api/sprints/{id}`; ↑/↓ reorder
+  buttons on sprint cards swap adjacent `order_index` values; sprint list sort
+  fixed to use `order_index` (was using undefined `order` field); `formatDate`
+  added; dates shown on sprint cards and in sprint header stats; 18 new tests
+  across `DashboardDeleteTests` and `DashboardSprintOrderTests`; 95 dashboard
+  tests and 20 E2E tests all passing

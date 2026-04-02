@@ -2,19 +2,42 @@
 
 ## Current sprint
 
-- Sprint: `sprint-31-backlog-items`
-- Status: done
-- Goal: clear the sprint-30 backlog — sprint creation with inline tasks, task
-  cancellation, task dependencies display, event log load-more, and cancelled
-  sprint filter
+- Sprint: none active (between sprints)
+- Last completed: `sprint-35-dashboard-crud-polish` (2026-04-01)
+- See `docs/sprints/current.md` for recently completed sprint list
 
 ## Active branches
 
-- no long-lived feature branch should remain loose after the engine DB
-  discovery, security-review, backend-preflight, and retention slices; start
-  product-surface hardening work from `main`
+- no active feature branches; sprints 32–35 all landed to `main`
 
-## Completed this week
+## Completed this session (sprints 30–35)
+
+- completed `sprint-30-wire-dead-surfaces`
+- wired Stop agent button; `PATCH /api/sprints/{id}` lifecycle transitions
+  (planned→active→completed/cancelled); `started_at`/`completed_at` set on
+  transition; `PATCH /api/tasks/{id}` for description and priority; sprint
+  status badges and Start/Complete buttons in sprint view header
+- completed `sprint-31-backlog-items`
+- sprint creation with inline tasks; task cancellation; task dependency display;
+  event log load-more with cursor; cancelled sprint filter in list and kanban
+- completed `sprint-32-tier1-editing`
+- task field editing in `TaskDetailDrawer` (title, type, criteria); sprint goal
+  inline editing; activity panel auto-scroll via `useLayoutEffect`
+- completed `sprint-33-tier2-gaps`
+- workflow step badge on task cards and drawer; project creation from dashboard
+  (`POST /api/projects`, `NewProjectModal`); `foreman run` from dashboard
+  (`POST /api/projects/{id}/agent/start`, subprocess spawn, Run/Stop toggle)
+- completed `sprint-34-task-edit-enforcement`
+- `update_task_fields` tracks changed fields; `human.task_edited` event emitted
+  for `in_progress`/`blocked` task edits; `getEventCategory` broadened to
+  `human.*` prefix; synthetic run created when task has no run history
+- completed `sprint-35-dashboard-crud-polish`
+- board-view filter leak fixed (filters gated on list mode); delete task/sprint
+  with FK-safe cascade in store; sprint title inline editing; sprint ordering
+  (`order_index` in API, ↑/↓ reorder buttons); `started_at`/`completed_at`
+  exposed in sprint responses; date display on cards and sprint header
+
+## Previously completed (sprints 1–29)
 
 - reconciled the previously loose feature and recovery histories into one
   integrated mainline and pushed the result to `origin/main`
@@ -190,7 +213,7 @@
 - fixed two E2E test regressions from previous dashboard overhaul session
 - 10 new tests in `DashboardSprintLifecycleTests`; 213 non-E2E, 20 E2E tests pass
 
-## Current repo state
+## Current repo state (as of sprint-35)
 
 - The repository now contains:
   - the product spec and UI mockup,
@@ -239,6 +262,13 @@
     via `prune_old_history()`,
   - 20 browser-driven E2E tests in `tests/test_e2e.py` covering the full
     FastAPI + SQLite + React dashboard stack via Playwright and Chromium,
+  - full dashboard CRUD: create, edit, and delete for projects, sprints, and
+    tasks; sprint title and goal inline editing; sprint ordering via ↑/↓ with
+    `order_index` in all sprint API responses; `started_at`/`completed_at`
+    displayed on sprint cards and in sprint view header,
+  - `human.task_edited` event emission for in-progress and blocked task edits,
+    with synthetic run creation when no run history exists,
+  - 95 dashboard unit/integration tests and 20 E2E tests all passing,
   - repo-memory docs that are intended to let a fresh agent continue from the
     next slice without reconstructing prior branch history.
 - The temporary markdown sprint and status workflow remains intentional
@@ -247,8 +277,12 @@
 
 ## Ready next
 
-- no prioritised backlog items; remaining gap-analysis items from sprint-30 audit
-  are in the backlog
+- SSE transport hardening (Tier 3, deferred — lowest urgency)
+- E2E test coverage for sprints 32–35 features
+- Task reordering within sprint board (order_index UI for tasks)
+- Task priority editing UI
+- Move task between sprints
+- See `docs/sprints/backlog.md` for full list
 
 ## Open risks
 

@@ -1458,16 +1458,7 @@ def generate_branch_name(task: Task) -> str:
     """Generate a stable branch name for one directed task."""
 
     prefix = _BRANCH_PREFIXES.get(task.task_type, "feat")
-    slug = _slugify(task.title)
-    if slug:
-        return f"{prefix}/{task.id}-{slug}"
     return f"{prefix}/{task.id}"
-
-
-def _slugify(text: str) -> str:
-    lowered = text.strip().lower()
-    slug = re.sub(r"[^a-z0-9]+", "-", lowered).strip("-")
-    return slug[:48]
 
 
 def _new_id(prefix: str) -> str:

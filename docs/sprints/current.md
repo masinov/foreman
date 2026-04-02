@@ -1,33 +1,22 @@
 # Current Sprint
 
-- Sprint: `sprint-34-task-edit-enforcement`
-- Status: done
-- Goal: close the Tier 3 task-editing enforcement gap — emit `human.task_edited`
-  events when in-progress or blocked tasks are edited from the dashboard
-- Branch: `feat/sprint-34-task-edit-enforcement`
-- Primary references:
-  - `foreman/dashboard_service.py`
-  - `frontend/src/format.js`
-  - `tests/test_dashboard.py`
+- Sprint: none active
+- Status: between sprints
+- Last completed: `sprint-35-dashboard-crud-polish` (2026-04-01)
 
-## Included tasks
+## Recently completed (this session)
 
-1. `[done]` Task editing enforcement
-   Deliverable: `update_task_fields()` tracks actually-changed fields; for
-   `in_progress` and `blocked` tasks with at least one real change, emits a
-   `human.task_edited` event with `changed_fields` payload. Synthetic run
-   created if task has no run history. `todo`/`done`/`cancelled` edits remain
-   silent. Frontend `getEventCategory` broadened to `human.*` prefix so all
-   human events appear under the "Human" filter.
+- `sprint-32-tier1-editing` — task field editing in drawer, sprint goal inline
+  editing, activity panel auto-scroll
+- `sprint-33-tier2-gaps` — workflow step visibility, project creation from
+  dashboard, `foreman run` dashboard integration
+- `sprint-34-task-edit-enforcement` — `human.task_edited` event emission for
+  `in_progress`/`blocked` task edits; `getEventCategory` broadened to `human.*`
+- `sprint-35-dashboard-crud-polish` — board filter leak fix; delete task/sprint
+  with cascade; sprint title editing; sprint ordering (↑/↓ reorder, `order_index`
+  in API); `started_at`/`completed_at` exposed in sprint responses and displayed
+  on cards and in sprint header
 
-2. `[done]` 6 new tests in `DashboardTaskEditEventTests`
+## Next slice candidates
 
-## Acceptance criteria
-
-- PATCH in-progress task title → `human.task_edited` event with `title` in
-  `changed_fields`
-- PATCH blocked task criteria → `human.task_edited` event with
-  `acceptance_criteria` in `changed_fields`
-- PATCH todo task → no event emitted
-- PATCH with no actual change → no event emitted
-- 78 dashboard tests pass; 20 E2E tests pass
+See `docs/sprints/backlog.md`.

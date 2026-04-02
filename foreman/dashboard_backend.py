@@ -307,6 +307,10 @@ def create_dashboard_app(
             },
         )
 
+    @app.delete("/api/sprints/{sprint_id}")
+    async def delete_sprint(sprint_id: str) -> dict[str, Any]:
+        return with_api(lambda api: api.delete_sprint(sprint_id))
+
     @app.patch("/api/sprints/{sprint_id}")
     async def patch_sprint(sprint_id: str, request: Request) -> dict[str, Any]:
         data = await _read_json_body(request)
@@ -332,6 +336,10 @@ def create_dashboard_app(
     async def get_task(task_id: str) -> dict[str, Any]:
         return with_api(lambda api: api.get_task(task_id))
 
+    @app.delete("/api/tasks/{task_id}")
+    async def delete_task(task_id: str) -> dict[str, Any]:
+        return with_api(lambda api: api.delete_task(task_id))
+
     @app.patch("/api/tasks/{task_id}")
     async def update_task(task_id: str, request: Request) -> dict[str, Any]:
         data = await _read_json_body(request)
@@ -356,6 +364,15 @@ def create_dashboard_app(
         return with_api(
             lambda api: api.create_human_message(task_id, text=str(data.get("text", "")))
         )
+
+    @app.get("/api/roles")
+    async def list_roles() -> dict[str, Any]:
+        return with_api(lambda api: api.list_roles())
+
+    @app.patch("/api/roles/{role_id}")
+    async def update_role(role_id: str, request: Request) -> dict[str, Any]:
+        data = await _read_json_body(request)
+        return with_api(lambda api: api.update_role(role_id, updates=data))
 
     return app
 
