@@ -703,16 +703,8 @@ export default function App({ services, browser }) {
                       </div>
                     ) : (
                       <>
-                        {currentSprint.title}
+                        <span className="sprint-title-text" title={currentSprint.title} onDoubleClick={() => { setTitleDraft(currentSprint.title); setEditingTitle(true); }}>{currentSprint.title}</span>
                         <span className={`sprint-status-badge ss-${currentSprint.status}`}>{currentSprint.status}</span>
-                        <button
-                          className="goal-edit-btn"
-                          type="button"
-                          aria-label="Edit sprint title"
-                          onClick={() => { setTitleDraft(currentSprint.title); setEditingTitle(true); }}
-                        >
-                          ✎
-                        </button>
                       </>
                     )}
                   </div>
@@ -741,16 +733,8 @@ export default function App({ services, browser }) {
                       </button>
                     </div>
                   ) : (
-                    <div className="sprint-goal-text">
+                    <div className="sprint-goal-text" onDoubleClick={() => { setGoalDraft(currentSprint.goal || ""); setEditingGoal(true); }} title={currentSprint.goal || undefined}>
                       {currentSprint.goal || "No sprint goal recorded."}
-                      <button
-                        className="goal-edit-btn"
-                        type="button"
-                        aria-label="Edit sprint goal"
-                        onClick={() => { setGoalDraft(currentSprint.goal || ""); setEditingGoal(true); }}
-                      >
-                        ✎
-                      </button>
                     </div>
                   )}
                 </div>
@@ -790,16 +774,18 @@ export default function App({ services, browser }) {
                         type="button"
                         disabled={isActionPending}
                         onClick={() => handleTransitionSprint(currentSprint.id, "completed")}
+                        title="Complete sprint"
                       >
-                        Complete sprint
+                        Complete
                       </button>
                       <button
                         className="btn-danger-sm"
                         type="button"
                         disabled={isActionPending}
                         onClick={() => handleTransitionSprint(currentSprint.id, "cancelled")}
+                        title="Cancel sprint"
                       >
-                        Cancel sprint
+                        Cancel
                       </button>
                     </>
                   ) : null}
@@ -809,8 +795,9 @@ export default function App({ services, browser }) {
                       type="button"
                       disabled={isActionPending}
                       onClick={() => handleTransitionSprint(currentSprint.id, "cancelled")}
+                      title="Cancel sprint"
                     >
-                      Cancel sprint
+                      Cancel
                     </button>
                   ) : null}
                   <button

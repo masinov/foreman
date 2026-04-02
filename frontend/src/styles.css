@@ -1021,14 +1021,15 @@ button {
   display: flex;
   align-items: center;
   gap: 16px;
+  min-width: 0;
+  flex: 1;
 }
 
 .sprint-name {
-  font-size: 14px;
-  font-weight: 500;
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
 .sprint-status-badge {
@@ -1061,11 +1062,25 @@ button {
   background: var(--bg);
 }
 
-.sprint-goal-text {
-  font-size: 11px;
-  color: var(--text-tertiary);
-  font-family: var(--font-serif);
-  font-style: italic;
+.sprint-title-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: text;
+}
+
+.sprint-title-edit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.sprint-title-edit .sprint-title-input {
+  min-width: 200px;
+  flex: 1;
+  max-width: 420px;
 }
 
 .sprint-header-center {
@@ -1078,10 +1093,9 @@ button {
 .sprint-header-right {
   display: flex;
   align-items: center;
-  gap: 12px;
-  flex-shrink: 1;
-  min-width: 0;
-  overflow: hidden;
+  gap: 8px;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .sprint-stat {
@@ -2112,32 +2126,44 @@ button {
 
 /* ═══ Sprint goal inline edit ═════════════════════ */
 .sprint-goal-text {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.goal-edit-btn {
-  background: none;
-  border: none;
+  font-size: 13px;
   color: var(--text-tertiary);
-  cursor: pointer;
-  font-size: 12px;
-  padding: 1px 4px;
-  line-height: 1;
-  transition: var(--transition);
-  flex-shrink: 0;
+  font-family: var(--font-serif);
+  font-style: italic;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: text;
+  min-width: 0;
 }
 
-.goal-edit-btn:hover {
-  color: var(--text-primary);
-}
-
-.sprint-goal-edit,
-.sprint-title-edit {
+.sprint-goal-edit {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
+}
+
+.sprint-goal-edit .sprint-goal-input {
+  min-width: 300px;
+  flex: 1;
+  max-width: 520px;
+}
+
+.sprint-goal-input {
+  background: var(--bg-card);
+  border: 1px solid var(--text-tertiary);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-size: 13px;
+  padding: 6px 10px;
+  font-family: var(--font-serif);
+  font-style: italic;
+}
+
+.sprint-goal-input:focus {
+  outline: none;
+  border-color: var(--text-secondary);
 }
 
 .sprint-title-input {
@@ -2153,22 +2179,6 @@ button {
 }
 
 .sprint-title-input:focus {
-  outline: none;
-  border-color: var(--text-secondary);
-}
-
-.sprint-goal-input {
-  background: var(--bg-card);
-  border: 1px solid var(--text-tertiary);
-  border-radius: var(--radius);
-  color: var(--text-primary);
-  font-size: 12px;
-  padding: 4px 8px;
-  font-family: inherit;
-  min-width: 240px;
-}
-
-.sprint-goal-input:focus {
   outline: none;
   border-color: var(--text-secondary);
 }
