@@ -32,12 +32,12 @@ export const EVENT_FILTERS = [
   { key: "review", label: "Review" },
 ];
 
-function totalsSummaryLine(projectTotals, currentProject) {
+function totalsSummaryLine(projectTotals) {
   const project = projectTotals?.total_token_count ? formatCompactCount(projectTotals.total_token_count) : null;
   if (project) {
     return `${project} tokens`;
   }
-  return "No run totals yet";
+  return "No tokens used yet";
 }
 
 function projectStatusClass(status) {
@@ -239,12 +239,12 @@ const STATUS_FILTER_OPTIONS = [
 ];
 
 const KANBAN_COLUMNS = [
+  { key: "planned", label: "Planned" },
   { key: "active", label: "Active" },
   { key: "done", label: "Done" },
-  { key: "planned", label: "Planned" },
 ];
 
-export function SprintList({ project, sprints, onSelectSprint, onOpenNewSprint, onTransitionSprint, onDeleteSprint, onReorderSprint }) {
+export function SprintList({ project, sprints, onSelectSprint, onOpenNewSprint, onTransitionSprint, onDeleteSprint, onReorderSprint, onStartAgent, onStopAgent, isActionPending }) {
   const [filterKey, setFilterKey] = useState("all");
   const [newestFirst, setNewestFirst] = useState(false);
   const [viewMode, setViewMode] = useState("list");
@@ -261,6 +261,168 @@ export function SprintList({ project, sprints, onSelectSprint, onOpenNewSprint, 
       return newestFirst ? orderB - orderA : orderA - orderB;
     });
   }, [sprints, filterKey, newestFirst]);
+
+  function renderCard(sprint, { reorderable } = {}) {
+    const counts = sprint.task_counts || {};
+    const total = (counts.todo || 0) + (counts.in_progress || 0) + (counts.blocked || 0) + (counts.done || 0);
+    const done = counts.done || 0;
+    const statusClass = sprint.status === "active" ? "sc-active"
+      : sprint.status === "done" ? "sc-completed"
+      : sprint.status === "planned" ? "sc-planned"
+      : `sc-${sprint.status}`;
+    return (
+      <div
+        key={sprint.id}
+        className={`sprint-card ${sprint.status === "active" ? "active-sprint" : ""}`}
+      >
+        <button
+          className="sc-main"
+          type="button"
+          aria-label={`Open sprint ${sprint.title}`}
+          onClick={() => onSelectSprint(sprint.id)}
+        >
+          <div className={`sc-status ${statusClass}`}>{sprint.status}</div>
+          <div className="sc-body">
+            <div className="sc-body-main">
+              <span className="sc-title">{sprint.title}</span>
+              <span className="sc-goal">{sprint.goal || "No goal recorded."}</span>
+            </div>
+            {sprint.started_at || sprint.completed_at ? (
+              <div className="sc-dates">
+                {sprint.started_at ? <span>started {formatDate(sprint.started_at)}</span> : null}
+                {sprint.completed_at ? <span>closed {formatDate(sprint.completed_at)}</span> : null}
+              </div>
+            ) : null}
+          </div>
+          <div className="sc-tasks-inline">
+            <span>
+              <span className="n">{done}</span>/<span className="n">{total}</span>{" "}
+              {total === done && total > 0 ? "done" : "tasks"}
+            </span>
+            <div className="progress-bar sc-progress-inline" aria-hidden="true">
+              <span className="p-done" style={{ flex: done }} />
+              <span className="p-wip" style={{ flex: counts.in_progress || 0 }} />
+              <span className="p-blocked" style={{ flex: counts.blocked || 0 }} />
+              <span className="p-todo" style={{ flex: counts.todo || 0 }} />
+            </div>
+          </div>
+          <div className="sc-stats-inline">
+            {sprint.totals?.total_token_count > 0 ? (
+              <>
+                <span><span>{formatCompactCount(sprint.totals.total_token_count)}</span> tok</span>
+                <span><span>{formatCount(sprint.totals.run_count)}</span> runs</span>
+              </>
+            ) : (
+              <span>—</span>
+            )}
+          </div>
+        </button>
+        {(onTransitionSprint || onDeleteSprint || reorderable) ? (
+          <div className="sc-actions" onClick={(e) => e.stopPropagation()}>
+            {reorderable && onReorderSprint ? (
+              <>
+                <button
+                  className="sc-action-btn sc-action-order"
+                  type="button"
+                  title="Move earlier in queue"
+                  onClick={() => onReorderSprint(sprint.id, newestFirst ? "down" : "up")}
+                >
+                  ↑
+                </button>
+                <button
+                  className="sc-action-btn sc-action-order"
+                  type="button"
+                  title="Move later in queue"
+                  onClick={() => onReorderSprint(sprint.id, newestFirst ? "up" : "down")}
+                >
+                  ↓
+                </button>
+                {(onTransitionSprint || onDeleteSprint) ? (
+                  <div className="sc-action-sep" />
+                ) : null}
+              </>
+            ) : null}
+            {onTransitionSprint && sprint.status === "planned" ? (
+              <button
+                className="sc-action-btn"
+                type="button"
+                onClick={() => onTransitionSprint(sprint.id, "active")}
+              >
+                Start
+              </button>
+            ) : null}
+            {onTransitionSprint && sprint.status === "active" ? (
+              <button
+                className="sc-action-btn"
+                type="button"
+                onClick={() => onTransitionSprint(sprint.id, "completed")}
+              >
+                Complete
+              </button>
+            ) : null}
+            {onTransitionSprint && (sprint.status === "planned" || sprint.status === "active") ? (
+              <button
+                className="sc-action-btn sc-action-danger"
+                type="button"
+                onClick={() => onTransitionSprint(sprint.id, "cancelled")}
+              >
+                Cancel
+              </button>
+            ) : null}
+            {onDeleteSprint ? (
+              <button
+                className="sc-action-btn sc-action-danger"
+                type="button"
+                onClick={() => onDeleteSprint(sprint.id)}
+              >
+                Delete
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  const runStopButton = project.status === "running" ? (
+    <button
+      className="btn-stop"
+      type="button"
+      title="Stop agent"
+      aria-label="Stop agent"
+      disabled={isActionPending}
+      onClick={onStopAgent}
+    >
+      <svg viewBox="0 0 16 16" width="12" height="12"><rect x="3" y="3" width="10" height="10" rx="1"/></svg>
+      Stop
+    </button>
+  ) : (
+    <button
+      className="btn-action"
+      type="button"
+      title="Run agent"
+      aria-label="Run agent"
+      disabled={isActionPending}
+      onClick={onStartAgent}
+    >
+      ▶ Run
+    </button>
+  );
+
+  const viewToggle = (
+    <div className="view-toggle">
+      <button
+        className={`view-toggle-btn ${viewMode === "list" ? "active" : ""}`}
+        type="button"
+        onClick={() => setViewMode("list")}
+      >List</button>
+      <button
+        className={`view-toggle-btn ${viewMode === "board" ? "active" : ""}`}
+        type="button"
+        onClick={() => setViewMode("board")}
+      >Board</button>
+    </div>
+  );
 
   return (
     <section className="project-view view visible">
@@ -283,231 +445,115 @@ export function SprintList({ project, sprints, onSelectSprint, onOpenNewSprint, 
           </div>
         ) : null}
       </div>
-      <div className="sprint-toolbar">
-        <div className="sprint-toolbar-left">
-          {viewMode === "list" ? (
-            <>
-              {STATUS_FILTER_OPTIONS.map((opt) => (
-                <button
-                  key={opt.key}
-                  className={`filter-btn ${filterKey === opt.key ? "active" : ""}`}
-                  type="button"
-                  onClick={() => setFilterKey(opt.key)}
-                >
-                  {opt.label}
-                </button>
-              ))}
-              <div className="filter-sep" />
-              <button className="sort-btn" type="button" onClick={() => setNewestFirst((v) => !v)}>
-                {newestFirst ? "Newest first" : "Oldest first"}
-              </button>
-            </>
-          ) : null}
-        </div>
-        <div className="sprint-toolbar-right">
-          <div className="view-toggle">
-            <button
-              className={`view-toggle-btn ${viewMode === "list" ? "active" : ""}`}
-              type="button"
-              onClick={() => setViewMode("list")}
-            >List</button>
-            <button
-              className={`view-toggle-btn ${viewMode === "board" ? "active" : ""}`}
-              type="button"
-              onClick={() => setViewMode("board")}
-            >Board</button>
-          </div>
-          {onOpenNewSprint ? (
-            <button className="btn-action" type="button" onClick={onOpenNewSprint}>
-              <span className="plus">+</span> New sprint
-            </button>
-          ) : null}
-        </div>
+
+      <div className="sprint-page-bar">
+        {runStopButton}
+        {viewToggle}
       </div>
 
       {viewMode === "list" ? (() => {
+        const executedSprints = visibleSprints.filter((s) => s.status !== "planned");
         const plannedSprints = visibleSprints.filter((s) => s.status === "planned");
-        const otherSprints = visibleSprints.filter((s) => s.status !== "planned");
-        const showDivider = plannedSprints.length > 0 && otherSprints.length > 0;
-
-        function renderCard(sprint, { reorderable } = {}) {
-          const counts = sprint.task_counts || {};
-          const total = (counts.todo || 0) + (counts.in_progress || 0) + (counts.blocked || 0) + (counts.done || 0);
-          const done = counts.done || 0;
-          const statusClass = sprint.status === "active" ? "sc-active"
-            : sprint.status === "done" ? "sc-completed"
-            : sprint.status === "planned" ? "sc-planned"
-            : `sc-${sprint.status}`;
-          return (
-            <div
-              key={sprint.id}
-              className={`sprint-card ${sprint.status === "active" ? "active-sprint" : ""}`}
-            >
-              <button
-                className="sc-main"
-                type="button"
-                aria-label={`Open sprint ${sprint.title}`}
-                onClick={() => onSelectSprint(sprint.id)}
-              >
-                <div className={`sc-status ${statusClass}`}>{sprint.status}</div>
-                <div className="sc-body">
-                  <div className="sc-body-main">
-                    <span className="sc-title">{sprint.title}</span>
-                    <span className="sc-goal">{sprint.goal || "No goal recorded."}</span>
-                  </div>
-                  {sprint.started_at || sprint.completed_at ? (
-                    <div className="sc-dates">
-                      {sprint.started_at ? <span>started {formatDate(sprint.started_at)}</span> : null}
-                      {sprint.completed_at ? <span>closed {formatDate(sprint.completed_at)}</span> : null}
-                    </div>
-                  ) : null}
-                </div>
-                <div className="sc-tasks-inline">
-                  <span>
-                    <span className="n">{done}</span>/<span className="n">{total}</span>{" "}
-                    {total === done && total > 0 ? "done" : "tasks"}
-                  </span>
-                  <div className="progress-bar sc-progress-inline" aria-hidden="true">
-                    <span className="p-done" style={{ flex: done }} />
-                    <span className="p-wip" style={{ flex: counts.in_progress || 0 }} />
-                    <span className="p-blocked" style={{ flex: counts.blocked || 0 }} />
-                    <span className="p-todo" style={{ flex: counts.todo || 0 }} />
-                  </div>
-                </div>
-                <div className="sc-stats-inline">
-                  {sprint.totals?.total_token_count > 0 ? (
-                    <>
-                      <span><span>{formatCompactCount(sprint.totals.total_token_count)}</span> tok</span>
-                      <span><span>{formatCount(sprint.totals.run_count)}</span> runs</span>
-                    </>
-                  ) : (
-                    <span>—</span>
-                  )}
-                </div>
-              </button>
-              {(onTransitionSprint || onDeleteSprint || reorderable) ? (
-                <div className="sc-actions" onClick={(e) => e.stopPropagation()}>
-                  {onTransitionSprint && sprint.status === "planned" ? (
-                    <button
-                      className="sc-action-btn"
-                      type="button"
-                      onClick={() => onTransitionSprint(sprint.id, "active")}
-                    >
-                      Start
-                    </button>
-                  ) : null}
-                  {onTransitionSprint && sprint.status === "active" ? (
-                    <button
-                      className="sc-action-btn"
-                      type="button"
-                      onClick={() => onTransitionSprint(sprint.id, "completed")}
-                    >
-                      Complete
-                    </button>
-                  ) : null}
-                  {onTransitionSprint && (sprint.status === "planned" || sprint.status === "active") ? (
-                    <button
-                      className="sc-action-btn sc-action-danger"
-                      type="button"
-                      onClick={() => onTransitionSprint(sprint.id, "cancelled")}
-                    >
-                      Cancel
-                    </button>
-                  ) : null}
-                  {reorderable && onReorderSprint ? (
-                    <>
-                      <button
-                        className="sc-action-btn sc-action-order"
-                        type="button"
-                        title="Move earlier in queue"
-                        onClick={() => onReorderSprint(sprint.id, "up")}
-                      >
-                        ↑
-                      </button>
-                      <button
-                        className="sc-action-btn sc-action-order"
-                        type="button"
-                        title="Move later in queue"
-                        onClick={() => onReorderSprint(sprint.id, "down")}
-                      >
-                        ↓
-                      </button>
-                    </>
-                  ) : null}
-                  {onDeleteSprint ? (
-                    <button
-                      className="sc-action-btn sc-action-danger"
-                      type="button"
-                      onClick={() => onDeleteSprint(sprint.id)}
-                    >
-                      Delete
-                    </button>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
-          );
-        }
 
         return (
-          <div className="sprint-list">
-            {otherSprints.map((sprint) => renderCard(sprint, { reorderable: false }))}
-            {showDivider ? <div className="sprint-list-divider"><span>planned</span></div> : null}
-            {plannedSprints.map((sprint) => renderCard(sprint, { reorderable: true }))}
-          </div>
+          <>
+            <div className="sprint-executed-panel">
+              <div className="sprint-toolbar">
+                <div className="sprint-toolbar-left">
+                  {STATUS_FILTER_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.key}
+                      className={`filter-btn ${filterKey === opt.key ? "active" : ""}`}
+                      type="button"
+                      onClick={() => setFilterKey(opt.key)}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                  <div className="filter-sep" />
+                  <button className="sort-btn" type="button" onClick={() => setNewestFirst((v) => !v)}>
+                    {newestFirst ? "Newest first" : "Oldest first"}
+                  </button>
+                </div>
+              </div>
+              <div className="sprint-executed-list">
+                {executedSprints.length > 0
+                  ? executedSprints.map((s) => renderCard(s, { reorderable: false }))
+                  : <p className="sprint-executed-empty">No sprints have been run yet.</p>}
+              </div>
+            </div>
+
+            {filterKey === "all" ? (
+              <div className="sprint-list-divider"><span>planned</span></div>
+            ) : null}
+
+            <div className="sprint-list">
+              {plannedSprints.map((s) => renderCard(s, { reorderable: true }))}
+            </div>
+
+            {onOpenNewSprint ? (
+              <button className="sprint-add-btn" type="button" onClick={onOpenNewSprint}>
+                + New sprint
+              </button>
+            ) : null}
+          </>
         );
       })() : (
         <div className="sprint-kanban">
-          {KANBAN_COLUMNS.map((col) => {
-            const colSprints = sprints.filter((s) => {
-              if (col.key === "active") return s.status === "active";
-              if (col.key === "done") return s.status === "done" || s.status === "completed" || s.status === "cancelled";
-              return s.status === "planned";
-            });
-            return (
-              <div key={col.key} className="sk-column">
-                <div className="sk-col-header">
-                  <span className="sk-col-title">{col.label}</span>
-                  <span className="sk-col-count">{colSprints.length}</span>
-                </div>
-                {colSprints.map((sprint) => {
-                  const counts = sprint.task_counts || {};
-                  const total = (counts.todo || 0) + (counts.in_progress || 0) + (counts.blocked || 0) + (counts.done || 0);
-                  const done = counts.done || 0;
-                  return (
-                    <button
-                      key={sprint.id}
-                      className={`sk-card ${sprint.status === "active" ? "active-sprint" : ""}`}
-                      type="button"
-                      onClick={() => onSelectSprint(sprint.id)}
-                    >
-                      <div className="sk-card-title">{sprint.title}</div>
-                      <div className="sk-card-goal">{sprint.goal || "No goal recorded."}</div>
-                      <div className="sk-card-footer">
-                        <div className="sk-card-tasks">
-                          <span><span className="n">{done}</span> done</span>
-                          {counts.in_progress > 0 ? <span><span className="n">{counts.in_progress}</span> wip</span> : null}
-                          {counts.blocked > 0 ? <span><span className="n">{counts.blocked}</span> blocked</span> : null}
+            {KANBAN_COLUMNS.map((col) => {
+              const colSprints = sprints.filter((s) => {
+                if (col.key === "active") return s.status === "active";
+                if (col.key === "done") return s.status === "done" || s.status === "completed" || s.status === "cancelled";
+                return s.status === "planned";
+              });
+              return (
+                <div key={col.key} className="sk-column">
+                  <div className="sk-col-header">
+                    <span className="sk-col-title">{col.label}</span>
+                    <span className="sk-col-count">{colSprints.length}</span>
+                  </div>
+                  {colSprints.map((sprint) => {
+                    const counts = sprint.task_counts || {};
+                    const done = counts.done || 0;
+                    return (
+                      <button
+                        key={sprint.id}
+                        className={`sk-card ${sprint.status === "active" ? "active-sprint" : ""}`}
+                        type="button"
+                        onClick={() => onSelectSprint(sprint.id)}
+                      >
+                        <div className="sk-card-title">{sprint.title}</div>
+                        <div className="sk-card-goal">{sprint.goal || "No goal recorded."}</div>
+                        <div className="sk-card-footer">
+                          <div className="sk-card-tasks">
+                            <span><span className="n">{done}</span> done</span>
+                            {counts.in_progress > 0 ? <span><span className="n">{counts.in_progress}</span> wip</span> : null}
+                            {counts.blocked > 0 ? <span><span className="n">{counts.blocked}</span> blocked</span> : null}
+                          </div>
+                          {sprint.totals?.total_token_count > 0 ? (
+                            <span><span className="n">{formatCompactCount(sprint.totals.total_token_count)}</span> tok</span>
+                          ) : <span>—</span>}
                         </div>
-                        {sprint.totals?.total_token_count > 0 ? (
-                          <span><span className="n">{formatCompactCount(sprint.totals.total_token_count)}</span> tok</span>
-                        ) : <span>—</span>}
-                      </div>
-                      {sprint.status === "active" ? (
-                        <div className="progress-bar" style={{ marginTop: "6px" }} aria-hidden="true">
-                          <span className="p-done" style={{ flex: done }} />
-                          <span className="p-wip" style={{ flex: counts.in_progress || 0 }} />
-                          <span className="p-blocked" style={{ flex: counts.blocked || 0 }} />
-                          <span className="p-todo" style={{ flex: counts.todo || 0 }} />
-                        </div>
-                      ) : null}
+                        {sprint.status === "active" ? (
+                          <div className="progress-bar" style={{ marginTop: "6px" }} aria-hidden="true">
+                            <span className="p-done" style={{ flex: done }} />
+                            <span className="p-wip" style={{ flex: counts.in_progress || 0 }} />
+                            <span className="p-blocked" style={{ flex: counts.blocked || 0 }} />
+                            <span className="p-todo" style={{ flex: counts.todo || 0 }} />
+                          </div>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                  {col.key === "planned" && onOpenNewSprint ? (
+                    <button className="sprint-add-btn" type="button" onClick={onOpenNewSprint}>
+                      + New sprint
                     </button>
-                  );
-                })}
-              </div>
-            );
-          })}
-        </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
       )}
     </section>
   );

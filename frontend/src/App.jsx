@@ -172,7 +172,6 @@ export default function App({ services, browser }) {
       events: nextEvents,
     };
   }
-
   async function refreshTaskDetail(taskId) {
     if (!taskId) {
       setTaskDetail(null);
@@ -223,7 +222,6 @@ export default function App({ services, browser }) {
 
   useEffect(() => {
     let cancelled = false;
-    setErrorMessage("");
 
     if (refreshTimerRef.current) {
       browser.clearTimeout(refreshTimerRef.current);
@@ -231,6 +229,11 @@ export default function App({ services, browser }) {
     }
 
     refreshSprintScope(route.sprintId)
+      .then(() => {
+        if (!cancelled) {
+          setErrorMessage("");
+        }
+      })
       .catch((error) => {
         if (!cancelled) {
           setErrorMessage(error.message);
@@ -595,16 +598,27 @@ export default function App({ services, browser }) {
       .sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
     const idx = sorted.findIndex((s) => s.id === sprintId);
     const swapIdx = direction === "up" ? idx - 1 : idx + 1;
-    if (swapIdx < 0 || swapIdx >= sorted.length) return;
-    const other = sorted[swapIdx];
-    const thisOrder = sorted[idx].order_index ?? 0;
-    const otherOrder = other.order_index ?? 0;
+    if (idx < 0 || swapIdx < 0 || swapIdx >= sorted.length) return;
+
+    // Swap positions in the array, then assign clean sequential indices.
+    // This correctly handles the case where multiple sprints share the same
+    // order_index value (e.g. all 0 from default), where a plain value-swap
+    // would be a no-op in the database.
+    const tmp = sorted[idx];
+    sorted[idx] = sorted[swapIdx];
+    sorted[swapIdx] = tmp;
+
+    const updates = sorted
+      .map((s, i) => ({ id: s.id, order_index: i, prev: s.order_index ?? 0 }))
+      .filter(({ order_index, prev }) => order_index !== prev);
+
+    if (updates.length === 0) return;
+
     setErrorMessage("");
     try {
-      await Promise.all([
-        services.updateSprint(sprintId, { order_index: otherOrder }),
-        services.updateSprint(other.id, { order_index: thisOrder }),
-      ]);
+      await Promise.all(updates.map(({ id, order_index }) =>
+        services.updateSprint(id, { order_index }),
+      ));
       await refreshProjectScope(routeRef.current.projectId);
     } catch (error) {
       setErrorMessage(error.message);
@@ -659,11 +673,14 @@ export default function App({ services, browser }) {
           <SprintList
             project={currentProject}
             sprints={currentSprints}
-            onSelectSprint={(sprintId) => navigateTo(buildSprintPath(route.projectId, sprintId))}
+            onSelectSprint={async (sprintId) => { await refreshSprintScope(sprintId); navigateTo(buildSprintPath(route.projectId, sprintId)); }}
             onOpenNewSprint={() => setNewSprintOpen(true)}
             onTransitionSprint={handleTransitionSprint}
             onDeleteSprint={handleDeleteSprint}
             onReorderSprint={handleReorderSprint}
+            onStartAgent={handleStartAgent}
+            onStopAgent={handleStopAgent}
+            isActionPending={isActionPending}
           />
         ) : (
           <EmptyPanel title="Project not found" message="The requested project could not be loaded." />
@@ -740,14 +757,34 @@ export default function App({ services, browser }) {
                 </div>
                 <div className="sprint-header-right">
                   {currentSprint.status === "planned" ? (
-                    <button
-                      className="btn-action"
-                      type="button"
-                      disabled={isActionPending}
-                      onClick={() => handleTransitionSprint(currentSprint.id, "active")}
-                    >
-                      Start
-                    </button>
+                    <>
+                      <button
+                        className="btn-action"
+                        type="button"
+                        disabled={isActionPending}
+                        onClick={() => handleTransitionSprint(currentSprint.id, "active")}
+                      >
+                        Start
+                      </button>
+                      <button
+                        className="btn-danger-sm"
+                        type="button"
+                        disabled={isActionPending}
+                        onClick={() => handleTransitionSprint(currentSprint.id, "cancelled")}
+                        title="Cancel sprint"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        className="btn-danger-sm"
+                        type="button"
+                        disabled={isActionPending}
+                        onClick={() => handleDeleteSprint(currentSprint.id)}
+                        title="Delete sprint"
+                      >
+                        Delete
+                      </button>
+                    </>
                   ) : null}
                   {currentSprint.status === "active" ? (
                     <>
@@ -771,50 +808,17 @@ export default function App({ services, browser }) {
                       </button>
                     </>
                   ) : null}
-                  {currentSprint.status === "planned" ? (
+                  {currentSprint.status === "done" || currentSprint.status === "cancelled" ? (
                     <button
                       className="btn-danger-sm"
                       type="button"
                       disabled={isActionPending}
-                      onClick={() => handleTransitionSprint(currentSprint.id, "cancelled")}
-                      title="Cancel sprint"
+                      onClick={() => handleDeleteSprint(currentSprint.id)}
+                      title="Delete sprint"
                     >
-                      Cancel
+                      Delete
                     </button>
                   ) : null}
-                  <button
-                    className="btn-danger-sm"
-                    type="button"
-                    disabled={isActionPending}
-                    onClick={() => handleDeleteSprint(currentSprint.id)}
-                    title="Delete sprint"
-                  >
-                    Delete
-                  </button>
-                  {topbarProject?.status === "running" ? (
-                    <button
-                      className="btn-stop"
-                      type="button"
-                      title="Stop agent"
-                      aria-label="Stop agent"
-                      disabled={isActionPending}
-                      onClick={handleStopAgent}
-                    >
-                      <svg viewBox="0 0 16 16" width="12" height="12"><rect x="3" y="3" width="10" height="10" rx="1"/></svg>
-                      Stop
-                    </button>
-                  ) : (
-                    <button
-                      className="btn-action"
-                      type="button"
-                      title="Run agent"
-                      aria-label="Run agent"
-                      disabled={isActionPending}
-                      onClick={handleStartAgent}
-                    >
-                      ▶ Run
-                    </button>
-                  )}
                 </div>
               </header>
               <div className={`sprint-body ${activityCollapsed ? "activity-hidden" : "with-activity"}`}>

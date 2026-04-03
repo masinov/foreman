@@ -291,6 +291,7 @@ class DashboardService:
                     "title": sprint.title,
                     "goal": sprint.goal,
                     "status": sprint.status,
+                    "order_index": sprint.order_index,
                     "task_counts": {
                         **task_counts,
                         "total": sum(task_counts.values()),
@@ -707,7 +708,7 @@ class DashboardService:
         if sprint is None:
             raise DashboardNotFoundError(f"Sprint not found: {sprint_id}")
 
-        allowed_fields = {"title", "goal"}
+        allowed_fields = {"title", "goal", "order_index"}
         unknown = set(updates) - allowed_fields
         if unknown:
             raise DashboardValidationError(f"Unknown sprint fields: {sorted(unknown)}")
@@ -722,6 +723,8 @@ class DashboardService:
         if "goal" in updates:
             value = updates["goal"]
             sprint.goal = str(value).strip() if value else None
+        if "order_index" in updates:
+            sprint.order_index = int(updates["order_index"])
 
         self.store.save_sprint(sprint)
         return {

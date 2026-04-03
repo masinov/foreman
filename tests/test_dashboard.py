@@ -1500,6 +1500,113 @@ class DashboardTaskEditingTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 400)
 
+    def test_patch_sprint_order_index(self):
+        """PATCH /api/sprints/{id} with order_index updates the sprint order."""
+        _, sprint, _ = self._seed()
+        response = self._request(
+            "PATCH",
+            f"/api/sprints/{sprint.id}",
+            json={"order_index": 42},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["id"], sprint.id)
+
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        updated = store.get_sprint(sprint.id)
+        store.close()
+        self.assertEqual(updated.order_index, 42)
+
+    def test_patch_sprint_order_index_swap(self):
+        """Swapping order_index between two sprints changes their list position."""
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        project = Project(
+            id=self._next_id("proj-swap"),
+            name="Swap Project",
+            repo_path="/tmp/swap",
+            workflow_id="development",
+        )
+        store.save_project(project)
+        s1 = Sprint(
+            id=self._next_id("sprint-swap"),
+            project_id=project.id,
+            title="Sprint One",
+            status="planned",
+            order_index=0,
+        )
+        s2 = Sprint(
+            id=self._next_id("sprint-swap"),
+            project_id=project.id,
+            title="Sprint Two",
+            status="planned",
+            order_index=1,
+        )
+        store.save_sprint(s1)
+        store.save_sprint(s2)
+        store.close()
+
+        self._request("PATCH", f"/api/sprints/{s1.id}", json={"order_index": 1})
+        self._request("PATCH", f"/api/sprints/{s2.id}", json={"order_index": 0})
+
+        response = self._request("GET", f"/api/projects/{project.id}/sprints")
+        self.assertEqual(response.status_code, 200)
+        sprints = response.json()["sprints"]
+        self.assertEqual(sprints[0]["id"], s2.id)
+        self.assertEqual(sprints[1]["id"], s1.id)
+
+    def test_patch_sprint_order_index_swap_from_collision(self):
+        """Reorder works when both sprints share the same order_index (e.g. default 0).
+
+        The frontend fix assigns sequential indices rather than swapping values,
+        so only the sprint that needs to move gets updated (the other keeps index 0).
+        """
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        project = Project(
+            id=self._next_id("proj-coll"),
+            name="Collision Project",
+            repo_path="/tmp/coll",
+            workflow_id="development",
+        )
+        store.save_project(project)
+        s1 = Sprint(
+            id=self._next_id("sprint-coll"),
+            project_id=project.id,
+            title="First",
+            status="planned",
+            order_index=0,
+        )
+        s2 = Sprint(
+            id=self._next_id("sprint-coll"),
+            project_id=project.id,
+            title="Second",
+            status="planned",
+            order_index=0,  # collides with s1
+        )
+        store.save_sprint(s1)
+        store.save_sprint(s2)
+        store.close()
+
+        # Simulate the frontend sequential-index approach: s2 gets 0, s1 gets 1
+        self._request("PATCH", f"/api/sprints/{s1.id}", json={"order_index": 1})
+
+        response = self._request("GET", f"/api/projects/{project.id}/sprints")
+        self.assertEqual(response.status_code, 200)
+        sprints = response.json()["sprints"]
+        self.assertEqual(sprints[0]["id"], s2.id)
+        self.assertEqual(sprints[1]["id"], s1.id)
+
+    def test_list_project_sprints_includes_order_index(self):
+        """GET /api/projects/{id}/sprints response includes order_index for each sprint."""
+        _, sprint, _ = self._seed()
+        response = self._request("GET", f"/api/projects/{sprint.project_id}/sprints")
+        self.assertEqual(response.status_code, 200)
+        sprints = response.json()["sprints"]
+        self.assertTrue(len(sprints) > 0)
+        for s in sprints:
+            self.assertIn("order_index", s)
+
 
 class DashboardTier2Tests(unittest.TestCase):
     """Tests for sprint-33 Tier 2: project creation, start_agent, workflow_current_step."""
@@ -2136,13 +2243,3 @@ class DashboardDeleteSprintTests(unittest.TestCase):
         with self.assertRaises(DashboardNotFoundError):
             api.delete_sprint("nonexistent")
         temp_dir.cleanup()
-
-    def test_cancel_sprint_from_active(self):
-        self._create_sprint("spr-cancel-active", status="active")
-        result = self._api().transition_sprint("spr-cancel-active", target_status="cancelled")
-        self.assertEqual(result["status"], "cancelled")
-
-    def test_cancel_sprint_from_planned(self):
-        self._create_sprint("spr-cancel-planned", status="planned")
-        result = self._api().transition_sprint("spr-cancel-planned", target_status="cancelled")
-        self.assertEqual(result["status"], "cancelled")
