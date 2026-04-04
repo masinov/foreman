@@ -57,6 +57,7 @@ def _row_to_project(row: sqlite3.Row) -> Project:
         spec_path=row["spec_path"],
         methodology=row["methodology"],
         default_branch=row["default_branch"],
+        autonomy_level=row["autonomy_level"] if "autonomy_level" in row.keys() else "supervised",  # type: ignore[assignment]
         settings=_load_json_dict(row["settings_json"]),
         created_at=row["created_at"],
         updated_at=row["updated_at"],
@@ -221,8 +222,8 @@ class ForemanStore:
                 """
                 INSERT INTO projects (
                     id, name, repo_path, spec_path, methodology, workflow_id,
-                    default_branch, settings_json, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    default_branch, autonomy_level, settings_json, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     name = excluded.name,
                     repo_path = excluded.repo_path,
@@ -230,6 +231,7 @@ class ForemanStore:
                     methodology = excluded.methodology,
                     workflow_id = excluded.workflow_id,
                     default_branch = excluded.default_branch,
+                    autonomy_level = excluded.autonomy_level,
                     settings_json = excluded.settings_json,
                     created_at = excluded.created_at,
                     updated_at = excluded.updated_at
@@ -242,6 +244,7 @@ class ForemanStore:
                     project.methodology,
                     project.workflow_id,
                     project.default_branch,
+                    project.autonomy_level,
                     _json_dumps(project.settings),
                     project.created_at,
                     project.updated_at,

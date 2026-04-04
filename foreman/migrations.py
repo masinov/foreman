@@ -126,4 +126,11 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         ON runs(project_id, completed_at);
         """,
     ),
+    (
+        3,
+        "add autonomy_level to projects",
+        """
+        ALTER TABLE projects ADD COLUMN autonomy_level TEXT NOT NULL DEFAULT 'supervised';
+        """,
+    ),
 ]

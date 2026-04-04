@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from .models import Event, Project, Run, Sprint, SprintStatus, Task
+from .models import AUTONOMY_LEVELS, Event, Project, Run, Sprint, SprintStatus, Task
 from .orchestrator import ForemanOrchestrator, OrchestratorError
 from .scaffold import generate_project_id
 from .store import ForemanStore
@@ -146,6 +146,7 @@ class DashboardService:
             "repo_path": project.repo_path,
             "spec_path": project.spec_path,
             "methodology": project.methodology,
+            "autonomy_level": project.autonomy_level,
             "totals": self.store.run_totals(project_id=project_id),
         }
 
@@ -160,6 +161,7 @@ class DashboardService:
             "workflow_id": project.workflow_id,
             "default_branch": project.default_branch,
             "spec_path": project.spec_path or "",
+            "autonomy_level": project.autonomy_level,
             "settings": dict(project.settings),
         }
 
@@ -175,7 +177,7 @@ class DashboardService:
         if project is None:
             raise DashboardNotFoundError(f"Project not found: {project_id}")
 
-        allowed_top_level = {"workflow_id", "default_branch", "spec_path"}
+        allowed_top_level = {"workflow_id", "default_branch", "spec_path", "autonomy_level"}
         for key in updates:
             if key == "settings":
                 continue
@@ -194,6 +196,14 @@ class DashboardService:
             project.default_branch = str(updates["default_branch"])
         if "spec_path" in updates:
             project.spec_path = str(updates["spec_path"])
+        if "autonomy_level" in updates:
+            value = str(updates["autonomy_level"])
+            if value not in AUTONOMY_LEVELS:
+                raise DashboardValidationError(
+                    f"Invalid autonomy_level: '{value}'. "
+                    f"Expected one of: {', '.join(AUTONOMY_LEVELS)}."
+                )
+            project.autonomy_level = value  # type: ignore[assignment]
 
         project.updated_at = self._now().isoformat()
         self.store.save_project(project)
@@ -592,6 +602,14 @@ class DashboardService:
                 f"Cannot transition sprint from '{sprint.status}' to '{target_status}'. "
                 f"Allowed: {list(allowed) or 'none'}."
             )
+
+        if target_status == "active":
+            existing_active = self.store.get_active_sprint(sprint.project_id)
+            if existing_active is not None and existing_active.id != sprint.id:
+                raise DashboardValidationError(
+                    f"Sprint '{existing_active.title}' is already active. "
+                    "Complete or cancel it before activating another sprint."
+                )
 
         now = self._now().isoformat()
         sprint.status = target_status  # type: ignore[assignment]

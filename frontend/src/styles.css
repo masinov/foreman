@@ -2511,6 +2511,59 @@ button {
   border-bottom: 1px solid var(--border-subtle);
 }
 
+.autonomy-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.autonomy-option {
+  display: grid;
+  grid-template-columns: 14px 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 8px;
+  row-gap: 1px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.autonomy-option:hover {
+  border-color: var(--border);
+  background: var(--surface-hover);
+}
+
+.autonomy-option.selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.autonomy-option input[type="radio"] {
+  grid-row: 1;
+  grid-column: 1;
+  margin: 2px 0 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.autonomy-option-label {
+  grid-row: 1;
+  grid-column: 2;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.autonomy-option-desc {
+  grid-row: 2;
+  grid-column: 2;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  line-height: 1.4;
+}
+
 .settings-row {
   display: flex;
   justify-content: space-between;

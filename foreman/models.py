@@ -9,6 +9,7 @@ from typing import Any, Literal
 JsonDict = dict[str, Any]
 
 ProjectMethodology = Literal["development"]
+AutonomyLevel = Literal["directed", "supervised", "autonomous"]
 SprintStatus = Literal["planned", "active", "completed", "cancelled"]
 TaskStatus = Literal["todo", "in_progress", "blocked", "done", "cancelled"]
 TaskType = Literal["feature", "fix", "refactor", "docs", "spike", "chore"]
@@ -55,6 +56,9 @@ def utc_now_text() -> str:
     )
 
 
+AUTONOMY_LEVELS: tuple[AutonomyLevel, ...] = ("directed", "supervised", "autonomous")
+
+
 @dataclass(slots=True)
 class Project:
     """A tracked Foreman project."""
@@ -66,6 +70,7 @@ class Project:
     spec_path: str | None = None
     methodology: ProjectMethodology = "development"
     default_branch: str = "main"
+    autonomy_level: AutonomyLevel = "supervised"
     settings: JsonDict = field(default_factory=dict)
     created_at: str = field(default_factory=utc_now_text)
     updated_at: str = field(default_factory=utc_now_text)

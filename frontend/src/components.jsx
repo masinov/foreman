@@ -244,7 +244,7 @@ const KANBAN_COLUMNS = [
   { key: "done", label: "Done" },
 ];
 
-export function SprintList({ project, sprints, onSelectSprint, onOpenNewSprint, onTransitionSprint, onDeleteSprint, onReorderSprint, onStartAgent, onStopAgent, isActionPending }) {
+export function SprintList({ project, sprints, onSelectSprint, onOpenNewSprint, onTransitionSprint, onDeleteSprint, onReorderSprint, onStartAgent, onStopAgent, isActionPending, autonomyLevel }) {
   const [filterKey, setFilterKey] = useState("all");
   const [newestFirst, setNewestFirst] = useState(false);
   const [viewMode, setViewMode] = useState("list");
@@ -342,13 +342,14 @@ export function SprintList({ project, sprints, onSelectSprint, onOpenNewSprint, 
                 ) : null}
               </>
             ) : null}
-            {onTransitionSprint && sprint.status === "planned" ? (
+            {onTransitionSprint && sprint.status === "planned" && autonomyLevel !== "autonomous" ? (
               <button
                 className="sc-action-btn"
                 type="button"
+                title={autonomyLevel === "supervised" ? "Promote to active (bypasses queue order)" : undefined}
                 onClick={() => onTransitionSprint(sprint.id, "active")}
               >
-                Start
+                {autonomyLevel === "supervised" ? "Promote" : "Start"}
               </button>
             ) : null}
             {onTransitionSprint && sprint.status === "active" ? (
@@ -926,6 +927,24 @@ const WORKFLOW_OPTIONS = [
   { value: "development_secure", label: "development_secure" },
 ];
 
+const AUTONOMY_LEVEL_OPTIONS = [
+  {
+    value: "directed",
+    label: "Directed",
+    description: "You control everything. Activate sprints manually; agent runs only the active sprint and stops when done.",
+  },
+  {
+    value: "supervised",
+    label: "Supervised",
+    description: "Agent follows your queue order strictly. It auto-advances between sprints but stops and notifies you if it detects a conflict it can't resolve.",
+  },
+  {
+    value: "autonomous",
+    label: "Autonomous",
+    description: "Agent manages sprint sequencing entirely. Your queue order is a hint, not a contract. You can still stop it at any time.",
+  },
+];
+
 
 export function SettingsPanel({ settings, onUpdate, onClose }) {
   const [draft, setDraft] = useState(null);
@@ -968,6 +987,27 @@ export function SettingsPanel({ settings, onUpdate, onClose }) {
         <div className="settings-body">
           <div className="settings-section">
             <div className="settings-section-title">Supervision</div>
+            <div className="form-group">
+              <label className="form-label">Autonomy level</label>
+              <div className="autonomy-options">
+                {AUTONOMY_LEVEL_OPTIONS.map((opt) => (
+                  <label
+                    key={opt.value}
+                    className={`autonomy-option${(current.autonomy_level || "supervised") === opt.value ? " selected" : ""}`}
+                  >
+                    <input
+                      type="radio"
+                      name="autonomy_level"
+                      value={opt.value}
+                      checked={(current.autonomy_level || "supervised") === opt.value}
+                      onChange={() => handleTopLevel("autonomy_level", opt.value)}
+                    />
+                    <span className="autonomy-option-label">{opt.label}</span>
+                    <span className="autonomy-option-desc">{opt.description}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
             <SettingsToggle
               label="Approve merges"
               description="Require human approval before merging to target branch"

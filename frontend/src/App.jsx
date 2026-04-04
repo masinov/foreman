@@ -681,6 +681,7 @@ export default function App({ services, browser }) {
             onStartAgent={handleStartAgent}
             onStopAgent={handleStopAgent}
             isActionPending={isActionPending}
+            autonomyLevel={currentProject.autonomy_level || "supervised"}
           />
         ) : (
           <EmptyPanel title="Project not found" message="The requested project could not be loaded." />
