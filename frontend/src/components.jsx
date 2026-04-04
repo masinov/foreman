@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import {
   eventMatchesFilter,
@@ -310,7 +310,7 @@ function DecisionGateBanner({ gate, sprints, onResolve }) {
   );
 }
 
-export function SprintList({ project, sprints, pendingGates, onSelectSprint, onOpenNewSprint, onTransitionSprint, onDeleteSprint, onReorderSprint, onStartAgent, onStopAgent, onResolveGate, isActionPending, autonomyLevel }) {
+export function SprintList({ project, sprints, pendingGates, onSelectSprint, onOpenNewSprint, onTransitionSprint, onDeleteSprint, onReorderSprint, onStartAgent, onStopAgent, onResolveGate, onSprintsChanged, services, isActionPending, autonomyLevel }) {
   const [filterKey, setFilterKey] = useState("all");
   const [newestFirst, setNewestFirst] = useState(false);
   const [viewMode, setViewMode] = useState("list");
@@ -635,6 +635,13 @@ export function SprintList({ project, sprints, pendingGates, onSelectSprint, onO
             })}
           </div>
       )}
+      {services ? (
+        <PlannerPanel
+          projectId={project.id}
+          services={services}
+          onSprintsChanged={onSprintsChanged}
+        />
+      ) : null}
     </section>
   );
 }
@@ -1456,6 +1463,166 @@ export function NewProjectModal({ onSubmit, onClose }) {
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+export function PlannerPanel({ projectId, services, onSprintsChanged }) {
+  const [open, setOpen] = useState(false);
+  const [input, setInput] = useState("");
+  const [turns, setTurns] = useState([]);
+  const [streaming, setStreaming] = useState(false);
+  const [error, setError] = useState("");
+  const bottomRef = useRef(null);
+
+  function scrollToBottom() {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }
+
+  async function handleSend() {
+    const msg = input.trim();
+    if (!msg || streaming) return;
+    setInput("");
+    setError("");
+
+    const userTurn = { role: "user", text: msg, toolUses: [] };
+    setTurns((prev) => [...prev, userTurn]);
+    setStreaming(true);
+
+    const assistantTurn = { role: "assistant", text: "", toolUses: [], done: false };
+    setTurns((prev) => [...prev, assistantTurn]);
+
+    try {
+      for await (const event of services.plannerMessage(projectId, msg)) {
+        if (event.type === "text_delta") {
+          setTurns((prev) => {
+            const next = [...prev];
+            next[next.length - 1] = { ...next[next.length - 1], text: next[next.length - 1].text + event.text };
+            return next;
+          });
+          scrollToBottom();
+        } else if (event.type === "tool_use") {
+          setTurns((prev) => {
+            const next = [...prev];
+            const last = next[next.length - 1];
+            next[next.length - 1] = { ...last, toolUses: [...last.toolUses, { name: event.name, status: "running" }] };
+            return next;
+          });
+        } else if (event.type === "tool_result") {
+          setTurns((prev) => {
+            const next = [...prev];
+            const last = next[next.length - 1];
+            const updatedTools = last.toolUses.map((t) =>
+              t.name === event.name && t.status === "running" ? { ...t, status: "done" } : t
+            );
+            next[next.length - 1] = { ...last, toolUses: updatedTools };
+            return next;
+          });
+          onSprintsChanged?.();
+        } else if (event.type === "error") {
+          setError(event.message);
+        }
+      }
+    } catch (err) {
+      setError(err.message || "Something went wrong.");
+    } finally {
+      setStreaming(false);
+      setTurns((prev) => {
+        const next = [...prev];
+        next[next.length - 1] = { ...next[next.length - 1], done: true };
+        return next;
+      });
+      scrollToBottom();
+    }
+  }
+
+  async function handleClear() {
+    try {
+      await services.clearPlannerSession(projectId);
+      setTurns([]);
+      setError("");
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  function handleKeyDown(e) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  }
+
+  if (!open) {
+    return (
+      <button className="planner-toggle" type="button" onClick={() => setOpen(true)}>
+        ✦ Sprint planner
+      </button>
+    );
+  }
+
+  return (
+    <div className="planner-panel">
+      <div className="planner-header">
+        <span className="planner-title">✦ Sprint planner</span>
+        <span className="planner-subtitle">Claude — sprint &amp; task management</span>
+        <div className="planner-header-actions">
+          <button className="planner-action-btn" type="button" onClick={handleClear} title="Clear session">
+            Clear
+          </button>
+          <button className="planner-action-btn" type="button" onClick={() => setOpen(false)} title="Close">
+            ✕
+          </button>
+        </div>
+      </div>
+
+      <div className="planner-body">
+        {turns.length === 0 ? (
+          <div className="planner-empty">
+            Ask me to create sprints, add tasks, reorder the queue, or refine goals.
+          </div>
+        ) : (
+          turns.map((turn, i) => (
+            <div key={i} className={`planner-turn planner-turn-${turn.role}`}>
+              {turn.toolUses.length > 0 ? (
+                <div className="planner-tool-uses">
+                  {turn.toolUses.map((t, j) => (
+                    <span key={j} className={`planner-tool-chip planner-tool-${t.status}`}>
+                      {t.status === "running" ? "⟳" : "✓"} {t.name.replace("foreman_", "").replace(/_/g, " ")}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+              {turn.text ? <p className="planner-text">{turn.text}</p> : null}
+              {streaming && i === turns.length - 1 && !turn.done ? (
+                <span className="planner-cursor" />
+              ) : null}
+            </div>
+          ))
+        )}
+        {error ? <div className="planner-error">{error}</div> : null}
+        <div ref={bottomRef} />
+      </div>
+
+      <div className="planner-input-row">
+        <textarea
+          className="planner-input"
+          rows={2}
+          placeholder="Plan sprints, add tasks, reorder the queue…"
+          value={input}
+          disabled={streaming}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={handleKeyDown}
+        />
+        <button
+          className="planner-send-btn"
+          type="button"
+          disabled={streaming || !input.trim()}
+          onClick={handleSend}
+        >
+          {streaming ? "…" : "Send"}
+        </button>
       </div>
     </div>
   );

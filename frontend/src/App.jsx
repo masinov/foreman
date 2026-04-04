@@ -696,6 +696,8 @@ export default function App({ services, browser }) {
             onStartAgent={handleStartAgent}
             onStopAgent={handleStopAgent}
             onResolveGate={handleResolveGate}
+            onSprintsChanged={() => refreshProjectScope(route.projectId)}
+            services={services}
             isActionPending={isActionPending}
             autonomyLevel={currentProject.autonomy_level || "supervised"}
           />
