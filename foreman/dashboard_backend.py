@@ -322,6 +322,72 @@ def create_dashboard_app(
         field_updates = {k: v for k, v in data.items()}
         return with_api(lambda api: api.update_sprint_fields(sprint_id, updates=field_updates))
 
+    @app.post("/api/projects/{project_id}/planner/message")
+    async def planner_message(project_id: str, request: Request) -> StreamingResponse:
+        from .planner import process_message, get_session_history
+
+        data = await _read_json_body(request)
+        message = str(data.get("message", "")).strip()
+        if not message:
+            raise DashboardValidationError("message cannot be empty.")
+
+        with _open_store(db_path) as store:
+            api = DashboardService(store)
+            project = store.get_project(project_id)
+            if project is None:
+                raise DashboardNotFoundError(f"Project not found: {project_id}")
+
+        async def _stream():
+            with _open_store(db_path) as store:
+                api = DashboardService(store)
+                async for chunk in process_message(project_id, message, api=api):
+                    yield chunk.encode("utf-8")
+
+        return StreamingResponse(
+            _stream(),
+            media_type="application/x-ndjson",
+            headers={"X-Accel-Buffering": "no"},
+        )
+
+    @app.get("/api/projects/{project_id}/planner/history")
+    async def planner_history(project_id: str) -> dict[str, Any]:
+        from .planner import get_session_history
+
+        with _open_store(db_path) as store:
+            project = store.get_project(project_id)
+            if project is None:
+                raise DashboardNotFoundError(f"Project not found: {project_id}")
+        turns = get_session_history(project_id)
+        # Return simplified turn list safe for the frontend
+        simplified = []
+        for turn in turns:
+            content = turn["content"]
+            if isinstance(content, str):
+                simplified.append({"role": turn["role"], "text": content})
+            elif isinstance(content, list):
+                text_parts = [b["text"] for b in content if b.get("type") == "text"]
+                tool_parts = [
+                    {"name": b["name"], "input": b.get("input", {})}
+                    for b in content if b.get("type") == "tool_use"
+                ]
+                simplified.append({
+                    "role": turn["role"],
+                    "text": " ".join(text_parts),
+                    "tool_uses": tool_parts,
+                })
+        return {"project_id": project_id, "turns": simplified}
+
+    @app.delete("/api/projects/{project_id}/planner/session")
+    async def clear_planner_session(project_id: str) -> dict[str, Any]:
+        from .planner import clear_session
+
+        with _open_store(db_path) as store:
+            project = store.get_project(project_id)
+            if project is None:
+                raise DashboardNotFoundError(f"Project not found: {project_id}")
+        clear_session(project_id)
+        return {"project_id": project_id, "cleared": True}
+
     @app.post("/api/projects/{project_id}/gates")
     async def create_gate(project_id: str, request: Request) -> dict[str, Any]:
         data = await _read_json_body(request)

@@ -1,70 +1,67 @@
 # Current Sprint
 
-- Sprint: `sprint-38-decision-gates`
+- Sprint: `sprint-39-planner-chat`
 - Status: done
-- Branch: `feat/sprint-38-decision-gates`
+- Branch: `feat/sprint-39-planner-chat`
 - Started: 2026-04-04
 - Completed: 2026-04-04
 
 ## Goal
 
-Land the full decision gate infrastructure: schema, model, store, service,
-API endpoints, and frontend banner with resolve flow. Orchestrator/runner
-integration (agent actually detecting contradictions and raising gates) is
-deferred — the surface is ready to wire in.
+Land the sprint planner chat MVP: an embedded chat panel in the sprint view
+backed by a Claude Messages API session with eight Foreman management tools.
+The agent can create, update, delete, and reorder sprints and tasks directly
+through the existing dashboard service layer. Changes apply live.
 
 ## Tasks
 
-### 1. Schema migration — decision_gates table
+### 1. Anthropic SDK
 
 - Status: done
-- Migration 4: `decision_gates` table with `id`, `project_id`, `sprint_id`,
-  `raised_at`, `conflict_description`, `suggested_order`, `suggested_reason`,
-  `status`, `resolved_at`, `resolved_by`
-- Index: `idx_decision_gates_project` on `(project_id, status)`
+- `anthropic>=0.89` added to `pyproject.toml` dependencies and installed
 
-### 2. Model — DecisionGate dataclass
+### 2. Role definition
 
 - Status: done
-- `GateStatus` type alias added to `models.py`
-- `DecisionGate` dataclass with all ADR-0006 fields
+- `roles/sprint-planner.toml` with `backend = "anthropic_messages"`,
+  restricted tool list, and planning-focused system prompt
+- Role loader compatibility ensured (completion section, permission_mode)
 
-### 3. Store — save / get / list gates
-
-- Status: done
-- `_row_to_gate` helper
-- `save_decision_gate`, `get_decision_gate`, `list_decision_gates` (with optional `status` filter)
-
-### 4. Service — create / list / resolve gates
+### 3. Planner service — foreman/planner.py
 
 - Status: done
-- `create_gate`: validates project and sprint membership, rejects empty description
-- `list_gates`: filtered by status or returns all
-- `resolve_gate`: accepted → rewrites `order_index` on all sprints in `suggested_order`;
-  rejected/dismissed → no reorder; both close the gate
-- `_serialize_gate` helper
+- 8 tool definitions (JSON schema for Anthropic tool_use API):
+  list/create/update/delete for sprints and tasks
+- `_execute_tool` dispatcher calls DashboardService methods directly
+- In-memory session history per project (`_sessions` dict)
+- `process_message` async generator: streaming NDJSON events
+  (text_delta, tool_use, tool_result, done, error)
+- Graceful handling of missing API key or SDK
 
-### 5. Backend — three API endpoints
-
-- Status: done
-- `POST /api/projects/{id}/gates`
-- `GET /api/projects/{id}/gates[?status=pending]`
-- `PATCH /api/gates/{id}` (resolve)
-
-### 6. Frontend — gate banner and resolve flow
+### 4. Backend endpoints
 
 - Status: done
-- `services.listGates` and `services.resolveGate` in `api.js`
-- `refreshProjectScope` fetches pending gates alongside project and sprints
-- `pendingGates` state in App; `handleResolveGate` handler
-- `DecisionGateBanner` component: header, description, expandable detail
-  (reason + suggested order with sprint titles), Accept / Keep current / Dismiss buttons
-- `gate-banners` container renders one banner per pending gate above the sprint page bar
-- CSS: `.gate-banner*`, `.gate-btn*` classes
+- `POST /api/projects/{id}/planner/message` — streaming NDJSON response
+- `GET /api/projects/{id}/planner/history` — simplified turn list
+- `DELETE /api/projects/{id}/planner/session` — clear in-memory session
 
-### 7. Tests
+### 5. Frontend
 
 - Status: done
-- `DashboardDecisionGateTests` (9 tests): create, reject empty description, reject
-  unknown project, list filtered/unfiltered, accept reorders sprints, reject
-  preserves order, double-resolve blocked, invalid resolution rejected
+- `api.js`: `plannerMessage` (async generator over NDJSON stream),
+  `plannerHistory`, `clearPlannerSession`
+- `PlannerPanel` component: collapsible, docked at bottom of sprint view;
+  streaming text with cursor animation; tool use chips (running/done);
+  Enter to send, Shift+Enter for newline; Clear session button
+- `SprintList` accepts `services` and `onSprintsChanged` props;
+  renders PlannerPanel when services is provided
+- App.jsx passes `services` and sprint refresh callback
+- CSS: `.planner-panel`, `.planner-toggle`, `.planner-turn-*`,
+  `.planner-tool-chip`, `.planner-cursor` with blink/pulse animations
+
+### 6. Tests
+
+- Status: done
+- `DashboardPlannerTests` (9 tests): history empty/404, clear session/404,
+  message 400/404, tool executor list_sprints, create_sprint, unknown tool
+- `test_loads_shipped_roles` updated to include sprint-planner

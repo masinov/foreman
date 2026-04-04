@@ -136,6 +136,40 @@ export function createDashboardServices({
         method: "POST",
       });
     },
+    async *plannerMessage(projectId, message) {
+      const response = await fetchImpl(`/api/projects/${encodeURIComponent(projectId)}/planner/message`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message }),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error || `Request failed: ${response.status}`);
+      }
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop();
+        for (const line of lines) {
+          if (line.trim()) {
+            try { yield JSON.parse(line); } catch {}
+          }
+        }
+      }
+    },
+    plannerHistory(projectId) {
+      return requestJson(fetchImpl, `/api/projects/${encodeURIComponent(projectId)}/planner/history`);
+    },
+    clearPlannerSession(projectId) {
+      return requestJson(fetchImpl, `/api/projects/${encodeURIComponent(projectId)}/planner/session`, {
+        method: "DELETE",
+      });
+    },
     listGates(projectId, { status } = {}) {
       const params = status ? `?status=${encodeURIComponent(status)}` : "";
       return requestJson(fetchImpl, `/api/projects/${encodeURIComponent(projectId)}/gates${params}`);
