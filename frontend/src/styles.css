@@ -539,7 +539,7 @@ button {
 }
 
 /* ═══ Project view (sprint list) ════════════════════ */
-.project-view {
+.project-view-inner {
   display: flex;
   flex-direction: column;
   height: calc(100vh - 48px);

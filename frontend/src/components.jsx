@@ -504,6 +504,7 @@ export function SprintList({ project, sprints, pendingGates, onSelectSprint, onO
 
   return (
     <section className="project-view view visible">
+      <div className="project-view-inner">
       <div className="project-top">
         <div className="project-info">
           <h1>{project.name}</h1>
@@ -669,6 +670,7 @@ export function SprintList({ project, sprints, pendingGates, onSelectSprint, onO
             Agent
           </button>
         ) : null}
+      </div>
       </div>
     </section>
   );
