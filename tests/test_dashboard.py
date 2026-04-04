@@ -2590,8 +2590,8 @@ class DashboardDecisionGateTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
 
 
-class DashboardPlannerTests(unittest.TestCase):
-    """Tests for the planner session endpoints (no live API key required)."""
+class DashboardMetaAgentTests(unittest.TestCase):
+    """Tests for the meta-agent session endpoints (no live subprocess required)."""
 
     @classmethod
     def setUpClass(cls):
@@ -2605,16 +2605,16 @@ class DashboardPlannerTests(unittest.TestCase):
     _counter = 0
 
     def _next_id(self, prefix):
-        DashboardPlannerTests._counter += 1
-        return f"{prefix}-{DashboardPlannerTests._counter}"
+        DashboardMetaAgentTests._counter += 1
+        return f"{prefix}-{DashboardMetaAgentTests._counter}"
 
     def _seed(self):
         store = ForemanStore(self.db_path)
         store.initialize()
         project = Project(
-            id=self._next_id("proj-planner"),
-            name="Planner Test",
-            repo_path="/tmp/planner-test",
+            id=self._next_id("proj-meta"),
+            name="Meta Agent Test",
+            repo_path="/tmp/meta-test",
             workflow_id="development",
         )
         store.save_project(project)
@@ -2629,114 +2629,61 @@ class DashboardPlannerTests(unittest.TestCase):
                 return await client.request(method, url, **kwargs)
         return asyncio.run(send())
 
-    def test_planner_history_returns_empty_for_new_project(self):
-        """GET /api/projects/{id}/planner/history returns empty turns list."""
+    def test_meta_history_returns_empty_for_new_project(self):
+        """GET /api/projects/{id}/meta/history returns empty turns list."""
         project = self._seed()
-        response = self._request("GET", f"/api/projects/{project.id}/planner/history")
+        response = self._request("GET", f"/api/projects/{project.id}/meta/history")
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data["project_id"], project.id)
         self.assertEqual(data["turns"], [])
 
-    def test_planner_history_returns_404_for_unknown_project(self):
-        """GET /api/projects/{id}/planner/history returns 404 for unknown project."""
-        response = self._request("GET", "/api/projects/does-not-exist/planner/history")
+    def test_meta_history_returns_404_for_unknown_project(self):
+        """GET /api/projects/{id}/meta/history returns 404 for unknown project."""
+        response = self._request("GET", "/api/projects/does-not-exist/meta/history")
         self.assertEqual(response.status_code, 404)
 
-    def test_clear_session_returns_cleared(self):
-        """DELETE /api/projects/{id}/planner/session clears and confirms."""
+    def test_clear_meta_session_returns_cleared(self):
+        """DELETE /api/projects/{id}/meta/session clears and confirms."""
         project = self._seed()
-        response = self._request("DELETE", f"/api/projects/{project.id}/planner/session")
+        response = self._request("DELETE", f"/api/projects/{project.id}/meta/session")
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["cleared"])
 
-    def test_clear_session_returns_404_for_unknown_project(self):
-        """DELETE /api/projects/{id}/planner/session returns 404 for unknown project."""
-        response = self._request("DELETE", "/api/projects/does-not-exist/planner/session")
+    def test_clear_meta_session_returns_404_for_unknown_project(self):
+        """DELETE /api/projects/{id}/meta/session returns 404 for unknown project."""
+        response = self._request("DELETE", "/api/projects/does-not-exist/meta/session")
         self.assertEqual(response.status_code, 404)
 
-    def test_planner_message_returns_400_for_empty_message(self):
-        """POST /api/projects/{id}/planner/message returns 400 for empty message."""
+    def test_meta_message_returns_400_for_empty_message(self):
+        """POST /api/projects/{id}/meta/message returns 400 for empty message."""
         project = self._seed()
         response = self._request(
             "POST",
-            f"/api/projects/{project.id}/planner/message",
+            f"/api/projects/{project.id}/meta/message",
             json={"message": "   "},
         )
         self.assertEqual(response.status_code, 400)
 
-    def test_planner_message_returns_404_for_unknown_project(self):
-        """POST /api/projects/{id}/planner/message returns 404 for unknown project."""
+    def test_meta_message_returns_404_for_unknown_project(self):
+        """POST /api/projects/{id}/meta/message returns 404 for unknown project."""
         response = self._request(
             "POST",
-            "/api/projects/does-not-exist/planner/message",
+            "/api/projects/does-not-exist/meta/message",
             json={"message": "hello"},
         )
         self.assertEqual(response.status_code, 404)
 
-    def test_planner_tool_execute_list_sprints(self):
-        """Tool executor: foreman_list_sprints returns sprint data via service."""
-        from foreman.planner import _execute_tool
-        from foreman.store import ForemanStore
-        store = ForemanStore(self.db_path)
-        store.initialize()
-        project = Project(
-            id=self._next_id("proj-tool"),
-            name="Tool Test",
-            repo_path="/tmp/tool-test",
-            workflow_id="development",
-        )
-        sprint = __import__("foreman.models", fromlist=["Sprint"]).Sprint(
-            id=self._next_id("spr-tool"),
-            project_id=project.id,
-            title="Test Sprint",
-        )
-        store.save_project(project)
-        store.save_sprint(sprint)
-        api = DashboardService(store)
-        result = _execute_tool("foreman_list_sprints", {}, project_id=project.id, api=api)
-        store.close()
-        self.assertIn("sprints", result)
-        self.assertEqual(len(result["sprints"]), 1)
-        self.assertEqual(result["sprints"][0]["title"], "Test Sprint")
-
-    def test_planner_tool_create_sprint(self):
-        """Tool executor: foreman_create_sprint creates a sprint via service."""
-        from foreman.planner import _execute_tool
-        store = ForemanStore(self.db_path)
-        store.initialize()
-        project = Project(
-            id=self._next_id("proj-cs"),
-            name="Create Sprint Test",
-            repo_path="/tmp/cs-test",
-            workflow_id="development",
-        )
-        store.save_project(project)
-        api = DashboardService(store)
-        result = _execute_tool(
-            "foreman_create_sprint",
-            {"title": "New Sprint", "goal": "Ship it"},
-            project_id=project.id,
-            api=api,
-        )
-        store.close()
-        self.assertEqual(result["title"], "New Sprint")
-        self.assertEqual(result["goal"], "Ship it")
-        self.assertEqual(result["status"], "planned")
-
-    def test_planner_tool_unknown_returns_error(self):
-        """Tool executor: unknown tool name returns error dict without raising."""
-        from foreman.planner import _execute_tool
-        store = ForemanStore(self.db_path)
-        store.initialize()
-        project = Project(
-            id=self._next_id("proj-unk"),
-            name="Unknown Tool",
-            repo_path="/tmp/unk",
-            workflow_id="development",
-        )
-        store.save_project(project)
-        api = DashboardService(store)
-        result = _execute_tool("foreman_explode_everything", {}, project_id=project.id, api=api)
-        store.close()
-        self.assertIn("error", result)
+    def test_meta_history_reflects_cleared_session(self):
+        """After clearing session, history returns empty list again."""
+        from foreman.meta_agent import _sessions, _get_session
+        project = self._seed()
+        # Seed an in-memory session manually
+        sess = _get_session(project.id)
+        sess.history = [{"role": "user", "text": "hello", "tool_uses": []}]
+        # Clear via API
+        resp = self._request("DELETE", f"/api/projects/{project.id}/meta/session")
+        self.assertEqual(resp.status_code, 200)
+        # History should now be empty
+        resp2 = self._request("GET", f"/api/projects/{project.id}/meta/history")
+        self.assertEqual(resp2.json()["turns"], [])

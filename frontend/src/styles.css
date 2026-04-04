@@ -2642,67 +2642,76 @@ button {
   color: var(--text-secondary);
 }
 
-/* ── Sprint planner panel ──────────────────────────────────────────────── */
+/* ── Meta agent panel ──────────────────────────────────────────────────── */
 
-.planner-toggle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 16px;
-  padding: 8px 14px;
-  width: 100%;
+.meta-toggle-btn {
   font-size: 11px;
   font-family: var(--font-mono);
   color: var(--text-tertiary);
   background: none;
-  border: 1px dashed var(--border-subtle);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius);
+  padding: 4px 10px;
   cursor: pointer;
   transition: var(--transition);
 }
 
-.planner-toggle:hover {
+.meta-toggle-btn:hover {
   color: var(--text-secondary);
   border-color: var(--border);
 }
 
-.planner-panel {
+.meta-toggle-btn.active {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  background: var(--accent-dim);
+}
+
+.meta-panel {
+  position: fixed;
+  top: 41px; /* topbar height */
+  right: 0;
+  bottom: 0;
+  width: 380px;
+  background: var(--bg-raised);
+  border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  margin-top: 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  overflow: hidden;
-  background: var(--surface);
+  z-index: 200;
 }
 
-.planner-header {
+.meta-panel-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
   padding: 10px 14px;
   border-bottom: 1px solid var(--border-subtle);
-  background: var(--surface-alt);
+  flex-shrink: 0;
 }
 
-.planner-title {
+.meta-panel-title-row {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.meta-panel-title {
   font-size: 12px;
   font-weight: 600;
   color: var(--text-primary);
 }
 
-.planner-subtitle {
-  font-size: 11px;
+.meta-panel-subtitle {
+  font-size: 10px;
   color: var(--text-tertiary);
-  flex: 1;
 }
 
-.planner-header-actions {
+.meta-panel-actions {
   display: flex;
   gap: 6px;
 }
 
-.planner-action-btn {
+.meta-action-btn {
   font-size: 11px;
   font-family: var(--font-mono);
   color: var(--text-tertiary);
@@ -2714,63 +2723,64 @@ button {
   transition: var(--transition);
 }
 
-.planner-action-btn:hover {
+.meta-action-btn:hover {
   color: var(--text-secondary);
-  background: var(--surface-hover);
+  background: var(--bg-card-hover);
 }
 
-.planner-body {
+.meta-panel-body {
   flex: 1;
-  max-height: 360px;
   overflow-y: auto;
   padding: 12px 14px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
-.planner-empty {
+.meta-panel-empty {
   font-size: 12px;
   color: var(--text-tertiary);
   font-style: italic;
   text-align: center;
-  padding: 20px 0;
+  padding: 24px 0;
+  line-height: 1.6;
 }
 
-.planner-turn {
+.meta-turn {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
-.planner-turn-user .planner-text {
+.meta-turn-user .meta-turn-text {
   align-self: flex-end;
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
   border-radius: var(--radius);
   padding: 7px 10px;
   font-size: 12px;
   color: var(--text-primary);
-  max-width: 85%;
+  max-width: 88%;
   margin: 0;
   white-space: pre-wrap;
 }
 
-.planner-turn-assistant .planner-text {
+.meta-turn-assistant .meta-turn-text {
   font-size: 12px;
   color: var(--text-primary);
-  line-height: 1.6;
+  line-height: 1.65;
   margin: 0;
   white-space: pre-wrap;
 }
 
-.planner-tool-uses {
+.meta-tool-uses {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
+  padding-bottom: 2px;
 }
 
-.planner-tool-chip {
+.meta-tool-chip {
   font-size: 10px;
   font-family: var(--font-mono);
   padding: 2px 8px;
@@ -2779,39 +2789,39 @@ button {
   color: var(--text-tertiary);
 }
 
-.planner-tool-running {
+.meta-tool-running {
   color: var(--accent);
   border-color: color-mix(in srgb, var(--accent) 30%, transparent);
-  animation: planner-pulse 1s ease-in-out infinite;
+  animation: meta-pulse 1s ease-in-out infinite;
 }
 
-.planner-tool-done {
+.meta-tool-done {
   color: var(--green);
   border-color: color-mix(in srgb, var(--green) 30%, transparent);
 }
 
-@keyframes planner-pulse {
+@keyframes meta-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
 }
 
-.planner-cursor {
+.meta-cursor {
   display: inline-block;
   width: 8px;
   height: 13px;
   background: var(--accent);
   border-radius: 1px;
-  animation: planner-blink 0.9s step-end infinite;
+  animation: meta-blink 0.9s step-end infinite;
   vertical-align: text-bottom;
   margin-left: 2px;
 }
 
-@keyframes planner-blink {
+@keyframes meta-blink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0; }
 }
 
-.planner-error {
+.meta-error {
   font-size: 11px;
   color: var(--red);
   padding: 6px 10px;
@@ -2820,21 +2830,22 @@ button {
   background: color-mix(in srgb, var(--red) 8%, transparent);
 }
 
-.planner-input-row {
+.meta-input-row {
   display: flex;
   gap: 8px;
   padding: 10px 14px;
   border-top: 1px solid var(--border-subtle);
   align-items: flex-end;
+  flex-shrink: 0;
 }
 
-.planner-input {
+.meta-input {
   flex: 1;
   resize: none;
   font-size: 12px;
   font-family: var(--font-mono);
   color: var(--text-primary);
-  background: var(--surface-alt);
+  background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 8px 10px;
@@ -2842,17 +2853,17 @@ button {
   line-height: 1.5;
 }
 
-.planner-input:focus {
+.meta-input:focus {
   border-color: var(--accent);
 }
 
-.planner-send-btn {
+.meta-send-btn {
   font-size: 12px;
   font-family: var(--font-mono);
   font-weight: 600;
   padding: 8px 14px;
   background: var(--accent);
-  color: #fff;
+  color: #0c0c0e;
   border: none;
   border-radius: var(--radius);
   cursor: pointer;
@@ -2860,11 +2871,11 @@ button {
   flex-shrink: 0;
 }
 
-.planner-send-btn:hover:not(:disabled) {
+.meta-send-btn:hover:not(:disabled) {
   opacity: 0.85;
 }
 
-.planner-send-btn:disabled {
+.meta-send-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
