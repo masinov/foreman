@@ -540,7 +540,15 @@ button {
 
 /* ═══ Project view (sprint list) ════════════════════ */
 .project-view {
-  padding: 24px 64px;
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 48px);
+  overflow: hidden;
+}
+
+.project-top {
+  padding: 24px 64px 0;
+  flex-shrink: 0;
 }
 
 .project-info {
@@ -596,6 +604,69 @@ button {
 .detail-status {
   font-size: 11px;
   color: var(--text-tertiary);
+}
+
+.project-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: 1fr;
+  transition: grid-template-columns 250ms ease;
+}
+
+.project-body.with-agent {
+  grid-template-columns: 1fr 360px;
+}
+
+.project-body.agent-hidden {
+  grid-template-columns: 1fr 32px;
+}
+
+.project-main {
+  overflow-y: auto;
+  padding: 12px 64px 24px;
+  min-width: 0;
+}
+
+.agent-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  border-left: 1px solid var(--border-subtle);
+}
+
+.project-body.agent-hidden .agent-panel {
+  display: none;
+}
+
+.agent-tab {
+  display: none;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  padding: 16px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: var(--transition);
+  background: var(--bg);
+  user-select: none;
+  border: 0;
+  border-left: 1px solid var(--border-subtle);
+}
+
+.agent-tab:hover {
+  color: var(--text-secondary);
+  background: var(--bg-raised);
+}
+
+.project-body.agent-hidden .agent-tab {
+  display: flex;
+  align-items: center;
 }
 
 .sprint-page-bar {
@@ -2644,40 +2715,11 @@ button {
 
 /* ── Meta agent panel ──────────────────────────────────────────────────── */
 
-.meta-toggle-btn {
-  font-size: 11px;
-  font-family: var(--font-mono);
-  color: var(--text-tertiary);
-  background: none;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius);
-  padding: 4px 10px;
-  cursor: pointer;
-  transition: var(--transition);
-}
-
-.meta-toggle-btn:hover {
-  color: var(--text-secondary);
-  border-color: var(--border);
-}
-
-.meta-toggle-btn.active {
-  color: var(--accent);
-  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
-  background: var(--accent-dim);
-}
-
 .meta-panel {
-  position: fixed;
-  top: 41px; /* topbar height */
-  right: 0;
-  bottom: 0;
-  width: 380px;
-  background: var(--bg-raised);
-  border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  z-index: 200;
+  height: 100%;
+  background: var(--bg-raised);
 }
 
 .meta-panel-header {
@@ -3296,6 +3338,17 @@ select.form-input {
     width: 100vw;
     max-width: none;
   }
+
+  .project-body,
+  .project-body.agent-hidden {
+    grid-template-columns: 1fr;
+  }
+
+  .agent-panel,
+  .agent-tab {
+    border-left: 0;
+    border-top: 1px solid var(--border-subtle);
+  }
 }
 
 @media (max-width: 980px) {
@@ -3307,7 +3360,8 @@ select.form-input {
   }
 
   .dashboard,
-  .project-view,
+  .project-top,
+  .project-main,
   .board,
   .sprint-header {
     padding-left: 16px;
