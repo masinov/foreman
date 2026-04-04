@@ -504,48 +504,48 @@ export function SprintList({ project, sprints, pendingGates, onSelectSprint, onO
 
   return (
     <section className="project-view view visible">
-      <div className="project-view-inner">
-      <div className="project-top">
-        <div className="project-info">
-          <h1>{project.name}</h1>
-          <div className="project-meta">
-            <span>
-              Workflow <span className="v">{project.workflow_id}</span>
-            </span>
-            <span>
-              Default branch <span className="v">{project.default_branch || "main"}</span>
-            </span>
-            <span>
-              Repo <span className="v">{project.repo_path}</span>
-            </span>
-          </div>
-          {project.task_counts?.blocked > 0 ? (
-            <div className="project-badges">
-              <span className="badge badge-warn">{project.task_counts.blocked} awaiting approval</span>
+      <div className={`project-view-inner ${agentBodyClass}`}>
+        <div className="project-left">
+          <div className="project-top">
+            <div className="project-info">
+              <h1>{project.name}</h1>
+              <div className="project-meta">
+                <span>
+                  Workflow <span className="v">{project.workflow_id}</span>
+                </span>
+                <span>
+                  Default branch <span className="v">{project.default_branch || "main"}</span>
+                </span>
+                <span>
+                  Repo <span className="v">{project.repo_path}</span>
+                </span>
+              </div>
+              {project.task_counts?.blocked > 0 ? (
+                <div className="project-badges">
+                  <span className="badge badge-warn">{project.task_counts.blocked} awaiting approval</span>
+                </div>
+              ) : null}
             </div>
-          ) : null}
-        </div>
 
-        {pendingGates && pendingGates.length > 0 ? (
-          <div className="gate-banners">
-            {pendingGates.map((gate) => (
-              <DecisionGateBanner
-                key={gate.id}
-                gate={gate}
-                sprints={sprints}
-                onResolve={onResolveGate}
-              />
-            ))}
+            {pendingGates && pendingGates.length > 0 ? (
+              <div className="gate-banners">
+                {pendingGates.map((gate) => (
+                  <DecisionGateBanner
+                    key={gate.id}
+                    gate={gate}
+                    sprints={sprints}
+                    onResolve={onResolveGate}
+                  />
+                ))}
+              </div>
+            ) : null}
           </div>
-        ) : null}
-      </div>
 
-      <div className={`project-body ${agentBodyClass}`}>
-        <div className="project-main">
-          <div className="sprint-page-bar">
-            {runStopButton}
-            {viewToggle}
-          </div>
+          <div className="project-main">
+            <div className="sprint-page-bar">
+              {runStopButton}
+              {viewToggle}
+            </div>
           {viewMode === "list" ? (() => {
             const executedSprints = visibleSprints.filter((s) => s.status !== "planned");
             const plannedSprints = visibleSprints.filter((s) => s.status === "planned");
@@ -650,6 +650,7 @@ export function SprintList({ project, sprints, pendingGates, onSelectSprint, onO
               })}
             </div>
           )}
+          </div>
         </div>
 
         {services ? (
@@ -670,7 +671,6 @@ export function SprintList({ project, sprints, pendingGates, onSelectSprint, onO
             Agent
           </button>
         ) : null}
-      </div>
       </div>
     </section>
   );

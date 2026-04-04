@@ -540,9 +540,26 @@ button {
 
 /* ═══ Project view (sprint list) ════════════════════ */
 .project-view-inner {
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: minmax(0, 1fr);
+  height: calc(100vh - 48px);
+  overflow: hidden;
+  transition: grid-template-columns 250ms ease;
+}
+
+.project-view-inner.with-agent {
+  grid-template-columns: 1fr 360px;
+}
+
+.project-view-inner.agent-hidden {
+  grid-template-columns: 1fr 32px;
+}
+
+.project-left {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 48px);
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -606,39 +623,20 @@ button {
   color: var(--text-tertiary);
 }
 
-.project-body {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-  display: grid;
-  grid-template-columns: 1fr;
-  grid-template-rows: minmax(0, 1fr);
-  transition: grid-template-columns 250ms ease;
-}
-
-.project-body.with-agent {
-  grid-template-columns: 1fr 360px;
-}
-
-.project-body.agent-hidden {
-  grid-template-columns: 1fr 32px;
-}
-
 .project-main {
   overflow-y: auto;
-  padding: 12px 64px 24px;
+  padding: 0 64px 24px;
   min-width: 0;
 }
 
 .agent-panel {
   display: flex;
   flex-direction: column;
-  height: 100%;
   overflow: hidden;
   border-left: 1px solid var(--border-subtle);
 }
 
-.project-body.agent-hidden .agent-panel {
+.project-view-inner.agent-hidden .agent-panel {
   display: none;
 }
 
@@ -665,7 +663,7 @@ button {
   background: var(--bg-raised);
 }
 
-.project-body.agent-hidden .agent-tab {
+.project-view-inner.agent-hidden .agent-tab {
   display: flex;
   align-items: center;
 }
@@ -3340,8 +3338,8 @@ select.form-input {
     max-width: none;
   }
 
-  .project-body,
-  .project-body.agent-hidden {
+  .project-view-inner,
+  .project-view-inner.agent-hidden {
     grid-template-columns: 1fr;
   }
 
@@ -3365,8 +3363,8 @@ select.form-input {
   .project-main,
   .board,
   .sprint-header {
-    padding-left: 16px;
-    padding-right: 16px;
+    padding-left: 16px !important;
+    padding-right: 16px !important;
   }
 
   .sprint-card {
