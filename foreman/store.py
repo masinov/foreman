@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from .migrations import MIGRATIONS
-from .models import Event, Project, Run, Sprint, TASK_STATUSES, Task
+from .models import DecisionGate, Event, Project, Run, Sprint, TASK_STATUSES, Task
 
 _PRUNE_PROTECTED_TASK_STATUSES = ("blocked", "in_progress")
 
@@ -139,6 +139,28 @@ def _row_to_event(row: sqlite3.Row) -> Event:
         timestamp=row["timestamp"],
         role_id=row["role_id"],
         payload=_load_json_dict(row["payload_json"]),
+    )
+
+
+def _row_to_gate(row: sqlite3.Row) -> DecisionGate:
+    import json as _json
+
+    raw = row["suggested_order"]
+    try:
+        suggested_order = _json.loads(raw) if raw else []
+    except (ValueError, TypeError):
+        suggested_order = []
+    return DecisionGate(
+        id=row["id"],
+        project_id=row["project_id"],
+        sprint_id=row["sprint_id"],
+        raised_at=row["raised_at"],
+        conflict_description=row["conflict_description"],
+        suggested_order=suggested_order,
+        suggested_reason=row["suggested_reason"] or "",
+        status=row["status"],  # type: ignore[assignment]
+        resolved_at=row["resolved_at"],
+        resolved_by=row["resolved_by"],
     )
 
 
@@ -1138,3 +1160,63 @@ class ForemanStore:
         for row in self._connection.execute(sql, tuple(params)).fetchall():
             counts[str(row["status"])] = int(row["value"])
         return counts
+
+    # ── Decision gates ────────────────────────────────────────────────────────
+
+    def save_decision_gate(self, gate: DecisionGate) -> DecisionGate:
+        """Insert or update a decision gate record."""
+        import json as _json
+
+        with self._connection:
+            self._connection.execute(
+                """
+                INSERT INTO decision_gates (
+                    id, project_id, sprint_id, raised_at,
+                    conflict_description, suggested_order, suggested_reason,
+                    status, resolved_at, resolved_by
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    status = excluded.status,
+                    resolved_at = excluded.resolved_at,
+                    resolved_by = excluded.resolved_by
+                """,
+                (
+                    gate.id,
+                    gate.project_id,
+                    gate.sprint_id,
+                    gate.raised_at,
+                    gate.conflict_description,
+                    _json.dumps(gate.suggested_order),
+                    gate.suggested_reason,
+                    gate.status,
+                    gate.resolved_at,
+                    gate.resolved_by,
+                ),
+            )
+        return gate
+
+    def get_decision_gate(self, gate_id: str) -> DecisionGate | None:
+        """Return one decision gate by id."""
+        row = self._connection.execute(
+            "SELECT * FROM decision_gates WHERE id = ?", (gate_id,)
+        ).fetchone()
+        return _row_to_gate(row) if row else None
+
+    def list_decision_gates(
+        self,
+        project_id: str,
+        *,
+        status: str | None = None,
+    ) -> list[DecisionGate]:
+        """List decision gates for a project, optionally filtered by status."""
+        if status is not None:
+            rows = self._connection.execute(
+                "SELECT * FROM decision_gates WHERE project_id = ? AND status = ? ORDER BY raised_at DESC",
+                (project_id, status),
+            ).fetchall()
+        else:
+            rows = self._connection.execute(
+                "SELECT * FROM decision_gates WHERE project_id = ? ORDER BY raised_at DESC",
+                (project_id,),
+            ).fetchall()
+        return [_row_to_gate(row) for row in rows]

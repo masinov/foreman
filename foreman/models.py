@@ -10,6 +10,7 @@ JsonDict = dict[str, Any]
 
 ProjectMethodology = Literal["development"]
 AutonomyLevel = Literal["directed", "supervised", "autonomous"]
+GateStatus = Literal["pending", "accepted", "rejected", "dismissed"]
 SprintStatus = Literal["planned", "active", "completed", "cancelled"]
 TaskStatus = Literal["todo", "in_progress", "blocked", "done", "cancelled"]
 TaskType = Literal["feature", "fix", "refactor", "docs", "spike", "chore"]
@@ -142,6 +143,22 @@ class Run:
     started_at: str | None = None
     completed_at: str | None = None
     created_at: str = field(default_factory=utc_now_text)
+
+
+@dataclass(slots=True)
+class DecisionGate:
+    """A persisted decision gate raised when the agent detects a sprint ordering conflict."""
+
+    id: str
+    project_id: str
+    sprint_id: str
+    conflict_description: str
+    suggested_order: list[str] = field(default_factory=list)
+    suggested_reason: str = ""
+    status: GateStatus = "pending"
+    raised_at: str = field(default_factory=utc_now_text)
+    resolved_at: str | None = None
+    resolved_by: str | None = None
 
 
 @dataclass(slots=True)
