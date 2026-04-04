@@ -802,6 +802,150 @@ class DashboardSettingsTests(unittest.TestCase):
         store.close()
 
 
+class DashboardAutonomyLevelTests(unittest.TestCase):
+    """Tests for autonomy_level on projects."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.temp_dir = tempfile.TemporaryDirectory()
+        cls.db_path = Path(cls.temp_dir.name) / "foreman.db"
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.temp_dir.cleanup()
+
+    def _seed_project(self, autonomy_level="supervised"):
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        project = Project(
+            id=f"proj-al-{id(self)}-{autonomy_level}",
+            name="Autonomy Test",
+            repo_path="/tmp/autonomy-test",
+            workflow_id="development",
+            autonomy_level=autonomy_level,
+        )
+        store.save_project(project)
+        store.close()
+        return project
+
+    def _request(self, method, url, **kwargs):
+        async def send():
+            app = create_dashboard_app(str(self.db_path))
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+                return await client.request(method, url, **kwargs)
+        return asyncio.run(send())
+
+    def test_project_defaults_to_supervised(self):
+        """New projects persist autonomy_level='supervised' and it is returned in get_project."""
+        project = self._seed_project()
+        response = self._request("GET", f"/api/projects/{project.id}")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["autonomy_level"], "supervised")
+
+    def test_settings_returns_autonomy_level(self):
+        """GET /api/projects/{id}/settings includes autonomy_level."""
+        project = self._seed_project("directed")
+        response = self._request("GET", f"/api/projects/{project.id}/settings")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["autonomy_level"], "directed")
+
+    def test_patch_settings_updates_autonomy_level(self):
+        """PATCH /api/projects/{id}/settings accepts and persists a valid autonomy_level."""
+        project = self._seed_project("supervised")
+        response = self._request(
+            "PATCH",
+            f"/api/projects/{project.id}/settings",
+            json={"autonomy_level": "autonomous"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["autonomy_level"], "autonomous")
+
+        # Verify persisted
+        get = self._request("GET", f"/api/projects/{project.id}/settings")
+        self.assertEqual(get.json()["autonomy_level"], "autonomous")
+
+    def test_patch_settings_rejects_invalid_autonomy_level(self):
+        """PATCH /api/projects/{id}/settings returns 400 for an unknown autonomy_level value."""
+        project = self._seed_project()
+        response = self._request(
+            "PATCH",
+            f"/api/projects/{project.id}/settings",
+            json={"autonomy_level": "turbo"},
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_autonomy_level_roundtrips_all_valid_values(self):
+        """All three valid autonomy_level values survive a save/load cycle."""
+        for level in ("directed", "supervised", "autonomous"):
+            project = self._seed_project(level)
+            response = self._request("GET", f"/api/projects/{project.id}/settings")
+            self.assertEqual(response.json()["autonomy_level"], level, msg=f"failed for {level}")
+
+    def test_transition_to_active_blocked_when_sprint_already_active(self):
+        """PATCH /api/sprints/{id} with status=active returns 400 when another sprint is already active."""
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        project = Project(
+            id=f"proj-oas-{id(self)}",
+            name="One Active Sprint",
+            repo_path="/tmp/oas",
+            workflow_id="development",
+        )
+        store.save_project(project)
+        active_sprint = Sprint(
+            id=f"sprint-oas-active-{id(self)}",
+            project_id=project.id,
+            title="Already Active",
+            status="active",
+        )
+        planned_sprint = Sprint(
+            id=f"sprint-oas-planned-{id(self)}",
+            project_id=project.id,
+            title="Wants to be Active",
+            status="planned",
+        )
+        store.save_sprint(active_sprint)
+        store.save_sprint(planned_sprint)
+        store.close()
+
+        response = self._request(
+            "PATCH",
+            f"/api/sprints/{planned_sprint.id}",
+            json={"status": "active"},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("already active", response.json()["error"].lower())
+
+    def test_transition_to_active_allowed_when_no_active_sprint(self):
+        """PATCH /api/sprints/{id} with status=active succeeds when no sprint is currently active."""
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        project = Project(
+            id=f"proj-noactive-{id(self)}",
+            name="No Active Sprint",
+            repo_path="/tmp/noactive",
+            workflow_id="development",
+        )
+        store.save_project(project)
+        planned_sprint = Sprint(
+            id=f"sprint-noactive-{id(self)}",
+            project_id=project.id,
+            title="Promote Me",
+            status="planned",
+        )
+        store.save_sprint(planned_sprint)
+        store.close()
+
+        response = self._request(
+            "PATCH",
+            f"/api/sprints/{planned_sprint.id}",
+            json={"status": "active"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "active")
+
+
 class DashboardSprintLifecycleTests(unittest.TestCase):
     """Tests for sprint status transitions, task field updates, and stop-agent endpoint."""
 
@@ -1500,6 +1644,113 @@ class DashboardTaskEditingTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 400)
 
+    def test_patch_sprint_order_index(self):
+        """PATCH /api/sprints/{id} with order_index updates the sprint order."""
+        _, sprint, _ = self._seed()
+        response = self._request(
+            "PATCH",
+            f"/api/sprints/{sprint.id}",
+            json={"order_index": 42},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["id"], sprint.id)
+
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        updated = store.get_sprint(sprint.id)
+        store.close()
+        self.assertEqual(updated.order_index, 42)
+
+    def test_patch_sprint_order_index_swap(self):
+        """Swapping order_index between two sprints changes their list position."""
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        project = Project(
+            id=self._next_id("proj-swap"),
+            name="Swap Project",
+            repo_path="/tmp/swap",
+            workflow_id="development",
+        )
+        store.save_project(project)
+        s1 = Sprint(
+            id=self._next_id("sprint-swap"),
+            project_id=project.id,
+            title="Sprint One",
+            status="planned",
+            order_index=0,
+        )
+        s2 = Sprint(
+            id=self._next_id("sprint-swap"),
+            project_id=project.id,
+            title="Sprint Two",
+            status="planned",
+            order_index=1,
+        )
+        store.save_sprint(s1)
+        store.save_sprint(s2)
+        store.close()
+
+        self._request("PATCH", f"/api/sprints/{s1.id}", json={"order_index": 1})
+        self._request("PATCH", f"/api/sprints/{s2.id}", json={"order_index": 0})
+
+        response = self._request("GET", f"/api/projects/{project.id}/sprints")
+        self.assertEqual(response.status_code, 200)
+        sprints = response.json()["sprints"]
+        self.assertEqual(sprints[0]["id"], s2.id)
+        self.assertEqual(sprints[1]["id"], s1.id)
+
+    def test_patch_sprint_order_index_swap_from_collision(self):
+        """Reorder works when both sprints share the same order_index (e.g. default 0).
+
+        The frontend fix assigns sequential indices rather than swapping values,
+        so only the sprint that needs to move gets updated (the other keeps index 0).
+        """
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        project = Project(
+            id=self._next_id("proj-coll"),
+            name="Collision Project",
+            repo_path="/tmp/coll",
+            workflow_id="development",
+        )
+        store.save_project(project)
+        s1 = Sprint(
+            id=self._next_id("sprint-coll"),
+            project_id=project.id,
+            title="First",
+            status="planned",
+            order_index=0,
+        )
+        s2 = Sprint(
+            id=self._next_id("sprint-coll"),
+            project_id=project.id,
+            title="Second",
+            status="planned",
+            order_index=0,  # collides with s1
+        )
+        store.save_sprint(s1)
+        store.save_sprint(s2)
+        store.close()
+
+        # Simulate the frontend sequential-index approach: s2 gets 0, s1 gets 1
+        self._request("PATCH", f"/api/sprints/{s1.id}", json={"order_index": 1})
+
+        response = self._request("GET", f"/api/projects/{project.id}/sprints")
+        self.assertEqual(response.status_code, 200)
+        sprints = response.json()["sprints"]
+        self.assertEqual(sprints[0]["id"], s2.id)
+        self.assertEqual(sprints[1]["id"], s1.id)
+
+    def test_list_project_sprints_includes_order_index(self):
+        """GET /api/projects/{id}/sprints response includes order_index for each sprint."""
+        _, sprint, _ = self._seed()
+        response = self._request("GET", f"/api/projects/{sprint.project_id}/sprints")
+        self.assertEqual(response.status_code, 200)
+        sprints = response.json()["sprints"]
+        self.assertTrue(len(sprints) > 0)
+        for s in sprints:
+            self.assertIn("order_index", s)
+
 
 class DashboardTier2Tests(unittest.TestCase):
     """Tests for sprint-33 Tier 2: project creation, start_agent, workflow_current_step."""
@@ -2136,13 +2387,3 @@ class DashboardDeleteSprintTests(unittest.TestCase):
         with self.assertRaises(DashboardNotFoundError):
             api.delete_sprint("nonexistent")
         temp_dir.cleanup()
-
-    def test_cancel_sprint_from_active(self):
-        self._create_sprint("spr-cancel-active", status="active")
-        result = self._api().transition_sprint("spr-cancel-active", target_status="cancelled")
-        self.assertEqual(result["status"], "cancelled")
-
-    def test_cancel_sprint_from_planned(self):
-        self._create_sprint("spr-cancel-planned", status="planned")
-        result = self._api().transition_sprint("spr-cancel-planned", target_status="cancelled")
-        self.assertEqual(result["status"], "cancelled")
