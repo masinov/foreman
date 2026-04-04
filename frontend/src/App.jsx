@@ -49,6 +49,7 @@ export default function App({ services, browser }) {
   const [currentProject, setCurrentProject] = useState(null);
   const [currentSprints, setCurrentSprints] = useState([]);
   const [currentSprint, setCurrentSprint] = useState(null);
+  const [pendingGates, setPendingGates] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [events, setEvents] = useState([]);
   const [selectedTaskId, setSelectedTaskId] = useState(null);
@@ -121,15 +122,18 @@ export default function App({ services, browser }) {
       setCurrentSprints([]);
       return null;
     }
-    const [projectPayload, sprintPayload] = await Promise.all([
+    const [projectPayload, sprintPayload, gatesPayload] = await Promise.all([
       services.getProject(projectId),
       services.listProjectSprints(projectId),
+      services.listGates(projectId, { status: "pending" }).catch(() => ({ gates: [] })),
     ]);
     setCurrentProject(projectPayload);
     setCurrentSprints(sprintPayload.sprints);
+    setPendingGates(gatesPayload.gates || []);
     return {
       project: projectPayload,
       sprints: sprintPayload.sprints,
+      gates: gatesPayload.gates || [],
     };
   }
 
@@ -498,6 +502,16 @@ export default function App({ services, browser }) {
     }
   }
 
+  async function handleResolveGate(gateId, resolution) {
+    setErrorMessage("");
+    try {
+      await services.resolveGate(gateId, { resolution });
+      await refreshProjectScope(routeRef.current.projectId);
+    } catch (error) {
+      setErrorMessage(error.message);
+    }
+  }
+
   async function handleCreateProject({ name, repoPath, workflowId }) {
     setErrorMessage("");
     try {
@@ -673,6 +687,7 @@ export default function App({ services, browser }) {
           <SprintList
             project={currentProject}
             sprints={currentSprints}
+            pendingGates={pendingGates}
             onSelectSprint={async (sprintId) => { await refreshSprintScope(sprintId); navigateTo(buildSprintPath(route.projectId, sprintId)); }}
             onOpenNewSprint={() => setNewSprintOpen(true)}
             onTransitionSprint={handleTransitionSprint}
@@ -680,6 +695,7 @@ export default function App({ services, browser }) {
             onReorderSprint={handleReorderSprint}
             onStartAgent={handleStartAgent}
             onStopAgent={handleStopAgent}
+            onResolveGate={handleResolveGate}
             isActionPending={isActionPending}
             autonomyLevel={currentProject.autonomy_level || "supervised"}
           />

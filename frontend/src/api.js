@@ -136,6 +136,16 @@ export function createDashboardServices({
         method: "POST",
       });
     },
+    listGates(projectId, { status } = {}) {
+      const params = status ? `?status=${encodeURIComponent(status)}` : "";
+      return requestJson(fetchImpl, `/api/projects/${encodeURIComponent(projectId)}/gates${params}`);
+    },
+    resolveGate(gateId, { resolution, resolvedBy = "human" } = {}) {
+      return requestJson(fetchImpl, `/api/gates/${encodeURIComponent(gateId)}`, {
+        method: "PATCH",
+        body: { resolution, resolved_by: resolvedBy },
+      });
+    },
     startAgent(projectId, { taskId } = {}) {
       return requestJson(fetchImpl, `/api/projects/${encodeURIComponent(projectId)}/agent/start`, {
         method: "POST",

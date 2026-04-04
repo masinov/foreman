@@ -244,7 +244,73 @@ const KANBAN_COLUMNS = [
   { key: "done", label: "Done" },
 ];
 
-export function SprintList({ project, sprints, onSelectSprint, onOpenNewSprint, onTransitionSprint, onDeleteSprint, onReorderSprint, onStartAgent, onStopAgent, isActionPending, autonomyLevel }) {
+function DecisionGateBanner({ gate, sprints, onResolve }) {
+  const [expanded, setExpanded] = useState(false);
+  const sprintIndex = new Map((sprints || []).map((s) => [s.id, s]));
+
+  const suggestedTitles = (gate.suggested_order || []).map(
+    (id, i) => `${i + 1}. ${sprintIndex.get(id)?.title || id}`
+  );
+
+  return (
+    <div className="gate-banner">
+      <div className="gate-banner-header">
+        <span className="gate-banner-icon">⚠</span>
+        <span className="gate-banner-title">Agent paused — ordering conflict detected</span>
+        <button
+          className="gate-banner-toggle"
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+        >
+          {expanded ? "Hide details" : "Show details"}
+        </button>
+      </div>
+      <p className="gate-banner-desc">{gate.conflict_description}</p>
+      {expanded ? (
+        <div className="gate-banner-detail">
+          {gate.suggested_reason ? (
+            <p className="gate-banner-reason">{gate.suggested_reason}</p>
+          ) : null}
+          {suggestedTitles.length > 0 ? (
+            <div className="gate-banner-order">
+              <span className="gate-banner-order-label">Suggested order:</span>
+              <ol className="gate-banner-order-list">
+                {suggestedTitles.map((t, i) => <li key={i}>{t}</li>)}
+              </ol>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+      <div className="gate-banner-actions">
+        {gate.suggested_order?.length > 0 ? (
+          <button
+            className="gate-btn gate-btn-accept"
+            type="button"
+            onClick={() => onResolve?.(gate.id, "accepted")}
+          >
+            Accept suggested order
+          </button>
+        ) : null}
+        <button
+          className="gate-btn gate-btn-reject"
+          type="button"
+          onClick={() => onResolve?.(gate.id, "rejected")}
+        >
+          Keep current order
+        </button>
+        <button
+          className="gate-btn gate-btn-dismiss"
+          type="button"
+          onClick={() => onResolve?.(gate.id, "dismissed")}
+        >
+          Dismiss
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export function SprintList({ project, sprints, pendingGates, onSelectSprint, onOpenNewSprint, onTransitionSprint, onDeleteSprint, onReorderSprint, onStartAgent, onStopAgent, onResolveGate, isActionPending, autonomyLevel }) {
   const [filterKey, setFilterKey] = useState("all");
   const [newestFirst, setNewestFirst] = useState(false);
   const [viewMode, setViewMode] = useState("list");
@@ -446,6 +512,19 @@ export function SprintList({ project, sprints, onSelectSprint, onOpenNewSprint, 
           </div>
         ) : null}
       </div>
+
+      {pendingGates && pendingGates.length > 0 ? (
+        <div className="gate-banners">
+          {pendingGates.map((gate) => (
+            <DecisionGateBanner
+              key={gate.id}
+              gate={gate}
+              sprints={sprints}
+              onResolve={onResolveGate}
+            />
+          ))}
+        </div>
+      ) : null}
 
       <div className="sprint-page-bar">
         {runStopButton}

@@ -1,65 +1,70 @@
 # Current Sprint
 
-- Sprint: `sprint-37-autonomy-level-foundation`
+- Sprint: `sprint-38-decision-gates`
 - Status: done
-- Branch: `feat/sprint-37-autonomy-level-foundation`
+- Branch: `feat/sprint-38-decision-gates`
 - Started: 2026-04-04
 - Completed: 2026-04-04
 
 ## Goal
 
-Land the autonomy level foundation: `autonomy_level` field on `Project`
-(schema migration, model, store, API), project settings UI with a radio
-selector, "Start" button adaptation per mode, and enforcement of the
-one-active-sprint-per-project constraint at the service layer.
+Land the full decision gate infrastructure: schema, model, store, service,
+API endpoints, and frontend banner with resolve flow. Orchestrator/runner
+integration (agent actually detecting contradictions and raising gates) is
+deferred — the surface is ready to wire in.
 
 ## Tasks
 
-### 1. Schema migration — autonomy_level on projects
+### 1. Schema migration — decision_gates table
 
 - Status: done
-- Migration 3: `ALTER TABLE projects ADD COLUMN autonomy_level TEXT NOT NULL DEFAULT 'supervised'`
-- `AutonomyLevel` type alias and `AUTONOMY_LEVELS` tuple added to `models.py`
-- `Project` dataclass gains `autonomy_level: AutonomyLevel = "supervised"`
+- Migration 4: `decision_gates` table with `id`, `project_id`, `sprint_id`,
+  `raised_at`, `conflict_description`, `suggested_order`, `suggested_reason`,
+  `status`, `resolved_at`, `resolved_by`
+- Index: `idx_decision_gates_project` on `(project_id, status)`
 
-### 2. Store — save and load autonomy_level
-
-- Status: done
-- `_row_to_project` reads `autonomy_level` from row (falls back to `"supervised"` for pre-migration rows)
-- `save_project` includes `autonomy_level` in INSERT/ON CONFLICT UPDATE
-
-### 3. Dashboard service — expose and validate autonomy_level
+### 2. Model — DecisionGate dataclass
 
 - Status: done
-- `get_project` response includes `autonomy_level`
-- `get_project_settings` response includes `autonomy_level`
-- `update_project_settings` accepts `autonomy_level`, validates against `AUTONOMY_LEVELS`, rejects unknowns with 400
-- `transition_sprint` enforces one-active-sprint-per-project: returns 400 if another sprint is already active
+- `GateStatus` type alias added to `models.py`
+- `DecisionGate` dataclass with all ADR-0006 fields
 
-### 4. Settings UI — autonomy level radio selector
+### 3. Store — save / get / list gates
 
 - Status: done
-- `AUTONOMY_LEVEL_OPTIONS` constant with value/label/description for each mode
-- `SettingsPanel` gains a radio group at the top of the Supervision section
-- Selected option highlighted with accent border; description shown below label
-- CSS: `.autonomy-options`, `.autonomy-option`, `.autonomy-option-label`, `.autonomy-option-desc`
+- `_row_to_gate` helper
+- `save_decision_gate`, `get_decision_gate`, `list_decision_gates` (with optional `status` filter)
 
-### 5. Sprint list — "Start" button adaptation
+### 4. Service — create / list / resolve gates
 
 - Status: done
-- `SprintList` accepts `autonomyLevel` prop
-- In `autonomous` mode: "Start" button hidden (agent owns activation)
-- In `supervised` mode: button labeled "Promote" with tooltip noting queue bypass
-- In `directed` mode: button labeled "Start" as before
+- `create_gate`: validates project and sprint membership, rejects empty description
+- `list_gates`: filtered by status or returns all
+- `resolve_gate`: accepted → rewrites `order_index` on all sprints in `suggested_order`;
+  rejected/dismissed → no reorder; both close the gate
+- `_serialize_gate` helper
 
-### 6. Tests
+### 5. Backend — three API endpoints
 
 - Status: done
-- `DashboardAutonomyLevelTests` (7 tests):
-  - default value is "supervised"
-  - settings endpoint returns autonomy_level
-  - PATCH updates and persists the value
-  - PATCH rejects invalid values
-  - all three valid values round-trip correctly
-  - transition to active blocked when another sprint is already active
-  - transition to active allowed when no active sprint exists
+- `POST /api/projects/{id}/gates`
+- `GET /api/projects/{id}/gates[?status=pending]`
+- `PATCH /api/gates/{id}` (resolve)
+
+### 6. Frontend — gate banner and resolve flow
+
+- Status: done
+- `services.listGates` and `services.resolveGate` in `api.js`
+- `refreshProjectScope` fetches pending gates alongside project and sprints
+- `pendingGates` state in App; `handleResolveGate` handler
+- `DecisionGateBanner` component: header, description, expandable detail
+  (reason + suggested order with sprint titles), Accept / Keep current / Dismiss buttons
+- `gate-banners` container renders one banner per pending gate above the sprint page bar
+- CSS: `.gate-banner*`, `.gate-btn*` classes
+
+### 7. Tests
+
+- Status: done
+- `DashboardDecisionGateTests` (9 tests): create, reject empty description, reject
+  unknown project, list filtered/unfiltered, accept reorders sprints, reject
+  preserves order, double-resolve blocked, invalid resolution rejected

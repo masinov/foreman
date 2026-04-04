@@ -133,4 +133,25 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         ALTER TABLE projects ADD COLUMN autonomy_level TEXT NOT NULL DEFAULT 'supervised';
         """,
     ),
+    (
+        4,
+        "add decision_gates table for supervised-mode conflict notifications",
+        """
+        CREATE TABLE IF NOT EXISTS decision_gates (
+            id                   TEXT PRIMARY KEY,
+            project_id           TEXT NOT NULL REFERENCES projects(id),
+            sprint_id            TEXT NOT NULL REFERENCES sprints(id),
+            raised_at            TEXT NOT NULL,
+            conflict_description TEXT NOT NULL,
+            suggested_order      TEXT NOT NULL DEFAULT '[]',
+            suggested_reason     TEXT NOT NULL DEFAULT '',
+            status               TEXT NOT NULL DEFAULT 'pending',
+            resolved_at          TEXT,
+            resolved_by          TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_decision_gates_project
+        ON decision_gates(project_id, status);
+        """,
+    ),
 ]

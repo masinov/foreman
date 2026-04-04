@@ -322,6 +322,28 @@ def create_dashboard_app(
         field_updates = {k: v for k, v in data.items()}
         return with_api(lambda api: api.update_sprint_fields(sprint_id, updates=field_updates))
 
+    @app.post("/api/projects/{project_id}/gates")
+    async def create_gate(project_id: str, request: Request) -> dict[str, Any]:
+        data = await _read_json_body(request)
+        return with_api(lambda api: api.create_gate(
+            project_id,
+            sprint_id=str(data.get("sprint_id", "")),
+            conflict_description=str(data.get("conflict_description", "")),
+            suggested_order=data.get("suggested_order") or [],
+            suggested_reason=str(data.get("suggested_reason", "")),
+        ))
+
+    @app.get("/api/projects/{project_id}/gates")
+    async def list_gates(project_id: str, status: str | None = None) -> dict[str, Any]:
+        return with_api(lambda api: api.list_gates(project_id, status=status))
+
+    @app.patch("/api/gates/{gate_id}")
+    async def resolve_gate(gate_id: str, request: Request) -> dict[str, Any]:
+        data = await _read_json_body(request)
+        resolution = str(data.get("resolution", ""))
+        resolved_by = str(data.get("resolved_by", "human"))
+        return with_api(lambda api: api.resolve_gate(gate_id, resolution=resolution, resolved_by=resolved_by))
+
     @app.post("/api/projects/{project_id}/agent/stop")
     async def stop_agent(project_id: str) -> dict[str, Any]:
         return with_api(lambda api: api.stop_agent(project_id))

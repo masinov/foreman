@@ -18,7 +18,7 @@ from foreman.dashboard_service import (
     DashboardValidationError,
 )
 from foreman.dashboard_backend import create_dashboard_app
-from foreman.models import Event, Project, Run, Sprint, Task
+from foreman.models import DecisionGate, Event, Project, Run, Sprint, Task
 from foreman.store import ForemanStore
 
 
@@ -2387,3 +2387,204 @@ class DashboardDeleteSprintTests(unittest.TestCase):
         with self.assertRaises(DashboardNotFoundError):
             api.delete_sprint("nonexistent")
         temp_dir.cleanup()
+
+
+class DashboardDecisionGateTests(unittest.TestCase):
+    """Tests for decision gate create / list / resolve endpoints."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.temp_dir = tempfile.TemporaryDirectory()
+        cls.db_path = Path(cls.temp_dir.name) / "foreman.db"
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.temp_dir.cleanup()
+
+    _counter = 0
+
+    def _next_id(self, prefix):
+        DashboardDecisionGateTests._counter += 1
+        return f"{prefix}-{DashboardDecisionGateTests._counter}"
+
+    def _seed(self):
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        project = Project(
+            id=self._next_id("proj-gate"),
+            name="Gate Test Project",
+            repo_path="/tmp/gate-test",
+            workflow_id="development",
+        )
+        store.save_project(project)
+        sprint_a = Sprint(id=self._next_id("spr-a"), project_id=project.id, title="Sprint A", status="planned", order_index=0)
+        sprint_b = Sprint(id=self._next_id("spr-b"), project_id=project.id, title="Sprint B", status="planned", order_index=1)
+        store.save_sprint(sprint_a)
+        store.save_sprint(sprint_b)
+        store.close()
+        return project, sprint_a, sprint_b
+
+    def _request(self, method, url, **kwargs):
+        async def send():
+            app = create_dashboard_app(str(self.db_path))
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+                return await client.request(method, url, **kwargs)
+        return asyncio.run(send())
+
+    def test_create_gate_returns_pending_gate(self):
+        """POST /api/projects/{id}/gates creates and returns a pending gate."""
+        project, sprint_a, _ = self._seed()
+        response = self._request(
+            "POST",
+            f"/api/projects/{project.id}/gates",
+            json={
+                "sprint_id": sprint_a.id,
+                "conflict_description": "Sprint B depends on work not yet in Sprint A.",
+                "suggested_order": [sprint_a.id],
+                "suggested_reason": "A must complete before B.",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["status"], "pending")
+        self.assertEqual(data["project_id"], project.id)
+        self.assertEqual(data["sprint_id"], sprint_a.id)
+        self.assertIn("gate-", data["id"])
+        self.assertEqual(data["conflict_description"], "Sprint B depends on work not yet in Sprint A.")
+
+    def test_create_gate_rejects_empty_description(self):
+        """POST /api/projects/{id}/gates returns 400 for empty conflict_description."""
+        project, sprint_a, _ = self._seed()
+        response = self._request(
+            "POST",
+            f"/api/projects/{project.id}/gates",
+            json={"sprint_id": sprint_a.id, "conflict_description": "   "},
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_create_gate_rejects_unknown_project(self):
+        """POST /api/projects/{id}/gates returns 404 for unknown project."""
+        response = self._request(
+            "POST",
+            "/api/projects/does-not-exist/gates",
+            json={"sprint_id": "any", "conflict_description": "desc"},
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_list_gates_returns_pending_only_when_filtered(self):
+        """GET /api/projects/{id}/gates?status=pending returns only pending gates."""
+        project, sprint_a, _ = self._seed()
+        # Create a gate
+        self._request(
+            "POST",
+            f"/api/projects/{project.id}/gates",
+            json={"sprint_id": sprint_a.id, "conflict_description": "conflict 1"},
+        )
+        response = self._request("GET", f"/api/projects/{project.id}/gates?status=pending")
+        self.assertEqual(response.status_code, 200)
+        gates = response.json()["gates"]
+        self.assertTrue(len(gates) >= 1)
+        self.assertTrue(all(g["status"] == "pending" for g in gates))
+
+    def test_list_gates_without_filter_returns_all(self):
+        """GET /api/projects/{id}/gates without filter returns all gates."""
+        project, sprint_a, _ = self._seed()
+        self._request(
+            "POST",
+            f"/api/projects/{project.id}/gates",
+            json={"sprint_id": sprint_a.id, "conflict_description": "conflict list-all"},
+        )
+        response = self._request("GET", f"/api/projects/{project.id}/gates")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("gates", response.json())
+
+    def test_resolve_gate_accepted_reorders_sprints(self):
+        """PATCH /api/gates/{id} with accepted applies suggested_order to sprint order_index."""
+        project, sprint_a, sprint_b = self._seed()
+        create_resp = self._request(
+            "POST",
+            f"/api/projects/{project.id}/gates",
+            json={
+                "sprint_id": sprint_a.id,
+                "conflict_description": "B must come before A",
+                "suggested_order": [sprint_b.id, sprint_a.id],
+            },
+        )
+        gate_id = create_resp.json()["id"]
+
+        resolve_resp = self._request(
+            "PATCH",
+            f"/api/gates/{gate_id}",
+            json={"resolution": "accepted"},
+        )
+        self.assertEqual(resolve_resp.status_code, 200)
+        self.assertEqual(resolve_resp.json()["status"], "accepted")
+
+        # Verify sprints were reordered
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        b = store.get_sprint(sprint_b.id)
+        a = store.get_sprint(sprint_a.id)
+        store.close()
+        self.assertEqual(b.order_index, 0)
+        self.assertEqual(a.order_index, 1)
+
+    def test_resolve_gate_rejected_does_not_reorder(self):
+        """PATCH /api/gates/{id} with rejected closes the gate without changing sprint order."""
+        project, sprint_a, sprint_b = self._seed()
+        create_resp = self._request(
+            "POST",
+            f"/api/projects/{project.id}/gates",
+            json={
+                "sprint_id": sprint_a.id,
+                "conflict_description": "order conflict",
+                "suggested_order": [sprint_b.id, sprint_a.id],
+            },
+        )
+        gate_id = create_resp.json()["id"]
+
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        orig_a_order = store.get_sprint(sprint_a.id).order_index
+        orig_b_order = store.get_sprint(sprint_b.id).order_index
+        store.close()
+
+        resolve_resp = self._request(
+            "PATCH",
+            f"/api/gates/{gate_id}",
+            json={"resolution": "rejected"},
+        )
+        self.assertEqual(resolve_resp.status_code, 200)
+        self.assertEqual(resolve_resp.json()["status"], "rejected")
+
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        self.assertEqual(store.get_sprint(sprint_a.id).order_index, orig_a_order)
+        self.assertEqual(store.get_sprint(sprint_b.id).order_index, orig_b_order)
+        store.close()
+
+    def test_resolve_gate_cannot_resolve_already_resolved(self):
+        """PATCH /api/gates/{id} returns 400 when gate is not pending."""
+        project, sprint_a, _ = self._seed()
+        create_resp = self._request(
+            "POST",
+            f"/api/projects/{project.id}/gates",
+            json={"sprint_id": sprint_a.id, "conflict_description": "desc"},
+        )
+        gate_id = create_resp.json()["id"]
+        self._request("PATCH", f"/api/gates/{gate_id}", json={"resolution": "dismissed"})
+        second = self._request("PATCH", f"/api/gates/{gate_id}", json={"resolution": "dismissed"})
+        self.assertEqual(second.status_code, 400)
+
+    def test_resolve_gate_rejects_invalid_resolution(self):
+        """PATCH /api/gates/{id} returns 400 for an unrecognised resolution value."""
+        project, sprint_a, _ = self._seed()
+        create_resp = self._request(
+            "POST",
+            f"/api/projects/{project.id}/gates",
+            json={"sprint_id": sprint_a.id, "conflict_description": "desc"},
+        )
+        gate_id = create_resp.json()["id"]
+        response = self._request("PATCH", f"/api/gates/{gate_id}", json={"resolution": "ignored"})
+        self.assertEqual(response.status_code, 400)
