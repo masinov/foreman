@@ -537,15 +537,14 @@ export function SprintList({ project, sprints, pendingGates, onSelectSprint, onO
             ))}
           </div>
         ) : null}
-
-        <div className="sprint-page-bar">
-          {runStopButton}
-          {viewToggle}
-        </div>
       </div>
 
       <div className={`project-body ${agentBodyClass}`}>
         <div className="project-main">
+          <div className="sprint-page-bar">
+            {runStopButton}
+            {viewToggle}
+          </div>
           {viewMode === "list" ? (() => {
             const executedSprints = visibleSprints.filter((s) => s.status !== "planned");
             const plannedSprints = visibleSprints.filter((s) => s.status === "planned");
