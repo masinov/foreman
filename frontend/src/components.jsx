@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   eventMatchesFilter,
@@ -233,8 +233,7 @@ export function ProjectOverview({ projects, onSelectProject, onNewProject }) {
 const STATUS_FILTER_OPTIONS = [
   { key: "all", label: "All" },
   { key: "active", label: "Active" },
-  { key: "done", label: "Done" },
-  { key: "planned", label: "Planned" },
+  { key: "completed", label: "Completed" },
   { key: "cancelled", label: "Cancelled" },
 ];
 
@@ -314,10 +313,18 @@ export function SprintList({ project, sprints, pendingGates, onSelectSprint, onO
   const [filterKey, setFilterKey] = useState("all");
   const [newestFirst, setNewestFirst] = useState(false);
   const [viewMode, setViewMode] = useState("list");
+  const [agentCollapsed, setAgentCollapsed] = useState(true);
+  const [agentMounted, setAgentMounted] = useState(false);
 
-  const visibleSprints = useMemo(() => {
-    const STATUS_RANK = { active: 0, completed: 1, done: 1, cancelled: 2, planned: 3 };
-    const filtered = filterKey === "all" ? sprints : sprints.filter((s) => s.status === filterKey);
+  function openAgent() {
+    setAgentCollapsed(false);
+    setAgentMounted(true);
+  }
+
+  const executedSprints = useMemo(() => {
+    const STATUS_RANK = { active: 0, completed: 1, cancelled: 2 };
+    const nonPlanned = sprints.filter((s) => s.status !== "planned");
+    const filtered = filterKey === "all" ? nonPlanned : nonPlanned.filter((s) => s.status === filterKey);
     return filtered.slice().sort((a, b) => {
       const rankA = STATUS_RANK[a.status] ?? 3;
       const rankB = STATUS_RANK[b.status] ?? 3;
@@ -328,12 +335,18 @@ export function SprintList({ project, sprints, pendingGates, onSelectSprint, onO
     });
   }, [sprints, filterKey, newestFirst]);
 
+  const plannedSprints = useMemo(() => {
+    return sprints
+      .filter((s) => s.status === "planned")
+      .slice()
+      .sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
+  }, [sprints]);
+
   function renderCard(sprint, { reorderable } = {}) {
     const counts = sprint.task_counts || {};
     const total = (counts.todo || 0) + (counts.in_progress || 0) + (counts.blocked || 0) + (counts.done || 0);
     const done = counts.done || 0;
     const statusClass = sprint.status === "active" ? "sc-active"
-      : sprint.status === "done" ? "sc-completed"
       : sprint.status === "planned" ? "sc-planned"
       : `sc-${sprint.status}`;
     return (
@@ -491,157 +504,175 @@ export function SprintList({ project, sprints, pendingGates, onSelectSprint, onO
     </div>
   );
 
+  const agentBodyClass = services
+    ? (agentCollapsed ? "agent-hidden" : "with-agent")
+    : "";
+
   return (
     <section className="project-view view visible">
-      <div className="project-info">
-        <h1>{project.name}</h1>
-        <div className="project-meta">
-          <span>
-            Workflow <span className="v">{project.workflow_id}</span>
-          </span>
-          <span>
-            Default branch <span className="v">{project.default_branch || "main"}</span>
-          </span>
-          <span>
-            Repo <span className="v">{project.repo_path}</span>
-          </span>
-        </div>
-        {project.task_counts?.blocked > 0 ? (
-          <div className="project-badges">
-            <span className="badge badge-warn">{project.task_counts.blocked} awaiting approval</span>
+      <div className={`project-view-inner ${agentBodyClass}`}>
+        <div className="project-left">
+          <div className="project-top">
+            <div className="project-info">
+              <h1>{project.name}</h1>
+              <div className="project-meta">
+                <span>
+                  Workflow <span className="v">{project.workflow_id}</span>
+                </span>
+                <span>
+                  Default branch <span className="v">{project.default_branch || "main"}</span>
+                </span>
+                <span>
+                  Repo <span className="v">{project.repo_path}</span>
+                </span>
+              </div>
+              {project.task_counts?.blocked > 0 ? (
+                <div className="project-badges">
+                  <span className="badge badge-warn">{project.task_counts.blocked} awaiting approval</span>
+                </div>
+              ) : null}
+            </div>
+
+            {pendingGates && pendingGates.length > 0 ? (
+              <div className="gate-banners">
+                {pendingGates.map((gate) => (
+                  <DecisionGateBanner
+                    key={gate.id}
+                    gate={gate}
+                    sprints={sprints}
+                    onResolve={onResolveGate}
+                  />
+                ))}
+              </div>
+            ) : null}
           </div>
+
+          <div className="project-main">
+            <div className="sprint-page-bar">
+              {runStopButton}
+              {viewToggle}
+            </div>
+          {viewMode === "list" ? (() => {
+            return (
+              <>
+                <div className="sprint-executed-panel">
+                  <div className="sprint-toolbar">
+                    <div className="sprint-toolbar-left">
+                      {STATUS_FILTER_OPTIONS.map((opt) => (
+                        <button
+                          key={opt.key}
+                          className={`filter-btn ${filterKey === opt.key ? "active" : ""}`}
+                          type="button"
+                          onClick={() => setFilterKey(opt.key)}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                      <div className="filter-sep" />
+                      <button className="sort-btn" type="button" onClick={() => setNewestFirst((v) => !v)}>
+                        {newestFirst ? "Newest first" : "Oldest first"}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="sprint-executed-list">
+                    {executedSprints.length > 0
+                      ? executedSprints.map((s) => renderCard(s, { reorderable: false }))
+                      : <p className="sprint-executed-empty">No sprints have been run yet.</p>}
+                  </div>
+                </div>
+
+                <div className="sprint-list-divider"><span>planned</span></div>
+
+                <div className="sprint-list">
+                  {plannedSprints.map((s) => renderCard(s, { reorderable: true }))}
+                </div>
+
+                {onOpenNewSprint ? (
+                  <button className="sprint-add-btn" type="button" onClick={onOpenNewSprint}>
+                    + New sprint
+                  </button>
+                ) : null}
+              </>
+            );
+          })() : (
+            <div className="sprint-kanban">
+              {KANBAN_COLUMNS.map((col) => {
+                const colSprints = sprints.filter((s) => {
+                  if (col.key === "active") return s.status === "active";
+                  if (col.key === "done") return s.status === "completed" || s.status === "cancelled";
+                  return s.status === "planned";
+                });
+                return (
+                  <div key={col.key} className="sk-column">
+                    <div className="sk-col-header">
+                      <span className="sk-col-title">{col.label}</span>
+                      <span className="sk-col-count">{colSprints.length}</span>
+                    </div>
+                    {colSprints.map((sprint) => {
+                      const counts = sprint.task_counts || {};
+                      const done = counts.done || 0;
+                      return (
+                        <button
+                          key={sprint.id}
+                          className={`sk-card ${sprint.status === "active" ? "active-sprint" : ""}`}
+                          type="button"
+                          onClick={() => onSelectSprint(sprint.id)}
+                        >
+                          <div className="sk-card-title">{sprint.title}</div>
+                          <div className="sk-card-goal">{sprint.goal || "No goal recorded."}</div>
+                          <div className="sk-card-footer">
+                            <div className="sk-card-tasks">
+                              <span><span className="n">{done}</span> done</span>
+                              {counts.in_progress > 0 ? <span><span className="n">{counts.in_progress}</span> wip</span> : null}
+                              {counts.blocked > 0 ? <span><span className="n">{counts.blocked}</span> blocked</span> : null}
+                            </div>
+                            {sprint.totals?.total_token_count > 0 ? (
+                              <span><span className="n">{formatCompactCount(sprint.totals.total_token_count)}</span> tok</span>
+                            ) : <span>—</span>}
+                          </div>
+                          {sprint.status === "active" ? (
+                            <div className="progress-bar" style={{ marginTop: "6px" }} aria-hidden="true">
+                              <span className="p-done" style={{ flex: done }} />
+                              <span className="p-wip" style={{ flex: counts.in_progress || 0 }} />
+                              <span className="p-blocked" style={{ flex: counts.blocked || 0 }} />
+                              <span className="p-todo" style={{ flex: counts.todo || 0 }} />
+                            </div>
+                          ) : null}
+                        </button>
+                      );
+                    })}
+                    {col.key === "planned" && onOpenNewSprint ? (
+                      <button className="sprint-add-btn" type="button" onClick={onOpenNewSprint}>
+                        + New sprint
+                      </button>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          </div>
+        </div>
+
+        {services ? (
+          <aside className="agent-panel">
+            {agentMounted ? (
+              <MetaAgentPanel
+                projectId={project.id}
+                services={services}
+                onSprintsChanged={onSprintsChanged}
+                onCollapse={() => setAgentCollapsed(true)}
+              />
+            ) : null}
+          </aside>
+        ) : null}
+
+        {services && agentCollapsed ? (
+          <button className="agent-tab" type="button" onClick={openAgent}>
+            Agent
+          </button>
         ) : null}
       </div>
-
-      {pendingGates && pendingGates.length > 0 ? (
-        <div className="gate-banners">
-          {pendingGates.map((gate) => (
-            <DecisionGateBanner
-              key={gate.id}
-              gate={gate}
-              sprints={sprints}
-              onResolve={onResolveGate}
-            />
-          ))}
-        </div>
-      ) : null}
-
-      <div className="sprint-page-bar">
-        {runStopButton}
-        {viewToggle}
-      </div>
-
-      {viewMode === "list" ? (() => {
-        const executedSprints = visibleSprints.filter((s) => s.status !== "planned");
-        const plannedSprints = visibleSprints.filter((s) => s.status === "planned");
-
-        return (
-          <>
-            <div className="sprint-executed-panel">
-              <div className="sprint-toolbar">
-                <div className="sprint-toolbar-left">
-                  {STATUS_FILTER_OPTIONS.map((opt) => (
-                    <button
-                      key={opt.key}
-                      className={`filter-btn ${filterKey === opt.key ? "active" : ""}`}
-                      type="button"
-                      onClick={() => setFilterKey(opt.key)}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                  <div className="filter-sep" />
-                  <button className="sort-btn" type="button" onClick={() => setNewestFirst((v) => !v)}>
-                    {newestFirst ? "Newest first" : "Oldest first"}
-                  </button>
-                </div>
-              </div>
-              <div className="sprint-executed-list">
-                {executedSprints.length > 0
-                  ? executedSprints.map((s) => renderCard(s, { reorderable: false }))
-                  : <p className="sprint-executed-empty">No sprints have been run yet.</p>}
-              </div>
-            </div>
-
-            {filterKey === "all" ? (
-              <div className="sprint-list-divider"><span>planned</span></div>
-            ) : null}
-
-            <div className="sprint-list">
-              {plannedSprints.map((s) => renderCard(s, { reorderable: true }))}
-            </div>
-
-            {onOpenNewSprint ? (
-              <button className="sprint-add-btn" type="button" onClick={onOpenNewSprint}>
-                + New sprint
-              </button>
-            ) : null}
-          </>
-        );
-      })() : (
-        <div className="sprint-kanban">
-            {KANBAN_COLUMNS.map((col) => {
-              const colSprints = sprints.filter((s) => {
-                if (col.key === "active") return s.status === "active";
-                if (col.key === "done") return s.status === "done" || s.status === "completed" || s.status === "cancelled";
-                return s.status === "planned";
-              });
-              return (
-                <div key={col.key} className="sk-column">
-                  <div className="sk-col-header">
-                    <span className="sk-col-title">{col.label}</span>
-                    <span className="sk-col-count">{colSprints.length}</span>
-                  </div>
-                  {colSprints.map((sprint) => {
-                    const counts = sprint.task_counts || {};
-                    const done = counts.done || 0;
-                    return (
-                      <button
-                        key={sprint.id}
-                        className={`sk-card ${sprint.status === "active" ? "active-sprint" : ""}`}
-                        type="button"
-                        onClick={() => onSelectSprint(sprint.id)}
-                      >
-                        <div className="sk-card-title">{sprint.title}</div>
-                        <div className="sk-card-goal">{sprint.goal || "No goal recorded."}</div>
-                        <div className="sk-card-footer">
-                          <div className="sk-card-tasks">
-                            <span><span className="n">{done}</span> done</span>
-                            {counts.in_progress > 0 ? <span><span className="n">{counts.in_progress}</span> wip</span> : null}
-                            {counts.blocked > 0 ? <span><span className="n">{counts.blocked}</span> blocked</span> : null}
-                          </div>
-                          {sprint.totals?.total_token_count > 0 ? (
-                            <span><span className="n">{formatCompactCount(sprint.totals.total_token_count)}</span> tok</span>
-                          ) : <span>—</span>}
-                        </div>
-                        {sprint.status === "active" ? (
-                          <div className="progress-bar" style={{ marginTop: "6px" }} aria-hidden="true">
-                            <span className="p-done" style={{ flex: done }} />
-                            <span className="p-wip" style={{ flex: counts.in_progress || 0 }} />
-                            <span className="p-blocked" style={{ flex: counts.blocked || 0 }} />
-                            <span className="p-todo" style={{ flex: counts.todo || 0 }} />
-                          </div>
-                        ) : null}
-                      </button>
-                    );
-                  })}
-                  {col.key === "planned" && onOpenNewSprint ? (
-                    <button className="sprint-add-btn" type="button" onClick={onOpenNewSprint}>
-                      + New sprint
-                    </button>
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
-      )}
-      {services ? (
-        <PlannerPanel
-          projectId={project.id}
-          services={services}
-          onSprintsChanged={onSprintsChanged}
-        />
-      ) : null}
     </section>
   );
 }
@@ -1132,6 +1163,20 @@ export function SettingsPanel({ settings, onUpdate, onClose }) {
             />
           </div>
           <div className="settings-section">
+            <div className="settings-section-title">Meta Agent</div>
+            <div className="form-group">
+              <label className="form-label">Backend</label>
+              <select
+                className="form-input"
+                value={innerSettings.meta_agent_backend || "claude"}
+                onChange={(e) => handleChange("meta_agent_backend", e.target.value)}
+              >
+                <option value="claude">Claude Code</option>
+                <option value="codex">Codex</option>
+              </select>
+            </div>
+          </div>
+          <div className="settings-section">
             <div className="settings-section-title">Workflow</div>
             <div className="form-group">
               <label className="form-label">Default workflow</label>
@@ -1468,13 +1513,30 @@ export function NewProjectModal({ onSubmit, onClose }) {
   );
 }
 
-export function PlannerPanel({ projectId, services, onSprintsChanged }) {
-  const [open, setOpen] = useState(false);
+export function MetaAgentPanel({ projectId, services, onSprintsChanged, onCollapse }) {
   const [input, setInput] = useState("");
   const [turns, setTurns] = useState([]);
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState("");
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   const bottomRef = useRef(null);
+
+  // Load history when panel mounts
+  useEffect(() => {
+    if (historyLoaded) return;
+    services.metaHistory(projectId)
+      .then((payload) => {
+        const rawTurns = payload.turns || [];
+        setTurns(rawTurns.map((t) => ({
+          role: t.role,
+          text: t.text || "",
+          toolUses: (t.tool_uses || []).map((u) => ({ name: u.name, status: "done" })),
+          done: true,
+        })));
+        setHistoryLoaded(true);
+      })
+      .catch(() => setHistoryLoaded(true));
+  }, [historyLoaded, projectId, services]);
 
   function scrollToBottom() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -1486,39 +1548,31 @@ export function PlannerPanel({ projectId, services, onSprintsChanged }) {
     setInput("");
     setError("");
 
-    const userTurn = { role: "user", text: msg, toolUses: [] };
-    setTurns((prev) => [...prev, userTurn]);
-    setStreaming(true);
-
+    setTurns((prev) => [...prev, { role: "user", text: msg, toolUses: [], done: true }]);
     const assistantTurn = { role: "assistant", text: "", toolUses: [], done: false };
     setTurns((prev) => [...prev, assistantTurn]);
+    setStreaming(true);
 
     try {
-      for await (const event of services.plannerMessage(projectId, msg)) {
+      for await (const event of services.metaMessage(projectId, msg)) {
         if (event.type === "text_delta") {
           setTurns((prev) => {
             const next = [...prev];
-            next[next.length - 1] = { ...next[next.length - 1], text: next[next.length - 1].text + event.text };
+            const last = { ...next[next.length - 1] };
+            last.text = last.text + event.text;
+            next[next.length - 1] = last;
             return next;
           });
           scrollToBottom();
         } else if (event.type === "tool_use") {
           setTurns((prev) => {
             const next = [...prev];
-            const last = next[next.length - 1];
-            next[next.length - 1] = { ...last, toolUses: [...last.toolUses, { name: event.name, status: "running" }] };
+            const last = { ...next[next.length - 1] };
+            last.toolUses = [...last.toolUses, { name: event.name, status: "running" }];
+            next[next.length - 1] = last;
             return next;
           });
-        } else if (event.type === "tool_result") {
-          setTurns((prev) => {
-            const next = [...prev];
-            const last = next[next.length - 1];
-            const updatedTools = last.toolUses.map((t) =>
-              t.name === event.name && t.status === "running" ? { ...t, status: "done" } : t
-            );
-            next[next.length - 1] = { ...last, toolUses: updatedTools };
-            return next;
-          });
+        } else if (event.type === "done") {
           onSprintsChanged?.();
         } else if (event.type === "error") {
           setError(event.message);
@@ -1530,7 +1584,13 @@ export function PlannerPanel({ projectId, services, onSprintsChanged }) {
       setStreaming(false);
       setTurns((prev) => {
         const next = [...prev];
-        next[next.length - 1] = { ...next[next.length - 1], done: true };
+        const last = { ...next[next.length - 1] };
+        last.done = true;
+        // Mark any still-running tools as done
+        last.toolUses = last.toolUses.map((t) =>
+          t.status === "running" ? { ...t, status: "done" } : t,
+        );
+        next[next.length - 1] = last;
         return next;
       });
       scrollToBottom();
@@ -1539,7 +1599,7 @@ export function PlannerPanel({ projectId, services, onSprintsChanged }) {
 
   async function handleClear() {
     try {
-      await services.clearPlannerSession(projectId);
+      await services.clearMetaSession(projectId);
       setTurns([]);
       setError("");
     } catch (err) {
@@ -1554,69 +1614,65 @@ export function PlannerPanel({ projectId, services, onSprintsChanged }) {
     }
   }
 
-  if (!open) {
-    return (
-      <button className="planner-toggle" type="button" onClick={() => setOpen(true)}>
-        ✦ Sprint planner
-      </button>
-    );
-  }
-
   return (
-    <div className="planner-panel">
-      <div className="planner-header">
-        <span className="planner-title">✦ Sprint planner</span>
-        <span className="planner-subtitle">Claude — sprint &amp; task management</span>
-        <div className="planner-header-actions">
-          <button className="planner-action-btn" type="button" onClick={handleClear} title="Clear session">
+    <div className="meta-panel">
+      <div className="meta-panel-header">
+        <div className="meta-panel-title-row">
+          <span className="meta-panel-title">Agent</span>
+          <span className="meta-panel-subtitle">Claude Code — project operator</span>
+        </div>
+        <div className="meta-panel-actions">
+          <button className="meta-action-btn" type="button" onClick={handleClear} title="Clear session">
             Clear
           </button>
-          <button className="planner-action-btn" type="button" onClick={() => setOpen(false)} title="Close">
-            ✕
+          <button className="meta-action-btn" type="button" onClick={onCollapse} title="Collapse">
+            »
           </button>
         </div>
       </div>
 
-      <div className="planner-body">
-        {turns.length === 0 ? (
-          <div className="planner-empty">
-            Ask me to create sprints, add tasks, reorder the queue, or refine goals.
+      <div className="meta-panel-body">
+        {!historyLoaded ? (
+          <div className="meta-panel-empty">Loading…</div>
+        ) : turns.length === 0 ? (
+          <div className="meta-panel-empty">
+            Ask me to inspect the codebase, run tests, create branches, reorder sprints, or make changes directly.
           </div>
         ) : (
           turns.map((turn, i) => (
-            <div key={i} className={`planner-turn planner-turn-${turn.role}`}>
+            <div key={i} className={`meta-turn meta-turn-${turn.role}`}>
               {turn.toolUses.length > 0 ? (
-                <div className="planner-tool-uses">
+                <div className="meta-tool-uses">
                   {turn.toolUses.map((t, j) => (
-                    <span key={j} className={`planner-tool-chip planner-tool-${t.status}`}>
-                      {t.status === "running" ? "⟳" : "✓"} {t.name.replace("foreman_", "").replace(/_/g, " ")}
+                    <span key={j} className={`meta-tool-chip meta-tool-${t.status}`}>
+                      {t.status === "running" ? "⟳" : "✓"} {t.name}
                     </span>
                   ))}
                 </div>
               ) : null}
-              {turn.text ? <p className="planner-text">{turn.text}</p> : null}
+              {turn.text ? <p className="meta-turn-text">{turn.text}</p> : null}
               {streaming && i === turns.length - 1 && !turn.done ? (
-                <span className="planner-cursor" />
+                <span className="meta-cursor" />
               ) : null}
             </div>
           ))
         )}
-        {error ? <div className="planner-error">{error}</div> : null}
+        {error ? <div className="meta-error">{error}</div> : null}
         <div ref={bottomRef} />
       </div>
 
-      <div className="planner-input-row">
+      <div className="meta-input-row">
         <textarea
-          className="planner-input"
-          rows={2}
-          placeholder="Plan sprints, add tasks, reorder the queue…"
+          className="meta-input"
+          rows={3}
+          placeholder="Describe a change, ask a question, or give a directive…"
           value={input}
           disabled={streaming}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
         />
         <button
-          className="planner-send-btn"
+          className="meta-send-btn"
           type="button"
           disabled={streaming || !input.trim()}
           onClick={handleSend}

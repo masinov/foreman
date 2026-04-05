@@ -322,9 +322,9 @@ def create_dashboard_app(
         field_updates = {k: v for k, v in data.items()}
         return with_api(lambda api: api.update_sprint_fields(sprint_id, updates=field_updates))
 
-    @app.post("/api/projects/{project_id}/planner/message")
-    async def planner_message(project_id: str, request: Request) -> StreamingResponse:
-        from .planner import process_message, get_session_history
+    @app.post("/api/projects/{project_id}/meta/message")
+    async def meta_message(project_id: str, request: Request) -> StreamingResponse:
+        from .meta_agent import process_message as meta_process_message
 
         data = await _read_json_body(request)
         message = str(data.get("message", "")).strip()
@@ -332,16 +332,21 @@ def create_dashboard_app(
             raise DashboardValidationError("message cannot be empty.")
 
         with _open_store(db_path) as store:
-            api = DashboardService(store)
             project = store.get_project(project_id)
             if project is None:
                 raise DashboardNotFoundError(f"Project not found: {project_id}")
+            sprints_payload = DashboardService(store).list_project_sprints(project_id)
+
+        sprints = sprints_payload.get("sprints", [])
 
         async def _stream():
-            with _open_store(db_path) as store:
-                api = DashboardService(store)
-                async for chunk in process_message(project_id, message, api=api):
-                    yield chunk.encode("utf-8")
+            async for chunk in meta_process_message(
+                project_id,
+                message,
+                project=project,
+                sprints=sprints,
+            ):
+                yield chunk.encode("utf-8")
 
         return StreamingResponse(
             _stream(),
@@ -349,43 +354,26 @@ def create_dashboard_app(
             headers={"X-Accel-Buffering": "no"},
         )
 
-    @app.get("/api/projects/{project_id}/planner/history")
-    async def planner_history(project_id: str) -> dict[str, Any]:
-        from .planner import get_session_history
+    @app.get("/api/projects/{project_id}/meta/history")
+    async def meta_history(project_id: str) -> dict[str, Any]:
+        from .meta_agent import get_history as meta_get_history
 
         with _open_store(db_path) as store:
             project = store.get_project(project_id)
             if project is None:
                 raise DashboardNotFoundError(f"Project not found: {project_id}")
-        turns = get_session_history(project_id)
-        # Return simplified turn list safe for the frontend
-        simplified = []
-        for turn in turns:
-            content = turn["content"]
-            if isinstance(content, str):
-                simplified.append({"role": turn["role"], "text": content})
-            elif isinstance(content, list):
-                text_parts = [b["text"] for b in content if b.get("type") == "text"]
-                tool_parts = [
-                    {"name": b["name"], "input": b.get("input", {})}
-                    for b in content if b.get("type") == "tool_use"
-                ]
-                simplified.append({
-                    "role": turn["role"],
-                    "text": " ".join(text_parts),
-                    "tool_uses": tool_parts,
-                })
-        return {"project_id": project_id, "turns": simplified}
+        turns = meta_get_history(project_id)
+        return {"project_id": project_id, "turns": turns}
 
-    @app.delete("/api/projects/{project_id}/planner/session")
-    async def clear_planner_session(project_id: str) -> dict[str, Any]:
-        from .planner import clear_session
+    @app.delete("/api/projects/{project_id}/meta/session")
+    async def clear_meta_session(project_id: str) -> dict[str, Any]:
+        from .meta_agent import clear_session as meta_clear_session
 
         with _open_store(db_path) as store:
             project = store.get_project(project_id)
             if project is None:
                 raise DashboardNotFoundError(f"Project not found: {project_id}")
-        clear_session(project_id)
+        meta_clear_session(project_id)
         return {"project_id": project_id, "cleared": True}
 
     @app.post("/api/projects/{project_id}/gates")

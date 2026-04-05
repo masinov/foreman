@@ -136,8 +136,8 @@ export function createDashboardServices({
         method: "POST",
       });
     },
-    async *plannerMessage(projectId, message) {
-      const response = await fetchImpl(`/api/projects/${encodeURIComponent(projectId)}/planner/message`, {
+    async *metaMessage(projectId, message) {
+      const response = await fetchImpl(`/api/projects/${encodeURIComponent(projectId)}/meta/message`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message }),
@@ -162,11 +162,11 @@ export function createDashboardServices({
         }
       }
     },
-    plannerHistory(projectId) {
-      return requestJson(fetchImpl, `/api/projects/${encodeURIComponent(projectId)}/planner/history`);
+    metaHistory(projectId) {
+      return requestJson(fetchImpl, `/api/projects/${encodeURIComponent(projectId)}/meta/history`);
     },
-    clearPlannerSession(projectId) {
-      return requestJson(fetchImpl, `/api/projects/${encodeURIComponent(projectId)}/planner/session`, {
+    clearMetaSession(projectId) {
+      return requestJson(fetchImpl, `/api/projects/${encodeURIComponent(projectId)}/meta/session`, {
         method: "DELETE",
       });
     },

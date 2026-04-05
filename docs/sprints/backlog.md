@@ -17,6 +17,10 @@ Fixing it requires an in-process pub/sub layer (e.g. asyncio queue or
 
 - E2E test coverage for features added in sprints 32–35 (task editing,
   deletion, sprint ordering, date display, board/list toggle)
+- E2E test coverage for meta agent panel (sprint-40)
+- Persist meta agent session history to SQLite (survives server restarts)
+- Kanban board drag-and-drop reordering for the planned column (list view has
+  ↑/↓ reorder buttons; board view should support drag)
 - Task `order_index` editing UI within a sprint board (reorder tasks within a
   sprint, similar to sprint ↑/↓ reorder)
 - Task priority UI (priority field exists in schema and drawer display but has
