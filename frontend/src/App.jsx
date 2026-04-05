@@ -611,16 +611,23 @@ export default function App({ services, browser }) {
       .filter((s) => s.status === "planned")
       .sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
     const idx = sorted.findIndex((s) => s.id === sprintId);
-    const swapIdx = direction === "up" ? idx - 1 : idx + 1;
-    if (idx < 0 || swapIdx < 0 || swapIdx >= sorted.length) return;
+    if (idx < 0) return;
 
-    // Swap positions in the array, then assign clean sequential indices.
-    // This correctly handles the case where multiple sprints share the same
-    // order_index value (e.g. all 0 from default), where a plain value-swap
-    // would be a no-op in the database.
-    const tmp = sorted[idx];
-    sorted[idx] = sorted[swapIdx];
-    sorted[swapIdx] = tmp;
+    if (direction === "top") {
+      // Move to position 0 (Next Up slot).
+      const [item] = sorted.splice(idx, 1);
+      sorted.unshift(item);
+    } else {
+      const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+      if (swapIdx < 0 || swapIdx >= sorted.length) return;
+      // Swap positions in the array, then assign clean sequential indices.
+      // This correctly handles the case where multiple sprints share the same
+      // order_index value (e.g. all 0 from default), where a plain value-swap
+      // would be a no-op in the database.
+      const tmp = sorted[idx];
+      sorted[idx] = sorted[swapIdx];
+      sorted[swapIdx] = tmp;
+    }
 
     const updates = sorted
       .map((s, i) => ({ id: s.id, order_index: i, prev: s.order_index ?? 0 }))

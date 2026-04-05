@@ -230,18 +230,6 @@ export function ProjectOverview({ projects, onSelectProject, onNewProject }) {
   );
 }
 
-const STATUS_FILTER_OPTIONS = [
-  { key: "all", label: "All" },
-  { key: "active", label: "Active" },
-  { key: "completed", label: "Completed" },
-  { key: "cancelled", label: "Cancelled" },
-];
-
-const KANBAN_COLUMNS = [
-  { key: "planned", label: "Planned" },
-  { key: "active", label: "Active" },
-  { key: "done", label: "Done" },
-];
 
 function DecisionGateBanner({ gate, sprints, onResolve }) {
   const [expanded, setExpanded] = useState(false);
@@ -310,39 +298,38 @@ function DecisionGateBanner({ gate, sprints, onResolve }) {
 }
 
 export function SprintList({ project, sprints, pendingGates, onSelectSprint, onOpenNewSprint, onTransitionSprint, onDeleteSprint, onReorderSprint, onStartAgent, onStopAgent, onResolveGate, onSprintsChanged, services, isActionPending, autonomyLevel }) {
-  const [filterKey, setFilterKey] = useState("all");
-  const [newestFirst, setNewestFirst] = useState(false);
-  const [viewMode, setViewMode] = useState("list");
   const [agentCollapsed, setAgentCollapsed] = useState(true);
   const [agentMounted, setAgentMounted] = useState(false);
+  const [archiveExpanded, setArchiveExpanded] = useState(false);
 
   function openAgent() {
     setAgentCollapsed(false);
     setAgentMounted(true);
   }
 
-  const executedSprints = useMemo(() => {
-    const STATUS_RANK = { active: 0, completed: 1, cancelled: 2 };
-    const nonPlanned = sprints.filter((s) => s.status !== "planned");
-    const filtered = filterKey === "all" ? nonPlanned : nonPlanned.filter((s) => s.status === filterKey);
-    return filtered.slice().sort((a, b) => {
-      const rankA = STATUS_RANK[a.status] ?? 3;
-      const rankB = STATUS_RANK[b.status] ?? 3;
-      if (rankA !== rankB) return rankA - rankB;
-      const orderA = a.order_index ?? 0;
-      const orderB = b.order_index ?? 0;
-      return newestFirst ? orderB - orderA : orderA - orderB;
-    });
-  }, [sprints, filterKey, newestFirst]);
+  const activeSprint = useMemo(() =>
+    sprints.find((s) => s.status === "active") ?? null,
+  [sprints]);
 
-  const plannedSprints = useMemo(() => {
-    return sprints
+  const plannedSprints = useMemo(() =>
+    sprints
       .filter((s) => s.status === "planned")
       .slice()
-      .sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
-  }, [sprints]);
+      .sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0)),
+  [sprints]);
 
-  function renderCard(sprint, { reorderable } = {}) {
+  const archiveSprints = useMemo(() =>
+    sprints
+      .filter((s) => s.status === "completed" || s.status === "cancelled")
+      .slice()
+      .sort((a, b) => {
+        const ta = a.completed_at ?? a.started_at ?? "";
+        const tb = b.completed_at ?? b.started_at ?? "";
+        return tb.localeCompare(ta);
+      }),
+  [sprints]);
+
+  function renderCard(sprint, { reorderable, showPromote } = {}) {
     const counts = sprint.task_counts || {};
     const total = (counts.todo || 0) + (counts.in_progress || 0) + (counts.blocked || 0) + (counts.done || 0);
     const done = counts.done || 0;
@@ -396,15 +383,28 @@ export function SprintList({ project, sprints, pendingGates, onSelectSprint, onO
             )}
           </div>
         </button>
-        {(onTransitionSprint || onDeleteSprint || reorderable) ? (
+        {(onTransitionSprint || onDeleteSprint || reorderable || showPromote) ? (
           <div className="sc-actions" onClick={(e) => e.stopPropagation()}>
+            {showPromote && onReorderSprint ? (
+              <>
+                <button
+                  className="sc-action-btn sc-action-promote"
+                  type="button"
+                  title="Promote to next up"
+                  onClick={() => onReorderSprint(sprint.id, "top")}
+                >
+                  Promote
+                </button>
+                <div className="sc-action-sep" />
+              </>
+            ) : null}
             {reorderable && onReorderSprint ? (
               <>
                 <button
                   className="sc-action-btn sc-action-order"
                   type="button"
                   title="Move earlier in queue"
-                  onClick={() => onReorderSprint(sprint.id, newestFirst ? "down" : "up")}
+                  onClick={() => onReorderSprint(sprint.id, "up")}
                 >
                   ↑
                 </button>
@@ -412,7 +412,7 @@ export function SprintList({ project, sprints, pendingGates, onSelectSprint, onO
                   className="sc-action-btn sc-action-order"
                   type="button"
                   title="Move later in queue"
-                  onClick={() => onReorderSprint(sprint.id, newestFirst ? "up" : "down")}
+                  onClick={() => onReorderSprint(sprint.id, "down")}
                 >
                   ↓
                 </button>
@@ -420,16 +420,6 @@ export function SprintList({ project, sprints, pendingGates, onSelectSprint, onO
                   <div className="sc-action-sep" />
                 ) : null}
               </>
-            ) : null}
-            {onTransitionSprint && sprint.status === "planned" && autonomyLevel !== "autonomous" ? (
-              <button
-                className="sc-action-btn"
-                type="button"
-                title={autonomyLevel === "supervised" ? "Promote to active (bypasses queue order)" : undefined}
-                onClick={() => onTransitionSprint(sprint.id, "active")}
-              >
-                {autonomyLevel === "supervised" ? "Promote" : "Start"}
-              </button>
             ) : null}
             {onTransitionSprint && sprint.status === "active" ? (
               <button
@@ -489,21 +479,6 @@ export function SprintList({ project, sprints, pendingGates, onSelectSprint, onO
     </button>
   );
 
-  const viewToggle = (
-    <div className="view-toggle">
-      <button
-        className={`view-toggle-btn ${viewMode === "list" ? "active" : ""}`}
-        type="button"
-        onClick={() => setViewMode("list")}
-      >List</button>
-      <button
-        className={`view-toggle-btn ${viewMode === "board" ? "active" : ""}`}
-        type="button"
-        onClick={() => setViewMode("board")}
-      >Board</button>
-    </div>
-  );
-
   const agentBodyClass = services
     ? (agentCollapsed ? "agent-hidden" : "with-agent")
     : "";
@@ -550,107 +525,107 @@ export function SprintList({ project, sprints, pendingGates, onSelectSprint, onO
           <div className="project-main">
             <div className="sprint-page-bar">
               {runStopButton}
-              {viewToggle}
             </div>
-          {viewMode === "list" ? (() => {
-            return (
-              <>
-                <div className="sprint-executed-panel">
-                  <div className="sprint-toolbar">
-                    <div className="sprint-toolbar-left">
-                      {STATUS_FILTER_OPTIONS.map((opt) => (
-                        <button
-                          key={opt.key}
-                          className={`filter-btn ${filterKey === opt.key ? "active" : ""}`}
-                          type="button"
-                          onClick={() => setFilterKey(opt.key)}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
-                      <div className="filter-sep" />
-                      <button className="sort-btn" type="button" onClick={() => setNewestFirst((v) => !v)}>
-                        {newestFirst ? "Newest first" : "Oldest first"}
-                      </button>
+
+            {/* Zone 1 — Active */}
+            <div className="pq-active">
+              {activeSprint ? (
+                <button
+                  className="pq-active-card"
+                  type="button"
+                  onClick={() => onSelectSprint(activeSprint.id)}
+                >
+                  <div className="pq-active-header">
+                    <div className="pq-active-title">{activeSprint.title}</div>
+                    <div className={`pq-active-status ${project.status === "running" ? "is-running" : ""}`}>
+                      {project.status === "running" ? "running" : "idle"}
                     </div>
                   </div>
-                  <div className="sprint-executed-list">
-                    {executedSprints.length > 0
-                      ? executedSprints.map((s) => renderCard(s, { reorderable: false }))
-                      : <p className="sprint-executed-empty">No sprints have been run yet.</p>}
+                  {activeSprint.goal ? (
+                    <div className="pq-active-goal">{activeSprint.goal}</div>
+                  ) : null}
+                  {(() => {
+                    const counts = activeSprint.task_counts || {};
+                    const total = (counts.todo || 0) + (counts.in_progress || 0) + (counts.blocked || 0) + (counts.done || 0);
+                    const done = counts.done || 0;
+                    return (
+                      <div className="pq-active-progress">
+                        <div className="pq-active-counts">
+                          {counts.in_progress > 0 ? <span className="pq-count-wip">{counts.in_progress} in progress</span> : null}
+                          {counts.blocked > 0 ? <span className="pq-count-blocked">{counts.blocked} blocked</span> : null}
+                          {counts.todo > 0 ? <span className="pq-count-todo">{counts.todo} todo</span> : null}
+                          <span className="pq-count-done">{done}/{total} done</span>
+                        </div>
+                        <div className="progress-bar" aria-hidden="true">
+                          <span className="p-done" style={{ flex: done }} />
+                          <span className="p-wip" style={{ flex: counts.in_progress || 0 }} />
+                          <span className="p-blocked" style={{ flex: counts.blocked || 0 }} />
+                          <span className="p-todo" style={{ flex: counts.todo || 0 }} />
+                          {total === 0 ? <span className="p-todo" style={{ flex: 1 }} /> : null}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </button>
+              ) : plannedSprints.length > 0 ? (
+                <div className="pq-idle-state">
+                  {autonomyLevel === "supervised" ? (
+                    <>
+                      <span className="pq-idle-label">Next up:</span>
+                      <span className="pq-idle-sprint">{plannedSprints[0].title}</span>
+                      <span className="pq-idle-hint">Press Run to start</span>
+                    </>
+                  ) : (
+                    <span className="pq-idle-hint">No active sprint — press Run to start the queue</span>
+                  )}
+                </div>
+              ) : (
+                <div className="pq-idle-state">
+                  <span className="pq-idle-hint">No sprints yet — add one to the queue below</span>
+                </div>
+              )}
+            </div>
+
+            {/* Zone 2 — Next Up */}
+            {plannedSprints.length > 0 ? (
+              <div className="pq-next-up">
+                <div className="pq-section-label">Next up</div>
+                {renderCard(plannedSprints[0], { reorderable: plannedSprints.length > 1 })}
+              </div>
+            ) : null}
+
+            {/* Zone 3 — Queue */}
+            {plannedSprints.length > 1 ? (
+              <div className="pq-queue">
+                <div className="pq-section-label">Queue</div>
+                {plannedSprints.slice(1).map((s) => renderCard(s, { reorderable: true, showPromote: true }))}
+              </div>
+            ) : null}
+
+            {onOpenNewSprint ? (
+              <button className="sprint-add-btn" type="button" onClick={onOpenNewSprint}>
+                + New sprint
+              </button>
+            ) : null}
+
+            {/* Zone 4 — Archive */}
+            {archiveSprints.length > 0 ? (
+              <div className="pq-archive">
+                <button
+                  className="pq-archive-toggle"
+                  type="button"
+                  onClick={() => setArchiveExpanded((v) => !v)}
+                >
+                  <span>{archiveSprints.length} completed sprint{archiveSprints.length !== 1 ? "s" : ""}</span>
+                  <span>{archiveExpanded ? "▲" : "▼"}</span>
+                </button>
+                {archiveExpanded ? (
+                  <div className="pq-archive-list">
+                    {archiveSprints.map((s) => renderCard(s, { reorderable: false }))}
                   </div>
-                </div>
-
-                <div className="sprint-list-divider"><span>planned</span></div>
-
-                <div className="sprint-list">
-                  {plannedSprints.map((s) => renderCard(s, { reorderable: true }))}
-                </div>
-
-                {onOpenNewSprint ? (
-                  <button className="sprint-add-btn" type="button" onClick={onOpenNewSprint}>
-                    + New sprint
-                  </button>
                 ) : null}
-              </>
-            );
-          })() : (
-            <div className="sprint-kanban">
-              {KANBAN_COLUMNS.map((col) => {
-                const colSprints = sprints.filter((s) => {
-                  if (col.key === "active") return s.status === "active";
-                  if (col.key === "done") return s.status === "completed" || s.status === "cancelled";
-                  return s.status === "planned";
-                });
-                return (
-                  <div key={col.key} className="sk-column">
-                    <div className="sk-col-header">
-                      <span className="sk-col-title">{col.label}</span>
-                      <span className="sk-col-count">{colSprints.length}</span>
-                    </div>
-                    {colSprints.map((sprint) => {
-                      const counts = sprint.task_counts || {};
-                      const done = counts.done || 0;
-                      return (
-                        <button
-                          key={sprint.id}
-                          className={`sk-card ${sprint.status === "active" ? "active-sprint" : ""}`}
-                          type="button"
-                          onClick={() => onSelectSprint(sprint.id)}
-                        >
-                          <div className="sk-card-title">{sprint.title}</div>
-                          <div className="sk-card-goal">{sprint.goal || "No goal recorded."}</div>
-                          <div className="sk-card-footer">
-                            <div className="sk-card-tasks">
-                              <span><span className="n">{done}</span> done</span>
-                              {counts.in_progress > 0 ? <span><span className="n">{counts.in_progress}</span> wip</span> : null}
-                              {counts.blocked > 0 ? <span><span className="n">{counts.blocked}</span> blocked</span> : null}
-                            </div>
-                            {sprint.totals?.total_token_count > 0 ? (
-                              <span><span className="n">{formatCompactCount(sprint.totals.total_token_count)}</span> tok</span>
-                            ) : <span>—</span>}
-                          </div>
-                          {sprint.status === "active" ? (
-                            <div className="progress-bar" style={{ marginTop: "6px" }} aria-hidden="true">
-                              <span className="p-done" style={{ flex: done }} />
-                              <span className="p-wip" style={{ flex: counts.in_progress || 0 }} />
-                              <span className="p-blocked" style={{ flex: counts.blocked || 0 }} />
-                              <span className="p-todo" style={{ flex: counts.todo || 0 }} />
-                            </div>
-                          ) : null}
-                        </button>
-                      );
-                    })}
-                    {col.key === "planned" && onOpenNewSprint ? (
-                      <button className="sprint-add-btn" type="button" onClick={onOpenNewSprint}>
-                        + New sprint
-                      </button>
-                    ) : null}
-                  </div>
-                );
-              })}
-            </div>
-          )}
+              </div>
+            ) : null}
           </div>
         </div>
 

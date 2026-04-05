@@ -1083,97 +1083,160 @@ button {
 }
 
 /* ═══ Sprint kanban view ════════════════════════════ */
-.sprint-kanban {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
+/* ═══ Project queue layout (4-zone) ══════════════════ */
+.pq-active {
+  margin-bottom: 16px;
 }
 
-.sk-column {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-height: 0;
+.pq-active-card {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--green);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  cursor: pointer;
+  transition: var(--transition);
 }
 
-.sk-col-header {
+.pq-active-card:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--border);
+}
+
+.pq-active-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 0 6px;
-  border-bottom: 1px solid var(--border-subtle);
-  margin-bottom: 2px;
+  margin-bottom: 4px;
 }
 
-.sk-col-title {
+.pq-active-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.pq-active-status {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+}
+
+.pq-active-status.is-running {
+  color: var(--green);
+}
+
+.pq-active-goal {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-family: var(--font-serif);
+  font-style: italic;
+  margin-bottom: 10px;
+  line-height: 1.4;
+}
+
+.pq-active-progress {
+  margin-top: 10px;
+}
+
+.pq-active-counts {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 6px;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.pq-count-wip   { color: var(--yellow); }
+.pq-count-blocked { color: var(--red); }
+.pq-count-todo  { color: var(--text-tertiary); }
+.pq-count-done  { color: var(--text-secondary); }
+
+.pq-idle-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 18px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  font-size: 11px;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+}
+
+.pq-idle-label {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.pq-idle-sprint {
+  color: var(--text-primary);
+}
+
+.pq-idle-hint {
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+.pq-section-label {
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--text-tertiary);
+  margin-bottom: 6px;
 }
 
-.sk-col-count {
-  font-size: 10px;
+.pq-next-up {
+  margin-bottom: 12px;
+}
+
+.pq-queue {
+  margin-bottom: 8px;
+}
+
+.pq-archive {
+  margin-top: 16px;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 8px;
+}
+
+.pq-archive-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 6px 0;
+  font-size: 11px;
+  font-family: var(--font-mono);
   color: var(--text-tertiary);
-  background: var(--bg);
-  padding: 1px 6px;
-  border-radius: 2px;
-}
-
-.sk-card {
-  background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius);
-  padding: 12px;
+  background: none;
+  border: none;
   cursor: pointer;
   transition: var(--transition);
-  text-align: left;
-  width: 100%;
-  border: 1px solid var(--border-subtle);
 }
 
-.sk-card:hover {
-  border-color: var(--border);
-  background: var(--bg-card-hover);
-}
-
-.sk-card.active-sprint {
-  border-left: 2px solid var(--green);
-}
-
-.sk-card-title {
-  font-size: 12px;
-  font-weight: 500;
-  margin-bottom: 4px;
-}
-
-.sk-card-goal {
-  font-size: 10px;
-  color: var(--text-tertiary);
-  font-family: var(--font-serif);
-  font-style: italic;
-  margin-bottom: 6px;
-  line-height: 1.4;
-}
-
-.sk-card-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 10px;
-  color: var(--text-tertiary);
-  font-variant-numeric: tabular-nums;
-}
-
-.sk-card-tasks {
-  display: flex;
-  gap: 6px;
-}
-
-.sk-card-tasks .n {
+.pq-archive-toggle:hover {
   color: var(--text-secondary);
-  font-weight: 500;
+}
+
+.pq-archive-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 6px;
+}
+
+.sc-action-promote {
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 /* ═══ Sprint view (board + activity) ════════════════ */
