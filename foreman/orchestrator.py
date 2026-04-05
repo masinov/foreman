@@ -14,7 +14,7 @@ from .builtins import BuiltinEventRecord, BuiltinExecutor
 from .context import ProjectContextProjection, build_project_context, relative_project_path
 from .errors import ForemanError
 from .git import GitError, changed_files, checkout_branch, recent_commits, status_text
-from .models import Event, Project, Run, Task, utc_now_text
+from .models import Event, Project, Run, Sprint, Task, utc_now_text
 from .runner import AgentRunConfig, ClaudeCodeRunner, CodexRunner, run_with_retry
 from .runner.base import AgentRunner as NativeAgentRunner
 from .roles import RoleDefinition, default_roles_dir, load_roles
@@ -173,27 +173,38 @@ class ForemanOrchestrator:
                 stop_reason="task_complete",
             )
 
+        stop_reason = "idle"
         while True:
             task = self.select_next_task(project)
-            if task is None:
-                break
-            completed = self.run_task(project, workflow, task)
-            executed_task_ids.append(completed.id)
-            if completed.status == "blocked":
-                blocked_task_ids.append(completed.id)
+            if task is not None:
+                completed = self.run_task(project, workflow, task)
+                executed_task_ids.append(completed.id)
+                if completed.status == "blocked":
+                    blocked_task_ids.append(completed.id)
+                continue
 
-        active_sprint = self.store.get_active_sprint(project.id)
-        remaining = (
-            self.store.list_tasks(sprint_id=active_sprint.id)
-            if active_sprint is not None
-            else []
-        )
-        if any(task.status == "blocked" for task in remaining):
-            stop_reason = "blocked"
-        elif any(task.status in {"todo", "in_progress"} for task in remaining):
-            stop_reason = "waiting"
-        else:
-            stop_reason = "idle"
+            # No runnable task — check sprint state.
+            sprint = self.store.get_active_sprint(project.id)
+            if sprint is not None and self._sprint_fully_resolved(sprint):
+                result = self._advance_sprint(project, sprint)
+                if result is None:
+                    # Autonomous mode: next sprint now active — keep looping.
+                    continue
+                stop_reason = result
+            else:
+                remaining = (
+                    self.store.list_tasks(sprint_id=sprint.id)
+                    if sprint is not None
+                    else []
+                )
+                if any(t.status == "blocked" for t in remaining):
+                    stop_reason = "blocked"
+                elif any(t.status in {"todo", "in_progress"} for t in remaining):
+                    stop_reason = "waiting"
+                else:
+                    stop_reason = "idle"
+            break
+
         return ProjectRunResult(
             project_id=project.id,
             executed_task_ids=tuple(executed_task_ids),
@@ -950,6 +961,70 @@ class ForemanOrchestrator:
 
         project_tasks = self.store.list_tasks(project_id=project_id)
         return project_tasks[0] if project_tasks else None
+
+    # ── Sprint advancement ────────────────────────────────────────────────────
+
+    def _sprint_fully_resolved(self, sprint: Sprint) -> bool:
+        """Return True when every task in the sprint is done or cancelled."""
+        tasks = self.store.list_tasks(sprint_id=sprint.id)
+        return bool(tasks) and all(t.status in {"done", "cancelled"} for t in tasks)
+
+    def _advance_sprint(self, project: Project, sprint: Sprint) -> str | None:
+        """Complete *sprint* and advance to the next planned sprint if appropriate.
+
+        Returns:
+            None            — autonomous mode advanced; caller should continue loop.
+            "sprint_complete" — next sprint is queued but waiting for human.
+            "idle"          — sprint done, no further sprints in the queue.
+        """
+        now = self.utc_now().isoformat()
+        sprint.status = "completed"
+        sprint.completed_at = now
+        self.store.save_sprint(sprint)
+        self._emit_sprint_event(project, "engine.sprint_completed", {
+            "sprint_id": sprint.id,
+            "sprint_title": sprint.title,
+        }, sprint=sprint)
+
+        next_sprint = self.store.get_next_planned_sprint(project.id)
+        if next_sprint is None:
+            return "idle"
+
+        if project.autonomy_level == "autonomous":
+            next_sprint.status = "active"
+            next_sprint.started_at = now
+            self.store.save_sprint(next_sprint)
+            self._emit_sprint_event(project, "engine.sprint_started", {
+                "sprint_id": next_sprint.id,
+                "sprint_title": next_sprint.title,
+            }, sprint=next_sprint)
+            return None  # continue loop
+
+        # supervised or directed: emit ready signal and stop.
+        if project.autonomy_level == "supervised":
+            self._emit_sprint_event(project, "engine.sprint_ready", {
+                "sprint_id": next_sprint.id,
+                "sprint_title": next_sprint.title,
+            }, sprint=sprint)
+        return "sprint_complete"
+
+    def _emit_sprint_event(
+        self,
+        project: Project,
+        event_type: str,
+        payload: dict[str, Any],
+        *,
+        sprint: Sprint,
+    ) -> None:
+        """Emit a sprint-scoped lifecycle event via a synthetic run."""
+        tasks = self.store.list_tasks(sprint_id=sprint.id)
+        task = tasks[0] if tasks else self._select_project_system_task(project.id)
+        if task is None:
+            return
+        run = self._create_system_run(
+            task, workflow_step="orchestrator", outcome="success", detail=event_type
+        )
+        self._emit_event(run, event_type, payload)
 
     def _load_workflow_for_project(self, project: Project) -> WorkflowDefinition:
         workflow = self.workflows.get(project.workflow_id)

@@ -256,7 +256,11 @@ class DashboardService:
         *,
         task_id: str | None = None,
     ) -> dict[str, Any]:
-        """Spawn a ``foreman run`` subprocess for the given project."""
+        """Spawn a ``foreman run`` subprocess for the given project.
+
+        If no sprint is currently active and a planned sprint exists, the first
+        planned sprint (by queue order) is activated before the subprocess starts.
+        """
 
         project = self.store.get_project(project_id)
         if project is None:
@@ -267,6 +271,17 @@ class DashboardService:
             raise DashboardValidationError(
                 f"Agent is already running for project {project_id}."
             )
+
+        if task_id is None and self.store.get_active_sprint(project_id) is None:
+            next_sprint = self.store.get_next_planned_sprint(project_id)
+            if next_sprint is None:
+                raise DashboardValidationError(
+                    "No active or planned sprint. Add a sprint to the queue before running."
+                )
+            now = datetime.now(timezone.utc).isoformat()
+            next_sprint.status = "active"
+            next_sprint.started_at = now
+            self.store.save_sprint(next_sprint)
 
         foreman_bin = str(Path(sys.executable).parent / "foreman")
         cmd = [foreman_bin, "run", "--project", project_id, "--db", self.store.db_path]
