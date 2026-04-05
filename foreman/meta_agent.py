@@ -126,8 +126,9 @@ async def _run_claude(
     cmd = [
         executable,
         "--print",
+        "--verbose",
         "--output-format", "stream-json",
-        "--permission-mode", "default",
+        "--permission-mode", "bypassPermissions",
     ]
     if session.session_id:
         cmd.extend(["--resume", session.session_id])

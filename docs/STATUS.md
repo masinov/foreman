@@ -2,15 +2,29 @@
 
 ## Current sprint
 
-- Sprint: `sprint-36-intervention-and-ordering` (completed 2026-04-02)
-- Branch: `feat/sprint-36-intervention-and-ordering`
+- Sprint: `sprint-40-meta-agent-panel` (completed 2026-04-05)
+- Branch: `feat/sprint-40-meta-agent-panel`
 
 ## Active branches
 
-- `feat/sprint-36-intervention-and-ordering` — sprint list ordering,
-  manual intervention controls, board layout fixes
+None — all work merged to main.
 
-## Completed this session (sprints 30–35)
+## Completed this session (sprints 36–40)
+
+- completed `sprint-40-meta-agent-panel`
+- replaced the sprint-39 planner stub with a correct meta agent: persistent
+  Claude Code subprocess per project, right-side collapsible sidebar panel on
+  the project sprint list view matching the Activity panel pattern
+- panel spans full height, session history preserved across open/close, streams
+  text and tool-use chips, Clear button wipes in-memory session
+- fixed silent subprocess failure (`--output-format stream-json` requires
+  `--verbose`; Claude Code exits silently without it)
+- sprint list filters now scope to executed sprints only; planned sprints always
+  visible; removed nonsensical "Planned" filter button
+- cleaned up dead `"done"` sprint status in card classes, board column filter,
+  and STATUS_RANK (task status leaked into sprint components)
+
+## Previously completed (sprints 30–35)
 
 - completed `sprint-30-wire-dead-surfaces`
 - wired Stop agent button; `PATCH /api/sprints/{id}` lifecycle transitions

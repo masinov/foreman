@@ -233,8 +233,7 @@ export function ProjectOverview({ projects, onSelectProject, onNewProject }) {
 const STATUS_FILTER_OPTIONS = [
   { key: "all", label: "All" },
   { key: "active", label: "Active" },
-  { key: "done", label: "Done" },
-  { key: "planned", label: "Planned" },
+  { key: "completed", label: "Completed" },
   { key: "cancelled", label: "Cancelled" },
 ];
 
@@ -322,9 +321,10 @@ export function SprintList({ project, sprints, pendingGates, onSelectSprint, onO
     setAgentMounted(true);
   }
 
-  const visibleSprints = useMemo(() => {
-    const STATUS_RANK = { active: 0, completed: 1, done: 1, cancelled: 2, planned: 3 };
-    const filtered = filterKey === "all" ? sprints : sprints.filter((s) => s.status === filterKey);
+  const executedSprints = useMemo(() => {
+    const STATUS_RANK = { active: 0, completed: 1, cancelled: 2 };
+    const nonPlanned = sprints.filter((s) => s.status !== "planned");
+    const filtered = filterKey === "all" ? nonPlanned : nonPlanned.filter((s) => s.status === filterKey);
     return filtered.slice().sort((a, b) => {
       const rankA = STATUS_RANK[a.status] ?? 3;
       const rankB = STATUS_RANK[b.status] ?? 3;
@@ -335,12 +335,18 @@ export function SprintList({ project, sprints, pendingGates, onSelectSprint, onO
     });
   }, [sprints, filterKey, newestFirst]);
 
+  const plannedSprints = useMemo(() => {
+    return sprints
+      .filter((s) => s.status === "planned")
+      .slice()
+      .sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
+  }, [sprints]);
+
   function renderCard(sprint, { reorderable } = {}) {
     const counts = sprint.task_counts || {};
     const total = (counts.todo || 0) + (counts.in_progress || 0) + (counts.blocked || 0) + (counts.done || 0);
     const done = counts.done || 0;
     const statusClass = sprint.status === "active" ? "sc-active"
-      : sprint.status === "done" ? "sc-completed"
       : sprint.status === "planned" ? "sc-planned"
       : `sc-${sprint.status}`;
     return (
@@ -547,9 +553,6 @@ export function SprintList({ project, sprints, pendingGates, onSelectSprint, onO
               {viewToggle}
             </div>
           {viewMode === "list" ? (() => {
-            const executedSprints = visibleSprints.filter((s) => s.status !== "planned");
-            const plannedSprints = visibleSprints.filter((s) => s.status === "planned");
-
             return (
               <>
                 <div className="sprint-executed-panel">
@@ -578,9 +581,7 @@ export function SprintList({ project, sprints, pendingGates, onSelectSprint, onO
                   </div>
                 </div>
 
-                {filterKey === "all" ? (
-                  <div className="sprint-list-divider"><span>planned</span></div>
-                ) : null}
+                <div className="sprint-list-divider"><span>planned</span></div>
 
                 <div className="sprint-list">
                   {plannedSprints.map((s) => renderCard(s, { reorderable: true }))}
@@ -598,7 +599,7 @@ export function SprintList({ project, sprints, pendingGates, onSelectSprint, onO
               {KANBAN_COLUMNS.map((col) => {
                 const colSprints = sprints.filter((s) => {
                   if (col.key === "active") return s.status === "active";
-                  if (col.key === "done") return s.status === "done" || s.status === "completed" || s.status === "cancelled";
+                  if (col.key === "done") return s.status === "completed" || s.status === "cancelled";
                   return s.status === "planned";
                 });
                 return (
