@@ -297,7 +297,7 @@ function DecisionGateBanner({ gate, sprints, onResolve }) {
   );
 }
 
-export function SprintList({ project, sprints, pendingGates, onSelectSprint, onOpenNewSprint, onTransitionSprint, onDeleteSprint, onReorderSprint, onStartAgent, onStopAgent, onResolveGate, onSprintsChanged, services, isActionPending, autonomyLevel }) {
+export function SprintList({ project, sprints, pendingGates, onSelectSprint, onOpenNewSprint, onTransitionSprint, onDeleteSprint, onReorderSprint, onStartAgent, onStopAgent, onResolveGate, onSprintsChanged, services, isActionPending }) {
   const [agentCollapsed, setAgentCollapsed] = useState(true);
   const [agentMounted, setAgentMounted] = useState(false);
   const [archiveExpanded, setArchiveExpanded] = useState(false);
@@ -527,105 +527,139 @@ export function SprintList({ project, sprints, pendingGates, onSelectSprint, onO
               {runStopButton}
             </div>
 
-            {/* Zone 1 — Active */}
-            <div className="pq-active">
-              {activeSprint ? (
-                <button
-                  className="pq-active-card"
-                  type="button"
-                  onClick={() => onSelectSprint(activeSprint.id)}
-                >
-                  <div className="pq-active-header">
-                    <div className="pq-active-title">{activeSprint.title}</div>
-                    <div className={`pq-active-status ${project.status === "running" ? "is-running" : ""}`}>
-                      {project.status === "running" ? "running" : "idle"}
-                    </div>
-                  </div>
-                  {activeSprint.goal ? (
-                    <div className="pq-active-goal">{activeSprint.goal}</div>
+            {/* Top row: Next Up (left) + Active (right) */}
+            <div className="pq-top">
+              {/* Next Up panel */}
+              <div className="pq-next-panel">
+                <div className="pq-panel-label">Next up</div>
+                {plannedSprints.length > 0 ? (
+                  <button
+                    className="pq-next-card"
+                    type="button"
+                    onClick={() => onSelectSprint(plannedSprints[0].id)}
+                  >
+                    <div className="pq-next-title">{plannedSprints[0].title}</div>
+                    {plannedSprints[0].goal ? (
+                      <div className="pq-next-goal">{plannedSprints[0].goal}</div>
+                    ) : null}
+                    {(() => {
+                      const c = plannedSprints[0].task_counts || {};
+                      const total = (c.todo || 0) + (c.in_progress || 0) + (c.blocked || 0) + (c.done || 0);
+                      return total > 0 ? (
+                        <div className="pq-next-meta">{total} task{total !== 1 ? "s" : ""}</div>
+                      ) : null;
+                    })()}
+                  </button>
+                ) : (
+                  <div className="pq-empty-slot">queue empty</div>
+                )}
+              </div>
+
+              {/* Active sprint panel */}
+              <div className="pq-active-panel">
+                <div className="pq-panel-label">
+                  Active
+                  {activeSprint ? (
+                    <span className={`pq-running-dot ${project.status === "running" ? "is-running" : ""}`} />
                   ) : null}
-                  {(() => {
-                    const counts = activeSprint.task_counts || {};
-                    const total = (counts.todo || 0) + (counts.in_progress || 0) + (counts.blocked || 0) + (counts.done || 0);
-                    const done = counts.done || 0;
-                    return (
-                      <div className="pq-active-progress">
-                        <div className="pq-active-counts">
-                          {counts.in_progress > 0 ? <span className="pq-count-wip">{counts.in_progress} in progress</span> : null}
-                          {counts.blocked > 0 ? <span className="pq-count-blocked">{counts.blocked} blocked</span> : null}
-                          {counts.todo > 0 ? <span className="pq-count-todo">{counts.todo} todo</span> : null}
-                          <span className="pq-count-done">{done}/{total} done</span>
-                        </div>
-                        <div className="progress-bar" aria-hidden="true">
-                          <span className="p-done" style={{ flex: done }} />
-                          <span className="p-wip" style={{ flex: counts.in_progress || 0 }} />
-                          <span className="p-blocked" style={{ flex: counts.blocked || 0 }} />
-                          <span className="p-todo" style={{ flex: counts.todo || 0 }} />
-                          {total === 0 ? <span className="p-todo" style={{ flex: 1 }} /> : null}
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </button>
-              ) : plannedSprints.length > 0 ? (
-                <div className="pq-idle-state">
-                  {autonomyLevel === "supervised" ? (
-                    <>
-                      <span className="pq-idle-label">Next up:</span>
-                      <span className="pq-idle-sprint">{plannedSprints[0].title}</span>
-                      <span className="pq-idle-hint">Press Run to start</span>
-                    </>
-                  ) : (
-                    <span className="pq-idle-hint">No active sprint — press Run to start the queue</span>
-                  )}
                 </div>
-              ) : (
-                <div className="pq-idle-state">
-                  <span className="pq-idle-hint">No sprints yet — add one to the queue below</span>
-                </div>
-              )}
+                {activeSprint ? (
+                  <button
+                    className="pq-active-card"
+                    type="button"
+                    onClick={() => onSelectSprint(activeSprint.id)}
+                  >
+                    <div className="pq-active-title">{activeSprint.title}</div>
+                    {activeSprint.goal ? (
+                      <div className="pq-active-goal">{activeSprint.goal}</div>
+                    ) : null}
+                    {(() => {
+                      const counts = activeSprint.task_counts || {};
+                      const total = (counts.todo || 0) + (counts.in_progress || 0) + (counts.blocked || 0) + (counts.done || 0);
+                      const done = counts.done || 0;
+                      return (
+                        <div className="pq-active-body">
+                          <div className="pq-task-grid">
+                            {counts.in_progress > 0 ? (
+                              <div className="pq-task-stat pq-stat-wip">
+                                <span className="pq-stat-n">{counts.in_progress}</span>
+                                <span className="pq-stat-l">in progress</span>
+                              </div>
+                            ) : null}
+                            {counts.blocked > 0 ? (
+                              <div className="pq-task-stat pq-stat-blocked">
+                                <span className="pq-stat-n">{counts.blocked}</span>
+                                <span className="pq-stat-l">blocked</span>
+                              </div>
+                            ) : null}
+                            {counts.todo > 0 ? (
+                              <div className="pq-task-stat pq-stat-todo">
+                                <span className="pq-stat-n">{counts.todo}</span>
+                                <span className="pq-stat-l">todo</span>
+                              </div>
+                            ) : null}
+                            <div className="pq-task-stat pq-stat-done">
+                              <span className="pq-stat-n">{done}/{total}</span>
+                              <span className="pq-stat-l">done</span>
+                            </div>
+                          </div>
+                          <div className="progress-bar pq-progress" aria-hidden="true">
+                            <span className="p-done" style={{ flex: done }} />
+                            <span className="p-wip" style={{ flex: counts.in_progress || 0 }} />
+                            <span className="p-blocked" style={{ flex: counts.blocked || 0 }} />
+                            <span className="p-todo" style={{ flex: counts.todo || 0 }} />
+                            {total === 0 ? <span className="p-todo" style={{ flex: 1 }} /> : null}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </button>
+                ) : (
+                  <div className="pq-empty-slot pq-active-empty">
+                    {plannedSprints.length > 0
+                      ? "press Run to start"
+                      : "no sprints queued"}
+                  </div>
+                )}
+              </div>
             </div>
 
-            {/* Zone 2 — Next Up */}
-            {plannedSprints.length > 0 ? (
-              <div className="pq-next-up">
-                <div className="pq-section-label">Next up</div>
-                {renderCard(plannedSprints[0], { reorderable: plannedSprints.length > 1 })}
+            {/* Bottom row: Queue (left) + Archive (right) */}
+            <div className="pq-bottom">
+              {/* Queue column */}
+              <div className="pq-queue-col">
+                <div className="pq-panel-label">Queue</div>
+                {plannedSprints.length > 1
+                  ? plannedSprints.slice(1).map((s) => renderCard(s, { reorderable: true, showPromote: true }))
+                  : <div className="pq-empty-col">no sprints queued</div>}
+                {onOpenNewSprint ? (
+                  <button className="sprint-add-btn" type="button" onClick={onOpenNewSprint}>
+                    + New sprint
+                  </button>
+                ) : null}
               </div>
-            ) : null}
 
-            {/* Zone 3 — Queue */}
-            {plannedSprints.length > 1 ? (
-              <div className="pq-queue">
-                <div className="pq-section-label">Queue</div>
-                {plannedSprints.slice(1).map((s) => renderCard(s, { reorderable: true, showPromote: true }))}
-              </div>
-            ) : null}
-
-            {onOpenNewSprint ? (
-              <button className="sprint-add-btn" type="button" onClick={onOpenNewSprint}>
-                + New sprint
-              </button>
-            ) : null}
-
-            {/* Zone 4 — Archive */}
-            {archiveSprints.length > 0 ? (
-              <div className="pq-archive">
+              {/* Archive column */}
+              <div className="pq-archive-col">
                 <button
-                  className="pq-archive-toggle"
+                  className="pq-panel-label pq-archive-toggle"
                   type="button"
                   onClick={() => setArchiveExpanded((v) => !v)}
                 >
-                  <span>{archiveSprints.length} completed sprint{archiveSprints.length !== 1 ? "s" : ""}</span>
-                  <span>{archiveExpanded ? "▲" : "▼"}</span>
+                  <span>Archive{archiveSprints.length > 0 ? ` · ${archiveSprints.length}` : ""}</span>
+                  <span className="pq-archive-chevron">{archiveExpanded ? "▲" : "▼"}</span>
                 </button>
-                {archiveExpanded ? (
+                {archiveExpanded && archiveSprints.length > 0 ? (
                   <div className="pq-archive-list">
                     {archiveSprints.map((s) => renderCard(s, { reorderable: false }))}
                   </div>
+                ) : !archiveExpanded ? (
+                  <div className="pq-empty-col">
+                    {archiveSprints.length === 0 ? "no completed sprints" : `${archiveSprints.length} sprint${archiveSprints.length !== 1 ? "s" : ""} — click to expand`}
+                  </div>
                 ) : null}
               </div>
-            ) : null}
+            </div>
           </div>
         </div>
 
