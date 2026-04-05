@@ -1,10 +1,10 @@
 # Current Sprint
 
 - Sprint: `sprint-41-sprint-queue-and-advancement`
-- Status: todo
+- Status: done
 - Branch: `feat/sprint-41-sprint-queue-and-advancement`
-- Started: —
-- Completed: —
+- Started: 2026-04-04
+- Completed: 2026-04-05
 
 ## Goal
 
