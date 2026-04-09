@@ -1925,7 +1925,8 @@ class DashboardTier2Tests(unittest.TestCase):
         self.assertEqual(response.status_code, 404)
 
     def test_start_agent_launched_for_known_project(self):
-        """POST /api/projects/{id}/agent/start spawns a subprocess and returns started=true."""
+        """POST /api/projects/{id}/agent/start auto-activates the first planned sprint
+        and spawns a subprocess."""
         store = ForemanStore(self.db_path)
         store.initialize()
         project = Project(
@@ -1935,6 +1936,14 @@ class DashboardTier2Tests(unittest.TestCase):
             workflow_id="development",
         )
         store.save_project(project)
+        sprint = Sprint(
+            id=self._next_id("sprint-sa"),
+            project_id=project.id,
+            title="First Sprint",
+            status="planned",
+            order_index=0,
+        )
+        store.save_sprint(sprint)
         store.close()
 
         import unittest.mock as mock
@@ -1952,6 +1961,34 @@ class DashboardTier2Tests(unittest.TestCase):
         data = response.json()
         self.assertTrue(data["started"])
         self.assertEqual(data["project_id"], project.id)
+
+        # Verify the sprint was auto-activated.
+        store2 = ForemanStore(self.db_path)
+        store2.initialize()
+        activated = store2.get_active_sprint(project.id)
+        store2.close()
+        self.assertIsNotNone(activated)
+        self.assertEqual(activated.id, sprint.id)
+
+    def test_start_agent_returns_400_when_no_sprints(self):
+        """POST /api/projects/{id}/agent/start returns 400 when no planned or active sprint exists."""
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        project = Project(
+            id=self._next_id("proj-sa"),
+            name="Empty Project",
+            repo_path="/tmp/sa-empty",
+            workflow_id="development",
+        )
+        store.save_project(project)
+        store.close()
+
+        response = self._request(
+            "POST",
+            f"/api/projects/{project.id}/agent/start",
+            json={},
+        )
+        self.assertEqual(response.status_code, 400)
 
 
 class DashboardTaskEditEventTests(unittest.TestCase):

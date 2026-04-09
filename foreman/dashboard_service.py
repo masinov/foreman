@@ -256,7 +256,11 @@ class DashboardService:
         *,
         task_id: str | None = None,
     ) -> dict[str, Any]:
-        """Spawn a ``foreman run`` subprocess for the given project."""
+        """Spawn a ``foreman run`` subprocess for the given project.
+
+        If no sprint is currently active and a planned sprint exists, the first
+        planned sprint (by queue order) is activated before the subprocess starts.
+        """
 
         project = self.store.get_project(project_id)
         if project is None:
@@ -267,6 +271,17 @@ class DashboardService:
             raise DashboardValidationError(
                 f"Agent is already running for project {project_id}."
             )
+
+        if task_id is None and self.store.get_active_sprint(project_id) is None:
+            next_sprint = self.store.get_next_planned_sprint(project_id)
+            if next_sprint is None:
+                raise DashboardValidationError(
+                    "No active or planned sprint. Add a sprint to the queue before running."
+                )
+            now = datetime.now(timezone.utc).isoformat()
+            next_sprint.status = "active"
+            next_sprint.started_at = now
+            self.store.save_sprint(next_sprint)
 
         foreman_bin = str(Path(sys.executable).parent / "foreman")
         cmd = [foreman_bin, "run", "--project", project_id, "--db", self.store.db_path]
@@ -295,20 +310,26 @@ class DashboardService:
         result = []
         for sprint in self.store.list_sprints(project_id):
             task_counts = self.store.task_counts(sprint_id=sprint.id)
-            result.append(
-                {
-                    "id": sprint.id,
-                    "title": sprint.title,
-                    "goal": sprint.goal,
-                    "status": sprint.status,
-                    "order_index": sprint.order_index,
-                    "task_counts": {
-                        **task_counts,
-                        "total": sum(task_counts.values()),
-                    },
-                    "totals": self.store.run_totals(sprint_id=sprint.id),
-                }
-            )
+            entry: dict[str, Any] = {
+                "id": sprint.id,
+                "title": sprint.title,
+                "goal": sprint.goal,
+                "status": sprint.status,
+                "order_index": sprint.order_index,
+                "started_at": sprint.started_at,
+                "completed_at": sprint.completed_at,
+                "task_counts": {
+                    **task_counts,
+                    "total": sum(task_counts.values()),
+                },
+                "totals": self.store.run_totals(sprint_id=sprint.id),
+            }
+            if sprint.status == "active":
+                entry["tasks"] = [
+                    {"id": t.id, "title": t.title, "status": t.status, "task_type": t.task_type}
+                    for t in self.store.list_tasks(sprint_id=sprint.id)
+                ]
+            result.append(entry)
         return {"sprints": result}
 
     def get_sprint(self, sprint_id: str) -> dict[str, Any]:
@@ -376,12 +397,20 @@ class DashboardService:
             while self.store.get_task(task_id) is not None:
                 task_id = f"task-{_stable_slug(task_title)}-{dedup}"
                 dedup += 1
+            acceptance_criteria = task_data.get("acceptance_criteria") or None
+            if acceptance_criteria:
+                acceptance_criteria = str(acceptance_criteria).strip() or None
+            description = task_data.get("description") or None
+            if description:
+                description = str(description).strip() or None
             task = Task(
                 id=task_id,
                 sprint_id=sprint_id,
                 project_id=project_id,
                 title=task_title,
                 task_type=task_type,
+                acceptance_criteria=acceptance_criteria,
+                description=description,
                 order_index=i,
                 created_by="human",
                 created_at=now,

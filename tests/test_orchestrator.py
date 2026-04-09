@@ -350,7 +350,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
 
             runs = store.list_runs(task_id=task.id)
             self.assertEqual(
-                [run.workflow_step for run in runs],
+                [run.workflow_step for run in runs if run.role_id != "_builtin:orchestrator"],
                 ["develop", "review", "test", "merge", "done"],
             )
             self.assertEqual(
@@ -454,7 +454,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
 
             runs = store.list_runs(task_id=task.id)
             self.assertEqual(
-                [run.workflow_step for run in runs],
+                [run.workflow_step for run in runs if run.role_id != "_builtin:orchestrator"],
                 ["develop", "code_review", "security_review", "test", "merge", "done"],
             )
             self.assertEqual(
@@ -866,7 +866,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
 
             runs = store.list_runs(task_id=task.id)
             self.assertEqual(
-                [run.workflow_step for run in runs],
+                [run.workflow_step for run in runs if run.role_id != "_builtin:orchestrator"],
                 ["plan", "human_approval", "human_approval", "develop", "review", "test", "merge", "done"],
             )
             self.assertEqual(
@@ -966,7 +966,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
 
             runs = store.list_runs(task_id=task.id)
             self.assertEqual(
-                [run.workflow_step for run in runs],
+                [run.workflow_step for run in runs if run.role_id != "_builtin:orchestrator"],
                 ["plan", "human_approval", "human_approval", "plan", "human_approval"],
             )
             self.assertEqual(
@@ -1100,13 +1100,14 @@ class ForemanOrchestratorTests(unittest.TestCase):
             self.assertEqual(reviewer_capture.disallowed_tools, ("Bash", "Write", "Edit", "NotebookEdit"))
 
             runs = store.list_runs(task_id=task.id)
+            workflow_runs = [r for r in runs if r.role_id != "_builtin:orchestrator"]
             self.assertEqual(
-                [run.workflow_step for run in runs],
+                [run.workflow_step for run in workflow_runs],
                 ["develop", "review", "test", "merge", "done"],
             )
-            self.assertEqual(runs[0].session_id, "dev-session")
+            self.assertEqual(workflow_runs[0].session_id, "dev-session")
             self.assertEqual(
-                [run.outcome for run in runs],
+                [run.outcome for run in workflow_runs],
                 ["done", "approve", "success", "success", "success"],
             )
 
@@ -1566,7 +1567,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
 
             runs = store.list_runs(task_id=task.id)
             self.assertEqual(
-                [run.workflow_step for run in runs],
+                [run.workflow_step for run in runs if run.role_id != "_builtin:orchestrator"],
                 ["develop", "review", "test", "merge", "done"],
             )
             self.assertEqual(runs[0].agent_backend, "codex")
@@ -1739,7 +1740,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
             self.assertEqual(runner.capture(1).model, "gpt-5.4")
             runs = store.list_runs(task_id=task.id)
             self.assertEqual(
-                [run.workflow_step for run in runs],
+                [run.workflow_step for run in runs if run.role_id != "_builtin:orchestrator"],
                 ["human_approval", "develop", "review", "test", "merge", "done"],
             )
             self.assertEqual(runs[1].agent_backend, "codex")
@@ -2153,8 +2154,9 @@ class ForemanOrchestratorTests(unittest.TestCase):
             self.assertTrue((repo_path / ".foreman" / "status.md").is_file())
 
             runs = store.list_runs(task_id=task.id)
+            workflow_runs = [r for r in runs if r.role_id != "_builtin:orchestrator"]
             self.assertEqual(
-                [run.workflow_step for run in runs],
+                [run.workflow_step for run in workflow_runs],
                 ["develop", "sync_context", "done"],
             )
             context_events = [
@@ -2389,3 +2391,169 @@ class AutonomousTaskSelectionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SprintAdvancementTests(unittest.TestCase):
+    """Tests for sprint-41: orchestrator sprint completion and auto-advancement."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.db_path = Path(self.tmp.name) / "foreman.db"
+        self.store = ForemanStore(self.db_path)
+        self.store.initialize()
+
+    def tearDown(self) -> None:
+        self.store.close()
+        self.tmp.cleanup()
+
+    def _make_project(self, autonomy_level: str = "directed") -> Project:
+        p = Project(
+            id=f"proj-adv-{autonomy_level}",
+            name=f"Test {autonomy_level}",
+            repo_path=self.tmp.name,
+            workflow_id="development",
+            autonomy_level=autonomy_level,  # type: ignore[arg-type]
+        )
+        self.store.save_project(p)
+        return p
+
+    def _make_sprint(self, project_id: str, *, order_index: int = 0, status: str = "planned") -> Sprint:
+        s = Sprint(
+            id=f"sprint-adv-{project_id}-{order_index}",
+            project_id=project_id,
+            title=f"Sprint {order_index}",
+            status=status,  # type: ignore[arg-type]
+            order_index=order_index,
+        )
+        self.store.save_sprint(s)
+        return s
+
+    def _make_done_task(self, sprint: Sprint) -> Task:
+        t = Task(
+            id=f"task-adv-{sprint.id}",
+            sprint_id=sprint.id,
+            project_id=sprint.project_id,
+            title="Done task",
+            status="done",
+        )
+        self.store.save_task(t)
+        return t
+
+    def _orchestrator(self) -> ForemanOrchestrator:
+        from foreman.roles import load_roles, default_roles_dir
+        from foreman.workflows import load_workflows, default_workflows_dir
+        roles = load_roles(default_roles_dir())
+        workflows = load_workflows(default_workflows_dir(), available_role_ids=set(roles))
+        return ForemanOrchestrator(self.store, roles=roles, workflows=workflows)
+
+    def test_directed_completes_sprint_and_stops(self) -> None:
+        project = self._make_project("directed")
+        sprint0 = self._make_sprint(project.id, order_index=0, status="active")
+        sprint1 = self._make_sprint(project.id, order_index=1, status="planned")
+        self._make_done_task(sprint0)
+
+        result = self._orchestrator().run_project(project.id)
+
+        self.assertEqual(result.stop_reason, "sprint_complete")
+        self.assertIsNone(self.store.get_active_sprint(project.id))
+        s0 = next(s for s in self.store.list_sprints(project.id) if s.id == sprint0.id)
+        self.assertEqual(s0.status, "completed")
+        s1 = next(s for s in self.store.list_sprints(project.id) if s.id == sprint1.id)
+        self.assertEqual(s1.status, "planned")
+
+    def test_directed_idle_when_no_next_sprint(self) -> None:
+        project = self._make_project("directed")
+        sprint = self._make_sprint(project.id, order_index=0, status="active")
+        self._make_done_task(sprint)
+
+        result = self._orchestrator().run_project(project.id)
+
+        self.assertEqual(result.stop_reason, "idle")
+        s = next(s for s in self.store.list_sprints(project.id) if s.id == sprint.id)
+        self.assertEqual(s.status, "completed")
+
+    def test_supervised_emits_sprint_ready_event(self) -> None:
+        project = self._make_project("supervised")
+        sprint0 = self._make_sprint(project.id, order_index=0, status="active")
+        sprint1 = self._make_sprint(project.id, order_index=1, status="planned")
+        task = self._make_done_task(sprint0)
+
+        result = self._orchestrator().run_project(project.id)
+
+        self.assertEqual(result.stop_reason, "sprint_complete")
+        event_types = [e.event_type for e in self.store.list_events(task_id=task.id)]
+        self.assertIn("engine.sprint_completed", event_types)
+        self.assertIn("engine.sprint_ready", event_types)
+        ready = next(e for e in self.store.list_events(task_id=task.id) if e.event_type == "engine.sprint_ready")
+        self.assertEqual(ready.payload["sprint_id"], sprint1.id)
+
+    def test_directed_does_not_emit_sprint_ready(self) -> None:
+        project = self._make_project("directed")
+        sprint0 = self._make_sprint(project.id, order_index=0, status="active")
+        self._make_sprint(project.id, order_index=1, status="planned")
+        task = self._make_done_task(sprint0)
+
+        self._orchestrator().run_project(project.id)
+
+        event_types = [e.event_type for e in self.store.list_events(task_id=task.id)]
+        self.assertNotIn("engine.sprint_ready", event_types)
+        self.assertIn("engine.sprint_completed", event_types)
+
+    def test_autonomous_activates_next_sprint(self) -> None:
+        project = self._make_project("autonomous")
+        sprint0 = self._make_sprint(project.id, order_index=0, status="active")
+        sprint1 = self._make_sprint(project.id, order_index=1, status="planned")
+        self._make_done_task(sprint0)
+
+        result = self._orchestrator().run_project(project.id)
+
+        s1 = next(s for s in self.store.list_sprints(project.id) if s.id == sprint1.id)
+        self.assertEqual(s1.status, "active")
+        self.assertIsNotNone(s1.started_at)
+        self.assertEqual(result.stop_reason, "idle")
+
+    def test_autonomous_stops_when_no_next_sprint(self) -> None:
+        project = self._make_project("autonomous")
+        sprint = self._make_sprint(project.id, order_index=0, status="active")
+        self._make_done_task(sprint)
+
+        result = self._orchestrator().run_project(project.id)
+
+        self.assertEqual(result.stop_reason, "idle")
+
+    def test_blocked_tasks_prevent_sprint_completion(self) -> None:
+        project = self._make_project("autonomous")
+        sprint = self._make_sprint(project.id, order_index=0, status="active")
+        t = Task(
+            id="task-adv-blocked",
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="Blocked task",
+            status="blocked",
+        )
+        self.store.save_task(t)
+
+        result = self._orchestrator().run_project(project.id)
+
+        self.assertEqual(result.stop_reason, "blocked")
+        s = next(s for s in self.store.list_sprints(project.id) if s.id == sprint.id)
+        self.assertEqual(s.status, "active")
+
+    def test_sprint_with_mixed_done_cancelled_is_resolved(self) -> None:
+        project = self._make_project("directed")
+        sprint = self._make_sprint(project.id, order_index=0, status="active")
+        self._make_done_task(sprint)
+        t = Task(
+            id="task-adv-cancelled",
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="Cancelled task",
+            status="cancelled",
+        )
+        self.store.save_task(t)
+
+        result = self._orchestrator().run_project(project.id)
+
+        s = next(s for s in self.store.list_sprints(project.id) if s.id == sprint.id)
+        self.assertEqual(s.status, "completed")
+        self.assertEqual(result.stop_reason, "idle")

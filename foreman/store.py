@@ -370,6 +370,20 @@ class ForemanStore:
         ).fetchone()
         return _row_to_sprint(row) if row else None
 
+    def get_next_planned_sprint(self, project_id: str) -> Sprint | None:
+        """Return the first planned sprint by queue order, or None."""
+
+        row = self._connection.execute(
+            """
+            SELECT * FROM sprints
+            WHERE project_id = ? AND status = 'planned'
+            ORDER BY order_index ASC, created_at ASC, id ASC
+            LIMIT 1
+            """,
+            (project_id,),
+        ).fetchone()
+        return _row_to_sprint(row) if row else None
+
     def save_task(self, task: Task) -> Task:
         """Insert or update a task record."""
 

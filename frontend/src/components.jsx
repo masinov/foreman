@@ -230,18 +230,6 @@ export function ProjectOverview({ projects, onSelectProject, onNewProject }) {
   );
 }
 
-const STATUS_FILTER_OPTIONS = [
-  { key: "all", label: "All" },
-  { key: "active", label: "Active" },
-  { key: "completed", label: "Completed" },
-  { key: "cancelled", label: "Cancelled" },
-];
-
-const KANBAN_COLUMNS = [
-  { key: "planned", label: "Planned" },
-  { key: "active", label: "Active" },
-  { key: "done", label: "Done" },
-];
 
 function DecisionGateBanner({ gate, sprints, onResolve }) {
   const [expanded, setExpanded] = useState(false);
@@ -309,128 +297,258 @@ function DecisionGateBanner({ gate, sprints, onResolve }) {
   );
 }
 
-export function SprintList({ project, sprints, pendingGates, onSelectSprint, onOpenNewSprint, onTransitionSprint, onDeleteSprint, onReorderSprint, onStartAgent, onStopAgent, onResolveGate, onSprintsChanged, services, isActionPending, autonomyLevel }) {
-  const [filterKey, setFilterKey] = useState("all");
-  const [newestFirst, setNewestFirst] = useState(false);
-  const [viewMode, setViewMode] = useState("list");
+export function SprintList({ project, sprints, pendingGates, onSelectSprint, onOpenNewSprint, onTransitionSprint, onDeleteSprint, onReorderSprints, onStartAgent, onStopAgent, onResolveGate, onSprintsChanged, services, isActionPending }) {
   const [agentCollapsed, setAgentCollapsed] = useState(true);
   const [agentMounted, setAgentMounted] = useState(false);
+  const [archiveExpanded, setArchiveExpanded] = useState(false);
+  const [expandedSprintId, setExpandedSprintId] = useState(null);
+  const [expandedTasks, setExpandedTasks] = useState([]);
+  const [expandedLoading, setExpandedLoading] = useState(false);
+  const [exTitleDraft, setExTitleDraft] = useState("");
+  const [exGoalDraft, setExGoalDraft] = useState("");
+  const [exNewTaskTitle, setExNewTaskTitle] = useState("");
+  const [exNewTaskType, setExNewTaskType] = useState("feature");
+  const [exNewTaskCriteria, setExNewTaskCriteria] = useState("");
+  const [dragOverId, setDragOverId] = useState(null);
+  const dragSrcId = useRef(null);
+
+  async function toggleExpandSprint(sprint) {
+    if (expandedSprintId === sprint.id) {
+      setExpandedSprintId(null);
+      return;
+    }
+    setExpandedSprintId(sprint.id);
+    setExTitleDraft(sprint.title);
+    setExGoalDraft(sprint.goal || "");
+    setExNewTaskTitle("");
+    setExNewTaskCriteria("");
+    setExNewTaskType("feature");
+    if (services) {
+      setExpandedLoading(true);
+      try {
+        const payload = await services.listSprintTasks(sprint.id);
+        setExpandedTasks(payload.tasks || []);
+      } finally {
+        setExpandedLoading(false);
+      }
+    }
+  }
+
+  async function saveExTitle(sprintId) {
+    const trimmed = exTitleDraft.trim();
+    if (!trimmed || !services) return;
+    await services.updateSprint(sprintId, { title: trimmed });
+    onSprintsChanged?.();
+  }
+
+  async function saveExGoal(sprintId) {
+    if (!services) return;
+    await services.updateSprint(sprintId, { goal: exGoalDraft.trim() });
+    onSprintsChanged?.();
+  }
+
+  async function addExTask(sprintId) {
+    const trimmed = exNewTaskTitle.trim();
+    if (!trimmed || !services) return;
+    await services.createTask(sprintId, { title: trimmed, taskType: exNewTaskType, acceptanceCriteria: exNewTaskCriteria.trim() || undefined });
+    setExNewTaskTitle("");
+    setExNewTaskCriteria("");
+    setExNewTaskType("feature");
+    const payload = await services.listSprintTasks(sprintId);
+    setExpandedTasks(payload.tasks || []);
+    onSprintsChanged?.();
+  }
+
+  async function removeExTask(sprintId, taskId) {
+    if (!services) return;
+    await services.deleteTask(taskId);
+    setExpandedTasks((prev) => prev.filter((t) => t.id !== taskId));
+    onSprintsChanged?.();
+  }
 
   function openAgent() {
     setAgentCollapsed(false);
     setAgentMounted(true);
   }
 
-  const executedSprints = useMemo(() => {
-    const STATUS_RANK = { active: 0, completed: 1, cancelled: 2 };
-    const nonPlanned = sprints.filter((s) => s.status !== "planned");
-    const filtered = filterKey === "all" ? nonPlanned : nonPlanned.filter((s) => s.status === filterKey);
-    return filtered.slice().sort((a, b) => {
-      const rankA = STATUS_RANK[a.status] ?? 3;
-      const rankB = STATUS_RANK[b.status] ?? 3;
-      if (rankA !== rankB) return rankA - rankB;
-      const orderA = a.order_index ?? 0;
-      const orderB = b.order_index ?? 0;
-      return newestFirst ? orderB - orderA : orderA - orderB;
-    });
-  }, [sprints, filterKey, newestFirst]);
+  const activeSprint = useMemo(() =>
+    sprints.find((s) => s.status === "active") ?? null,
+  [sprints]);
 
-  const plannedSprints = useMemo(() => {
-    return sprints
+  const plannedSprints = useMemo(() =>
+    sprints
       .filter((s) => s.status === "planned")
       .slice()
-      .sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
-  }, [sprints]);
+      .sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0)),
+  [sprints]);
 
-  function renderCard(sprint, { reorderable } = {}) {
+  const archiveSprints = useMemo(() =>
+    sprints
+      .filter((s) => s.status === "completed" || s.status === "cancelled")
+      .slice()
+      .sort((a, b) => {
+        const ta = a.completed_at ?? a.started_at ?? "";
+        const tb = b.completed_at ?? b.started_at ?? "";
+        return tb.localeCompare(ta);
+      }),
+  [sprints]);
+
+  function renderCard(sprint, { nextUp } = {}) {
     const counts = sprint.task_counts || {};
     const total = (counts.todo || 0) + (counts.in_progress || 0) + (counts.blocked || 0) + (counts.done || 0);
     const done = counts.done || 0;
+    const isPlanned = sprint.status === "planned";
+    const isArchived = sprint.status === "completed" || sprint.status === "cancelled";
+    const hideStatus = isPlanned || isArchived;
+    const isExpanded = isPlanned && expandedSprintId === sprint.id;
     const statusClass = sprint.status === "active" ? "sc-active"
-      : sprint.status === "planned" ? "sc-planned"
+      : isPlanned ? "sc-planned"
       : `sc-${sprint.status}`;
+
+    // Expanded inline editor for queued sprints
+    if (isExpanded) {
+      return (
+        <div key={sprint.id} className={`sprint-card sprint-card--no-status sprint-card--expanded${nextUp ? " sprint-card--next-up" : ""}`}>
+          <div className="sc-expanded-header">
+            <input
+              className="sc-expanded-title"
+              value={exTitleDraft}
+              onChange={(e) => setExTitleDraft(e.target.value)}
+              onBlur={() => saveExTitle(sprint.id)}
+              onKeyDown={(e) => e.key === "Enter" && e.target.blur()}
+            />
+            <button className="sc-expanded-open" type="button" onClick={() => onSelectSprint(sprint.id)}>
+              Open →
+            </button>
+            <button className="sc-expanded-collapse" type="button" onClick={() => setExpandedSprintId(null)}>
+              ✕
+            </button>
+          </div>
+          <textarea
+            className="sc-expanded-goal"
+            value={exGoalDraft}
+            onChange={(e) => setExGoalDraft(e.target.value)}
+            onBlur={() => saveExGoal(sprint.id)}
+            placeholder="Sprint goal…"
+            rows={2}
+          />
+          <div className="sc-expanded-tasks">
+            {expandedLoading ? (
+              <div className="sc-expanded-loading">loading…</div>
+            ) : expandedTasks.length > 0 ? (
+              <ul className="sc-expanded-task-list">
+                {expandedTasks.map((t) => (
+                  <li key={t.id} className="sc-expanded-task-item">
+                    <span className={`card-tag ${getTaskTypeClass(t.task_type)}`}>{t.task_type}</span>
+                    <span className="sc-expanded-task-title">{t.title}</span>
+                    <button
+                      className="sc-expanded-task-remove"
+                      type="button"
+                      onClick={() => removeExTask(sprint.id, t.id)}
+                      aria-label={`Remove ${t.title}`}
+                    >×</button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div className="sc-expanded-empty">No tasks yet.</div>
+            )}
+            <div className="sc-expanded-add">
+              <input
+                className="form-input"
+                type="text"
+                placeholder="New task title"
+                value={exNewTaskTitle}
+                onChange={(e) => setExNewTaskTitle(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addExTask(sprint.id); } }}
+              />
+              <textarea
+                className="form-input"
+                placeholder="Acceptance criteria (optional)"
+                value={exNewTaskCriteria}
+                onChange={(e) => setExNewTaskCriteria(e.target.value)}
+                rows={2}
+              />
+              <div className="sc-expanded-add-footer">
+                <div className="form-chips">
+                  {TASK_TYPE_CHIPS.map((type) => (
+                    <button
+                      key={type}
+                      type="button"
+                      className={`form-chip ${exNewTaskType === type ? "selected" : ""}`}
+                      onClick={() => setExNewTaskType(type)}
+                    >{type}</button>
+                  ))}
+                </div>
+                <button
+                  className="btn-action"
+                  type="button"
+                  disabled={!exNewTaskTitle.trim()}
+                  onClick={() => addExTask(sprint.id)}
+                >Add task</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div
         key={sprint.id}
-        className={`sprint-card ${sprint.status === "active" ? "active-sprint" : ""}`}
+        className={`sprint-card${hideStatus ? " sprint-card--no-status" : ""}${nextUp ? " sprint-card--next-up" : ""}`}
       >
         <button
           className="sc-main"
           type="button"
           aria-label={`Open sprint ${sprint.title}`}
-          onClick={() => onSelectSprint(sprint.id)}
+          onClick={() => isPlanned ? toggleExpandSprint(sprint) : onSelectSprint(sprint.id)}
         >
-          <div className={`sc-status ${statusClass}`}>{sprint.status}</div>
+          {!hideStatus && <div className={`sc-status ${statusClass}`}>{sprint.status}</div>}
           <div className="sc-body">
             <div className="sc-body-main">
               <span className="sc-title">{sprint.title}</span>
-              <span className="sc-goal">{sprint.goal || "No goal recorded."}</span>
+              {sprint.status === "cancelled" ? (
+                <span className="sc-cancelled-tag">cancelled</span>
+              ) : null}
+              {isArchived && (sprint.started_at || sprint.completed_at) ? (
+                <div className="sc-dates">
+                  {sprint.started_at ? <span>started {formatDate(sprint.started_at)}</span> : null}
+                  {sprint.completed_at ? <span>closed {formatDate(sprint.completed_at)}</span> : null}
+                </div>
+              ) : null}
             </div>
-            {sprint.started_at || sprint.completed_at ? (
-              <div className="sc-dates">
-                {sprint.started_at ? <span>started {formatDate(sprint.started_at)}</span> : null}
-                {sprint.completed_at ? <span>closed {formatDate(sprint.completed_at)}</span> : null}
-              </div>
-            ) : null}
+            {sprint.goal ? <div className="sc-goal-line">{sprint.goal}</div> : null}
           </div>
           <div className="sc-tasks-inline">
-            <span>
-              <span className="n">{done}</span>/<span className="n">{total}</span>{" "}
-              {total === done && total > 0 ? "done" : "tasks"}
-            </span>
-            <div className="progress-bar sc-progress-inline" aria-hidden="true">
-              <span className="p-done" style={{ flex: done }} />
-              <span className="p-wip" style={{ flex: counts.in_progress || 0 }} />
-              <span className="p-blocked" style={{ flex: counts.blocked || 0 }} />
-              <span className="p-todo" style={{ flex: counts.todo || 0 }} />
-            </div>
-          </div>
-          <div className="sc-stats-inline">
-            {sprint.totals?.total_token_count > 0 ? (
-              <>
-                <span><span>{formatCompactCount(sprint.totals.total_token_count)}</span> tok</span>
-                <span><span>{formatCount(sprint.totals.run_count)}</span> runs</span>
-              </>
+            {isPlanned ? (
+              <span><span className="n">{total}</span> task{total !== 1 ? "s" : ""}</span>
             ) : (
-              <span>—</span>
-            )}
-          </div>
-        </button>
-        {(onTransitionSprint || onDeleteSprint || reorderable) ? (
-          <div className="sc-actions" onClick={(e) => e.stopPropagation()}>
-            {reorderable && onReorderSprint ? (
               <>
-                <button
-                  className="sc-action-btn sc-action-order"
-                  type="button"
-                  title="Move earlier in queue"
-                  onClick={() => onReorderSprint(sprint.id, newestFirst ? "down" : "up")}
-                >
-                  ↑
-                </button>
-                <button
-                  className="sc-action-btn sc-action-order"
-                  type="button"
-                  title="Move later in queue"
-                  onClick={() => onReorderSprint(sprint.id, newestFirst ? "up" : "down")}
-                >
-                  ↓
-                </button>
-                {(onTransitionSprint || onDeleteSprint) ? (
-                  <div className="sc-action-sep" />
+                <span>
+                  <span className="n">{done}</span>/<span className="n">{total}</span>{" "}
+                  {total === done && total > 0 ? "done" : "tasks"}
+                </span>
+                {total > 0 ? (
+                  <div className="progress-bar sc-progress-inline" aria-hidden="true">
+                    <span className="p-done" style={{ flex: done }} />
+                    <span className="p-wip" style={{ flex: counts.in_progress || 0 }} />
+                    <span className="p-blocked" style={{ flex: counts.blocked || 0 }} />
+                    <span className="p-todo" style={{ flex: counts.todo || 0 }} />
+                  </div>
                 ) : null}
               </>
-            ) : null}
-            {onTransitionSprint && sprint.status === "planned" && autonomyLevel !== "autonomous" ? (
-              <button
-                className="sc-action-btn"
-                type="button"
-                title={autonomyLevel === "supervised" ? "Promote to active (bypasses queue order)" : undefined}
-                onClick={() => onTransitionSprint(sprint.id, "active")}
-              >
-                {autonomyLevel === "supervised" ? "Promote" : "Start"}
-              </button>
-            ) : null}
+            )}
+          </div>
+          {sprint.totals?.total_token_count > 0 ? (
+            <div className="sc-stats-inline">
+              <span><span>{formatCompactCount(sprint.totals.total_token_count)}</span> tok</span>
+              <span><span>{formatCount(sprint.totals.run_count)}</span> runs</span>
+            </div>
+          ) : null}
+        </button>
+        {(onTransitionSprint || onDeleteSprint) ? (
+          <div className="sc-actions" onClick={(e) => e.stopPropagation()}>
             {onTransitionSprint && sprint.status === "active" ? (
               <button
                 className="sc-action-btn"
@@ -489,21 +607,6 @@ export function SprintList({ project, sprints, pendingGates, onSelectSprint, onO
     </button>
   );
 
-  const viewToggle = (
-    <div className="view-toggle">
-      <button
-        className={`view-toggle-btn ${viewMode === "list" ? "active" : ""}`}
-        type="button"
-        onClick={() => setViewMode("list")}
-      >List</button>
-      <button
-        className={`view-toggle-btn ${viewMode === "board" ? "active" : ""}`}
-        type="button"
-        onClick={() => setViewMode("board")}
-      >Board</button>
-    </div>
-  );
-
   const agentBodyClass = services
     ? (agentCollapsed ? "agent-hidden" : "with-agent")
     : "";
@@ -550,107 +653,111 @@ export function SprintList({ project, sprints, pendingGates, onSelectSprint, onO
           <div className="project-main">
             <div className="sprint-page-bar">
               {runStopButton}
-              {viewToggle}
             </div>
-          {viewMode === "list" ? (() => {
-            return (
-              <>
-                <div className="sprint-executed-panel">
-                  <div className="sprint-toolbar">
-                    <div className="sprint-toolbar-left">
-                      {STATUS_FILTER_OPTIONS.map((opt) => (
-                        <button
-                          key={opt.key}
-                          className={`filter-btn ${filterKey === opt.key ? "active" : ""}`}
-                          type="button"
-                          onClick={() => setFilterKey(opt.key)}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
-                      <div className="filter-sep" />
-                      <button className="sort-btn" type="button" onClick={() => setNewestFirst((v) => !v)}>
-                        {newestFirst ? "Newest first" : "Oldest first"}
-                      </button>
-                    </div>
-                  </div>
-                  <div className="sprint-executed-list">
-                    {executedSprints.length > 0
-                      ? executedSprints.map((s) => renderCard(s, { reorderable: false }))
-                      : <p className="sprint-executed-empty">No sprints have been run yet.</p>}
-                  </div>
-                </div>
 
-                <div className="sprint-list-divider"><span>planned</span></div>
-
-                <div className="sprint-list">
-                  {plannedSprints.map((s) => renderCard(s, { reorderable: true }))}
-                </div>
-
-                {onOpenNewSprint ? (
-                  <button className="sprint-add-btn" type="button" onClick={onOpenNewSprint}>
-                    + New sprint
-                  </button>
+            {/* Active sprint */}
+            <div className="pq-section">
+              <div className="pq-panel-label">
+                Active
+                {activeSprint ? (
+                  <span className={`pq-running-dot ${project.status === "running" ? "is-running" : ""}`} />
                 ) : null}
-              </>
-            );
-          })() : (
-            <div className="sprint-kanban">
-              {KANBAN_COLUMNS.map((col) => {
-                const colSprints = sprints.filter((s) => {
-                  if (col.key === "active") return s.status === "active";
-                  if (col.key === "done") return s.status === "completed" || s.status === "cancelled";
-                  return s.status === "planned";
-                });
-                return (
-                  <div key={col.key} className="sk-column">
-                    <div className="sk-col-header">
-                      <span className="sk-col-title">{col.label}</span>
-                      <span className="sk-col-count">{colSprints.length}</span>
-                    </div>
-                    {colSprints.map((sprint) => {
-                      const counts = sprint.task_counts || {};
-                      const done = counts.done || 0;
-                      return (
-                        <button
-                          key={sprint.id}
-                          className={`sk-card ${sprint.status === "active" ? "active-sprint" : ""}`}
-                          type="button"
-                          onClick={() => onSelectSprint(sprint.id)}
-                        >
-                          <div className="sk-card-title">{sprint.title}</div>
-                          <div className="sk-card-goal">{sprint.goal || "No goal recorded."}</div>
-                          <div className="sk-card-footer">
-                            <div className="sk-card-tasks">
-                              <span><span className="n">{done}</span> done</span>
-                              {counts.in_progress > 0 ? <span><span className="n">{counts.in_progress}</span> wip</span> : null}
-                              {counts.blocked > 0 ? <span><span className="n">{counts.blocked}</span> blocked</span> : null}
-                            </div>
-                            {sprint.totals?.total_token_count > 0 ? (
-                              <span><span className="n">{formatCompactCount(sprint.totals.total_token_count)}</span> tok</span>
-                            ) : <span>—</span>}
-                          </div>
-                          {sprint.status === "active" ? (
-                            <div className="progress-bar" style={{ marginTop: "6px" }} aria-hidden="true">
-                              <span className="p-done" style={{ flex: done }} />
-                              <span className="p-wip" style={{ flex: counts.in_progress || 0 }} />
-                              <span className="p-blocked" style={{ flex: counts.blocked || 0 }} />
-                              <span className="p-todo" style={{ flex: counts.todo || 0 }} />
-                            </div>
-                          ) : null}
-                        </button>
-                      );
-                    })}
-                    {col.key === "planned" && onOpenNewSprint ? (
-                      <button className="sprint-add-btn" type="button" onClick={onOpenNewSprint}>
-                        + New sprint
-                      </button>
-                    ) : null}
-                  </div>
-                );
-              })}
+              </div>
+              {activeSprint ? (
+                <button
+                  className="pq-active-card"
+                  type="button"
+                  onClick={() => onSelectSprint(activeSprint.id)}
+                >
+                  <div className="pq-active-title">{activeSprint.title}</div>
+                  {activeSprint.goal ? (
+                    <div className="pq-active-goal">{activeSprint.goal}</div>
+                  ) : null}
+                  {activeSprint.tasks?.length > 0 ? (
+                    <ul className="pq-task-list">
+                      {activeSprint.tasks.map((t) => (
+                        <li key={t.id} className={`pq-task-row pq-task-row--${t.status.replace("_", "-")}`}>
+                          <span className="pq-task-dot" />
+                          <span className="pq-task-row-title">{t.title}</span>
+                          <span className="pq-task-row-status">{t.status.replace("_", " ")}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </button>
+              ) : (
+                <div className="pq-empty-slot">
+                  {plannedSprints.length > 0 ? "Press Run to start" : "No sprints queued"}
+                </div>
+              )}
             </div>
-          )}
+
+            {/* Queue */}
+            <div className="pq-section">
+              <div className="pq-panel-label">Queue</div>
+              {plannedSprints.length > 0 ? (
+                plannedSprints.map((s, i) => (
+                  <div
+                    key={s.id}
+                    className={`pq-drag-item${dragOverId === s.id ? " pq-drag-over" : ""}`}
+                    draggable
+                    onDragStart={(e) => {
+                      dragSrcId.current = s.id;
+                      e.dataTransfer.effectAllowed = "move";
+                    }}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = "move";
+                      if (dragSrcId.current !== s.id) setDragOverId(s.id);
+                    }}
+                    onDragLeave={() => setDragOverId(null)}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setDragOverId(null);
+                      const srcId = dragSrcId.current;
+                      dragSrcId.current = null;
+                      if (!srcId || srcId === s.id) return;
+                      const ids = plannedSprints.map((p) => p.id);
+                      const fromIdx = ids.indexOf(srcId);
+                      const toIdx = ids.indexOf(s.id);
+                      if (fromIdx < 0 || toIdx < 0) return;
+                      ids.splice(fromIdx, 1);
+                      ids.splice(toIdx, 0, srcId);
+                      onReorderSprints?.(ids);
+                    }}
+                    onDragEnd={() => { dragSrcId.current = null; setDragOverId(null); }}
+                  >
+                    {renderCard(s, { nextUp: i === 0 })}
+                  </div>
+                ))
+              ) : (
+                <div className="pq-empty-col">no sprints queued</div>
+              )}
+              {onOpenNewSprint ? (
+                <button className="sprint-add-btn" type="button" onClick={onOpenNewSprint}>
+                  + New sprint
+                </button>
+              ) : null}
+            </div>
+
+            {/* Archive */}
+            <div className="pq-section">
+              <button
+                className="pq-panel-label pq-archive-toggle"
+                type="button"
+                onClick={() => setArchiveExpanded((v) => !v)}
+              >
+                <span>Archive{archiveSprints.length > 0 ? ` · ${archiveSprints.length}` : ""}</span>
+                <span className="pq-archive-chevron">{archiveExpanded ? "▲" : "▼"}</span>
+              </button>
+              {archiveExpanded && archiveSprints.length > 0 ? (
+                archiveSprints.map((s) => renderCard(s))
+              ) : !archiveExpanded ? (
+                <div className="pq-empty-col">
+                  {archiveSprints.length === 0 ? "No completed sprints" : `${archiveSprints.length} sprint${archiveSprints.length !== 1 ? "s" : ""} — click to expand`}
+                </div>
+              ) : null}
+            </div>
           </div>
         </div>
 
@@ -1278,24 +1385,53 @@ export function NewSprintModal({ onSubmit, onClose }) {
   const [title, setTitle] = useState("");
   const [goal, setGoal] = useState("");
   const [pendingTasks, setPendingTasks] = useState([]);
-  const [taskInput, setTaskInput] = useState("");
+  const [editingIndex, setEditingIndex] = useState(null); // null = new task form
+  const [taskTitle, setTaskTitle] = useState("");
+  const [taskType, setTaskType] = useState("feature");
+  const [taskCriteria, setTaskCriteria] = useState("");
+  const [taskContext, setTaskContext] = useState("");
+  const bodyRef = useRef(null);
 
-  function addTask() {
-    const trimmed = taskInput.trim();
+  function openEditTask(index) {
+    const t = pendingTasks[index];
+    setEditingIndex(index);
+    setTaskTitle(t.title);
+    setTaskType(t.task_type || "feature");
+    setTaskCriteria(t.acceptance_criteria || "");
+    setTaskContext(t.description || "");
+  }
+
+  function clearTaskForm() {
+    setEditingIndex(null);
+    setTaskTitle("");
+    setTaskType("feature");
+    setTaskCriteria("");
+    setTaskContext("");
+  }
+
+  function commitTask() {
+    const trimmed = taskTitle.trim();
     if (!trimmed) return;
-    setPendingTasks((prev) => [...prev, { title: trimmed, task_type: "feature" }]);
-    setTaskInput("");
+    const task = {
+      title: trimmed,
+      task_type: taskType,
+      acceptance_criteria: taskCriteria.trim() || undefined,
+      description: taskContext.trim() || undefined,
+    };
+    if (editingIndex !== null) {
+      setPendingTasks((prev) => prev.map((t, i) => i === editingIndex ? task : t));
+    } else {
+      setPendingTasks((prev) => [...prev, task]);
+      setTimeout(() => {
+        if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
+      }, 0);
+    }
+    clearTaskForm();
   }
 
   function removeTask(index) {
+    if (editingIndex === index) clearTaskForm();
     setPendingTasks((prev) => prev.filter((_, i) => i !== index));
-  }
-
-  function handleTaskKeyDown(e) {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      addTask();
-    }
   }
 
   function handleSubmit(e) {
@@ -1316,7 +1452,7 @@ export function NewSprintModal({ onSubmit, onClose }) {
             <h3>New Sprint</h3>
             <button className="modal-close" type="button" onClick={onClose}>×</button>
           </div>
-          <div className="modal-body">
+          <div className="modal-body" ref={bodyRef}>
             <div className="form-group">
               <label className="form-label">Title</label>
               <input className="form-input" type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Sprint 5" autoFocus />
@@ -1327,33 +1463,28 @@ export function NewSprintModal({ onSubmit, onClose }) {
             </div>
             <div className="form-group">
               <label className="form-label">Initial tasks (optional)</label>
-              <div className="task-entry-row">
-                <input
-                  className="form-input"
-                  type="text"
-                  value={taskInput}
-                  onChange={(e) => setTaskInput(e.target.value)}
-                  onKeyDown={handleTaskKeyDown}
-                  placeholder="Task title — press Enter or Add"
-                />
-                <button
-                  className="btn-action"
-                  type="button"
-                  onClick={addTask}
-                  disabled={!taskInput.trim()}
-                >
-                  Add
-                </button>
-              </div>
               {pendingTasks.length > 0 ? (
                 <ul className="pending-tasks">
                   {pendingTasks.map((t, i) => (
-                    <li key={i} className="pending-task-item">
-                      <span>{t.title}</span>
+                    <li
+                      key={i}
+                      className={`pending-task-item ${editingIndex === i ? "is-editing" : ""}`}
+                      onClick={() => editingIndex === i ? clearTaskForm() : openEditTask(i)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => e.key === "Enter" && openEditTask(i)}
+                    >
+                      <div className="pending-task-info">
+                        <span className="pending-task-title">{t.title}</span>
+                        {t.acceptance_criteria ? (
+                          <span className="pending-task-sub">{t.acceptance_criteria}</span>
+                        ) : null}
+                      </div>
+                      <span className={`card-tag ${getTaskTypeClass(t.task_type)}`}>{t.task_type}</span>
                       <button
                         className="pending-task-remove"
                         type="button"
-                        onClick={() => removeTask(i)}
+                        onClick={(e) => { e.stopPropagation(); removeTask(i); }}
                         aria-label={`Remove task ${t.title}`}
                       >
                         ×
@@ -1362,6 +1493,57 @@ export function NewSprintModal({ onSubmit, onClose }) {
                   ))}
                 </ul>
               ) : null}
+              <div className="pending-task-form">
+                <div className="pending-task-form-label">
+                  {editingIndex !== null ? `Editing task ${editingIndex + 1}` : "New task"}
+                  {editingIndex !== null ? (
+                    <button className="pending-task-form-cancel" type="button" onClick={clearTaskForm}>cancel</button>
+                  ) : null}
+                </div>
+                <input
+                  className="form-input"
+                  type="text"
+                  value={taskTitle}
+                  onChange={(e) => setTaskTitle(e.target.value)}
+                  placeholder="Task title"
+                />
+                <textarea
+                  className="form-input"
+                  style={{ minHeight: "48px" }}
+                  value={taskCriteria}
+                  onChange={(e) => setTaskCriteria(e.target.value)}
+                  placeholder="Acceptance criteria"
+                />
+                <textarea
+                  className="form-input"
+                  style={{ minHeight: "48px" }}
+                  value={taskContext}
+                  onChange={(e) => setTaskContext(e.target.value)}
+                  placeholder="Context (optional)"
+                />
+                <div className="pending-task-form-footer">
+                  <div className="form-chips">
+                    {TASK_TYPE_CHIPS.map((type) => (
+                      <button
+                        key={type}
+                        type="button"
+                        className={`form-chip ${taskType === type ? "selected" : ""}`}
+                        onClick={() => setTaskType(type)}
+                      >
+                        {type}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    className="btn-action"
+                    type="button"
+                    onClick={commitTask}
+                    disabled={!taskTitle.trim()}
+                  >
+                    {editingIndex !== null ? "Save" : "Add task"}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
           <div className="modal-footer">
