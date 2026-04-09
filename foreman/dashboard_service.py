@@ -310,20 +310,26 @@ class DashboardService:
         result = []
         for sprint in self.store.list_sprints(project_id):
             task_counts = self.store.task_counts(sprint_id=sprint.id)
-            result.append(
-                {
-                    "id": sprint.id,
-                    "title": sprint.title,
-                    "goal": sprint.goal,
-                    "status": sprint.status,
-                    "order_index": sprint.order_index,
-                    "task_counts": {
-                        **task_counts,
-                        "total": sum(task_counts.values()),
-                    },
-                    "totals": self.store.run_totals(sprint_id=sprint.id),
-                }
-            )
+            entry: dict[str, Any] = {
+                "id": sprint.id,
+                "title": sprint.title,
+                "goal": sprint.goal,
+                "status": sprint.status,
+                "order_index": sprint.order_index,
+                "started_at": sprint.started_at,
+                "completed_at": sprint.completed_at,
+                "task_counts": {
+                    **task_counts,
+                    "total": sum(task_counts.values()),
+                },
+                "totals": self.store.run_totals(sprint_id=sprint.id),
+            }
+            if sprint.status == "active":
+                entry["tasks"] = [
+                    {"id": t.id, "title": t.title, "status": t.status, "task_type": t.task_type}
+                    for t in self.store.list_tasks(sprint_id=sprint.id)
+                ]
+            result.append(entry)
         return {"sprints": result}
 
     def get_sprint(self, sprint_id: str) -> dict[str, Any]:
@@ -391,12 +397,20 @@ class DashboardService:
             while self.store.get_task(task_id) is not None:
                 task_id = f"task-{_stable_slug(task_title)}-{dedup}"
                 dedup += 1
+            acceptance_criteria = task_data.get("acceptance_criteria") or None
+            if acceptance_criteria:
+                acceptance_criteria = str(acceptance_criteria).strip() or None
+            description = task_data.get("description") or None
+            if description:
+                description = str(description).strip() or None
             task = Task(
                 id=task_id,
                 sprint_id=sprint_id,
                 project_id=project_id,
                 title=task_title,
                 task_type=task_type,
+                acceptance_criteria=acceptance_criteria,
+                description=description,
                 order_index=i,
                 created_by="human",
                 created_at=now,

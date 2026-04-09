@@ -168,7 +168,7 @@ export default function App({ services, browser }) {
       if (currentValue && nextTasks.some((task) => task.id === currentValue)) {
         return currentValue;
       }
-      return pickDefaultTaskId(nextTasks);
+      return null;
     });
     return {
       sprint: sprintPayload,
@@ -606,31 +606,10 @@ export default function App({ services, browser }) {
     }
   }
 
-  async function handleReorderSprint(sprintId, direction) {
-    const sorted = [...currentSprints]
-      .filter((s) => s.status === "planned")
-      .sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
-    const idx = sorted.findIndex((s) => s.id === sprintId);
-    if (idx < 0) return;
-
-    if (direction === "top") {
-      // Move to position 0 (Next Up slot).
-      const [item] = sorted.splice(idx, 1);
-      sorted.unshift(item);
-    } else {
-      const swapIdx = direction === "up" ? idx - 1 : idx + 1;
-      if (swapIdx < 0 || swapIdx >= sorted.length) return;
-      // Swap positions in the array, then assign clean sequential indices.
-      // This correctly handles the case where multiple sprints share the same
-      // order_index value (e.g. all 0 from default), where a plain value-swap
-      // would be a no-op in the database.
-      const tmp = sorted[idx];
-      sorted[idx] = sorted[swapIdx];
-      sorted[swapIdx] = tmp;
-    }
-
-    const updates = sorted
-      .map((s, i) => ({ id: s.id, order_index: i, prev: s.order_index ?? 0 }))
+  async function handleReorderSprints(orderedIds) {
+    const sprintMap = new Map(currentSprints.map((s) => [s.id, s]));
+    const updates = orderedIds
+      .map((id, i) => ({ id, order_index: i, prev: sprintMap.get(id)?.order_index ?? 0 }))
       .filter(({ order_index, prev }) => order_index !== prev);
 
     if (updates.length === 0) return;
@@ -699,7 +678,7 @@ export default function App({ services, browser }) {
             onOpenNewSprint={() => setNewSprintOpen(true)}
             onTransitionSprint={handleTransitionSprint}
             onDeleteSprint={handleDeleteSprint}
-            onReorderSprint={handleReorderSprint}
+            onReorderSprints={handleReorderSprints}
             onStartAgent={handleStartAgent}
             onStopAgent={handleStopAgent}
             onResolveGate={handleResolveGate}
@@ -814,6 +793,17 @@ export default function App({ services, browser }) {
                   ) : null}
                   {currentSprint.status === "active" ? (
                     <>
+                      <button
+                        className="btn-stop"
+                        type="button"
+                        disabled={isActionPending || currentProject?.status !== "running"}
+                        title="Stop agent"
+                        aria-label="Stop agent"
+                        onClick={handleStopAgent}
+                      >
+                        <svg viewBox="0 0 16 16" width="12" height="12"><rect x="3" y="3" width="10" height="10" rx="1"/></svg>
+                        Stop
+                      </button>
                       <button
                         className="btn-secondary"
                         type="button"
