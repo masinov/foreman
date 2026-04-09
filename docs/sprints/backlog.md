@@ -19,9 +19,6 @@ Fixing it requires an in-process pub/sub layer (e.g. asyncio queue or
   deletion, sprint ordering, date display)
 - E2E test coverage for meta agent panel (sprint-40)
 - Persist meta agent session history to SQLite (survives server restarts)
-- Verify or fix dashboard `Run` subprocess wiring (`DashboardService.start_agent()`
-  currently shells out as `foreman run --project ...` while the CLI parser
-  takes positional `project_id`)
 - Task `order_index` editing UI within a sprint board (reorder tasks within a
   sprint, similar to sprint ↑/↓ reorder)
 - Task priority UI (priority field exists in schema and drawer display but has

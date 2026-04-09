@@ -1961,6 +1961,9 @@ class DashboardTier2Tests(unittest.TestCase):
         data = response.json()
         self.assertTrue(data["started"])
         self.assertEqual(data["project_id"], project.id)
+        self.assertTrue(mock_popen.called)
+        popen_args = mock_popen.call_args.args[0]
+        self.assertEqual(popen_args[1:5], ["run", project.id, "--db", str(self.db_path)])
 
         # Verify the sprint was auto-activated.
         store2 = ForemanStore(self.db_path)
@@ -1969,6 +1972,55 @@ class DashboardTier2Tests(unittest.TestCase):
         store2.close()
         self.assertIsNotNone(activated)
         self.assertEqual(activated.id, sprint.id)
+
+    def test_start_agent_passes_task_id_through_to_subprocess(self):
+        """POST /api/projects/{id}/agent/start forwards the optional task_id to the CLI."""
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        project = Project(
+            id=self._next_id("proj-sa"),
+            name="Task Scoped Start Agent Project",
+            repo_path="/tmp/sa-task",
+            workflow_id="development",
+        )
+        store.save_project(project)
+        sprint = Sprint(
+            id=self._next_id("sprint-sa"),
+            project_id=project.id,
+            title="Task Scoped Sprint",
+            status="active",
+            order_index=0,
+        )
+        store.save_sprint(sprint)
+        task = Task(
+            id=self._next_id("task-sa"),
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="Scoped task",
+            status="todo",
+            task_type="feature",
+        )
+        store.save_task(task)
+        store.close()
+
+        import unittest.mock as mock
+        with mock.patch("subprocess.Popen") as mock_popen:
+            mock_proc = mock.MagicMock()
+            mock_proc.poll.return_value = None
+            mock_popen.return_value = mock_proc
+
+            response = self._request(
+                "POST",
+                f"/api/projects/{project.id}/agent/start",
+                json={"task_id": task.id},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        popen_args = mock_popen.call_args.args[0]
+        self.assertEqual(
+            popen_args[1:7],
+            ["run", project.id, "--db", str(self.db_path), "--task", task.id],
+        )
 
     def test_start_agent_returns_400_when_no_sprints(self):
         """POST /api/projects/{id}/agent/start returns 400 when no planned or active sprint exists."""
