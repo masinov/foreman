@@ -2,15 +2,28 @@
 
 ## Current sprint
 
-- Sprint: `sprint-40-meta-agent-panel` (completed 2026-04-05)
-- Branch: `feat/sprint-40-meta-agent-panel`
+- Sprint: `sprint-41-sprint-queue-and-advancement` (completed 2026-04-05)
+- Branch: `feat/sprint-41-sprint-queue-and-advancement`
 
 ## Active branches
 
 None — all work merged to main.
 
-## Completed this session (sprints 36–40)
+## Completed this session (sprints 36–41)
 
+- completed `sprint-41-sprint-queue-and-advancement`
+- wired orchestrator sprint advancement to project `autonomy_level`;
+  autonomous mode now auto-activates the next planned sprint and continues,
+  while supervised mode emits `engine.sprint_ready` and directed mode stops
+  after the sprint completes
+- added queue-order lookup via `ForemanStore.get_next_planned_sprint()` and
+  made dashboard Run auto-activate the first planned sprint when nothing is
+  active
+- replaced the old kanban or filter project view with a queue-focused project
+  surface around Active, Queue, and Archive; the first queued sprint is styled
+  as next up instead of using activation as the ordering signal
+- removed the old Start/Promote-to-active behavior; queue order is now the
+  intent signal for what runs next
 - completed `sprint-40-meta-agent-panel`
 - replaced the sprint-39 planner stub with a correct meta agent: persistent
   Claude Code subprocess per project, right-side collapsible sidebar panel on
@@ -233,7 +246,7 @@ None — all work merged to main.
 - fixed two E2E test regressions from previous dashboard overhaul session
 - 10 new tests in `DashboardSprintLifecycleTests`; 213 non-E2E, 20 E2E tests pass
 
-## Current repo state (as of sprint-35)
+## Current repo state (as of sprint-41)
 
 - The repository now contains:
   - the product spec and UI mockup,
@@ -266,6 +279,12 @@ None — all work merged to main.
     an actual ASGI app,
   - a dedicated React dashboard frontend in `frontend/` plus built assets in
     `foreman/dashboard_frontend_dist/`,
+  - queue-oriented sprint management with Active, Queue, and Archive sections,
+    plus sprint advancement that now respects project `autonomy_level`,
+  - decision gates plus dashboard banners and resolution actions for
+    sequencing conflicts,
+  - a per-project meta-agent sidebar backed by a persistent Claude Code
+    subprocess with streamed text and tool-use events,
   - `foreman/dashboard_runtime.py` as the asset-aware uvicorn entrypoint for
     `foreman dashboard`, with an explicit frontend-dev mode that no longer
     requires built assets,
@@ -297,11 +316,17 @@ None — all work merged to main.
 
 ## Ready next
 
-- SSE transport hardening (Tier 3, deferred — lowest urgency)
+- SSE transport hardening (Tier 3, deferred — documented architecture gap)
+- Verify or fix dashboard `Run` subprocess wiring so `DashboardService.start_agent()`
+  matches the current CLI `foreman run` contract
 - E2E test coverage for sprints 32–35 features
-- Task reordering within sprint board (order_index UI for tasks)
+- E2E test coverage for the meta-agent panel
+- Persist meta-agent session history to SQLite
+- Task `order_index` editing UI within the sprint board
 - Task priority editing UI
 - Move task between sprints
+- Codex cost capture
+- Run and prompt retention product-level defaults
 - See `docs/sprints/backlog.md` for full list
 
 ## Open risks
@@ -317,6 +342,10 @@ None — all work merged to main.
   if the build is stale.
 - the sprint SSE path still polls SQLite directly inside the FastAPI stream
   loop; that is acceptable for now, but it is not a final transport design.
+- `DashboardService.start_agent()` currently shells out as
+  `foreman run --project <id>`, while the CLI parser takes positional
+  `project_id`; confirm and fix this before treating dashboard Run control as
+  fully reliable.
 - Native backend preflight now validates executable presence and Codex startup
   handshake assumptions, but it does not yet prove downstream auth or service
   reachability beyond startup.
@@ -366,6 +395,11 @@ None — all work merged to main.
   current schema still requires non-null `run_id` and `task_id` on events. The
   runtime therefore records pruning through a synthetic orchestrator run
   attached to one stable project task.
+- ADR-0007 describes a restricted sprint-planner session that manages
+  sprint and task state through Foreman APIs only. The shipped `meta_agent.py`
+  instead launches a full-access Claude Code repo session with git, CLI, and
+  file-system access plus in-memory history. Treat the ADR as not yet aligned
+  to the shipped surface.
 
 ## Open decisions
 

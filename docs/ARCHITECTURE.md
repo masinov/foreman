@@ -158,10 +158,13 @@ The current dashboard baseline includes:
 - Vite dev-mode `/api` proxying plus a combined local dashboard dev launcher
   in `scripts/dashboard_dev.py`,
 - project overview and multi-project switching,
+- a queue-oriented project view with Active, Queue, and Archive sections,
 - sprint board grouped by task status,
 - task detail with run history, acceptance criteria, and step visit counts,
 - activity feed filtering,
+- decision-gate banners and resolution actions,
 - human message submission stored as `human.message` events,
+- a per-project meta-agent sidebar backed by a persistent Claude Code session,
 - a dedicated sprint event stream for incremental persisted activity delivery,
 - debounced board and selected-task refresh on incoming activity,
 - approve or deny actions that call the orchestrator to resume workflow
@@ -169,11 +172,11 @@ The current dashboard baseline includes:
 
 The current implementation debt in this area is explicit:
 
-- there is still no browser-driven end-to-end dashboard test stack,
 - the committed built frontend assets must stay synchronized with the source
   app in `frontend/`,
-- the local Vite-plus-FastAPI development loop now exists, but it still lacks
-  browser-driven end-to-end validation,
+- browser-driven dashboard E2E coverage now exists, but newer surfaces still
+  need more coverage, especially the meta-agent panel and recent queue or
+  editing flows,
 - the SSE transport still polls SQLite directly inside the FastAPI stream
   loop.
 
@@ -217,10 +220,11 @@ The current CLI watch baseline now includes:
 - `event_retention_days` now prunes old project events on startup, but current
   schema constraints force `engine.event_pruned` to ride on a synthetic
   task-bound orchestrator run instead of a pure project-level event.
-- multiple product-facing CLI surfaces still route through a generic stub
-  handler and must not be treated as complete.
-- `task_selection_mode="autonomous"` is modeled in settings but is not yet
-  implemented in the orchestrator.
+- product-facing CLI surfaces now ship as explicit commands rather than a
+  generic stub handler.
+- `task_selection_mode="autonomous"` now creates placeholder tasks within the
+  active sprint, while `autonomy_level` separately governs sprint-to-sprint
+  advancement behavior.
 - `session_persistence` is a role-level policy with scope `task + role +
   backend`, and fresh orchestrator invocations now reload the last compatible
   persisted session from SQLite for persistent roles.

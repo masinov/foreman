@@ -62,15 +62,16 @@ The integrated pre-release baseline now contains:
 - a FastAPI dashboard backend in `foreman/dashboard_backend.py` served by
   uvicorn,
 - a dedicated React dashboard frontend in `frontend/` with project overview,
-  sprint board, task detail, activity feed, human message input, activity
-  filtering, project switching, approve or deny actions, and live sprint
-  activity updates,
+  queue-oriented sprint management, task detail, activity feed, human message
+  input, decision-gate handling, project switching, a per-project meta-agent
+  panel, and live sprint activity updates,
 - built dashboard assets in `foreman/dashboard_frontend_dist/` served by the
   FastAPI backend,
 - `foreman/dashboard_runtime.py` as the dashboard runtime entrypoint and
   frontend asset guard plus dev-mode launch support,
-- unit and integration coverage across store, CLI, orchestrator, runners,
-  dashboard, the React frontend, and runner-backed executor seams.
+- unit, integration, and browser-driven E2E coverage across store, CLI,
+  orchestrator, runners, dashboard, the React frontend, and runner-backed
+  executor seams.
 
 The current repo-memory goal is to keep that baseline coherent while moving
 into the next implementation gap rather than leaving finished work stranded on
@@ -204,16 +205,21 @@ Both wrappers expect these files to be current:
 
 ## Next implementation slice
 
-The current sprint is `sprint-24-product-surface-hardening`.
+The most recently completed sprint is
+`sprint-41-sprint-queue-and-advancement`.
 
-The next recommended task is:
+No new in-progress sprint is recorded yet. The next documented architecture
+gap in `docs/sprints/backlog.md` is:
 
-- close the most visible remaining product-surface gaps and strengthen
-  validation now that the shipped CLI commands no longer depend on placeholder
-  handlers.
+- harden the dashboard SSE transport so the stream wakes on writes instead of
+  polling SQLite on a fixed interval.
 
-That work is recorded in `docs/sprints/current.md`, so a fresh agent can pick
-it up without reconstructing branch history first.
+Additional documented follow-ups include:
+
+- persisting meta-agent session history to SQLite,
+- expanding E2E coverage for newer dashboard surfaces,
+- confirming or fixing dashboard `Run` subprocess wiring to match the current
+  CLI `foreman run` contract.
 
 ## Validation
 
