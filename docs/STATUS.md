@@ -2,24 +2,26 @@
 
 ## Current sprint
 
-- Sprint: `sprint-43-backend-run-queue-activation` (in progress)
-- Branch: `fix/run-auto-activate-planned-sprint`
+- Sprint: none (sprint-43 complete)
+- Branch: none
 
 ## Active branches
 
-- `fix/run-auto-activate-planned-sprint` — move first-planned-sprint activation
-  into the backend run path so `foreman run <project>` can consume queued work
-  without a dashboard-only pre-activation shim; add sprint-level cost gating in
-  the orchestrator so unattended runs stop when a sprint budget is exhausted;
-  preserve actionable runner failure details on blocked tasks and honor the
-  project-level per-run time limit setting in native executor config; restore
-  the caller's original git branch after clean task runs and blocked failures;
-  treat a live `in_progress` task as owning the sprint so Foreman waits instead
-  of starting parallel work into the same checkout, and recover only stale
-  `running` runs during crash recovery
+- none
 
-## Completed this session (sprints 36–42)
+## Completed this session (sprints 36–43)
 
+- completed `sprint-43-backend-run-queue-activation`
+- move first-planned-sprint activation into the backend run path so
+  `foreman run <project>` can consume queued work without a dashboard-only
+  pre-activation shim; add sprint-level cost gating in the orchestrator so
+  unattended runs stop when a sprint budget is exhausted; preserve actionable
+  runner failure details on blocked tasks and honor the project-level per-run
+  time limit setting in native executor config; restore the caller's original
+  git branch after clean task runs and blocked failures; treat a live
+  `in_progress` task as owning the sprint so Foreman waits instead of starting
+  parallel work into the same checkout, and recover only stale `running` runs
+  during crash recovery
 - completed `sprint-42-dashboard-run-invocation`
 - confirmed the dashboard Run subprocess mismatch from the shipped surfaces:
   `DashboardService.start_agent()` spawned `foreman run --project ...` while
