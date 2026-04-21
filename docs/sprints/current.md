@@ -1,27 +1,21 @@
 # Current Sprint
 
-- Sprint: `sprint-44-supervisor-state-reconciliation`
+- Sprint: `sprint-45-supervised-convergence-validation`
 - Status: in_progress
-- Branch: `fix/run-auto-activate-planned-sprint`
+- Branch: `fix/task-repair-first-live-supervised-run-defect`
 - Started: 2026-04-22
 
 ## Goal
 
-Make supervised Foreman runs update SQLite state consistently with what the
-supervisor actually did, so task completion, sprint completion, and queue state
-in `.foreman.db` stay aligned with git history and repo docs.
+Run a fresh supervised backend session against current main, verify reviewed
+supervisors reconcile approved merges into SQLite state, and fix the first
+defect exposed by the live run.
 
 ## Context and rationale
 
-The first supervised run was able to merge a branch into `main`, but the live
-SQLite state still showed stale blocked tasks and an old active sprint. The
-reviewed Codex supervisor also allowed follow-up work to continue on `main`
-after the supervisor merge commit, which made the session appear cleaner than
-it really was.
-
-This sprint closes that backend gap by introducing an explicit supervisor
-finalization seam for merged tasks and by blocking post-merge drift on `main`
-inside the reviewed Codex wrapper.
+Sprint-44 introduced the supervisor finalization seam and post-merge branch
+safety. Sprint-45 validates that seam end to end by running the reviewed
+supervisors and hardening the first defect they expose.
 
 ## Constraints
 
@@ -29,63 +23,32 @@ inside the reviewed Codex wrapper.
 - do not manually edit `.foreman.db`
 - keep branch ownership rules intact: developers work on feature branches,
   supervisors merge approved work
-- avoid duplicating sprint lifecycle logic inside the wrapper scripts
 
 ## Affected areas
 
-- `foreman/store.py` — task lookup by branch
-- `foreman/orchestrator.py` — shared supervisor merge finalization
-- `foreman/supervisor_state.py` — wrapper-facing SQLite reconciliation seam
-- `scripts/reviewed_codex.py` — persist completion and block post-merge work on `main`
-- `scripts/reviewed_claude.py` — persist completion after supervisor merge
-- `tests/test_reviewed_codex.py` — supervisor regression coverage
-- `tests/test_supervisor_state.py` — backend reconciliation coverage
-- `docs/STATUS.md` — active branch and sprint note
-- `docs/sprints/current.md` — current sprint definition
+- `tests/test_reviewed_claude.py` — new regression coverage for Claude supervisor
+- `tests/test_supervisor_state.py` — additional backend edge cases
+- `docs/sprints/current.md` — this sprint definition
+- `docs/STATUS.md` — sprint and task status
 
-## Implementation plan
+## Tasks
 
-### Task 1 — Shared finalization seam
-
-Add one backend helper that maps a merged feature branch back to a tracked
-project task, marks that task done, and resolves sprint lifecycle state through
-Foreman code rather than raw supervisor-side SQLite writes.
-
-### Task 2 — Reviewed supervisor wiring
-
-Call the shared finalization seam from both reviewed supervisors immediately
-after a successful merge. Carry an explicit `TASK_ID` from the developer
-completion summary into the supervisor finalization path instead of relying on
-branch-name lookup alone.
-
-### Task 3 — Post-merge branch safety
-
-Teach the reviewed Codex supervisor to remember the exact `main` commit created
-by supervisor merge and reject any later turn that leaves dirty edits or new
-commits on `main`.
-
-### Task 4 — Regression coverage
-
-Add focused tests for:
-
-- branch-to-task reconciliation
-- task-done plus sprint-complete propagation
-- unresolved branch lookup returning no result
-- reviewed Codex refusing to treat post-merge `main` drift as clean success
-
-## Risks
-
-- the new explicit task-id handoff reduces branch-name ambiguity, but older or
-  malformed completion summaries still fall back to branch lookup for backward
-  compatibility
-- this sprint reconciles future supervisor runs; it does not retroactively fix
-  stale rows from older sessions
-- reviewed Claude still lacks dedicated regression tests in this repo, so its
-  wiring is covered by shared helper behavior rather than script-specific tests
+- [done] Supervised reconciliation live validation seam (task-supervised-reconciliation-live-validation-seam)
+  - Added `tests/test_reviewed_claude.py` with 22 tests covering:
+    - completion marker detection (task and spec complete)
+    - task ID extraction from multiple formats
+    - reviewer decision parsing (APPROVE/DENY/STEER)
+    - main violation detection (direct main branch, main HEAD change)
+    - API failure tracking and reset
+    - finalize_supervisor_merge integration (missing DB, none result, success payload)
+  - Extended `tests/test_supervisor_state.py` with 2 new tests:
+    - `test_finalize_supervisor_merge_skips_already_done_task` — no duplicate events
+    - `test_finalize_supervisor_merge_does_not_complete_sprint_when_other_tasks_unresolved`
+- [todo] Repair first live supervised run defect (task-repair-first-live-supervised-run-defect)
+- [todo] Reviewed Claude supervisor regression coverage (task-reviewed-claude-supervisor-regression-coverage)
 
 ## Validation
 
-- `./venv/bin/python -m pytest tests/test_supervisor_state.py -q`
-- `./venv/bin/python -m pytest tests/test_reviewed_codex.py -q`
+- `./venv/bin/python -m pytest tests/test_supervisor_state.py tests/test_reviewed_codex.py tests/test_reviewed_claude.py -q`
 - `./venv/bin/python -m py_compile scripts/reviewed_codex.py`
 - `./venv/bin/python -m py_compile scripts/reviewed_claude.py`
