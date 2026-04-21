@@ -90,6 +90,18 @@ class HumanGateResumeResult:
     note: str | None = None
 
 
+@dataclass(slots=True)
+class SupervisorMergeResult:
+    """Summary of one supervisor merge finalization."""
+
+    project_id: str
+    task_id: str
+    sprint_id: str
+    task_status: str
+    sprint_status: str
+    stop_reason: str | None = None
+
+
 class AgentExecutor(Protocol):
     """Execution protocol for workflow agent steps."""
 
@@ -237,6 +249,66 @@ class ForemanOrchestrator:
         next_sprint.completed_at = None
         self.store.save_sprint(next_sprint)
         return next_sprint
+
+    def finalize_supervisor_merge(
+        self,
+        *,
+        repo_path: str,
+        branch_name: str,
+        task_id: str | None = None,
+    ) -> SupervisorMergeResult | None:
+        """Persist task and sprint state after a reviewed supervisor merge."""
+
+        project = self.store.find_project_by_repo_path(repo_path)
+        if project is None:
+            return None
+
+        task = self.store.get_task(task_id) if task_id else None
+        if task is not None and task.project_id != project.id:
+            return None
+        if task is None:
+            task = self.store.find_task_by_branch(project_id=project.id, branch_name=branch_name)
+        if task is None:
+            return None
+
+        if task.status != "done":
+            task.status = "done"
+            task.blocked_reason = None
+            task.workflow_current_step = None
+            task.workflow_carried_output = None
+            task.completed_at = task.completed_at or utc_now_text()
+            self.store.save_task(task)
+
+            run = self._create_system_run(
+                task,
+                workflow_step="supervisor_finalize",
+                outcome="success",
+                detail=f"Supervisor merged {branch_name} into {project.default_branch}.",
+            )
+            self._emit_event(
+                run,
+                "engine.supervisor_merge",
+                {
+                    "branch": branch_name,
+                    "target": project.default_branch,
+                    "task_id": task.id,
+                },
+            )
+
+        sprint = self.store.get_sprint(task.sprint_id)
+        stop_reason: str | None = None
+        if sprint is not None and sprint.status == "active" and self._sprint_fully_resolved(sprint):
+            stop_reason = self._advance_sprint(project, sprint)
+            sprint = self.store.get_sprint(task.sprint_id) or sprint
+
+        return SupervisorMergeResult(
+            project_id=project.id,
+            task_id=task.id,
+            sprint_id=task.sprint_id,
+            task_status=task.status,
+            sprint_status=sprint.status if sprint is not None else "unknown",
+            stop_reason=stop_reason,
+        )
 
     def select_next_task(self, project: Project) -> Task | None:
         """Return the next runnable task for one project."""

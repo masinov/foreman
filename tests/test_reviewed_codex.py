@@ -17,12 +17,18 @@ class ReviewedCodexFlowTests(unittest.TestCase):
         runner.dev_thread_id = "dev-thread"
         runner.dev_turn_id = None
         runner.last_supervisor_merge_main_head = None
+        runner.last_developer_output = ""
         return runner
 
     def test_spec_complete_marker_is_detected(self) -> None:
         text = f"slice summary\n{reviewed_codex.SPEC_COMPLETE_MARKER}\n"
         self.assertTrue(reviewed_codex.developer_declared_spec_complete(text))
         self.assertFalse(reviewed_codex.developer_declared_spec_complete("not complete"))
+
+    def test_extract_task_id_reads_explicit_task_line(self) -> None:
+        text = "Summary\nTASK_ID: sprint-44-t2\nREVIEWED_CODEX_TASK_COMPLETE\n"
+
+        self.assertEqual(reviewed_codex.extract_task_id(text), "sprint-44-t2")
 
     @patch("scripts.reviewed_codex.terminal_report")
     def test_continue_developer_turn_can_allow_spec_completion(self, _terminal_report: Mock) -> None:
@@ -37,6 +43,7 @@ class ReviewedCodexFlowTests(unittest.TestCase):
         self.assertIn(reviewed_codex.TASK_COMPLETE_MARKER, prompt)
 
     @patch("scripts.reviewed_codex.terminal_report")
+    @patch("scripts.reviewed_codex.finalize_supervisor_merge", return_value="")
     @patch("scripts.reviewed_codex.run_git_command")
     @patch("scripts.reviewed_codex.current_head", return_value="abc123")
     @patch("scripts.reviewed_codex.current_branch", return_value="feat/slice")
@@ -45,6 +52,7 @@ class ReviewedCodexFlowTests(unittest.TestCase):
         _current_branch: Mock,
         _current_head: Mock,
         run_git_command: Mock,
+        finalize_supervisor_merge: Mock,
         _terminal_report: Mock,
     ) -> None:
         run_git_command.side_effect = [
@@ -61,6 +69,7 @@ class ReviewedCodexFlowTests(unittest.TestCase):
             run_git_command.call_args_list[1].args[0],
             ["merge", "--no-ff", "feat/slice", "-m", "merge: feat/slice into main"],
         )
+        finalize_supervisor_merge.assert_called_once_with("feat/slice", task_id=None)
         self.assertEqual(runner.last_supervisor_merge_main_head, "abc123")
         runner.continue_developer_turn.assert_called_once()
         reason = runner.continue_developer_turn.call_args.args[0]
@@ -68,12 +77,42 @@ class ReviewedCodexFlowTests(unittest.TestCase):
         self.assertTrue(runner.continue_developer_turn.call_args.kwargs["allow_spec_complete"])
 
     @patch("scripts.reviewed_codex.terminal_report")
+    @patch("scripts.reviewed_codex.finalize_supervisor_merge", return_value="")
+    @patch("scripts.reviewed_codex.run_git_command")
+    @patch("scripts.reviewed_codex.current_head", return_value="abc123")
+    @patch("scripts.reviewed_codex.current_branch", return_value="feat/slice")
+    def test_handle_approved_completion_passes_explicit_task_id_to_state_sync(
+        self,
+        _current_branch: Mock,
+        _current_head: Mock,
+        run_git_command: Mock,
+        finalize_supervisor_merge: Mock,
+        _terminal_report: Mock,
+    ) -> None:
+        run_git_command.side_effect = [
+            subprocess.CompletedProcess(["git", "switch", "main"], 0, stdout="ok", stderr=""),
+            subprocess.CompletedProcess(["git", "merge"], 0, stdout="merged", stderr=""),
+        ]
+        runner = self.make_runner()
+        runner.last_developer_output = "Completed slice\nTASK_ID: sprint-44-t2\nREVIEWED_CODEX_TASK_COMPLETE"
+        runner.continue_developer_turn = Mock()
+
+        runner.handle_approved_completion()
+
+        finalize_supervisor_merge.assert_called_once_with(
+            "feat/slice",
+            task_id="sprint-44-t2",
+        )
+
+    @patch("scripts.reviewed_codex.terminal_report")
+    @patch("scripts.reviewed_codex.finalize_supervisor_merge", return_value="")
     @patch("scripts.reviewed_codex.run_git_command")
     @patch("scripts.reviewed_codex.current_branch", return_value="feat/slice")
     def test_handle_approved_completion_recovers_from_merge_failure(
         self,
         _current_branch: Mock,
         run_git_command: Mock,
+        finalize_supervisor_merge: Mock,
         _terminal_report: Mock,
     ) -> None:
         run_git_command.side_effect = [
@@ -84,11 +123,38 @@ class ReviewedCodexFlowTests(unittest.TestCase):
 
         runner.handle_approved_completion()
 
+        finalize_supervisor_merge.assert_not_called()
         runner.continue_developer_turn.assert_called_once()
         reason = runner.continue_developer_turn.call_args.args[0]
         self.assertIn("automatic merge of `feat/slice` into `main` failed", reason)
         self.assertIn("Finalize the approved slice", reason)
         self.assertTrue(runner.continue_developer_turn.call_args.kwargs["allow_spec_complete"])
+
+    @patch("scripts.reviewed_codex.terminal_report")
+    @patch("scripts.reviewed_codex.finalize_supervisor_merge", return_value="sqlite mismatch")
+    @patch("scripts.reviewed_codex.run_git_command")
+    @patch("scripts.reviewed_codex.current_branch", return_value="feat/slice")
+    def test_handle_approved_completion_recovers_from_state_sync_failure(
+        self,
+        _current_branch: Mock,
+        run_git_command: Mock,
+        finalize_supervisor_merge: Mock,
+        _terminal_report: Mock,
+    ) -> None:
+        run_git_command.side_effect = [
+            subprocess.CompletedProcess(["git", "switch", "main"], 0, stdout="ok", stderr=""),
+            subprocess.CompletedProcess(["git", "merge"], 0, stdout="merged", stderr=""),
+        ]
+        runner = self.make_runner()
+        runner.continue_developer_turn = Mock()
+
+        runner.handle_approved_completion()
+
+        finalize_supervisor_merge.assert_called_once_with("feat/slice", task_id=None)
+        runner.continue_developer_turn.assert_called_once()
+        reason = runner.continue_developer_turn.call_args.args[0]
+        self.assertIn("could not reconcile the SQLite runtime state", reason)
+        self.assertIn("sqlite mismatch", reason)
 
     @patch("scripts.reviewed_codex.terminal_report")
     @patch("scripts.reviewed_codex.current_branch", return_value="main")
