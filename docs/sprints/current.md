@@ -1,142 +1,91 @@
 # Current Sprint
 
-- Sprint: `sprint-43-backend-run-queue-activation`
-- Status: done
+- Sprint: `sprint-44-supervisor-state-reconciliation`
+- Status: in_progress
 - Branch: `fix/run-auto-activate-planned-sprint`
-- Started: 2026-04-21
-- Completed: 2026-04-21
+- Started: 2026-04-22
 
 ## Goal
 
-Move first-planned-sprint activation into the backend run path so Foreman can
-start working queued sprints from `foreman run <project>` without depending on
-the dashboard service to pre-activate the queue.
-
-This is a backend-execution slice aimed directly at the autonomous-development
-workflow: define sprints and tasks, start Foreman, let the engine consume the
-queue from structured state, and stop unattended work when sprint budget limits
-are reached. It also tightens failure reporting and run-time limits so backend
-operators can understand and constrain live agent failures without leaving the
-repo checkout stranded on task branches after routine runs. The slice now also
-hardens active-run ownership so a live native task holds the sprint until it
-resumes or times out, rather than letting the orchestrator start another task
-into the same checkout.
+Make supervised Foreman runs update SQLite state consistently with what the
+supervisor actually did, so task completion, sprint completion, and queue state
+in `.foreman.db` stay aligned with git history and repo docs.
 
 ## Context and rationale
 
-After merging `fix/dashboard-run-invocation`, the real project state on `main`
-showed:
+The first supervised run was able to merge a branch into `main`, but the live
+SQLite state still showed stale blocked tasks and an old active sprint. The
+reviewed Codex supervisor also allowed follow-up work to continue on `main`
+after the supervisor merge commit, which made the session appear cleaner than
+it really was.
 
-```bash
-./venv/bin/foreman run foreman
-```
-
-returning:
-
-```text
-Stop reason: idle
-```
-
-even though planned sprints were queued in the SQLite store. The dashboard
-worked around this by activating the first planned sprint before spawning the
-subprocess, but the backend run path itself still treated "no active sprint" as
-"no work". That blocks the intended operator flow of setting up queued work and
-then starting Foreman from the backend surface.
+This sprint closes that backend gap by introducing an explicit supervisor
+finalization seam for merged tasks and by blocking post-merge drift on `main`
+inside the reviewed Codex wrapper.
 
 ## Constraints
 
-- Fix backend run semantics, not just another surface-specific shim.
-- Preserve task-scoped `foreman run <project> --task <task-id>` behavior.
-- Keep sprint queue ownership in durable backend logic so CLI and future
-  callers share the same behavior.
-- Add regression coverage for both the orchestrator and the CLI contract.
-- Keep budget enforcement in the orchestrator, not the dashboard.
+- backend-only
+- do not manually edit `.foreman.db`
+- keep branch ownership rules intact: developers work on feature branches,
+  supervisors merge approved work
+- avoid duplicating sprint lifecycle logic inside the wrapper scripts
 
 ## Affected areas
 
-- `foreman/orchestrator.py` — project-scoped run startup
-- `foreman/orchestrator.py` — project-scoped run startup and sprint budget gate
-- `foreman/orchestrator.py` — backend failure blocking semantics
-- `foreman/executor.py` — project-level run time limit mapping
-- `foreman/git.py` — safe worktree cleanliness check for branch restoration
-- `tests/test_orchestrator.py` — queue activation regression coverage
-- `tests/test_executor.py` — run timeout mapping coverage
-- `tests/test_cli.py` — `foreman run` regression coverage
-- `docs/STATUS.md` — active branch and slice context
-- `docs/prs/fix-run-auto-activate-planned-sprint.md` — branch summary
+- `foreman/store.py` — task lookup by branch
+- `foreman/orchestrator.py` — shared supervisor merge finalization
+- `foreman/supervisor_state.py` — wrapper-facing SQLite reconciliation seam
+- `scripts/reviewed_codex.py` — persist completion and block post-merge work on `main`
+- `scripts/reviewed_claude.py` — persist completion after supervisor merge
+- `tests/test_reviewed_codex.py` — supervisor regression coverage
+- `tests/test_supervisor_state.py` — backend reconciliation coverage
+- `docs/STATUS.md` — active branch and sprint note
+- `docs/sprints/current.md` — current sprint definition
 
 ## Implementation plan
 
-### Task 1 — Backend queue pickup
+### Task 1 — Shared finalization seam
 
-When `run_project()` is called for a whole project and no sprint is active,
-activate the first planned sprint by queue order before the selection loop
-starts.
+Add one backend helper that maps a merged feature branch back to a tracked
+project task, marks that task done, and resolves sprint lifecycle state through
+Foreman code rather than raw supervisor-side SQLite writes.
 
-### Task 2 — Regression coverage
+### Task 2 — Reviewed supervisor wiring
 
-Cover the no-active-sprint case in:
+Call the shared finalization seam from both reviewed supervisors immediately
+after a successful merge. Carry an explicit `TASK_ID` from the developer
+completion summary into the supervisor finalization path instead of relying on
+branch-name lookup alone.
 
-- orchestrator tests
-- CLI tests
+### Task 3 — Post-merge branch safety
 
-so the backend contract stays aligned with the "define queued work, then run"
-operator workflow.
+Teach the reviewed Codex supervisor to remember the exact `main` commit created
+by supervisor merge and reject any later turn that leaves dirty edits or new
+commits on `main`.
 
-### Task 3 — Sprint budget guardrail
+### Task 4 — Regression coverage
 
-Honor `cost_limit_per_sprint_usd` in the orchestrator before the next workflow
-step runs. When the sprint's cumulative persisted run cost is already over the
-limit, block the task, emit `gate.cost_exceeded` with `scope="sprint"`, and
-stop unattended execution instead of continuing to burn budget.
+Add focused tests for:
 
-### Task 4 — Actionable backend failures
-
-When a native runner exhausts retries or fails preflight, preserve the actual
-run error detail on the blocked task instead of replacing it with the generic
-workflow fallback message. This keeps live autonomous failures diagnosable from
-task history and task detail surfaces.
-
-### Task 5 — Product-level run timeout mapping
-
-Make the native executor honor `time_limit_per_run_minutes` from project
-settings when building runner config, while keeping the older
-`runner_timeout_seconds` setting as a fallback for compatibility.
-
-### Task 6 — Checkout restoration after safe task runs
-
-Capture the caller's original branch before a directed task switches onto its
-working branch. After the task run or human-gate resume finishes, restore the
-original branch when git is healthy and the worktree is clean. This reduces
-checkout drift during live backend use without risking a forced branch switch
-over uncommitted task work.
-
-### Task 7 — Active-run ownership and stale-run recovery
-
-Treat `in_progress` tasks without a persisted workflow step as live sprint
-owners. While that ownership exists, `select_next_task()` should wait instead
-of starting other directed work or creating autonomous placeholders. Only
-persisted `running` runs that have exceeded the configured timeout window
-should be failed and recovered automatically.
+- branch-to-task reconciliation
+- task-done plus sprint-complete propagation
+- unresolved branch lookup returning no result
+- reviewed Codex refusing to treat post-merge `main` drift as clean success
 
 ## Risks
 
-- The dashboard currently performs its own pre-activation before spawning the
-  subprocess, so backend activation must remain compatible with that existing
-  behavior while the dashboard shim still exists.
-- A queued sprint with no tasks will still activate and then immediately idle;
-  this slice does not redefine empty-sprint policy.
-- Sprint cost gating currently uses persisted USD totals. Backends that report
-  tokens without reliable USD pricing still need separate pricing support for
-  complete budget enforcement.
-- Live native runs still depend on timeout-based stale detection rather than a
-  stronger lease or heartbeat. This branch prevents parallel task starts in the
-  same sprint and recovers stale `running` runs, but it does not yet add active
-  cancellation or positive liveness confirmation.
+- the new explicit task-id handoff reduces branch-name ambiguity, but older or
+  malformed completion summaries still fall back to branch lookup for backward
+  compatibility
+- this sprint reconciles future supervisor runs; it does not retroactively fix
+  stale rows from older sessions
+- reviewed Claude still lacks dedicated regression tests in this repo, so its
+  wiring is covered by shared helper behavior rather than script-specific tests
 
 ## Validation
 
-- `./venv/bin/python -m pytest tests/test_orchestrator.py -q`
-- `./venv/bin/python -m pytest tests/test_executor.py -q`
-- `./venv/bin/python -m pytest tests/test_cli.py -q`
-- `./venv/bin/python scripts/validate_repo_memory.py`
+- `./venv/bin/python -m pytest tests/test_supervisor_state.py -q`
+- `./venv/bin/python -m pytest tests/test_reviewed_codex.py -q`
+- `./venv/bin/python -m py_compile scripts/reviewed_codex.py`
+- `./venv/bin/python -m py_compile scripts/reviewed_claude.py`

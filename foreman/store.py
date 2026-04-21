@@ -490,6 +490,35 @@ class ForemanStore:
         rows = self._connection.execute(sql, tuple(params)).fetchall()
         return [_row_to_task(row) for row in rows]
 
+    def find_task_by_branch(
+        self,
+        *,
+        project_id: str,
+        branch_name: str,
+    ) -> Task | None:
+        """Return the best task match for one persisted branch name."""
+
+        row = self._connection.execute(
+            """
+            SELECT * FROM tasks
+            WHERE project_id = ? AND branch_name = ?
+            ORDER BY
+                CASE status
+                    WHEN 'in_progress' THEN 0
+                    WHEN 'blocked' THEN 1
+                    WHEN 'todo' THEN 2
+                    WHEN 'done' THEN 3
+                    WHEN 'cancelled' THEN 4
+                    ELSE 5
+                END,
+                created_at DESC,
+                id DESC
+            LIMIT 1
+            """,
+            (project_id, branch_name),
+        ).fetchone()
+        return _row_to_task(row) if row else None
+
     def save_run(self, run: Run) -> Run:
         """Insert or update a run record."""
 

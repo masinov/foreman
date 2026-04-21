@@ -2,12 +2,15 @@
 
 ## Current sprint
 
-- Sprint: none (sprint-43 complete)
-- Branch: none
+- Sprint: `sprint-44-supervisor-state-reconciliation` (in progress)
+- Branch: `fix/run-auto-activate-planned-sprint`
 
 ## Active branches
 
-- none
+- `fix/run-auto-activate-planned-sprint` — add supervisor-to-SQLite
+  reconciliation so approved reviewed runs persist task completion and sprint
+  lifecycle state in `.foreman.db`; prevent reviewed Codex from continuing work
+  on `main` after the supervisor merge commit
 
 ## Completed this session (sprints 36–43)
 

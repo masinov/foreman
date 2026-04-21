@@ -33,6 +33,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from foreman.store import ForemanStore
+from foreman.supervisor_state import finalize_supervisor_merge as finalize_supervisor_merge_state
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 TASK_COMPLETE_MARKER = "REVIEWED_CLAUDE_TASK_COMPLETE"
 SPEC_COMPLETE_MARKER = "REVIEWED_CLAUDE_SPEC_COMPLETE"
@@ -84,6 +87,7 @@ Rules:
 - NEVER merge to main or commit directly to main — work on a feature branch; the supervisor merges after reviewer approval
 - when you receive reviewer feedback, apply it directly and continue autonomously
 - keep working across as many turns as needed until the assigned work is actually complete; an intermediate turn ending does not mean the task is done
+- when finishing a tracked slice, include the exact task id in the completion summary
 - only when the assigned work is fully complete and ready for final review, write a structured completion summary (see format below) and then end your final message with the exact line `{task_complete_marker}`
 - if after reading docs/sprints/backlog.md and docs/STATUS.md there is genuinely no remaining work (all backlog tasks are done and no follow-ups are recorded), end your message with the exact line `{spec_complete_marker}` instead — do not invent work
 
@@ -99,6 +103,7 @@ plus basic git state — make it self-contained.
 
 **Sprint**: <sprint id>
 **Branch**: <branch name>
+**Task ID**: <task id>
 **Task**: <one-sentence description of what was done>
 
 **What was implemented**:
@@ -298,6 +303,39 @@ def recent_commits(n: int = 10) -> str:
     return run_git(["log", "--oneline", f"-{n}"]) or "(none)"
 
 
+def finalize_supervisor_merge(branch: str, *, task_id: Optional[str] = None) -> str:
+    db_path = REPO_ROOT / ".foreman.db"
+    if not db_path.exists():
+        return f"repo-local database is missing: {db_path}"
+    with ForemanStore(db_path) as store:
+        store.initialize()
+        result = finalize_supervisor_merge_state(
+            store,
+            repo_path=REPO_ROOT,
+            branch_name=branch,
+            task_id=task_id,
+        )
+    if result is None:
+        return (
+            "could not map the merged branch back to a tracked project task in SQLite; "
+            "supervised completion state was not persisted"
+        )
+    terminal_report(
+        "SUPERVISOR",
+        "state-sync",
+        "Persisted supervisor merge state to SQLite.",
+        payload={
+            "project_id": result.project_id,
+            "task_id": result.task_id,
+            "sprint_id": result.sprint_id,
+            "task_status": result.task_status,
+            "sprint_status": result.sprint_status,
+            "stop_reason": result.stop_reason,
+        },
+    )
+    return ""
+
+
 # ─── File helpers ─────────────────────────────────────────────────────────────
 
 
@@ -323,6 +361,22 @@ def developer_declared_completion(text: str) -> bool:
 
 def developer_declared_spec_complete(text: str) -> bool:
     return any(line.strip() == SPEC_COMPLETE_MARKER for line in text.splitlines())
+
+
+def extract_task_id(text: str) -> Optional[str]:
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.upper().startswith("TASK_ID:"):
+            task_id = stripped.partition(":")[2].strip()
+            return task_id or None
+        if stripped.lower().startswith("**task id**:"):
+            task_id = stripped.partition(":")[2].strip()
+            return task_id or None
+        if stripped.lower() == "**task id**" and index + 1 < len(lines):
+            candidate = lines[index + 1].strip().lstrip("-").strip()
+            return candidate or None
+    return None
 
 
 def split_reviewer_decision(text: str) -> tuple[str, str]:
@@ -832,6 +886,20 @@ class ReviewedClaude:
                         f"with the exact line {TASK_COMPLETE_MARKER}."
                     )
                 else:
+                    state_error = finalize_supervisor_merge(
+                        branch,
+                        task_id=extract_task_id(text),
+                    )
+                    if state_error:
+                        text = self._developer_turn_safe(
+                            f"Reviewer approved the completed work and the branch `{branch}` was merged into `main`, "
+                            "but the supervisor could not reconcile the SQLite runtime state:\n\n"
+                            f"{state_error}\n\n"
+                            "Create a new feature branch from the merged `main`, reconcile the missing backend state through sanctioned repository changes, "
+                            "and continue autonomous development only after the persisted project state matches git history. "
+                            f"When the next slice is fully complete, end your final message with the exact line {TASK_COMPLETE_MARKER}."
+                        )
+                        continue
                     text = self._developer_turn_safe(
                         f"Reviewer approved the completed work. "
                         f"Branch `{branch}` has been merged into main.\n\n"

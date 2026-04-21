@@ -13,6 +13,9 @@ from pathlib import Path
 from datetime import datetime, timezone
 from typing import Any, Deque, Dict, List, Optional
 
+from foreman.store import ForemanStore
+from foreman.supervisor_state import finalize_supervisor_merge as finalize_supervisor_merge_state
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 APP_SERVER_CMD = os.environ.get("CODEX_APP_SERVER_CMD", "codex app-server")
 CLIENT_INFO = {
@@ -75,6 +78,7 @@ Rules:
 - use sanctioned commands for branch or repository state changes
 - if a command needs approval and is denied or deferred, wait for supervisor feedback rather than trying to satisfy it by editing internal state files yourself
 - keep working across as many turns as needed until the assigned work is actually complete; an intermediate turn ending does not mean the task is done
+- when finishing a tracked slice, include a standalone line `TASK_ID: <task-id>` in your completion summary before the completion marker
 - only when the assigned work is fully complete and ready for final review, end your final message with the exact line `{task_complete_marker}`
 - if after reading docs/sprints/backlog.md and docs/STATUS.md there is genuinely no remaining work, end your message with the exact line `{spec_complete_marker}` instead — do not invent work
 
@@ -407,6 +411,16 @@ def developer_declared_completion(text: str) -> bool:
 
 def developer_declared_spec_complete(text: str) -> bool:
     return any(line.strip() == SPEC_COMPLETE_MARKER for line in text.splitlines())
+
+
+def extract_task_id(text: str) -> Optional[str]:
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped.upper().startswith("TASK_ID:"):
+            continue
+        task_id = stripped.partition(":")[2].strip()
+        return task_id or None
+    return None
 
 
 def truncate_text(text: str, limit: int = 240) -> str:
@@ -757,6 +771,14 @@ def current_branch() -> str:
     return run_git(["rev-parse", "--abbrev-ref", "HEAD"])
 
 
+def current_head() -> str:
+    return run_git(["rev-parse", "HEAD"])
+
+
+def worktree_dirty() -> bool:
+    return bool(run_git(["status", "--short"]).strip())
+
+
 def git_status() -> str:
     out = run_git(["status", "--short", "--branch"])
     return out or "(empty)"
@@ -770,6 +792,39 @@ def changed_files() -> str:
 def diff_summary() -> str:
     out = run_git(["diff", "--stat"])
     return out or "(none)"
+
+
+def finalize_supervisor_merge(branch: str, *, task_id: Optional[str] = None) -> str:
+    db_path = REPO_ROOT / ".foreman.db"
+    if not db_path.exists():
+        return f"repo-local database is missing: {db_path}"
+    with ForemanStore(db_path) as store:
+        store.initialize()
+        result = finalize_supervisor_merge_state(
+            store,
+            repo_path=REPO_ROOT,
+            branch_name=branch,
+            task_id=task_id,
+        )
+    if result is None:
+        return (
+            "could not map the merged branch back to a tracked project task in SQLite; "
+            "supervised completion state was not persisted"
+        )
+    terminal_report(
+        "SUPERVISOR",
+        "state-sync",
+        "Persisted supervisor merge state to SQLite.",
+        payload={
+            "project_id": result.project_id,
+            "task_id": result.task_id,
+            "sprint_id": result.sprint_id,
+            "task_status": result.task_status,
+            "sprint_status": result.sprint_status,
+            "stop_reason": result.stop_reason,
+        },
+    )
+    return ""
 
 
 def tail_text(path: Path, max_lines: int = 250) -> str:
@@ -949,6 +1004,7 @@ class ReviewedCodex:
         self.last_developer_output: str = ""
         self.current_reviewer_output: List[str] = []
         self.agent_message_buffers: Dict[str, List[str]] = {}
+        self.last_supervisor_merge_main_head: Optional[str] = None
         terminal_report("SUPERVISOR", "init", "ReviewedCodex supervisor initialized.")
 
     def append_log(self, path: Path, text: str) -> None:
@@ -1410,11 +1466,50 @@ class ReviewedCodex:
             )
             return
 
+        state_error = finalize_supervisor_merge(
+            branch,
+            task_id=extract_task_id(self.last_developer_output),
+        )
+        if state_error:
+            self.continue_developer_turn(
+                f"Reviewer approved the completed work and the branch `{branch}` was merged into `main`, "
+                "but the supervisor could not reconcile the SQLite runtime state:\n\n"
+                f"{state_error}\n\n"
+                "Create a new feature branch from the merged `main`, reconcile the missing backend state through sanctioned repository changes, "
+                "and continue autonomous development only after the persisted project state matches git history.",
+                allow_spec_complete=True,
+            )
+            return
+
+        self.last_supervisor_merge_main_head = current_head()
         self.continue_developer_turn(
             f"Reviewer approved the completed work. Branch `{branch}` has been merged into `main`.\n\n"
             "Continue autonomous development: read `docs/STATUS.md` and `docs/sprints/backlog.md` to select the next valid slice, update repo state as part of the same flow, and proceed autonomously.",
             allow_spec_complete=True,
         )
+
+    def post_merge_main_violation_reason(self) -> Optional[str]:
+        if self.last_supervisor_merge_main_head is None:
+            return None
+        if current_branch() != "main":
+            return None
+        if worktree_dirty():
+            return (
+                "VIOLATION: the supervisor already merged the approved slice into `main`, "
+                "but there are still uncommitted changes on `main`. Create a new feature branch "
+                "for any further work or discard the accidental main-only edits before continuing. "
+                "If there is genuinely no remaining work, return to a clean merged `main` first and then emit "
+                f"{SPEC_COMPLETE_MARKER}."
+            )
+        if current_head() != self.last_supervisor_merge_main_head:
+            return (
+                "VIOLATION: the supervisor already merged the approved slice into `main`, "
+                "but new commits were created on `main` afterward. Move any follow-up work onto a new feature branch, "
+                "or restore `main` to the supervisor-merged commit before continuing. "
+                "If there is genuinely no remaining work, return to the clean merged `main` first and then emit "
+                f"{SPEC_COMPLETE_MARKER}."
+            )
+        return None
 
     def loop(self) -> None:
         assert self.dev_thread_id is not None
@@ -1432,6 +1527,16 @@ class ReviewedCodex:
 
             if method == "turn/completed" and thread_id == self.dev_thread_id:
                 self.last_developer_output = "".join(self.current_developer_output).strip()
+                main_violation = self.post_merge_main_violation_reason()
+                if main_violation is not None:
+                    terminal_report(
+                        "SUPERVISOR",
+                        "main-violation",
+                        "Detected post-merge work on main after supervisor approval.",
+                        payload={"main_head": current_head()},
+                    )
+                    self.continue_developer_turn(main_violation, allow_spec_complete=True)
+                    continue
                 if developer_declared_spec_complete(self.last_developer_output):
                     terminal_report(
                         "SUPERVISOR",

@@ -19,15 +19,26 @@
   `in_progress` task still owns the sprint
 - recover only stale persisted `running` runs during crash recovery, leaving
   fresh active owners untouched
+- reconcile supervisor-approved merges back into SQLite task and sprint state
+- block reviewed Codex from continuing work on `main` after the supervisor
+  merge commit
+- pass an explicit `TASK_ID` from reviewed completion summaries into supervisor
+  state finalization, with branch-name lookup only as a compatibility fallback
 
 ## Scope
 
 - `foreman/orchestrator.py`
 - `foreman/executor.py`
 - `foreman/git.py`
+- `foreman/store.py`
+- `foreman/supervisor_state.py`
+- `scripts/reviewed_codex.py`
+- `scripts/reviewed_claude.py`
 - `tests/test_orchestrator.py`
 - `tests/test_executor.py`
 - `tests/test_cli.py`
+- `tests/test_reviewed_codex.py`
+- `tests/test_supervisor_state.py`
 - `docs/STATUS.md`
 - `docs/sprints/current.md`
 
@@ -36,9 +47,15 @@
 - `foreman/orchestrator.py`
 - `foreman/executor.py`
 - `foreman/git.py`
+- `foreman/store.py`
+- `foreman/supervisor_state.py`
+- `scripts/reviewed_codex.py`
+- `scripts/reviewed_claude.py`
 - `tests/test_orchestrator.py`
 - `tests/test_executor.py`
 - `tests/test_cli.py`
+- `tests/test_reviewed_codex.py`
+- `tests/test_supervisor_state.py`
 - `docs/STATUS.md`
 - `docs/sprints/current.md`
 - `docs/prs/fix-run-auto-activate-planned-sprint.md`
@@ -64,12 +81,18 @@
 - checkout restoration only happens when the worktree is clean, so interrupted
   or still-running task branches can still leave the repo on the task branch
   until a later recovery step handles them
+- supervisor reconciliation now prefers an explicit `TASK_ID` from the reviewed
+  completion summary and falls back to persisted `branch_name` only for older
+  sessions; malformed summaries can still miss the stronger identity path
 
 ## Tests
 
 - `./venv/bin/python -m pytest tests/test_orchestrator.py -q`
 - `./venv/bin/python -m pytest tests/test_executor.py -q`
 - `./venv/bin/python -m pytest tests/test_cli.py -q`
+- `./venv/bin/python -m pytest tests/test_supervisor_state.py -q`
+- `./venv/bin/python -m pytest tests/test_reviewed_codex.py -q`
+- `./venv/bin/python -m py_compile scripts/reviewed_codex.py scripts/reviewed_claude.py foreman/supervisor_state.py`
 - `./venv/bin/python scripts/validate_repo_memory.py`
 
 ## Screenshots or output examples
@@ -97,6 +120,12 @@
   task into the same sprint checkout
 - crash recovery only fails `running` runs that have actually exceeded the
   configured timeout window
+- reviewed supervisors now persist approved merge completion back into SQLite
+  task and sprint state through a shared backend seam
+- reviewed Codex now rejects post-merge dirty or newly committed `main` state
+  instead of treating it as a clean successful continuation
+- reviewed supervisors now carry explicit task identity from completion output
+  into backend finalization instead of relying solely on merged branch names
 
 ## Follow-ups
 
@@ -106,3 +135,5 @@
   be rejected at creation time
 - add a stronger active-run lease or heartbeat model so recovery does not rely
   only on timeout windows
+- add reviewed Claude regression tests matching the reviewed Codex task-id and
+  state-reconciliation coverage
