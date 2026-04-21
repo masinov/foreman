@@ -2,18 +2,22 @@
 
 ## Current sprint
 
-- Sprint: `sprint-44-supervisor-state-reconciliation` (in progress)
-- Branch: `fix/run-auto-activate-planned-sprint`
+- Sprint: `sprint-45-supervised-convergence-validation` (in progress)
+- Branch: `fix/task-repair-first-live-supervised-run-defect`
 
 ## Active branches
 
-- `fix/run-auto-activate-planned-sprint` — add supervisor-to-SQLite
-  reconciliation so approved reviewed runs persist task completion and sprint
-  lifecycle state in `.foreman.db`; prevent reviewed Codex from continuing work
-  on `main` after the supervisor merge commit
+- `fix/task-repair-first-live-supervised-run-defect` — repair first live supervised run defect: added missing `main`-violation guard to `reviewed_claude.py` (feature parity with `reviewed_codex.py`); hardened both supervisors with regression test coverage for the post-merge branch-safety seam
 
-## Completed this session (sprints 36–43)
+## Completed this session (sprints 36–45)
 
+- completed `sprint-44-supervisor-state-reconciliation`
+- introduced shared supervisor finalization seam in `foreman/supervisor_state.py`
+  that maps a merged branch back to a tracked task, marks it done, and propagates
+  sprint lifecycle; wired `finalize_supervisor_merge` into both reviewed
+  supervisors; added post-merge branch safety to reviewed Codex (remembers the
+  supervisor merge HEAD and rejects dirty or drifted `main`); added regression
+  tests in `test_supervisor_state.py` and `test_reviewed_codex.py`
 - completed `sprint-43-backend-run-queue-activation`
 - move first-planned-sprint activation into the backend run path so
   `foreman run <project>` can consume queued work without a dashboard-only
