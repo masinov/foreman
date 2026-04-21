@@ -131,7 +131,7 @@ class ClaudeCodeExecutor:
         session_id: str | None,
     ) -> AgentRunConfig:
         """Build runner config from role and project settings."""
-        timeout = _int_setting(project, "runner_timeout_seconds", self.config.default_timeout_seconds)
+        timeout = _project_timeout_seconds(project, self.config.default_timeout_seconds)
         max_cost = _float_setting(project, "runner_max_cost_usd", self.config.default_max_cost_usd)
         permission_mode = _string_setting(
             project,
@@ -181,3 +181,16 @@ def _float_setting(project: Project, key: str, default: float) -> float:
 def _string_setting(project: Project, key: str, default: str) -> str:
     value = project.settings.get(key, default)
     return value if isinstance(value, str) else default
+
+
+def _project_timeout_seconds(project: Project, default: int) -> int:
+    """Return runner timeout seconds, preferring the product-level project setting."""
+
+    time_limit_minutes = project.settings.get("time_limit_per_run_minutes")
+    if isinstance(time_limit_minutes, bool):
+        return default
+    if isinstance(time_limit_minutes, int) and time_limit_minutes > 0:
+        return time_limit_minutes * 60
+    if isinstance(time_limit_minutes, float) and time_limit_minutes > 0:
+        return int(time_limit_minutes * 60)
+    return _int_setting(project, "runner_timeout_seconds", default)

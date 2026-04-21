@@ -13,7 +13,10 @@ from foreman.models import Event, Project, Run, Sprint, Task
 from foreman.orchestrator import (
     AgentExecutionResult,
     ForemanOrchestrator,
+    OrchestratorError,
+    _extract_decision_output,
 )
+from foreman.git import current_branch
 from foreman.runner.base import AgentEvent, AgentRunConfig, InfrastructureError, PreflightError
 from foreman.roles import default_roles_dir, load_roles
 from foreman.store import ForemanStore
@@ -94,6 +97,7 @@ class RunnerCapture:
     prompt: str
     working_dir: Path
     disallowed_tools: tuple[str, ...]
+    timeout_seconds: int
 
 
 class ScriptedNativeRunner:
@@ -114,6 +118,7 @@ class ScriptedNativeRunner:
                 prompt=config.prompt,
                 working_dir=config.working_dir,
                 disallowed_tools=config.disallowed_tools,
+                timeout_seconds=config.timeout_seconds,
             )
         )
         handler = self.handlers.get(self.call_count)
@@ -347,6 +352,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 "feat/task-1",
             )
             self.assertIsNotNone(updated_task.completed_at)
+            self.assertEqual(current_branch(repo_path), "main")
 
             runs = store.list_runs(task_id=task.id)
             agent_runs = [r for r in runs if r.role_id != "_builtin:orchestrator"]
@@ -1325,7 +1331,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
             self.assertEqual(blocked_task.status, "blocked")
             self.assertEqual(
                 blocked_task.blocked_reason,
-                "Unhandled workflow outcome. Requires human review.",
+                "claude unavailable",
             )
 
             event_types = [event.event_type for event in store.list_events(task_id=task.id)]
@@ -1375,7 +1381,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
             self.assertEqual(blocked_task.status, "blocked")
             self.assertEqual(
                 blocked_task.blocked_reason,
-                "Unhandled workflow outcome. Requires human review.",
+                "Claude Code preflight failed: executable `claude` was not found in PATH.",
             )
 
             events = store.list_events(task_id=task.id)
@@ -1389,6 +1395,204 @@ class ForemanOrchestratorTests(unittest.TestCase):
             self.assertEqual(runs[0].status, "failed")
             self.assertEqual(runs[0].outcome, "error")
             self.assertIn("preflight failed", runs[0].outcome_detail.lower())
+            self.assertEqual(current_branch(repo_path), "main")
+
+    def test_native_runner_uses_project_time_limit_for_timeout_seconds(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+            project.settings["default_model"] = "claude-sonnet-4-6"
+            project.settings["time_limit_per_run_minutes"] = 7
+            store.save_project(project)
+            runner = ScriptedNativeRunner(
+                {
+                    1: lambda config: self._native_developer_success(repo_path, config),
+                    2: lambda config: self._native_reviewer_approve(config),
+                }
+            )
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=self.roles,
+                workflows=self.workflows,
+                agent_runners={"claude_code": runner},
+            )
+
+            result = orchestrator.run_project(project.id)
+
+            self.assertEqual(result.stop_reason, "idle")
+            self.assertEqual(runner.capture(1).timeout_seconds, 420)
+            self.assertEqual(runner.capture(2).timeout_seconds, 420)
+
+    def test_run_project_waits_for_non_stale_active_run_before_starting_other_tasks(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, sprint, task = self.seed_project(store, repo_path=repo_path)
+            project.settings["time_limit_per_run_minutes"] = 10
+            store.save_project(project)
+            task.status = "in_progress"
+            task.branch_name = "feat/task-1-implement-orchestrator-loop"
+            task.started_at = "2026-03-30T12:20:00Z"
+            store.save_task(task)
+            waiting_task = Task(
+                id="task-2",
+                sprint_id=sprint.id,
+                project_id=project.id,
+                title="Second task",
+                status="todo",
+                created_at="2026-03-30T12:21:00Z",
+            )
+            store.save_task(waiting_task)
+            active_run = Run(
+                id="run-active",
+                task_id=task.id,
+                project_id=project.id,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude_code",
+                status="running",
+                started_at="2026-03-30T12:20:00Z",
+                created_at="2026-03-30T12:20:00Z",
+            )
+            store.save_run(active_run)
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=self.roles,
+                workflows=self.workflows,
+                utc_now=lambda: datetime(2026, 3, 30, 12, 25, 0, tzinfo=timezone.utc),
+            )
+
+            result = orchestrator.run_project(project.id)
+
+            self.assertEqual(result.executed_task_ids, ())
+            self.assertEqual(result.stop_reason, "waiting")
+            refreshed_waiting_task = store.get_task(waiting_task.id)
+            assert refreshed_waiting_task is not None
+            self.assertEqual(refreshed_waiting_task.status, "todo")
+
+    def test_project_run_task_rejects_non_stale_active_running_run(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+            project.settings["time_limit_per_run_minutes"] = 10
+            store.save_project(project)
+            task.status = "in_progress"
+            task.branch_name = "feat/task-1-implement-orchestrator-loop"
+            task.started_at = "2026-03-30T12:20:00Z"
+            store.save_task(task)
+            active_run = Run(
+                id="run-active",
+                task_id=task.id,
+                project_id=project.id,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude_code",
+                status="running",
+                started_at="2026-03-30T12:20:00Z",
+                created_at="2026-03-30T12:20:00Z",
+            )
+            store.save_run(active_run)
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=self.roles,
+                workflows=self.workflows,
+                utc_now=lambda: datetime(2026, 3, 30, 12, 25, 0, tzinfo=timezone.utc),
+            )
+
+            with self.assertRaises(OrchestratorError) as exc:
+                orchestrator.run_project(project.id, task_id=task.id)
+
+            self.assertIn("already has an active run", str(exc.exception))
+            refreshed_task = store.get_task(task.id)
+            assert refreshed_task is not None
+            self.assertEqual(refreshed_task.status, "in_progress")
+            refreshed_run = store.get_run(active_run.id)
+            assert refreshed_run is not None
+            self.assertEqual(refreshed_run.status, "running")
+
+    def test_recover_orphaned_tasks_only_recovers_stale_running_runs(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+            project.settings["time_limit_per_run_minutes"] = 1
+            store.save_project(project)
+            task.status = "in_progress"
+            task.branch_name = "feat/task-1-implement-orchestrator-loop"
+            task.started_at = "2026-03-30T12:20:00Z"
+            store.save_task(task)
+            fresh_task = Task(
+                id="task-2",
+                sprint_id=task.sprint_id,
+                project_id=project.id,
+                title="Fresh in-progress task",
+                status="in_progress",
+                branch_name="feat/task-2-fresh",
+                started_at="2026-03-30T12:29:30Z",
+                created_at="2026-03-30T12:29:00Z",
+            )
+            store.save_task(fresh_task)
+            stale_run = Run(
+                id="run-stale",
+                task_id=task.id,
+                project_id=project.id,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude_code",
+                status="running",
+                started_at="2026-03-30T12:20:00Z",
+                created_at="2026-03-30T12:20:00Z",
+            )
+            store.save_run(stale_run)
+            fresh_run = Run(
+                id="run-fresh",
+                task_id=fresh_task.id,
+                project_id=project.id,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude_code",
+                status="running",
+                started_at="2026-03-30T12:29:30Z",
+                created_at="2026-03-30T12:29:30Z",
+            )
+            store.save_run(fresh_run)
+
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=self.roles,
+                workflows=self.workflows,
+                utc_now=lambda: datetime(2026, 3, 30, 12, 30, 0, tzinfo=timezone.utc),
+            )
+
+            orchestrator.recover_orphaned_tasks(project.id)
+
+            refreshed_task = store.get_task(task.id)
+            assert refreshed_task is not None
+            self.assertEqual(refreshed_task.status, "todo")
+            self.assertEqual(refreshed_task.step_visit_counts, {})
+            refreshed_run = store.get_run(stale_run.id)
+            assert refreshed_run is not None
+            self.assertEqual(refreshed_run.status, "failed")
+            self.assertEqual(
+                refreshed_run.outcome_detail,
+                "Recovered stale running run after exceeding the active-run limit.",
+            )
+            refreshed_fresh_task = store.get_task(fresh_task.id)
+            assert refreshed_fresh_task is not None
+            self.assertEqual(refreshed_fresh_task.status, "in_progress")
+            refreshed_fresh_run = store.get_run(fresh_run.id)
+            assert refreshed_fresh_run is not None
+            self.assertEqual(refreshed_fresh_run.status, "running")
 
     def test_run_project_prunes_old_done_task_events_and_preserves_blocked_history(self) -> None:
         repo_path, db_path = self.create_workspace()
@@ -1950,6 +2154,109 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 {"step": "review", "outcome": "unknown"},
             )
 
+    def test_sprint_cost_limit_blocks_task_before_next_step_runs(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project = Project(
+                id="project-1",
+                name="Foreman Demo",
+                repo_path=str(repo_path),
+                workflow_id="development",
+                default_branch="main",
+                settings={"cost_limit_per_sprint_usd": 5.0},
+                created_at="2026-03-30T12:00:00Z",
+                updated_at="2026-03-30T12:00:00Z",
+            )
+            sprint = Sprint(
+                id="sprint-1",
+                project_id=project.id,
+                title="Budgeted sprint",
+                status="active",
+                created_at="2026-03-30T12:05:00Z",
+                started_at="2026-03-30T12:10:00Z",
+            )
+            task = Task(
+                id="task-1",
+                sprint_id=sprint.id,
+                project_id=project.id,
+                title="Blocked by sprint budget",
+                status="todo",
+                created_at="2026-03-30T12:15:00Z",
+            )
+            prior_task = Task(
+                id="task-prior",
+                sprint_id=sprint.id,
+                project_id=project.id,
+                title="Earlier expensive task",
+                status="done",
+                created_at="2026-03-30T12:14:00Z",
+                completed_at="2026-03-30T12:14:30Z",
+            )
+            prior_run = Run(
+                id="run-prior",
+                task_id=prior_task.id,
+                project_id=project.id,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="codex",
+                status="completed",
+                outcome="done",
+                cost_usd=5.25,
+                token_count=250,
+                created_at="2026-03-30T12:14:00Z",
+                started_at="2026-03-30T12:14:00Z",
+                completed_at="2026-03-30T12:14:30Z",
+            )
+            store.save_project(project)
+            store.save_sprint(sprint)
+            store.save_task(prior_task)
+            store.save_task(task)
+            store.save_run(prior_run)
+
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=self.roles,
+                workflows=self.workflows,
+            )
+
+            result = orchestrator.run_project(project.id)
+
+            self.assertEqual(result.executed_task_ids, (task.id,))
+            self.assertEqual(result.blocked_task_ids, (task.id,))
+            self.assertEqual(result.stop_reason, "blocked")
+
+            blocked_task = store.get_task(task.id)
+            self.assertIsNotNone(blocked_task)
+            assert blocked_task is not None
+            self.assertEqual(blocked_task.status, "blocked")
+            self.assertEqual(
+                blocked_task.blocked_reason,
+                "Sprint cost $5.25 exceeds limit $5.00",
+            )
+
+            runs = store.list_runs(task_id=task.id)
+            self.assertEqual(len(runs), 1)
+            self.assertEqual(runs[0].role_id, "_builtin:orchestrator")
+            self.assertEqual(runs[0].outcome, "blocked")
+
+            cost_events = [
+                event
+                for event in store.list_events(task_id=task.id)
+                if event.event_type == "gate.cost_exceeded"
+            ]
+            self.assertEqual(len(cost_events), 1)
+            self.assertEqual(
+                cost_events[0].payload,
+                {
+                    "limit_usd": 5.0,
+                    "actual_usd": 5.25,
+                    "scope": "sprint",
+                },
+            )
+
     def test_select_next_task_skips_unsatisfied_dependencies(self) -> None:
         repo_path, db_path = self.create_workspace()
         repo_path.mkdir(exist_ok=True)
@@ -1981,7 +2288,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 title="Blocked by dependency",
                 status="todo",
                 priority=0,
-                depends_on_task_ids=["task-0"],
+                depends_on_task_ids=["task-missing"],
                 created_at="2026-03-30T12:15:00Z",
             )
             ready_task = Task(
@@ -1993,19 +2300,10 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 priority=1,
                 created_at="2026-03-30T12:16:00Z",
             )
-            prerequisite = Task(
-                id="task-0",
-                sprint_id=sprint.id,
-                project_id=project.id,
-                title="Prerequisite",
-                status="in_progress",
-                created_at="2026-03-30T12:14:00Z",
-            )
             store.save_project(project)
             store.save_sprint(sprint)
             store.save_task(blocked_task)
             store.save_task(ready_task)
-            store.save_task(prerequisite)
 
             orchestrator = ForemanOrchestrator(
                 store,
@@ -2291,6 +2589,26 @@ class AutonomousTaskSelectionTests(unittest.TestCase):
         all_tasks = store.list_tasks(sprint_id=sprint.id)
         self.assertEqual(len(all_tasks), 1)
 
+    def test_autonomous_waits_for_live_in_progress_task_before_creating_placeholder(self) -> None:
+        store, _ = self._make_store()
+        project, sprint = self._seed(store)
+        existing = Task(
+            id="task-existing",
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="Live native task",
+            status="in_progress",
+            created_by="orchestrator",
+        )
+        store.save_task(existing)
+        orc = self._orchestrator(store)
+
+        selected = orc.select_next_task(project)
+
+        self.assertIsNone(selected)
+        all_tasks = store.list_tasks(sprint_id=sprint.id)
+        self.assertEqual(len(all_tasks), 1)
+
     def test_autonomous_respects_max_autonomous_tasks_limit(self) -> None:
         store, _ = self._make_store()
         project, sprint = self._seed(store, max_autonomous_tasks=2)
@@ -2394,13 +2712,32 @@ class AutonomousTaskSelectionTests(unittest.TestCase):
         store.save_project(project)
         orc = self._orchestrator(store)
 
-        from foreman.orchestrator import OrchestratorError
         with self.assertRaises(OrchestratorError):
             orc.select_next_task(project)
 
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DecisionExtractionTests(unittest.TestCase):
+    """Unit coverage for reviewer decision parsing."""
+
+    def test_extract_decision_output_accepts_preamble_and_markdown_wrapped_verdict(self) -> None:
+        outcome, detail = _extract_decision_output(
+            "I verified the changes.\n\nEverything checks out.\n\n**APPROVE**"
+        )
+
+        self.assertEqual(outcome, "approve")
+        self.assertEqual(detail, "APPROVE")
+
+    def test_extract_decision_output_accepts_trailing_deny_reason(self) -> None:
+        outcome, detail = _extract_decision_output(
+            "I found one issue.\n\n- DENY: add the missing migration test"
+        )
+
+        self.assertEqual(outcome, "deny")
+        self.assertEqual(detail, "add the missing migration test")
 
 
 class SprintAdvancementTests(unittest.TestCase):
@@ -2530,6 +2867,19 @@ class SprintAdvancementTests(unittest.TestCase):
         result = self._orchestrator().run_project(project.id)
 
         self.assertEqual(result.stop_reason, "idle")
+
+    def test_run_project_auto_activates_first_planned_sprint(self) -> None:
+        project = self._make_project("directed")
+        sprint = self._make_sprint(project.id, order_index=0, status="planned")
+        self._make_done_task(sprint)
+
+        result = self._orchestrator().run_project(project.id)
+
+        self.assertEqual(result.stop_reason, "idle")
+        refreshed = next(s for s in self.store.list_sprints(project.id) if s.id == sprint.id)
+        self.assertEqual(refreshed.status, "completed")
+        self.assertIsNotNone(refreshed.started_at)
+        self.assertIsNotNone(refreshed.completed_at)
 
     def test_blocked_tasks_prevent_sprint_completion(self) -> None:
         project = self._make_project("autonomous")

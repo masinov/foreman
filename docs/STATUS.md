@@ -2,12 +2,21 @@
 
 ## Current sprint
 
-- Sprint: `sprint-42-dashboard-run-invocation` (completed 2026-04-10)
-- Branch: `fix/dashboard-run-invocation`
+- Sprint: `sprint-43-backend-run-queue-activation` (in progress)
+- Branch: `fix/run-auto-activate-planned-sprint`
 
 ## Active branches
 
-None — all work merged to main.
+- `fix/run-auto-activate-planned-sprint` — move first-planned-sprint activation
+  into the backend run path so `foreman run <project>` can consume queued work
+  without a dashboard-only pre-activation shim; add sprint-level cost gating in
+  the orchestrator so unattended runs stop when a sprint budget is exhausted;
+  preserve actionable runner failure details on blocked tasks and honor the
+  project-level per-run time limit setting in native executor config; restore
+  the caller's original git branch after clean task runs and blocked failures;
+  treat a live `in_progress` task as owning the sprint so Foreman waits instead
+  of starting parallel work into the same checkout, and recover only stale
+  `running` runs during crash recovery
 
 ## Completed this session (sprints 36–42)
 

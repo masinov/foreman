@@ -600,6 +600,42 @@ class ForemanCLISmokeTests(unittest.TestCase):
         self.assertIn("Executed tasks: task-done", result.stdout)
         self.assertIn("Stop reason: task_complete", result.stdout)
 
+    def test_run_command_auto_activates_first_planned_sprint(self) -> None:
+        store, db_path = self.create_store()
+        project = Project(
+            id="project-1",
+            name="Foreman Demo",
+            repo_path="/tmp/foreman-demo",
+            workflow_id="development",
+        )
+        sprint = Sprint(
+            id="sprint-1",
+            project_id=project.id,
+            title="Queued sprint",
+            status="planned",
+        )
+        task = Task(
+            id="task-done",
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="Already done",
+            status="done",
+        )
+        store.save_project(project)
+        store.save_sprint(sprint)
+        store.save_task(task)
+
+        result = self.run_cli("run", project.id, "--db", str(db_path))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Executed tasks: none", result.stdout)
+        self.assertIn("Stop reason: idle", result.stdout)
+        refreshed = store.get_sprint(sprint.id)
+        assert refreshed is not None
+        self.assertEqual(refreshed.status, "completed")
+        self.assertIsNotNone(refreshed.started_at)
+        self.assertIsNotNone(refreshed.completed_at)
+
     def test_config_command_can_show_and_update_project_settings(self) -> None:
         store, db_path = self.create_store()
         project = Project(

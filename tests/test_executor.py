@@ -86,6 +86,33 @@ class ClaudeCodeExecutorTests(unittest.TestCase):
         self.assertEqual(config.permission_mode, "ask")
         self.assertEqual(config.session_id, "sess-123")
 
+    def test_build_run_config_prefers_project_time_limit_per_run_minutes(self) -> None:
+        """Product-level time_limit_per_run_minutes overrides the internal timeout key."""
+        self.project.settings["time_limit_per_run_minutes"] = 7
+        self.project.settings["runner_timeout_seconds"] = 600
+
+        config = self.executor._build_run_config(
+            role=self.role,
+            project=self.project,
+            prompt="Test",
+            session_id=None,
+        )
+
+        self.assertEqual(config.timeout_seconds, 420)
+
+    def test_build_run_config_falls_back_to_runner_timeout_seconds(self) -> None:
+        """Legacy runner_timeout_seconds still works when the product-level key is absent."""
+        self.project.settings["runner_timeout_seconds"] = 600
+
+        config = self.executor._build_run_config(
+            role=self.role,
+            project=self.project,
+            prompt="Test",
+            session_id=None,
+        )
+
+        self.assertEqual(config.timeout_seconds, 600)
+
     def test_build_run_config_uses_role_disallowed_tools(self) -> None:
         """Config includes disallowed tools from role."""
         # Developer role has no disallowed tools by default

@@ -13,7 +13,15 @@ from uuid import uuid4
 from .builtins import BuiltinEventRecord, BuiltinExecutor
 from .context import ProjectContextProjection, build_project_context, relative_project_path
 from .errors import ForemanError
-from .git import GitError, changed_files, checkout_branch, recent_commits, status_text
+from .git import (
+    GitError,
+    changed_files,
+    checkout_branch,
+    current_branch,
+    is_worktree_clean,
+    recent_commits,
+    status_text,
+)
 from .models import Event, Project, Run, Sprint, Task, utc_now_text
 from .runner import AgentRunConfig, ClaudeCodeRunner, CodexRunner, run_with_retry
 from .runner.base import AgentRunner as NativeAgentRunner
@@ -173,6 +181,7 @@ class ForemanOrchestrator:
                 stop_reason="task_complete",
             )
 
+        self._activate_first_planned_sprint(project.id)
         stop_reason = "idle"
         while True:
             task = self.select_next_task(project)
@@ -212,6 +221,23 @@ class ForemanOrchestrator:
             stop_reason=stop_reason,
         )
 
+    def _activate_first_planned_sprint(self, project_id: str) -> Sprint | None:
+        """Activate the first planned sprint when project-scoped execution starts idle."""
+
+        active = self.store.get_active_sprint(project_id)
+        if active is not None:
+            return active
+
+        next_sprint = self.store.get_next_planned_sprint(project_id)
+        if next_sprint is None:
+            return None
+
+        next_sprint.status = "active"
+        next_sprint.started_at = next_sprint.started_at or self.utc_now().isoformat()
+        next_sprint.completed_at = None
+        self.store.save_sprint(next_sprint)
+        return next_sprint
+
     def select_next_task(self, project: Project) -> Task | None:
         """Return the next runnable task for one project."""
 
@@ -231,6 +257,11 @@ class ForemanOrchestrator:
         for task in sprint_tasks:
             if task.status == "in_progress" and task.workflow_current_step:
                 return task
+        if any(
+            task.status == "in_progress" and not task.workflow_current_step
+            for task in sprint_tasks
+        ):
+            return None
         for task in sprint_tasks:
             if task.status != "todo":
                 continue
@@ -258,6 +289,11 @@ class ForemanOrchestrator:
         for task in sprint_tasks:
             if task.status == "in_progress" and task.workflow_current_step:
                 return task
+        if any(
+            task.status == "in_progress" and not task.workflow_current_step
+            for task in sprint_tasks
+        ):
+            return None
 
         # Check the per-sprint autonomous task limit.
         max_tasks = int(
@@ -292,9 +328,23 @@ class ForemanOrchestrator:
             raise OrchestratorError(f"Unknown task {task.id!r}.")
         if current_task.status in {"done", "cancelled"}:
             return current_task
+        active_runs = self.store.list_runs(task_id=current_task.id, status="running")
+        if active_runs:
+            recoverable_runs = [
+                run for run in active_runs if self._run_is_stale(project, run)
+            ]
+            if recoverable_runs:
+                self._recover_stale_running_runs(project, current_task, recoverable_runs)
+                current_task = self.store.get_task(task.id) or current_task
+                active_runs = self.store.list_runs(task_id=current_task.id, status="running")
+            if active_runs:
+                raise OrchestratorError(
+                    f"Task {task.id!r} already has an active run and cannot be started again yet."
+                )
         resume_step = workflow.entry_step
         resume_carried_output: str | None = None
         is_resuming = current_task.workflow_current_step is not None
+        restore_branch = self._safe_current_branch(project.repo_path)
 
         if current_task.status == "blocked":
             if current_task.workflow_current_step:
@@ -338,29 +388,32 @@ class ForemanOrchestrator:
         current_task.started_at = current_task.started_at or utc_now_text()
         self.store.save_task(current_task)
 
-        self.run_workflow_from_step(
-            project,
-            workflow,
-            current_task,
-            step=resume_step,
-            carried_output=resume_carried_output,
-        )
-        refreshed = self.store.get_task(current_task.id)
-        if refreshed is None:
-            raise OrchestratorError(f"Task {current_task.id!r} disappeared during execution.")
-        latest_run = self.store.get_latest_run(refreshed.id)
-        if latest_run is not None:
-            self._write_runtime_context(
-                latest_run,
+        try:
+            self.run_workflow_from_step(
                 project,
-                context_projection=build_project_context(
-                    self.store,
-                    project,
-                    current_task=refreshed,
-                    carried_output=refreshed.workflow_carried_output,
-                ),
+                workflow,
+                current_task,
+                step=resume_step,
+                carried_output=resume_carried_output,
             )
-        return refreshed
+            refreshed = self.store.get_task(current_task.id)
+            if refreshed is None:
+                raise OrchestratorError(f"Task {current_task.id!r} disappeared during execution.")
+            latest_run = self.store.get_latest_run(refreshed.id)
+            if latest_run is not None:
+                self._write_runtime_context(
+                    latest_run,
+                    project,
+                    context_projection=build_project_context(
+                        self.store,
+                        project,
+                        current_task=refreshed,
+                        carried_output=refreshed.workflow_carried_output,
+                    ),
+                )
+            return refreshed
+        finally:
+            self._restore_branch_if_safe(project.repo_path, restore_branch)
 
     def resume_human_gate(
         self,
@@ -485,6 +538,7 @@ class ForemanOrchestrator:
                 note=note,
             )
 
+        restore_branch = self._safe_current_branch(project.repo_path)
         if str(project.settings.get("task_selection_mode", "directed")) == "directed":
             current_task.branch_name = current_task.branch_name or generate_branch_name(
                 current_task
@@ -496,39 +550,42 @@ class ForemanOrchestrator:
                 base_branch=project.default_branch,
             )
 
-        self.run_workflow_from_step(
-            project,
-            workflow,
-            current_task,
-            step=transition.to_step,
-            carried_output=carried_output,
-        )
-        refreshed = self.store.get_task(current_task.id)
-        if refreshed is None:
-            raise OrchestratorError(
-                f"Task {current_task.id!r} disappeared during human-gate resume."
-            )
-        latest_run = self.store.get_latest_run(refreshed.id)
-        if latest_run is not None:
-            self._write_runtime_context(
-                latest_run,
+        try:
+            self.run_workflow_from_step(
                 project,
-                context_projection=build_project_context(
-                    self.store,
-                    project,
-                    current_task=refreshed,
-                    carried_output=refreshed.workflow_carried_output,
-                ),
+                workflow,
+                current_task,
+                step=transition.to_step,
+                carried_output=carried_output,
             )
-        return HumanGateResumeResult(
-            task=refreshed,
-            decision=outcome,
-            paused_step=paused_step.id,
-            next_step=transition.to_step,
-            deferred=False,
-            carried_output=carried_output,
-            note=note,
-        )
+            refreshed = self.store.get_task(current_task.id)
+            if refreshed is None:
+                raise OrchestratorError(
+                    f"Task {current_task.id!r} disappeared during human-gate resume."
+                )
+            latest_run = self.store.get_latest_run(refreshed.id)
+            if latest_run is not None:
+                self._write_runtime_context(
+                    latest_run,
+                    project,
+                    context_projection=build_project_context(
+                        self.store,
+                        project,
+                        current_task=refreshed,
+                        carried_output=refreshed.workflow_carried_output,
+                    ),
+                )
+            return HumanGateResumeResult(
+                task=refreshed,
+                decision=outcome,
+                paused_step=paused_step.id,
+                next_step=transition.to_step,
+                deferred=False,
+                carried_output=carried_output,
+                note=note,
+            )
+        finally:
+            self._restore_branch_if_safe(project.repo_path, restore_branch)
 
     def run_workflow_from_step(
         self,
@@ -603,6 +660,39 @@ class ForemanOrchestrator:
                         "limit_usd": cost_limit,
                         "actual_usd": task_cost,
                         "scope": "task",
+                    },
+                )
+                current_task.status = "blocked"
+                current_task.blocked_reason = detail
+                self.store.save_task(current_task)
+                break
+
+            sprint_cost_limit = _float_setting(
+                project,
+                "cost_limit_per_sprint_usd",
+                default=None,
+            )
+            sprint_cost = float(
+                self.store.run_totals(sprint_id=current_task.sprint_id)["total_cost_usd"]
+            )
+            if sprint_cost_limit is not None and sprint_cost >= sprint_cost_limit:
+                detail = (
+                    f"Sprint cost ${sprint_cost:.2f} exceeds limit "
+                    f"${sprint_cost_limit:.2f}"
+                )
+                run = self._create_system_run(
+                    current_task,
+                    workflow_step=current_step,
+                    outcome="blocked",
+                    detail=detail,
+                )
+                self._emit_event(
+                    run,
+                    "gate.cost_exceeded",
+                    {
+                        "limit_usd": sprint_cost_limit,
+                        "actual_usd": sprint_cost,
+                        "scope": "sprint",
                     },
                 )
                 current_task.status = "blocked"
@@ -788,10 +878,11 @@ class ForemanOrchestrator:
                     {"step": current_step, "outcome": outcome},
                 )
                 current_task.status = "blocked"
-                current_task.blocked_reason = (
-                    workflow.fallback.message
-                    if workflow.fallback is not None
-                    else f"No transition for '{outcome}' at '{current_step}'"
+                current_task.blocked_reason = self._blocked_reason_for_unhandled_outcome(
+                    workflow=workflow,
+                    step=current_step,
+                    outcome=outcome,
+                    detail=detail,
                 )
                 current_task.workflow_current_step = None
                 current_task.workflow_carried_output = None
@@ -816,29 +907,65 @@ class ForemanOrchestrator:
 
         return current_task
 
+    def _blocked_reason_for_unhandled_outcome(
+        self,
+        *,
+        workflow: WorkflowDefinition,
+        step: str,
+        outcome: str,
+        detail: str | None,
+    ) -> str:
+        """Return the task block reason for a step outcome with no transition."""
+
+        if outcome in {"error", "killed"} and detail:
+            return detail
+        if workflow.fallback is not None:
+            return workflow.fallback.message
+        return f"No transition for '{outcome}' at '{step}'"
+
+    def _safe_current_branch(self, repo_path: str) -> str | None:
+        """Return the current branch name or None when git state is unavailable."""
+
+        try:
+            branch = current_branch(repo_path)
+        except GitError:
+            return None
+        return branch or None
+
+    def _restore_branch_if_safe(self, repo_path: str, branch_name: str | None) -> None:
+        """Best-effort restore of the caller's branch when the worktree is clean."""
+
+        if not branch_name:
+            return
+        try:
+            active_branch = current_branch(repo_path)
+            if active_branch == branch_name:
+                return
+            if not is_worktree_clean(repo_path):
+                return
+            checkout_branch(repo_path, branch_name)
+        except GitError:
+            return
+
     def recover_orphaned_tasks(self, project_id: str) -> None:
         """Reset orphaned in-progress tasks after a prior engine crash."""
 
+        project = self.store.get_project(project_id)
+        if project is None:
+            return
         orphaned_tasks = self.store.list_tasks(project_id=project_id, status="in_progress")
         for task in orphaned_tasks:
             if task.workflow_current_step is not None:
                 continue
 
             active_runs = self.store.list_runs(task_id=task.id, status="running")
-            for run in active_runs:
-                run.status = "failed"
-                run.outcome = "error"
-                run.outcome_detail = "Engine crashed during run"
-                run.completed_at = utc_now_text()
-                self.store.save_run(run)
-                self._emit_event(
-                    run,
-                    "engine.crash_recovery",
-                    {
-                        "task_id": task.id,
-                        "message": "Marked interrupted run as failed.",
-                    },
-                )
+            stale_runs = [run for run in active_runs if self._run_is_stale(project, run)]
+            if active_runs and not stale_runs:
+                continue
+
+            if stale_runs:
+                self._recover_stale_running_runs(project, task, stale_runs)
+                continue
 
             if not active_runs:
                 system_run = self._create_system_run(
@@ -860,6 +987,50 @@ class ForemanOrchestrator:
             task.blocked_reason = None
             task.step_visit_counts = {}
             self.store.save_task(task)
+
+    def _recover_stale_running_runs(
+        self,
+        project: Project,
+        task: Task,
+        runs: list[Run],
+    ) -> None:
+        """Fail stale running runs and reset task state so the slice can be retried safely."""
+
+        now = utc_now_text()
+        for run in runs:
+            run.status = "failed"
+            run.outcome = "error"
+            run.outcome_detail = "Recovered stale running run after exceeding the active-run limit."
+            run.completed_at = now
+            self.store.save_run(run)
+            self._emit_event(
+                run,
+                "engine.crash_recovery",
+                {
+                    "task_id": task.id,
+                    "message": "Marked stale running run as failed.",
+                },
+            )
+
+        task.status = "todo"
+        task.blocked_reason = None
+        task.workflow_current_step = None
+        task.workflow_carried_output = None
+        task.step_visit_counts = {}
+        self.store.save_task(task)
+        self._restore_branch_if_safe(project.repo_path, project.default_branch)
+
+    def _run_is_stale(self, project: Project, run: Run) -> bool:
+        """Return whether a persisted running run has exceeded its allowed ownership window."""
+
+        timeout_seconds = _project_timeout_seconds(project)
+        if timeout_seconds is None or timeout_seconds <= 0:
+            return False
+        reference = run.started_at or run.created_at
+        started = _parse_utc_timestamp(reference)
+        if started is None:
+            return False
+        return (self.utc_now() - started).total_seconds() > timeout_seconds
 
     def prune_old_history(self, project: Project) -> dict[str, int]:
         """Prune old project history according to per-type retention settings.
@@ -1207,7 +1378,10 @@ class ForemanOrchestrator:
             permission_mode=role.agent.permission_mode,
             disallowed_tools=role.agent.tools.disallowed,
             extra_flags=role.agent.flags,
-            timeout_seconds=max(role.completion.timeout_minutes, 0) * 60,
+            timeout_seconds=_project_timeout_seconds(
+                project,
+                role_timeout_minutes=role.completion.timeout_minutes,
+            ),
             max_cost_usd=max(role.completion.max_cost_usd, 0.0),
         )
         max_retries = _int_setting(project, "max_infra_retries", default=3)
@@ -1595,24 +1769,68 @@ def _coerce_int_value(value: Any, *, default: int | None) -> int | None:
     return default
 
 
+def _project_timeout_seconds(
+    project: Project,
+    *,
+    role_timeout_minutes: int | None = None,
+) -> int:
+    """Return the effective timeout window for native runs and stale-run recovery."""
+
+    setting = project.settings.get("time_limit_per_run_minutes")
+    if isinstance(setting, bool):
+        setting = None
+    if isinstance(setting, int) and setting > 0:
+        return setting * 60
+    if isinstance(setting, float) and setting > 0:
+        return int(setting * 60)
+    if role_timeout_minutes is not None and role_timeout_minutes > 0:
+        return role_timeout_minutes * 60
+    return 0
+
+
+def _parse_utc_timestamp(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    normalized = value.replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
 def _extract_decision_output(text: str) -> tuple[str, str]:
     if not text:
         return ("error", "Reviewer returned no decision.")
 
-    first_line = next((line.strip() for line in text.splitlines() if line.strip()), "")
-    if first_line == "APPROVE":
-        return ("approve", "APPROVE")
-    if first_line == "DENY":
-        return ("deny", "DENY")
-    if first_line == "STEER":
-        return ("steer", "STEER")
-    if first_line.startswith("DENY:"):
-        return ("deny", first_line.partition(":")[2].strip() or text)
-    if first_line.startswith("STEER:"):
-        return ("steer", first_line.partition(":")[2].strip() or text)
-    if first_line.startswith("APPROVE:"):
-        return ("approve", first_line.partition(":")[2].strip() or text)
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    for raw_line in reversed(lines):
+        line = _normalize_decision_line(raw_line)
+        if line == "APPROVE":
+            return ("approve", "APPROVE")
+        if line == "DENY":
+            return ("deny", "DENY")
+        if line == "STEER":
+            return ("steer", "STEER")
+        if line.startswith("DENY:"):
+            return ("deny", line.partition(":")[2].strip() or text)
+        if line.startswith("STEER:"):
+            return ("steer", line.partition(":")[2].strip() or text)
+        if line.startswith("APPROVE:"):
+            return ("approve", line.partition(":")[2].strip() or text)
     return ("error", text)
+
+
+def _normalize_decision_line(line: str) -> str:
+    normalized = line.strip()
+    normalized = normalized.strip("`")
+    normalized = normalized.strip()
+    if normalized.startswith(("* ", "- ")):
+        normalized = normalized[2:].strip()
+    normalized = normalized.strip("*").strip()
+    return normalized
 
 
 def _strip_completion_marker(text: str, marker: str) -> str:

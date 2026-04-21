@@ -97,6 +97,13 @@ def current_branch(repo_path: str | Path) -> str:
     return result.stdout
 
 
+def is_worktree_clean(repo_path: str | Path) -> bool:
+    """Return whether the repository has no staged or unstaged file changes."""
+
+    result = run_git(repo_path, "status", "--porcelain")
+    return result.stdout == ""
+
+
 def merge_branch(
     repo_path: str | Path,
     source_branch: str,

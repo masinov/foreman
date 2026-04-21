@@ -1,99 +1,141 @@
 # Current Sprint
 
-- Sprint: `sprint-42-dashboard-run-invocation`
-- Status: done
-- Branch: `fix/dashboard-run-invocation`
-- Started: 2026-04-10
-- Completed: 2026-04-10
+- Sprint: `sprint-43-backend-run-queue-activation`
+- Status: in_progress
+- Branch: `fix/run-auto-activate-planned-sprint`
+- Started: 2026-04-21
 
 ## Goal
 
-Align the dashboard's background `Run` subprocess invocation with the shipped
-CLI contract so dashboard-triggered runs actually launch the orchestrator
-instead of failing immediately on an unrecognized argument.
+Move first-planned-sprint activation into the backend run path so Foreman can
+start working queued sprints from `foreman run <project>` without depending on
+the dashboard service to pre-activate the queue.
 
-This slice is intentionally narrow: fix the invocation path, add regression
-coverage for the exact argv, and remove the now-closed repo-memory risk.
+This is a backend-execution slice aimed directly at the autonomous-development
+workflow: define sprints and tasks, start Foreman, let the engine consume the
+queue from structured state, and stop unattended work when sprint budget limits
+are reached. It also tightens failure reporting and run-time limits so backend
+operators can understand and constrain live agent failures without leaving the
+repo checkout stranded on task branches after routine runs. The slice now also
+hardens active-run ownership so a live native task holds the sprint until it
+resumes or times out, rather than letting the orchestrator start another task
+into the same checkout.
 
 ## Context and rationale
 
-During the repo-memory reconciliation pass, the dashboard service was found to
-spawn:
+After merging `fix/dashboard-run-invocation`, the real project state on `main`
+showed:
 
 ```bash
-foreman run --project <project_id> --db <path>
+./venv/bin/foreman run foreman
 ```
 
-The actual CLI parser exposes:
+returning:
 
-```bash
-foreman run <project_id> [--task ...] [--db ...]
+```text
+Stop reason: idle
 ```
 
-This means the dashboard's Run control can report success from the API layer
-while the child process exits immediately with `unrecognized arguments:
---project`. The code path needs a direct regression test because previous
-coverage only asserted that a subprocess was spawned, not that its argv was
-valid.
+even though planned sprints were queued in the SQLite store. The dashboard
+worked around this by activating the first planned sprint before spawning the
+subprocess, but the backend run path itself still treated "no active sprint" as
+"no work". That blocks the intended operator flow of setting up queued work and
+then starting Foreman from the backend surface.
 
 ## Constraints
 
-- Fix the invocation shape only; do not broaden this slice into dashboard UX or
-  orchestrator refactors.
-- Preserve the existing `./venv/bin/foreman` subprocess entrypoint rather than
-  changing the dashboard to a different runtime contract.
-- Add regression coverage for both project-scope and task-scope start paths.
-- Leave unrelated local frontend edits untouched.
+- Fix backend run semantics, not just another surface-specific shim.
+- Preserve task-scoped `foreman run <project> --task <task-id>` behavior.
+- Keep sprint queue ownership in durable backend logic so CLI and future
+  callers share the same behavior.
+- Add regression coverage for both the orchestrator and the CLI contract.
+- Keep budget enforcement in the orchestrator, not the dashboard.
 
 ## Affected areas
 
-- `foreman/dashboard_service.py` — `start_agent` subprocess argv
-- `tests/test_dashboard.py` — `start_agent` regression coverage
-- `docs/STATUS.md` — closed risk and completed-sprint record
-- `docs/sprints/backlog.md` — remove closed follow-up
-- `docs/prs/fix-dashboard-run-invocation.md` — branch summary
+- `foreman/orchestrator.py` — project-scoped run startup
+- `foreman/orchestrator.py` — project-scoped run startup and sprint budget gate
+- `foreman/orchestrator.py` — backend failure blocking semantics
+- `foreman/executor.py` — project-level run time limit mapping
+- `foreman/git.py` — safe worktree cleanliness check for branch restoration
+- `tests/test_orchestrator.py` — queue activation regression coverage
+- `tests/test_executor.py` — run timeout mapping coverage
+- `tests/test_cli.py` — `foreman run` regression coverage
+- `docs/STATUS.md` — active branch and slice context
+- `docs/prs/fix-run-auto-activate-planned-sprint.md` — branch summary
 
 ## Implementation plan
 
----
+### Task 1 — Backend queue pickup
 
-### Task 1 — Fix the subprocess argv
+When `run_project()` is called for a whole project and no sprint is active,
+activate the first planned sprint by queue order before the selection loop
+starts.
 
-Change the dashboard service from:
+### Task 2 — Regression coverage
 
-```bash
-foreman run --project <project_id> --db <path>
-```
+Cover the no-active-sprint case in:
 
-to:
+- orchestrator tests
+- CLI tests
 
-```bash
-foreman run <project_id> --db <path>
-```
+so the backend contract stays aligned with the "define queued work, then run"
+operator workflow.
 
----
+### Task 3 — Sprint budget guardrail
 
-### Task 2 — Lock the contract down with tests
+Honor `cost_limit_per_sprint_usd` in the orchestrator before the next workflow
+step runs. When the sprint's cumulative persisted run cost is already over the
+limit, block the task, emit `gate.cost_exceeded` with `scope="sprint"`, and
+stop unattended execution instead of continuing to burn budget.
 
-Extend dashboard tests so they assert the exact argv passed to
-`subprocess.Popen`, including:
+### Task 4 — Actionable backend failures
 
-- project-scope start: positional `project_id`
-- task-scope start: positional `project_id` plus `--task <task_id>`
+When a native runner exhausts retries or fails preflight, preserve the actual
+run error detail on the blocked task instead of replacing it with the generic
+workflow fallback message. This keeps live autonomous failures diagnosable from
+task history and task detail surfaces.
 
----
+### Task 5 — Product-level run timeout mapping
+
+Make the native executor honor `time_limit_per_run_minutes` from project
+settings when building runner config, while keeping the older
+`runner_timeout_seconds` setting as a fallback for compatibility.
+
+### Task 6 — Checkout restoration after safe task runs
+
+Capture the caller's original branch before a directed task switches onto its
+working branch. After the task run or human-gate resume finishes, restore the
+original branch when git is healthy and the worktree is clean. This reduces
+checkout drift during live backend use without risking a forced branch switch
+over uncommitted task work.
+
+### Task 7 — Active-run ownership and stale-run recovery
+
+Treat `in_progress` tasks without a persisted workflow step as live sprint
+owners. While that ownership exists, `select_next_task()` should wait instead
+of starting other directed work or creating autonomous placeholders. Only
+persisted `running` runs that have exceeded the configured timeout window
+should be failed and recovered automatically.
 
 ## Risks
 
-- The current tests patch `subprocess.Popen`, so they validate argv shape but do
-  not execute a real background run.
-- This does not address broader dashboard process-lifecycle concerns beyond the
-  CLI argument mismatch.
+- The dashboard currently performs its own pre-activation before spawning the
+  subprocess, so backend activation must remain compatible with that existing
+  behavior while the dashboard shim still exists.
+- A queued sprint with no tasks will still activate and then immediately idle;
+  this slice does not redefine empty-sprint policy.
+- Sprint cost gating currently uses persisted USD totals. Backends that report
+  tokens without reliable USD pricing still need separate pricing support for
+  complete budget enforcement.
+- Live native runs still depend on timeout-based stale detection rather than a
+  stronger lease or heartbeat. This branch prevents parallel task starts in the
+  same sprint and recovers stale `running` runs, but it does not yet add active
+  cancellation or positive liveness confirmation.
 
 ## Validation
 
-- `./venv/bin/foreman run --help`
-- `./venv/bin/foreman run --project demo --db /tmp/demo.db` (expected parser
-  failure before the fix; confirms the mismatch exists)
-- `./venv/bin/python -m pytest tests/test_dashboard.py -q`
+- `./venv/bin/python -m pytest tests/test_orchestrator.py -q`
+- `./venv/bin/python -m pytest tests/test_executor.py -q`
+- `./venv/bin/python -m pytest tests/test_cli.py -q`
 - `./venv/bin/python scripts/validate_repo_memory.py`
