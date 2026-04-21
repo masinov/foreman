@@ -757,6 +757,14 @@ def current_branch() -> str:
     return run_git(["rev-parse", "--abbrev-ref", "HEAD"])
 
 
+def current_head() -> str:
+    return run_git(["rev-parse", "HEAD"])
+
+
+def worktree_dirty() -> bool:
+    return bool(run_git(["status", "--short"]).strip())
+
+
 def git_status() -> str:
     out = run_git(["status", "--short", "--branch"])
     return out or "(empty)"
@@ -949,6 +957,7 @@ class ReviewedCodex:
         self.last_developer_output: str = ""
         self.current_reviewer_output: List[str] = []
         self.agent_message_buffers: Dict[str, List[str]] = {}
+        self.last_supervisor_merge_main_head: Optional[str] = None
         terminal_report("SUPERVISOR", "init", "ReviewedCodex supervisor initialized.")
 
     def append_log(self, path: Path, text: str) -> None:
@@ -1410,11 +1419,35 @@ class ReviewedCodex:
             )
             return
 
+        self.last_supervisor_merge_main_head = current_head()
         self.continue_developer_turn(
             f"Reviewer approved the completed work. Branch `{branch}` has been merged into `main`.\n\n"
             "Continue autonomous development: read `docs/STATUS.md` and `docs/sprints/backlog.md` to select the next valid slice, update repo state as part of the same flow, and proceed autonomously.",
             allow_spec_complete=True,
         )
+
+    def post_merge_main_violation_reason(self) -> Optional[str]:
+        if self.last_supervisor_merge_main_head is None:
+            return None
+        if current_branch() != "main":
+            return None
+        if worktree_dirty():
+            return (
+                "VIOLATION: the supervisor already merged the approved slice into `main`, "
+                "but there are still uncommitted changes on `main`. Create a new feature branch "
+                "for any further work or discard the accidental main-only edits before continuing. "
+                "If there is genuinely no remaining work, return to a clean merged `main` first and then emit "
+                f"{SPEC_COMPLETE_MARKER}."
+            )
+        if current_head() != self.last_supervisor_merge_main_head:
+            return (
+                "VIOLATION: the supervisor already merged the approved slice into `main`, "
+                "but new commits were created on `main` afterward. Move any follow-up work onto a new feature branch, "
+                "or restore `main` to the supervisor-merged commit before continuing. "
+                "If there is genuinely no remaining work, return to the clean merged `main` first and then emit "
+                f"{SPEC_COMPLETE_MARKER}."
+            )
+        return None
 
     def loop(self) -> None:
         assert self.dev_thread_id is not None
@@ -1432,6 +1465,16 @@ class ReviewedCodex:
 
             if method == "turn/completed" and thread_id == self.dev_thread_id:
                 self.last_developer_output = "".join(self.current_developer_output).strip()
+                main_violation = self.post_merge_main_violation_reason()
+                if main_violation is not None:
+                    terminal_report(
+                        "SUPERVISOR",
+                        "main-violation",
+                        "Detected post-merge work on main after supervisor approval.",
+                        payload={"main_head": current_head()},
+                    )
+                    self.continue_developer_turn(main_violation, allow_spec_complete=True)
+                    continue
                 if developer_declared_spec_complete(self.last_developer_output):
                     terminal_report(
                         "SUPERVISOR",
