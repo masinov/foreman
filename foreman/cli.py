@@ -1289,8 +1289,13 @@ def handle_task_list(args: argparse.Namespace) -> int:
         if project is None:
             return 1
 
+        sprint_filter = getattr(args, "sprint", None)
         sprints = store.list_sprints(project.id)
+        if sprint_filter:
+            sprints = [s for s in sprints if s.id == sprint_filter]
+        sprint_ids = {s.id for s in sprints}
         tasks = store.list_tasks(project_id=project.id)
+        tasks = [t for t in tasks if t.sprint_id in sprint_ids]
         totals_by_task = {
             str(row["task_id"]): row for row in store.task_run_totals(project_id=project.id)
         }
@@ -1726,6 +1731,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     task_list = task_commands.add_parser("list", help="List project tasks.")
     task_list.add_argument("project_id", help="Project identifier.")
+    task_list.add_argument("--sprint", metavar="SPRINT_ID", help="Filter to a specific sprint.")
     _add_db_option(
         task_list,
         help_text=f"Path to the SQLite store containing the project. {DB_OPTION_NOTE}",

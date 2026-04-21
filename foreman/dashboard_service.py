@@ -284,7 +284,7 @@ class DashboardService:
             self.store.save_sprint(next_sprint)
 
         foreman_bin = str(Path(sys.executable).parent / "foreman")
-        cmd = [foreman_bin, "run", "--project", project_id, "--db", self.store.db_path]
+        cmd = [foreman_bin, "run", project_id, "--db", self.store.db_path]
         if task_id is not None:
             cmd.extend(["--task", task_id])
 

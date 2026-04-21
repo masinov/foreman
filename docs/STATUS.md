@@ -2,15 +2,22 @@
 
 ## Current sprint
 
-- Sprint: `sprint-41-sprint-queue-and-advancement` (completed 2026-04-05)
-- Branch: `feat/sprint-41-sprint-queue-and-advancement`
+- Sprint: `sprint-42-dashboard-run-invocation` (completed 2026-04-10)
+- Branch: `fix/dashboard-run-invocation`
 
 ## Active branches
 
 None — all work merged to main.
 
-## Completed this session (sprints 36–41)
+## Completed this session (sprints 36–42)
 
+- completed `sprint-42-dashboard-run-invocation`
+- confirmed the dashboard Run subprocess mismatch from the shipped surfaces:
+  `DashboardService.start_agent()` spawned `foreman run --project ...` while
+  the CLI parser only accepts positional `project_id`
+- fixed `DashboardService.start_agent()` to invoke `foreman run <project_id>
+  --db ...` and added regression coverage for both project-scope and task-scope
+  argv assembly
 - completed `sprint-41-sprint-queue-and-advancement`
 - wired orchestrator sprint advancement to project `autonomy_level`;
   autonomous mode now auto-activates the next planned sprint and continues,
@@ -317,8 +324,6 @@ None — all work merged to main.
 ## Ready next
 
 - SSE transport hardening (Tier 3, deferred — documented architecture gap)
-- Verify or fix dashboard `Run` subprocess wiring so `DashboardService.start_agent()`
-  matches the current CLI `foreman run` contract
 - E2E test coverage for sprints 32–35 features
 - E2E test coverage for the meta-agent panel
 - Persist meta-agent session history to SQLite
@@ -342,10 +347,6 @@ None — all work merged to main.
   if the build is stale.
 - the sprint SSE path still polls SQLite directly inside the FastAPI stream
   loop; that is acceptable for now, but it is not a final transport design.
-- `DashboardService.start_agent()` currently shells out as
-  `foreman run --project <id>`, while the CLI parser takes positional
-  `project_id`; confirm and fix this before treating dashboard Run control as
-  fully reliable.
 - Native backend preflight now validates executable presence and Codex startup
   handshake assumptions, but it does not yet prove downstream auth or service
   reachability beyond startup.
