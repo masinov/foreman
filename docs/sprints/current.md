@@ -1,9 +1,10 @@
 # Current Sprint
 
 - Sprint: `sprint-43-backend-run-queue-activation`
-- Status: in_progress
+- Status: done
 - Branch: `fix/run-auto-activate-planned-sprint`
 - Started: 2026-04-21
+- Completed: 2026-04-21
 
 ## Goal
 
