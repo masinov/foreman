@@ -10,7 +10,9 @@ JsonDict = dict[str, Any]
 
 ProjectMethodology = Literal["development"]
 AutonomyLevel = Literal["directed", "supervised", "autonomous"]
-GateStatus = Literal["pending", "accepted", "rejected", "dismissed"]
+GateStatus = Literal["pending", "approved", "rejected", "dismissed"]
+GateType = Literal["human_review"]
+DecisionGateStatus = Literal["pending", "accepted", "rejected", "dismissed"]
 SprintStatus = Literal["planned", "active", "completed", "cancelled"]
 TaskStatus = Literal["todo", "in_progress", "blocked", "done", "cancelled"]
 TaskType = Literal["feature", "fix", "refactor", "docs", "spike", "chore"]
@@ -146,6 +148,22 @@ class Run:
 
 
 @dataclass(slots=True)
+class Gate:
+    """A human-gate pause point emitted by the workflow engine during a task run."""
+
+    id: str
+    project_id: str
+    sprint_id: str
+    task_id: str
+    type: GateType = "human_review"
+    payload: JsonDict = field(default_factory=dict)
+    status: GateStatus = "pending"
+    raised_at: str = field(default_factory=utc_now_text)
+    resolved_at: str | None = None
+    resolved_by: str | None = None
+
+
+@dataclass(slots=True)
 class DecisionGate:
     """A persisted decision gate raised when the agent detects a sprint ordering conflict."""
 
@@ -155,7 +173,7 @@ class DecisionGate:
     conflict_description: str
     suggested_order: list[str] = field(default_factory=list)
     suggested_reason: str = ""
-    status: GateStatus = "pending"
+    status: DecisionGateStatus = "pending"
     raised_at: str = field(default_factory=utc_now_text)
     resolved_at: str | None = None
     resolved_by: str | None = None

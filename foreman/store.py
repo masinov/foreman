@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from .migrations import MIGRATIONS
-from .models import DecisionGate, Event, Project, Run, Sprint, TASK_STATUSES, Task
+from .models import DecisionGate, Event, Gate, Project, Run, Sprint, TASK_STATUSES, Task
 
 _PRUNE_PROTECTED_TASK_STATUSES = ("blocked", "in_progress")
 
@@ -142,7 +142,22 @@ def _row_to_event(row: sqlite3.Row) -> Event:
     )
 
 
-def _row_to_gate(row: sqlite3.Row) -> DecisionGate:
+def _row_to_gate(row: sqlite3.Row) -> Gate:
+    return Gate(
+        id=row["id"],
+        project_id=row["project_id"],
+        sprint_id=row["sprint_id"],
+        task_id=row["task_id"],
+        type=row["type"],
+        payload=_load_json_dict(row["payload_json"]),
+        status=row["status"],
+        raised_at=row["raised_at"],
+        resolved_at=row["resolved_at"],
+        resolved_by=row["resolved_by"],
+    )
+
+
+def _row_to_decision_gate(row: sqlite3.Row) -> DecisionGate:
     import json as _json
 
     raw = row["suggested_order"]
@@ -1214,7 +1229,7 @@ class ForemanStore:
         row = self._connection.execute(
             "SELECT * FROM decision_gates WHERE id = ?", (gate_id,)
         ).fetchone()
-        return _row_to_gate(row) if row else None
+        return _row_to_decision_gate(row) if row else None
 
     def list_decision_gates(
         self,
@@ -1233,4 +1248,68 @@ class ForemanStore:
                 "SELECT * FROM decision_gates WHERE project_id = ? ORDER BY raised_at DESC",
                 (project_id,),
             ).fetchall()
+        return [_row_to_decision_gate(row) for row in rows]
+
+    # ── Human gates ────────────────────────────────────────────────────────────
+
+    def save_gate(self, gate: Gate) -> Gate:
+        """Insert or update a human gate record."""
+        with self._connection:
+            self._connection.execute(
+                """
+                INSERT INTO gates (
+                    id, project_id, sprint_id, task_id, type, payload_json,
+                    status, raised_at, resolved_at, resolved_by
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    type = excluded.type,
+                    payload_json = excluded.payload_json,
+                    status = excluded.status,
+                    resolved_at = excluded.resolved_at,
+                    resolved_by = excluded.resolved_by
+                """,
+                (
+                    gate.id,
+                    gate.project_id,
+                    gate.sprint_id,
+                    gate.task_id,
+                    gate.type,
+                    _json_dumps(gate.payload),
+                    gate.status,
+                    gate.raised_at,
+                    gate.resolved_at,
+                    gate.resolved_by,
+                ),
+            )
+        return gate
+
+    def get_gate(self, gate_id: str) -> Gate | None:
+        """Return one human gate by id."""
+        row = self._connection.execute(
+            "SELECT * FROM gates WHERE id = ?", (gate_id,)
+        ).fetchone()
+        return _row_to_gate(row) if row else None
+
+    def list_gates(
+        self,
+        project_id: str,
+        *,
+        status: str | None = None,
+        sprint_id: str | None = None,
+    ) -> list[Gate]:
+        """List human gates for a project, optionally filtered by status and/or sprint."""
+        filters: list[str] = ["project_id = ?"]
+        params: list[Any] = [project_id]
+        if status is not None:
+            filters.append("status = ?")
+            params.append(status)
+        if sprint_id is not None:
+            filters.append("sprint_id = ?")
+            params.append(sprint_id)
+        sql = f"SELECT * FROM gates WHERE {' AND '.join(filters)} ORDER BY raised_at DESC"
+        rows = self._connection.execute(sql, tuple(params)).fetchall()
         return [_row_to_gate(row) for row in rows]
+
+    def list_pending_gates(self, project_id: str) -> list[Gate]:
+        """Return all pending gates for a project."""
+        return self.list_gates(project_id, status="pending")

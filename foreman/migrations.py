@@ -154,4 +154,28 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         ON decision_gates(project_id, status);
         """,
     ),
+    (
+        5,
+        "add gates table for human-gate pause points",
+        """
+        CREATE TABLE IF NOT EXISTS gates (
+            id           TEXT PRIMARY KEY,
+            project_id   TEXT NOT NULL REFERENCES projects(id),
+            sprint_id    TEXT NOT NULL REFERENCES sprints(id),
+            task_id      TEXT NOT NULL REFERENCES tasks(id),
+            type         TEXT NOT NULL DEFAULT 'human_review',
+            payload_json TEXT NOT NULL DEFAULT '{}',
+            status       TEXT NOT NULL DEFAULT 'pending',
+            raised_at    TEXT NOT NULL,
+            resolved_at  TEXT,
+            resolved_by  TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_gates_project_status
+        ON gates(project_id, status);
+
+        CREATE INDEX IF NOT EXISTS idx_gates_sprint
+        ON gates(sprint_id);
+        """,
+    ),
 ]

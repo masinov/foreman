@@ -7,7 +7,7 @@ import sqlite3
 import tempfile
 import unittest
 
-from foreman.models import Event, Project, Run, Sprint, Task, utc_now_text
+from foreman.models import Event, Gate, Project, Run, Sprint, Task, utc_now_text
 from foreman.store import ForemanStore
 
 
@@ -1003,6 +1003,118 @@ class ForemanStoreTests(unittest.TestCase):
                 store.list_events(task_id=task.id),
                 [first_event, second_event],
             )
+
+    def test_gate_round_trip_all_fields_and_crud(self) -> None:
+        db_path = self.create_db_path()
+        project = Project(
+            id="project-1",
+            name="Foreman",
+            repo_path="/work/foreman",
+            workflow_id="development",
+            created_at="2026-04-01T10:00:00Z",
+            updated_at="2026-04-01T10:00:00Z",
+        )
+        sprint = Sprint(
+            id="sprint-1",
+            project_id=project.id,
+            title="Gate sprint",
+            status="active",
+            created_at="2026-04-01T10:05:00Z",
+            started_at="2026-04-01T10:06:00Z",
+        )
+        task = Task(
+            id="task-1",
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="Gate task",
+            status="blocked",
+            blocked_reason="Awaiting human approval",
+            created_at="2026-04-01T10:10:00Z",
+        )
+        pending_gate = Gate(
+            id="gate-1",
+            project_id=project.id,
+            sprint_id=sprint.id,
+            task_id=task.id,
+            type="human_review",
+            payload={
+                "step": "review",
+                "carried_output": "The changes look good.",
+                "question": "Approve this refactor?",
+            },
+            status="pending",
+            raised_at="2026-04-01T10:15:00Z",
+        )
+        approved_gate = Gate(
+            id="gate-2",
+            project_id=project.id,
+            sprint_id=sprint.id,
+            task_id=task.id,
+            type="human_review",
+            payload={"step": "develop"},
+            status="approved",
+            raised_at="2026-04-01T09:00:00Z",
+            resolved_at="2026-04-01T09:05:00Z",
+            resolved_by="human",
+        )
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            store.save_project(project)
+            store.save_sprint(sprint)
+            store.save_task(task)
+            store.save_gate(pending_gate)
+            store.save_gate(approved_gate)
+
+            # get_gate and all-fields round-trip
+            retrieved = store.get_gate(pending_gate.id)
+            assert retrieved is not None
+            self.assertEqual(retrieved.id, pending_gate.id)
+            self.assertEqual(retrieved.project_id, project.id)
+            self.assertEqual(retrieved.sprint_id, sprint.id)
+            self.assertEqual(retrieved.task_id, task.id)
+            self.assertEqual(retrieved.type, "human_review")
+            self.assertEqual(retrieved.payload["step"], "review")
+            self.assertEqual(retrieved.payload["question"], "Approve this refactor?")
+            self.assertEqual(retrieved.status, "pending")
+            self.assertIsNone(retrieved.resolved_at)
+            self.assertIsNone(retrieved.resolved_by)
+
+            # list_gates — all
+            all_gates = store.list_gates(project.id)
+            self.assertEqual(len(all_gates), 2)
+
+            # list_gates — filter by status
+            pending = store.list_gates(project.id, status="pending")
+            self.assertEqual(len(pending), 1)
+            self.assertEqual(pending[0].id, pending_gate.id)
+
+            # list_gates — filter by sprint_id
+            sprint_gates = store.list_gates(project.id, sprint_id=sprint.id)
+            self.assertEqual(len(sprint_gates), 2)
+
+            # list_pending_gates shortcut
+            self.assertEqual(store.list_pending_gates(project.id), pending)
+
+            # Update gate to approved
+            resolved_gate = Gate(
+                id=pending_gate.id,
+                project_id=project.id,
+                sprint_id=sprint.id,
+                task_id=task.id,
+                type="human_review",
+                payload=pending_gate.payload,
+                status="approved",
+                raised_at=pending_gate.raised_at,
+                resolved_at="2026-04-01T11:00:00Z",
+                resolved_by="human",
+            )
+            store.save_gate(resolved_gate)
+            updated = store.get_gate(pending_gate.id)
+            assert updated is not None
+            self.assertEqual(updated.status, "approved")
+            self.assertEqual(updated.resolved_at, "2026-04-01T11:00:00Z")
+            self.assertEqual(updated.resolved_by, "human")
 
 
 if __name__ == "__main__":
