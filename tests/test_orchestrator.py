@@ -301,7 +301,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
             def developer_handler(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
                 self.assertIsNone(carried_output)
                 self.assertIn("Task: Implement orchestrator loop", prompt)
-                self.assertIn("Branch: feat/task-1-implement-orchestrator-loop", prompt)
+                self.assertIn("Branch: feat/task-1", prompt)
                 self.write_text(repo_path / "feature.txt", "implemented\n")
                 self.write_text(repo_path / "ready.txt", "ready\n")
                 self.commit_all(repo_path, "feat: implement workflow slice")
@@ -344,17 +344,18 @@ class ForemanOrchestratorTests(unittest.TestCase):
             self.assertEqual(updated_task.status, "done")
             self.assertEqual(
                 updated_task.branch_name,
-                "feat/task-1-implement-orchestrator-loop",
+                "feat/task-1",
             )
             self.assertIsNotNone(updated_task.completed_at)
 
             runs = store.list_runs(task_id=task.id)
+            agent_runs = [r for r in runs if r.role_id != "_builtin:orchestrator"]
             self.assertEqual(
-                [run.workflow_step for run in runs if run.role_id != "_builtin:orchestrator"],
+                [r.workflow_step for r in agent_runs],
                 ["develop", "review", "test", "merge", "done"],
             )
             self.assertEqual(
-                [run.outcome for run in runs],
+                [r.outcome for r in agent_runs],
                 ["done", "approve", "success", "success", "success"],
             )
 
@@ -453,12 +454,13 @@ class ForemanOrchestratorTests(unittest.TestCase):
             )
 
             runs = store.list_runs(task_id=task.id)
+            agent_runs = [r for r in runs if r.role_id != "_builtin:orchestrator"]
             self.assertEqual(
-                [run.workflow_step for run in runs if run.role_id != "_builtin:orchestrator"],
+                [r.workflow_step for r in agent_runs],
                 ["develop", "code_review", "security_review", "test", "merge", "done"],
             )
             self.assertEqual(
-                [run.outcome for run in runs],
+                [r.outcome for r in agent_runs],
                 ["done", "approve", "approve", "success", "success", "success"],
             )
 
@@ -602,7 +604,11 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 "Remove the hardcoded token in feature.txt.",
             )
             self.assertEqual(
-                [run.workflow_step for run in store.list_runs(task_id=task.id)],
+                [
+                    r.workflow_step
+                    for r in store.list_runs(task_id=task.id)
+                    if r.role_id != "_builtin:orchestrator"
+                ],
                 [
                     "develop",
                     "code_review",
@@ -641,7 +647,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
 
             def developer_one(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
                 self.assertIsNone(carried_output)
-                self.assertIn("Branch: feat/task-1-implement-orchestrator-loop", prompt)
+                self.assertIn("Branch: feat/task-1", prompt)
                 self.write_text(repo_path / "feature.txt", "initial implementation\n")
                 self.commit_all(repo_path, "feat: initial implementation")
                 return AgentExecutionResult(
@@ -735,7 +741,11 @@ class ForemanOrchestratorTests(unittest.TestCase):
             )
 
             self.assertEqual(
-                [run.workflow_step for run in store.list_runs(task_id=task.id)],
+                [
+                    r.workflow_step
+                    for r in store.list_runs(task_id=task.id)
+                    if r.role_id != "_builtin:orchestrator"
+                ],
                 [
                     "develop",
                     "review",
