@@ -114,6 +114,7 @@ class Task:
     workflow_current_step: str | None = None
     workflow_carried_output: str | None = None
     step_visit_counts: dict[str, int] = field(default_factory=dict)
+    completion_evidence: Any = None
     created_at: str = field(default_factory=utc_now_text)
     started_at: str | None = None
     completed_at: str | None = None

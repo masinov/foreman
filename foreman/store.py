@@ -30,6 +30,32 @@ def _json_loads(raw_value: str) -> Any:
     return json.loads(raw_value) if raw_value else None
 
 
+def _load_json_loads(raw_value: str) -> Any:
+    """Load a JSON value that may be either a dict (object) or a list (array)."""
+    if not raw_value:
+        return None
+    try:
+        parsed = json.loads(raw_value)
+        if isinstance(parsed, (dict, list)):
+            return parsed
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return None
+
+
+def _serialize_evidence(evidence: Any) -> str:
+    """Serialize a completion evidence object (dataclass or dict) to JSON."""
+    if evidence is None:
+        return ""
+    if isinstance(evidence, dict):
+        return json.dumps(evidence, sort_keys=True)
+    try:
+        from dataclasses import asdict
+        return json.dumps(asdict(evidence), sort_keys=True)
+    except Exception:
+        return json.dumps({"error": str(evidence)}, sort_keys=True)
+
+
 def _load_json_dict(raw_value: str) -> dict[str, Any]:
     parsed = _json_loads(raw_value)
     if parsed in (None, ""):
@@ -79,6 +105,8 @@ def _row_to_sprint(row: sqlite3.Row) -> Sprint:
 
 
 def _row_to_task(row: sqlite3.Row) -> Task:
+    raw_evidence = row["completion_evidence_json"] if "completion_evidence_json" in row.keys() else ""
+    completion_evidence = _load_json_loads(raw_evidence) if raw_evidence else None
     return Task(
         id=row["id"],
         sprint_id=row["sprint_id"],
@@ -98,6 +126,7 @@ def _row_to_task(row: sqlite3.Row) -> Task:
         workflow_current_step=row["workflow_current_step"],
         workflow_carried_output=row["workflow_carried_output"],
         step_visit_counts=_load_json_dict(row["step_visit_counts"]),
+        completion_evidence=completion_evidence,
         created_at=row["created_at"],
         started_at=row["started_at"],
         completed_at=row["completed_at"],
@@ -198,7 +227,9 @@ class ForemanStore:
 
         with self._connection:
             self._connection.executescript(_SCHEMA_MIGRATIONS_DDL)
-        return self.migrate()
+        applied = self.migrate()
+        self._repair_known_schema_drift()
+        return applied
 
     def schema_version(self) -> int:
         """Return the highest migration version applied to this database, or 0."""
@@ -235,6 +266,25 @@ class ForemanStore:
             applied.append(version)
 
         return applied
+
+    def _repair_known_schema_drift(self) -> None:
+        """Repair additive schema drift that can occur in long-lived local DBs.
+
+        This is intentionally narrow. It handles cases where a local database
+        has migration ledger state that does not match the actual table shape,
+        which can happen when experimental branches reuse or reshuffle
+        migration versions before landing on main.
+        """
+
+        task_columns = {
+            str(row["name"])
+            for row in self._connection.execute("PRAGMA table_info(tasks)").fetchall()
+        }
+        if "completion_evidence_json" not in task_columns:
+            with self._connection:
+                self._connection.execute(
+                    "ALTER TABLE tasks ADD COLUMN completion_evidence_json TEXT NOT NULL DEFAULT ''"
+                )
 
     def save_project(self, project: Project) -> Project:
         """Insert or update a project record."""
@@ -395,9 +445,9 @@ class ForemanStore:
                     priority, order_index, branch_name, assigned_role,
                     acceptance_criteria, blocked_reason, created_by,
                     depends_on_task_ids, workflow_current_step,
-                    workflow_carried_output, step_visit_counts, created_at,
-                    started_at, completed_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    workflow_carried_output, step_visit_counts, completion_evidence_json,
+                    created_at, started_at, completed_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     sprint_id = excluded.sprint_id,
                     project_id = excluded.project_id,
@@ -416,6 +466,7 @@ class ForemanStore:
                     workflow_current_step = excluded.workflow_current_step,
                     workflow_carried_output = excluded.workflow_carried_output,
                     step_visit_counts = excluded.step_visit_counts,
+                    completion_evidence_json = excluded.completion_evidence_json,
                     created_at = excluded.created_at,
                     started_at = excluded.started_at,
                     completed_at = excluded.completed_at
@@ -439,6 +490,7 @@ class ForemanStore:
                     task.workflow_current_step,
                     task.workflow_carried_output,
                     _json_dumps(task.step_visit_counts),
+                    _serialize_evidence(task.completion_evidence),
                     task.created_at,
                     task.started_at,
                     task.completed_at,

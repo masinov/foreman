@@ -23,7 +23,7 @@ class RunnerExecutorConfig:
     """Configuration for the runner-based executor."""
 
     default_timeout_seconds: int = 3600
-    default_max_cost_usd: float = 10.0
+    default_max_cost_usd: float = 1000.0
     default_permission_mode: str = "auto"
     capture_all_events: bool = True
 

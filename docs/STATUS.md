@@ -2,18 +2,45 @@
 
 ## Current sprint
 
-- Sprint: `sprint-44-supervisor-state-reconciliation` (in progress)
-- Branch: `fix/run-auto-activate-planned-sprint`
+- Sprint: `sprint-46-completion-truth-hardening` (in progress)
+- Branch: none
 
 ## Active branches
 
-- `fix/run-auto-activate-planned-sprint` — add supervisor-to-SQLite
-  reconciliation so approved reviewed runs persist task completion and sprint
-  lifecycle state in `.foreman.db`; prevent reviewed Codex from continuing work
-  on `main` after the supervisor merge commit
+- none
 
-## Completed this session (sprints 36–43)
+## Completed this session (sprints 36–46)
 
+- completed `sprint-45-supervised-convergence-validation`
+- ran a supervised Foreman session end to end against the live repository
+- verified queue activation, task execution, review, merge, and SQLite
+  completion state through a real session rather than a simulated path
+- merged regression-test and repo-memory updates; no new `foreman/*.py`
+  implementation changes landed from the autonomous run itself
+- started `sprint-46-completion-truth-hardening`
+- confirmed the real backend gap after sprint 45 is completion-truth
+  evaluation, not directed task selection: in directed mode Foreman executes
+  the next runnable queued task and currently lacks a first-class structured
+  completion-evidence model
+- completed `task-completion-evidence-model-in-orchestrator`
+- added a `CompletionEvidence` dataclass and evidence builder in
+  `foreman/orchestrator.py`; `finalize_supervisor_merge()` now persists
+  structured completion evidence and emits an `engine.completion_evidence`
+  event
+- added `Task.completion_evidence` plus `completion_evidence_json` persistence
+  in the SQLite store and migration framework
+- hardened `ForemanStore.initialize()` with a narrow additive schema-repair
+  step so long-lived local databases recover when a migration ledger entry
+  exists without the matching `tasks.completion_evidence_json` column
+- raised shipped role and executor cost caps to `$1000.00` so native runs do
+  not stop early on environments that do not need per-run USD gating
+- completed `sprint-44-supervisor-state-reconciliation`
+- introduced shared supervisor finalization seam in `foreman/supervisor_state.py`
+  that maps a merged branch back to a tracked task, marks it done, and propagates
+  sprint lifecycle; wired `finalize_supervisor_merge` into both reviewed
+  supervisors; added post-merge branch safety to reviewed Codex (remembers the
+  supervisor merge HEAD and rejects dirty or drifted `main`); added regression
+  tests in `test_supervisor_state.py` and `test_reviewed_codex.py`
 - completed `sprint-43-backend-run-queue-activation`
 - move first-planned-sprint activation into the backend run path so
   `foreman run <project>` can consume queued work without a dashboard-only

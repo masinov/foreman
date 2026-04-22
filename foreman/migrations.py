@@ -154,4 +154,11 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         ON decision_gates(project_id, status);
         """,
     ),
+    (
+        5,
+        "add completion_evidence_json to tasks for structured completion evidence",
+        """
+        ALTER TABLE tasks ADD COLUMN completion_evidence_json TEXT NOT NULL DEFAULT '';
+        """,
+    ),
 ]
