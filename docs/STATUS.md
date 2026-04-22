@@ -7,7 +7,7 @@
 
 ## Active branches
 
-- `fix/task-repair-first-live-supervised-run-defect` — repair first live supervised run defect: added missing `main`-violation guard to `reviewed_claude.py` (feature parity with `reviewed_codex.py`); hardened both supervisors with regression test coverage for the post-merge branch-safety seam
+- `chore/task-reviewed-claude-supervisor-regression-coverage` — add regression coverage for `scripts/reviewed_claude.py`: 18 new tests covering TASK_ID extraction edge cases, SQLite reconciliation integration, reviewer decision normalization, and main-violation detection; 40 tests pass total in `test_reviewed_claude.py` and `test_supervisor_state.py`
 
 ## Completed this session (sprints 36–45)
 

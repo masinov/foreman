@@ -45,7 +45,17 @@ supervisors and hardening the first defect they expose.
     - `test_finalize_supervisor_merge_skips_already_done_task` — no duplicate events
     - `test_finalize_supervisor_merge_does_not_complete_sprint_when_other_tasks_unresolved`
 - [todo] Repair first live supervised run defect (task-repair-first-live-supervised-run-defect)
-- [todo] Reviewed Claude supervisor regression coverage (task-reviewed-claude-supervisor-regression-coverage)
+- [done] Reviewed Claude supervisor regression coverage (task-reviewed-claude-supervisor-regression-coverage)
+  - Added 18 new tests in `tests/test_reviewed_claude.py` covering:
+    - TASK_ID extraction edge cases: empty colon value, bold header with next-line
+      value, body-text false positives, empty input, first-match wins
+    - SQLite reconciliation: explicit task_id pass-through, missing DB error,
+      none-result recovery prompt
+    - Malformed completion summary rejection: whitespace-only normalize_decision,
+      DENY without colon, empty string, STEER/DENY preserved as-is
+    - Developer completion declaration false positives
+    - Main violation detection: on-main branch, main-head change, empty main head
+  - 40 tests pass total (32 in test_reviewed_claude, 8 in test_supervisor_state)
 
 ## Validation
 

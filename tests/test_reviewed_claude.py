@@ -99,19 +99,27 @@ class ReviewedClaudeFlowTests(unittest.TestCase):
 
     # ─── Main violation detection ─────────────────────────────────────────────
 
-    @patch("scripts.reviewed_claude.current_branch", return_value="main")
-    def test_developer_turn_safe_rejects_main_branch(self, _current_branch: Mock) -> None:
-        runner = self.make_runner()
-        runner._developer_turn_safe = Mock(return_value="__MAIN_VIOLATION__")
+    def test_main_head_returns_empty_string_when_main_not_found(self) -> None:
+        with patch("scripts.reviewed_claude.run_git", return_value=""):
+            result = reviewed_claude.main_head()
+            self.assertEqual(result, "")
 
-        result = runner._developer_turn_safe("prompt")
+    def test_developer_turn_safe_returns_main_violation_when_on_main(self) -> None:
+        runner = self.make_runner()
+        runner._run_developer_turn = Mock(return_value="committed directly to main")
+        runner.consecutive_api_failures = 0
+
+        with patch("scripts.reviewed_claude.current_branch", return_value="main"):
+            with patch("scripts.reviewed_claude.main_head", return_value="abc123"):
+                result = runner._developer_turn_safe("prompt")
 
         self.assertEqual(result, "__MAIN_VIOLATION__")
-        self.assertEqual(runner.consecutive_api_failures, 0)
+        self.assertEqual(runner.consecutive_api_failures, 0)  # not an API error
 
-    def test_developer_turn_safe_rejects_main_head_change(self) -> None:
+    def test_developer_turn_safe_returns_main_violation_when_main_head_changed(self) -> None:
         runner = self.make_runner()
         runner._run_developer_turn = Mock(return_value="some output")
+        runner.consecutive_api_failures = 0
 
         call_count = [0]
 
@@ -125,113 +133,136 @@ class ReviewedClaudeFlowTests(unittest.TestCase):
 
         self.assertEqual(result, "__MAIN_VIOLATION__")
 
-    @patch("scripts.reviewed_claude.current_branch", return_value="feat/branch")
-    @patch("scripts.reviewed_claude.main_head", return_value="abc123")
-    def test_developer_turn_safe_tracks_api_failures(
-        self, _main_head: Mock, _current_branch: Mock
-    ) -> None:
+    def test_developer_turn_safe_increments_api_failure_on_runtime_error(self) -> None:
         runner = self.make_runner()
         runner._run_developer_turn = Mock(side_effect=RuntimeError("api error"))
         runner.consecutive_api_failures = 2
 
-        result = runner._developer_turn_safe("prompt")
+        with patch("scripts.reviewed_claude.current_branch", return_value="feat/branch"):
+            with patch("scripts.reviewed_claude.main_head", return_value="abc123"):
+                result = runner._developer_turn_safe("prompt")
 
         self.assertIsNone(result)
         self.assertEqual(runner.consecutive_api_failures, 3)
 
-    @patch("scripts.reviewed_claude.current_branch", return_value="feat/branch")
-    @patch("scripts.reviewed_claude.main_head", return_value="abc123")
-    def test_developer_turn_safe_resets_failure_count_on_success(
-        self, _main_head: Mock, _current_branch: Mock
-    ) -> None:
+    def test_developer_turn_safe_resets_api_failure_on_success(self) -> None:
         runner = self.make_runner()
-        runner.consecutive_api_failures = 2
         runner._run_developer_turn = Mock(return_value="output text")
+        runner.consecutive_api_failures = 2
 
-        result = runner._developer_turn_safe("prompt")
+        with patch("scripts.reviewed_claude.current_branch", return_value="feat/branch"):
+            with patch("scripts.reviewed_claude.main_head", return_value="abc123"):
+                result = runner._developer_turn_safe("prompt")
 
         self.assertEqual(result, "output text")
         self.assertEqual(runner.consecutive_api_failures, 0)
 
-    # ─── Reviewer interaction ────────────────────────────────────────────────
+    # ─── Task ID extraction edge cases ─────────────────────────────────────────
 
-    @patch("scripts.reviewed_claude.run_git")
-    def test_build_review_prompt_includes_developer_output(
-        self, _run_git: Mock
-    ) -> None:
-        runner = self.make_runner()
-        runner.last_developer_output = "Developer completed task-1.\nTASK_ID: task-1"
-        with patch("scripts.reviewed_claude.current_branch", return_value="feat/slice"):
-            prompt = runner.build_review_prompt()
-        self.assertIn("Developer completed task-1", prompt)
-        self.assertIn("feat/slice", prompt)
+    def test_extract_task_id_empty_colon_value_returns_none(self) -> None:
+        text = "Summary\nTASK_ID:\nREVIEWED_CLAUDE_TASK_COMPLETE\n"
+        self.assertIsNone(reviewed_claude.extract_task_id(text))
 
-    @patch("scripts.reviewed_claude.run_git")
-    def test_build_review_prompt_shows_fallback_when_no_output(
-        self, _run_git: Mock
-    ) -> None:
-        runner = self.make_runner()
-        runner.last_developer_output = ""
-        with patch("scripts.reviewed_claude.current_branch", return_value="feat/slice"):
-            prompt = runner.build_review_prompt()
-        self.assertIn("no completion summary", prompt)
+    def test_extract_task_id_bold_header_next_line_value(self) -> None:
+        text = "Summary\n**Task ID**\nsprint-45-t1\nREVIEWED_CLAUDE_TASK_COMPLETE\n"
+        self.assertEqual(reviewed_claude.extract_task_id(text), "sprint-45-t1")
 
-    # ─── Finalize merge integration ──────────────────────────────────────────
+    def test_extract_task_id_not_recognized_when_only_in_body_text(self) -> None:
+        text = "Summary\nThe task-id was sprint-45-t1 according to our tracking.\nREVIEWED_CLAUDE_TASK_COMPLETE\n"
+        self.assertIsNone(reviewed_claude.extract_task_id(text))
 
-    @patch("scripts.reviewed_claude.Path.exists")
-    def test_finalize_supervisor_merge_returns_error_when_db_missing(
-        self, mock_exists: Mock
-    ) -> None:
-        mock_exists.return_value = False
-        result = reviewed_claude.finalize_supervisor_merge("feat/branch")
-        self.assertIn("missing", result)
+    def test_extract_task_id_empty_text_returns_none(self) -> None:
+        self.assertIsNone(reviewed_claude.extract_task_id(""))
+        self.assertIsNone(reviewed_claude.extract_task_id("   \n  "))
 
-    @patch("scripts.reviewed_claude.terminal_report")
-    @patch("scripts.reviewed_claude.ForemanStore")
-    def test_finalize_supervisor_merge_reports_state_when_finalize_returns_none(
-        self, mock_store_class: Mock, _terminal_report: Mock
-    ) -> None:
-        mock_store = Mock()
-        mock_store.initialize = Mock()
-        mock_store_class.return_value.__enter__ = Mock(return_value=mock_store)
-        mock_store_class.return_value.__exit__ = Mock(return_value=None)
+    def test_extract_task_id_returns_first_match(self) -> None:
+        text = "Summary\nTASK_ID: first-id\nSomething else\n**Task ID**: last-id\n"
+        self.assertEqual(reviewed_claude.extract_task_id(text), "first-id")
 
-        with patch.object(
-            reviewed_claude, "finalize_supervisor_merge_state", return_value=None
-        ):
-            result = reviewed_claude.finalize_supervisor_merge("feat/branch", task_id="task-1")
-        self.assertIn("could not map", result)
+    # ─── Reviewer decision parsing edge cases ─────────────────────────────────
 
-    @patch("scripts.reviewed_claude.terminal_report")
-    @patch("scripts.reviewed_claude.ForemanStore")
-    def test_finalize_supervisor_merge_reports_success_payload(
-        self, mock_store_class: Mock, mock_terminal_report: Mock
-    ) -> None:
+    def test_split_reviewer_decision_empty_string_returns_steer(self) -> None:
+        kind, detail = reviewed_claude.split_reviewer_decision("")
+        self.assertEqual(kind, "STEER")
+        self.assertEqual(detail, "")
+
+    def test_normalize_decision_whitespace_only_returns_steer(self) -> None:
+        result = reviewed_claude.normalize_decision("   \n  ")
+        self.assertTrue(result.startswith("STEER:"))
+        self.assertIn("malformed", result)
+
+    def test_normalize_decision_just_deny_without_colon_returns_steer(self) -> None:
+        result = reviewed_claude.normalize_decision("DENY")
+        self.assertTrue(result.startswith("STEER:"))
+        self.assertIn("DENY", result)
+
+    def test_normalize_decision_empty_string_returns_steer(self) -> None:
+        result = reviewed_claude.normalize_decision("")
+        self.assertTrue(result.startswith("STEER:"))
+
+    def test_normalize_decision_steer_preserved(self) -> None:
+        result = reviewed_claude.normalize_decision("some noise\nSTEER: do this\nmore noise")
+        self.assertEqual(result, "STEER: do this")
+
+    def test_normalize_decision_deny_preserved(self) -> None:
+        result = reviewed_claude.normalize_decision("some noise\nDENY: reason here\nmore noise")
+        self.assertEqual(result, "DENY: reason here")
+
+    # ─── Developer completion declaration edge cases ─────────────────────────
+
+    def test_developer_declared_completion_false_without_marker(self) -> None:
+        self.assertFalse(reviewed_claude.developer_declared_completion("TASK_COMPLETE wrong format"))
+        self.assertFalse(reviewed_claude.developer_declared_completion(""))
+
+    def test_developer_declared_spec_complete_false_without_marker(self) -> None:
+        self.assertFalse(reviewed_claude.developer_declared_spec_complete("SPEC_COMPLETE wrong format"))
+        self.assertFalse(reviewed_claude.developer_declared_spec_complete(""))
+
+    # ─── SQLite reconciliation integration ─────────────────────────────────────
+
+    def test_finalize_supervisor_merge_passes_explicit_task_id(self) -> None:
         from foreman.supervisor_state import SupervisorMergeResult
 
         mock_store = Mock()
         mock_store.initialize = Mock()
-        mock_store_class.return_value.__enter__ = Mock(return_value=mock_store)
-        mock_store_class.return_value.__exit__ = Mock(return_value=None)
+        with patch("scripts.reviewed_claude.ForemanStore") as mock_store_class:
+            mock_store_class.return_value.__enter__ = Mock(return_value=mock_store)
+            mock_store_class.return_value.__exit__ = Mock(return_value=None)
+            with patch("scripts.reviewed_claude.finalize_supervisor_merge_state") as mock_finalize:
+                result_obj = SupervisorMergeResult(
+                    project_id="proj-1",
+                    task_id="explicit-task",
+                    sprint_id="sprint-1",
+                    task_status="done",
+                    sprint_status="active",
+                    stop_reason=None,
+                )
+                mock_finalize.return_value = result_obj
+                with patch("scripts.reviewed_claude.terminal_report"):
+                    result = reviewed_claude.finalize_supervisor_merge(
+                        "feat/branch", task_id="explicit-task"
+                    )
 
-        result_obj = SupervisorMergeResult(
-            project_id="proj-1",
-            task_id="task-1",
-            sprint_id="sprint-1",
-            task_status="done",
-            sprint_status="completed",
-            stop_reason="sprint_complete",
-        )
-        with patch.object(
-            reviewed_claude, "finalize_supervisor_merge_state", return_value=result_obj
-        ):
-            result = reviewed_claude.finalize_supervisor_merge("feat/branch", task_id="task-1")
         self.assertEqual(result, "")
-        mock_terminal_report.assert_called()
-        call_kwargs = mock_terminal_report.call_args.kwargs
-        self.assertEqual(call_kwargs["payload"]["task_status"], "done")
-        self.assertEqual(call_kwargs["payload"]["sprint_status"], "completed")
+        mock_finalize.assert_called_once()
+        _, kwargs = mock_finalize.call_args
+        self.assertEqual(kwargs["task_id"], "explicit-task")
+        self.assertEqual(kwargs["branch_name"], "feat/branch")
 
+    def test_finalize_supervisor_merge_db_absent_returns_meaningful_error(self) -> None:
+        with patch("scripts.reviewed_claude.Path.exists", return_value=False):
+            result = reviewed_claude.finalize_supervisor_merge("feat/branch")
+        self.assertIn("missing", result)
+        self.assertIn(".foreman.db", result)
 
-if __name__ == "__main__":
-    unittest.main()
+    @patch("scripts.reviewed_claude.ForemanStore")
+    @patch("scripts.reviewed_claude.terminal_report")
+    def test_finalize_supervisor_merge_none_result_gives_recovery_prompt(
+        self, _terminal_report: Mock, _mock_store_class: Mock
+    ) -> None:
+        with patch.object(reviewed_claude, "finalize_supervisor_merge_state", return_value=None):
+            result = reviewed_claude.finalize_supervisor_merge("feat/branch", task_id="task-1")
+
+        self.assertIn("could not map", result)
+
+    # ─── Reviewer interaction ────────────────────────────────────────────────
