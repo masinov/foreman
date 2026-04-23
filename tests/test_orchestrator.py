@@ -2740,6 +2740,987 @@ class DecisionExtractionTests(unittest.TestCase):
         self.assertEqual(detail, "add the missing migration test")
 
 
+class CompletionEvidenceTests(unittest.TestCase):
+    """Regression coverage for CompletionEvidence false-positive scenarios.
+
+    Proves that Foreman does not treat docs-only or tests-only changes as
+    sufficient completion for implementation-oriented backend tasks when the
+    completion evidence does not support that outcome.
+
+    False-positive scenarios covered:
+    - docs-only:    no implementation code changed (verdict = insufficient)
+    - tests-only:  tests added but no implementation code (verdict <= weak)
+    - approval-only: reviewer approval without evidence of actual implementation
+    - text-only:    agent output text without matching code changes (weak verdict)
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.roles = load_roles(default_roles_dir())
+        cls.workflows = load_workflows(
+            default_workflows_dir(),
+            available_role_ids=set(cls.roles),
+        )
+
+    def create_workspace(self) -> tuple[Path, Path]:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        root = Path(temp_dir.name)
+        repo_path = root / "repo"
+        repo_path.mkdir()
+        db_path = root / "foreman.db"
+        return repo_path, db_path
+
+    def git(self, repo_path: Path, *args: str) -> subprocess.CompletedProcess[str]:
+        result = subprocess.run(
+            ["git", *args],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise AssertionError(
+                f"git {' '.join(args)} failed in {repo_path}\n"
+                f"stdout:\n{result.stdout}\n"
+                f"stderr:\n{result.stderr}"
+            )
+        return result
+
+    def write_text(self, path: Path, text: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+    def commit_all(self, repo_path: Path, message: str) -> None:
+        self.git(repo_path, "add", ".")
+        self.git(repo_path, "commit", "-m", message)
+
+    def initialize_repo(self, repo_path: Path) -> None:
+        self.git(repo_path, "init")
+        self.git(repo_path, "checkout", "-b", "main")
+        self.git(repo_path, "config", "user.email", "foreman-tests@example.com")
+        self.git(repo_path, "config", "user.name", "Foreman Tests")
+        self.write_text(repo_path / "AGENTS.md", "# Local Instructions\nUse tests.\n")
+        self.write_text(repo_path / ".gitignore", ".foreman/\n")
+        self.write_text(repo_path / "README.md", "# Temp Repo\n")
+        self.commit_all(repo_path, "chore: initial commit")
+
+    def seed_project(
+        self,
+        store: ForemanStore,
+        *,
+        repo_path: Path,
+        acceptance_criteria: str | None = None,
+        branch_name: str | None = "feat/task-fp-1",
+    ) -> tuple[Project, Sprint, Task]:
+        project = Project(
+            id="project-fp",
+            name="False-Positive Test",
+            repo_path=str(repo_path),
+            spec_path="docs/specs/engine-design-v3.md",
+            workflow_id="development",
+            default_branch="main",
+            settings={
+                "task_selection_mode": "directed",
+                "test_command": "test -f ready.txt",
+                "default_model": "gpt-5.4",
+            },
+            created_at="2026-04-22T10:00:00Z",
+            updated_at="2026-04-22T10:00:00Z",
+        )
+        sprint = Sprint(
+            id="sprint-fp",
+            project_id=project.id,
+            title="False-Positive Sprint",
+            goal="Validate completion truth",
+            status="active",
+            order_index=1,
+            created_at="2026-04-22T10:05:00Z",
+            started_at="2026-04-22T10:10:00Z",
+        )
+        task = Task(
+            id="task-fp-1",
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="Implement the scheduler queue",
+            description="Build a persistent task scheduler.",
+            status="todo",
+            task_type="feature",
+            priority=1,
+            order_index=1,
+            acceptance_criteria=acceptance_criteria,
+            branch_name=branch_name,
+            created_at="2026-04-22T10:15:00Z",
+        )
+        store.save_project(project)
+        store.save_sprint(sprint)
+        store.save_task(task)
+        return project, sprint, task
+
+    def seed_run(
+        self,
+        store: ForemanStore,
+        *,
+        project: Project,
+        task: Task,
+        role_id: str,
+        workflow_step: str,
+        agent_backend: str,
+        created_at: str,
+        outcome: str = "done",
+        outcome_detail: str = "Completed.",
+        status: str = "completed",
+    ) -> Run:
+        run = Run(
+            id=f"run-fp-{len(store.list_runs(task_id=task.id)) + 1}",
+            task_id=task.id,
+            project_id=project.id,
+            role_id=role_id,
+            workflow_step=workflow_step,
+            agent_backend=agent_backend,
+            status=status,
+            outcome=outcome,
+            outcome_detail=outcome_detail,
+            created_at=created_at,
+        )
+        store.save_run(run)
+        return run
+
+    def seed_test_events(
+        self,
+        store: ForemanStore,
+        run: Run,
+        task: Task,
+        project: Project,
+        passed: bool,
+        timestamp: str,
+        command: str = "pytest tests/",
+    ) -> None:
+        test_run_event = Event(
+            id=f"event-test-run-{task.id}-{run.id}",
+            run_id=run.id,
+            task_id=task.id,
+            project_id=project.id,
+            event_type="engine.test_run",
+            timestamp=timestamp,
+            payload={"command": command, "passed": passed},
+        )
+        test_output_event = Event(
+            id=f"event-test-output-{task.id}-{run.id}",
+            run_id=run.id,
+            task_id=task.id,
+            project_id=project.id,
+            event_type="engine.test_output",
+            timestamp=timestamp,
+            payload={"exit_code": 0 if passed else 1, "output": "ok" if passed else "FAILED"},
+        )
+        store.save_event(test_run_event)
+        store.save_event(test_output_event)
+
+    def test_build_completion_evidence_returns_correct_structure(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(
+                store,
+                repo_path=repo_path,
+                acceptance_criteria="Implement the orchestrator.\nWrite tests for it.",
+            )
+
+            self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude_code",
+                outcome="done",
+                outcome_detail="Implemented the orchestrator module with proper structure.",
+                created_at="2026-04-22T10:20:00Z",
+            )
+            self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="code_reviewer",
+                workflow_step="review",
+                agent_backend="claude_code",
+                outcome="approve",
+                outcome_detail="Implementation looks correct.",
+                created_at="2026-04-22T10:25:00Z",
+            )
+
+            self.git(repo_path, "checkout", "-b", task.branch_name)
+            self.write_text(repo_path / "orchestrator.py", "def run(): pass\n")
+            self.commit_all(repo_path, "feat: implement orchestrator")
+            self.git(repo_path, "checkout", "main")
+
+            orchestrator = ForemanOrchestrator(store, roles=self.roles, workflows=self.workflows)
+
+            evidence = orchestrator.build_completion_evidence(task, project)
+
+            self.assertIsNotNone(evidence)
+            assert evidence is not None
+            self.assertEqual(evidence.task_id, task.id)
+            self.assertEqual(evidence.task_title, task.title)
+            self.assertEqual(evidence.acceptance_criteria, task.acceptance_criteria)
+            self.assertEqual(evidence.criteria_count, 2)
+            self.assertGreater(len(evidence.agent_outputs), 0)
+            self.assertIn("orchestrator.py", evidence.changed_files)
+            self.assertIn("1 file", evidence.branch_diff_stat)
+
+    def test_build_completion_evidence_scores_passed_tests_higher(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(
+                store,
+                repo_path=repo_path,
+                acceptance_criteria="Implement feature.\nAdd tests.",
+            )
+
+            self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude_code",
+                outcome="done",
+                outcome_detail="Implemented the feature module with comprehensive tests.",
+                created_at="2026-04-22T10:20:00Z",
+            )
+            self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="code_reviewer",
+                workflow_step="review",
+                agent_backend="claude_code",
+                outcome="approve",
+                outcome_detail="Code review passed.",
+                created_at="2026-04-22T10:25:00Z",
+            )
+            test_run = self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="_builtin:test",
+                workflow_step="test",
+                agent_backend="builtin",
+                outcome="success",
+                outcome_detail="All tests passed.",
+                created_at="2026-04-22T10:30:00Z",
+            )
+            self.seed_test_events(
+                store, test_run, task, project, passed=True, timestamp="2026-04-22T10:30:00Z"
+            )
+
+            self.git(repo_path, "checkout", "-b", task.branch_name)
+            self.write_text(repo_path / "feature.py", "def feature(): return True\n")
+            self.commit_all(repo_path, "feat: add feature")
+            self.git(repo_path, "checkout", "main")
+
+            orchestrator = ForemanOrchestrator(store, roles=self.roles, workflows=self.workflows)
+
+            evidence = orchestrator.build_completion_evidence(task, project)
+
+            self.assertIsNotNone(evidence)
+            assert evidence is not None
+            self.assertTrue(evidence.builtin_test_passed)
+            self.assertEqual(evidence.builtin_test_result, "pytest tests/")
+            self.assertGreater(evidence.score, 0)
+            self.assertIn("test=30", evidence.score_breakdown)
+
+    def test_build_completion_evidence_failing_test_receives_zero_test_points(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(
+                store,
+                repo_path=repo_path,
+                acceptance_criteria="Implement feature.\nAdd tests.",
+            )
+
+            self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude_code",
+                outcome="done",
+                outcome_detail="Implemented the feature module.",
+                created_at="2026-04-22T10:20:00Z",
+            )
+            test_run = self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="_builtin:test",
+                workflow_step="test",
+                agent_backend="builtin",
+                outcome="failure",
+                outcome_detail="Tests failed.",
+                created_at="2026-04-22T10:25:00Z",
+            )
+            self.seed_test_events(
+                store, test_run, task, project, passed=False, timestamp="2026-04-22T10:25:00Z"
+            )
+
+            orchestrator = ForemanOrchestrator(store, roles=self.roles, workflows=self.workflows)
+
+            evidence = orchestrator.build_completion_evidence(task, project)
+
+            self.assertIsNotNone(evidence)
+            assert evidence is not None
+            self.assertFalse(evidence.builtin_test_passed)
+            self.assertIn("test=0", evidence.score_breakdown)
+
+    def test_build_completion_evidence_verdict_weak_when_no_criteria_addressed(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(
+                store,
+                repo_path=repo_path,
+                acceptance_criteria="Implement the scheduler queue.\nAdd priority handling.\n",
+            )
+
+            # Empty output — nothing addresses the criteria
+            self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude_code",
+                outcome="done",
+                outcome_detail="Done.",
+                created_at="2026-04-22T10:20:00Z",
+            )
+
+            orchestrator = ForemanOrchestrator(store, roles=self.roles, workflows=self.workflows)
+
+            evidence = orchestrator.build_completion_evidence(task, project)
+
+            self.assertIsNotNone(evidence)
+            assert evidence is not None
+            self.assertEqual(evidence.criteria_addressed, 0)
+            self.assertLess(evidence.score, 40)
+            self.assertIn(evidence.verdict, ("weak", "insufficient"))
+
+    def test_build_completion_evidence_weak_verdict_despite_criteria_coverage_when_no_code_changes(
+        self,
+    ) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(
+                store,
+                repo_path=repo_path,
+                acceptance_criteria="Implement the scheduler queue.\nAdd priority handling.\n",
+            )
+
+            self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude_code",
+                outcome="done",
+                outcome_detail="Implemented the scheduler queue with priority handling for tasks.",
+                created_at="2026-04-22T10:20:00Z",
+            )
+
+            # No code changes made — only output text with no diff
+            orchestrator = ForemanOrchestrator(store, roles=self.roles, workflows=self.workflows)
+
+            evidence = orchestrator.build_completion_evidence(task, project)
+
+            self.assertIsNotNone(evidence)
+            assert evidence is not None
+            self.assertGreater(evidence.criteria_addressed, 0)
+            self.assertGreaterEqual(evidence.score, 40)
+            # Without code changes and no test result, verdict stays "weak" despite criteria coverage
+            self.assertEqual(evidence.verdict, "weak")
+
+    def test_build_completion_evidence_no_acceptance_criteria_handled_gracefully(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path, acceptance_criteria=None)
+
+            self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude_code",
+                outcome="done",
+                outcome_detail="Done.",
+                created_at="2026-04-22T10:20:00Z",
+            )
+
+            orchestrator = ForemanOrchestrator(store, roles=self.roles, workflows=self.workflows)
+
+            evidence = orchestrator.build_completion_evidence(task, project)
+
+            self.assertIsNotNone(evidence)
+            assert evidence is not None
+            self.assertEqual(evidence.criteria_count, 0)
+            self.assertEqual(evidence.verdict, "insufficient")
+            self.assertIn("No acceptance criteria defined", evidence.verdict_reasons)
+
+    # ------------------------------------------------------------------
+    # False-positive regression tests: core acceptance criteria
+    # ------------------------------------------------------------------
+
+    def test_docs_only_changes_verdict_is_insufficient(self) -> None:
+        """Docs-only changes with reviewer approval are NOT sufficient for implementation tasks.
+
+        Even when a reviewer approves and the agent reports done, docs-only
+        changes to a task about implementing backend code produce verdict=insufficient.
+        """
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(
+                store,
+                repo_path=repo_path,
+                acceptance_criteria="Implement the scheduler queue.\nAdd priority handling.\nWrite integration tests.\n",
+            )
+
+            self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude_code",
+                outcome="done",
+                outcome_detail="Documented the scheduler design in docs/scheduler.md",
+                created_at="2026-04-22T10:20:00Z",
+            )
+            self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="code_reviewer",
+                workflow_step="review",
+                agent_backend="claude_code",
+                outcome="approve",
+                outcome_detail="Documentation looks great.",
+                created_at="2026-04-22T10:25:00Z",
+            )
+
+            # Only docs changed — no implementation code
+            self.git(repo_path, "checkout", "-b", task.branch_name)
+            self.write_text(repo_path / "docs" / "scheduler.md", "# Scheduler Design\n## Queue\n")
+            self.commit_all(repo_path, "docs: document scheduler design")
+            self.git(repo_path, "checkout", "main")
+
+            orchestrator = ForemanOrchestrator(store, roles=self.roles, workflows=self.workflows)
+
+            evidence = orchestrator.build_completion_evidence(task, project)
+
+            self.assertIsNotNone(evidence)
+            assert evidence is not None
+            # Changed files are docs only — no .py implementation files
+            self.assertTrue(
+                all(
+                    f.endswith(".md") or f.startswith("docs/")
+                    for f in evidence.changed_files
+                ),
+                f"Expected docs-only changes, got: {evidence.changed_files}",
+            )
+            # Score is low: no criteria addressed, no code changes
+            self.assertLess(evidence.score, 40)
+            # Verdict must be insufficient — docs-only is not adequate for implementation task
+            self.assertEqual(
+                evidence.verdict,
+                "insufficient",
+                f"Expected verdict=insufficient for docs-only, got verdict={evidence.verdict!r} "
+                f"(score={evidence.score}, breakdown={evidence.score_breakdown})",
+            )
+
+    def test_tests_only_changes_verdict_is_weak(self) -> None:
+        """Tests-only changes with reviewer approval are NOT sufficient for implementation tasks.
+
+        Adding tests for functionality that does not exist does not constitute
+        implementation evidence — verdict stays weak or below adequate.
+        """
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(
+                store,
+                repo_path=repo_path,
+                acceptance_criteria="Implement the scheduler queue.\nAdd priority handling.\n",
+            )
+
+            self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude_code",
+                outcome="done",
+                outcome_detail="Added tests for the scheduler queue.",
+                created_at="2026-04-22T10:20:00Z",
+            )
+            self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="code_reviewer",
+                workflow_step="review",
+                agent_backend="claude_code",
+                outcome="approve",
+                outcome_detail="Tests look reasonable.",
+                created_at="2026-04-22T10:25:00Z",
+            )
+
+            # Only test file changed — no implementation code
+            self.git(repo_path, "checkout", "-b", task.branch_name)
+            self.write_text(repo_path / "tests" / "test_scheduler.py", "def test_scheduler():\n    pass\n")
+            self.commit_all(repo_path, "test: add scheduler tests")
+            self.git(repo_path, "checkout", "main")
+
+            orchestrator = ForemanOrchestrator(store, roles=self.roles, workflows=self.workflows)
+
+            evidence = orchestrator.build_completion_evidence(task, project)
+
+            self.assertIsNotNone(evidence)
+            assert evidence is not None
+            # Only test file changed
+            self.assertTrue(
+                any("test_scheduler" in f for f in evidence.changed_files),
+                f"Expected test file in changed files, got: {evidence.changed_files}",
+            )
+            # No criteria addressed (no implementation for "scheduler" or "priority" in code)
+            self.assertEqual(evidence.criteria_addressed, 0)
+            # Score capped by file points alone
+            self.assertLess(evidence.score, 60)
+            # Verdict is weak or insufficient — tests-only is not adequate
+            self.assertIn(
+                evidence.verdict,
+                ("weak", "insufficient"),
+                f"Expected verdict in (weak, insufficient) for tests-only, got {evidence.verdict!r} "
+                f"(score={evidence.score})",
+            )
+
+    def test_approval_without_implementation_is_insufficient(self) -> None:
+        """Reviewer approval alone is not sufficient evidence for task completion.
+
+        Even with APPROVE outcome and no other signals, the evidence verdict
+        must reflect the absence of implementation work.
+        """
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(
+                store,
+                repo_path=repo_path,
+                acceptance_criteria="Implement the scheduler queue.\nAdd priority handling.\n",
+            )
+
+            # Agent marks done but no detail about actual work
+            self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude_code",
+                outcome="done",
+                outcome_detail="Done.",
+                created_at="2026-04-22T10:20:00Z",
+            )
+            # Reviewer approves with no substance
+            self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="code_reviewer",
+                workflow_step="review",
+                agent_backend="claude_code",
+                outcome="approve",
+                outcome_detail="Looks fine.",
+                created_at="2026-04-22T10:25:00Z",
+            )
+
+            # No branch or code changes
+            orchestrator = ForemanOrchestrator(store, roles=self.roles, workflows=self.workflows)
+
+            evidence = orchestrator.build_completion_evidence(task, project)
+
+            self.assertIsNotNone(evidence)
+            assert evidence is not None
+            # No criteria addressed
+            self.assertEqual(evidence.criteria_addressed, 0)
+            self.assertEqual(evidence.verdict, "insufficient")
+            self.assertLess(evidence.score, 40)
+
+    def test_text_claims_implementation_but_no_code_changes_produces_weak_verdict(self) -> None:
+        """Agent output that claims implementation but has no matching code changes.
+
+        The evidence model must detect this mismatch: text coverage alone does not
+        overcome the absence of code changes for implementation-oriented tasks.
+        """
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(
+                store,
+                repo_path=repo_path,
+                acceptance_criteria="Implement the scheduler queue.\nAdd priority handling.\n",
+            )
+
+            # Agent text claims it implemented the scheduler
+            self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude_code",
+                outcome="done",
+                outcome_detail=(
+                    "Implemented the scheduler queue with priority handling. "
+                    "The scheduler module now supports queue operations and priority-based ordering."
+                ),
+                created_at="2026-04-22T10:20:00Z",
+            )
+            self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="code_reviewer",
+                workflow_step="review",
+                agent_backend="claude_code",
+                outcome="approve",
+                outcome_detail="Implementation reviewed.",
+                created_at="2026-04-22T10:25:00Z",
+            )
+
+            # No code changes on the branch
+            orchestrator = ForemanOrchestrator(store, roles=self.roles, workflows=self.workflows)
+
+            evidence = orchestrator.build_completion_evidence(task, project)
+
+            self.assertIsNotNone(evidence)
+            assert evidence is not None
+            # Criteria are partially addressed via text (scheduler/priority in output)
+            # but verdict is weak because there are no code changes
+            self.assertLessEqual(evidence.verdict, "weak")
+            self.assertLess(evidence.score, 60)
+            # The score breakdown should reflect low file-change points
+            # (at most files=5 for no actual code changes)
+            self.assertIn("files=", evidence.score_breakdown)
+
+    def test_passed_tests_alone_without_implementation_is_weak_not_adequate(self) -> None:
+        """Passing tests without any implementation code is insufficient evidence.
+
+        A passing test run alone cannot support a verdict of adequate or higher
+        when no implementation files changed.
+        """
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(
+                store,
+                repo_path=repo_path,
+                acceptance_criteria="Implement the scheduler queue.\nAdd priority handling.\n",
+            )
+
+            self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude_code",
+                outcome="done",
+                outcome_detail="Work complete.",
+                created_at="2026-04-22T10:20:00Z",
+            )
+            test_run = self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="_builtin:test",
+                workflow_step="test",
+                agent_backend="builtin",
+                outcome="success",
+                outcome_detail="All tests passed.",
+                created_at="2026-04-22T10:25:00Z",
+            )
+            self.seed_test_events(
+                store, test_run, task, project, passed=True, timestamp="2026-04-22T10:25:00Z"
+            )
+
+            self.git(repo_path, "checkout", "-b", task.branch_name)
+            # Only a placeholder file — not a real implementation
+            self.write_text(repo_path / "scheduler.py", "# TODO\n")
+            self.commit_all(repo_path, "chore: placeholder")
+            self.git(repo_path, "checkout", "main")
+
+            orchestrator = ForemanOrchestrator(store, roles=self.roles, workflows=self.workflows)
+
+            evidence = orchestrator.build_completion_evidence(task, project)
+
+            self.assertIsNotNone(evidence)
+            assert evidence is not None
+            # Tests passed: 30 points from test component
+            self.assertIn("test=30", evidence.score_breakdown)
+            # But no real implementation: criteria_addressed stays 0
+            self.assertEqual(evidence.criteria_addressed, 0)
+            # Score maxes out at ~35 (30 test + 5 file) — still not adequate
+            self.assertLess(evidence.score, 60)
+            # Verdict is weak or insufficient — not adequate
+            self.assertIn(
+                evidence.verdict,
+                ("weak", "insufficient"),
+                f"Expected verdict in (weak, insufficient) for placeholder-only, "
+                f"got {evidence.verdict!r} (score={evidence.score})",
+            )
+
+    def test_strong_verdict_requires_code_changes_plus_criteria_plus_passed_tests(self) -> None:
+        """A 'strong' verdict requires all three: real code changes, addressed criteria, passing tests.
+
+        This is the positive case — proving the model rewards genuine completion.
+        """
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(
+                store,
+                repo_path=repo_path,
+                acceptance_criteria="Implement the scheduler queue.\nAdd priority handling.\n",
+            )
+
+            self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude_code",
+                outcome="done",
+                outcome_detail=(
+                    "Implemented the scheduler queue with priority handling. "
+                    "scheduler.py and scheduler_test.py now cover queue operations."
+                ),
+                created_at="2026-04-22T10:20:00Z",
+            )
+            self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="code_reviewer",
+                workflow_step="review",
+                agent_backend="claude_code",
+                outcome="approve",
+                outcome_detail="Implementation is solid.",
+                created_at="2026-04-22T10:25:00Z",
+            )
+            test_run = self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="_builtin:test",
+                workflow_step="test",
+                agent_backend="builtin",
+                outcome="success",
+                outcome_detail="All tests passed.",
+                created_at="2026-04-22T10:30:00Z",
+            )
+            self.seed_test_events(
+                store, test_run, task, project, passed=True, timestamp="2026-04-22T10:30:00Z"
+            )
+
+            # Real implementation files
+            self.git(repo_path, "checkout", "-b", task.branch_name)
+            self.write_text(
+                repo_path / "scheduler.py",
+                "# Scheduler queue with priority handling\ndef enqueue(item): pass\n",
+            )
+            self.write_text(
+                repo_path / "scheduler_test.py",
+                "def test_scheduler(): pass\n",
+            )
+            self.commit_all(repo_path, "feat: implement scheduler with priority")
+            self.git(repo_path, "checkout", "main")
+
+            orchestrator = ForemanOrchestrator(store, roles=self.roles, workflows=self.workflows)
+
+            evidence = orchestrator.build_completion_evidence(task, project)
+
+            self.assertIsNotNone(evidence)
+            assert evidence is not None
+            # All three signals present
+            self.assertGreater(evidence.criteria_addressed, 0)
+            self.assertTrue(evidence.builtin_test_passed)
+            self.assertGreater(len(evidence.changed_files), 0)
+            self.assertTrue(
+                any(f.endswith(".py") for f in evidence.changed_files),
+                f"Expected Python implementation files, got: {evidence.changed_files}",
+            )
+            # Score must be adequate or above
+            self.assertGreaterEqual(evidence.score, 60)
+            self.assertIn(
+                evidence.verdict,
+                ("adequate", "strong"),
+                f"Expected verdict in (adequate, strong) for strong completion, "
+                f"got {evidence.verdict!r} (score={evidence.score})",
+            )
+
+    def test_no_branch_means_no_changed_files_evidence(self) -> None:
+        """Tasks with no branch name have no diff evidence and rely solely on agent output.
+
+        This guards against false positives from incomplete task metadata.
+        """
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(
+                store,
+                repo_path=repo_path,
+                acceptance_criteria="Implement the scheduler queue.\nAdd priority handling.\n",
+                branch_name=None,  # No branch set
+            )
+
+            self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude_code",
+                outcome="done",
+                outcome_detail="Implemented the scheduler.",
+                created_at="2026-04-22T10:20:00Z",
+            )
+            self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="code_reviewer",
+                workflow_step="review",
+                agent_backend="claude_code",
+                outcome="approve",
+                outcome_detail="Approved.",
+                created_at="2026-04-22T10:25:00Z",
+            )
+
+            orchestrator = ForemanOrchestrator(store, roles=self.roles, workflows=self.workflows)
+
+            evidence = orchestrator.build_completion_evidence(task, project)
+
+            self.assertIsNotNone(evidence)
+            assert evidence is not None
+            # No diff available when no branch
+            self.assertEqual(evidence.changed_files, ())
+            self.assertEqual(evidence.branch_diff_stat, "")
+            # Verdict driven by output text alone — stays weak without code changes
+            self.assertIn(
+                evidence.verdict,
+                ("weak", "insufficient"),
+                f"Expected verdict in (weak, insufficient) for no-branch case, "
+                f"got {evidence.verdict!r}",
+            )
+
+    def test_failing_test_cancels_test_score_points(self) -> None:
+        """A failing built-in test must reduce the score to zero on the test component.
+
+        This prevents test passes from masking incomplete implementation.
+        """
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(
+                store,
+                repo_path=repo_path,
+                acceptance_criteria="Implement the scheduler queue.\nAdd tests.\n",
+            )
+
+            self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude_code",
+                outcome="done",
+                outcome_detail="Implemented the scheduler module.",
+                created_at="2026-04-22T10:20:00Z",
+            )
+            test_run = self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="_builtin:test",
+                workflow_step="test",
+                agent_backend="builtin",
+                outcome="failure",
+                outcome_detail="Tests failed.",
+                created_at="2026-04-22T10:25:00Z",
+            )
+            self.seed_test_events(
+                store, test_run, task, project, passed=False, timestamp="2026-04-22T10:25:00Z"
+            )
+
+            self.git(repo_path, "checkout", "-b", task.branch_name)
+            self.write_text(repo_path / "scheduler.py", "def scheduler(): pass\n")
+            self.commit_all(repo_path, "feat: scheduler implementation")
+            self.git(repo_path, "checkout", "main")
+
+            orchestrator = ForemanOrchestrator(store, roles=self.roles, workflows=self.workflows)
+
+            evidence = orchestrator.build_completion_evidence(task, project)
+
+            self.assertIsNotNone(evidence)
+            assert evidence is not None
+            # Failing test: 0 points on test component
+            self.assertFalse(evidence.builtin_test_passed)
+            self.assertIn("test=0", evidence.score_breakdown)
+            # Score is at most ~25 (criteria + files) — insufficient without test points
+            self.assertLess(evidence.score, 60)
+            self.assertEqual(evidence.verdict, "insufficient")
+
+
 class SprintAdvancementTests(unittest.TestCase):
     """Tests for sprint-41: orchestrator sprint completion and auto-advancement."""
 
