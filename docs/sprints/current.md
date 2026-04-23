@@ -75,6 +75,14 @@ recovery gap.
     non-implementation task types (docs/spike/chore)
   - 7 regression tests in `MarkDoneCompletionGuardTests`: strong/adequate pass, insufficient/weak
     block, event emission, guard-disable setting, non-implementation task type bypass
+- [done] Reviewer prompt hardening with engine-produced evidence follow-up: cache completion evidence on task record (task-4221cd659154)
+  - Branch: `chore/task-4221cd659154` (this branch)
+  - `CompletionEvidence` is built once at first reviewer prompt render via `build_completion_evidence()` in `_build_prompt`
+  - Persisted to the task record via `store.save_task()` after first build
+  - Subsequent reviewer prompts reuse `task.completion_evidence` without recomputing
+  - Evidence fields injected into reviewer prompt context: verdict, reasons, score, score_breakdown, criteria counts, changed files, diff stat, builtin test result
+  - `Task.completion_evidence` typed as `CompletionEvidence | None` in models.py
+  - Store deserializes `CompletionEvidence` from JSON in `_row_to_task`
 - [todo] Completion truth contract docs (task-completion-truth-contract-docs)
 - [todo] Reviewer prompt hardening with engine-produced evidence (task-reviewer-prompt-hardening-with-engine-produced-evidence)
 
