@@ -1,64 +1,66 @@
 # Current Sprint
 
-- Sprint: `sprint-45-supervised-convergence-validation`
-- Status: in_progress
-- Branch: `fix/task-repair-first-live-supervised-run-defect`
-- Started: 2026-04-22
+- Sprint: `sprint-46-completion-truth-hardening`
+- Status: active
+- Branch: `chore/task-false-positive-completion-regression-coverage`
+- Started: 2026-04-23
 
 ## Goal
 
-Run a fresh supervised backend session against current main, verify reviewed
-supervisors reconcile approved merges into SQLite state, and fix the first
-defect exposed by the live run.
+Harden Foreman's backend completion evaluation so developer markers and
+reviewer approval alone are not enough to count implementation work as done
+when evidence is too weak for the task intent.
 
 ## Context and rationale
 
-Sprint-44 introduced the supervisor finalization seam and post-merge branch
-safety. Sprint-45 validates that seam end to end by running the reviewed
-supervisors and hardening the first defect they expose.
+Sprint-45 validated the supervisor finalization seam end-to-end. Sprint-46
+attacks the completion truth problem at the evidence-model level: docs-only
+and tests-only changes must not be treated as sufficient evidence for
+implementation-oriented backend tasks. The evidence model and scoring
+mechanism are already designed (feat/completion-truth-evidence-model), so
+this sprint adds regression coverage to prove the model is correct before
+the backend guard is wired up.
 
 ## Constraints
 
-- backend-only
-- do not manually edit `.foreman.db`
-- keep branch ownership rules intact: developers work on feature branches,
-  supervisors merge approved work
+- regression coverage only — do not implement the backend guard yet
+- tests must document the expected behavior in the absence of the guard
+- do not merge to main — the supervisor handles that after approval
 
 ## Affected areas
 
-- `tests/test_reviewed_claude.py` — new regression coverage for Claude supervisor
-- `tests/test_supervisor_state.py` — additional backend edge cases
+- `tests/test_orchestrator.py` — CompletionEvidenceTests class with 14 tests
 - `docs/sprints/current.md` — this sprint definition
-- `docs/STATUS.md` — sprint and task status
+- `docs/STATUS.md` — task and sprint status
 
 ## Tasks
 
-- [done] Supervised reconciliation live validation seam (task-supervised-reconciliation-live-validation-seam)
-  - Added `tests/test_reviewed_claude.py` with 22 tests covering:
-    - completion marker detection (task and spec complete)
-    - task ID extraction from multiple formats
-    - reviewer decision parsing (APPROVE/DENY/STEER)
-    - main violation detection (direct main branch, main HEAD change)
-    - API failure tracking and reset
-    - finalize_supervisor_merge integration (missing DB, none result, success payload)
-  - Extended `tests/test_supervisor_state.py` with 2 new tests:
-    - `test_finalize_supervisor_merge_skips_already_done_task` — no duplicate events
-    - `test_finalize_supervisor_merge_does_not_complete_sprint_when_other_tasks_unresolved`
-- [todo] Repair first live supervised run defect (task-repair-first-live-supervised-run-defect)
-- [done] Reviewed Claude supervisor regression coverage (task-reviewed-claude-supervisor-regression-coverage)
-  - Added 18 new tests in `tests/test_reviewed_claude.py` covering:
-    - TASK_ID extraction edge cases: empty colon value, bold header with next-line
-      value, body-text false positives, empty input, first-match wins
-    - SQLite reconciliation: explicit task_id pass-through, missing DB error,
-      none-result recovery prompt
-    - Malformed completion summary rejection: whitespace-only normalize_decision,
-      DENY without colon, empty string, STEER/DENY preserved as-is
-    - Developer completion declaration false positives
-    - Main violation detection: on-main branch, main-head change, empty main head
-  - 40 tests pass total (32 in test_reviewed_claude, 8 in test_supervisor_state)
+- [done] Completion evidence model in orchestrator (task-completion-evidence-model-in-orchestrator)
+  - Branch: `feat/completion-truth-evidence-model`
+  - Added `CompletionEvidence` dataclass to `foreman/models.py`
+  - Added `build_completion_evidence()` to `ForemanOrchestrator`
+  - Scoring: criteria (40 pts), files (20 pts), diff context (10 pts), tests (30 pts)
+  - Verdicts: strong, adequate, weak, insufficient
+  - `_criterion_addressed()` — keyword coverage ratio against output + changed files
+  - Persisted via `completion_evidence_json` column in tasks table
+  - Wired into `finalize_supervisor_merge()` with `engine.completion_evidence` event
+- [done] False-positive completion regression coverage (task-false-positive-completion-regression-coverage)
+  - Branch: `chore/task-false-positive-completion-regression-coverage` (this branch)
+  - Added 14 tests in `CompletionEvidenceTests` covering:
+    - `test_docs_only_changes_verdict_is_insufficient` — docs-only → verdict=insufficient
+    - `test_tests_only_changes_verdict_is_weak` — tests-only → verdict in (weak, insufficient)
+    - `test_approval_without_implementation_is_insufficient` — reviewer APPROVE alone → verdict=insufficient
+    - `test_text_claims_implementation_but_no_code_changes_produces_weak_verdict` — text coverage without code changes → verdict=weak
+    - `test_passed_tests_alone_without_implementation_is_weak_not_adequate` — passing tests without implementation → verdict ≤ weak
+    - `test_strong_verdict_requires_code_changes_plus_criteria_plus_passed_tests` — positive case: all three signals → verdict adequate/strong
+    - `test_no_branch_means_no_changed_files_evidence` — no branch → no diff, verdict driven by output alone
+    - `test_failing_test_cancels_test_score_points` — failing test → test=0 in score breakdown
+    - 6 baseline tests: structure, scoring, verdict, coverage, no-criteria edge case
+- [todo] Backend guard for weak completions (task-backend-guard-for-weak-completions)
+- [todo] Completion truth contract docs (task-completion-truth-contract-docs)
+- [todo] Reviewer prompt hardening with engine-produced evidence (task-reviewer-prompt-hardening-with-engine-produced-evidence)
 
 ## Validation
 
-- `./venv/bin/python -m pytest tests/test_supervisor_state.py tests/test_reviewed_codex.py tests/test_reviewed_claude.py -q`
-- `./venv/bin/python -m py_compile scripts/reviewed_codex.py`
-- `./venv/bin/python -m py_compile scripts/reviewed_claude.py`
+- `./venv/bin/python -m py_compile tests/test_orchestrator.py`
+- `./venv/bin/python scripts/validate_repo_memory.py`

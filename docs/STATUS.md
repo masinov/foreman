@@ -2,14 +2,14 @@
 
 ## Current sprint
 
-- Sprint: `sprint-45-supervised-convergence-validation` (in progress)
-- Branch: `fix/task-repair-first-live-supervised-run-defect`
+- Sprint: `sprint-46-completion-truth-hardening` (active)
+- Branch: `chore/task-false-positive-completion-regression-coverage`
 
 ## Active branches
 
-- `chore/task-reviewed-claude-supervisor-regression-coverage` — add regression coverage for `scripts/reviewed_claude.py`: 18 new tests covering TASK_ID extraction edge cases, SQLite reconciliation integration, reviewer decision normalization, and main-violation detection; 40 tests pass total in `test_reviewed_claude.py` and `test_supervisor_state.py`
+- `chore/task-false-positive-completion-regression-coverage` — 14 new tests in `CompletionEvidenceTests` covering false-positive completion scenarios: docs-only, tests-only, approval-only, text-without-code, passed-tests-only, strong-completion-gate, no-branch, and failing-test signals. Tests prove verdict=insufficient for docs-only and approval-only, verdict ≤ weak for tests-only and text-without-code, and verdict ≥ adequate only when all three signals (code changes, criteria coverage, passing tests) are present.
 
-## Completed this session (sprints 36–45)
+## Completed this session (sprints 36–46)
 
 - completed `sprint-44-supervisor-state-reconciliation`
 - introduced shared supervisor finalization seam in `foreman/supervisor_state.py`
