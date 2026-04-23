@@ -114,6 +114,7 @@ class Task:
     workflow_current_step: str | None = None
     workflow_carried_output: str | None = None
     step_visit_counts: dict[str, int] = field(default_factory=dict)
+    completion_evidence: Any = None
     created_at: str = field(default_factory=utc_now_text)
     started_at: str | None = None
     completed_at: str | None = None
@@ -159,6 +160,37 @@ class DecisionGate:
     raised_at: str = field(default_factory=utc_now_text)
     resolved_at: str | None = None
     resolved_by: str | None = None
+
+
+@dataclass(slots=True, frozen=True)
+class CompletionEvidence:
+    """Structured evidence summary for a task completion decision.
+
+    Bundles acceptance-criteria text, branch diff context, changed files,
+    agent outputs, and built-in test results so downstream review
+    (human or automated) can assess whether the implementation actually
+    satisfies the task intent — not just whether the developer marked
+    it done or the reviewer approved it.
+    """
+
+    task_id: str
+    task_title: str
+    acceptance_criteria: str
+    criteria_count: int = 0
+    criteria_addressed: int = 0
+    criteria_partially_addressed: int = 0
+    changed_files: tuple[str, ...] = ()
+    diff_context_lines: int = 0
+    branch_diff_stat: str = ""
+    agent_outputs: tuple[str, ...] = ()
+    builtin_test_result: str = ""
+    builtin_test_passed: bool = False
+    builtin_test_detail: str = ""
+    score: float = 0.0
+    score_breakdown: str = ""
+    verdict: str = "unknown"
+    verdict_reasons: tuple[str, ...] = ()
+    built_at: str = field(default_factory=utc_now_text)
 
 
 @dataclass(slots=True)

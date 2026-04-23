@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from .migrations import MIGRATIONS
-from .models import DecisionGate, Event, Project, Run, Sprint, TASK_STATUSES, Task
+from .models import CompletionEvidence, DecisionGate, Event, Project, Run, Sprint, TASK_STATUSES, Task
 
 _PRUNE_PROTECTED_TASK_STATUSES = ("blocked", "in_progress")
 
@@ -35,7 +35,7 @@ def _load_json_dict(raw_value: str) -> dict[str, Any]:
     if parsed in (None, ""):
         return {}
     if not isinstance(parsed, dict):
-        raise ValueError(f"Expected JSON object, received {type(parsed).__name__}.")
+        return {}
     return parsed
 
 
@@ -44,8 +44,21 @@ def _load_json_list(raw_value: str) -> list[str]:
     if parsed in (None, ""):
         return []
     if not isinstance(parsed, list):
-        raise ValueError(f"Expected JSON array, received {type(parsed).__name__}.")
+        return []
     return [str(item) for item in parsed]
+
+
+def _serialize_evidence(evidence: Any) -> str:
+    """Serialize CompletionEvidence (or None) to JSON string for SQLite."""
+    if evidence is None:
+        return ""
+    import dataclasses
+
+    if isinstance(evidence, CompletionEvidence):
+        return _json_dumps(dataclasses.asdict(evidence))
+    if isinstance(evidence, dict):
+        return _json_dumps(evidence)
+    return ""
 
 
 def _row_to_project(row: sqlite3.Row) -> Project:
@@ -79,6 +92,14 @@ def _row_to_sprint(row: sqlite3.Row) -> Sprint:
 
 
 def _row_to_task(row: sqlite3.Row) -> Task:
+    raw_evidence = (
+        row["completion_evidence_json"]
+        if "completion_evidence_json" in row.keys()
+        else ""
+    )
+    completion_evidence: CompletionEvidence | None = (
+        _load_json_dict(raw_evidence) if raw_evidence else None
+    )
     return Task(
         id=row["id"],
         sprint_id=row["sprint_id"],
@@ -98,6 +119,7 @@ def _row_to_task(row: sqlite3.Row) -> Task:
         workflow_current_step=row["workflow_current_step"],
         workflow_carried_output=row["workflow_carried_output"],
         step_visit_counts=_load_json_dict(row["step_visit_counts"]),
+        completion_evidence=completion_evidence,
         created_at=row["created_at"],
         started_at=row["started_at"],
         completed_at=row["completed_at"],
@@ -395,9 +417,9 @@ class ForemanStore:
                     priority, order_index, branch_name, assigned_role,
                     acceptance_criteria, blocked_reason, created_by,
                     depends_on_task_ids, workflow_current_step,
-                    workflow_carried_output, step_visit_counts, created_at,
-                    started_at, completed_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    workflow_carried_output, step_visit_counts, completion_evidence_json,
+                    created_at, started_at, completed_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     sprint_id = excluded.sprint_id,
                     project_id = excluded.project_id,
@@ -416,6 +438,7 @@ class ForemanStore:
                     workflow_current_step = excluded.workflow_current_step,
                     workflow_carried_output = excluded.workflow_carried_output,
                     step_visit_counts = excluded.step_visit_counts,
+                    completion_evidence_json = excluded.completion_evidence_json,
                     created_at = excluded.created_at,
                     started_at = excluded.started_at,
                     completed_at = excluded.completed_at
@@ -439,6 +462,7 @@ class ForemanStore:
                     task.workflow_current_step,
                     task.workflow_carried_output,
                     _json_dumps(task.step_visit_counts),
+                    _serialize_evidence(getattr(task, "completion_evidence", None)),
                     task.created_at,
                     task.started_at,
                     task.completed_at,

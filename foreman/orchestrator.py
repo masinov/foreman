@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import re
+import subprocess
 from typing import Any, Protocol
 from uuid import uuid4
 
@@ -22,7 +23,7 @@ from .git import (
     recent_commits,
     status_text,
 )
-from .models import Event, Project, Run, Sprint, Task, utc_now_text
+from .models import CompletionEvidence, Event, Project, Run, Sprint, Task, utc_now_text
 from .runner import AgentRunConfig, ClaudeCodeRunner, CodexRunner, run_with_retry
 from .runner.base import AgentRunner as NativeAgentRunner
 from .roles import RoleDefinition, default_roles_dir, load_roles
@@ -249,6 +250,290 @@ class ForemanOrchestrator:
         next_sprint.completed_at = None
         self.store.save_sprint(next_sprint)
         return next_sprint
+
+    def build_completion_evidence(
+        self,
+        task: Task,
+        project: Project,
+    ) -> CompletionEvidence | None:
+        """Build structured completion evidence for one task.
+
+        Gathers acceptance-criteria coverage, branch diff stats, agent outputs,
+        and built-in test results to produce a score and verdict that
+        downstream review can use without trusting developer markers or
+        reviewer approval alone.
+        """
+        runs = self.store.list_runs(task_id=task.id)
+
+        # Changed files from git diff
+        changed_files: tuple[str, ...] = ()
+        diff_context_lines = 0
+        branch_diff_stat = ""
+        if task.branch_name:
+            diff_text = self._safe_branch_diff(
+                project.repo_path,
+                project.default_branch,
+                task.branch_name,
+            )
+            if diff_text:
+                changed_files, diff_context_lines, branch_diff_stat = self._parse_diff_stats(
+                    diff_text,
+                )
+
+        # Agent output summaries
+        agent_outputs = self._collect_agent_outputs(runs)
+
+        # Built-in test results
+        test_events = [
+            event
+            for event in self.store.list_events(task_id=task.id)
+            if event.event_type in ("engine.test_run", "engine.test_output")
+        ]
+        builtin_test_passed = False
+        builtin_test_result = ""
+        builtin_test_detail = ""
+        for event in sorted(test_events, key=lambda e: e.timestamp):
+            payload = event.payload
+            if event.event_type == "engine.test_run":
+                builtin_test_result = payload.get("command", "")
+                builtin_test_passed = payload.get("passed", False)
+            elif event.event_type == "engine.test_output":
+                if payload.get("exit_code") == 0:
+                    builtin_test_passed = True
+                builtin_test_detail = payload.get("output", "")
+
+        # Criteria coverage
+        criteria_count = 0
+        criteria_addressed = 0
+        criteria_partially_addressed = 0
+        criteria_text = task.acceptance_criteria or ""
+        criteria_list = [c.strip() for c in criteria_text.split("\n") if c.strip()]
+        criteria_count = len(criteria_list)
+
+        if criteria_list:
+            all_output_text = "\n".join(agent_outputs).lower()
+            for criterion in criteria_list:
+                addressed, partial = self._criterion_addressed(criterion, all_output_text, changed_files)
+                if addressed:
+                    criteria_addressed += 1
+                elif partial:
+                    criteria_partially_addressed += 1
+
+        score, breakdown = self._score_evidence(
+            criteria_count=criteria_count,
+            criteria_addressed=criteria_addressed,
+            criteria_partially_addressed=criteria_partially_addressed,
+            changed_files=changed_files,
+            diff_context_lines=diff_context_lines,
+            builtin_test_passed=builtin_test_passed,
+            builtin_test_result=builtin_test_result,
+            agent_outputs=agent_outputs,
+        )
+        verdict, reasons = self._verdict_from_score(score, criteria_count, criteria_addressed)
+
+        return CompletionEvidence(
+            task_id=task.id,
+            task_title=task.title,
+            acceptance_criteria=criteria_text,
+            criteria_count=criteria_count,
+            criteria_addressed=criteria_addressed,
+            criteria_partially_addressed=criteria_partially_addressed,
+            changed_files=changed_files,
+            diff_context_lines=diff_context_lines,
+            branch_diff_stat=branch_diff_stat,
+            agent_outputs=agent_outputs,
+            builtin_test_result=builtin_test_result,
+            builtin_test_passed=builtin_test_passed,
+            builtin_test_detail=builtin_test_detail,
+            score=score,
+            score_breakdown=breakdown,
+            verdict=verdict,
+            verdict_reasons=tuple(reasons),
+        )
+
+    def _safe_branch_diff(
+        self,
+        repo_path: str,
+        target_branch: str,
+        branch_name: str,
+    ) -> str:
+        """Return diff text for one branch, or empty string on failure."""
+        try:
+            result = subprocess.run(
+                ["git", "diff", "--stat", f"{target_branch}...{branch_name}"],
+                cwd=str(repo_path),
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if result.returncode == 0:
+                return result.stdout
+        except Exception:  # pragma: no cover
+            pass
+        try:
+            result2 = subprocess.run(
+                ["git", "diff", target_branch, branch_name, "--stat"],
+                cwd=str(repo_path),
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if result2.returncode == 0:
+                return result2.stdout
+        except Exception:  # pragma: no cover
+            pass
+        return ""
+
+    def _parse_diff_stats(
+        self,
+        diff_output: str,
+    ) -> tuple[tuple[str, ...], int, str]:
+        """Parse git diff --stat output into structured fields.
+
+        Returns (changed_files, total_context_lines, summary_line).
+        """
+        lines = [l.strip() for l in diff_output.strip().splitlines() if l.strip()]
+        changed_files: list[str] = []
+        total_additions = 0
+        total_deletions = 0
+        context_lines = 0
+
+        for line in lines:
+            if " | " in line and "Binary" not in line:
+                parts = line.split()
+                if parts:
+                    changed_files.append(parts[0])
+                if "+" in line:
+                    match = re.search(r"(\d+)\s*\+", line)
+                    if match:
+                        total_additions += int(match.group(1))
+                if "-" in line:
+                    match = re.search(r"(\d+)\s*-", line)
+                    if match:
+                        total_deletions += int(match.group(1))
+            context_lines += 1
+
+        summary = f"{len(changed_files)} file(s), +{total_additions}, -{total_deletions}"
+        return (tuple(changed_files), context_lines, summary)
+
+    def _collect_agent_outputs(self, runs: list[Run]) -> tuple[str, ...]:
+        """Extract meaningful output snippets from completed agent runs."""
+        outputs: list[str] = []
+        for run in runs:
+            if run.status not in {"completed", "failed", "killed", "timeout"}:
+                continue
+            detail = run.outcome_detail or ""
+            snippet = detail[:500].strip() if detail.strip() else ""
+            if snippet:
+                role_and_step = f"[{run.role_id} / {run.workflow_step}]"
+                outputs.append(f"{role_and_step}: {snippet}")
+        return tuple(outputs)
+
+    def _criterion_addressed(
+        self,
+        criterion: str,
+        output_text: str,
+        changed_files: tuple[str, ...],
+    ) -> tuple[bool, bool]:
+        """Return (addressed, partially_addressed) for one acceptance criterion.
+
+        A criterion is addressed when the output text or changed files
+        contain substantive references to its key terms.  Partial coverage
+        is when only a subset of the relevant terms appear.
+        """
+        key_terms = re.findall(r"\b\w{4,}\b", criterion.lower())
+        if not key_terms:
+            return (False, False)
+
+        matching_terms = sum(
+            1 for term in key_terms if term in output_text or any(term in f.lower() for f in changed_files)
+        )
+        coverage_ratio = matching_terms / len(key_terms)
+
+        if coverage_ratio >= 0.7:
+            return (True, False)
+        if coverage_ratio >= 0.3:
+            return (False, True)
+        return (False, False)
+
+    def _score_evidence(
+        self,
+        *,
+        criteria_count: int,
+        criteria_addressed: int,
+        criteria_partially_addressed: int,
+        changed_files: tuple[str, ...],
+        diff_context_lines: int,
+        builtin_test_passed: bool,
+        builtin_test_result: str,
+        agent_outputs: tuple[str, ...],
+    ) -> tuple[float, str]:
+        """Compute a 0–100 evidence score with a human-readable breakdown."""
+        score = 0.0
+        parts: list[str] = []
+
+        # Criteria coverage: up to 40 points
+        if criteria_count > 0:
+            criteria_score = (criteria_addressed * 40 / criteria_count) + (
+                criteria_partially_addressed * 15 / criteria_count
+            )
+        else:
+            criteria_score = 0.0
+        score += min(criteria_score, 40)
+        parts.append(f"criteria={min(criteria_score, 40):.1f}/40")
+
+        # Code change breadth: up to 20 points
+        file_score = min(len(changed_files) * 5, 20)
+        score += file_score
+        parts.append(f"files={file_score:.1f}/20 ({len(changed_files)} changed)")
+
+        # Diff context: up to 10 points
+        diff_score = min(diff_context_lines * 0.5, 10)
+        score += diff_score
+        parts.append(f"diff={diff_score:.1f}/10 ({diff_context_lines} context lines)")
+
+        # Built-in test: up to 30 points
+        if builtin_test_result:
+            test_score = 30 if builtin_test_passed else 0
+        else:
+            test_score = 0
+        score += test_score
+        parts.append(f"test={test_score:.1f}/30 (passed={builtin_test_passed})")
+
+        breakdown = "; ".join(parts)
+        return (round(score, 2), breakdown)
+
+    def _verdict_from_score(
+        self,
+        score: float,
+        criteria_count: int,
+        criteria_addressed: int,
+    ) -> tuple[str, list[str]]:
+        """Translate a numeric score into a completion verdict with reasons."""
+        reasons: list[str] = []
+
+        if score >= 75 and criteria_addressed >= criteria_count:
+            verdict = "strong"
+            reasons.append("All acceptance criteria addressed with good evidence")
+        elif score >= 60 and criteria_addressed >= max(1, criteria_count // 2):
+            verdict = "adequate"
+            reasons.append("Sufficient evidence of task completion")
+        elif score >= 40:
+            verdict = "weak"
+            reasons.append("Incomplete coverage of acceptance criteria")
+        else:
+            verdict = "insufficient"
+            reasons.append("Insufficient evidence for task completion")
+
+        if criteria_count == 0:
+            reasons.append("No acceptance criteria defined")
+        elif criteria_addressed == 0 and criteria_count > 0:
+            reasons.append("No acceptance criteria were addressed")
+
+        if not reasons:
+            reasons.append("Unable to determine verdict from available evidence")
+
+        return verdict, reasons
 
     def finalize_supervisor_merge(
         self,
