@@ -2,7 +2,7 @@
 
 - Sprint: `sprint-46-completion-truth-hardening`
 - Status: active
-- Branch: `chore/task-false-positive-completion-regression-coverage`
+- Branch: `feat/task-backend-guard-for-weak-completions`
 - Started: 2026-04-23
 
 ## Goal
@@ -13,23 +13,25 @@ when evidence is too weak for the task intent.
 
 ## Context and rationale
 
-Sprint-45 validated the supervisor finalization seam end-to-end. Sprint-46
-attacks the completion truth problem at the evidence-model level: docs-only
-and tests-only changes must not be treated as sufficient evidence for
-implementation-oriented backend tasks. The evidence model and scoring
-mechanism are already designed (feat/completion-truth-evidence-model), so
-this sprint adds regression coverage to prove the model is correct before
-the backend guard is wired up.
+Sprint-45 validated the supervisor finalization seam end to end. Sprint-46
+hardens completion truth in two stages: first the evidence model and
+regression coverage, then the backend guard that uses branch diff evidence
+to stop implementation tasks from flowing to `done` when they only changed
+docs/tests or never produced material branch changes.
 
 ## Constraints
 
-- regression coverage only — do not implement the backend guard yet
-- tests must document the expected behavior in the absence of the guard
+- backend only — no dashboard or legacy supervisor script work
+- guard must operate before terminal completion so valid tasks do not get
+  blocked after a successful merge
+- keep the shipped workflow shape intact: `develop -> review -> test -> merge -> done`
 - do not merge to main — the supervisor handles that after approval
 
 ## Affected areas
 
-- `tests/test_orchestrator.py` — CompletionEvidenceTests class with 14 tests
+- `foreman/builtins.py` — merge-time completion guard + mark_done completion guard
+- `foreman/orchestrator.py` — preserve blocked reasons from builtin outcomes
+- `tests/test_orchestrator.py` — CompletionEvidenceTests, CompletionGuardTests, MarkDoneCompletionGuardTests
 - `docs/sprints/current.md` — this sprint definition
 - `docs/STATUS.md` — task and sprint status
 
@@ -56,11 +58,24 @@ the backend guard is wired up.
     - `test_no_branch_means_no_changed_files_evidence` — no branch → no diff, verdict driven by output alone
     - `test_failing_test_cancels_test_score_points` — failing test → test=0 in score breakdown
     - 6 baseline tests: structure, scoring, verdict, coverage, no-criteria edge case
-- [todo] Backend guard for weak completions (task-backend-guard-for-weak-completions)
+- [done] Backend guard for weak completions (task-backend-guard-for-weak-completions)
+  - Branch: `feat/task-backend-guard-for-weak-completions`
+  - Added completion guard to `_builtin:mark_done` in `foreman/builtins.py`
+  - Guard mirrors the existing `_builtin:merge` guard: builds completion evidence (git diff,
+    criteria coverage, test results) and blocks feature/fix/refactor tasks when evidence is weak
+    (no material code changes, or docs/tests-only changes)
+  - Post-merge invocation handled via `git merge-base --is-ancestor feat/t main`: when the task
+    branch has been absorbed into the default branch, the diff is naturally empty but the guard
+    already ran at merge time, so mark_done proceeds without re-evaluating
+  - Guard respects `completion_guard_enabled` project setting (default True) and skips for
+    non-implementation task types (docs/spike/chore)
+  - 7 regression tests in `MarkDoneCompletionGuardTests`: strong/adequate pass, insufficient/weak
+    block, event emission, guard-disable setting, non-implementation task type bypass
 - [todo] Completion truth contract docs (task-completion-truth-contract-docs)
 - [todo] Reviewer prompt hardening with engine-produced evidence (task-reviewer-prompt-hardening-with-engine-produced-evidence)
 
 ## Validation
 
-- `./venv/bin/python -m py_compile tests/test_orchestrator.py`
+- `./venv/bin/python -m pytest tests/test_orchestrator.py -q`
+- `./venv/bin/python -m pytest tests/test_store.py tests/test_executor.py tests/test_roles.py -q`
 - `./venv/bin/python scripts/validate_repo_memory.py`

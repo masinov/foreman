@@ -8,8 +8,8 @@ import subprocess
 from typing import TYPE_CHECKING, Any
 
 from .context import relative_project_path, write_project_context
-from .git import GitMergeResult, merge_branch
-from .models import Project, Task, utc_now_text
+from .git import GitMergeResult, merge_branch, run_git
+from .models import CompletionEvidence, Project, Task, utc_now_text
 
 if TYPE_CHECKING:
     from .store import ForemanStore
@@ -57,9 +57,9 @@ class BuiltinExecutor:
                 carried_output=carried_output,
             )
         if role_id == "_builtin:merge":
-            return self._merge(project=project, task=task)
+            return self._merge(project=project, task=task, store=store)
         if role_id == "_builtin:mark_done":
-            return self._mark_done(task=task)
+            return self._mark_done(task=task, project=project, store=store)
         if role_id == "_builtin:human_gate":
             return self._human_gate(task=task, step_id=step_id, carried_output=carried_output)
         raise ValueError(f"Unsupported builtin role: {role_id}")
@@ -109,7 +109,13 @@ class BuiltinExecutor:
             ),
         )
 
-    def _merge(self, *, project: Project, task: Task) -> BuiltinResult:
+    def _merge(
+        self,
+        *,
+        project: Project,
+        task: Task,
+        store: ForemanStore | None,
+    ) -> BuiltinResult:
         if not task.branch_name:
             detail = "Task branch is not set."
             return BuiltinResult(
@@ -122,6 +128,37 @@ class BuiltinExecutor:
                     ),
                 ),
             )
+
+        if _bool_setting(project, "completion_guard_enabled", default=True):
+            evidence = self._build_completion_evidence(
+                project=project,
+                task=task,
+                store=store,
+            )
+            task.completion_evidence = evidence
+            if evidence is not None:
+                block_reason = self._completion_guard_block_reason(task, evidence)
+                if block_reason is not None:
+                    task.status = "blocked"
+                    task.blocked_reason = block_reason
+                    task.workflow_current_step = None
+                    task.workflow_carried_output = None
+                    return BuiltinResult(
+                        outcome="blocked",
+                        detail=block_reason,
+                        events=(
+                            BuiltinEventRecord(
+                                event_type="engine.completion_guard",
+                                payload={
+                                    "verdict": evidence.verdict,
+                                    "score": evidence.score,
+                                    "score_breakdown": evidence.score_breakdown,
+                                    "changed_files": list(evidence.changed_files),
+                                    "reasons": list(evidence.verdict_reasons),
+                                },
+                            ),
+                        ),
+                    )
 
         result: GitMergeResult = merge_branch(
             project.repo_path,
@@ -157,16 +194,66 @@ class BuiltinExecutor:
             ),
         )
 
-    def _mark_done(self, *, task: Task) -> BuiltinResult:
+    def _mark_done(
+        self,
+        *,
+        task: Task,
+        project: Project,
+        store: ForemanStore,
+    ) -> BuiltinResult:
+        if _bool_setting(project, "completion_guard_enabled", default=True):
+            # The guard evaluates completion evidence via git diff against the
+            # default branch.  After a successful merge the branch tip may equal
+            # HEAD (fast-forward or --no-ff with no new commit), making the diff
+            # empty even though real implementation was merged.  Detect this by
+            # checking whether the default branch is now a direct ancestor of
+            # the task branch — if it is, the branch has been absorbed.
+            # The merge step already ran this guard before allowing the merge.
+            if task.branch_name:
+                ancestor_check = run_git(
+                    project.repo_path,
+                    "merge-base",
+                    "--is-ancestor",
+                    task.branch_name,
+                    project.default_branch,
+                    check=False,
+                )
+                if ancestor_check.returncode != 0:
+                    evidence = self._build_completion_evidence(
+                        project=project,
+                        task=task,
+                        store=store,
+                    )
+                    task.completion_evidence = evidence
+                    if evidence is not None:
+                        block_reason = self._completion_guard_block_reason(task, evidence)
+                        if block_reason is not None:
+                            task.status = "blocked"
+                            task.blocked_reason = block_reason
+                            task.workflow_current_step = None
+                            task.workflow_carried_output = None
+                            return BuiltinResult(
+                                outcome="blocked",
+                                detail=block_reason,
+                                events=(
+                                    BuiltinEventRecord(
+                                        event_type="engine.completion_guard",
+                                        payload={
+                                            "verdict": evidence.verdict,
+                                            "score": evidence.score,
+                                            "score_breakdown": evidence.score_breakdown,
+                                            "changed_files": list(evidence.changed_files),
+                                            "reasons": list(evidence.verdict_reasons),
+                                        },
+                                    ),
+                                ),
+                            )
         task.status = "done"
         task.blocked_reason = None
         task.workflow_current_step = None
         task.workflow_carried_output = None
         task.completed_at = task.completed_at or utc_now_text()
-        return BuiltinResult(
-            outcome="success",
-            detail="Task marked done.",
-        )
+        return BuiltinResult(outcome="success", detail="Task marked done.")
 
     def _human_gate(
         self,
@@ -212,6 +299,82 @@ class BuiltinExecutor:
                 for path in projection.written_paths
             ),
         )
+
+    # ── Completion evidence helpers ─────────────────────────────────────────
+
+    def _build_completion_evidence(
+        self,
+        *,
+        project: Project,
+        task: Task,
+        store: ForemanStore | None,
+    ) -> CompletionEvidence | None:
+        """Best-effort completion evidence build for pre-merge guard checks."""
+
+        if store is None:
+            return None
+        try:
+            from .orchestrator import ForemanOrchestrator
+
+            return ForemanOrchestrator(store).build_completion_evidence(task, project)
+        except Exception:  # pragma: no cover - guard logic must not crash execution
+            return None
+
+    def _completion_guard_block_reason(
+        self,
+        task: Task,
+        evidence: CompletionEvidence,
+    ) -> str | None:
+        """Return a block reason when merge-time evidence is too weak."""
+
+        if task.task_type not in {"feature", "fix", "refactor"}:
+            return None
+        if not evidence.changed_files:
+            return (
+                f"Completion evidence too weak (verdict: {evidence.verdict}). "
+                "Blocking merge because the task branch has no material file changes."
+            )
+        if self._changes_are_docs_or_tests_only(evidence.changed_files):
+            return (
+                f"Completion evidence too weak (verdict: {evidence.verdict}). "
+                "Blocking merge because only docs or tests changed for an implementation task."
+            )
+        return None
+
+    def _changes_are_docs_or_tests_only(self, changed_files: tuple[str, ...]) -> bool:
+        """Return True when every changed path is documentation or test-only."""
+
+        normalized = [path.strip().lower() for path in changed_files if path.strip()]
+        if not normalized:
+            return False
+        return all(self._is_docs_or_tests_path(path) for path in normalized)
+
+    def _is_docs_or_tests_path(self, path: str) -> bool:
+        """Classify one path as documentation or test-only."""
+
+        candidate = Path(path)
+        name = candidate.name.lower()
+        parts = [part.lower() for part in candidate.parts]
+        if name.endswith(".md") or name in {"readme", "readme.txt"}:
+            return True
+        if parts and parts[0] == "docs":
+            return True
+        if "tests" in parts:
+            return True
+        if name.startswith("test_") or name.endswith("_test.py"):
+            return True
+        return False
+
+
+def _bool_setting(project: Project, key: str, *, default: bool) -> bool:
+    value = project.settings.get(key)
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return bool(value)
+    return default
 
 
 def _combine_output(stdout: str, stderr: str) -> str:

@@ -441,7 +441,10 @@ class ForemanOrchestrator:
         contain substantive references to its key terms.  Partial coverage
         is when only a subset of the relevant terms appear.
         """
-        key_terms = re.findall(r"\b\w{4,}\b", criterion.lower())
+        key_terms = [
+            t.strip().rstrip(".,;:!?()[]{}'\"").strip()
+            for t in re.findall(r"\b\w{4,}\b", criterion.lower())
+        ]
         if not key_terms:
             return (False, False)
 
@@ -1274,7 +1277,7 @@ class ForemanOrchestrator:
     ) -> str:
         """Return the task block reason for a step outcome with no transition."""
 
-        if outcome in {"error", "killed"} and detail:
+        if outcome in {"error", "killed", "blocked"} and detail:
             return detail
         if workflow.fallback is not None:
             return workflow.fallback.message
@@ -1872,7 +1875,7 @@ class ForemanOrchestrator:
             return _extract_decision_output(cleaned_text)
 
         if marker:
-            if marker not in cleaned_text.splitlines():
+            if not _contains_completion_marker(cleaned_text, marker):
                 return ("error", f"Missing completion marker `{marker}`.")
             cleaned_text = _strip_completion_marker(cleaned_text, marker)
 
@@ -2190,8 +2193,12 @@ def _normalize_decision_line(line: str) -> str:
     return normalized
 
 
+def _contains_completion_marker(text: str, marker: str) -> bool:
+    return any(_normalize_decision_line(line) == marker for line in text.splitlines())
+
+
 def _strip_completion_marker(text: str, marker: str) -> str:
-    lines = [line for line in text.splitlines() if line.strip() != marker]
+    lines = [line for line in text.splitlines() if _normalize_decision_line(line) != marker]
     return "\n".join(lines).strip()
 
 
