@@ -192,6 +192,20 @@ class CompletionEvidence:
     verdict_reasons: tuple[str, ...] = ()
     built_at: str = field(default_factory=utc_now_text)
 
+    def __str__(self) -> str:
+        parts = [
+            f"Evidence score: {self.score:.1f}/100 ({self.verdict})",
+            f"Criteria: {self.criteria_addressed}/{self.criteria_count} addressed"
+            + (f" + {self.criteria_partially_addressed} partial" if self.criteria_partially_addressed else ""),
+            f"Score breakdown: {self.score_breakdown}" if self.score_breakdown else None,
+            f"Changed files: {', '.join(self.changed_files)}" if self.changed_files else "Changed files: (none)",
+            f"Branch diff: {self.branch_diff_stat}" if self.branch_diff_stat else None,
+            f"Tests: {'PASSED' if self.builtin_test_passed else 'FAILED'}" if self.builtin_test_result else None,
+            f"Verdict reasons: {'; '.join(self.verdict_reasons)}" if self.verdict_reasons else None,
+            f"Criteria text: {self.acceptance_criteria[:300]!r}" if self.acceptance_criteria else None,
+        ]
+        return "\n".join(p for p in parts if p is not None)
+
 
 @dataclass(slots=True)
 class Event:
