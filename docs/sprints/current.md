@@ -65,6 +65,7 @@ the backend guard is wired up.
   - Wired completion evidence into `_build_prompt()` for `code_reviewer` role only when branch_name is set
   - Updated `roles/code_reviewer.toml`: evidence section before Git Status + explicit weighting instruction
   - Added `ReviewerPromptHardeningTests`: 7 regression cases covering all acceptance criteria
+  - PR: https://github.com/masinov/foreman/pull/feat/task-reviewer-prompt-hardening-with-engine-produced-evidence
 - [todo] Backend guard for weak completions (task-backend-guard-for-weak-completions)
 - [todo] Completion truth contract docs (task-completion-truth-contract-docs)
 
