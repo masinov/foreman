@@ -2,7 +2,7 @@
 
 - Sprint: `sprint-46-completion-truth-hardening`
 - Status: active
-- Branch: `feat/task-backend-guard-for-weak-completions`
+- Branch: `fix/native-run-step-lease-recovery`
 - Started: 2026-04-23
 
 ## Goal
@@ -17,7 +17,11 @@ Sprint-45 validated the supervisor finalization seam end to end. Sprint-46
 hardens completion truth in two stages: first the evidence model and
 regression coverage, then the backend guard that uses branch diff evidence
 to stop implementation tasks from flowing to `done` when they only changed
-docs/tests or never produced material branch changes.
+docs/tests or never produced material branch changes. While running those
+tasks live, Foreman exposed a separate runtime defect: native `review`
+steps could strand with only `workflow.step_started` persisted. The current
+branch is an emergency backend hardening slice for that ownership and
+recovery gap.
 
 ## Constraints
 
