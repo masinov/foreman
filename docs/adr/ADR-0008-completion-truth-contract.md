@@ -142,13 +142,17 @@ ALTER TABLE tasks ADD COLUMN completion_evidence_json TEXT NOT NULL DEFAULT '';
 
 ### 9. Wiring into the orchestrator
 
-`build_completion_evidence()` is called from `finalize_supervisor_merge()`,
-which is the canonical point at which a supervisor-approved merge transitions
-a task to `done`.
+`build_completion_evidence()` is a method on `ForemanOrchestrator`
+(`foreman/orchestrator.py`). `finalize_supervisor_merge()` is the canonical
+orchestrator entry point at which a supervisor-approved merge transitions a
+task to `done`; the evidence wiring at that point is pending the backend guard
+(task-004). Until the guard lands, evidence is built and persisted via the
+same method when called directly by the guard implementation.
 
-The `CompletionEvidence` record is stored on the task before the status
-transition is persisted. This means every `done` task has an evidence record
-in the database, enabling post-hoc audit and regression analysis.
+The `CompletionEvidence` record is stored on the task via
+`completion_evidence_json` before the status transition is persisted. This
+means every `done` task has an evidence record in the database, enabling
+post-hoc audit and regression analysis.
 
 ## Consequences
 
