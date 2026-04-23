@@ -1608,6 +1608,13 @@ class ForemanOrchestrator:
                 current_task=task,
                 carried_output=carried_output,
             )
+        # Reuse cached evidence on the task record to avoid recomputing on
+        # repeated reviewer prompts. Built once at first reviewer render.
+        evidence = task.completion_evidence
+        if evidence is None and role.id in self.roles:
+            evidence = self.build_completion_evidence(task, project)
+            task.completion_evidence = evidence
+            self.store.save_task(task)
         context = {
             "task_title": task.title,
             "task_description": task.description or "",
@@ -1628,6 +1635,20 @@ class ForemanOrchestrator:
             ),
             "recent_commits": self._safe_recent_commits(project.repo_path, task.branch_name),
         }
+        if evidence is not None:
+            context.update({
+                "completion_verdict": evidence.verdict,
+                "completion_verdict_reasons": evidence.verdict_reasons,
+                "completion_score": evidence.score,
+                "completion_score_breakdown": evidence.score_breakdown,
+                "completion_criteria_count": evidence.criteria_count,
+                "completion_criteria_addressed": evidence.criteria_addressed,
+                "completion_criteria_partially_addressed": evidence.criteria_partially_addressed,
+                "completion_changed_files": evidence.changed_files,
+                "completion_branch_diff_stat": evidence.branch_diff_stat,
+                "completion_builtin_test_passed": evidence.builtin_test_passed,
+                "completion_builtin_test_result": evidence.builtin_test_result,
+            })
         return role.render_prompt(context)
 
     def _load_repo_instructions(self, repo_path: str) -> str:

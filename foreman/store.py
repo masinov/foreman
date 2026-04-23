@@ -97,8 +97,9 @@ def _row_to_task(row: sqlite3.Row) -> Task:
         if "completion_evidence_json" in row.keys()
         else ""
     )
+    evidence_dict = _load_json_dict(raw_evidence) if raw_evidence else None
     completion_evidence: CompletionEvidence | None = (
-        _load_json_dict(raw_evidence) if raw_evidence else None
+        CompletionEvidence(**evidence_dict) if isinstance(evidence_dict, dict) else None
     )
     return Task(
         id=row["id"],
