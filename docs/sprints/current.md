@@ -29,7 +29,10 @@ the backend guard is wired up.
 
 ## Affected areas
 
-- `tests/test_orchestrator.py` — CompletionEvidenceTests class with 14 tests
+- `foreman/models.py` — CompletionEvidence.__str__() for prompt-friendly rendering
+- `foreman/orchestrator.py` — _build_prompt() injects completion_evidence for code_reviewer
+- `roles/code_reviewer.toml` — evidence section before Git Status, explicit weighting instruction
+- `tests/test_orchestrator.py` — ReviewerPromptHardeningTests: 7 regression cases
 - `docs/sprints/current.md` — this sprint definition
 - `docs/STATUS.md` — task and sprint status
 
@@ -56,9 +59,14 @@ the backend guard is wired up.
     - `test_no_branch_means_no_changed_files_evidence` — no branch → no diff, verdict driven by output alone
     - `test_failing_test_cancels_test_score_points` — failing test → test=0 in score breakdown
     - 6 baseline tests: structure, scoring, verdict, coverage, no-criteria edge case
+- [done] Reviewer prompt hardening with engine-produced evidence (task-reviewer-prompt-hardening-with-engine-produced-evidence)
+  - Branch: `feat/task-reviewer-prompt-hardening-with-engine-produced-evidence`
+  - Added `CompletionEvidence.__str__()` to render a human-readable evidence block
+  - Wired completion evidence into `_build_prompt()` for `code_reviewer` role only when branch_name is set
+  - Updated `roles/code_reviewer.toml`: evidence section before Git Status + explicit weighting instruction
+  - Added `ReviewerPromptHardeningTests`: 7 regression cases covering all acceptance criteria
 - [todo] Backend guard for weak completions (task-backend-guard-for-weak-completions)
 - [todo] Completion truth contract docs (task-completion-truth-contract-docs)
-- [todo] Reviewer prompt hardening with engine-produced evidence (task-reviewer-prompt-hardening-with-engine-produced-evidence)
 
 ## Validation
 

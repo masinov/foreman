@@ -3,11 +3,11 @@
 ## Current sprint
 
 - Sprint: `sprint-46-completion-truth-hardening` (active)
-- Branch: `chore/task-false-positive-completion-regression-coverage`
+- Branch: `feat/task-reviewer-prompt-hardening-with-engine-produced-evidence`
 
 ## Active branches
 
-- `chore/task-false-positive-completion-regression-coverage` — 14 new tests in `CompletionEvidenceTests` covering false-positive completion scenarios: docs-only, tests-only, approval-only, text-without-code, passed-tests-only, strong-completion-gate, no-branch, and failing-test signals. Tests prove verdict=insufficient for docs-only and approval-only, verdict ≤ weak for tests-only and text-without-code, and verdict ≥ adequate only when all three signals (code changes, criteria coverage, passing tests) are present.
+- `feat/task-reviewer-prompt-hardening-with-engine-produced-evidence` — Wired engine-produced completion evidence into reviewer prompts: `CompletionEvidence.__str__()` for prompt rendering, `_build_prompt()` injection for `code_reviewer` role when branch is present, updated TOML template with evidence section before Git Status and explicit weighting instruction, `ReviewerPromptHardeningTests`: 7 regression cases.
 
 ## Completed this session (sprints 36–46)
 
