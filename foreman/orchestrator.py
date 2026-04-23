@@ -1875,7 +1875,7 @@ class ForemanOrchestrator:
             return _extract_decision_output(cleaned_text)
 
         if marker:
-            if marker not in cleaned_text.splitlines():
+            if not _contains_completion_marker(cleaned_text, marker):
                 return ("error", f"Missing completion marker `{marker}`.")
             cleaned_text = _strip_completion_marker(cleaned_text, marker)
 
@@ -2193,8 +2193,12 @@ def _normalize_decision_line(line: str) -> str:
     return normalized
 
 
+def _contains_completion_marker(text: str, marker: str) -> bool:
+    return any(_normalize_decision_line(line) == marker for line in text.splitlines())
+
+
 def _strip_completion_marker(text: str, marker: str) -> str:
-    lines = [line for line in text.splitlines() if line.strip() != marker]
+    lines = [line for line in text.splitlines() if _normalize_decision_line(line) != marker]
     return "\n".join(lines).strip()
 
 
