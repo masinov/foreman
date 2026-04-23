@@ -2,7 +2,7 @@
 
 - Sprint: `sprint-46-completion-truth-hardening`
 - Status: active
-- Branch: `chore/task-false-positive-completion-regression-coverage`
+- Branch: `docs/task-completion-truth-contract-docs`
 - Started: 2026-04-23
 
 ## Goal
@@ -57,8 +57,14 @@ the backend guard is wired up.
     - `test_failing_test_cancels_test_score_points` — failing test → test=0 in score breakdown
     - 6 baseline tests: structure, scoring, verdict, coverage, no-criteria edge case
 - [todo] Backend guard for weak completions (task-backend-guard-for-weak-completions)
-- [todo] Completion truth contract docs (task-completion-truth-contract-docs)
-- [todo] Reviewer prompt hardening with engine-produced evidence (task-reviewer-prompt-hardening-with-engine-produced-evidence)
+- [done] Completion truth contract docs (task-completion-truth-contract-docs)
+  - Branch: `docs/task-completion-truth-contract-docs`
+  - Created `docs/adr/ADR-0008-completion-truth-contract.md`
+  - Captures: evidence dimensions, 4-component scoring (100 pts max), verdict
+    thresholds (strong/adequate/weak/insufficient), insufficient-evidence
+    scenarios, wiring into `finalize_supervisor_merge()` and persistence via
+    `completion_evidence_json`
+- [blocked] Reviewer prompt hardening with engine-produced evidence (task-reviewer-prompt-hardening-with-engine-produced-evidence)
 
 ## Validation
 
