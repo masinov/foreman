@@ -8,7 +8,7 @@ import subprocess
 from typing import TYPE_CHECKING, Any
 
 from .context import relative_project_path, write_project_context
-from .git import GitMergeResult, merge_branch
+from .git import GitMergeResult, merge_branch, run_git
 from .models import CompletionEvidence, Project, Task, utc_now_text
 
 if TYPE_CHECKING:
@@ -201,7 +201,53 @@ class BuiltinExecutor:
         project: Project,
         store: ForemanStore,
     ) -> BuiltinResult:
-        del project, store
+        if _bool_setting(project, "completion_guard_enabled", default=True):
+            # The guard evaluates completion evidence via git diff against the
+            # default branch.  After a successful merge the branch tip may equal
+            # HEAD (fast-forward or --no-ff with no new commit), making the diff
+            # empty even though real implementation was merged.  Detect this by
+            # checking whether the default branch is now a direct ancestor of
+            # the task branch — if it is, the branch has been absorbed.
+            # The merge step already ran this guard before allowing the merge.
+            if task.branch_name:
+                ancestor_check = run_git(
+                    project.repo_path,
+                    "merge-base",
+                    "--is-ancestor",
+                    task.branch_name,
+                    project.default_branch,
+                    check=False,
+                )
+                if ancestor_check.returncode != 0:
+                    evidence = self._build_completion_evidence(
+                        project=project,
+                        task=task,
+                        store=store,
+                    )
+                    task.completion_evidence = evidence
+                    if evidence is not None:
+                        block_reason = self._completion_guard_block_reason(task, evidence)
+                        if block_reason is not None:
+                            task.status = "blocked"
+                            task.blocked_reason = block_reason
+                            task.workflow_current_step = None
+                            task.workflow_carried_output = None
+                            return BuiltinResult(
+                                outcome="blocked",
+                                detail=block_reason,
+                                events=(
+                                    BuiltinEventRecord(
+                                        event_type="engine.completion_guard",
+                                        payload={
+                                            "verdict": evidence.verdict,
+                                            "score": evidence.score,
+                                            "score_breakdown": evidence.score_breakdown,
+                                            "changed_files": list(evidence.changed_files),
+                                            "reasons": list(evidence.verdict_reasons),
+                                        },
+                                    ),
+                                ),
+                            )
         task.status = "done"
         task.blocked_reason = None
         task.workflow_current_step = None

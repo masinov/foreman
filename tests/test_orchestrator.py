@@ -4057,6 +4057,395 @@ class CompletionGuardTests(unittest.TestCase):
         self.assertIsInstance(guard_event.payload["verdict"], str)
 
 
+class MarkDoneCompletionGuardTests(unittest.TestCase):
+    """Regression coverage for the _builtin:mark_done completion guard.
+
+    Verifies that _builtin:mark_done blocks tasks with weak/insufficient
+    evidence, and allows through strong/adequate evidence, mirroring the
+    same guard logic already present in _builtin:merge.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.roles = load_roles(default_roles_dir())
+        cls.workflows = load_workflows(
+            default_workflows_dir(),
+            available_role_ids=set(cls.roles),
+        )
+
+    def create_workspace(self) -> tuple[Path, Path]:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        root = Path(temp_dir.name)
+        repo_path = root / "repo"
+        repo_path.mkdir()
+        db_path = root / "foreman.db"
+        return repo_path, db_path
+
+    def git(self, repo_path: Path, *args: str) -> subprocess.CompletedProcess[str]:
+        result = subprocess.run(
+            ["git", *args],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise AssertionError(
+                f"git {' '.join(args)} failed in {repo_path}\n"
+                f"stdout:\n{result.stdout}\n"
+                f"stderr:\n{result.stderr}"
+            )
+        return result
+
+    def write_text(self, path: Path, text: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+    def commit_all(self, repo_path: Path, message: str) -> None:
+        self.git(repo_path, "add", ".")
+        self.git(repo_path, "commit", "-m", message)
+
+    def initialize_repo(self, repo_path: Path) -> None:
+        self.git(repo_path, "init")
+        self.git(repo_path, "checkout", "-b", "main")
+        self.git(repo_path, "config", "user.email", "foreman-tests@example.com")
+        self.git(repo_path, "config", "user.name", "Foreman Tests")
+        self.write_text(repo_path / "AGENTS.md", "# Local Instructions\nUse tests.\n")
+        self.write_text(repo_path / ".gitignore", ".foreman/\n")
+        self.write_text(repo_path / "README.md", "# Temp Repo\n")
+        self.commit_all(repo_path, "chore: initial commit")
+
+    def seed_project(
+        self,
+        store: ForemanStore,
+        *,
+        repo_path: Path,
+        acceptance_criteria: str,
+    ) -> tuple[Project, Sprint, Task]:
+        project = Project(
+            id="proj-mark-done",
+            name="Mark Done Guard Test",
+            repo_path=str(repo_path),
+            spec_path="docs/specs/engine-design-v3.md",
+            workflow_id="development",
+            default_branch="main",
+            settings={
+                "task_selection_mode": "directed",
+                "test_command": "test -f ready.txt",
+            },
+            created_at="2026-04-22T10:00:00Z",
+            updated_at="2026-04-22T10:00:00Z",
+        )
+        sprint = Sprint(
+            id="sprint-mark-done",
+            project_id=project.id,
+            title="Mark Done Guard Sprint",
+            status="active",
+            order_index=1,
+            created_at="2026-04-22T10:05:00Z",
+            started_at="2026-04-22T10:10:00Z",
+        )
+        task = Task(
+            id="task-mark-done-1",
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="Implement auth tokens",
+            description="Build a token-based auth system.",
+            status="todo",
+            task_type="feature",
+            priority=1,
+            order_index=1,
+            acceptance_criteria=acceptance_criteria,
+            branch_name="feat/mark-done-test",
+            created_at="2026-04-22T10:15:00Z",
+        )
+        store.save_project(project)
+        store.save_sprint(sprint)
+        store.save_task(task)
+        return project, sprint, task
+
+    def test_strong_verdict_allows_mark_done(self) -> None:
+        """A task with real implementation changes can be marked done via _builtin:mark_done."""
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+        store = ForemanStore(db_path)
+        self.addCleanup(store.close)
+        store.initialize()
+
+        project, sprint, task = self.seed_project(
+            store,
+            repo_path=repo_path,
+            acceptance_criteria="Add JWT token generation\nAdd token validation middleware",
+        )
+
+        # Commit real implementation files.
+        self.git(repo_path, "checkout", "-b", task.branch_name)
+        self.write_text(
+            repo_path / "auth.py",
+            "import jwt\ndef generate_token(user_id): return jwt.encode({'uid': user_id}, 'secret')\n"
+            "def validate_token(token): return jwt.decode(token, 'secret', algorithms=['HS256'])\n",
+        )
+        self.write_text(
+            repo_path / "middleware.py",
+            "def auth_middleware(request): return request.get('token') is not None\n",
+        )
+        self.write_text(repo_path / "tests/test_auth.py", "def test_token(): assert True\n")
+        self.write_text(repo_path / "ready.txt", "ok\n")
+        self.commit_all(repo_path, "feat: auth token implementation")
+        self.git(repo_path, "checkout", "main")
+
+        from foreman.builtins import BuiltinExecutor
+
+        task.status = "in_progress"
+        executor = BuiltinExecutor()
+        result = executor.execute(
+            "_builtin:mark_done",
+            project=project,
+            task=task,
+            step_id="done",
+            carried_output=None,
+            store=store,
+        )
+
+        self.assertEqual(result.outcome, "success")
+        self.assertEqual(task.status, "done")
+        self.assertNotEqual(task.status, "blocked")
+
+    def test_insufficient_verdict_blocks_mark_done(self) -> None:
+        """A task with no material implementation changes is blocked by _builtin:mark_done."""
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+        store = ForemanStore(db_path)
+        self.addCleanup(store.close)
+        store.initialize()
+
+        project, sprint, task = self.seed_project(
+            store,
+            repo_path=repo_path,
+            acceptance_criteria="Add JWT token generation\nAdd token validation middleware",
+        )
+
+        # Only a docs note — no implementation.
+        self.git(repo_path, "checkout", "-b", task.branch_name)
+        self.write_text(repo_path / "NOTES.md", "Will implement JWT auth next sprint.\n")
+        self.commit_all(repo_path, "docs: outline auth approach")
+        self.git(repo_path, "checkout", "main")
+
+        from foreman.builtins import BuiltinExecutor
+
+        task.status = "in_progress"
+        executor = BuiltinExecutor()
+        result = executor.execute(
+            "_builtin:mark_done",
+            project=project,
+            task=task,
+            step_id="done",
+            carried_output=None,
+            store=store,
+        )
+
+        self.assertEqual(result.outcome, "blocked")
+        self.assertEqual(task.status, "blocked")
+        self.assertIn("Completion evidence too weak", task.blocked_reason)
+        self.assertIn("verdict:", task.blocked_reason)
+
+    def test_weak_verdict_blocks_mark_done(self) -> None:
+        """A docs-only implementation branch is blocked by _builtin:mark_done."""
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+        store = ForemanStore(db_path)
+        self.addCleanup(store.close)
+        store.initialize()
+
+        project, sprint, task = self.seed_project(
+            store,
+            repo_path=repo_path,
+            acceptance_criteria="Add scheduler queue",
+        )
+
+        # Only a docs file — no implementation.
+        self.git(repo_path, "checkout", "-b", task.branch_name)
+        self.write_text(repo_path / "SCHEDULER.md", "# Scheduler Queue\nWill implement soon.\n")
+        self.commit_all(repo_path, "docs: scheduler design doc")
+        self.git(repo_path, "checkout", "main")
+
+        from foreman.builtins import BuiltinExecutor
+
+        task.status = "in_progress"
+        executor = BuiltinExecutor()
+        result = executor.execute(
+            "_builtin:mark_done",
+            project=project,
+            task=task,
+            step_id="done",
+            carried_output=None,
+            store=store,
+        )
+
+        self.assertEqual(result.outcome, "blocked")
+        self.assertEqual(task.status, "blocked")
+        self.assertIn("only docs or tests changed", task.blocked_reason)
+
+    def test_adequate_verdict_allows_mark_done(self) -> None:
+        """A task with partial but real implementation changes can be marked done."""
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+        store = ForemanStore(db_path)
+        self.addCleanup(store.close)
+        store.initialize()
+
+        project, sprint, task = self.seed_project(
+            store,
+            repo_path=repo_path,
+            acceptance_criteria="Add JWT token generation\nAdd token validation middleware",
+        )
+
+        # Implementation covers one criterion, tests present.
+        self.git(repo_path, "checkout", "-b", task.branch_name)
+        self.write_text(
+            repo_path / "auth.py",
+            "def generate_token(user_id): return f'token-{user_id}'\n"
+            "def validate_token(token): return token.startswith('token-')\n",
+        )
+        self.write_text(repo_path / "tests/test_auth.py", "def test_generate(): pass\n")
+        self.commit_all(repo_path, "feat: partial auth implementation")
+        self.git(repo_path, "checkout", "main")
+
+        from foreman.builtins import BuiltinExecutor
+
+        task.status = "in_progress"
+        executor = BuiltinExecutor()
+        result = executor.execute(
+            "_builtin:mark_done",
+            project=project,
+            task=task,
+            step_id="done",
+            carried_output=None,
+            store=store,
+        )
+
+        self.assertEqual(result.outcome, "success")
+        self.assertEqual(task.status, "done")
+
+    def test_mark_done_guard_emits_event(self) -> None:
+        """The _builtin:mark_done guard emits an engine.completion_guard event on block."""
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+        store = ForemanStore(db_path)
+        self.addCleanup(store.close)
+        store.initialize()
+
+        project, sprint, task = self.seed_project(
+            store,
+            repo_path=repo_path,
+            acceptance_criteria="Add auth module",
+        )
+
+        # Docs-only changes trigger the guard event.
+        self.git(repo_path, "checkout", "-b", task.branch_name)
+        self.write_text(repo_path / "docs" / "auth.md", "# Auth module\n")
+        self.commit_all(repo_path, "docs: outline auth module")
+        self.git(repo_path, "checkout", "main")
+
+        from foreman.builtins import BuiltinExecutor
+
+        task.status = "in_progress"
+        executor = BuiltinExecutor()
+        result = executor.execute(
+            "_builtin:mark_done",
+            project=project,
+            task=task,
+            step_id="done",
+            carried_output=None,
+            store=store,
+        )
+
+        self.assertEqual(result.outcome, "blocked")
+        self.assertEqual(len(result.events), 1)
+        guard_event = result.events[0]
+        self.assertEqual(guard_event.event_type, "engine.completion_guard")
+        self.assertIn("verdict", guard_event.payload)
+        self.assertIsInstance(guard_event.payload["verdict"], str)
+
+    def test_mark_done_guard_disabled_via_setting(self) -> None:
+        """_builtin:mark_done skips the guard when completion_guard_enabled=False."""
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+        store = ForemanStore(db_path)
+        self.addCleanup(store.close)
+        store.initialize()
+
+        project, sprint, task = self.seed_project(
+            store,
+            repo_path=repo_path,
+            acceptance_criteria="Add auth module",
+        )
+        # Disable the guard via project settings.
+        project.settings["completion_guard_enabled"] = False
+        store.save_project(project)
+
+        # Only a docs note — would normally block, but guard is disabled.
+        self.git(repo_path, "checkout", "-b", task.branch_name)
+        self.write_text(repo_path / "NOTES.md", "Will implement next sprint.\n")
+        self.commit_all(repo_path, "docs: outline")
+        self.git(repo_path, "checkout", "main")
+
+        from foreman.builtins import BuiltinExecutor
+
+        task.status = "in_progress"
+        executor = BuiltinExecutor()
+        result = executor.execute(
+            "_builtin:mark_done",
+            project=project,
+            task=task,
+            step_id="done",
+            carried_output=None,
+            store=store,
+        )
+
+        self.assertEqual(result.outcome, "success")
+        self.assertEqual(task.status, "done")
+
+    def test_mark_done_non_implementation_task_type_skips_guard(self) -> None:
+        """_builtin:mark_done skips the guard for docs/spike/chore task types."""
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+        store = ForemanStore(db_path)
+        self.addCleanup(store.close)
+        store.initialize()
+
+        project, sprint, task = self.seed_project(
+            store,
+            repo_path=repo_path,
+            acceptance_criteria="Write documentation for auth module",
+        )
+        task.task_type = "docs"
+        store.save_task(task)
+
+        # Only a docs note — would normally block for feature, but docs type bypasses.
+        self.git(repo_path, "checkout", "-b", task.branch_name)
+        self.write_text(repo_path / "docs" / "auth.md", "# Auth module\nDocumentation.\n")
+        self.commit_all(repo_path, "docs: write auth docs")
+        self.git(repo_path, "checkout", "main")
+
+        from foreman.builtins import BuiltinExecutor
+
+        task.status = "in_progress"
+        executor = BuiltinExecutor()
+        result = executor.execute(
+            "_builtin:mark_done",
+            project=project,
+            task=task,
+            step_id="done",
+            carried_output=None,
+            store=store,
+        )
+
+        self.assertEqual(result.outcome, "success")
+        self.assertEqual(task.status, "done")
+
+
 class SprintAdvancementTests(unittest.TestCase):
     """Tests for sprint-41: orchestrator sprint completion and auto-advancement."""
 
