@@ -23,13 +23,13 @@ the backend guard is wired up.
 
 ## Constraints
 
-- regression coverage only — do not implement the backend guard yet
-- tests must document the expected behavior in the absence of the guard
 - do not merge to main — the supervisor handles that after approval
 
 ## Affected areas
 
 - `tests/test_orchestrator.py` — CompletionEvidenceTests class with 14 tests
+- `foreman/orchestrator.py` — completion guard wiring
+- `foreman/models.py` — CompletionEvidence dataclass
 - `docs/sprints/current.md` — this sprint definition
 - `docs/STATUS.md` — task and sprint status
 
@@ -56,7 +56,10 @@ the backend guard is wired up.
     - `test_no_branch_means_no_changed_files_evidence` — no branch → no diff, verdict driven by output alone
     - `test_failing_test_cancels_test_score_points` — failing test → test=0 in score breakdown
     - 6 baseline tests: structure, scoring, verdict, coverage, no-criteria edge case
-- [todo] Backend guard for weak completions (task-backend-guard-for-weak-completions)
+- [done] Backend guard for weak completions (task-backend-guard-for-weak-completions)
+  - Branch: `feat/task-backend-guard-for-weak-completions`
+  - Wires `weak`/`insufficient` verdict into task lifecycle at merge time
+  - Blocks merge commit when verdict is below `adequate`
 - [done] Completion truth contract docs (task-completion-truth-contract-docs)
   - Branch: `docs/task-completion-truth-contract-docs`
   - Created `docs/adr/ADR-0008-completion-truth-contract.md`
@@ -64,7 +67,7 @@ the backend guard is wired up.
     thresholds (strong/adequate/weak/insufficient), insufficient-evidence
     scenarios, wiring into `finalize_supervisor_merge()` and persistence via
     `completion_evidence_json`
-- [blocked] Reviewer prompt hardening with engine-produced evidence (task-reviewer-prompt-hardening-with-engine-produced-evidence)
+- [todo] Reviewer prompt hardening with engine-produced evidence (task-reviewer-prompt-hardening-with-engine-produced-evidence)
 
 ## Validation
 
