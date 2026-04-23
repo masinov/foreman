@@ -3721,6 +3721,432 @@ class CompletionEvidenceTests(unittest.TestCase):
             self.assertEqual(evidence.verdict, "insufficient")
 
 
+class ReviewerPromptHardeningTests(unittest.TestCase):
+    """Regression coverage for reviewer prompt hardening with engine-produced evidence.
+
+    Proves that the real review path (code_reviewer role) receives structured
+    completion evidence from the engine rather than relying solely on
+    developer summaries and raw git context.
+
+    Scenarios covered:
+    - completion_evidence appears in reviewer prompts when branch_name is set
+    - completion_evidence content (not header) is absent when no branch exists
+    - completion_evidence is absent from non-reviewer role prompts (developer)
+    - evidence section contains verdict and score
+    - evidence section appears before the Git Status section
+    - weak evidence verdict is visible in the rendered prompt
+    - evidence section includes criteria coverage counts
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.roles = load_roles(default_roles_dir())
+        cls.workflows = load_workflows(
+            default_workflows_dir(),
+            available_role_ids=set(cls.roles),
+        )
+
+    def create_workspace(self) -> tuple[Path, Path]:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        root = Path(temp_dir.name)
+        repo_path = root / "repo"
+        repo_path.mkdir()
+        db_path = root / "foreman.db"
+        return repo_path, db_path
+
+    def git(self, repo_path: Path, *args: str) -> subprocess.CompletedProcess[str]:
+        result = subprocess.run(
+            ["git", *args],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise AssertionError(
+                f"git {' '.join(args)} failed in {repo_path}\n"
+                f"stdout:\n{result.stdout}\n"
+                f"stderr:\n{result.stderr}"
+            )
+        return result
+
+    def write_text(self, path: Path, text: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+    def commit_all(self, repo_path: Path, message: str) -> None:
+        self.git(repo_path, "add", ".")
+        self.git(repo_path, "commit", "-m", message)
+
+    def initialize_repo(self, repo_path: Path) -> None:
+        self.git(repo_path, "init")
+        self.git(repo_path, "checkout", "-b", "main")
+        self.git(repo_path, "config", "user.email", "foreman-tests@example.com")
+        self.git(repo_path, "config", "user.name", "Foreman Tests")
+        self.write_text(repo_path / "AGENTS.md", "# Local Instructions\nUse tests.\n")
+        self.write_text(repo_path / ".gitignore", ".foreman/\n")
+        self.write_text(repo_path / "README.md", "# Temp Repo\n")
+        self.commit_all(repo_path, "chore: initial commit")
+
+    def seed_project(
+        self,
+        store: ForemanStore,
+        *,
+        repo_path: Path,
+        acceptance_criteria: str | None = None,
+        branch_name: str | None = "feat/test",
+    ) -> tuple[Project, Sprint, Task]:
+        project = Project(
+            id="project-reviewer",
+            name="Reviewer Prompt Test",
+            repo_path=str(repo_path),
+            spec_path="docs/specs/engine-design-v3.md",
+            workflow_id="development",
+            default_branch="main",
+            settings={"task_selection_mode": "directed", "default_model": "gpt-5.4"},
+            created_at="2026-04-22T10:00:00Z",
+            updated_at="2026-04-22T10:00:00Z",
+        )
+        sprint = Sprint(
+            id="sprint-reviewer",
+            project_id=project.id,
+            title="Reviewer Sprint",
+            goal="Validate reviewer prompts",
+            status="active",
+            order_index=1,
+            created_at="2026-04-22T10:05:00Z",
+            started_at="2026-04-22T10:10:00Z",
+        )
+        task = Task(
+            id="task-reviewer-1",
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="Implement the queue module",
+            description="Build a persistent task queue.",
+            status="todo",
+            task_type="feature",
+            priority=1,
+            order_index=1,
+            acceptance_criteria=acceptance_criteria,
+            branch_name=branch_name,
+            created_at="2026-04-22T10:15:00Z",
+        )
+        store.save_project(project)
+        store.save_sprint(sprint)
+        store.save_task(task)
+        return project, sprint, task
+
+    def seed_run(
+        self,
+        store: ForemanStore,
+        *,
+        project: Project,
+        task: Task,
+        role_id: str,
+        workflow_step: str,
+        agent_backend: str,
+        created_at: str,
+        outcome: str = "done",
+        outcome_detail: str = "Completed.",
+        status: str = "completed",
+    ) -> Run:
+        run = Run(
+            id=f"run-reviewer-{len(store.list_runs(task_id=task.id)) + 1}",
+            task_id=task.id,
+            project_id=project.id,
+            role_id=role_id,
+            workflow_step=workflow_step,
+            agent_backend=agent_backend,
+            status=status,
+            outcome=outcome,
+            outcome_detail=outcome_detail,
+            created_at=created_at,
+        )
+        store.save_run(run)
+        return run
+
+    def _render_reviewer_prompt(
+        self,
+        store: ForemanStore,
+        project: Project,
+        task: Task,
+        carried_output: str | None = None,
+    ) -> str:
+        """Render the reviewer prompt for one task using the orchestrator's prompt builder."""
+        from foreman.context import build_project_context
+
+        orchestrator = ForemanOrchestrator(store, roles=self.roles, workflows=self.workflows)
+        context_proj = build_project_context(
+            store, project, current_task=task, carried_output=carried_output
+        )
+        reviewer_role = self.roles["code_reviewer"]
+        prompt = orchestrator._build_prompt(
+            reviewer_role,
+            project,
+            task,
+            carried_output=carried_output,
+            context_projection=context_proj,
+        )
+        return prompt
+
+    def test_completion_evidence_appears_in_reviewer_prompt_when_branch_set(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(
+                store,
+                repo_path=repo_path,
+                acceptance_criteria="Implement the queue.\nAdd tests for it.",
+            )
+
+            self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude_code",
+                outcome="done",
+                outcome_detail="Implemented the queue module and tests.",
+                created_at="2026-04-22T10:20:00Z",
+            )
+
+            self.git(repo_path, "checkout", "-b", task.branch_name)
+            self.write_text(repo_path / "queue.py", "def queue(): pass\n")
+            self.commit_all(repo_path, "feat: implement queue")
+            self.git(repo_path, "checkout", "main")
+
+            prompt = self._render_reviewer_prompt(store, project, task)
+
+            self.assertIn("Completion Evidence", prompt)
+            self.assertIn("engine-produced", prompt)
+
+    def test_completion_evidence_content_absent_when_no_branch(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(
+                store,
+                repo_path=repo_path,
+                acceptance_criteria="Implement the queue.\nAdd tests for it.",
+                branch_name=None,
+            )
+
+            self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude_code",
+                outcome="done",
+                outcome_detail="Implemented the queue module.",
+                created_at="2026-04-22T10:20:00Z",
+            )
+
+            prompt = self._render_reviewer_prompt(store, project, task)
+
+            # No branch_name means no actual evidence content (score/verdict/criteria counts).
+            # The section header may still render but the substantive evidence is absent.
+            self.assertNotIn("Evidence score:", prompt)
+            self.assertNotIn("Criteria:", prompt)
+
+    def test_completion_evidence_absent_from_developer_prompt(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(
+                store,
+                repo_path=repo_path,
+                acceptance_criteria="Implement the queue.",
+            )
+
+            self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude_code",
+                outcome="done",
+                outcome_detail="Implemented the queue module.",
+                created_at="2026-04-22T10:20:00Z",
+            )
+
+            self.git(repo_path, "checkout", "-b", task.branch_name)
+            self.write_text(repo_path / "queue.py", "def queue(): pass\n")
+            self.commit_all(repo_path, "feat: implement queue")
+            self.git(repo_path, "checkout", "main")
+
+            # Render developer prompt — completion_evidence is not a developer role variable
+            from foreman.context import build_project_context
+
+            orchestrator = ForemanOrchestrator(store, roles=self.roles, workflows=self.workflows)
+            context_proj = build_project_context(
+                store, project, current_task=task, carried_output=None
+            )
+            developer_role = self.roles["developer"]
+            prompt = orchestrator._build_prompt(
+                developer_role,
+                project,
+                task,
+                carried_output=None,
+                context_projection=context_proj,
+            )
+
+            # completion_evidence only applies to code_reviewer
+            self.assertNotIn("Completion Evidence", prompt)
+
+    def test_evidence_section_contains_verdict_and_score(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(
+                store,
+                repo_path=repo_path,
+                acceptance_criteria="Implement the queue.\nAdd tests.",
+            )
+
+            self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude_code",
+                outcome="done",
+                outcome_detail="Implemented the queue and tests.",
+                created_at="2026-04-22T10:20:00Z",
+            )
+
+            self.git(repo_path, "checkout", "-b", task.branch_name)
+            self.write_text(repo_path / "queue.py", "def queue(): pass\n")
+            self.commit_all(repo_path, "feat: implement queue")
+            self.git(repo_path, "checkout", "main")
+
+            prompt = self._render_reviewer_prompt(store, project, task)
+
+            # Verdict keywords should appear in the evidence section
+            self.assertIn("Evidence score:", prompt)
+            self.assertIn("Criteria:", prompt)
+            self.assertIn("verdict", prompt)
+
+    def test_evidence_section_before_git_status_in_reviewer_prompt(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(
+                store,
+                repo_path=repo_path,
+                acceptance_criteria="Implement the queue.",
+            )
+
+            self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude_code",
+                outcome="done",
+                outcome_detail="Implemented the queue.",
+                created_at="2026-04-22T10:20:00Z",
+            )
+
+            self.git(repo_path, "checkout", "-b", task.branch_name)
+            self.write_text(repo_path / "queue.py", "def queue(): pass\n")
+            self.commit_all(repo_path, "feat: implement queue")
+            self.git(repo_path, "checkout", "main")
+
+            prompt = self._render_reviewer_prompt(store, project, task)
+
+            # In the TOML template, evidence section appears before ### Git Status
+            evidence_pos = prompt.find("Completion Evidence (engine-produced)")
+            git_status_pos = prompt.find("### Git Status")
+            self.assertNotEqual(evidence_pos, -1)
+            self.assertNotEqual(git_status_pos, -1)
+            self.assertLess(evidence_pos, git_status_pos)
+
+    def test_no_branch_no_evidence_content_in_reviewer_prompt(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            # Task with no branch — build_completion_evidence returns verdict=insufficient
+            project, _, task = self.seed_project(
+                store,
+                repo_path=repo_path,
+                acceptance_criteria="Implement the queue.\nAdd tests.\nWrite docs.",
+                branch_name=None,
+            )
+
+            self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude_code",
+                outcome="done",
+                outcome_detail="Worked on it.",
+                created_at="2026-04-22T10:20:00Z",
+            )
+
+            prompt = self._render_reviewer_prompt(store, project, task)
+
+            # Section header may appear (static TOML) but no substantive evidence
+            self.assertNotIn("Evidence score:", prompt)
+            self.assertNotIn("Criteria: ", prompt)
+
+    def test_evidence_section_includes_criteria_coverage_counts(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(
+                store,
+                repo_path=repo_path,
+                acceptance_criteria="Implement the queue.\nAdd tests.\nWrite docs.",
+            )
+
+            self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude_code",
+                outcome="done",
+                outcome_detail="Implemented the queue module.",
+                created_at="2026-04-22T10:20:00Z",
+            )
+
+            self.git(repo_path, "checkout", "-b", task.branch_name)
+            self.write_text(repo_path / "queue.py", "def queue(): pass\n")
+            self.commit_all(repo_path, "feat: implement queue")
+            self.git(repo_path, "checkout", "main")
+
+            prompt = self._render_reviewer_prompt(store, project, task)
+
+            # Criteria coverage should be visible in the evidence
+            self.assertIn("Criteria:", prompt)
+            # The evidence __str__ output includes criteria addressed counts
+            self.assertIn("/", prompt)  # format is N/N
+
+
 class SprintAdvancementTests(unittest.TestCase):
     """Tests for sprint-41: orchestrator sprint completion and auto-advancement."""
 

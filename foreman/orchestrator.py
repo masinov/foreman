@@ -1611,6 +1611,11 @@ class ForemanOrchestrator:
                 task.branch_name,
             ),
             "recent_commits": self._safe_recent_commits(project.repo_path, task.branch_name),
+            "completion_evidence": (
+                str(self.build_completion_evidence(task, project))
+                if role.id == "code_reviewer" and task.branch_name
+                else ""
+            ),
         }
         return role.render_prompt(context)
 
