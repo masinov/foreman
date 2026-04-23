@@ -2,7 +2,7 @@
 
 - Sprint: `sprint-46-completion-truth-hardening`
 - Status: active
-- Branch: `chore/task-false-positive-completion-regression-coverage`
+- Branch: `feat/task-reviewer-prompt-hardening-with-engine-produced-evidence`
 - Started: 2026-04-23
 
 ## Goal
