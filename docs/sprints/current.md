@@ -2,7 +2,7 @@
 
 - Sprint: `sprint-46-completion-truth-hardening`
 - Status: active
-- Branch: `fix/native-run-step-lease-recovery`
+- Branch: `fix/merge-conflict-recovery-review-loop`
 - Started: 2026-04-23
 
 ## Goal
@@ -18,10 +18,13 @@ hardens completion truth in two stages: first the evidence model and
 regression coverage, then the backend guard that uses branch diff evidence
 to stop implementation tasks from flowing to `done` when they only changed
 docs/tests or never produced material branch changes. While running those
-tasks live, Foreman exposed a separate runtime defect: native `review`
-steps could strand with only `workflow.step_started` persisted. The current
-branch is an emergency backend hardening slice for that ownership and
-recovery gap.
+tasks live, Foreman exposed follow-on runtime defects around native-step
+recovery, dirty finalization, malformed output contracts, and stale
+task-branch reuse. The current branch fixes the stale-branch merge-conflict
+loop: merge conflicts are now distinguished from generic merge failures,
+conflict-resolution passes get explicit carried guidance, and existing task
+branches are refreshed against current `main` when that refresh is clean
+before the developer tries again.
 
 ## Constraints
 
@@ -33,9 +36,11 @@ recovery gap.
 
 ## Affected areas
 
-- `foreman/builtins.py` — merge-time completion guard + mark_done completion guard
-- `foreman/orchestrator.py` — preserve blocked reasons from builtin outcomes
-- `tests/test_orchestrator.py` — CompletionEvidenceTests, CompletionGuardTests, MarkDoneCompletionGuardTests
+- `foreman/builtins.py` — merge conflict outcome and conflict-specific carry output
+- `foreman/git.py` — merge-conflict detection + stale task-branch refresh helper
+- `foreman/orchestrator.py` — conflict-recovery branch preparation and re-review loop
+- `workflows/development.toml` — explicit `completion:conflict` transition
+- `tests/test_orchestrator.py` — conflict-loop and stale-branch refresh regressions
 - `docs/sprints/current.md` — this sprint definition
 - `docs/STATUS.md` — task and sprint status
 

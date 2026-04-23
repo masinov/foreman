@@ -210,6 +210,29 @@ class BuiltinExecutor:
                 ),
             )
 
+        if result.conflict:
+            detail = (
+                f"Merge conflict against {project.default_branch!r}. Reconcile branch "
+                f"{task.branch_name!r} with the latest {project.default_branch!r}, then "
+                "complete another develop pass. Conflict-resolution changes must go back "
+                "through code review before merge.\n\n"
+                f"{result.detail}"
+            )
+            return BuiltinResult(
+                outcome="conflict",
+                detail=detail,
+                events=(
+                    BuiltinEventRecord(
+                        event_type="engine.merge_conflict",
+                        payload={
+                            "branch": task.branch_name,
+                            "target": project.default_branch,
+                            "error": result.detail,
+                        },
+                    ),
+                ),
+            )
+
         return BuiltinResult(
             outcome="failure",
             detail=result.detail,

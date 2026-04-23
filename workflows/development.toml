@@ -63,6 +63,12 @@ to = "done"
 
 [[transitions]]
 from = "merge"
+trigger = "completion:conflict"
+to = "develop"
+carry_output = true
+
+[[transitions]]
+from = "merge"
 trigger = "completion:failure"
 to = "develop"
 carry_output = true
