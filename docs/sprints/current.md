@@ -29,9 +29,9 @@ docs/tests or never produced material branch changes.
 
 ## Affected areas
 
-- `foreman/builtins.py` — merge-time completion guard
+- `foreman/builtins.py` — merge-time completion guard + mark_done completion guard
 - `foreman/orchestrator.py` — preserve blocked reasons from builtin outcomes
-- `tests/test_orchestrator.py` — CompletionEvidenceTests plus merge-guard regressions
+- `tests/test_orchestrator.py` — CompletionEvidenceTests, CompletionGuardTests, MarkDoneCompletionGuardTests
 - `docs/sprints/current.md` — this sprint definition
 - `docs/STATUS.md` — task and sprint status
 
@@ -58,14 +58,19 @@ docs/tests or never produced material branch changes.
     - `test_no_branch_means_no_changed_files_evidence` — no branch → no diff, verdict driven by output alone
     - `test_failing_test_cancels_test_score_points` — failing test → test=0 in score breakdown
     - 6 baseline tests: structure, scoring, verdict, coverage, no-criteria edge case
-- [todo] Backend guard for weak completions (task-backend-guard-for-weak-completions)
+- [done] Backend guard for weak completions (task-backend-guard-for-weak-completions)
   - Branch: `feat/task-backend-guard-for-weak-completions`
-  - Move the guard to `_builtin:merge` so weak evidence blocks before merge/final completion
-  - Block only implementation task types (`feature`, `fix`, `refactor`)
-  - Current rule: block when branch evidence shows no changed files or docs/tests-only changes
-  - Preserve the specific blocked reason by treating builtin `blocked` outcomes as actionable detail in `ForemanOrchestrator`
-  - Add merge-time regression coverage for docs/tests-only blocking and implementation-path success
-  - The first live developer run stalled during `develop`; the stale run was reconciled and the task was reset to `todo` so Foreman can rerun it cleanly from this repaired branch
+  - Added completion guard to `_builtin:mark_done` in `foreman/builtins.py`
+  - Guard mirrors the existing `_builtin:merge` guard: builds completion evidence (git diff,
+    criteria coverage, test results) and blocks feature/fix/refactor tasks when evidence is weak
+    (no material code changes, or docs/tests-only changes)
+  - Post-merge invocation handled via `git merge-base --is-ancestor feat/t main`: when the task
+    branch has been absorbed into the default branch, the diff is naturally empty but the guard
+    already ran at merge time, so mark_done proceeds without re-evaluating
+  - Guard respects `completion_guard_enabled` project setting (default True) and skips for
+    non-implementation task types (docs/spike/chore)
+  - 7 regression tests in `MarkDoneCompletionGuardTests`: strong/adequate pass, insufficient/weak
+    block, event emission, guard-disable setting, non-implementation task type bypass
 - [todo] Completion truth contract docs (task-completion-truth-contract-docs)
 - [todo] Reviewer prompt hardening with engine-produced evidence (task-reviewer-prompt-hardening-with-engine-produced-evidence)
 
