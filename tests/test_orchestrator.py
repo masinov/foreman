@@ -1094,6 +1094,155 @@ class ForemanOrchestratorTests(unittest.TestCase):
             assert final_task is not None
             self.assertEqual(final_task.status, "done")
 
+    def test_run_project_retries_developer_once_after_missing_completion_marker(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+
+            def developer_missing_marker(
+                *,
+                task: Task,
+                prompt: str,
+                carried_output: str | None,
+            ) -> AgentExecutionResult:
+                self.assertIn("Task: Implement orchestrator loop", prompt)
+                return AgentExecutionResult(
+                    outcome="error",
+                    detail="Missing completion marker `TASK_COMPLETE`.",
+                    status="completed",
+                )
+
+            def developer_retry(
+                *,
+                task: Task,
+                prompt: str,
+                carried_output: str | None,
+            ) -> AgentExecutionResult:
+                self.assertIn("### Output Correction", prompt)
+                self.assertIn("end with `TASK_COMPLETE`", prompt)
+                self.write_text(repo_path / "feature.txt", "implemented\n")
+                self.write_text(repo_path / "ready.txt", "ready\n")
+                self.commit_all(repo_path, "feat: implement workflow slice")
+                return AgentExecutionResult(
+                    outcome="done",
+                    detail="Implemented the workflow slice.",
+                    status="completed",
+                )
+
+            executor = ScriptedAgentExecutor(
+                {
+                    ("developer", 1): developer_missing_marker,
+                    ("developer", 2): developer_retry,
+                    ("code_reviewer", 1): lambda **_: AgentExecutionResult(
+                        outcome="approve",
+                        detail="APPROVE",
+                    ),
+                }
+            )
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=self.roles,
+                workflows=self.workflows,
+                agent_executor=executor,
+            )
+
+            result = orchestrator.run_project(project.id)
+
+            self.assertEqual(result.stop_reason, "idle")
+            self.assertEqual(executor.call_counts["developer"], 2)
+            final_task = store.get_task(task.id)
+            assert final_task is not None
+            self.assertEqual(final_task.status, "done")
+            retry_events = [
+                event
+                for event in store.list_events(task_id=task.id)
+                if event.event_type == "engine.output_contract_retry"
+            ]
+            self.assertEqual(len(retry_events), 1)
+            self.assertEqual(retry_events[0].payload["reason"], "missing_completion_marker")
+
+    def test_run_project_retries_reviewer_once_after_malformed_decision_output(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+
+            def developer_success(
+                *,
+                task: Task,
+                prompt: str,
+                carried_output: str | None,
+            ) -> AgentExecutionResult:
+                self.write_text(repo_path / "feature.txt", "implemented\n")
+                self.write_text(repo_path / "ready.txt", "ready\n")
+                self.commit_all(repo_path, "feat: implement workflow slice")
+                return AgentExecutionResult(
+                    outcome="done",
+                    detail="Implemented the workflow slice.",
+                    status="completed",
+                )
+
+            def malformed_review(
+                *,
+                task: Task,
+                prompt: str,
+                carried_output: str | None,
+            ) -> AgentExecutionResult:
+                self.assertIn("Developer Summary", prompt)
+                return AgentExecutionResult(
+                    outcome="error",
+                    detail="<invoke name=\"Bash\">bad tool call</invoke>",
+                    status="completed",
+                )
+
+            def corrected_review(
+                *,
+                task: Task,
+                prompt: str,
+                carried_output: str | None,
+            ) -> AgentExecutionResult:
+                self.assertIn("### Output Correction", prompt)
+                self.assertIn("Return exactly one line and nothing else", prompt)
+                return AgentExecutionResult(
+                    outcome="approve",
+                    detail="APPROVE",
+                    status="completed",
+                )
+
+            executor = ScriptedAgentExecutor(
+                {
+                    ("developer", 1): developer_success,
+                    ("code_reviewer", 1): malformed_review,
+                    ("code_reviewer", 2): corrected_review,
+                }
+            )
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=self.roles,
+                workflows=self.workflows,
+                agent_executor=executor,
+            )
+
+            result = orchestrator.run_project(project.id)
+
+            self.assertEqual(result.stop_reason, "idle")
+            self.assertEqual(executor.call_counts["code_reviewer"], 2)
+            final_task = store.get_task(task.id)
+            assert final_task is not None
+            self.assertEqual(final_task.status, "done")
+            retry_events = [
+                event
+                for event in store.list_events(task_id=task.id)
+                if event.event_type == "engine.output_contract_retry"
+            ]
+            self.assertEqual(len(retry_events), 1)
+            self.assertEqual(retry_events[0].payload["reason"], "decision_format")
+
     def test_native_runner_executes_claude_roles_without_an_injected_executor(self) -> None:
         repo_path, db_path = self.create_workspace()
         self.initialize_repo(repo_path)

@@ -1225,6 +1225,84 @@ class ForemanOrchestrator:
                     token_count=result.token_count,
                     duration_ms=result.duration_ms,
                 )
+                retry_reason = self._output_contract_retry_reason(role, result)
+                if retry_reason is not None:
+                    self._emit_event(
+                        run,
+                        "engine.output_contract_retry",
+                        {
+                            "step": current_step,
+                            "role_id": role.id,
+                            "reason": retry_reason,
+                            "retry_attempt": 1,
+                        },
+                    )
+                    retry_prompt = self._append_output_contract_retry_instruction(
+                        prompt,
+                        role,
+                        retry_reason,
+                    )
+                    retry_session_id = result.session_id or session_id
+                    retry_run = self._create_running_run(
+                        current_task,
+                        role_id=role.id,
+                        workflow_step=current_step,
+                        agent_backend=role.agent.backend,
+                        model=model or None,
+                        branch_name=current_task.branch_name,
+                        prompt_text=retry_prompt,
+                    )
+                    self._write_runtime_context(
+                        retry_run,
+                        project,
+                        context_projection=context_projection,
+                    )
+                    self._emit_event(
+                        retry_run,
+                        "workflow.step_started",
+                        {
+                            "step": current_step,
+                            "visit_count": visit_count,
+                            "retry_attempt": 1,
+                        },
+                    )
+                    retry_result = self._execute_agent_step(
+                        role=role,
+                        project=project,
+                        task=current_task,
+                        workflow_step=current_step,
+                        prompt=retry_prompt,
+                        session_id=retry_session_id,
+                        carried_output=carried_output,
+                        event_recorder=lambda event_record: self._persist_agent_event(
+                            retry_run,
+                            current_task,
+                            project,
+                            role.id,
+                            event_record,
+                        ),
+                    )
+                    if not retry_result.events_streamed:
+                        self._emit_agent_events(
+                            retry_run,
+                            current_task,
+                            project,
+                            role.id,
+                            retry_result.events,
+                        )
+                    self._complete_run(
+                        retry_run,
+                        status=retry_result.status,
+                        outcome=retry_result.outcome,
+                        detail=retry_result.detail,
+                        model=retry_result.model or model or None,
+                        session_id=retry_result.session_id,
+                        cost_usd=retry_result.cost_usd,
+                        token_count=retry_result.token_count,
+                        duration_ms=retry_result.duration_ms,
+                    )
+                    run = retry_run
+                    result = retry_result
                 if role.agent.session_persistence and result.session_id:
                     session_ids[session_key] = result.session_id
                 outcome = result.outcome
@@ -1905,6 +1983,53 @@ class ForemanOrchestrator:
             return ("done", cleaned_text or "Completed.")
 
         return ("done", cleaned_text or "Completed.")
+
+    def _output_contract_retry_reason(
+        self,
+        role: RoleDefinition,
+        result: AgentExecutionResult,
+    ) -> str | None:
+        """Return a retry reason when one malformed agent response merits one corrective retry."""
+
+        if result.status != "completed" or result.outcome != "error":
+            return None
+
+        if role.completion.output.extract_decision:
+            return "decision_format"
+
+        marker = role.completion.marker.strip()
+        if marker and result.detail == f"Missing completion marker `{marker}`.":
+            return "missing_completion_marker"
+
+        return None
+
+    def _append_output_contract_retry_instruction(
+        self,
+        prompt: str,
+        role: RoleDefinition,
+        reason: str,
+    ) -> str:
+        """Append a minimal corrective instruction for one malformed-output retry."""
+
+        if reason == "decision_format":
+            correction = (
+                "Your previous response did not follow the required final output format.\n"
+                "Do not do more review work.\n"
+                "Return exactly one line and nothing else:\n"
+                "APPROVE\n"
+                "DENY: <reason>\n"
+                "STEER: <specific corrective action>"
+            )
+        elif reason == "missing_completion_marker":
+            correction = (
+                "Your previous response did not include the required completion marker.\n"
+                "Do not do more work.\n"
+                f"Return your completion summary again and end with `{role.completion.marker}` "
+                "on its own line."
+            )
+        else:
+            return prompt
+        return f"{prompt}\n\n### Output Correction\n{correction}"
 
     def _emit_agent_events(
         self,
