@@ -441,7 +441,10 @@ class ForemanOrchestrator:
         contain substantive references to its key terms.  Partial coverage
         is when only a subset of the relevant terms appear.
         """
-        key_terms = re.findall(r"\b\w{4,}\b", criterion.lower())
+        key_terms = [
+            t.strip().rstrip(".,;:!?()[]{}'\"").strip()
+            for t in re.findall(r"\b\w{4,}\b", criterion.lower())
+        ]
         if not key_terms:
             return (False, False)
 
@@ -1274,7 +1277,7 @@ class ForemanOrchestrator:
     ) -> str:
         """Return the task block reason for a step outcome with no transition."""
 
-        if outcome in {"error", "killed"} and detail:
+        if outcome in {"error", "killed", "blocked"} and detail:
             return detail
         if workflow.fallback is not None:
             return workflow.fallback.message

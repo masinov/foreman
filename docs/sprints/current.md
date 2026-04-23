@@ -2,7 +2,7 @@
 
 - Sprint: `sprint-46-completion-truth-hardening`
 - Status: active
-- Branch: `chore/task-false-positive-completion-regression-coverage`
+- Branch: `feat/task-backend-guard-for-weak-completions`
 - Started: 2026-04-23
 
 ## Goal
@@ -13,23 +13,25 @@ when evidence is too weak for the task intent.
 
 ## Context and rationale
 
-Sprint-45 validated the supervisor finalization seam end-to-end. Sprint-46
-attacks the completion truth problem at the evidence-model level: docs-only
-and tests-only changes must not be treated as sufficient evidence for
-implementation-oriented backend tasks. The evidence model and scoring
-mechanism are already designed (feat/completion-truth-evidence-model), so
-this sprint adds regression coverage to prove the model is correct before
-the backend guard is wired up.
+Sprint-45 validated the supervisor finalization seam end to end. Sprint-46
+hardens completion truth in two stages: first the evidence model and
+regression coverage, then the backend guard that uses branch diff evidence
+to stop implementation tasks from flowing to `done` when they only changed
+docs/tests or never produced material branch changes.
 
 ## Constraints
 
-- regression coverage only — do not implement the backend guard yet
-- tests must document the expected behavior in the absence of the guard
+- backend only — no dashboard or legacy supervisor script work
+- guard must operate before terminal completion so valid tasks do not get
+  blocked after a successful merge
+- keep the shipped workflow shape intact: `develop -> review -> test -> merge -> done`
 - do not merge to main — the supervisor handles that after approval
 
 ## Affected areas
 
-- `tests/test_orchestrator.py` — CompletionEvidenceTests class with 14 tests
+- `foreman/builtins.py` — merge-time completion guard
+- `foreman/orchestrator.py` — preserve blocked reasons from builtin outcomes
+- `tests/test_orchestrator.py` — CompletionEvidenceTests plus merge-guard regressions
 - `docs/sprints/current.md` — this sprint definition
 - `docs/STATUS.md` — task and sprint status
 
@@ -57,10 +59,18 @@ the backend guard is wired up.
     - `test_failing_test_cancels_test_score_points` — failing test → test=0 in score breakdown
     - 6 baseline tests: structure, scoring, verdict, coverage, no-criteria edge case
 - [todo] Backend guard for weak completions (task-backend-guard-for-weak-completions)
+  - Branch: `feat/task-backend-guard-for-weak-completions`
+  - Move the guard to `_builtin:merge` so weak evidence blocks before merge/final completion
+  - Block only implementation task types (`feature`, `fix`, `refactor`)
+  - Current rule: block when branch evidence shows no changed files or docs/tests-only changes
+  - Preserve the specific blocked reason by treating builtin `blocked` outcomes as actionable detail in `ForemanOrchestrator`
+  - Add merge-time regression coverage for docs/tests-only blocking and implementation-path success
+  - The first live developer run stalled during `develop`; the stale run was reconciled and the task was reset to `todo` so Foreman can rerun it cleanly from this repaired branch
 - [todo] Completion truth contract docs (task-completion-truth-contract-docs)
 - [todo] Reviewer prompt hardening with engine-produced evidence (task-reviewer-prompt-hardening-with-engine-produced-evidence)
 
 ## Validation
 
-- `./venv/bin/python -m py_compile tests/test_orchestrator.py`
+- `./venv/bin/python -m pytest tests/test_orchestrator.py -q`
+- `./venv/bin/python -m pytest tests/test_store.py tests/test_executor.py tests/test_roles.py -q`
 - `./venv/bin/python scripts/validate_repo_memory.py`

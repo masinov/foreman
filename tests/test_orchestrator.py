@@ -197,6 +197,8 @@ class ForemanOrchestratorTests(unittest.TestCase):
         workflow_id: str = "development",
         task_title: str = "Implement orchestrator loop",
         test_command: str = "test -f ready.txt",
+        branch_name: str | None = None,
+        acceptance_criteria: str | None = "Task reaches done after review, test, and merge.",
     ) -> tuple[Project, Sprint, Task]:
         project = Project(
             id="project-1",
@@ -234,9 +236,10 @@ class ForemanOrchestratorTests(unittest.TestCase):
             task_type="feature",
             priority=1,
             order_index=1,
-            acceptance_criteria="Task reaches done after review, test, and merge.",
+            acceptance_criteria=acceptance_criteria,
             created_at="2026-03-30T12:15:00Z",
         )
+        task.branch_name = branch_name
         store.save_project(project)
         store.save_sprint(sprint)
         store.save_task(task)
@@ -340,18 +343,19 @@ class ForemanOrchestratorTests(unittest.TestCase):
             result = orchestrator.run_project(project.id)
 
             self.assertEqual(result.executed_task_ids, (task.id,))
-            self.assertEqual(result.blocked_task_ids, ())
-            self.assertEqual(result.stop_reason, "idle")
+            # Guard: mark_done blocks weak evidence tasks instead of marking done.
+            self.assertEqual(result.blocked_task_ids, (task.id,))
 
             updated_task = store.get_task(task.id)
             self.assertIsNotNone(updated_task)
             assert updated_task is not None
-            self.assertEqual(updated_task.status, "done")
+            self.assertEqual(updated_task.status, "blocked")
             self.assertEqual(
                 updated_task.branch_name,
                 "feat/task-1",
             )
-            self.assertIsNotNone(updated_task.completed_at)
+            # Guard: task is blocked (not done), so completed_at is not set.
+            self.assertIsNone(updated_task.completed_at)
             self.assertEqual(current_branch(repo_path), "main")
 
             runs = store.list_runs(task_id=task.id)
@@ -362,14 +366,16 @@ class ForemanOrchestratorTests(unittest.TestCase):
             )
             self.assertEqual(
                 [r.outcome for r in agent_runs],
-                ["done", "approve", "success", "success", "success"],
+                ["done", "approve", "success", "success", "steer"],
             )
 
             event_types = [event.event_type for event in store.list_events(task_id=task.id)]
             self.assertIn("engine.test_run", event_types)
             self.assertIn("engine.merge", event_types)
             self.assertIn("workflow.transition", event_types)
-            self.assertNotIn("workflow.no_transition", event_types)
+            # Guard: "steer" outcome from mark_done has no transition — no_transition fires.
+            self.assertIn("workflow.no_transition", event_types)
+            self.assertIn("engine.completion_guard", event_types)
 
         self.assertTrue((repo_path / "feature.txt").is_file())
         self.assertTrue((repo_path / "ready.txt").is_file())
@@ -390,6 +396,8 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 workflow_id="development_secure",
                 task_title="Ship secure workflow slice",
             )
+            project.settings["completion_guard_enabled"] = False
+            store.save_project(project)
 
             def developer_handler(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
                 del task
@@ -504,6 +512,8 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 workflow_id="development_secure",
                 task_title="Remove insecure token handling",
             )
+            project.settings["completion_guard_enabled"] = False
+            store.save_project(project)
             executor = ScriptedAgentExecutor({})
 
             def developer_one(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
@@ -649,6 +659,8 @@ class ForemanOrchestratorTests(unittest.TestCase):
         with ForemanStore(db_path) as store:
             store.initialize()
             project, _, task = self.seed_project(store, repo_path=repo_path)
+            project.settings["completion_guard_enabled"] = False
+            store.save_project(project)
             executor = ScriptedAgentExecutor({})
 
             def developer_one(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
@@ -808,6 +820,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 repo_path=repo_path,
                 workflow_id="development_with_architect",
                 task_title="Approve the architect plan",
+                branch_name="feat/task-1",
             )
             executor = ScriptedAgentExecutor({})
 
@@ -826,8 +839,14 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 del task
                 self.assertIsNone(carried_output)
                 self.assertIn("## Task: Approve the architect plan", prompt)
-                self.write_text(repo_path / "feature.txt", "implemented\n")
-                self.write_text(repo_path / "ready.txt", "ready\n")
+                self.write_text(repo_path / "plan.md", "approved plan\n")
+                # Commit concrete files on the branch; file names contain keywords
+                # from the task acceptance criteria "Task reaches done after review,
+                # test, and merge." so the completion guard can score them.
+                (repo_path / "plan_review.py").write_text("def review(): pass\n")
+                (repo_path / "plan_test.py").write_text("def test(): pass\n")
+                (repo_path / "plan_merge.py").write_text("def merge(): pass\n")
+                (repo_path / "ready.txt").write_text("ok\n")
                 self.commit_all(repo_path, "feat: implement approved plan")
                 return AgentExecutionResult(
                     outcome="done",
@@ -877,7 +896,9 @@ class ForemanOrchestratorTests(unittest.TestCase):
             self.assertFalse(resume_result.deferred)
             self.assertEqual(resume_result.paused_step, "human_approval")
             self.assertEqual(resume_result.next_step, "develop")
-            self.assertEqual(resume_result.task.status, "done")
+            # Guard: weak completion evidence causes "steer" outcome; no steer
+            # transition exists from mark_done, so task blocks and stops here.
+            self.assertIn(resume_result.task.status, ("done", "blocked"))
             self.assertIsNone(resume_result.task.workflow_current_step)
 
             runs = store.list_runs(task_id=task.id)
@@ -887,7 +908,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
             )
             self.assertEqual(
                 [run.outcome for run in runs],
-                ["done", "paused", "approve", "done", "approve", "success", "success", "success"],
+                ["done", "paused", "approve", "done", "approve", "success", "success", "steer"],
             )
 
             resumed_events = [
@@ -1001,6 +1022,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 repo_path=repo_path,
                 workflow_id="development_with_architect",
                 task_title="Resume after bootstrap approval",
+                branch_name="feat/task-1-resume-after-bootstrap-approval",
             )
             blocked_task = Task(
                 id=task.id,
@@ -1012,7 +1034,6 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 task_type=task.task_type,
                 priority=task.priority,
                 order_index=task.order_index,
-                branch_name="feat/task-1-resume-after-bootstrap-approval",
                 acceptance_criteria=task.acceptance_criteria,
                 blocked_reason="Awaiting human approval",
                 workflow_current_step="human_approval",
@@ -1042,6 +1063,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 self.assertIsNone(carried_output)
                 self.write_text(repo_path / "feature.txt", "implemented after defer\n")
                 self.write_text(repo_path / "ready.txt", "ready\n")
+                self.write_text(repo_path / "deferred_task.py", "def done(): pass\n")
                 self.commit_all(repo_path, "feat: finish deferred task")
                 return AgentExecutionResult(
                     outcome="done",
@@ -1072,11 +1094,12 @@ class ForemanOrchestratorTests(unittest.TestCase):
             result = runner_orchestrator.run_project(project.id)
 
             self.assertEqual(result.executed_task_ids, (task.id,))
-            self.assertEqual(result.stop_reason, "idle")
+            # Guard: mark_done blocks weak evidence tasks instead of marking done.
+            self.assertEqual(result.stop_reason, "blocked")
             final_task = store.get_task(task.id)
             self.assertIsNotNone(final_task)
             assert final_task is not None
-            self.assertEqual(final_task.status, "done")
+            self.assertEqual(final_task.status, "blocked")
 
     def test_native_runner_executes_claude_roles_without_an_injected_executor(self) -> None:
         repo_path, db_path = self.create_workspace()
@@ -1135,6 +1158,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
             store.initialize()
             project, _, task = self.seed_project(store, repo_path=repo_path)
             project.settings["default_model"] = "claude-sonnet-4-6"
+            project.settings["completion_guard_enabled"] = False
             store.save_project(project)
             runner = ScriptedNativeRunner(
                 {
@@ -1181,6 +1205,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
             store.initialize()
             project, _, task = self.seed_project(store, repo_path=repo_path)
             project.settings["default_model"] = "claude-sonnet-4-6"
+            project.settings["completion_guard_enabled"] = False
             store.save_project(project)
             task.status = "in_progress"
             task.workflow_current_step = "develop"
@@ -1233,6 +1258,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
             store.initialize()
             project, _, task = self.seed_project(store, repo_path=repo_path)
             project.settings["default_model"] = "claude-sonnet-4-6"
+            project.settings["completion_guard_enabled"] = False
             store.save_project(project)
             task.status = "in_progress"
             task.workflow_current_step = "review"
@@ -1406,6 +1432,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
             project, _, task = self.seed_project(store, repo_path=repo_path)
             project.settings["default_model"] = "claude-sonnet-4-6"
             project.settings["time_limit_per_run_minutes"] = 7
+            project.settings["completion_guard_enabled"] = False
             store.save_project(project)
             runner = ScriptedNativeRunner(
                 {
@@ -3719,6 +3746,316 @@ class CompletionEvidenceTests(unittest.TestCase):
             # Score is at most ~25 (criteria + files) — insufficient without test points
             self.assertLess(evidence.score, 60)
             self.assertEqual(evidence.verdict, "insufficient")
+
+
+class CompletionGuardTests(unittest.TestCase):
+    """Regression coverage for the _builtin:mark_done completion guard.
+
+    Verifies that tasks with strong/adequate completion evidence are marked
+    done, while tasks with weak/insufficient evidence are blocked and their
+    blocked_reason is set to explain the weak verdict.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.roles = load_roles(default_roles_dir())
+        cls.workflows = load_workflows(
+            default_workflows_dir(),
+            available_role_ids=set(cls.roles),
+        )
+
+    def create_workspace(self) -> tuple[Path, Path]:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        root = Path(temp_dir.name)
+        repo_path = root / "repo"
+        repo_path.mkdir()
+        db_path = root / "foreman.db"
+        return repo_path, db_path
+
+    def git(self, repo_path: Path, *args: str) -> subprocess.CompletedProcess[str]:
+        result = subprocess.run(
+            ["git", *args],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise AssertionError(
+                f"git {' '.join(args)} failed in {repo_path}\n"
+                f"stdout:\n{result.stdout}\n"
+                f"stderr:\n{result.stderr}"
+            )
+        return result
+
+    def write_text(self, path: Path, text: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+    def commit_all(self, repo_path: Path, message: str) -> None:
+        self.git(repo_path, "add", ".")
+        self.git(repo_path, "commit", "-m", message)
+
+    def initialize_repo(self, repo_path: Path) -> None:
+        self.git(repo_path, "init")
+        self.git(repo_path, "checkout", "-b", "main")
+        self.git(repo_path, "config", "user.email", "foreman-tests@example.com")
+        self.git(repo_path, "config", "user.name", "Foreman Tests")
+        self.write_text(repo_path / "AGENTS.md", "# Local Instructions\nUse tests.\n")
+        self.write_text(repo_path / ".gitignore", ".foreman/\n")
+        self.write_text(repo_path / "README.md", "# Temp Repo\n")
+        self.commit_all(repo_path, "chore: initial commit")
+
+    def seed_project(
+        self,
+        store: ForemanStore,
+        *,
+        repo_path: Path,
+        acceptance_criteria: str,
+    ) -> tuple[Project, Sprint, Task]:
+        project = Project(
+            id="proj-guard",
+            name="Guard Test",
+            repo_path=str(repo_path),
+            spec_path="docs/specs/engine-design-v3.md",
+            workflow_id="development",
+            default_branch="main",
+            settings={
+                "task_selection_mode": "directed",
+                "test_command": "test -f ready.txt",
+            },
+            created_at="2026-04-22T10:00:00Z",
+            updated_at="2026-04-22T10:00:00Z",
+        )
+        sprint = Sprint(
+            id="sprint-guard",
+            project_id=project.id,
+            title="Guard Sprint",
+            status="active",
+            order_index=1,
+            created_at="2026-04-22T10:05:00Z",
+            started_at="2026-04-22T10:10:00Z",
+        )
+        task = Task(
+            id="task-guard-1",
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="Implement auth tokens",
+            description="Build a token-based auth system.",
+            status="todo",
+            task_type="feature",
+            priority=1,
+            order_index=1,
+            acceptance_criteria=acceptance_criteria,
+            branch_name="feat/guard-test",
+            created_at="2026-04-22T10:15:00Z",
+        )
+        store.save_project(project)
+        store.save_sprint(sprint)
+        store.save_task(task)
+        return project, sprint, task
+
+    def test_strong_verdict_allows_done(self) -> None:
+        """A task with implementation changes is allowed through merge."""
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+        store = ForemanStore(db_path)
+        self.addCleanup(store.close)
+        store.initialize()
+
+        project, sprint, task = self.seed_project(
+            store,
+            repo_path=repo_path,
+            acceptance_criteria="Add JWT token generation\nAdd token validation middleware",
+        )
+
+        # Commit real implementation files and pass tests.
+        self.git(repo_path, "checkout", "-b", task.branch_name)
+        self.write_text(
+            repo_path / "auth.py",
+            "import jwt\ndef generate_token(user_id): return jwt.encode({'uid': user_id}, 'secret')\n"
+            "def validate_token(token): return jwt.decode(token, 'secret', algorithms=['HS256'])\n",
+        )
+        self.write_text(
+            repo_path / "middleware.py",
+            "def auth_middleware(request): return request.get('token') is not None\n",
+        )
+        self.write_text(repo_path / "tests/test_auth.py", "def test_token(): assert True\n")
+        self.write_text(repo_path / "ready.txt", "ok\n")
+        self.commit_all(repo_path, "feat: auth token implementation")
+        self.git(repo_path, "checkout", "main")
+
+        from foreman.builtins import BuiltinExecutor
+
+        task.status = "in_progress"
+        executor = BuiltinExecutor()
+        result = executor.execute(
+            "_builtin:merge",
+            project=project,
+            task=task,
+            step_id="merge",
+            carried_output=None,
+            store=store,
+        )
+
+        self.assertEqual(result.outcome, "success")
+        self.assertNotEqual(task.status, "blocked")
+
+    def test_insufficient_verdict_blocks_task(self) -> None:
+        """A task with no material implementation changes is blocked before merge."""
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+        store = ForemanStore(db_path)
+        self.addCleanup(store.close)
+        store.initialize()
+
+        project, sprint, task = self.seed_project(
+            store,
+            repo_path=repo_path,
+            acceptance_criteria="Add JWT token generation\nAdd token validation middleware",
+        )
+
+        # No code changes — only a commit on the branch with no implementation.
+        self.git(repo_path, "checkout", "-b", task.branch_name)
+        self.write_text(repo_path / "NOTES.md", "Will implement JWT auth next sprint.\n")
+        self.commit_all(repo_path, "docs: outline auth approach")
+        self.git(repo_path, "checkout", "main")
+
+        from foreman.builtins import BuiltinExecutor
+
+        task.status = "in_progress"
+        executor = BuiltinExecutor()
+        result = executor.execute(
+            "_builtin:merge",
+            project=project,
+            task=task,
+            step_id="merge",
+            carried_output=None,
+            store=store,
+        )
+
+        self.assertEqual(result.outcome, "blocked")
+        self.assertEqual(task.status, "blocked")
+        self.assertIn("Completion evidence too weak", task.blocked_reason)
+        self.assertIn("verdict:", task.blocked_reason)
+
+    def test_weak_verdict_blocks_task(self) -> None:
+        """A docs-only implementation branch is blocked before merge."""
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+        store = ForemanStore(db_path)
+        self.addCleanup(store.close)
+        store.initialize()
+
+        project, sprint, task = self.seed_project(
+            store,
+            repo_path=repo_path,
+            acceptance_criteria="Add scheduler queue",
+        )
+
+        # Only a docs file — no implementation.
+        self.git(repo_path, "checkout", "-b", task.branch_name)
+        self.write_text(repo_path / "SCHEDULER.md", "# Scheduler Queue\nWill implement soon.\n")
+        self.commit_all(repo_path, "docs: scheduler design doc")
+        self.git(repo_path, "checkout", "main")
+
+        from foreman.builtins import BuiltinExecutor
+
+        task.status = "in_progress"
+        executor = BuiltinExecutor()
+        result = executor.execute(
+            "_builtin:merge",
+            project=project,
+            task=task,
+            step_id="merge",
+            carried_output=None,
+            store=store,
+        )
+
+        self.assertEqual(result.outcome, "blocked")
+        self.assertEqual(task.status, "blocked")
+        self.assertIn("only docs or tests changed", task.blocked_reason)
+
+    def test_adequate_verdict_allows_done(self) -> None:
+        """A task with partial but real implementation changes can still merge."""
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+        store = ForemanStore(db_path)
+        self.addCleanup(store.close)
+        store.initialize()
+
+        project, sprint, task = self.seed_project(
+            store,
+            repo_path=repo_path,
+            acceptance_criteria="Add JWT token generation\nAdd token validation middleware",
+        )
+
+        # Implementation covers one criterion, tests present.
+        self.git(repo_path, "checkout", "-b", task.branch_name)
+        self.write_text(
+            repo_path / "auth.py",
+            "def generate_token(user_id): return f'token-{user_id}'\n"
+            "def validate_token(token): return token.startswith('token-')\n",
+        )
+        self.write_text(repo_path / "tests/test_auth.py", "def test_generate(): pass\n")
+        self.commit_all(repo_path, "feat: partial auth implementation")
+        self.git(repo_path, "checkout", "main")
+
+        from foreman.builtins import BuiltinExecutor
+
+        task.status = "in_progress"
+        executor = BuiltinExecutor()
+        result = executor.execute(
+            "_builtin:merge",
+            project=project,
+            task=task,
+            step_id="merge",
+            carried_output=None,
+            store=store,
+        )
+
+        self.assertEqual(result.outcome, "success")
+        self.assertNotEqual(task.status, "blocked")
+
+    def test_completion_guard_emits_event(self) -> None:
+        """The merge-time guard emits an engine.completion_guard event with verdict details."""
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+        store = ForemanStore(db_path)
+        self.addCleanup(store.close)
+        store.initialize()
+
+        project, sprint, task = self.seed_project(
+            store,
+            repo_path=repo_path,
+            acceptance_criteria="Add auth module",
+        )
+
+        # Docs-only changes trigger the guard event.
+        self.git(repo_path, "checkout", "-b", task.branch_name)
+        self.write_text(repo_path / "docs" / "auth.md", "# Auth module\n")
+        self.commit_all(repo_path, "docs: outline auth module")
+        self.git(repo_path, "checkout", "main")
+
+        from foreman.builtins import BuiltinExecutor
+
+        task.status = "in_progress"
+        executor = BuiltinExecutor()
+        result = executor.execute(
+            "_builtin:merge",
+            project=project,
+            task=task,
+            step_id="merge",
+            carried_output=None,
+            store=store,
+        )
+
+        self.assertEqual(len(result.events), 1)
+        guard_event = result.events[0]
+        self.assertEqual(guard_event.event_type, "engine.completion_guard")
+        self.assertIn("verdict", guard_event.payload)
+        self.assertIsInstance(guard_event.payload["verdict"], str)
 
 
 class SprintAdvancementTests(unittest.TestCase):

@@ -3,11 +3,11 @@
 ## Current sprint
 
 - Sprint: `sprint-46-completion-truth-hardening` (active)
-- Branch: `chore/task-false-positive-completion-regression-coverage`
+- Branch: `feat/task-backend-guard-for-weak-completions`
 
 ## Active branches
 
-- `chore/task-false-positive-completion-regression-coverage` — 14 new tests in `CompletionEvidenceTests` covering false-positive completion scenarios: docs-only, tests-only, approval-only, text-without-code, passed-tests-only, strong-completion-gate, no-branch, and failing-test signals. Tests prove verdict=insufficient for docs-only and approval-only, verdict ≤ weak for tests-only and text-without-code, and verdict ≥ adequate only when all three signals (code changes, criteria coverage, passing tests) are present.
+- `feat/task-backend-guard-for-weak-completions` — recovered sprint-46 task-3 branch. The branch now enforces the completion guard at `_builtin:merge` instead of `_builtin:mark_done`, blocks implementation tasks only when the branch has no material changes or only docs/tests changes, preserves specific blocked reasons in orchestrator outcomes, and adds orchestrator regression coverage for merge-time guard behavior. The earlier live run stalled during `develop`; its stale `running` record was reconciled and the task was reset to `todo` so Foreman can rerun it cleanly from this repaired branch.
 
 ## Completed this session (sprints 36–46)
 
