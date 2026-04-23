@@ -2723,6 +2723,11 @@ if __name__ == "__main__":
 class DecisionExtractionTests(unittest.TestCase):
     """Unit coverage for reviewer decision parsing."""
 
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.roles = load_roles(default_roles_dir())
+        cls.orchestrator = object.__new__(ForemanOrchestrator)
+
     def test_extract_decision_output_accepts_preamble_and_markdown_wrapped_verdict(self) -> None:
         outcome, detail = _extract_decision_output(
             "I verified the changes.\n\nEverything checks out.\n\n**APPROVE**"
@@ -2738,6 +2743,17 @@ class DecisionExtractionTests(unittest.TestCase):
 
         self.assertEqual(outcome, "deny")
         self.assertEqual(detail, "add the missing migration test")
+
+    def test_extract_completion_output_accepts_markdown_wrapped_marker(self) -> None:
+        role = self.roles["developer"]
+
+        outcome, detail = self.orchestrator._extract_completion_output(
+            role,
+            "Completed the slice.\n\n**TASK_COMPLETE**",
+        )
+
+        self.assertEqual(outcome, "done")
+        self.assertEqual(detail, "Completed the slice.")
 
 
 class CompletionEvidenceTests(unittest.TestCase):
