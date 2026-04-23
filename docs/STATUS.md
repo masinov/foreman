@@ -3,10 +3,11 @@
 ## Current sprint
 
 - Sprint: `sprint-46-completion-truth-hardening` (active)
-- Branch: `fix/native-run-step-lease-recovery`
+- Branch: `fix/reject-dirty-task-finalization`
 
 ## Active branches
 
+- `fix/reject-dirty-task-finalization` — fixes a state-integrity bug exposed by the live sprint-46 rerun: Foreman could restore the checkout to `main` and still mark a task `done` even when the task output existed only as dirty, uncommitted worktree changes. `_builtin:merge` now blocks dirty task branches and branches with no committed delta ahead of `main`, while `_builtin:mark_done` refuses dirty finalization and requires a recorded successful merge for already-absorbed branches.
 - `fix/native-run-step-lease-recovery` — hardens native-step ownership and recovery after the stranded review runs observed in sprint 46. The orchestrator now persists `workflow_current_step` before entering native steps, streams native runner events into SQLite as they arrive instead of buffering them until step return, and decides stale-run recovery from the latest persisted event timestamp with a dedicated active-run recovery timeout rather than the full per-run time limit.
 - `feat/task-backend-guard-for-weak-completions` — recovered sprint-46 task-3 branch. The branch now enforces the completion guard at `_builtin:merge` instead of `_builtin:mark_done`, blocks implementation tasks only when the branch has no material changes or only docs/tests changes, preserves specific blocked reasons in orchestrator outcomes, and adds orchestrator regression coverage for merge-time guard behavior. The earlier live run stalled during `develop`; its stale `running` record was reconciled and the task was reset to `todo` so Foreman can rerun it cleanly from this repaired branch.
 

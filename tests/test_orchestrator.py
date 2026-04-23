@@ -4253,6 +4253,75 @@ class CompletionGuardTests(unittest.TestCase):
         self.assertIn("verdict", guard_event.payload)
         self.assertIsInstance(guard_event.payload["verdict"], str)
 
+    def test_merge_blocks_dirty_uncommitted_task_work(self) -> None:
+        """_builtin:merge refuses to carry dirty task-branch changes onto main."""
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+        store = ForemanStore(db_path)
+        self.addCleanup(store.close)
+        store.initialize()
+
+        project, sprint, task = self.seed_project(
+            store,
+            repo_path=repo_path,
+            acceptance_criteria="Add auth module",
+        )
+
+        self.git(repo_path, "checkout", "-b", task.branch_name)
+        self.write_text(repo_path / "auth.py", "def issue_token(user_id): return f'token-{user_id}'\n")
+
+        from foreman.builtins import BuiltinExecutor
+
+        task.status = "in_progress"
+        executor = BuiltinExecutor()
+        result = executor.execute(
+            "_builtin:merge",
+            project=project,
+            task=task,
+            step_id="merge",
+            carried_output=None,
+            store=store,
+        )
+
+        self.assertEqual(result.outcome, "blocked")
+        self.assertIn("uncommitted changes", result.detail)
+        self.assertEqual(task.status, "blocked")
+        self.assertEqual(self.git(repo_path, "branch", "--show-current").stdout.strip(), task.branch_name)
+
+    def test_merge_blocks_branch_without_committed_delta(self) -> None:
+        """_builtin:merge refuses success when the task branch has no commits ahead of main."""
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+        store = ForemanStore(db_path)
+        self.addCleanup(store.close)
+        store.initialize()
+
+        project, sprint, task = self.seed_project(
+            store,
+            repo_path=repo_path,
+            acceptance_criteria="Add auth module",
+        )
+
+        self.git(repo_path, "checkout", "-b", task.branch_name)
+        self.git(repo_path, "checkout", "main")
+
+        from foreman.builtins import BuiltinExecutor
+
+        task.status = "in_progress"
+        executor = BuiltinExecutor()
+        result = executor.execute(
+            "_builtin:merge",
+            project=project,
+            task=task,
+            step_id="merge",
+            carried_output=None,
+            store=store,
+        )
+
+        self.assertEqual(result.outcome, "blocked")
+        self.assertIn("no committed changes ahead", result.detail)
+        self.assertEqual(task.status, "blocked")
+
 
 class MarkDoneCompletionGuardTests(unittest.TestCase):
     """Regression coverage for the _builtin:mark_done completion guard.
@@ -4625,6 +4694,126 @@ class MarkDoneCompletionGuardTests(unittest.TestCase):
         self.write_text(repo_path / "docs" / "auth.md", "# Auth module\nDocumentation.\n")
         self.commit_all(repo_path, "docs: write auth docs")
         self.git(repo_path, "checkout", "main")
+
+        from foreman.builtins import BuiltinExecutor
+
+        task.status = "in_progress"
+        executor = BuiltinExecutor()
+        result = executor.execute(
+            "_builtin:mark_done",
+            project=project,
+            task=task,
+            step_id="done",
+            carried_output=None,
+            store=store,
+        )
+
+        self.assertEqual(result.outcome, "success")
+        self.assertEqual(task.status, "done")
+
+    def test_mark_done_blocks_dirty_uncommitted_worktree(self) -> None:
+        """_builtin:mark_done refuses to finalize a task from dirty branch state."""
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+        store = ForemanStore(db_path)
+        self.addCleanup(store.close)
+        store.initialize()
+
+        project, sprint, task = self.seed_project(
+            store,
+            repo_path=repo_path,
+            acceptance_criteria="Add auth module",
+        )
+
+        self.git(repo_path, "checkout", "-b", task.branch_name)
+        self.write_text(repo_path / "auth.py", "def issue_token(user_id): return f'token-{user_id}'\n")
+
+        from foreman.builtins import BuiltinExecutor
+
+        task.status = "in_progress"
+        executor = BuiltinExecutor()
+        result = executor.execute(
+            "_builtin:mark_done",
+            project=project,
+            task=task,
+            step_id="done",
+            carried_output=None,
+            store=store,
+        )
+
+        self.assertEqual(result.outcome, "blocked")
+        self.assertIn("uncommitted changes", result.detail)
+        self.assertEqual(task.status, "blocked")
+
+    def test_mark_done_blocks_absorbed_branch_without_successful_merge_run(self) -> None:
+        """_builtin:mark_done refuses already-absorbed branches without a recorded merge success."""
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+        store = ForemanStore(db_path)
+        self.addCleanup(store.close)
+        store.initialize()
+
+        project, sprint, task = self.seed_project(
+            store,
+            repo_path=repo_path,
+            acceptance_criteria="Add auth module",
+        )
+
+        self.git(repo_path, "checkout", "-b", task.branch_name)
+        self.git(repo_path, "checkout", "main")
+
+        from foreman.builtins import BuiltinExecutor
+
+        task.status = "in_progress"
+        executor = BuiltinExecutor()
+        result = executor.execute(
+            "_builtin:mark_done",
+            project=project,
+            task=task,
+            step_id="done",
+            carried_output=None,
+            store=store,
+        )
+
+        self.assertEqual(result.outcome, "blocked")
+        self.assertIn("no recorded successful merge", result.detail)
+        self.assertEqual(task.status, "blocked")
+
+    def test_mark_done_allows_absorbed_branch_with_successful_merge_run(self) -> None:
+        """_builtin:mark_done still succeeds after a recorded successful merge."""
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+        store = ForemanStore(db_path)
+        self.addCleanup(store.close)
+        store.initialize()
+
+        project, sprint, task = self.seed_project(
+            store,
+            repo_path=repo_path,
+            acceptance_criteria="Add auth module",
+        )
+
+        self.git(repo_path, "checkout", "-b", task.branch_name)
+        self.write_text(repo_path / "auth.py", "def issue_token(user_id): return f'token-{user_id}'\n")
+        self.commit_all(repo_path, "feat: implement auth module")
+        self.git(repo_path, "checkout", "main")
+        self.git(repo_path, "merge", "--no-ff", "--no-edit", task.branch_name)
+
+        store.save_run(
+            Run(
+                id="run-merge-success",
+                task_id=task.id,
+                project_id=project.id,
+                role_id="_builtin:merge",
+                workflow_step="merge",
+                agent_backend="builtin",
+                status="completed",
+                outcome="success",
+                outcome_detail="Merged branch into main.",
+                created_at="2026-04-22T10:30:00Z",
+                completed_at="2026-04-22T10:30:00Z",
+            )
+        )
 
         from foreman.builtins import BuiltinExecutor
 
