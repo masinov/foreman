@@ -75,3 +75,29 @@ priority or legacy-script scope enforcement.
 - `./venv/bin/python -m pytest tests/test_migrations.py tests/test_orchestrator.py -q`
 - `./venv/bin/python -m pytest tests/test_store.py tests/test_cli.py -q`
 - `./venv/bin/python scripts/validate_repo_memory.py`
+
+## Next Queued Sprint
+
+- Sprint: `sprint-47-active-run-lease-and-heartbeat-recovery`
+- Status: planned
+- Queue position: next planned sprint, ahead of the older deferred
+  `sprint-008`
+
+### Goal
+
+Replace timeout-only stale-run recovery with explicit runner liveness tracking
+so Foreman can distinguish active native runs from abandoned ones without
+relying only on stale-run thresholds.
+
+### Proposed tasks
+
+- [todo] Run lease and heartbeat persistence (task-run-lease-and-heartbeat-persistence)
+  - add persisted lease or heartbeat fields for live run ownership tracking
+- [todo] Native runner heartbeat emission (task-native-runner-heartbeat-emission)
+  - emit heartbeat updates during live native execution
+- [todo] Lease-aware recovery and reclaim (task-lease-aware-recovery-and-reclaim)
+  - recover only truly abandoned runs and reclaim task ownership safely
+- [todo] Stale-vs-alive recovery regressions (task-stale-vs-alive-recovery-regressions)
+  - prove Foreman does not reclaim healthy live runs while still recovering dead ones
+- [todo] Lease and recovery contract docs (task-lease-and-recovery-contract-docs)
+  - document the backend ownership and cleanup contract for interrupted native runs
