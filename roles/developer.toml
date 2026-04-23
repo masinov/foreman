@@ -67,7 +67,7 @@ Read it if you need to understand the broader product direction.
 [completion]
 marker = "TASK_COMPLETE"
 timeout_minutes = 60
-max_cost_usd = 10.0
+max_cost_usd = 1000.0
 
 [completion.output]
 extract_summary = true

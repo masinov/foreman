@@ -56,7 +56,7 @@ STEER: <specific corrective action>
 [completion]
 marker = ""
 timeout_minutes = 10
-max_cost_usd = 2.0
+max_cost_usd = 1000.0
 
 [completion.output]
 extract_decision = true

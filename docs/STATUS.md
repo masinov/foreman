@@ -3,18 +3,54 @@
 ## Current sprint
 
 - Sprint: `sprint-46-completion-truth-hardening` (active)
-- Branch: `fix/merge-conflict-recovery-review-loop`
+- Branch: `main`
+- Next queued sprint: `sprint-47-active-run-lease-and-heartbeat-recovery`
 
 ## Active branches
 
-- `fix/merge-conflict-recovery-review-loop` — fixes the secondary sprint-46 loop exposed after output-contract retries started working. Foreman now distinguishes merge conflicts from generic merge failures, carries explicit conflict-resolution guidance back into `develop`, refreshes stale task branches against the latest `main` during conflict-recovery passes when that refresh is clean, and preserves the normal `develop -> review` cycle so conflict-resolution changes are reviewed again before merge.
-- `fix/output-contract-retry` — adds one corrective retry when agent output violates the role contract but the underlying run completed normally. Developer steps that omit `TASK_COMPLETE` are reprompted once to return the completion summary with the marker, and reviewer steps that return malformed decision text are reprompted once to return exactly `APPROVE`, `DENY: ...`, or `STEER: ...`. The retry is explicit and auditable via `engine.output_contract_retry`.
-- `fix/reject-dirty-task-finalization` — fixes a state-integrity bug exposed by the live sprint-46 rerun: Foreman could restore the checkout to `main` and still mark a task `done` even when the task output existed only as dirty, uncommitted worktree changes. `_builtin:merge` now blocks dirty task branches and branches with no committed delta ahead of `main`, while `_builtin:mark_done` refuses dirty finalization and requires a recorded successful merge for already-absorbed branches.
-- `fix/native-run-step-lease-recovery` — hardens native-step ownership and recovery after the stranded review runs observed in sprint 46. The orchestrator now persists `workflow_current_step` before entering native steps, streams native runner events into SQLite as they arrive instead of buffering them until step return, and decides stale-run recovery from the latest persisted event timestamp with a dedicated active-run recovery timeout rather than the full per-run time limit.
-- `feat/task-backend-guard-for-weak-completions` — recovered sprint-46 task-3 branch. The branch now enforces the completion guard at `_builtin:merge` instead of `_builtin:mark_done`, blocks implementation tasks only when the branch has no material changes or only docs/tests changes, preserves specific blocked reasons in orchestrator outcomes, and adds orchestrator regression coverage for merge-time guard behavior. The earlier live run stalled during `develop`; its stale `running` record was reconciled and the task was reset to `todo` so Foreman can rerun it cleanly from this repaired branch.
+- none; recent sprint-46 recovery slices were merged into local `main`
 
 ## Completed this session (sprints 36–46)
 
+- completed `sprint-45-supervised-convergence-validation`
+- ran a supervised Foreman session end to end against the live repository
+- verified queue activation, task execution, review, merge, and SQLite
+  completion state through a real session rather than a simulated path
+- merged regression-test and repo-memory updates; no new `foreman/*.py`
+  implementation changes landed from the autonomous run itself
+- started `sprint-46-completion-truth-hardening`
+- confirmed the real backend gap after sprint 45 is completion-truth
+  evaluation, not directed task selection: in directed mode Foreman executes
+  the next runnable queued task and currently lacks a first-class structured
+  completion-evidence model
+- completed `task-completion-evidence-model-in-orchestrator`
+- added a `CompletionEvidence` dataclass and evidence builder in
+  `foreman/orchestrator.py`; `finalize_supervisor_merge()` now persists
+  structured completion evidence and emits an `engine.completion_evidence`
+  event
+- added `Task.completion_evidence` plus `completion_evidence_json` persistence
+  in the SQLite store and migration framework
+- hardened `ForemanStore.initialize()` with a narrow additive schema-repair
+  step so long-lived local databases recover when a migration ledger entry
+  exists without the matching `tasks.completion_evidence_json` column
+- raised shipped role and executor cost caps to `$1000.00` so native runs do
+  not stop early on environments that do not need per-run USD gating
+- queued `sprint-47-active-run-lease-and-heartbeat-recovery` as the next
+  planned backend sprint ahead of the older deferred planned sprint 8
+- fixed native-step ownership and stale-run recovery in sprint 46
+  by persisting active workflow steps before native execution, streaming
+  native runner events into SQLite as they occur, and using the latest
+  persisted event timestamp for timeout-based recovery
+- fixed dirty task finalization in sprint 46 so `_builtin:merge` and
+  `_builtin:mark_done` refuse success from dirty worktrees or branch states
+  with no committed mergeable delta
+- fixed malformed output-contract handling in sprint 46 by adding one
+  corrective retry for developer outputs missing `TASK_COMPLETE` and reviewer
+  outputs that do not parse to `APPROVE`, `DENY`, or `STEER`
+- fixed sprint-46 merge-conflict recovery loops so merge conflicts are
+  distinct workflow outcomes, stale existing task branches can be refreshed
+  against latest `main`, and conflict-resolution passes go back through code
+  review before merge
 - completed `sprint-44-supervisor-state-reconciliation`
 - introduced shared supervisor finalization seam in `foreman/supervisor_state.py`
   that maps a merged branch back to a tracked task, marks it done, and propagates

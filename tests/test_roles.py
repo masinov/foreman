@@ -31,7 +31,7 @@ class RoleLoaderTests(unittest.TestCase):
             {"architect", "code_reviewer", "developer", "security_reviewer"},
         )
         self.assertTrue(roles["developer"].agent.session_persistence)
-        self.assertEqual(roles["code_reviewer"].completion.max_cost_usd, 2.0)
+        self.assertEqual(roles["code_reviewer"].completion.max_cost_usd, 1000.0)
         self.assertTrue(roles["architect"].completion.output.extract_json)
 
     def test_render_prompt_injects_completion_marker_and_signal_docs(self) -> None:

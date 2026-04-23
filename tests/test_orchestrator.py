@@ -12,8 +12,10 @@ import unittest
 from foreman.models import Event, Project, Run, Sprint, Task
 from foreman.orchestrator import (
     AgentExecutionResult,
+    CompletionEvidence,
     ForemanOrchestrator,
     OrchestratorError,
+    SupervisorMergeResult,
     _extract_decision_output,
 )
 from foreman.git import current_branch
@@ -3278,6 +3280,572 @@ class AutonomousTaskSelectionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CompletionEvidenceTests(unittest.TestCase):
+    """Regression coverage for CompletionEvidence model and build_completion_evidence."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.roles = load_roles(default_roles_dir())
+        cls.workflows = load_workflows(
+            default_workflows_dir(),
+            available_role_ids=set(cls.roles),
+        )
+
+    def create_workspace(self) -> tuple[Path, Path]:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        root = Path(temp_dir.name)
+        repo_path = root / "repo"
+        repo_path.mkdir()
+        db_path = root / "foreman.db"
+        return repo_path, db_path
+
+    def git(self, repo_path: Path, *args: str) -> subprocess.CompletedProcess[str]:
+        result = subprocess.run(
+            ["git", *args],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise AssertionError(
+                f"git {' '.join(args)} failed in {repo_path}\n"
+                f"stdout:\n{result.stdout}\n"
+                f"stderr:\n{result.stderr}"
+            )
+        return result
+
+    def write_text(self, path: Path, text: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+    def commit_all(self, repo_path: Path, message: str) -> None:
+        self.git(repo_path, "add", ".")
+        self.git(repo_path, "commit", "-m", message)
+
+    def initialize_repo(self, repo_path: Path) -> None:
+        self.git(repo_path, "init")
+        self.git(repo_path, "checkout", "-b", "main")
+        self.git(repo_path, "config", "user.email", "foreman-tests@example.com")
+        self.git(repo_path, "config", "user.name", "Foreman Tests")
+        self.write_text(repo_path / "AGENTS.md", "# Local Instructions\nUse tests.\n")
+        self.write_text(repo_path / ".gitignore", ".foreman/\n")
+        self.write_text(repo_path / "README.md", "# Temp Repo\n")
+        self.commit_all(repo_path, "chore: initial commit")
+
+    def seed_project(
+        self,
+        store: ForemanStore,
+        *,
+        repo_path: Path,
+        acceptance_criteria: str | None = None,
+        branch_name: str | None = "feat/task-evidence-1",
+    ) -> tuple[Project, Sprint, Task]:
+        project = Project(
+            id="project-evidence",
+            name="Evidence Demo",
+            repo_path=str(repo_path),
+            spec_path="docs/specs/engine-design-v3.md",
+            workflow_id="development",
+            default_branch="main",
+            settings={
+                "task_selection_mode": "directed",
+                "test_command": "test -f ready.txt",
+                "default_model": "gpt-5.4",
+            },
+            created_at="2026-04-22T10:00:00Z",
+            updated_at="2026-04-22T10:00:00Z",
+        )
+        sprint = Sprint(
+            id="sprint-evidence",
+            project_id=project.id,
+            title="Evidence Sprint",
+            goal="Validate completion evidence",
+            status="active",
+            order_index=1,
+            created_at="2026-04-22T10:05:00Z",
+            started_at="2026-04-22T10:10:00Z",
+        )
+        task = Task(
+            id="task-evidence-1",
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="Validate evidence model",
+            description="Run through the evidence gathering pipeline.",
+            status="todo",
+            task_type="feature",
+            priority=1,
+            order_index=1,
+            acceptance_criteria=acceptance_criteria,
+            branch_name=branch_name,
+            created_at="2026-04-22T10:15:00Z",
+        )
+        store.save_project(project)
+        store.save_sprint(sprint)
+        store.save_task(task)
+        return project, sprint, task
+
+    def seed_run(
+        self,
+        store: ForemanStore,
+        *,
+        project: Project,
+        task: Task,
+        role_id: str,
+        workflow_step: str,
+        agent_backend: str,
+        created_at: str,
+        outcome: str = "done",
+        outcome_detail: str = "Completed.",
+        status: str = "completed",
+    ) -> Run:
+        run = Run(
+            id=f"run-ev-{len(store.list_runs(task_id=task.id)) + 1}",
+            task_id=task.id,
+            project_id=project.id,
+            role_id=role_id,
+            workflow_step=workflow_step,
+            agent_backend=agent_backend,
+            status=status,
+            outcome=outcome,
+            outcome_detail=outcome_detail,
+            created_at=created_at,
+        )
+        store.save_run(run)
+        return run
+
+    def seed_test_event(
+        self,
+        store: ForemanStore,
+        run: Run,
+        task: Task,
+        project: Project,
+        passed: bool,
+        timestamp: str,
+        command: str = "pytest tests/",
+    ) -> None:
+        test_run_event = Event(
+            id=f"event-test-run-{task.id}-{run.id}",
+            run_id=run.id,
+            task_id=task.id,
+            project_id=project.id,
+            event_type="engine.test_run",
+            timestamp=timestamp,
+            payload={"command": command, "passed": passed},
+        )
+        test_output_event = Event(
+            id=f"event-test-output-{task.id}-{run.id}",
+            run_id=run.id,
+            task_id=task.id,
+            project_id=project.id,
+            event_type="engine.test_output",
+            timestamp=timestamp,
+            payload={"exit_code": 0 if passed else 1, "output": "tests passed" if passed else "FAILED"},
+        )
+        store.save_event(test_run_event)
+        store.save_event(test_output_event)
+
+    def test_build_completion_evidence_returns_correct_structure(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(
+                store,
+                repo_path=repo_path,
+                acceptance_criteria="Implement the orchestrator.\nWrite tests for it.",
+            )
+
+            self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude_code",
+                outcome="done",
+                outcome_detail="Implemented the orchestrator module with proper structure.",
+                created_at="2026-04-22T10:20:00Z",
+            )
+            self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="code_reviewer",
+                workflow_step="review",
+                agent_backend="claude_code",
+                outcome="approve",
+                outcome_detail="Implementation looks correct.",
+                created_at="2026-04-22T10:25:00Z",
+            )
+
+            self.git(repo_path, "checkout", "-b", task.branch_name)
+            self.write_text(repo_path / "orchestrator.py", "def run(): pass\n")
+            self.commit_all(repo_path, "feat: implement orchestrator")
+            self.git(repo_path, "checkout", "main")
+
+            orchestrator = ForemanOrchestrator(store, roles=self.roles, workflows=self.workflows)
+
+            evidence = orchestrator.build_completion_evidence(task, project)
+
+            self.assertIsNotNone(evidence)
+            assert evidence is not None
+            self.assertEqual(evidence.task_id, task.id)
+            self.assertEqual(evidence.task_title, task.title)
+            self.assertEqual(evidence.acceptance_criteria, task.acceptance_criteria)
+            self.assertEqual(evidence.criteria_count, 2)
+            self.assertGreater(len(evidence.agent_outputs), 0)
+            self.assertIn("orchestrator.py", evidence.changed_files)
+            self.assertIn("1 file", evidence.branch_diff_stat)
+
+    def test_build_completion_evidence_scores_passed_tests_higher(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(
+                store,
+                repo_path=repo_path,
+                acceptance_criteria="Implement feature.\nAdd tests.",
+            )
+
+            self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude_code",
+                outcome="done",
+                outcome_detail="Implemented the feature module with comprehensive tests.",
+                created_at="2026-04-22T10:20:00Z",
+            )
+            self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="code_reviewer",
+                workflow_step="review",
+                agent_backend="claude_code",
+                outcome="approve",
+                outcome_detail="Code review passed.",
+                created_at="2026-04-22T10:25:00Z",
+            )
+            test_run = self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="_builtin:test",
+                workflow_step="test",
+                agent_backend="builtin",
+                outcome="success",
+                outcome_detail="All tests passed.",
+                created_at="2026-04-22T10:30:00Z",
+            )
+            self.seed_test_event(store, test_run, task, project, passed=True, timestamp="2026-04-22T10:30:00Z")
+
+            self.git(repo_path, "checkout", "-b", task.branch_name)
+            self.write_text(repo_path / "feature.py", "def feature(): return True\n")
+            self.commit_all(repo_path, "feat: add feature")
+            self.git(repo_path, "checkout", "main")
+
+            orchestrator = ForemanOrchestrator(store, roles=self.roles, workflows=self.workflows)
+
+            evidence = orchestrator.build_completion_evidence(task, project)
+
+            self.assertIsNotNone(evidence)
+            assert evidence is not None
+            self.assertTrue(evidence.builtin_test_passed)
+            self.assertEqual(evidence.builtin_test_result, "pytest tests/")
+            self.assertGreater(evidence.score, 0)
+            self.assertIn("test=30", evidence.score_breakdown)
+
+    def test_build_completion_evidence_failing_test_receives_zero_test_points(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(
+                store,
+                repo_path=repo_path,
+                acceptance_criteria="Implement feature.\nAdd tests.",
+            )
+
+            self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude_code",
+                outcome="done",
+                outcome_detail="Implemented the feature module.",
+                created_at="2026-04-22T10:20:00Z",
+            )
+            test_run = self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="_builtin:test",
+                workflow_step="test",
+                agent_backend="builtin",
+                outcome="failure",
+                outcome_detail="Tests failed.",
+                created_at="2026-04-22T10:25:00Z",
+            )
+            self.seed_test_event(store, test_run, task, project, passed=False, timestamp="2026-04-22T10:25:00Z")
+
+            orchestrator = ForemanOrchestrator(store, roles=self.roles, workflows=self.workflows)
+
+            evidence = orchestrator.build_completion_evidence(task, project)
+
+            self.assertIsNotNone(evidence)
+            assert evidence is not None
+            self.assertFalse(evidence.builtin_test_passed)
+            self.assertIn("test=0", evidence.score_breakdown)
+
+    def test_build_completion_evidence_verdict_weak_when_no_criteria_addressed(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(
+                store,
+                repo_path=repo_path,
+                acceptance_criteria="Implement the scheduler queue.\nAdd priority handling.\n",
+            )
+
+            # Empty output — nothing addresses the criteria
+            self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude_code",
+                outcome="done",
+                outcome_detail="Done.",
+                created_at="2026-04-22T10:20:00Z",
+            )
+
+            orchestrator = ForemanOrchestrator(store, roles=self.roles, workflows=self.workflows)
+
+            evidence = orchestrator.build_completion_evidence(task, project)
+
+            self.assertIsNotNone(evidence)
+            assert evidence is not None
+            self.assertEqual(evidence.criteria_addressed, 0)
+            self.assertLess(evidence.score, 40)
+            self.assertIn(evidence.verdict, ("weak", "insufficient"))
+
+    def test_build_completion_evidence_weak_verdict_despite_criteria_coverage_when_no_code_changes(
+        self,
+    ) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(
+                store,
+                repo_path=repo_path,
+                acceptance_criteria="Implement the scheduler queue.\nAdd priority handling.\n",
+            )
+
+            self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude_code",
+                outcome="done",
+                outcome_detail="Implemented the scheduler queue with priority handling for tasks.",
+                created_at="2026-04-22T10:20:00Z",
+            )
+
+            self.git(repo_path, "checkout", "-b", task.branch_name)
+            self.write_text(repo_path / "scheduler.py", "# scheduler queue with priority\n")
+            self.commit_all(repo_path, "feat: scheduler with priority")
+            self.git(repo_path, "checkout", "main")
+
+            orchestrator = ForemanOrchestrator(store, roles=self.roles, workflows=self.workflows)
+
+            evidence = orchestrator.build_completion_evidence(task, project)
+
+            self.assertIsNotNone(evidence)
+            assert evidence is not None
+            self.assertGreater(evidence.criteria_addressed, 0)
+            self.assertGreaterEqual(evidence.score, 40)
+            # Without files changed and no test result, verdict stays "weak" despite criteria coverage
+            self.assertEqual(evidence.verdict, "weak")
+
+    def test_build_completion_evidence_no_acceptance_criteria_handled_gracefully(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path, acceptance_criteria=None)
+
+            self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude_code",
+                outcome="done",
+                outcome_detail="Done.",
+                created_at="2026-04-22T10:20:00Z",
+            )
+
+            orchestrator = ForemanOrchestrator(store, roles=self.roles, workflows=self.workflows)
+
+            evidence = orchestrator.build_completion_evidence(task, project)
+
+            self.assertIsNotNone(evidence)
+            assert evidence is not None
+            self.assertEqual(evidence.criteria_count, 0)
+            self.assertEqual(evidence.verdict, "insufficient")
+            self.assertIn("No acceptance criteria defined", evidence.verdict_reasons)
+
+    def test_finalize_supervisor_merge_returns_completion_evidence(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(
+                store,
+                repo_path=repo_path,
+                acceptance_criteria="Implement the feature.\nWrite tests.",
+            )
+
+            self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude_code",
+                outcome="done",
+                outcome_detail="Implemented the feature module.",
+                created_at="2026-04-22T10:20:00Z",
+            )
+            test_run = self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="_builtin:test",
+                workflow_step="test",
+                agent_backend="builtin",
+                outcome="success",
+                outcome_detail="All tests passed.",
+                created_at="2026-04-22T10:25:00Z",
+            )
+            self.seed_test_event(store, test_run, task, project, passed=True, timestamp="2026-04-22T10:25:00Z")
+
+            self.git(repo_path, "checkout", "-b", task.branch_name)
+            self.write_text(repo_path / "feature.py", "# feature implementation\n")
+            self.commit_all(repo_path, "feat: add feature")
+            self.git(repo_path, "checkout", "main")
+
+            orchestrator = ForemanOrchestrator(store, roles=self.roles, workflows=self.workflows)
+
+            result = orchestrator.finalize_supervisor_merge(
+                repo_path=str(repo_path),
+                branch_name=task.branch_name or "feat/task-evidence-1",
+                task_id=task.id,
+            )
+
+            self.assertIsNotNone(result)
+            assert result is not None
+            self.assertIsNotNone(result.completion_evidence)
+            ev = result.completion_evidence
+            assert ev is not None
+            self.assertEqual(ev.task_id, task.id)
+            self.assertEqual(ev.criteria_count, 2)
+            self.assertTrue(ev.builtin_test_passed)
+            self.assertGreater(ev.score, 0)
+            self.assertIn(ev.verdict, ("adequate", "strong"))
+
+            # Evidence should be persisted on the task record
+            refreshed = store.get_task(task.id)
+            self.assertIsNotNone(refreshed)
+            assert refreshed is not None
+            self.assertIsNotNone(refreshed.completion_evidence)
+            self.assertEqual(refreshed.completion_evidence["task_id"], task.id)
+            self.assertEqual(refreshed.completion_evidence["criteria_count"], 2)
+
+            # engine.completion_evidence event should be emitted
+            events = store.list_events(task_id=task.id)
+            evidence_events = [e for e in events if e.event_type == "engine.completion_evidence"]
+            self.assertEqual(len(evidence_events), 1)
+            self.assertEqual(evidence_events[0].payload["task_id"], task.id)
+            self.assertEqual(evidence_events[0].payload["criteria_count"], 2)
+
+    def test_finalize_supervisor_merge_returns_completion_evidence_when_task_already_done(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(
+                store,
+                repo_path=repo_path,
+                acceptance_criteria="Implement the feature.",
+            )
+            task.status = "done"
+            task.completed_at = "2026-04-22T11:00:00Z"
+            store.save_task(task)
+
+            self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude_code",
+                outcome="done",
+                outcome_detail="Done.",
+                created_at="2026-04-22T10:20:00Z",
+            )
+
+            orchestrator = ForemanOrchestrator(store, roles=self.roles, workflows=self.workflows)
+
+            result = orchestrator.finalize_supervisor_merge(
+                repo_path=str(repo_path),
+                branch_name=task.branch_name or "feat/task-evidence-1",
+                task_id=task.id,
+            )
+
+            self.assertIsNotNone(result)
+            assert result is not None
+            # Already-done tasks do not re-emit evidence (no re-finalize)
+            self.assertIsNone(result.completion_evidence)
+
+    def test_finalize_supervisor_merge_unknown_project_returns_none(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            orchestrator = ForemanOrchestrator(store, roles=self.roles, workflows=self.workflows)
+
+            result = orchestrator.finalize_supervisor_merge(
+                repo_path="/nonexistent/path",
+                branch_name="feat/dummy",
+            )
+
+            self.assertIsNone(result)
 
 
 class DecisionExtractionTests(unittest.TestCase):

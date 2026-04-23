@@ -103,6 +103,38 @@ class SupervisorMergeResult:
     task_status: str
     sprint_status: str
     stop_reason: str | None = None
+    completion_evidence: "CompletionEvidence | None" = None
+
+
+@dataclass(slots=True, frozen=True)
+class CompletionEvidence:
+    """Structured evidence summary for a task completion decision.
+
+    Bundles acceptance-criteria text, branch diff context, changed files,
+    agent outputs, and built-in test results so downstream review
+    (human or automated) can assess whether the implementation actually
+    satisfies the task intent — not just whether the developer marked
+    it done or the reviewer approved it.
+    """
+
+    task_id: str
+    task_title: str
+    acceptance_criteria: str
+    criteria_count: int = 0
+    criteria_addressed: int = 0
+    criteria_partially_addressed: int = 0
+    changed_files: tuple[str, ...] = ()
+    diff_context_lines: int = 0
+    branch_diff_stat: str = ""
+    agent_outputs: tuple[str, ...] = ()
+    builtin_test_result: str = ""
+    builtin_test_passed: bool = False
+    builtin_test_detail: str = ""
+    score: float = 0.0
+    score_breakdown: str = ""
+    verdict: str = "unknown"
+    verdict_reasons: tuple[str, ...] = ()
+    built_at: str = field(default_factory=utc_now_text)
 
 
 class AgentExecutor(Protocol):
@@ -413,6 +445,10 @@ class ForemanOrchestrator:
                     match = re.search(r"(\d+)\s*-", line)
                     if match:
                         total_deletions += int(match.group(1))
+            elif re.match(r"\d+ file", line):
+                pass  # summary line captured below
+            elif re.match(r"\d+ insertion", line) or re.match(r"\d+ deletion", line):
+                pass  # cumulative stat line
             context_lines += 1
 
         summary = f"{len(changed_files)} file(s), +{total_additions}, -{total_deletions}"
@@ -425,6 +461,7 @@ class ForemanOrchestrator:
             if run.status not in {"completed", "failed", "killed", "timeout"}:
                 continue
             detail = run.outcome_detail or ""
+            # Capture first meaningful chunk of output (up to 500 chars)
             snippet = detail[:500].strip() if detail.strip() else ""
             if snippet:
                 role_and_step = f"[{run.role_id} / {run.workflow_step}]"
@@ -561,12 +598,15 @@ class ForemanOrchestrator:
         if task is None:
             return None
 
+        completion_evidence: CompletionEvidence | None = None
         if task.status != "done":
             task.status = "done"
             task.blocked_reason = None
             task.workflow_current_step = None
             task.workflow_carried_output = None
             task.completed_at = task.completed_at or utc_now_text()
+            completion_evidence = self.build_completion_evidence(task, project)
+            task.completion_evidence = completion_evidence
             self.store.save_task(task)
 
             run = self._create_system_run(
@@ -582,6 +622,26 @@ class ForemanOrchestrator:
                     "branch": branch_name,
                     "target": project.default_branch,
                     "task_id": task.id,
+                    "evidence_score": completion_evidence.score if completion_evidence else None,
+                    "evidence_verdict": completion_evidence.verdict if completion_evidence else None,
+                },
+            )
+            self._emit_event(
+                run,
+                "engine.completion_evidence",
+                {
+                    "task_id": task.id,
+                    "criteria_count": completion_evidence.criteria_count if completion_evidence else 0,
+                    "criteria_addressed": completion_evidence.criteria_addressed if completion_evidence else 0,
+                    "criteria_partially_addressed": (
+                        completion_evidence.criteria_partially_addressed if completion_evidence else 0
+                    ),
+                    "changed_files": list(completion_evidence.changed_files) if completion_evidence else [],
+                    "builtin_test_passed": (
+                        completion_evidence.builtin_test_passed if completion_evidence else False
+                    ),
+                    "score": completion_evidence.score if completion_evidence else 0.0,
+                    "verdict": completion_evidence.verdict if completion_evidence else "unknown",
                 },
             )
 
@@ -598,6 +658,7 @@ class ForemanOrchestrator:
             task_status=task.status,
             sprint_status=sprint.status if sprint is not None else "unknown",
             stop_reason=stop_reason,
+            completion_evidence=completion_evidence,
         )
 
     def select_next_task(self, project: Project) -> Task | None:

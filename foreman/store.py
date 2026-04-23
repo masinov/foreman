@@ -30,6 +30,32 @@ def _json_loads(raw_value: str) -> Any:
     return json.loads(raw_value) if raw_value else None
 
 
+def _load_json_loads(raw_value: str) -> Any:
+    """Load a JSON value that may be either a dict (object) or a list (array)."""
+    if not raw_value:
+        return None
+    try:
+        parsed = json.loads(raw_value)
+        if isinstance(parsed, (dict, list)):
+            return parsed
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return None
+
+
+def _serialize_evidence(evidence: Any) -> str:
+    """Serialize a completion evidence object (dataclass or dict) to JSON."""
+    if evidence is None:
+        return ""
+    if isinstance(evidence, dict):
+        return json.dumps(evidence, sort_keys=True)
+    try:
+        from dataclasses import asdict
+        return json.dumps(asdict(evidence), sort_keys=True)
+    except Exception:
+        return json.dumps({"error": str(evidence)}, sort_keys=True)
+
+
 def _load_json_dict(raw_value: str) -> dict[str, Any]:
     parsed = _json_loads(raw_value)
     if parsed in (None, ""):
@@ -49,16 +75,18 @@ def _load_json_list(raw_value: str) -> list[str]:
 
 
 def _serialize_evidence(evidence: Any) -> str:
-    """Serialize CompletionEvidence (or None) to JSON string for SQLite."""
+    """Serialize completion evidence (dataclass or dict) to JSON."""
     if evidence is None:
         return ""
-    import dataclasses
-
-    if isinstance(evidence, CompletionEvidence):
-        return _json_dumps(dataclasses.asdict(evidence))
     if isinstance(evidence, dict):
         return _json_dumps(evidence)
-    return ""
+    try:
+        from dataclasses import asdict
+        if isinstance(evidence, CompletionEvidence):
+            return _json_dumps(asdict(evidence))
+        return _json_dumps(asdict(evidence))
+    except Exception:
+        return _json_dumps({"error": str(evidence)})
 
 
 def _row_to_project(row: sqlite3.Row) -> Project:
@@ -98,7 +126,7 @@ def _row_to_task(row: sqlite3.Row) -> Task:
         else ""
     )
     completion_evidence: CompletionEvidence | None = (
-        _load_json_dict(raw_evidence) if raw_evidence else None
+        _load_json_loads(raw_evidence) if raw_evidence else None
     )
     return Task(
         id=row["id"],
@@ -220,7 +248,9 @@ class ForemanStore:
 
         with self._connection:
             self._connection.executescript(_SCHEMA_MIGRATIONS_DDL)
-        return self.migrate()
+        applied = self.migrate()
+        self._repair_known_schema_drift()
+        return applied
 
     def schema_version(self) -> int:
         """Return the highest migration version applied to this database, or 0."""
@@ -257,6 +287,25 @@ class ForemanStore:
             applied.append(version)
 
         return applied
+
+    def _repair_known_schema_drift(self) -> None:
+        """Repair additive schema drift that can occur in long-lived local DBs.
+
+        This is intentionally narrow. It handles cases where a local database
+        has migration ledger state that does not match the actual table shape,
+        which can happen when experimental branches reuse or reshuffle
+        migration versions before landing on main.
+        """
+
+        task_columns = {
+            str(row["name"])
+            for row in self._connection.execute("PRAGMA table_info(tasks)").fetchall()
+        }
+        if "completion_evidence_json" not in task_columns:
+            with self._connection:
+                self._connection.execute(
+                    "ALTER TABLE tasks ADD COLUMN completion_evidence_json TEXT NOT NULL DEFAULT ''"
+                )
 
     def save_project(self, project: Project) -> Project:
         """Insert or update a project record."""
