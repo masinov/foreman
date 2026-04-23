@@ -3,10 +3,11 @@
 ## Current sprint
 
 - Sprint: `sprint-46-completion-truth-hardening` (active)
-- Branch: `fix/output-contract-retry`
+- Branch: `fix/merge-conflict-recovery-review-loop`
 
 ## Active branches
 
+- `fix/merge-conflict-recovery-review-loop` — fixes the secondary sprint-46 loop exposed after output-contract retries started working. Foreman now distinguishes merge conflicts from generic merge failures, carries explicit conflict-resolution guidance back into `develop`, refreshes stale task branches against the latest `main` during conflict-recovery passes when that refresh is clean, and preserves the normal `develop -> review` cycle so conflict-resolution changes are reviewed again before merge.
 - `fix/output-contract-retry` — adds one corrective retry when agent output violates the role contract but the underlying run completed normally. Developer steps that omit `TASK_COMPLETE` are reprompted once to return the completion summary with the marker, and reviewer steps that return malformed decision text are reprompted once to return exactly `APPROVE`, `DENY: ...`, or `STEER: ...`. The retry is explicit and auditable via `engine.output_contract_retry`.
 - `fix/reject-dirty-task-finalization` — fixes a state-integrity bug exposed by the live sprint-46 rerun: Foreman could restore the checkout to `main` and still mark a task `done` even when the task output existed only as dirty, uncommitted worktree changes. `_builtin:merge` now blocks dirty task branches and branches with no committed delta ahead of `main`, while `_builtin:mark_done` refuses dirty finalization and requires a recorded successful merge for already-absorbed branches.
 - `fix/native-run-step-lease-recovery` — hardens native-step ownership and recovery after the stranded review runs observed in sprint 46. The orchestrator now persists `workflow_current_step` before entering native steps, streams native runner events into SQLite as they arrive instead of buffering them until step return, and decides stale-run recovery from the latest persisted event timestamp with a dedicated active-run recovery timeout rather than the full per-run time limit.

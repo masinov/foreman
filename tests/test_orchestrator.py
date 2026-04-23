@@ -805,6 +805,210 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 transitions,
             )
 
+    def test_merge_conflict_resolution_returns_to_develop_and_back_through_review(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+        self.write_text(repo_path / "docs" / "sprints" / "current.md", "base\n")
+        self.commit_all(repo_path, "docs: add sprint baseline")
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+            project.settings["completion_guard_enabled"] = False
+            store.save_project(project)
+            executor = ScriptedAgentExecutor({})
+
+            def developer_one(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
+                self.assertIsNone(carried_output)
+                self.assertIn("Branch: feat/task-1", prompt)
+                self.write_text(
+                    repo_path / "docs" / "sprints" / "current.md",
+                    "branch update\n",
+                )
+                self.write_text(repo_path / "ready.txt", "ready\n")
+                self.commit_all(repo_path, "docs: branch updates sprint state")
+                self.git(repo_path, "checkout", "main")
+                self.write_text(
+                    repo_path / "docs" / "sprints" / "current.md",
+                    "main update\n",
+                )
+                self.commit_all(repo_path, "docs: main updates sprint state")
+                self.git(repo_path, "checkout", task.branch_name or "feat/task-1")
+                return AgentExecutionResult(
+                    outcome="done",
+                    detail="Task docs updated on the branch.",
+                )
+
+            def reviewer_one(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
+                del task
+                self.assertIsNone(carried_output)
+                self.assertIn("Task docs updated on the branch.", prompt)
+                return AgentExecutionResult(
+                    outcome="approve",
+                    detail="Approved before merge.",
+                )
+
+            def developer_two(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
+                del task
+                assert carried_output is not None
+                self.assertIn("Merge conflict against 'main'.", carried_output)
+                self.assertIn("go back through code review", carried_output)
+                merge_result = subprocess.run(
+                    ["git", "merge", "main"],
+                    cwd=repo_path,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                self.assertNotEqual(merge_result.returncode, 0)
+                self.write_text(
+                    repo_path / "docs" / "sprints" / "current.md",
+                    "resolved main + branch update\n",
+                )
+                self.commit_all(repo_path, "docs: resolve sprint merge conflict")
+                return AgentExecutionResult(
+                    outcome="done",
+                    detail="Resolved the merge conflict against main.",
+                )
+
+            def reviewer_two(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
+                del task
+                self.assertIsNone(carried_output)
+                self.assertIn("Resolved the merge conflict against main.", prompt)
+                return AgentExecutionResult(
+                    outcome="approve",
+                    detail="Approved after conflict resolution.",
+                )
+
+            executor.handlers.update(
+                {
+                    ("developer", 1): developer_one,
+                    ("code_reviewer", 1): reviewer_one,
+                    ("developer", 2): developer_two,
+                    ("code_reviewer", 2): reviewer_two,
+                }
+            )
+
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=self.roles,
+                workflows=self.workflows,
+                agent_executor=executor,
+            )
+
+            result = orchestrator.run_project(project.id)
+
+            self.assertEqual(result.executed_task_ids, (task.id,))
+            self.assertEqual(result.blocked_task_ids, ())
+            updated_task = store.get_task(task.id)
+            self.assertIsNotNone(updated_task)
+            assert updated_task is not None
+            self.assertEqual(updated_task.status, "done")
+            self.assertEqual(
+                [
+                    r.workflow_step
+                    for r in store.list_runs(task_id=task.id)
+                    if r.role_id != "_builtin:orchestrator"
+                ],
+                [
+                    "develop",
+                    "review",
+                    "test",
+                    "merge",
+                    "develop",
+                    "review",
+                    "test",
+                    "merge",
+                    "done",
+                ],
+            )
+            self.assertEqual(
+                [
+                    r.outcome
+                    for r in store.list_runs(task_id=task.id)
+                    if r.role_id != "_builtin:orchestrator"
+                ],
+                [
+                    "done",
+                    "approve",
+                    "success",
+                    "conflict",
+                    "done",
+                    "approve",
+                    "success",
+                    "success",
+                    "success",
+                ],
+            )
+            assert executor.capture("developer", 2).carried_output is not None
+            self.assertIn(
+                "Merge conflict against 'main'.",
+                executor.capture("developer", 2).carried_output,
+            )
+            transitions = [
+                event.payload
+                for event in store.list_events(task_id=task.id)
+                if event.event_type == "workflow.transition"
+            ]
+            self.assertIn(
+                {
+                    "from_step": "merge",
+                    "to_step": "develop",
+                    "trigger": "completion:conflict",
+                },
+                transitions,
+            )
+
+    def test_prepare_task_branch_for_conflict_resolution_refreshes_existing_branch(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+        self.write_text(repo_path / "docs" / "base.md", "baseline\n")
+        self.commit_all(repo_path, "docs: add base docs")
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(
+                store,
+                repo_path=repo_path,
+                branch_name="feat/task-1",
+            )
+            project.settings["completion_guard_enabled"] = False
+            store.save_project(project)
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=self.roles,
+                workflows=self.workflows,
+                agent_executor=ScriptedAgentExecutor({}),
+            )
+
+            self.git(repo_path, "checkout", "-b", task.branch_name)
+            self.write_text(repo_path / "feature.txt", "task work\n")
+            self.commit_all(repo_path, "feat: task work")
+
+            self.git(repo_path, "checkout", "main")
+            self.write_text(repo_path / "notes.txt", "main moved\n")
+            self.commit_all(repo_path, "docs: main moves forward")
+
+            carried_output, sync_event = orchestrator._prepare_task_branch_for_step(
+                project=project,
+                task=task,
+                step="develop",
+                carried_output="Merge conflict against 'main'.",
+            )
+
+            self.assertIsNotNone(carried_output)
+            assert carried_output is not None
+            self.assertIn("refreshed branch 'feat/task-1'", carried_output)
+            self.assertIsNotNone(sync_event)
+            assert sync_event is not None
+            self.assertEqual(sync_event[0], "engine.branch_sync")
+            self.assertEqual(current_branch(repo_path), "feat/task-1")
+            self.assertTrue((repo_path / "notes.txt").is_file())
+            self.assertIn(
+                "Merge branch 'main' into feat/task-1",
+                self.git(repo_path, "log", "-1", "--pretty=%s").stdout.strip(),
+            )
+
     def test_human_gate_approve_resumes_workflow_and_finishes_the_task(self) -> None:
         repo_path, db_path = self.create_workspace()
         self.initialize_repo(repo_path)

@@ -22,6 +22,7 @@ from .git import (
     is_worktree_clean,
     recent_commits,
     status_text,
+    sync_branch_with_base,
 )
 from .models import CompletionEvidence, Event, Project, Run, Sprint, Task, utc_now_text
 from .runner import AgentRunConfig, ClaudeCodeRunner, CodexRunner, run_with_retry
@@ -1061,6 +1062,7 @@ class ForemanOrchestrator:
                 self.store.save_task(current_task)
                 break
 
+            branch_sync_event: tuple[str, dict[str, Any]] | None = None
             if current_task.branch_name and step_def.role not in {
                 "_builtin:merge",
                 "_builtin:mark_done",
@@ -1070,6 +1072,15 @@ class ForemanOrchestrator:
                     current_task.branch_name,
                     create=True,
                     base_branch=project.default_branch,
+                )
+                (
+                    carried_output,
+                    branch_sync_event,
+                ) = self._prepare_task_branch_for_step(
+                    project=project,
+                    task=current_task,
+                    step=current_step,
+                    carried_output=carried_output,
                 )
 
             current_task.workflow_current_step = current_step
@@ -1184,6 +1195,9 @@ class ForemanOrchestrator:
                     "workflow.step_started",
                     {"step": current_step, "visit_count": visit_count},
                 )
+                if branch_sync_event is not None:
+                    event_type, payload = branch_sync_event
+                    self._emit_event(run, event_type, payload)
                 session_key = (role.id, role.agent.backend)
                 session_id: str | None = None
                 if role.agent.session_persistence:
@@ -1740,6 +1754,85 @@ class ForemanOrchestrator:
             return recent_commits(repo_path, branch_name=branch_name)
         except GitError:
             return ""
+
+    def _prepare_task_branch_for_step(
+        self,
+        *,
+        project: Project,
+        task: Task,
+        step: str,
+        carried_output: str | None,
+    ) -> tuple[str | None, tuple[str, dict[str, Any]] | None]:
+        """Prepare one task branch before a native role step.
+
+        Merge conflicts are special: the next develop pass should work from an
+        existing task branch that has been refreshed against the latest default
+        branch whenever that refresh is clean. If the refresh still conflicts,
+        carry explicit resolution guidance into the developer prompt and force
+        the usual develop -> review cycle after the resolution.
+        """
+
+        if (
+            step != "develop"
+            or not task.branch_name
+            or not _is_merge_conflict_feedback(carried_output)
+        ):
+            return carried_output, None
+
+        sync_result = sync_branch_with_base(
+            project.repo_path,
+            task.branch_name,
+            project.default_branch,
+        )
+        if sync_result.success:
+            guidance = _append_feedback_note(
+                carried_output,
+                (
+                    f"Foreman refreshed branch {task.branch_name!r} with the latest "
+                    f"{project.default_branch!r} before this develop pass. Review the "
+                    "merged base-branch changes, make any remaining adjustments, and end "
+                    "with TASK_COMPLETE. This conflict-resolution pass will go back "
+                    "through code review before merge."
+                ),
+            )
+            return (
+                guidance,
+                (
+                    "engine.branch_sync",
+                    {
+                        "step": step,
+                        "branch": task.branch_name,
+                        "target": project.default_branch,
+                        "mode": "merge_conflict_recovery",
+                        "detail": sync_result.detail,
+                    },
+                ),
+            )
+
+        guidance = _append_feedback_note(
+            carried_output,
+            (
+                f"You are resolving a merge conflict against {project.default_branch!r}. "
+                f"Reconcile branch {task.branch_name!r} with the latest "
+                f"{project.default_branch!r} so it merges cleanly, then complete another "
+                "develop pass. Your conflict-resolution changes will go back through code "
+                "review before merge.\n\n"
+                f"Latest merge attempt detail:\n{sync_result.detail}"
+            ),
+        )
+        return (
+            guidance,
+            (
+                "engine.branch_sync_conflict",
+                {
+                    "step": step,
+                    "branch": task.branch_name,
+                    "target": project.default_branch,
+                    "mode": "merge_conflict_recovery",
+                    "detail": sync_result.detail,
+                },
+            ),
+        )
 
     def _write_runtime_context(
         self,
@@ -2380,6 +2473,21 @@ def _contains_completion_marker(text: str, marker: str) -> bool:
 def _strip_completion_marker(text: str, marker: str) -> str:
     lines = [line for line in text.splitlines() if _normalize_decision_line(line) != marker]
     return "\n".join(lines).strip()
+
+
+def _is_merge_conflict_feedback(text: str | None) -> bool:
+    if not text:
+        return False
+    normalized = text.lower()
+    return "merge conflict against" in normalized or "conflict (" in normalized
+
+
+def _append_feedback_note(existing: str | None, note: str) -> str:
+    existing = (existing or "").strip()
+    note = note.strip()
+    if not existing:
+        return note
+    return f"{existing}\n\n{note}"
 
 
 def _extract_json_block(text: str) -> str | None:
