@@ -686,6 +686,23 @@ class ForemanStore:
         session_id = row["session_id"]
         return str(session_id) if session_id else None
 
+    def get_latest_event_timestamp(self, run_id: str) -> str | None:
+        """Return the latest persisted event timestamp for one run, if any."""
+
+        row = self._connection.execute(
+            """
+            SELECT timestamp FROM events
+            WHERE run_id = ?
+            ORDER BY timestamp DESC, rowid DESC
+            LIMIT 1
+            """,
+            (run_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        timestamp = row["timestamp"]
+        return str(timestamp) if timestamp else None
+
     def save_event(self, event: Event) -> Event:
         """Insert or update an event record."""
 

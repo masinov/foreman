@@ -1416,6 +1416,103 @@ class ForemanOrchestratorTests(unittest.TestCase):
             self.assertIn("preflight failed", runs[0].outcome_detail.lower())
             self.assertEqual(current_branch(repo_path), "main")
 
+    def test_native_runner_persists_active_step_before_execution(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+            project.settings["default_model"] = "claude-sonnet-4-6"
+            store.save_project(project)
+
+            def developer_handler(config: AgentRunConfig):
+                persisted_task = store.get_task(task.id)
+                assert persisted_task is not None
+                self.assertEqual(persisted_task.workflow_current_step, "develop")
+                self.assertIsNone(config.session_id)
+                yield from self._native_developer_success(repo_path, config)
+
+            runner = ScriptedNativeRunner(
+                {
+                    1: developer_handler,
+                    2: lambda config: self._native_reviewer_approve(config),
+                }
+            )
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=self.roles,
+                workflows=self.workflows,
+                agent_runners={"claude_code": runner},
+            )
+
+            result = orchestrator.run_project(project.id)
+
+            self.assertEqual(result.stop_reason, "idle")
+            updated_task = store.get_task(task.id)
+            assert updated_task is not None
+            self.assertEqual(updated_task.status, "done")
+
+    def test_native_runner_streams_events_before_a_mid_step_crash(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+            project.settings["default_model"] = "claude-sonnet-4-6"
+            store.save_project(project)
+
+            def crashing_reviewer(_config: AgentRunConfig):
+                yield AgentEvent(
+                    "agent.started",
+                    payload={"phase": "review"},
+                    timestamp="2026-03-30T12:25:00Z",
+                )
+                yield AgentEvent(
+                    "agent.message",
+                    payload={"text": "Review is underway.", "phase": "assistant"},
+                    timestamp="2026-03-30T12:25:05Z",
+                )
+                raise RuntimeError("review runner crashed")
+
+            runner = ScriptedNativeRunner(
+                {
+                    1: lambda config: self._native_developer_success(repo_path, config),
+                    2: crashing_reviewer,
+                }
+            )
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=self.roles,
+                workflows=self.workflows,
+                agent_runners={"claude_code": runner},
+            )
+
+            result = orchestrator.run_project(project.id)
+
+            self.assertEqual(result.stop_reason, "blocked")
+            updated_task = store.get_task(task.id)
+            assert updated_task is not None
+            self.assertEqual(updated_task.status, "blocked")
+            self.assertEqual(updated_task.blocked_reason, "review runner crashed")
+
+            runs = store.list_runs(task_id=task.id)
+            review_run = next(run for run in runs if run.workflow_step == "review")
+            self.assertEqual(review_run.status, "failed")
+            self.assertEqual(review_run.outcome, "error")
+            events = store.list_events(run_id=review_run.id)
+            event_types = [event.event_type for event in events]
+            self.assertGreaterEqual(event_types.count("engine.context_write"), 1)
+            self.assertIn("workflow.step_started", event_types)
+            self.assertIn("agent.started", event_types)
+            self.assertIn("agent.message", event_types)
+            self.assertIn("agent.error", event_types)
+            self.assertIn("workflow.step_completed", event_types)
+            self.assertIn("workflow.no_transition", event_types)
+            self.assertLess(event_types.index("agent.started"), event_types.index("agent.error"))
+            self.assertLess(event_types.index("agent.message"), event_types.index("agent.error"))
+
     def test_native_runner_uses_project_time_limit_for_timeout_seconds(self) -> None:
         repo_path, db_path = self.create_workspace()
         self.initialize_repo(repo_path)
@@ -1607,6 +1704,90 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 refreshed_run.outcome_detail,
                 "Recovered stale running run after exceeding the active-run limit.",
             )
+            refreshed_fresh_task = store.get_task(fresh_task.id)
+            assert refreshed_fresh_task is not None
+            self.assertEqual(refreshed_fresh_task.status, "in_progress")
+            refreshed_fresh_run = store.get_run(fresh_run.id)
+            assert refreshed_fresh_run is not None
+            self.assertEqual(refreshed_fresh_run.status, "running")
+
+    def test_recover_orphaned_tasks_uses_latest_event_timestamp_for_liveness(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, sprint, task = self.seed_project(store, repo_path=repo_path)
+            project.settings["time_limit_per_run_minutes"] = 240
+            project.settings["active_run_recovery_timeout_minutes"] = 5
+            store.save_project(project)
+            task.status = "in_progress"
+            task.branch_name = "feat/task-1-implement-orchestrator-loop"
+            task.started_at = "2026-03-30T12:20:00Z"
+            store.save_task(task)
+            fresh_task = Task(
+                id="task-2",
+                sprint_id=sprint.id,
+                project_id=project.id,
+                title="Fresh in-progress task",
+                status="in_progress",
+                branch_name="feat/task-2-fresh",
+                started_at="2026-03-30T12:20:00Z",
+                created_at="2026-03-30T12:19:00Z",
+            )
+            store.save_task(fresh_task)
+            stale_run = Run(
+                id="run-stale",
+                task_id=task.id,
+                project_id=project.id,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude_code",
+                status="running",
+                started_at="2026-03-30T12:20:00Z",
+                created_at="2026-03-30T12:20:00Z",
+            )
+            store.save_run(stale_run)
+            fresh_run = Run(
+                id="run-fresh",
+                task_id=fresh_task.id,
+                project_id=project.id,
+                role_id="code_reviewer",
+                workflow_step="review",
+                agent_backend="claude_code",
+                status="running",
+                started_at="2026-03-30T12:20:00Z",
+                created_at="2026-03-30T12:20:00Z",
+            )
+            store.save_run(fresh_run)
+            store.save_event(
+                Event(
+                    id="event-review-heartbeat",
+                    run_id=fresh_run.id,
+                    task_id=fresh_task.id,
+                    project_id=project.id,
+                    event_type="agent.started",
+                    role_id="code_reviewer",
+                    timestamp="2026-03-30T12:29:30Z",
+                    payload={"phase": "review"},
+                )
+            )
+
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=self.roles,
+                workflows=self.workflows,
+                utc_now=lambda: datetime(2026, 3, 30, 12, 30, 0, tzinfo=timezone.utc),
+            )
+
+            orchestrator.recover_orphaned_tasks(project.id)
+
+            refreshed_task = store.get_task(task.id)
+            assert refreshed_task is not None
+            self.assertEqual(refreshed_task.status, "todo")
+            refreshed_run = store.get_run(stale_run.id)
+            assert refreshed_run is not None
+            self.assertEqual(refreshed_run.status, "failed")
             refreshed_fresh_task = store.get_task(fresh_task.id)
             assert refreshed_fresh_task is not None
             self.assertEqual(refreshed_fresh_task.status, "in_progress")

@@ -66,6 +66,7 @@ class AgentExecutionResult:
     duration_ms: int | None = None
     model: str | None = None
     events: tuple[AgentEventRecord, ...] = ()
+    events_streamed: bool = False
 
 
 @dataclass(slots=True)
@@ -1071,6 +1072,10 @@ class ForemanOrchestrator:
                     base_branch=project.default_branch,
                 )
 
+            current_task.workflow_current_step = current_step
+            current_task.workflow_carried_output = carried_output
+            self.store.save_task(current_task)
+
             if step_def.role == "_builtin:human_gate":
                 run = self._create_running_run(
                     current_task,
@@ -1199,8 +1204,16 @@ class ForemanOrchestrator:
                     prompt=prompt,
                     session_id=session_id,
                     carried_output=carried_output,
+                    event_recorder=lambda event_record: self._persist_agent_event(
+                        run,
+                        current_task,
+                        project,
+                        role.id,
+                        event_record,
+                    ),
                 )
-                self._emit_agent_events(run, current_task, project, role.id, result.events)
+                if not result.events_streamed:
+                    self._emit_agent_events(run, current_task, project, role.id, result.events)
                 self._complete_run(
                     run,
                     status=result.status,
@@ -1383,10 +1396,10 @@ class ForemanOrchestrator:
     def _run_is_stale(self, project: Project, run: Run) -> bool:
         """Return whether a persisted running run has exceeded its allowed ownership window."""
 
-        timeout_seconds = _project_timeout_seconds(project)
+        timeout_seconds = _active_run_recovery_timeout_seconds(project)
         if timeout_seconds is None or timeout_seconds <= 0:
             return False
-        reference = run.started_at or run.created_at
+        reference = self.store.get_latest_event_timestamp(run.id) or run.started_at or run.created_at
         started = _parse_utc_timestamp(reference)
         if started is None:
             return False
@@ -1675,6 +1688,7 @@ class ForemanOrchestrator:
         prompt: str,
         session_id: str | None,
         carried_output: str | None,
+        event_recorder: Callable[[AgentEventRecord], None] | None = None,
     ) -> AgentExecutionResult:
         try:
             if self.agent_executor is not None:
@@ -1694,6 +1708,7 @@ class ForemanOrchestrator:
                 workflow_step=workflow_step,
                 prompt=prompt,
                 session_id=session_id,
+                event_recorder=event_recorder,
             )
         except Exception as exc:  # pragma: no cover - defensive fallback
             return AgentExecutionResult(
@@ -1717,6 +1732,7 @@ class ForemanOrchestrator:
         workflow_step: str,
         prompt: str,
         session_id: str | None,
+        event_recorder: Callable[[AgentEventRecord], None] | None = None,
     ) -> AgentExecutionResult:
         runner = self.agent_runners.get(role.agent.backend)
         if runner is None:
@@ -1765,13 +1781,14 @@ class ForemanOrchestrator:
             config,
             **retry_kwargs,
         ):
-            events.append(
-                AgentEventRecord(
-                    event_type=event.event_type,
-                    payload=dict(event.payload),
-                    timestamp=event.timestamp,
-                )
+            event_record = AgentEventRecord(
+                event_type=event.event_type,
+                payload=dict(event.payload),
+                timestamp=event.timestamp,
             )
+            events.append(event_record)
+            if event_recorder is not None:
+                event_recorder(event_record)
             if event.event_type == "agent.message":
                 text = _optional_string(event.payload.get("text"))
                 if text and (not message_fragments or message_fragments[-1] != text):
@@ -1860,6 +1877,7 @@ class ForemanOrchestrator:
             duration_ms=duration_ms,
             model=model or None,
             events=tuple(events),
+            events_streamed=event_recorder is not None,
         )
 
     def _extract_completion_output(
@@ -1905,6 +1923,25 @@ class ForemanOrchestrator:
                 timestamp=event_record.timestamp,
             )
             self._apply_agent_signal(task, project, role_id, event_record)
+
+    def _persist_agent_event(
+        self,
+        run: Run,
+        task: Task,
+        project: Project,
+        role_id: str,
+        event_record: AgentEventRecord,
+    ) -> None:
+        """Persist one agent event immediately while a native step is active."""
+
+        self._emit_event(
+            run,
+            event_record.event_type,
+            event_record.payload,
+            role_id=role_id,
+            timestamp=event_record.timestamp,
+        )
+        self._apply_agent_signal(task, project, role_id, event_record)
 
     def _apply_agent_signal(
         self,
@@ -2146,6 +2183,24 @@ def _project_timeout_seconds(
     if role_timeout_minutes is not None and role_timeout_minutes > 0:
         return role_timeout_minutes * 60
     return 0
+
+
+def _active_run_recovery_timeout_seconds(project: Project) -> int:
+    """Return the stale-run ownership window used for crash recovery."""
+
+    setting = project.settings.get("active_run_recovery_timeout_minutes")
+    if isinstance(setting, bool):
+        setting = None
+    if isinstance(setting, int) and setting > 0:
+        return setting * 60
+    if isinstance(setting, float) and setting > 0:
+        return int(setting * 60)
+
+    project_timeout = _project_timeout_seconds(project)
+    default_timeout = 5 * 60
+    if project_timeout <= 0:
+        return default_timeout
+    return min(project_timeout, default_timeout)
 
 
 def _parse_utc_timestamp(value: str | None) -> datetime | None:
