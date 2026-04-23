@@ -129,35 +129,36 @@ class BuiltinExecutor:
                 ),
             )
 
-        evidence = self._build_completion_evidence(
-            project=project,
-            task=task,
-            store=store,
-        )
-        task.completion_evidence = evidence
-        if evidence is not None:
-            block_reason = self._completion_guard_block_reason(task, evidence)
-            if block_reason is not None:
-                task.status = "blocked"
-                task.blocked_reason = block_reason
-                task.workflow_current_step = None
-                task.workflow_carried_output = None
-                return BuiltinResult(
-                    outcome="blocked",
-                    detail=block_reason,
-                    events=(
-                        BuiltinEventRecord(
-                            event_type="engine.completion_guard",
-                            payload={
-                                "verdict": evidence.verdict,
-                                "score": evidence.score,
-                                "score_breakdown": evidence.score_breakdown,
-                                "changed_files": list(evidence.changed_files),
-                                "reasons": list(evidence.verdict_reasons),
-                            },
+        if _bool_setting(project, "completion_guard_enabled", default=True):
+            evidence = self._build_completion_evidence(
+                project=project,
+                task=task,
+                store=store,
+            )
+            task.completion_evidence = evidence
+            if evidence is not None:
+                block_reason = self._completion_guard_block_reason(task, evidence)
+                if block_reason is not None:
+                    task.status = "blocked"
+                    task.blocked_reason = block_reason
+                    task.workflow_current_step = None
+                    task.workflow_carried_output = None
+                    return BuiltinResult(
+                        outcome="blocked",
+                        detail=block_reason,
+                        events=(
+                            BuiltinEventRecord(
+                                event_type="engine.completion_guard",
+                                payload={
+                                    "verdict": evidence.verdict,
+                                    "score": evidence.score,
+                                    "score_breakdown": evidence.score_breakdown,
+                                    "changed_files": list(evidence.changed_files),
+                                    "reasons": list(evidence.verdict_reasons),
+                                },
+                            ),
                         ),
-                    ),
-                )
+                    )
 
         result: GitMergeResult = merge_branch(
             project.repo_path,
@@ -200,90 +201,13 @@ class BuiltinExecutor:
         project: Project,
         store: ForemanStore,
     ) -> BuiltinResult:
-        """Mark task done, or block if completion evidence is too weak.
-
-        The guard is active when the project setting
-        ``completion_guard_enabled`` is True (the default).
-        When disabled, the task is always marked done (backward-compatible
-        behaviour for pre-existing projects).
-
-        Strong or adequate verdict (score >= 60, at least half criteria addressed):
-          -> status = done, outcome = success
-
-        Weak or insufficient verdict:
-          -> status = blocked, outcome = steer, task.workflow_current_step cleared
-        """
-        if not _bool_setting(project, "completion_guard_enabled", default=True):
-            task.status = "done"
-            task.blocked_reason = None
-            task.workflow_current_step = None
-            task.workflow_carried_output = None
-            task.completed_at = task.completed_at or utc_now_text()
-            return BuiltinResult(outcome="success", detail="Task marked done.")
-
-        from .orchestrator import ForemanOrchestrator
-
-        verdict: CompletionEvidence | None = None
-        try:
-            orchestrator = ForemanOrchestrator(store)
-            evidence = orchestrator.build_completion_evidence(task, project)
-            if evidence is not None and evidence.verdict in {"strong", "adequate"}:
-                verdict = evidence
-        except Exception:  # pragma: no cover — guard must never crash the workflow
-            pass
-
-        if verdict is not None:
-            task.status = "done"
-            task.blocked_reason = None
-            task.workflow_current_step = None
-            task.workflow_carried_output = None
-            task.completed_at = task.completed_at or utc_now_text()
-            return BuiltinResult(
-                outcome="success",
-                detail=f"Task marked done (completion verdict: {verdict.verdict}).",
-                events=(
-                    BuiltinEventRecord(
-                        event_type="engine.completion_guard",
-                        payload={
-                            "verdict": verdict.verdict,
-                            "score": verdict.score,
-                            "score_breakdown": verdict.score_breakdown,
-                            "reasons": list(verdict.verdict_reasons),
-                        },
-                    ),
-                ),
-            )
-
-        # Evidence is weak/insufficient — retrieve verdict for block reason.
-        weak_verdict = "unknown"
-        try:
-            orchestrator2 = ForemanOrchestrator(store)
-            evidence2 = orchestrator2.build_completion_evidence(task, project)
-            if evidence2 is not None:
-                weak_verdict = evidence2.verdict
-        except Exception:  # pragma: no cover
-            pass
-
-        steer_detail = (
-            f"Completion evidence too weak (verdict: {weak_verdict}). "
-            f"Blocking task from done. Review evidence and resolve manually."
-        )
-        task.status = "blocked"
-        task.blocked_reason = steer_detail
+        del project, store
+        task.status = "done"
+        task.blocked_reason = None
         task.workflow_current_step = None
         task.workflow_carried_output = None
-        return BuiltinResult(
-            outcome="steer",
-            detail=steer_detail,
-            events=(
-                BuiltinEventRecord(
-                    event_type="engine.completion_guard",
-                    payload={
-                        "verdict": weak_verdict,
-                    },
-                ),
-            ),
-        )
+        task.completed_at = task.completed_at or utc_now_text()
+        return BuiltinResult(outcome="success", detail="Task marked done.")
 
     def _human_gate(
         self,

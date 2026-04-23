@@ -343,19 +343,17 @@ class ForemanOrchestratorTests(unittest.TestCase):
             result = orchestrator.run_project(project.id)
 
             self.assertEqual(result.executed_task_ids, (task.id,))
-            # Guard: mark_done blocks weak evidence tasks instead of marking done.
-            self.assertEqual(result.blocked_task_ids, (task.id,))
+            self.assertEqual(result.blocked_task_ids, ())
 
             updated_task = store.get_task(task.id)
             self.assertIsNotNone(updated_task)
             assert updated_task is not None
-            self.assertEqual(updated_task.status, "blocked")
+            self.assertEqual(updated_task.status, "done")
             self.assertEqual(
                 updated_task.branch_name,
                 "feat/task-1",
             )
-            # Guard: task is blocked (not done), so completed_at is not set.
-            self.assertIsNone(updated_task.completed_at)
+            self.assertIsNotNone(updated_task.completed_at)
             self.assertEqual(current_branch(repo_path), "main")
 
             runs = store.list_runs(task_id=task.id)
@@ -366,16 +364,14 @@ class ForemanOrchestratorTests(unittest.TestCase):
             )
             self.assertEqual(
                 [r.outcome for r in agent_runs],
-                ["done", "approve", "success", "success", "steer"],
+                ["done", "approve", "success", "success", "success"],
             )
 
             event_types = [event.event_type for event in store.list_events(task_id=task.id)]
             self.assertIn("engine.test_run", event_types)
             self.assertIn("engine.merge", event_types)
             self.assertIn("workflow.transition", event_types)
-            # Guard: "steer" outcome from mark_done has no transition — no_transition fires.
-            self.assertIn("workflow.no_transition", event_types)
-            self.assertIn("engine.completion_guard", event_types)
+            self.assertNotIn("workflow.no_transition", event_types)
 
         self.assertTrue((repo_path / "feature.txt").is_file())
         self.assertTrue((repo_path / "ready.txt").is_file())
@@ -896,9 +892,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
             self.assertFalse(resume_result.deferred)
             self.assertEqual(resume_result.paused_step, "human_approval")
             self.assertEqual(resume_result.next_step, "develop")
-            # Guard: weak completion evidence causes "steer" outcome; no steer
-            # transition exists from mark_done, so task blocks and stops here.
-            self.assertIn(resume_result.task.status, ("done", "blocked"))
+            self.assertEqual(resume_result.task.status, "done")
             self.assertIsNone(resume_result.task.workflow_current_step)
 
             runs = store.list_runs(task_id=task.id)
@@ -908,7 +902,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
             )
             self.assertEqual(
                 [run.outcome for run in runs],
-                ["done", "paused", "approve", "done", "approve", "success", "success", "steer"],
+                ["done", "paused", "approve", "done", "approve", "success", "success", "success"],
             )
 
             resumed_events = [
@@ -1094,12 +1088,11 @@ class ForemanOrchestratorTests(unittest.TestCase):
             result = runner_orchestrator.run_project(project.id)
 
             self.assertEqual(result.executed_task_ids, (task.id,))
-            # Guard: mark_done blocks weak evidence tasks instead of marking done.
-            self.assertEqual(result.stop_reason, "blocked")
+            self.assertEqual(result.stop_reason, "idle")
             final_task = store.get_task(task.id)
             self.assertIsNotNone(final_task)
             assert final_task is not None
-            self.assertEqual(final_task.status, "blocked")
+            self.assertEqual(final_task.status, "done")
 
     def test_native_runner_executes_claude_roles_without_an_injected_executor(self) -> None:
         repo_path, db_path = self.create_workspace()
@@ -1769,6 +1762,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
             store.initialize()
             project, _, task = self.seed_project(store, repo_path=repo_path)
             project.settings["default_model"] = "gpt-5.4"
+            project.settings["completion_guard_enabled"] = False
             store.save_project(project)
             codex_roles = self.roles_with_backend(
                 "codex",
@@ -1823,6 +1817,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
             store.initialize()
             project, _, task = self.seed_project(store, repo_path=repo_path)
             project.settings["default_model"] = "gpt-5.4"
+            project.settings["completion_guard_enabled"] = False
             store.save_project(project)
             codex_roles = self.roles_with_backend(
                 "codex",
@@ -1867,6 +1862,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
             store.initialize()
             project, _, task = self.seed_project(store, repo_path=repo_path)
             project.settings["default_model"] = "gpt-5.4"
+            project.settings["completion_guard_enabled"] = False
             store.save_project(project)
             task.status = "in_progress"
             task.workflow_current_step = "develop"
@@ -1932,6 +1928,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 workflow_id="development_with_architect",
             )
             project.settings["default_model"] = "gpt-5.4"
+            project.settings["completion_guard_enabled"] = False
             store.save_project(project)
             blocked_task = Task(
                 id=task.id,
@@ -2351,6 +2348,8 @@ class ForemanOrchestratorTests(unittest.TestCase):
         with ForemanStore(db_path) as store:
             store.initialize()
             project, sprint, task = self.seed_project(store, repo_path=repo_path)
+            project.settings["completion_guard_enabled"] = False
+            store.save_project(project)
 
             def developer_handler(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
                 del carried_output
