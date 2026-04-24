@@ -2,66 +2,71 @@
 
 - Sprint: `sprint-46-completion-truth-hardening`
 - Status: active
-- Branch: `fix/native-run-step-lease-recovery`
+- Branch: `main`
 - Started: 2026-04-23
+- Next queued sprint: `sprint-47-active-run-lease-and-heartbeat-recovery`
 
 ## Goal
 
-Harden Foreman's backend completion evaluation so developer markers and
-reviewer approval alone are not enough to count implementation work as done
-when evidence is too weak for the task intent.
+Harden Foreman's backend completion evaluation so developer completion markers
+and reviewer approval alone are not enough to count implementation work as
+done when the evidence is too weak for the task intent.
 
 ## Context and rationale
 
-Sprint-45 validated the supervisor finalization seam end to end. Sprint-46
-hardens completion truth in two stages: first the evidence model and
-regression coverage, then the backend guard that uses branch diff evidence
-to stop implementation tasks from flowing to `done` when they only changed
-docs/tests or never produced material branch changes. While running those
-tasks live, Foreman exposed a separate runtime defect: native `review`
-steps could strand with only `workflow.step_started` persisted. The current
-branch is an emergency backend hardening slice for that ownership and
-recovery gap.
+Sprint 45 validated the supervisor finalization seam end to end in the live
+repository. Sprint 46 focuses on completion truth: structured evidence,
+backend guards against weak completions, and reviewer context that reflects
+engine-produced evidence instead of raw agent claims alone.
+
+The live sprint-46 runs also exposed follow-on runtime defects:
+
+- native-step ownership and stale-run recovery
+- dirty task finalization from uncommitted worktree state
+- malformed developer and reviewer output contracts
+- stale task-branch reuse causing deterministic merge-conflict loops
+
+Those runtime fixes are now merged into local `main`. The remaining sprint-46
+work should be rerun on that corrected baseline.
 
 ## Constraints
 
-- backend only — no dashboard or legacy supervisor script work
-- guard must operate before terminal completion so valid tasks do not get
-  blocked after a successful merge
-- keep the shipped workflow shape intact: `develop -> review -> test -> merge -> done`
-- do not merge to main — the supervisor handles that after approval
+- backend only
+- do not manually edit `.foreman.db`
+- do not target `scripts/reviewed_claude.py` or `scripts/reviewed_codex.py`
+  as product work
+- preserve the shipped workflow shape:
+  `develop -> review -> test -> merge -> done`
+- if a developer resolves a merge conflict, the task must pass through
+  `review` again before merge
 
 ## Affected areas
 
-- `foreman/builtins.py` — merge-time completion guard + mark_done completion guard
-- `foreman/orchestrator.py` — preserve blocked reasons from builtin outcomes
-- `tests/test_orchestrator.py` — CompletionEvidenceTests, CompletionGuardTests, MarkDoneCompletionGuardTests
-- `docs/sprints/current.md` — this sprint definition
-- `docs/STATUS.md` — task and sprint status
+- `foreman/orchestrator.py`
+- `foreman/git.py`
+- `foreman/builtins.py`
+- `foreman/store.py`
+- `foreman/migrations.py`
+- `roles/developer.toml`
+- `roles/code_reviewer.toml`
+- `workflows/development.toml`
+- orchestrator, migration, role, and executor regression tests
+- repo-memory docs for the completion-truth contract
 
 ## Tasks
 
 - [done] Completion evidence model in orchestrator (task-completion-evidence-model-in-orchestrator)
   - Branch: `feat/completion-truth-evidence-model`
-  - Added `CompletionEvidence` dataclass to `foreman/models.py`
+  - Added `CompletionEvidence` to `foreman/models.py`
   - Added `build_completion_evidence()` to `ForemanOrchestrator`
-  - Scoring: criteria (40 pts), files (20 pts), diff context (10 pts), tests (30 pts)
-  - Verdicts: strong, adequate, weak, insufficient
-  - `_criterion_addressed()` — keyword coverage ratio against output + changed files
-  - Persisted via `completion_evidence_json` column in tasks table
-  - Wired into `finalize_supervisor_merge()` with `engine.completion_evidence` event
+  - Persisted evidence via `completion_evidence_json` in SQLite
+  - Emitted `engine.completion_evidence` during supervisor merge finalization
+
 - [done] False-positive completion regression coverage (task-false-positive-completion-regression-coverage)
-  - Branch: `chore/task-false-positive-completion-regression-coverage` (this branch)
-  - Added 14 tests in `CompletionEvidenceTests` covering:
-    - `test_docs_only_changes_verdict_is_insufficient` — docs-only → verdict=insufficient
-    - `test_tests_only_changes_verdict_is_weak` — tests-only → verdict in (weak, insufficient)
-    - `test_approval_without_implementation_is_insufficient` — reviewer APPROVE alone → verdict=insufficient
-    - `test_text_claims_implementation_but_no_code_changes_produces_weak_verdict` — text coverage without code changes → verdict=weak
-    - `test_passed_tests_alone_without_implementation_is_weak_not_adequate` — passing tests without implementation → verdict ≤ weak
-    - `test_strong_verdict_requires_code_changes_plus_criteria_plus_passed_tests` — positive case: all three signals → verdict adequate/strong
-    - `test_no_branch_means_no_changed_files_evidence` — no branch → no diff, verdict driven by output alone
-    - `test_failing_test_cancels_test_score_points` — failing test → test=0 in score breakdown
-    - 6 baseline tests: structure, scoring, verdict, coverage, no-criteria edge case
+  - Branch: `chore/task-false-positive-completion-regression-coverage`
+  - Added coverage proving docs-only, tests-only, or output-only completions
+    are not sufficient evidence for implementation tasks
+
 - [done] Backend guard for weak completions (task-backend-guard-for-weak-completions)
   - Branch: `feat/task-backend-guard-for-weak-completions`
   - Added completion guard to `_builtin:mark_done` in `foreman/builtins.py`
@@ -91,3 +96,9 @@ recovery gap.
 - `./venv/bin/python -m pytest tests/test_orchestrator.py -q`
 - `./venv/bin/python -m pytest tests/test_store.py tests/test_executor.py tests/test_roles.py -q`
 - `./venv/bin/python scripts/validate_repo_memory.py`
+
+## Next Queued Sprint
+
+- Sprint: `sprint-47-active-run-lease-and-heartbeat-recovery`
+- Status: planned
+- Queue position: next planned sprint, ahead of the older deferred `sprint-008`

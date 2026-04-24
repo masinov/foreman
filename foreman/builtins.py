@@ -8,7 +8,7 @@ import subprocess
 from typing import TYPE_CHECKING, Any
 
 from .context import relative_project_path, write_project_context
-from .git import GitMergeResult, merge_branch, run_git
+from .git import GitMergeResult, is_worktree_clean, merge_branch, run_git
 from .models import CompletionEvidence, Project, Task, utc_now_text
 
 if TYPE_CHECKING:
@@ -129,6 +129,36 @@ class BuiltinExecutor:
                 ),
             )
 
+        if not is_worktree_clean(project.repo_path):
+            return self._block_task(
+                task,
+                detail=(
+                    "Task branch has uncommitted changes. Commit task work before merge."
+                ),
+                event_type="engine.merge_blocked",
+                payload={
+                    "branch": task.branch_name,
+                    "target": project.default_branch,
+                    "reason": "dirty_worktree",
+                },
+            )
+
+        has_committed_delta = self._task_branch_has_committed_delta(project, task)
+        if has_committed_delta is False:
+            return self._block_task(
+                task,
+                detail=(
+                    f"Task branch {task.branch_name!r} has no committed changes ahead of "
+                    f"{project.default_branch!r}. Commit task work before merge."
+                ),
+                event_type="engine.merge_blocked",
+                payload={
+                    "branch": task.branch_name,
+                    "target": project.default_branch,
+                    "reason": "no_committed_delta",
+                },
+            )
+
         if _bool_setting(project, "completion_guard_enabled", default=True):
             evidence = self._build_completion_evidence(
                 project=project,
@@ -180,6 +210,29 @@ class BuiltinExecutor:
                 ),
             )
 
+        if result.conflict:
+            detail = (
+                f"Merge conflict against {project.default_branch!r}. Reconcile branch "
+                f"{task.branch_name!r} with the latest {project.default_branch!r}, then "
+                "complete another develop pass. Conflict-resolution changes must go back "
+                "through code review before merge.\n\n"
+                f"{result.detail}"
+            )
+            return BuiltinResult(
+                outcome="conflict",
+                detail=detail,
+                events=(
+                    BuiltinEventRecord(
+                        event_type="engine.merge_conflict",
+                        payload={
+                            "branch": task.branch_name,
+                            "target": project.default_branch,
+                            "error": result.detail,
+                        },
+                    ),
+                ),
+            )
+
         return BuiltinResult(
             outcome="failure",
             detail=result.detail,
@@ -201,6 +254,21 @@ class BuiltinExecutor:
         project: Project,
         store: ForemanStore,
     ) -> BuiltinResult:
+        if task.branch_name and not is_worktree_clean(project.repo_path):
+            return self._block_task(
+                task,
+                detail=(
+                    "Task branch has uncommitted changes. Commit or discard task work before "
+                    "marking the task done."
+                ),
+                event_type="engine.task_finalization_blocked",
+                payload={
+                    "branch": task.branch_name,
+                    "target": project.default_branch,
+                    "reason": "dirty_worktree",
+                },
+            )
+
         if _bool_setting(project, "completion_guard_enabled", default=True):
             # The guard evaluates completion evidence via git diff against the
             # default branch.  After a successful merge the branch tip may equal
@@ -210,15 +278,23 @@ class BuiltinExecutor:
             # the task branch — if it is, the branch has been absorbed.
             # The merge step already ran this guard before allowing the merge.
             if task.branch_name:
-                ancestor_check = run_git(
-                    project.repo_path,
-                    "merge-base",
-                    "--is-ancestor",
-                    task.branch_name,
-                    project.default_branch,
-                    check=False,
-                )
-                if ancestor_check.returncode != 0:
+                if self._task_branch_is_absorbed(project, task):
+                    if not self._task_has_successful_merge_run(task, store):
+                        return self._block_task(
+                            task,
+                            detail=(
+                                f"Task branch {task.branch_name!r} has no recorded successful "
+                                f"merge into {project.default_branch!r}. Refusing to mark the "
+                                "task done from unmerged branch state."
+                            ),
+                            event_type="engine.task_finalization_blocked",
+                            payload={
+                                "branch": task.branch_name,
+                                "target": project.default_branch,
+                                "reason": "missing_merge_record",
+                            },
+                        )
+                else:
                     evidence = self._build_completion_evidence(
                         project=project,
                         task=task,
@@ -340,6 +416,61 @@ class BuiltinExecutor:
                 "Blocking merge because only docs or tests changed for an implementation task."
             )
         return None
+
+    def _block_task(
+        self,
+        task: Task,
+        *,
+        detail: str,
+        event_type: str,
+        payload: dict[str, Any],
+    ) -> BuiltinResult:
+        task.status = "blocked"
+        task.blocked_reason = detail
+        task.workflow_current_step = None
+        task.workflow_carried_output = None
+        return BuiltinResult(
+            outcome="blocked",
+            detail=detail,
+            events=(BuiltinEventRecord(event_type=event_type, payload=payload),),
+        )
+
+    def _task_branch_is_absorbed(self, project: Project, task: Task) -> bool:
+        if not task.branch_name:
+            return False
+        ancestor_check = run_git(
+            project.repo_path,
+            "merge-base",
+            "--is-ancestor",
+            task.branch_name,
+            project.default_branch,
+            check=False,
+        )
+        return ancestor_check.returncode == 0
+
+    def _task_branch_has_committed_delta(self, project: Project, task: Task) -> bool | None:
+        if not task.branch_name:
+            return None
+        result = run_git(
+            project.repo_path,
+            "rev-list",
+            "--right-only",
+            "--count",
+            f"{project.default_branch}...{task.branch_name}",
+            check=False,
+        )
+        if result.returncode != 0:
+            return None
+        try:
+            return int(result.stdout or "0") > 0
+        except ValueError:
+            return None
+
+    def _task_has_successful_merge_run(self, task: Task, store: ForemanStore) -> bool:
+        return any(
+            run.workflow_step == "merge" and run.status == "completed" and run.outcome == "success"
+            for run in store.list_runs(task_id=task.id)
+        )
 
     def _changes_are_docs_or_tests_only(self, changed_files: tuple[str, ...]) -> bool:
         """Return True when every changed path is documentation or test-only."""
