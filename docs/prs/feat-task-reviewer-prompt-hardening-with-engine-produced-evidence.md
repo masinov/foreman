@@ -15,14 +15,16 @@ Update the real Foreman review path so reviewer prompts receive explicit engine-
 
 - `foreman/models.py` — `CompletionEvidence.__str__()` (+14 lines)
 - `foreman/orchestrator.py` — `_build_prompt()` injects `completion_evidence` for `code_reviewer` (+5 lines)
+- `foreman/migrations.py` — migration 5: adds `completion_evidence_json` column to tasks table
+- `foreman/store.py` — persists and retrieves `completion_evidence_json` on task records
 - `roles/code_reviewer.toml` — evidence section before Git Status + weighting instruction (+11 lines)
-- `tests/test_orchestrator.py` — `ReviewerPromptHardeningTests`: 7 tests (+426 lines)
+- `tests/test_orchestrator.py` — `CompletionEvidenceModelTests`, `FalsePositiveCompletionEvidenceTests`, `ReviewerPromptHardeningTests`: 14 + 7 tests
 - `docs/sprints/current.md` — task marked done
 - `docs/STATUS.md` — active branch updated
 
 ## Migrations
 
-- none (no schema changes)
+- **Migration 5** — adds `completion_evidence_json TEXT NOT NULL DEFAULT ''` column to `tasks` table (`foreman/migrations.py`)
 
 ## Risks
 
