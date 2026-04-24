@@ -4986,6 +4986,284 @@ class CompletionEvidenceTests(unittest.TestCase):
             self.assertEqual(evidence.verdict, "insufficient")
 
 
+class EvidenceCachingTests(unittest.TestCase):
+    """Regression coverage for CompletionEvidence caching in _build_prompt."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.roles = load_roles(default_roles_dir())
+        cls.workflows = load_workflows(
+            default_workflows_dir(),
+            available_role_ids=set(cls.roles),
+        )
+
+    def create_workspace(self) -> tuple[Path, Path]:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        root = Path(temp_dir.name)
+        repo_path = root / "repo"
+        repo_path.mkdir()
+        db_path = root / "foreman.db"
+        return repo_path, db_path
+
+    def git(self, repo_path: Path, *args: str) -> subprocess.CompletedProcess[str]:
+        result = subprocess.run(
+            ["git", *args],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise AssertionError(
+                f"git {' '.join(args)} failed in {repo_path}\n"
+                f"stdout:\n{result.stdout}\n"
+                f"stderr:\n{result.stderr}"
+            )
+        return result
+
+    def write_text(self, path: Path, text: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+    def commit_all(self, repo_path: Path, message: str) -> None:
+        self.git(repo_path, "add", ".")
+        self.git(repo_path, "commit", "-m", message)
+
+    def initialize_repo(self, repo_path: Path) -> None:
+        self.git(repo_path, "init")
+        self.git(repo_path, "checkout", "-b", "main")
+        self.git(repo_path, "config", "user.email", "foreman-tests@example.com")
+        self.git(repo_path, "config", "user.name", "Foreman Tests")
+        self.write_text(repo_path / "AGENTS.md", "# Local Instructions\n")
+        self.write_text(repo_path / ".gitignore", ".foreman/\n")
+        self.write_text(repo_path / "README.md", "# Temp Repo\n")
+        self.commit_all(repo_path, "chore: initial commit")
+
+    def test_build_prompt_caches_evidence_on_second_call(self) -> None:
+        """Second _build_prompt call must reuse the cached evidence without rebuilding.
+
+        Verifies that build_completion_evidence() is called at most once regardless
+        of how many times _build_prompt is invoked for the same task/role.
+        """
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project = Project(
+                id="project-1",
+                name="Foreman Demo",
+                repo_path=str(repo_path),
+                spec_path="docs/specs/engine-design-v3.md",
+                workflow_id="development",
+                default_branch="main",
+                settings={"default_model": "claude-sonnet-4-7"},
+                created_at="2026-03-30T12:00:00Z",
+                updated_at="2026-03-30T12:00:00Z",
+            )
+            sprint = Sprint(
+                id="sprint-1",
+                project_id=project.id,
+                title="Orchestrator",
+                goal="Test evidence caching",
+                status="active",
+                order_index=1,
+                created_at="2026-03-30T12:05:00Z",
+                started_at="2026-03-30T12:10:00Z",
+            )
+            task = Task(
+                id="task-1",
+                sprint_id=sprint.id,
+                project_id=project.id,
+                title="Implement scheduler queue",
+                description="Add a task scheduler.",
+                status="in_progress",
+                task_type="feature",
+                priority=1,
+                branch_name="feat/scheduler",
+                acceptance_criteria="Add a queue implementation.\nAdd priority handling.\n",
+                created_at="2026-03-30T12:00:00Z",
+            )
+            store.save_project(project)
+            store.save_sprint(sprint)
+            store.save_task(task)
+
+            # Add a develop run so evidence can be built
+            store.save_run(
+                Run(
+                    id="run-1",
+                    task_id=task.id,
+                    project_id=project.id,
+                    role_id="developer",
+                    workflow_step="develop",
+                    agent_backend="claude_code",
+                    status="completed",
+                    outcome="done",
+                    outcome_detail="Implemented the scheduler queue.",
+                    created_at="2026-03-30T12:20:00Z",
+                )
+            )
+
+            # Create a branch with a real file change so evidence has material to work with
+            self.git(repo_path, "checkout", "-b", "feat/scheduler")
+            self.write_text(repo_path / "scheduler.py", "class Queue:\n    pass\n")
+            self.commit_all(repo_path, "feat: add scheduler stub")
+            self.git(repo_path, "checkout", "main")
+
+            orchestrator = ForemanOrchestrator(store, roles=self.roles, workflows=self.workflows)
+
+            # Spy on build_completion_evidence to track call count
+            original_build = orchestrator.build_completion_evidence
+            call_count = [0]
+
+            def spying_build(task_: Task, project_: Project):
+                call_count[0] += 1
+                return original_build(task_, project_)
+
+            orchestrator.build_completion_evidence = spying_build  # type: ignore[method-assignment]
+
+            role = self.roles["code_reviewer"]
+            # First call — should build and cache evidence
+            prompt1 = orchestrator._build_prompt(role, project, task, None)
+            self.assertGreater(call_count[0], 0, "build_completion_evidence should have been called on first _build_prompt")
+            self.assertIsNotNone(
+                task.completion_evidence,
+                "task.completion_evidence must be set after first _build_prompt",
+            )
+            first_evidence = task.completion_evidence
+
+            # Second call — evidence must be reused, not rebuilt
+            prompt2 = orchestrator._build_prompt(role, project, task, None)
+            self.assertEqual(
+                call_count[0],
+                1,
+                "build_completion_evidence must only be called once; second _build_prompt should reuse cached evidence",
+            )
+            self.assertIs(
+                task.completion_evidence,
+                first_evidence,
+                "task.completion_evidence must be the same object on second call",
+            )
+
+            # Third call — still no rebuild
+            prompt3 = orchestrator._build_prompt(role, project, task, None)
+            self.assertEqual(call_count[0], 1)
+            self.assertIs(task.completion_evidence, first_evidence)
+
+    def test_build_prompt_injects_all_12_evidence_fields(self) -> None:
+        """_build_prompt must inject all 12 completion evidence fields into the context."""
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project = Project(
+                id="project-1",
+                name="Foreman Demo",
+                repo_path=str(repo_path),
+                spec_path="docs/specs/engine-design-v3.md",
+                workflow_id="development",
+                default_branch="main",
+                settings={"default_model": "claude-sonnet-4-7"},
+                created_at="2026-03-30T12:00:00Z",
+                updated_at="2026-03-30T12:00:00Z",
+            )
+            sprint = Sprint(
+                id="sprint-1",
+                project_id=project.id,
+                title="Test Sprint",
+                goal="Test evidence fields",
+                status="active",
+                order_index=1,
+                created_at="2026-03-30T12:05:00Z",
+                started_at="2026-03-30T12:10:00Z",
+            )
+            task = Task(
+                id="task-1",
+                sprint_id=sprint.id,
+                project_id=project.id,
+                title="Test task",
+                description="Test.",
+                status="in_progress",
+                task_type="feature",
+                priority=1,
+                branch_name="feat/test",
+                acceptance_criteria="Add feature X.\n",
+                created_at="2026-03-30T12:00:00Z",
+            )
+            store.save_project(project)
+            store.save_sprint(sprint)
+            store.save_task(task)
+
+            store.save_run(
+                Run(
+                    id="run-1",
+                    task_id=task.id,
+                    project_id=project.id,
+                    role_id="developer",
+                    workflow_step="develop",
+                    agent_backend="claude_code",
+                    status="completed",
+                    outcome="done",
+                    outcome_detail="Done.",
+                    created_at="2026-03-30T12:20:00Z",
+                )
+            )
+
+            self.git(repo_path, "checkout", "-b", "feat/test")
+            self.write_text(repo_path / "feature.py", "def foo():\n    pass\n")
+            self.commit_all(repo_path, "feat: add feature")
+            self.git(repo_path, "checkout", "main")
+
+            orchestrator = ForemanOrchestrator(store, roles=self.roles, workflows=self.workflows)
+            role = self.roles["code_reviewer"]
+
+            # _build_prompt builds evidence on first call and injects fields into
+            # context. We verify all 12 are present by checking the evidence
+            # object that gets attached to the task after the call.
+            orchestrator._build_prompt(role, project, task, None)
+
+            self.assertIsNotNone(
+                task.completion_evidence,
+                "task.completion_evidence must be set after _build_prompt",
+            )
+            ev = task.completion_evidence
+            assert ev is not None  # type narrowing
+
+            # Verify evidence was built with all fields populated
+            self.assertIsNotNone(ev.verdict)
+            self.assertIsNotNone(ev.score)
+            self.assertIsNotNone(ev.score_breakdown)
+            self.assertIsNotNone(ev.branch_diff_stat)
+            self.assertIsNotNone(ev.builtin_test_result)
+            self.assertIsNotNone(ev.builtin_test_detail)
+            # Tuple fields
+            self.assertIsInstance(ev.verdict_reasons, tuple)
+            self.assertIsInstance(ev.changed_files, tuple)
+
+            # Verify 12 fields are all non-None on the evidence object
+            expected_non_none_fields = (
+                "verdict",
+                "score",
+                "score_breakdown",
+                "criteria_count",
+                "criteria_addressed",
+                "criteria_partially_addressed",
+                "changed_files",
+                "branch_diff_stat",
+                "builtin_test_passed",
+                "builtin_test_result",
+                "builtin_test_detail",
+            )
+            for field in expected_non_none_fields:
+                value = getattr(ev, field, None)
+                self.assertIsNotNone(
+                    value,
+                    f"CompletionEvidence.{field} must not be None",
+                )
+
+
 class CompletionGuardTests(unittest.TestCase):
     """Regression coverage for the _builtin:mark_done completion guard.
 

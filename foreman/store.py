@@ -30,32 +30,6 @@ def _json_loads(raw_value: str) -> Any:
     return json.loads(raw_value) if raw_value else None
 
 
-def _load_json_loads(raw_value: str) -> Any:
-    """Load a JSON value that may be either a dict (object) or a list (array)."""
-    if not raw_value:
-        return None
-    try:
-        parsed = json.loads(raw_value)
-        if isinstance(parsed, (dict, list)):
-            return parsed
-    except (json.JSONDecodeError, TypeError):
-        pass
-    return None
-
-
-def _serialize_evidence(evidence: Any) -> str:
-    """Serialize a completion evidence object (dataclass or dict) to JSON."""
-    if evidence is None:
-        return ""
-    if isinstance(evidence, dict):
-        return json.dumps(evidence, sort_keys=True)
-    try:
-        from dataclasses import asdict
-        return json.dumps(asdict(evidence), sort_keys=True)
-    except Exception:
-        return json.dumps({"error": str(evidence)}, sort_keys=True)
-
-
 def _load_json_dict(raw_value: str) -> dict[str, Any]:
     parsed = _json_loads(raw_value)
     if parsed in (None, ""):
@@ -125,8 +99,9 @@ def _row_to_task(row: sqlite3.Row) -> Task:
         if "completion_evidence_json" in row.keys()
         else ""
     )
+    evidence_dict = _load_json_dict(raw_evidence) if raw_evidence else None
     completion_evidence: CompletionEvidence | None = (
-        _load_json_loads(raw_evidence) if raw_evidence else None
+        CompletionEvidence(**evidence_dict) if isinstance(evidence_dict, dict) else None
     )
     return Task(
         id=row["id"],

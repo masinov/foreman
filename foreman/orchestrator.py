@@ -106,37 +106,6 @@ class SupervisorMergeResult:
     completion_evidence: "CompletionEvidence | None" = None
 
 
-@dataclass(slots=True, frozen=True)
-class CompletionEvidence:
-    """Structured evidence summary for a task completion decision.
-
-    Bundles acceptance-criteria text, branch diff context, changed files,
-    agent outputs, and built-in test results so downstream review
-    (human or automated) can assess whether the implementation actually
-    satisfies the task intent — not just whether the developer marked
-    it done or the reviewer approved it.
-    """
-
-    task_id: str
-    task_title: str
-    acceptance_criteria: str
-    criteria_count: int = 0
-    criteria_addressed: int = 0
-    criteria_partially_addressed: int = 0
-    changed_files: tuple[str, ...] = ()
-    diff_context_lines: int = 0
-    branch_diff_stat: str = ""
-    agent_outputs: tuple[str, ...] = ()
-    builtin_test_result: str = ""
-    builtin_test_passed: bool = False
-    builtin_test_detail: str = ""
-    score: float = 0.0
-    score_breakdown: str = ""
-    verdict: str = "unknown"
-    verdict_reasons: tuple[str, ...] = ()
-    built_at: str = field(default_factory=utc_now_text)
-
-
 class AgentExecutor(Protocol):
     """Execution protocol for workflow agent steps."""
 
@@ -1772,6 +1741,13 @@ class ForemanOrchestrator:
                 current_task=task,
                 carried_output=carried_output,
             )
+        # Reuse cached evidence on the task record to avoid recomputing on
+        # repeated reviewer prompts. Built once at first reviewer render.
+        evidence = task.completion_evidence
+        if evidence is None and role.id in self.roles:
+            evidence = self.build_completion_evidence(task, project)
+            task.completion_evidence = evidence
+            self.store.save_task(task)
         context = {
             "task_title": task.title,
             "task_description": task.description or "",
@@ -1792,6 +1768,21 @@ class ForemanOrchestrator:
             ),
             "recent_commits": self._safe_recent_commits(project.repo_path, task.branch_name),
         }
+        if evidence is not None:
+            context.update({
+                "completion_verdict": evidence.verdict,
+                "completion_verdict_reasons": evidence.verdict_reasons,
+                "completion_score": evidence.score,
+                "completion_score_breakdown": evidence.score_breakdown,
+                "completion_criteria_count": evidence.criteria_count,
+                "completion_criteria_addressed": evidence.criteria_addressed,
+                "completion_criteria_partially_addressed": evidence.criteria_partially_addressed,
+                "completion_changed_files": evidence.changed_files,
+                "completion_branch_diff_stat": evidence.branch_diff_stat,
+                "completion_builtin_test_passed": evidence.builtin_test_passed,
+                "completion_builtin_test_result": evidence.builtin_test_result,
+                "completion_builtin_test_detail": evidence.builtin_test_detail,
+            })
         return role.render_prompt(context)
 
     def _load_repo_instructions(self, repo_path: str) -> str:
