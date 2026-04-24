@@ -961,6 +961,127 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 transitions,
             )
 
+    def test_merge_conflict_resets_step_visit_budget_for_conflict_resolution_cycle(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+        self.write_text(repo_path / "docs" / "sprints" / "current.md", "base\n")
+        self.commit_all(repo_path, "docs: add sprint baseline")
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+            project.settings["completion_guard_enabled"] = False
+            project.settings["max_step_visits"] = 1
+            store.save_project(project)
+            executor = ScriptedAgentExecutor({})
+
+            def developer_one(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
+                self.assertIsNone(carried_output)
+                self.write_text(
+                    repo_path / "docs" / "sprints" / "current.md",
+                    "branch update\n",
+                )
+                self.write_text(repo_path / "ready.txt", "ready\n")
+                self.commit_all(repo_path, "docs: branch updates sprint state")
+                self.git(repo_path, "checkout", "main")
+                self.write_text(
+                    repo_path / "docs" / "sprints" / "current.md",
+                    "main update\n",
+                )
+                self.commit_all(repo_path, "docs: main updates sprint state")
+                self.git(repo_path, "checkout", task.branch_name or "feat/task-1")
+                return AgentExecutionResult(
+                    outcome="done",
+                    detail="Task docs updated on the branch.",
+                )
+
+            def reviewer_one(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
+                del task
+                self.assertIsNone(carried_output)
+                return AgentExecutionResult(
+                    outcome="approve",
+                    detail="Approved before merge.",
+                )
+
+            def developer_two(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
+                del task
+                assert carried_output is not None
+                self.assertIn("Merge conflict against 'main'.", carried_output)
+                merge_result = subprocess.run(
+                    ["git", "merge", "main"],
+                    cwd=repo_path,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                self.assertNotEqual(merge_result.returncode, 0)
+                self.write_text(
+                    repo_path / "docs" / "sprints" / "current.md",
+                    "resolved main + branch update\n",
+                )
+                self.commit_all(repo_path, "docs: resolve sprint merge conflict")
+                return AgentExecutionResult(
+                    outcome="done",
+                    detail="Resolved the merge conflict against main.",
+                )
+
+            def reviewer_two(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
+                del task
+                self.assertIsNone(carried_output)
+                self.assertIn("Resolved the merge conflict against main.", prompt)
+                return AgentExecutionResult(
+                    outcome="approve",
+                    detail="Approved after conflict resolution.",
+                )
+
+            executor.handlers.update(
+                {
+                    ("developer", 1): developer_one,
+                    ("code_reviewer", 1): reviewer_one,
+                    ("developer", 2): developer_two,
+                    ("code_reviewer", 2): reviewer_two,
+                }
+            )
+
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=self.roles,
+                workflows=self.workflows,
+                agent_executor=executor,
+            )
+
+            result = orchestrator.run_project(project.id)
+
+            self.assertEqual(result.executed_task_ids, (task.id,))
+            self.assertEqual(result.blocked_task_ids, ())
+            updated_task = store.get_task(task.id)
+            self.assertIsNotNone(updated_task)
+            assert updated_task is not None
+            self.assertEqual(updated_task.status, "done")
+            self.assertEqual(
+                updated_task.step_visit_counts,
+                {
+                    "develop": 1,
+                    "review": 1,
+                    "test": 1,
+                    "merge": 1,
+                    "done": 1,
+                },
+            )
+            reset_events = [
+                event.payload
+                for event in store.list_events(task_id=task.id)
+                if event.event_type == "workflow.step_visit_reset"
+            ]
+            self.assertIn(
+                {
+                    "reason": "merge_conflict_recovery",
+                    "from_step": "merge",
+                    "to_step": "develop",
+                },
+                reset_events,
+            )
+
     def test_prepare_task_branch_for_conflict_resolution_refreshes_existing_branch(self) -> None:
         repo_path, db_path = self.create_workspace()
         self.initialize_repo(repo_path)

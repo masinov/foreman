@@ -1426,6 +1426,17 @@ class ForemanOrchestrator:
                 },
             )
             carried_output = detail if transition.carry_output else None
+            if transition.trigger == "completion:conflict":
+                current_task.step_visit_counts = {}
+                self._emit_event(
+                    run,
+                    "workflow.step_visit_reset",
+                    {
+                        "reason": "merge_conflict_recovery",
+                        "from_step": current_step,
+                        "to_step": transition.to_step,
+                    },
+                )
             current_task.workflow_current_step = None
             current_task.workflow_carried_output = None
             self.store.save_task(current_task)
