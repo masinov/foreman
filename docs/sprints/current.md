@@ -69,27 +69,24 @@ work should be rerun on that corrected baseline.
 
 - [done] Backend guard for weak completions (task-backend-guard-for-weak-completions)
   - Branch: `feat/task-backend-guard-for-weak-completions`
-  - Added completion guard to `_builtin:mark_done` in `foreman/builtins.py`
-  - Guard mirrors the existing `_builtin:merge` guard: builds completion evidence (git diff,
-    criteria coverage, test results) and blocks feature/fix/refactor tasks when evidence is weak
-    (no material code changes, or docs/tests-only changes)
-  - Post-merge invocation handled via `git merge-base --is-ancestor feat/t main`: when the task
-    branch has been absorbed into the default branch, the diff is naturally empty but the guard
-    already ran at merge time, so mark_done proceeds without re-evaluating
-  - Guard respects `completion_guard_enabled` project setting (default True) and skips for
-    non-implementation task types (docs/spike/chore)
-  - 7 regression tests in `MarkDoneCompletionGuardTests`: strong/adequate pass, insufficient/weak
-    block, event emission, guard-disable setting, non-implementation task type bypass
-- [done] Reviewer prompt hardening with engine-produced evidence follow-up: cache completion evidence on task record (task-4221cd659154)
-  - Branch: `chore/task-4221cd659154` (this branch)
-  - `CompletionEvidence` is built once at first reviewer prompt render via `build_completion_evidence()` in `_build_prompt`
-  - Persisted to the task record via `store.save_task()` after first build
-  - Subsequent reviewer prompts reuse `task.completion_evidence` without recomputing
-  - Evidence fields injected into reviewer prompt context: verdict, reasons, score, score_breakdown, criteria counts, changed files, diff stat, builtin test result
-  - `Task.completion_evidence` typed as `CompletionEvidence | None` in models.py
-  - Store deserializes `CompletionEvidence` from JSON in `_row_to_task`
-- [todo] Completion truth contract docs (task-completion-truth-contract-docs)
-- [todo] Reviewer prompt hardening with engine-produced evidence (task-reviewer-prompt-hardening-with-engine-produced-evidence)
+  - Added completion guard enforcement before terminal completion
+  - Hardened `_builtin:merge` and `_builtin:mark_done` against dirty or
+    non-committed branch finalization
+
+- [blocked] Completion truth contract docs (task-completion-truth-contract-docs)
+  - Branch: `docs/task-completion-truth-contract-docs`
+  - Previously stalled in a merge-conflict loop due to stale branch reuse
+  - Should be rerun on the corrected conflict-recovery path
+
+- [blocked] Reviewer prompt hardening with engine-produced evidence (task-reviewer-prompt-hardening-with-engine-produced-evidence)
+  - Branch: `feat/task-reviewer-prompt-hardening-with-engine-produced-evidence`
+  - Previously stalled after malformed output-contract and stale-branch issues
+  - Should be rerun on the corrected runtime path
+
+- [blocked] Reviewer prompt hardening follow-up: cache completion evidence on task record (task-4221cd659154)
+  - Branch: `chore/task-4221cd659154`
+  - Left blocked by malformed reviewer output during the live run
+  - Should be rerun on the corrected runtime path
 
 ## Validation
 

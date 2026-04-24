@@ -3,13 +3,12 @@
 ## Current sprint
 
 - Sprint: `sprint-46-completion-truth-hardening` (active)
-- Branch: `chore/task-4221cd659154`
+- Branch: `main`
+- Next queued sprint: `sprint-47-active-run-lease-and-heartbeat-recovery`
 
 ## Active branches
 
-- `chore/task-4221cd659154` — caches `CompletionEvidence` on the `Task` record at first reviewer prompt render; subsequent reviewer prompts reuse the cached value without recomputing. Evidence fields are injected into reviewer prompt context. Modifies: `models.py`, `store.py`, `orchestrator.py`.
-- `fix/native-run-step-lease-recovery` — hardens native-step ownership and recovery after the stranded review runs observed in sprint 46.
-- `feat/task-backend-guard-for-weak-completions` — recovered sprint-46 task-3 branch. The branch now enforces the completion guard at `_builtin:merge` instead of `_builtin:mark_done`, blocks implementation tasks only when the branch has no material changes or only docs/tests changes, preserves specific blocked reasons in orchestrator outcomes, and adds orchestrator regression coverage for merge-time guard behavior. The earlier live run stalled during `develop`; its stale `running` record was reconciled and the task was reset to `todo` so Foreman can rerun it cleanly from this repaired branch.
+- none; recent sprint-46 recovery slices were merged into local `main`
 
 ## Completed this session (sprints 36–46)
 
