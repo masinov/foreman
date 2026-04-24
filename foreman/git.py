@@ -29,6 +29,7 @@ class GitMergeResult:
 
     success: bool
     detail: str
+    conflict: bool = False
 
 
 def run_git(repo_path: str | Path, *args: str, check: bool = True) -> GitCommandResult:
@@ -126,7 +127,45 @@ def merge_branch(
 
     run_git(repo_path, "merge", "--abort", check=False)
     detail = result.stderr or result.stdout or "git merge failed"
-    return GitMergeResult(success=False, detail=detail)
+    return GitMergeResult(
+        success=False,
+        detail=detail,
+        conflict=_looks_like_merge_conflict(detail),
+    )
+
+
+def sync_branch_with_base(
+    repo_path: str | Path,
+    branch_name: str,
+    base_branch: str,
+) -> GitMergeResult:
+    """Merge the current base branch into an existing task branch.
+
+    Foreman uses this during merge-conflict recovery so a stale task branch can
+    be refreshed against the latest default branch before the developer tries to
+    resolve the conflict and return for another review cycle.
+    """
+
+    checkout_branch(repo_path, branch_name)
+    result = run_git(
+        repo_path,
+        "merge",
+        "--no-ff",
+        "--no-edit",
+        base_branch,
+        check=False,
+    )
+    if result.returncode == 0:
+        detail = result.stdout or f"Merged {base_branch} into {branch_name}."
+        return GitMergeResult(success=True, detail=detail)
+
+    run_git(repo_path, "merge", "--abort", check=False)
+    detail = result.stderr or result.stdout or "git merge failed"
+    return GitMergeResult(
+        success=False,
+        detail=detail,
+        conflict=_looks_like_merge_conflict(detail),
+    )
 
 
 def status_text(repo_path: str | Path) -> str:
@@ -178,3 +217,12 @@ def recent_commits(
     if result.returncode != 0:
         return ""
     return result.stdout
+
+
+def _looks_like_merge_conflict(detail: str) -> bool:
+    normalized = detail.lower()
+    return (
+        "conflict (" in normalized
+        or "automatic merge failed" in normalized
+        or "fix conflicts and then commit" in normalized
+    )

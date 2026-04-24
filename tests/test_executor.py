@@ -18,7 +18,7 @@ class RunnerExecutorConfigTests(unittest.TestCase):
         """Default configuration values."""
         config = RunnerExecutorConfig()
         self.assertEqual(config.default_timeout_seconds, 3600)
-        self.assertEqual(config.default_max_cost_usd, 10.0)
+        self.assertEqual(config.default_max_cost_usd, 1000.0)
         self.assertEqual(config.default_permission_mode, "auto")
         self.assertTrue(config.capture_all_events)
 

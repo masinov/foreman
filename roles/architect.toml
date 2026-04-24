@@ -45,7 +45,7 @@ When done, end with: {completion_marker}
 [completion]
 marker = "TASK_COMPLETE"
 timeout_minutes = 15
-max_cost_usd = 5.0
+max_cost_usd = 1000.0
 
 [completion.output]
 extract_json = true

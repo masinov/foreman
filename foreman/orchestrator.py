@@ -22,6 +22,7 @@ from .git import (
     is_worktree_clean,
     recent_commits,
     status_text,
+    sync_branch_with_base,
 )
 from .models import CompletionEvidence, Event, Project, Run, Sprint, Task, utc_now_text
 from .runner import AgentRunConfig, ClaudeCodeRunner, CodexRunner, run_with_retry
@@ -66,6 +67,7 @@ class AgentExecutionResult:
     duration_ms: int | None = None
     model: str | None = None
     events: tuple[AgentEventRecord, ...] = ()
+    events_streamed: bool = False
 
 
 @dataclass(slots=True)
@@ -101,6 +103,38 @@ class SupervisorMergeResult:
     task_status: str
     sprint_status: str
     stop_reason: str | None = None
+    completion_evidence: "CompletionEvidence | None" = None
+
+
+@dataclass(slots=True, frozen=True)
+class CompletionEvidence:
+    """Structured evidence summary for a task completion decision.
+
+    Bundles acceptance-criteria text, branch diff context, changed files,
+    agent outputs, and built-in test results so downstream review
+    (human or automated) can assess whether the implementation actually
+    satisfies the task intent — not just whether the developer marked
+    it done or the reviewer approved it.
+    """
+
+    task_id: str
+    task_title: str
+    acceptance_criteria: str
+    criteria_count: int = 0
+    criteria_addressed: int = 0
+    criteria_partially_addressed: int = 0
+    changed_files: tuple[str, ...] = ()
+    diff_context_lines: int = 0
+    branch_diff_stat: str = ""
+    agent_outputs: tuple[str, ...] = ()
+    builtin_test_result: str = ""
+    builtin_test_passed: bool = False
+    builtin_test_detail: str = ""
+    score: float = 0.0
+    score_breakdown: str = ""
+    verdict: str = "unknown"
+    verdict_reasons: tuple[str, ...] = ()
+    built_at: str = field(default_factory=utc_now_text)
 
 
 class AgentExecutor(Protocol):
@@ -411,6 +445,10 @@ class ForemanOrchestrator:
                     match = re.search(r"(\d+)\s*-", line)
                     if match:
                         total_deletions += int(match.group(1))
+            elif re.match(r"\d+ file", line):
+                pass  # summary line captured below
+            elif re.match(r"\d+ insertion", line) or re.match(r"\d+ deletion", line):
+                pass  # cumulative stat line
             context_lines += 1
 
         summary = f"{len(changed_files)} file(s), +{total_additions}, -{total_deletions}"
@@ -423,6 +461,7 @@ class ForemanOrchestrator:
             if run.status not in {"completed", "failed", "killed", "timeout"}:
                 continue
             detail = run.outcome_detail or ""
+            # Capture first meaningful chunk of output (up to 500 chars)
             snippet = detail[:500].strip() if detail.strip() else ""
             if snippet:
                 role_and_step = f"[{run.role_id} / {run.workflow_step}]"
@@ -441,7 +480,10 @@ class ForemanOrchestrator:
         contain substantive references to its key terms.  Partial coverage
         is when only a subset of the relevant terms appear.
         """
-        key_terms = re.findall(r"\b\w{4,}\b", criterion.lower())
+        key_terms = [
+            t.strip().rstrip(".,;:!?()[]{}'\"").strip()
+            for t in re.findall(r"\b\w{4,}\b", criterion.lower())
+        ]
         if not key_terms:
             return (False, False)
 
@@ -556,12 +598,15 @@ class ForemanOrchestrator:
         if task is None:
             return None
 
+        completion_evidence: CompletionEvidence | None = None
         if task.status != "done":
             task.status = "done"
             task.blocked_reason = None
             task.workflow_current_step = None
             task.workflow_carried_output = None
             task.completed_at = task.completed_at or utc_now_text()
+            completion_evidence = self.build_completion_evidence(task, project)
+            task.completion_evidence = completion_evidence
             self.store.save_task(task)
 
             run = self._create_system_run(
@@ -577,6 +622,26 @@ class ForemanOrchestrator:
                     "branch": branch_name,
                     "target": project.default_branch,
                     "task_id": task.id,
+                    "evidence_score": completion_evidence.score if completion_evidence else None,
+                    "evidence_verdict": completion_evidence.verdict if completion_evidence else None,
+                },
+            )
+            self._emit_event(
+                run,
+                "engine.completion_evidence",
+                {
+                    "task_id": task.id,
+                    "criteria_count": completion_evidence.criteria_count if completion_evidence else 0,
+                    "criteria_addressed": completion_evidence.criteria_addressed if completion_evidence else 0,
+                    "criteria_partially_addressed": (
+                        completion_evidence.criteria_partially_addressed if completion_evidence else 0
+                    ),
+                    "changed_files": list(completion_evidence.changed_files) if completion_evidence else [],
+                    "builtin_test_passed": (
+                        completion_evidence.builtin_test_passed if completion_evidence else False
+                    ),
+                    "score": completion_evidence.score if completion_evidence else 0.0,
+                    "verdict": completion_evidence.verdict if completion_evidence else "unknown",
                 },
             )
 
@@ -593,6 +658,7 @@ class ForemanOrchestrator:
             task_status=task.status,
             sprint_status=sprint.status if sprint is not None else "unknown",
             stop_reason=stop_reason,
+            completion_evidence=completion_evidence,
         )
 
     def select_next_task(self, project: Project) -> Task | None:
@@ -1057,6 +1123,7 @@ class ForemanOrchestrator:
                 self.store.save_task(current_task)
                 break
 
+            branch_sync_event: tuple[str, dict[str, Any]] | None = None
             if current_task.branch_name and step_def.role not in {
                 "_builtin:merge",
                 "_builtin:mark_done",
@@ -1067,6 +1134,19 @@ class ForemanOrchestrator:
                     create=True,
                     base_branch=project.default_branch,
                 )
+                (
+                    carried_output,
+                    branch_sync_event,
+                ) = self._prepare_task_branch_for_step(
+                    project=project,
+                    task=current_task,
+                    step=current_step,
+                    carried_output=carried_output,
+                )
+
+            current_task.workflow_current_step = current_step
+            current_task.workflow_carried_output = carried_output
+            self.store.save_task(current_task)
 
             if step_def.role == "_builtin:human_gate":
                 run = self._create_running_run(
@@ -1176,6 +1256,9 @@ class ForemanOrchestrator:
                     "workflow.step_started",
                     {"step": current_step, "visit_count": visit_count},
                 )
+                if branch_sync_event is not None:
+                    event_type, payload = branch_sync_event
+                    self._emit_event(run, event_type, payload)
                 session_key = (role.id, role.agent.backend)
                 session_id: str | None = None
                 if role.agent.session_persistence:
@@ -1196,8 +1279,16 @@ class ForemanOrchestrator:
                     prompt=prompt,
                     session_id=session_id,
                     carried_output=carried_output,
+                    event_recorder=lambda event_record: self._persist_agent_event(
+                        run,
+                        current_task,
+                        project,
+                        role.id,
+                        event_record,
+                    ),
                 )
-                self._emit_agent_events(run, current_task, project, role.id, result.events)
+                if not result.events_streamed:
+                    self._emit_agent_events(run, current_task, project, role.id, result.events)
                 self._complete_run(
                     run,
                     status=result.status,
@@ -1209,6 +1300,84 @@ class ForemanOrchestrator:
                     token_count=result.token_count,
                     duration_ms=result.duration_ms,
                 )
+                retry_reason = self._output_contract_retry_reason(role, result)
+                if retry_reason is not None:
+                    self._emit_event(
+                        run,
+                        "engine.output_contract_retry",
+                        {
+                            "step": current_step,
+                            "role_id": role.id,
+                            "reason": retry_reason,
+                            "retry_attempt": 1,
+                        },
+                    )
+                    retry_prompt = self._append_output_contract_retry_instruction(
+                        prompt,
+                        role,
+                        retry_reason,
+                    )
+                    retry_session_id = result.session_id or session_id
+                    retry_run = self._create_running_run(
+                        current_task,
+                        role_id=role.id,
+                        workflow_step=current_step,
+                        agent_backend=role.agent.backend,
+                        model=model or None,
+                        branch_name=current_task.branch_name,
+                        prompt_text=retry_prompt,
+                    )
+                    self._write_runtime_context(
+                        retry_run,
+                        project,
+                        context_projection=context_projection,
+                    )
+                    self._emit_event(
+                        retry_run,
+                        "workflow.step_started",
+                        {
+                            "step": current_step,
+                            "visit_count": visit_count,
+                            "retry_attempt": 1,
+                        },
+                    )
+                    retry_result = self._execute_agent_step(
+                        role=role,
+                        project=project,
+                        task=current_task,
+                        workflow_step=current_step,
+                        prompt=retry_prompt,
+                        session_id=retry_session_id,
+                        carried_output=carried_output,
+                        event_recorder=lambda event_record: self._persist_agent_event(
+                            retry_run,
+                            current_task,
+                            project,
+                            role.id,
+                            event_record,
+                        ),
+                    )
+                    if not retry_result.events_streamed:
+                        self._emit_agent_events(
+                            retry_run,
+                            current_task,
+                            project,
+                            role.id,
+                            retry_result.events,
+                        )
+                    self._complete_run(
+                        retry_run,
+                        status=retry_result.status,
+                        outcome=retry_result.outcome,
+                        detail=retry_result.detail,
+                        model=retry_result.model or model or None,
+                        session_id=retry_result.session_id,
+                        cost_usd=retry_result.cost_usd,
+                        token_count=retry_result.token_count,
+                        duration_ms=retry_result.duration_ms,
+                    )
+                    run = retry_run
+                    result = retry_result
                 if role.agent.session_persistence and result.session_id:
                     session_ids[session_key] = result.session_id
                 outcome = result.outcome
@@ -1274,7 +1443,7 @@ class ForemanOrchestrator:
     ) -> str:
         """Return the task block reason for a step outcome with no transition."""
 
-        if outcome in {"error", "killed"} and detail:
+        if outcome in {"error", "killed", "blocked"} and detail:
             return detail
         if workflow.fallback is not None:
             return workflow.fallback.message
@@ -1380,10 +1549,10 @@ class ForemanOrchestrator:
     def _run_is_stale(self, project: Project, run: Run) -> bool:
         """Return whether a persisted running run has exceeded its allowed ownership window."""
 
-        timeout_seconds = _project_timeout_seconds(project)
+        timeout_seconds = _active_run_recovery_timeout_seconds(project)
         if timeout_seconds is None or timeout_seconds <= 0:
             return False
-        reference = run.started_at or run.created_at
+        reference = self.store.get_latest_event_timestamp(run.id) or run.started_at or run.created_at
         started = _parse_utc_timestamp(reference)
         if started is None:
             return False
@@ -1647,6 +1816,85 @@ class ForemanOrchestrator:
         except GitError:
             return ""
 
+    def _prepare_task_branch_for_step(
+        self,
+        *,
+        project: Project,
+        task: Task,
+        step: str,
+        carried_output: str | None,
+    ) -> tuple[str | None, tuple[str, dict[str, Any]] | None]:
+        """Prepare one task branch before a native role step.
+
+        Merge conflicts are special: the next develop pass should work from an
+        existing task branch that has been refreshed against the latest default
+        branch whenever that refresh is clean. If the refresh still conflicts,
+        carry explicit resolution guidance into the developer prompt and force
+        the usual develop -> review cycle after the resolution.
+        """
+
+        if (
+            step != "develop"
+            or not task.branch_name
+            or not _is_merge_conflict_feedback(carried_output)
+        ):
+            return carried_output, None
+
+        sync_result = sync_branch_with_base(
+            project.repo_path,
+            task.branch_name,
+            project.default_branch,
+        )
+        if sync_result.success:
+            guidance = _append_feedback_note(
+                carried_output,
+                (
+                    f"Foreman refreshed branch {task.branch_name!r} with the latest "
+                    f"{project.default_branch!r} before this develop pass. Review the "
+                    "merged base-branch changes, make any remaining adjustments, and end "
+                    "with TASK_COMPLETE. This conflict-resolution pass will go back "
+                    "through code review before merge."
+                ),
+            )
+            return (
+                guidance,
+                (
+                    "engine.branch_sync",
+                    {
+                        "step": step,
+                        "branch": task.branch_name,
+                        "target": project.default_branch,
+                        "mode": "merge_conflict_recovery",
+                        "detail": sync_result.detail,
+                    },
+                ),
+            )
+
+        guidance = _append_feedback_note(
+            carried_output,
+            (
+                f"You are resolving a merge conflict against {project.default_branch!r}. "
+                f"Reconcile branch {task.branch_name!r} with the latest "
+                f"{project.default_branch!r} so it merges cleanly, then complete another "
+                "develop pass. Your conflict-resolution changes will go back through code "
+                "review before merge.\n\n"
+                f"Latest merge attempt detail:\n{sync_result.detail}"
+            ),
+        )
+        return (
+            guidance,
+            (
+                "engine.branch_sync_conflict",
+                {
+                    "step": step,
+                    "branch": task.branch_name,
+                    "target": project.default_branch,
+                    "mode": "merge_conflict_recovery",
+                    "detail": sync_result.detail,
+                },
+            ),
+        )
+
     def _write_runtime_context(
         self,
         run: Run,
@@ -1672,6 +1920,7 @@ class ForemanOrchestrator:
         prompt: str,
         session_id: str | None,
         carried_output: str | None,
+        event_recorder: Callable[[AgentEventRecord], None] | None = None,
     ) -> AgentExecutionResult:
         try:
             if self.agent_executor is not None:
@@ -1691,6 +1940,7 @@ class ForemanOrchestrator:
                 workflow_step=workflow_step,
                 prompt=prompt,
                 session_id=session_id,
+                event_recorder=event_recorder,
             )
         except Exception as exc:  # pragma: no cover - defensive fallback
             return AgentExecutionResult(
@@ -1714,6 +1964,7 @@ class ForemanOrchestrator:
         workflow_step: str,
         prompt: str,
         session_id: str | None,
+        event_recorder: Callable[[AgentEventRecord], None] | None = None,
     ) -> AgentExecutionResult:
         runner = self.agent_runners.get(role.agent.backend)
         if runner is None:
@@ -1762,13 +2013,14 @@ class ForemanOrchestrator:
             config,
             **retry_kwargs,
         ):
-            events.append(
-                AgentEventRecord(
-                    event_type=event.event_type,
-                    payload=dict(event.payload),
-                    timestamp=event.timestamp,
-                )
+            event_record = AgentEventRecord(
+                event_type=event.event_type,
+                payload=dict(event.payload),
+                timestamp=event.timestamp,
             )
+            events.append(event_record)
+            if event_recorder is not None:
+                event_recorder(event_record)
             if event.event_type == "agent.message":
                 text = _optional_string(event.payload.get("text"))
                 if text and (not message_fragments or message_fragments[-1] != text):
@@ -1857,6 +2109,7 @@ class ForemanOrchestrator:
             duration_ms=duration_ms,
             model=model or None,
             events=tuple(events),
+            events_streamed=event_recorder is not None,
         )
 
     def _extract_completion_output(
@@ -1885,6 +2138,53 @@ class ForemanOrchestrator:
 
         return ("done", cleaned_text or "Completed.")
 
+    def _output_contract_retry_reason(
+        self,
+        role: RoleDefinition,
+        result: AgentExecutionResult,
+    ) -> str | None:
+        """Return a retry reason when one malformed agent response merits one corrective retry."""
+
+        if result.status != "completed" or result.outcome != "error":
+            return None
+
+        if role.completion.output.extract_decision:
+            return "decision_format"
+
+        marker = role.completion.marker.strip()
+        if marker and result.detail == f"Missing completion marker `{marker}`.":
+            return "missing_completion_marker"
+
+        return None
+
+    def _append_output_contract_retry_instruction(
+        self,
+        prompt: str,
+        role: RoleDefinition,
+        reason: str,
+    ) -> str:
+        """Append a minimal corrective instruction for one malformed-output retry."""
+
+        if reason == "decision_format":
+            correction = (
+                "Your previous response did not follow the required final output format.\n"
+                "Do not do more review work.\n"
+                "Return exactly one line and nothing else:\n"
+                "APPROVE\n"
+                "DENY: <reason>\n"
+                "STEER: <specific corrective action>"
+            )
+        elif reason == "missing_completion_marker":
+            correction = (
+                "Your previous response did not include the required completion marker.\n"
+                "Do not do more work.\n"
+                f"Return your completion summary again and end with `{role.completion.marker}` "
+                "on its own line."
+            )
+        else:
+            return prompt
+        return f"{prompt}\n\n### Output Correction\n{correction}"
+
     def _emit_agent_events(
         self,
         run: Run,
@@ -1902,6 +2202,25 @@ class ForemanOrchestrator:
                 timestamp=event_record.timestamp,
             )
             self._apply_agent_signal(task, project, role_id, event_record)
+
+    def _persist_agent_event(
+        self,
+        run: Run,
+        task: Task,
+        project: Project,
+        role_id: str,
+        event_record: AgentEventRecord,
+    ) -> None:
+        """Persist one agent event immediately while a native step is active."""
+
+        self._emit_event(
+            run,
+            event_record.event_type,
+            event_record.payload,
+            role_id=role_id,
+            timestamp=event_record.timestamp,
+        )
+        self._apply_agent_signal(task, project, role_id, event_record)
 
     def _apply_agent_signal(
         self,
@@ -2145,6 +2464,24 @@ def _project_timeout_seconds(
     return 0
 
 
+def _active_run_recovery_timeout_seconds(project: Project) -> int:
+    """Return the stale-run ownership window used for crash recovery."""
+
+    setting = project.settings.get("active_run_recovery_timeout_minutes")
+    if isinstance(setting, bool):
+        setting = None
+    if isinstance(setting, int) and setting > 0:
+        return setting * 60
+    if isinstance(setting, float) and setting > 0:
+        return int(setting * 60)
+
+    project_timeout = _project_timeout_seconds(project)
+    default_timeout = 5 * 60
+    if project_timeout <= 0:
+        return default_timeout
+    return min(project_timeout, default_timeout)
+
+
 def _parse_utc_timestamp(value: str | None) -> datetime | None:
     if not value:
         return None
@@ -2197,6 +2534,21 @@ def _contains_completion_marker(text: str, marker: str) -> bool:
 def _strip_completion_marker(text: str, marker: str) -> str:
     lines = [line for line in text.splitlines() if _normalize_decision_line(line) != marker]
     return "\n".join(lines).strip()
+
+
+def _is_merge_conflict_feedback(text: str | None) -> bool:
+    if not text:
+        return False
+    normalized = text.lower()
+    return "merge conflict against" in normalized or "conflict (" in normalized
+
+
+def _append_feedback_note(existing: str | None, note: str) -> str:
+    existing = (existing or "").strip()
+    note = note.strip()
+    if not existing:
+        return note
+    return f"{existing}\n\n{note}"
 
 
 def _extract_json_block(text: str) -> str | None:

@@ -3,14 +3,54 @@
 ## Current sprint
 
 - Sprint: `sprint-46-completion-truth-hardening` (active)
-- Branch: `chore/task-false-positive-completion-regression-coverage`
+- Branch: `main`
+- Next queued sprint: `sprint-47-active-run-lease-and-heartbeat-recovery`
 
 ## Active branches
 
-- `chore/task-false-positive-completion-regression-coverage` — 14 new tests in `CompletionEvidenceTests` covering false-positive completion scenarios: docs-only, tests-only, approval-only, text-without-code, passed-tests-only, strong-completion-gate, no-branch, and failing-test signals. Tests prove verdict=insufficient for docs-only and approval-only, verdict ≤ weak for tests-only and text-without-code, and verdict ≥ adequate only when all three signals (code changes, criteria coverage, passing tests) are present.
+- none; recent sprint-46 recovery slices were merged into local `main`
 
 ## Completed this session (sprints 36–46)
 
+- completed `sprint-45-supervised-convergence-validation`
+- ran a supervised Foreman session end to end against the live repository
+- verified queue activation, task execution, review, merge, and SQLite
+  completion state through a real session rather than a simulated path
+- merged regression-test and repo-memory updates; no new `foreman/*.py`
+  implementation changes landed from the autonomous run itself
+- started `sprint-46-completion-truth-hardening`
+- confirmed the real backend gap after sprint 45 is completion-truth
+  evaluation, not directed task selection: in directed mode Foreman executes
+  the next runnable queued task and currently lacks a first-class structured
+  completion-evidence model
+- completed `task-completion-evidence-model-in-orchestrator`
+- added a `CompletionEvidence` dataclass and evidence builder in
+  `foreman/orchestrator.py`; `finalize_supervisor_merge()` now persists
+  structured completion evidence and emits an `engine.completion_evidence`
+  event
+- added `Task.completion_evidence` plus `completion_evidence_json` persistence
+  in the SQLite store and migration framework
+- hardened `ForemanStore.initialize()` with a narrow additive schema-repair
+  step so long-lived local databases recover when a migration ledger entry
+  exists without the matching `tasks.completion_evidence_json` column
+- raised shipped role and executor cost caps to `$1000.00` so native runs do
+  not stop early on environments that do not need per-run USD gating
+- queued `sprint-47-active-run-lease-and-heartbeat-recovery` as the next
+  planned backend sprint ahead of the older deferred planned sprint 8
+- fixed native-step ownership and stale-run recovery in sprint 46
+  by persisting active workflow steps before native execution, streaming
+  native runner events into SQLite as they occur, and using the latest
+  persisted event timestamp for timeout-based recovery
+- fixed dirty task finalization in sprint 46 so `_builtin:merge` and
+  `_builtin:mark_done` refuse success from dirty worktrees or branch states
+  with no committed mergeable delta
+- fixed malformed output-contract handling in sprint 46 by adding one
+  corrective retry for developer outputs missing `TASK_COMPLETE` and reviewer
+  outputs that do not parse to `APPROVE`, `DENY`, or `STEER`
+- fixed sprint-46 merge-conflict recovery loops so merge conflicts are
+  distinct workflow outcomes, stale existing task branches can be refreshed
+  against latest `main`, and conflict-resolution passes go back through code
+  review before merge
 - completed `sprint-44-supervisor-state-reconciliation`
 - introduced shared supervisor finalization seam in `foreman/supervisor_state.py`
   that maps a merged branch back to a tracked task, marks it done, and propagates
