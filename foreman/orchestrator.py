@@ -1648,6 +1648,7 @@ class ForemanOrchestrator:
                 "completion_branch_diff_stat": evidence.branch_diff_stat,
                 "completion_builtin_test_passed": evidence.builtin_test_passed,
                 "completion_builtin_test_result": evidence.builtin_test_result,
+                "completion_builtin_test_detail": evidence.builtin_test_detail,
             })
         return role.render_prompt(context)
 
