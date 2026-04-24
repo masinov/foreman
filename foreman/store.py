@@ -74,17 +74,6 @@ def _load_json_list(raw_value: str) -> list[str]:
     return [str(item) for item in parsed]
 
 
-def _serialize_evidence(evidence: Any) -> str:
-    """Serialize CompletionEvidence (or None) to JSON string for SQLite."""
-    if evidence is None:
-        return ""
-    import dataclasses
-
-    if isinstance(evidence, CompletionEvidence):
-        return _json_dumps(dataclasses.asdict(evidence))
-    if isinstance(evidence, dict):
-        return _json_dumps(evidence)
-    return ""
 
 
 def _row_to_project(row: sqlite3.Row) -> Project:
@@ -1330,3 +1319,4 @@ _serialize_evidence(task.completion_evidence),
                 (project_id,),
             ).fetchall()
         return [_row_to_gate(row) for row in rows]
+
