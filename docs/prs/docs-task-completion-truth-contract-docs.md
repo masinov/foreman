@@ -16,11 +16,16 @@ happens when evidence is insufficient.
   scenarios, wiring into `finalize_supervisor_merge()`, and persistence via
   `completion_evidence_json`
 - Updated `docs/sprints/current.md` to mark task as done
+- Corrected the shipped workflow smoke test in `tests/test_cli.py` to expect
+  `transitions=9` after the explicit `completion:conflict` workflow edge was
+  added, which was the repeated failure keeping this docs task from closing
 
 ## Files changed
 
 - `docs/adr/ADR-0008-completion-truth-contract.md` — new ADR
 - `docs/sprints/current.md` — updated task status
+- `tests/test_cli.py` — aligned workflow smoke-test expectation with the current
+  shipped `development` workflow
 
 ## Migrations
 
@@ -28,10 +33,15 @@ happens when evidence is insufficient.
 
 ## Risks
 
-- None. Document only; no implementation change.
+- Low. This branch is still primarily documentation, but it now includes a
+  one-line baseline test expectation fix so the docs task can validate cleanly
+  against the current workflow graph.
 
 ## Tests
 
+- `./venv/bin/python -m pytest tests/test_cli.py -q` — passed (`41 passed`)
+- `./venv/bin/python -m pytest tests/test_orchestrator.py -q` — passed
+  (`89 passed`)
 - `scripts/validate_repo_memory.py` — passed
 - `scripts/repo_validation.py` — passed
 - `scripts/reviewed_claude.py` — passed (py_compile)
