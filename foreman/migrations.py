@@ -156,7 +156,7 @@ MIGRATIONS: list[tuple[int, str, str]] = [
     ),
     (
         5,
-        "add completion_evidence_json to tasks for structured completion verdicts",
+"add completion_evidence_json to tasks for structured completion verdicts",
         """
         ALTER TABLE tasks ADD COLUMN completion_evidence_json TEXT NOT NULL DEFAULT '';
         """,

@@ -223,5 +223,50 @@ class SchemaVersionTests(unittest.TestCase):
                 self.assertIn("T", applied_at, f"applied_at not ISO 8601: {applied_at!r}")
 
 
+class SchemaRepairTests(unittest.TestCase):
+    """Repair known local schema drift during initialize()."""
+
+    def test_initialize_repairs_missing_completion_evidence_column(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "foreman.db"
+            conn = sqlite3.connect(db_path)
+            try:
+                conn.row_factory = sqlite3.Row
+                conn.execute("PRAGMA foreign_keys = ON")
+                conn.executescript(_SCHEMA_MIGRATIONS_DDL)
+
+                # Simulate a long-lived local DB whose ledger says version 5
+                # is present even though the tasks table still has the pre-
+                # completion-evidence shape.
+                for version, description, sql in MIGRATIONS[:4]:
+                    conn.executescript(sql)
+                    conn.execute(
+                        "INSERT INTO schema_migrations (version, description, applied_at)"
+                        " VALUES (?, ?, datetime('now'))",
+                        (version, description),
+                    )
+                conn.execute(
+                    "INSERT INTO schema_migrations (version, description, applied_at)"
+                    " VALUES (5, 'stale local migration ledger entry', datetime('now'))"
+                )
+                conn.commit()
+
+                before = {
+                    row["name"]
+                    for row in conn.execute("PRAGMA table_info(tasks)").fetchall()
+                }
+                self.assertNotIn("completion_evidence_json", before)
+            finally:
+                conn.close()
+
+            with ForemanStore(db_path) as store:
+                store.initialize()
+                after = {
+                    row["name"]
+                    for row in store._connection.execute("PRAGMA table_info(tasks)").fetchall()
+                }
+                self.assertIn("completion_evidence_json", after)
+
+
 if __name__ == "__main__":
     unittest.main()

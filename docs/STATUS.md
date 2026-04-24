@@ -11,6 +11,23 @@
 
 ## Completed this session (sprints 36–46)
 
+- completed `sprint-45-supervised-convergence-validation`
+- ran a supervised Foreman session end to end against the live repository
+- verified queue activation, task execution, review, merge, and SQLite
+  completion state through a real session rather than a simulated path
+- merged regression-test and repo-memory updates; no new `foreman/*.py`
+  implementation changes landed from the autonomous run itself
+- completed `sprint-46-completion-truth-hardening`
+- wired engine-produced completion evidence into reviewer prompts:
+  `CompletionEvidence.__str__()` for prompt rendering, `_build_prompt()`
+  injection for `code_reviewer` role when branch is present, updated TOML
+  template with evidence section before Git Status and explicit weighting
+  instruction, `ReviewerPromptHardeningTests`: 7 regression cases
+- raised shipped role and executor cost caps to `$1000.00` so native runs do
+  not stop early on environments that do not need per-run USD gating
+- queued `sprint-47-active-run-lease-and-heartbeat-recovery` as the next
+  planned backend sprint ahead of the older deferred sprint-008
+
 - completed `sprint-44-supervisor-state-reconciliation`
 - introduced shared supervisor finalization seam in `foreman/supervisor_state.py`
   that maps a merged branch back to a tracked task, marks it done, and propagates
