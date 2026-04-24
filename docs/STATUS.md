@@ -4,20 +4,19 @@
 
 - No active sprint.
 - Latest completed sprint: `sprint-46-completion-truth-hardening`
-- Branch: `fix/close-sprint-46-cleanly`
+- Branch: `feat/full-run-transcript-logging`
 - Next queued sprint in SQLite: `sprint-47-active-run-lease-and-heartbeat-recovery`
 
 ## Active branches
 
-- `fix/close-sprint-46-cleanly` — closes sprint 46 in repo memory after
-  stopping a hidden host-side Foreman run and reconciling the last stale
-  reviewer-prompt task state
+- `feat/full-run-transcript-logging` — persists raw runner output and full
+  builtin test output into SQLite events, and adds a CLI transcript reader so
+  runs can be audited without guessing from branch state
 
 ## Current focus
 
-- finish reconciling sprint-46 runtime and repo-memory state into a quiet,
-  consistent `main`
-- then land durable transcript logging before delegating more work to Foreman
+- durable transcript logging before delegating more work to Foreman
+- keep sprint 47 queued but inactive until transcript visibility is in place
 
 ## New findings this session
 

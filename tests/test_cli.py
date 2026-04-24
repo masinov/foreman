@@ -210,6 +210,7 @@ class ForemanCLISmokeTests(unittest.TestCase):
                 model="gpt-5.4",
                 session_id="thread-1",
                 branch_name=wip_task.branch_name,
+                prompt_text="Implement the activity feed and keep the CLI output readable.",
                 cost_usd=0.0,
                 token_count=610,
                 duration_ms=3000,
@@ -1152,6 +1153,22 @@ class ForemanCLISmokeTests(unittest.TestCase):
         self.assertIn("- 2026-03-30T09:31:30Z | agent.command | role=developer | ./venv/bin/python -m unittest tests.test_cli", result.stdout)
         self.assertIn("- 2026-03-30T09:32:00Z | agent.file_change | role=developer | foreman/cli.py", result.stdout)
         self.assertIn("- 2026-03-30T09:41:12Z | signal.completion | role=code_reviewer | summary=Add more activity detail.", result.stdout)
+
+    def test_transcript_command_shows_full_prompt_and_event_payloads_for_one_run(self) -> None:
+        store, db_path = self.create_store()
+        fixture = self.seed_monitoring_state(store)
+
+        result = self.run_cli("transcript", fixture["wip_run_id"], "--db", str(db_path))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Transcript", result.stdout)
+        self.assertIn("Run: run-wip-1", result.stdout)
+        self.assertIn("Prompt (from run record):", result.stdout)
+        self.assertIn("Implement the activity feed and keep the CLI output readable.", result.stdout)
+        self.assertIn("- 2026-03-30T09:31:30Z | agent.command | role=developer", result.stdout)
+        self.assertIn("\"command\": \"./venv/bin/python -m unittest tests.test_cli\"", result.stdout)
+        self.assertIn("- 2026-03-30T09:32:00Z | agent.file_change | role=developer", result.stdout)
+        self.assertIn("\"path\": \"foreman/cli.py\"", result.stdout)
 
     def test_cost_command_can_scope_to_the_active_sprint(self) -> None:
         store, db_path = self.create_store()

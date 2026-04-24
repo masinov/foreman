@@ -113,6 +113,11 @@ class ClaudeCodeRunner(AgentRunner):
             if not line:
                 continue
 
+            yield AgentEvent(
+                "agent.raw_output",
+                payload={"stream": "stdout", "line": line},
+            )
+
             for event in self._parse_stream_line(
                 line,
                 working_dir=config.working_dir,
@@ -138,6 +143,12 @@ class ClaudeCodeRunner(AgentRunner):
 
         proc.wait()
         stderr = proc.stderr.read().strip() if proc.stderr is not None else ""
+        if stderr:
+            for line in stderr.splitlines():
+                yield AgentEvent(
+                    "agent.raw_output",
+                    payload={"stream": "stderr", "line": line},
+                )
         if saw_terminal_event:
             return
 
