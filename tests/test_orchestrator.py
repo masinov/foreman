@@ -2722,7 +2722,7 @@ if __name__ == "__main__":
     unittest.main()
 
 
-class CompletionEvidenceTests(unittest.TestCase):
+class CompletionEvidenceModelTests(unittest.TestCase):
     """Regression coverage for CompletionEvidence model and build_completion_evidence."""
 
     @classmethod
@@ -3324,7 +3324,7 @@ class DecisionExtractionTests(unittest.TestCase):
         self.assertEqual(detail, "Completed the slice.")
 
 
-class CompletionEvidenceTests(unittest.TestCase):
+class FalsePositiveCompletionEvidenceTests(unittest.TestCase):
     """Regression coverage for CompletionEvidence false-positive scenarios.
 
     Proves that Foreman does not treat docs-only or tests-only changes as
@@ -4507,6 +4507,11 @@ class ReviewerPromptHardeningTests(unittest.TestCase):
 
             self.assertIn("Completion Evidence", prompt)
             self.assertIn("engine-produced", prompt)
+            # Verify actual evidence content (score/verdict/criteria text) appears in the prompt
+            self.assertIn("Evidence score:", prompt)
+            self.assertRegex(prompt, r"Evidence score:\s*\d+\.\d+/100")
+            self.assertIn("Criteria:", prompt)
+            self.assertRegex(prompt, r"Criteria:\s*\d+/\d+")
 
     def test_completion_evidence_content_absent_when_no_branch(self) -> None:
         repo_path, db_path = self.create_workspace()
