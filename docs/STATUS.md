@@ -3,14 +3,13 @@
 ## Current sprint
 
 - Sprint: `sprint-46-completion-truth-hardening` (active)
-- Branch: `feat/cli-task-show-visibility`
+- Branch: `main`
 - Next queued sprint: `sprint-47-active-run-lease-and-heartbeat-recovery`
 
 ## Active branches
 
-- `feat/cli-task-show-visibility` — add a direct CLI inspection surface for one
-  task's current state, latest run, and recent events so Foreman debugging does
-  not depend on ad hoc SQLite scripts
+- none; recent sprint-46 recovery slices and the task-visibility CLI were
+  merged into local `main`
 
 ## Completed this session (sprints 36–46)
 
