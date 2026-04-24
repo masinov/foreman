@@ -2,14 +2,35 @@
 
 ## Current sprint
 
-- Sprint: `sprint-46-completion-truth-hardening` (active)
-- Branch: `main`
-- Next queued sprint: `sprint-47-active-run-lease-and-heartbeat-recovery`
+- No active sprint.
+- Latest completed sprint: `sprint-46-completion-truth-hardening`
+- Branch: `fix/close-sprint-46-cleanly`
+- Next queued sprint in SQLite: `sprint-47-active-run-lease-and-heartbeat-recovery`
 
 ## Active branches
 
-- none; recent sprint-46 recovery slices and the task-visibility CLI were
-  merged into local `main`
+- `fix/close-sprint-46-cleanly` — closes sprint 46 in repo memory after
+  stopping a hidden host-side Foreman run and reconciling the last stale
+  reviewer-prompt task state
+
+## Current focus
+
+- finish reconciling sprint-46 runtime and repo-memory state into a quiet,
+  consistent `main`
+- then land durable transcript logging before delegating more work to Foreman
+
+## New findings this session
+
+- the “phantom file” behavior was caused by a real hidden host-side process,
+  not synthetic heartbeat spam
+- host-level inspection revealed the still-running chain:
+  - `/home/datision/projects/foreman/venv/bin/python ./venv/bin/foreman run foreman`
+  - child `claude --print --verbose --output-format stream-json ...`
+- that hidden run continued writing real `agent.file_change` and
+  `agent.tool_use` events into SQLite even when the sandboxed shell could not
+  see the process via narrow `ps` filters
+- the run was stopped explicitly before sprint closeout so we could take over
+  the remaining work manually and start the logging slice from a quiet baseline
 
 ## Completed this session (sprints 36–46)
 
@@ -56,6 +77,11 @@
   looped reruns by merging the docs branch into local `main`, reconciling the
   task state in SQLite to `done`, and correcting the stale workflow smoke-test
   expectation that had kept sending the task back from `test` to `develop`
+- finished `task-reviewer-prompt-hardening-with-engine-produced-evidence`
+  manually after confirming the feature had already landed in local `main`,
+  stopping a hidden host-side rerun, and reconciling the final task row to
+  `done`
+- completed `sprint-46-completion-truth-hardening`
 - completed `sprint-44-supervisor-state-reconciliation`
 - introduced shared supervisor finalization seam in `foreman/supervisor_state.py`
   that maps a merged branch back to a tracked task, marks it done, and propagates
