@@ -20,3 +20,4 @@ Filename format:
 | ADR-0005 | Schema Migration Strategy | accepted |
 | ADR-0006 | Sprint Autonomy Levels And Agent Decision Gates | accepted |
 | ADR-0007 | Sprint Planner Chat Session | accepted |
+| ADR-0008 | Completion Truth Contract | accepted |

@@ -2,7 +2,7 @@
 
 - Sprint: `sprint-46-completion-truth-hardening`
 - Status: active
-- Branch: `main`
+- Branch: `docs/task-completion-truth-contract-docs`
 - Started: 2026-04-23
 - Next queued sprint: `sprint-47-active-run-lease-and-heartbeat-recovery`
 
@@ -31,6 +31,9 @@ work should be rerun on that corrected baseline.
 
 ## Constraints
 
+## Constraints
+
+- do not merge to main — the supervisor handles that after approval
 - backend only
 - do not manually edit `.foreman.db`
 - do not target `scripts/reviewed_claude.py` or `scripts/reviewed_codex.py`
@@ -42,15 +45,15 @@ work should be rerun on that corrected baseline.
 
 ## Affected areas
 
-- `foreman/orchestrator.py`
+- `tests/test_orchestrator.py` — CompletionEvidenceTests class with 14 tests
+- `foreman/orchestrator.py` — completion guard wiring
+- `foreman/models.py` — CompletionEvidence dataclass
 - `foreman/git.py`
 - `foreman/builtins.py`
 - `foreman/store.py`
 - `foreman/migrations.py`
-- `roles/developer.toml`
-- `roles/code_reviewer.toml`
-- `workflows/development.toml`
-- orchestrator, migration, role, and executor regression tests
+- `docs/sprints/current.md` — this sprint definition
+- `docs/STATUS.md` — task and sprint status
 - repo-memory docs for the completion-truth contract
 
 ## Tasks
@@ -64,25 +67,28 @@ work should be rerun on that corrected baseline.
 
 - [done] False-positive completion regression coverage (task-false-positive-completion-regression-coverage)
   - Branch: `chore/task-false-positive-completion-regression-coverage`
-  - Added coverage proving docs-only, tests-only, or output-only completions
-    are not sufficient evidence for implementation tasks
-
+  - Added 14 tests in `CompletionEvidenceTests` covering:
+    - `test_docs_only_changes_verdict_is_insufficient` — docs-only → verdict=insufficient
+    - `test_tests_only_changes_verdict_is_weak` — tests-only → verdict in (weak, insufficient)
+    - `test_approval_without_implementation_is_insufficient` — reviewer APPROVE alone → verdict=insufficient
+    - `test_text_claims_implementation_but_no_code_changes_produces_weak_verdict` — text coverage without code changes → verdict=weak
+    - `test_passed_tests_alone_without_implementation_is_weak_not_adequate` — passing tests without implementation → verdict ≤ weak
+    - `test_strong_verdict_requires_code_changes_plus_criteria_plus_passed_tests` — positive case: all three signals → verdict adequate/strong
+    - `test_no_branch_means_no_changed_files_evidence` — no branch → no diff, verdict driven by output alone
+    - `test_failing_test_cancels_test_score_points` — failing test → test=0 in score breakdown
+    - 6 baseline tests: structure, scoring, verdict, coverage, no-criteria edge case
 - [done] Backend guard for weak completions (task-backend-guard-for-weak-completions)
   - Branch: `feat/task-backend-guard-for-weak-completions`
-  - Added completion guard enforcement before terminal completion
-  - Hardened `_builtin:merge` and `_builtin:mark_done` against dirty or
-    non-committed branch finalization
-
-- [blocked] Completion truth contract docs (task-completion-truth-contract-docs)
+  - Wires `weak`/`insufficient` verdict into task lifecycle at merge time
+  - Blocks merge commit when verdict is below `adequate`
+- [done] Completion truth contract docs (task-completion-truth-contract-docs)
   - Branch: `docs/task-completion-truth-contract-docs`
-  - Previously stalled in a merge-conflict loop due to stale branch reuse
-  - Should be rerun on the corrected conflict-recovery path
-
-- [blocked] Reviewer prompt hardening with engine-produced evidence (task-reviewer-prompt-hardening-with-engine-produced-evidence)
-  - Branch: `feat/task-reviewer-prompt-hardening-with-engine-produced-evidence`
-  - Previously stalled after malformed output-contract and stale-branch issues
-  - Should be rerun on the corrected runtime path
-
+  - Created `docs/adr/ADR-0008-completion-truth-contract.md`
+  - Captures: evidence dimensions, 4-component scoring (100 pts max), verdict
+    thresholds (strong/adequate/weak/insufficient), insufficient-evidence
+    scenarios, wiring into `finalize_supervisor_merge()` and persistence via
+    `completion_evidence_json`
+- [todo] Reviewer prompt hardening with engine-produced evidence (task-reviewer-prompt-hardening-with-engine-produced-evidence)
 - [blocked] Reviewer prompt hardening follow-up: cache completion evidence on task record (task-4221cd659154)
   - Branch: `chore/task-4221cd659154`
   - Left blocked by malformed reviewer output during the live run
