@@ -3,12 +3,14 @@
 ## Current sprint
 
 - Sprint: `sprint-46-completion-truth-hardening` (active)
-- Branch: `main`
+- Branch: `feat/cli-task-show-visibility`
 - Next queued sprint: `sprint-47-active-run-lease-and-heartbeat-recovery`
 
 ## Active branches
 
-- none; recent sprint-46 recovery slices were merged into local `main`
+- `feat/cli-task-show-visibility` — add a direct CLI inspection surface for one
+  task's current state, latest run, and recent events so Foreman debugging does
+  not depend on ad hoc SQLite scripts
 
 ## Completed this session (sprints 36–46)
 
@@ -51,6 +53,10 @@
   distinct workflow outcomes, stale existing task branches can be refreshed
   against latest `main`, and conflict-resolution passes go back through code
   review before merge
+- finished `task-completion-truth-contract-docs` manually after repeated
+  looped reruns by merging the docs branch into local `main`, reconciling the
+  task state in SQLite to `done`, and correcting the stale workflow smoke-test
+  expectation that had kept sending the task back from `test` to `develop`
 - completed `sprint-44-supervisor-state-reconciliation`
 - introduced shared supervisor finalization seam in `foreman/supervisor_state.py`
   that maps a merged branch back to a tracked task, marks it done, and propagates

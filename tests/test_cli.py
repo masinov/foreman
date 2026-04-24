@@ -1115,6 +1115,44 @@ class ForemanCLISmokeTests(unittest.TestCase):
             result.stdout,
         )
 
+    def test_task_show_command_summarizes_current_state_latest_run_and_recent_events(self) -> None:
+        store, db_path = self.create_store()
+        fixture = self.seed_monitoring_state(store)
+
+        result = self.run_cli(
+            "task",
+            "show",
+            fixture["wip_task_id"],
+            "--runs",
+            "2",
+            "--events",
+            "3",
+            "--db",
+            str(db_path),
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Task", result.stdout)
+        self.assertIn(f"Task: {fixture['wip_task_id']} | Render activity feed", result.stdout)
+        self.assertIn("Status: in_progress | type=feature | created_by=human", result.stdout)
+        self.assertIn("Current step: develop", result.stdout)
+        self.assertIn("Step visits: develop=2, review=1", result.stdout)
+        self.assertIn(
+            "Latest run: run-wip-2 | role=code_reviewer | step=review | status=completed | cost_usd=$1.25 | tokens=300 | duration_ms=1200 | outcome=revise | detail=Add more activity detail.",
+            result.stdout,
+        )
+        self.assertIn(
+            "Latest event: 2026-03-30T09:41:12Z | signal.completion | role=code_reviewer | summary=Add more activity detail.",
+            result.stdout,
+        )
+        self.assertIn("Recent runs:", result.stdout)
+        self.assertIn("- run-wip-1 | role=developer | step=develop | status=completed | outcome=done | detail=Initial implementation landed.", result.stdout)
+        self.assertIn("- run-wip-2 | role=code_reviewer | step=review | status=completed | outcome=revise | detail=Add more activity detail.", result.stdout)
+        self.assertIn("Recent events:", result.stdout)
+        self.assertIn("- 2026-03-30T09:31:30Z | agent.command | role=developer | ./venv/bin/python -m unittest tests.test_cli", result.stdout)
+        self.assertIn("- 2026-03-30T09:32:00Z | agent.file_change | role=developer | foreman/cli.py", result.stdout)
+        self.assertIn("- 2026-03-30T09:41:12Z | signal.completion | role=code_reviewer | summary=Add more activity detail.", result.stdout)
+
     def test_cost_command_can_scope_to_the_active_sprint(self) -> None:
         store, db_path = self.create_store()
         fixture = self.seed_monitoring_state(store)
