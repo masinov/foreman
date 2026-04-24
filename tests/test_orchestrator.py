@@ -3939,8 +3939,9 @@ class CompletionEvidenceTests(unittest.TestCase):
             self.assertIsNotNone(refreshed)
             assert refreshed is not None
             self.assertIsNotNone(refreshed.completion_evidence)
-            self.assertEqual(refreshed.completion_evidence["task_id"], task.id)
-            self.assertEqual(refreshed.completion_evidence["criteria_count"], 2)
+            assert refreshed.completion_evidence is not None
+            self.assertEqual(refreshed.completion_evidence.task_id, task.id)
+            self.assertEqual(refreshed.completion_evidence.criteria_count, 2)
 
             # engine.completion_evidence event should be emitted
             events = store.list_events(task_id=task.id)
@@ -6149,6 +6150,119 @@ class MarkDoneCompletionGuardTests(unittest.TestCase):
 
         self.assertEqual(result.outcome, "success")
         self.assertEqual(task.status, "done")
+
+
+class BuiltinTranscriptLoggingTests(unittest.TestCase):
+    """Coverage for persisted builtin transcript events."""
+
+    def create_workspace(self) -> tuple[Path, Path]:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        root = Path(temp_dir.name)
+        repo_path = root / "repo"
+        repo_path.mkdir()
+        db_path = root / "foreman.db"
+        return repo_path, db_path
+
+    def test_run_tests_returns_full_output_events_without_streaming(self) -> None:
+        repo_path, _ = self.create_workspace()
+        project = Project(
+            id="proj-builtins",
+            name="Builtin Transcript Test",
+            repo_path=str(repo_path),
+            spec_path="docs/specs/engine-design-v3.md",
+            workflow_id="development",
+            default_branch="main",
+            settings={
+                "test_command": "printf 'stdout-line\\n'; printf 'stderr-line\\n' >&2; exit 1",
+            },
+            created_at="2026-04-24T18:00:00Z",
+            updated_at="2026-04-24T18:00:00Z",
+        )
+        task = Task(
+            id="task-builtins",
+            sprint_id="sprint-builtins",
+            project_id=project.id,
+            title="Capture builtin transcript",
+            status="in_progress",
+            created_at="2026-04-24T18:00:00Z",
+        )
+
+        from foreman.builtins import BuiltinExecutor
+
+        executor = BuiltinExecutor()
+        result = executor.execute(
+            "_builtin:run_tests",
+            project=project,
+            task=task,
+            step_id="test",
+            carried_output=None,
+        )
+
+        self.assertEqual(result.outcome, "failure")
+        self.assertEqual(
+            [event.event_type for event in result.events],
+            ["engine.test_started", "engine.test_output", "engine.test_output", "engine.test_run"],
+        )
+        output_streams = {
+            event.payload.get("stream")
+            for event in result.events
+            if event.event_type == "engine.test_output"
+        }
+        self.assertEqual(output_streams, {"stdout", "stderr"})
+        final_payload = result.events[-1].payload
+        self.assertEqual(final_payload["exit_code"], 1)
+        self.assertEqual(final_payload["stdout"], "stdout-line")
+        self.assertEqual(final_payload["stderr"], "stderr-line")
+
+    def test_run_tests_streams_events_to_recorder_when_present(self) -> None:
+        repo_path, _ = self.create_workspace()
+        project = Project(
+            id="proj-builtins-stream",
+            name="Builtin Transcript Stream Test",
+            repo_path=str(repo_path),
+            spec_path="docs/specs/engine-design-v3.md",
+            workflow_id="development",
+            default_branch="main",
+            settings={
+                "test_command": "printf 'stdout-line\\n'; printf 'stderr-line\\n' >&2; exit 0",
+            },
+            created_at="2026-04-24T18:00:00Z",
+            updated_at="2026-04-24T18:00:00Z",
+        )
+        task = Task(
+            id="task-builtins-stream",
+            sprint_id="sprint-builtins-stream",
+            project_id=project.id,
+            title="Capture streamed builtin transcript",
+            status="in_progress",
+            created_at="2026-04-24T18:00:00Z",
+        )
+
+        from foreman.builtins import BuiltinEventRecord, BuiltinExecutor
+
+        recorded: list[BuiltinEventRecord] = []
+        executor = BuiltinExecutor()
+        result = executor.execute(
+            "_builtin:run_tests",
+            project=project,
+            task=task,
+            step_id="test",
+            carried_output=None,
+            event_recorder=recorded.append,
+        )
+
+        self.assertEqual(result.outcome, "success")
+        self.assertEqual(result.events, ())
+        self.assertEqual(recorded[0].event_type, "engine.test_started")
+        self.assertEqual(recorded[-1].event_type, "engine.test_run")
+        self.assertEqual(recorded[-1].payload["exit_code"], 0)
+        output_streams = {
+            event.payload.get("stream")
+            for event in recorded
+            if event.event_type == "engine.test_output"
+        }
+        self.assertEqual(output_streams, {"stdout", "stderr"})
 
 
 class ReviewerPromptHardeningTests(unittest.TestCase):

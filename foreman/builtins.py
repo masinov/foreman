@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+import selectors
 import subprocess
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 from .context import relative_project_path, write_project_context
 from .git import GitMergeResult, is_worktree_clean, merge_branch, run_git
@@ -44,11 +45,12 @@ class BuiltinExecutor:
         step_id: str,
         carried_output: str | None,
         store: ForemanStore | None = None,
+        event_recorder: Callable[[BuiltinEventRecord], None] | None = None,
     ) -> BuiltinResult:
         """Dispatch one built-in role by identifier."""
 
         if role_id == "_builtin:run_tests":
-            return self._run_tests(project=project)
+            return self._run_tests(project=project, event_recorder=event_recorder)
         if role_id == "_builtin:context_write":
             return self._context_write(
                 store=store,
@@ -64,49 +66,96 @@ class BuiltinExecutor:
             return self._human_gate(task=task, step_id=step_id, carried_output=carried_output)
         raise ValueError(f"Unsupported builtin role: {role_id}")
 
-    def _run_tests(self, *, project: Project) -> BuiltinResult:
+    def _run_tests(
+        self,
+        *,
+        project: Project,
+        event_recorder: Callable[[BuiltinEventRecord], None] | None = None,
+    ) -> BuiltinResult:
         command = str(project.settings.get("test_command", "")).strip()
+        emitted_events: list[BuiltinEventRecord] = []
+
+        def emit(event_type: str, payload: dict[str, Any]) -> None:
+            record = BuiltinEventRecord(event_type=event_type, payload=payload)
+            if event_recorder is not None:
+                event_recorder(record)
+            else:
+                emitted_events.append(record)
+
         if not command:
             detail = "Project test_command is not configured."
-            return BuiltinResult(
-                outcome="failure",
-                detail=detail,
-                events=(
-                    BuiltinEventRecord(
-                        event_type="engine.test_run",
-                        payload={
-                            "command": command,
-                            "exit_code": None,
-                            "output_tail": detail,
-                        },
-                    ),
-                ),
+            emit(
+                "engine.test_run",
+                {
+                    "command": command,
+                    "exit_code": None,
+                    "stdout": "",
+                    "stderr": "",
+                    "output_tail": detail,
+                },
             )
+            return BuiltinResult(outcome="failure", detail=detail, events=tuple(emitted_events))
 
-        result = subprocess.run(
+        emit("engine.test_started", {"command": command})
+        proc = subprocess.Popen(
             ["bash", "-lc", command],
             cwd=Path(project.repo_path),
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            check=False,
+            bufsize=1,
         )
-        output = _combine_output(result.stdout, result.stderr)
+        assert proc.stdout is not None
+        assert proc.stderr is not None
+
+        selector = selectors.DefaultSelector()
+        selector.register(proc.stdout, selectors.EVENT_READ, "stdout")
+        selector.register(proc.stderr, selectors.EVENT_READ, "stderr")
+        stdout_chunks: list[str] = []
+        stderr_chunks: list[str] = []
+
+        while selector.get_map():
+            for key, _ in selector.select():
+                stream_name = str(key.data)
+                line = key.fileobj.readline()
+                if line == "":
+                    selector.unregister(key.fileobj)
+                    continue
+                text = line.rstrip("\n")
+                if stream_name == "stdout":
+                    stdout_chunks.append(line)
+                else:
+                    stderr_chunks.append(line)
+                emit(
+                    "engine.test_output",
+                    {
+                        "command": command,
+                        "stream": stream_name,
+                        "text": text,
+                    },
+                )
+
+        proc.wait()
+        stdout_text = "".join(stdout_chunks).strip()
+        stderr_text = "".join(stderr_chunks).strip()
+        output = _combine_output(stdout_text, stderr_text)
         output_tail = _tail_lines(output, 200)
-        outcome = "success" if result.returncode == 0 else "failure"
-        detail = output_tail or f"Command exited with {result.returncode}."
+        outcome = "success" if proc.returncode == 0 else "failure"
+        detail = output_tail or f"Command exited with {proc.returncode}."
+        emit(
+            "engine.test_run",
+            {
+                "command": command,
+                "exit_code": proc.returncode,
+                "stdout": stdout_text,
+                "stderr": stderr_text,
+                "output_tail": output_tail,
+            },
+        )
         return BuiltinResult(
             outcome=outcome,
             detail=detail,
-            events=(
-                BuiltinEventRecord(
-                    event_type="engine.test_run",
-                    payload={
-                        "command": command,
-                        "exit_code": result.returncode,
-                        "output_tail": output_tail,
-                    },
-                ),
-            ),
+            events=tuple(emitted_events),
         )
 
     def _merge(

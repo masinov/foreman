@@ -1136,6 +1136,7 @@ class ForemanOrchestrator:
                     step_id=current_step,
                     carried_output=carried_output,
                     store=self.store,
+                    event_recorder=lambda event_record: self._persist_builtin_event(run, event_record),
                 )
                 self.store.save_task(current_task)
                 self._complete_run(
@@ -1219,6 +1220,12 @@ class ForemanOrchestrator:
                     run,
                     project,
                     context_projection=context_projection,
+                )
+                self._emit_event(
+                    run,
+                    "agent.prompt",
+                    {"text": prompt},
+                    role_id=role.id,
                 )
                 self._emit_event(
                     run,
@@ -1768,8 +1775,8 @@ class ForemanOrchestrator:
             ),
             "recent_commits": self._safe_recent_commits(project.repo_path, task.branch_name),
             "completion_evidence": (
-                str(self.build_completion_evidence(task, project))
-                if role.id == "code_reviewer" and task.branch_name
+                str(evidence)
+                if role.id == "code_reviewer" and task.branch_name and evidence is not None
                 else ""
             ),
         }
@@ -2279,6 +2286,15 @@ class ForemanOrchestrator:
     ) -> None:
         for event_record in events:
             self._emit_event(run, event_record.event_type, event_record.payload)
+
+    def _persist_builtin_event(
+        self,
+        run: Run,
+        event_record: BuiltinEventRecord,
+    ) -> None:
+        """Persist one builtin event immediately while the builtin step is active."""
+
+        self._emit_event(run, event_record.event_type, event_record.payload)
 
     def _create_running_run(
         self,

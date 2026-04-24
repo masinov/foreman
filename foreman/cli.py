@@ -67,13 +67,19 @@ class CliResolutionError(ValueError):
 
 
 def _print_lines(*lines: str) -> None:
-    for line in lines:
-        print(line)
+    try:
+        for line in lines:
+            print(line)
+    except BrokenPipeError:  # pragma: no cover - depends on shell piping
+        raise SystemExit(0) from None
 
 
 def _print_stream_lines(*lines: str) -> None:
-    for line in lines:
-        print(line, flush=True)
+    try:
+        for line in lines:
+            print(line, flush=True)
+    except BrokenPipeError:  # pragma: no cover - depends on shell piping
+        raise SystemExit(0) from None
 
 
 def _add_db_option(
@@ -256,6 +262,50 @@ def _render_event_line(event_type: str, timestamp: str, role_id: str | None, pay
     if role_id:
         line = f"{line} | role={role_id}"
     return f"{line} | {_format_event_details(event_type, payload)}"
+
+
+def _indent_lines(text: str, *, prefix: str = "    ") -> list[str]:
+    if not text:
+        return [f"{prefix}(empty)"]
+    return [f"{prefix}{line}" for line in text.splitlines()]
+
+
+def _format_transcript_payload(event: Event) -> list[str]:
+    payload = event.payload
+    if not payload:
+        return ["    {}"]
+
+    if event.event_type == "agent.prompt":
+        return _indent_lines(str(payload.get("text", "")))
+
+    if event.event_type == "agent.raw_output":
+        stream = str(payload.get("stream", "")).strip() or "unknown"
+        if "line" in payload:
+            return [f"    stream={stream}", *_indent_lines(str(payload.get("line", "")))]
+        raw_message = json.dumps(payload.get("message"), indent=2, sort_keys=True)
+        return [f"    stream={stream}", *_indent_lines(raw_message)]
+
+    if event.event_type == "engine.test_output":
+        stream = str(payload.get("stream", "")).strip() or "unknown"
+        return [f"    stream={stream}", *_indent_lines(str(payload.get("text", "")))]
+
+    if event.event_type == "engine.test_run":
+        lines = [
+            f"    command={payload.get('command', '')}",
+            f"    exit_code={payload.get('exit_code', '')}",
+        ]
+        if "stdout" in payload:
+            lines.append("    stdout:")
+            lines.extend(_indent_lines(str(payload.get("stdout", "")), prefix="      "))
+        if "stderr" in payload:
+            lines.append("    stderr:")
+            lines.extend(_indent_lines(str(payload.get("stderr", "")), prefix="      "))
+        if "output_tail" in payload:
+            lines.append("    output_tail:")
+            lines.extend(_indent_lines(str(payload.get("output_tail", "")), prefix="      "))
+        return lines
+
+    return _indent_lines(json.dumps(payload, indent=2, sort_keys=True))
 
 
 def _render_board_task_line(task_id: str, title: str, task_type: str, details: list[str]) -> str:
@@ -627,6 +677,63 @@ def handle_history(args: argparse.Namespace) -> int:
             lines.append(
                 f"- {_render_event_line(event.event_type, event.timestamp, event.role_id, event.payload)}"
             )
+
+    _print_lines(*lines)
+    return 0
+
+
+def handle_transcript(args: argparse.Namespace) -> int:
+    """Handle ``foreman transcript``."""
+
+    db_path = _resolve_db_path_or_print(args.db)
+    if db_path is None:
+        return 1
+
+    with ForemanStore(db_path) as store:
+        store.initialize()
+        run = store.get_run(args.run_id)
+        if run is None:
+            print(f"Unknown run: {args.run_id}", file=sys.stderr)
+            return 1
+
+        db_path = store.db_path
+        task = store.get_task(run.task_id)
+        project = store.get_project(run.project_id)
+        events = store.list_events(run_id=run.id)
+
+    lines = [
+        "Transcript",
+        f"Database: {db_path}",
+        f"Run: {run.id}",
+        f"Task: {run.task_id} | {task.title if task is not None else 'unknown'}",
+        f"Project: {run.project_id} | {project.name if project is not None else 'unknown'}",
+        (
+            f"Role: {run.role_id} | step={run.workflow_step} | backend={run.agent_backend} | "
+            f"status={run.status}"
+        ),
+    ]
+    if run.outcome:
+        lines.append(f"Outcome: {run.outcome}")
+    if run.session_id:
+        lines.append(f"Session: {run.session_id}")
+    if run.model:
+        lines.append(f"Model: {run.model}")
+    if run.branch_name:
+        lines.append(f"Branch: {run.branch_name}")
+    if run.prompt_text and not any(event.event_type == "agent.prompt" for event in events):
+        lines.append("Prompt (from run record):")
+        lines.extend(_indent_lines(run.prompt_text))
+
+    lines.append("Events:")
+    if not events:
+        lines.append("- none")
+    else:
+        for event in events:
+            header = f"- {event.timestamp} | {event.event_type}"
+            if event.role_id:
+                header += f" | role={event.role_id}"
+            lines.append(header)
+            lines.extend(_format_transcript_payload(event))
 
     _print_lines(*lines)
     return 0
@@ -1968,6 +2075,17 @@ def build_parser() -> argparse.ArgumentParser:
         help_text=f"Path to the SQLite store containing task history. {DB_OPTION_NOTE}",
     )
     _set_handler(history_parser, handle_history, "history")
+
+    transcript_parser = subparsers.add_parser(
+        "transcript",
+        help="Show the full persisted transcript for one run.",
+    )
+    transcript_parser.add_argument("run_id", help="Run identifier.")
+    _add_db_option(
+        transcript_parser,
+        help_text=f"Path to the SQLite store containing the run transcript. {DB_OPTION_NOTE}",
+    )
+    _set_handler(transcript_parser, handle_transcript, "transcript")
 
     approve_parser = subparsers.add_parser("approve", help="Approve a paused task.")
     approve_parser.add_argument("task_id", help="Task identifier.")

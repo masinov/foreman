@@ -192,27 +192,33 @@ class ClaudeCodeRunnerTests(unittest.TestCase):
             [event.event_type for event in events],
             [
                 "agent.started",
+                "agent.raw_output",
                 "agent.message",
                 "signal.progress",
                 "agent.command",
                 "agent.file_change",
                 "agent.tool_use",
+                "agent.raw_output",
                 "agent.message",
                 "agent.cost_update",
                 "agent.completed",
             ],
         )
-        self.assertEqual(events[1].payload["text"], "Working on the task.\nTASK_COMPLETE")
-        self.assertEqual(events[2].payload, {"message": "halfway"})
-        self.assertEqual(events[3].payload["command"], "pytest -q")
-        self.assertEqual(events[4].payload, {"tool": "Write", "path": "README.md"})
-        self.assertEqual(events[5].payload["tool"], "Glob")
-        self.assertEqual(events[6].payload["text"], "Implemented the feature.\nTASK_COMPLETE")
-        self.assertEqual(events[7].payload["cumulative_usd"], 1.25)
-        self.assertEqual(events[7].payload["cumulative_tokens"], 321)
-        self.assertEqual(events[8].payload["session_id"], "sess-123")
-        self.assertEqual(events[8].payload["duration_ms"], 1234)
-        self.assertEqual(events[8].payload["token_count"], 321)
+        self.assertEqual(events[1].payload["stream"], "stdout")
+        self.assertIn("\"type\": \"assistant\"", events[1].payload["line"])
+        self.assertEqual(events[2].payload["text"], "Working on the task.\nTASK_COMPLETE")
+        self.assertEqual(events[3].payload, {"message": "halfway"})
+        self.assertEqual(events[4].payload["command"], "pytest -q")
+        self.assertEqual(events[5].payload, {"tool": "Write", "path": "README.md"})
+        self.assertEqual(events[6].payload["tool"], "Glob")
+        self.assertEqual(events[7].payload["stream"], "stdout")
+        self.assertIn("\"type\": \"result\"", events[7].payload["line"])
+        self.assertEqual(events[8].payload["text"], "Implemented the feature.\nTASK_COMPLETE")
+        self.assertEqual(events[9].payload["cumulative_usd"], 1.25)
+        self.assertEqual(events[9].payload["cumulative_tokens"], 321)
+        self.assertEqual(events[10].payload["session_id"], "sess-123")
+        self.assertEqual(events[10].payload["duration_ms"], 1234)
+        self.assertEqual(events[10].payload["token_count"], 321)
 
     def test_run_raises_preflight_error_when_executable_is_missing(self) -> None:
         temp_dir = tempfile.TemporaryDirectory()

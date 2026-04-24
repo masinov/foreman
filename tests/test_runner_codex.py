@@ -259,22 +259,34 @@ class CodexRunnerTests(unittest.TestCase):
             [event.event_type for event in events],
             [
                 "agent.started",
+                "agent.raw_output",
+                "agent.raw_output",
                 "agent.command",
+                "agent.raw_output",
                 "agent.file_change",
                 "agent.file_change",
+                "agent.raw_output",
                 "agent.cost_update",
+                "agent.raw_output",
                 "agent.message",
                 "signal.progress",
+                "agent.raw_output",
                 "agent.completed",
             ],
         )
-        self.assertEqual(events[1].payload["command"], "pytest -q")
-        self.assertEqual(events[2].payload, {"tool": "codex.fileChange", "path": "README.md"})
-        self.assertEqual(events[4].payload["cumulative_tokens"], 30)
-        self.assertEqual(events[5].payload["text"], "Working on the task.\nTASK_COMPLETE")
-        self.assertEqual(events[6].payload, {"message": "halfway"})
-        self.assertEqual(events[7].payload["session_id"], "thread-123")
-        self.assertEqual(events[7].payload["token_count"], 30)
+        self.assertEqual(events[1].payload["stream"], "rpc")
+        self.assertEqual(events[2].payload["stream"], "rpc")
+        self.assertEqual(events[3].payload["command"], "pytest -q")
+        self.assertEqual(events[4].payload["stream"], "rpc")
+        self.assertEqual(events[5].payload, {"tool": "codex.fileChange", "path": "README.md"})
+        self.assertEqual(events[7].payload["stream"], "rpc")
+        self.assertEqual(events[8].payload["cumulative_tokens"], 30)
+        self.assertEqual(events[9].payload["stream"], "rpc")
+        self.assertEqual(events[10].payload["text"], "Working on the task.\nTASK_COMPLETE")
+        self.assertEqual(events[11].payload, {"message": "halfway"})
+        self.assertEqual(events[12].payload["stream"], "rpc")
+        self.assertEqual(events[13].payload["session_id"], "thread-123")
+        self.assertEqual(events[13].payload["token_count"], 30)
 
         requests = [
             json.loads(line)
@@ -360,8 +372,13 @@ class CodexRunnerTests(unittest.TestCase):
 
         events = list(runner.run(config))
 
-        self.assertEqual([event.event_type for event in events], ["agent.started", "agent.error"])
-        self.assertEqual(events[1].payload["error"], "Command approval denied.")
+        self.assertEqual(
+            [event.event_type for event in events],
+            ["agent.started", "agent.raw_output", "agent.raw_output", "agent.error"],
+        )
+        self.assertEqual(events[1].payload["stream"], "rpc")
+        self.assertEqual(events[2].payload["stream"], "rpc")
+        self.assertEqual(events[3].payload["error"], "Command approval denied.")
         requests = [
             json.loads(line)
             for line in process.stdin.lines

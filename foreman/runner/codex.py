@@ -104,6 +104,11 @@ class CodexRunner(AgentRunner):
                 if not isinstance(message, dict):
                     continue
 
+                yield AgentEvent(
+                    "agent.raw_output",
+                    payload={"stream": "rpc", "message": message},
+                )
+
                 request_id = message.get("id")
                 method = _optional_string(message.get("method"))
                 if method is None:
