@@ -355,7 +355,8 @@ class ForemanOrchestrator:
             payload = event.payload
             if event.event_type == "engine.test_run":
                 builtin_test_result = payload.get("command", "")
-                builtin_test_passed = payload.get("passed", False)
+                # Derive passed from exit_code rather than a separate field
+                builtin_test_passed = payload.get("exit_code") == 0
             elif event.event_type == "engine.test_output":
                 if payload.get("exit_code") == 0:
                     builtin_test_passed = True

@@ -147,6 +147,7 @@ class BuiltinExecutor:
             {
                 "command": command,
                 "exit_code": proc.returncode,
+                "passed": proc.returncode == 0,
                 "stdout": stdout_text,
                 "stderr": stderr_text,
                 "output_tail": output_tail,
