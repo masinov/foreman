@@ -173,6 +173,7 @@ class ForemanOrchestrator:
         self.holder_id = holder_id or str(uuid4())
         self._task_lease_tokens: dict[str, str] = {}
         self._task_started_received: set[str] = set()
+        self._developer_step_executed: set[str] = set()
 
     def _acquire_task_lease(self, task: Task, project: Project) -> str | None:
         """Acquire a lease on a task. Returns the lease token or None if denied."""
@@ -386,6 +387,18 @@ class ForemanOrchestrator:
                     builtin_test_passed = True
                 builtin_test_detail = payload.get("output", "")
 
+        # Reviewer outcomes from human gate decisions
+        review_outcome = ""
+        security_review_outcome = ""
+        # code_reviewer role corresponds to "review" step
+        code_review = self.store.get_human_gate_decision(task.id, "review")
+        if code_review:
+            review_outcome = code_review.decision
+        # security_reviewer role corresponds to "security_review" step
+        security_review = self.store.get_human_gate_decision(task.id, "security_review")
+        if security_review:
+            security_review_outcome = security_review.decision
+
         # Criteria coverage
         criteria_count = 0
         criteria_addressed = 0
@@ -393,17 +406,28 @@ class ForemanOrchestrator:
         criteria_text = task.acceptance_criteria or ""
         criteria_list = [c.strip() for c in criteria_text.split("\n") if c.strip()]
         criteria_count = len(criteria_list)
-        criteria_checklist: list[tuple[str, bool]] = []
+        criteria_checklist: list[dict[str, str]] = []
 
         if criteria_list:
             all_output_text = "\n".join(agent_outputs).lower()
             for criterion in criteria_list:
                 addressed, partial = self._criterion_addressed(criterion, all_output_text, changed_files)
-                criteria_checklist.append((criterion, bool(addressed)))
                 if addressed:
+                    status = "passed"
+                    evidence = "Addressed in agent output or changed files."
                     criteria_addressed += 1
                 elif partial:
+                    status = "partial"
+                    evidence = "Partially addressed — some key terms missing."
                     criteria_partially_addressed += 1
+                else:
+                    status = "unknown"
+                    evidence = "No substantive coverage found in output or changed files."
+                criteria_checklist.append({
+                    "criterion": criterion,
+                    "status": status,
+                    "evidence": evidence,
+                })
 
         score, breakdown = self._score_evidence(
             criteria_count=criteria_count,
@@ -453,6 +477,8 @@ class ForemanOrchestrator:
             commit_count=commit_count,
             test_command=builtin_test_result,
             test_exit_code=test_exit_code,
+            review_outcome=review_outcome,
+            security_review_outcome=security_review_outcome,
             criteria_checklist=tuple(criteria_checklist),
             proof_status=proof_status,
             failure_reasons=tuple(failure_reasons),
@@ -1175,24 +1201,50 @@ class ForemanOrchestrator:
             # Verify task branch exists (for native role steps) or is being created.
             if step_def.role not in {"_builtin:merge", "_builtin:mark_done"}:
                 if current_task.branch_name:
-                    if not branch_exists(project.repo_path, current_task.branch_name):
-                        raise OrchestratorError(
-                            f"Task branch {current_task.branch_name!r} does not exist."
-                        )
-                    # In directed mode, current branch must be the task branch.
-                    mode = str(project.settings.get("task_selection_mode", "directed"))
-                    if mode == "directed":
-                        if worktree_branch(project.repo_path) != current_task.branch_name:
+                    try:
+                        if not branch_exists(project.repo_path, current_task.branch_name):
                             raise OrchestratorError(
-                                f"Expected to be on task branch {current_task.branch_name!r} "
-                                f"but found {worktree_branch(project.repo_path)!r}."
+                                f"Task branch {current_task.branch_name!r} does not exist."
                             )
+                        # In directed mode, current branch must be the task branch.
+                        mode = str(project.settings.get("task_selection_mode", "directed"))
+                        if mode == "directed":
+                            if worktree_branch(project.repo_path) != current_task.branch_name:
+                                raise OrchestratorError(
+                                    f"Expected to be on task branch {current_task.branch_name!r} "
+                                    f"but found {worktree_branch(project.repo_path)!r}."
+                                )
+                    except OrchestratorError as e:
+                        run = self._create_system_run(
+                            current_task,
+                            workflow_step=current_step,
+                            outcome="blocked",
+                            detail=str(e),
+                        )
+                        self._emit_event(
+                            run,
+                            "engine.branch_violation",
+                            {
+                                "branch": current_task.branch_name,
+                                "detail": str(e),
+                            },
+                        )
+                        current_task.status = "blocked"
+                        current_task.blocked_reason = str(e)
+                        current_task.workflow_current_step = None
+                        current_task.workflow_carried_output = None
+                        self.store.save_task(current_task)
+                        current_step = None
+                        self._release_task_lease(current_task, project)
+                        break
 
             # ── Autonomous contract: require signal.task_started after first developer step ──
+            # Pre-step check only for non-developer steps; developer step is checked
+            # after execution so the agent has a chance to emit signal.task_started.
             mode = str(project.settings.get("task_selection_mode", "directed"))
             if mode == "autonomous" and current_task.created_by == "orchestrator":
                 if current_task.id not in self._task_started_received:
-                    if step_def.role not in {"_builtin:merge", "_builtin:mark_done"}:
+                    if step_def.role not in {"_builtin:merge", "_builtin:mark_done", "developer"}:
                         detail = (
                             "Autonomous task did not emit required signal.task_started. "
                             "Missing: title, branch, or acceptance_criteria."
@@ -1620,6 +1672,50 @@ class ForemanOrchestrator:
                 outcome = normalize_agent_outcome(result.outcome)
                 detail = result.detail
 
+            # ── Autonomous contract check: after developer step executes ──
+            # Record that a developer step ran, then check whether signal was received.
+            mode = str(project.settings.get("task_selection_mode", "directed"))
+            if mode == "autonomous" and current_task.created_by == "orchestrator":
+                if step_def.role == "developer":
+                    self._developer_step_executed.add(current_task.id)
+                if (
+                    current_task.id in self._developer_step_executed
+                    and current_task.id not in self._task_started_received
+                ):
+                    # Also accept persisted non-placeholder fields as valid signal substitute
+                    has_persisted_signal = (
+                        current_task.title
+                        and current_task.title != "[autonomous] new task"
+                        and current_task.branch_name
+                        and current_task.acceptance_criteria
+                    )
+                    if not has_persisted_signal:
+                        detail = (
+                            "Autonomous task did not emit required signal.task_started "
+                            "after the first developer step."
+                        )
+                        run = self._create_system_run(
+                            current_task,
+                            workflow_step=current_step,
+                            outcome="blocked",
+                            detail=detail,
+                        )
+                        self._emit_event(
+                            run,
+                            "workflow.autonomous_contract_missing",
+                            {
+                                "task_id": current_task.id,
+                                "step": current_step,
+                                "reason": detail,
+                            },
+                        )
+                        current_task.status = "blocked"
+                        current_task.blocked_reason = detail
+                        self.store.save_task(current_task)
+                        current_step = None
+                        self._release_task_lease(current_task, project)
+                        break
+
             self._emit_event(
                 run,
                 "workflow.step_completed",
@@ -1631,11 +1727,35 @@ class ForemanOrchestrator:
             # If worktree is dirty (e.g. unresolved merge conflicts), skip to avoid
             # false positives from in-progress recovery workflows.
             if step_def.role != "_builtin:merge" and is_worktree_clean(project.repo_path):
-                assert_default_branch_unchanged(
-                    project.repo_path,
-                    default_branch,
-                    original_default_sha,
-                )
+                try:
+                    assert_default_branch_unchanged(
+                        project.repo_path,
+                        default_branch,
+                        original_default_sha,
+                    )
+                except GitError as e:
+                    run = self._create_system_run(
+                        current_task,
+                        workflow_step=current_step,
+                        outcome="blocked",
+                        detail=str(e),
+                    )
+                    self._emit_event(
+                        run,
+                        "engine.branch_violation",
+                        {
+                            "branch": default_branch,
+                            "detail": str(e),
+                        },
+                    )
+                    current_task.status = "blocked"
+                    current_task.blocked_reason = str(e)
+                    current_task.workflow_current_step = None
+                    current_task.workflow_carried_output = None
+                    self.store.save_task(current_task)
+                    current_step = None
+                    self._release_task_lease(current_task, project)
+                    break
 
             transition = workflow.find_transition(current_step, outcome)
             if transition is None:
@@ -1809,7 +1929,6 @@ class ForemanOrchestrator:
                     "task_id": task.id,
                     "lease_id": task_lease.id if task_lease else None,
                     "holder_id": task_lease.holder_id if task_lease else None,
-                    "lease_token": task_lease.lease_token if task_lease else None,
                     "fencing_token": task_lease.fencing_token if task_lease else None,
                     "message": "Marked stale running run as failed.",
                 },
@@ -1844,8 +1963,12 @@ class ForemanOrchestrator:
         if (self.utc_now() - started).total_seconds() <= timeout_seconds:
             return False
 
-        # Timeout has elapsed — check the task's active lease. If a live holder
-        # holds the lease (different holder_id), the run is not ours to recover.
+        # Timeout has elapsed — expire any stale leases for this task, then check.
+        self.store.expire_resource_leases(
+            project_id=project.id,
+            resource_type="task",
+            resource_id=run.task_id,
+        )
         task_lease = self.store.get_active_lease(
             project_id=project.id,
             resource_type="task",
@@ -2611,7 +2734,9 @@ class ForemanOrchestrator:
         events: tuple[BuiltinEventRecord, ...],
     ) -> None:
         for event_record in events:
-            self._emit_event(run, event_record.event_type, event_record.payload)
+            payload = dict(event_record.payload)
+            payload["schema_version"] = event_record.schema_version
+            self._emit_event(run, event_record.event_type, payload)
 
     def _persist_builtin_event(
         self,

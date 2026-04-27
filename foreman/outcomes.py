@@ -40,6 +40,7 @@ def normalize_agent_outcome(raw: str) -> str:
 
     Agents may emit variant strings (e.g. "completed", "done", "success").
     Normalize them to the canonical set so workflow transitions are deterministic.
+    Unknown outcomes are normalized to ERROR to ensure deterministic fallback.
     """
     normalized = raw.strip().lower()
 
@@ -57,23 +58,28 @@ def normalize_agent_outcome(raw: str) -> str:
     if normalized in ("success", "succeeded"):
         return SUCCESS
 
-    # Unknown but structural — pass through as-is for now; caller should handle
-    return normalized
+    # Unknown outcomes map to ERROR for deterministic fallback behavior
+    return ERROR
 
 
 def normalize_reviewer_decision(raw: str) -> str:
     """Normalize reviewer decision strings to canonical constants.
 
     Reviewer output may contain typos or extra whitespace. Normalize to
-    canonical approve/deny/steer constants.
+    canonical approve/deny/steer constants. Only exact canonical forms
+    are accepted; informal approvals like 'yes', 'lgtm', 'pass' are rejected.
     """
     normalized = raw.strip().lower()
 
-    if normalized in ("approve", "approved", "yes", "lgtm", "pass"):
+    if normalized in ("approve", "approved"):
         return APPROVE
     if normalized in ("deny", "denied", "no", "reject", "rejected", "needs_work"):
         return DENY
     if normalized in ("steer", "steering", "redirect", "revise"):
         return STEER
+
+    # Reject informal approval terms - they should not pass as approve
+    if normalized in ("yes", "lgtm", "pass"):
+        return DENY
 
     return raw.strip()

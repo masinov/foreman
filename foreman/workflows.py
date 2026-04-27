@@ -12,6 +12,18 @@ from .errors import ForemanError
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
+# Role-specific valid outcome sets for workflow validation
+_VALID_OUTCOMES: dict[str, set[str]] = {
+    "_builtin:merge": {"success", "failure", "conflict"},
+    "_builtin:run_tests": {"success", "failure"},
+    "_builtin:mark_done": {"success"},
+    "_builtin:human_gate": {"paused"},
+    "_builtin:orchestrator": {"done", "blocked", "error"},
+    "developer": {"done", "blocked", "error"},
+    "code_reviewer": {"approve", "deny", "steer"},
+    "security_reviewer": {"approve", "deny"},
+}
+
 
 class WorkflowLoadError(ForemanError):
     """Raised when a workflow definition cannot be loaded or validated."""
@@ -93,6 +105,7 @@ class WorkflowDefinition:
         - terminal _builtin:mark_done has no outgoing transition
         - every non-terminal step has at least one outgoing transition
         - duplicate transition triggers are rejected
+        - each step only emits outcomes that match its role's contract
         """
         errors: list[str] = []
         step_ids = {step.id for step in self.steps}
@@ -136,8 +149,18 @@ class WorkflowDefinition:
                 )
                 continue
 
-            # For builtin roles, validate that outcomes in transitions are plausible
-            if step.role.startswith("_builtin:"):
+            # For builtin roles and known roles, validate outcomes against contract
+            if step.role in _VALID_OUTCOMES:
+                valid_outcomes = _VALID_OUTCOMES[step.role]
+                for transition in outgoing[step.id]:
+                    trigger_outcome = transition.trigger.removeprefix("completion:")
+                    if trigger_outcome not in valid_outcomes:
+                        errors.append(
+                            f"Step {step.id!r} (role {step.role!r}) has transition with "
+                            f"invalid outcome {trigger_outcome!r}. Expected one of {valid_outcomes}."
+                        )
+            elif step.role.startswith("_builtin:"):
+                # Unknown builtin — allow generic outcomes
                 for transition in outgoing[step.id]:
                     trigger_outcome = transition.trigger.removeprefix("completion:")
                     if trigger_outcome not in {

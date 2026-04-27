@@ -227,8 +227,9 @@ class CompletionEvidence:
     # Review verdicts
     review_outcome: str = ""
     security_review_outcome: str = ""
-    # Criteria checklist: list of (criterion, addressed: bool)
-    criteria_checklist: tuple[tuple[str, bool], ...] = field(default_factory=tuple)
+    # Criteria checklist: list of {criterion, status, evidence}
+    # status: "passed" | "failed" | "partial" | "unknown"
+    criteria_checklist: tuple[dict[str, str], ...] = field(default_factory=tuple)
     # Proof status
     proof_status: str = "pending"
     failure_reasons: tuple[str, ...] = field(default_factory=tuple)

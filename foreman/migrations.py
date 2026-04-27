@@ -221,4 +221,13 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         ALTER TABLE runs ADD COLUMN failure_type TEXT;
         """,
     ),
+    (
+        9,
+        "add unique partial index enforcing one active lease per resource",
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_leases_active_resource_unique
+        ON leases(project_id, resource_type, resource_id)
+        WHERE status = 'active';
+        """,
+    ),
 ]

@@ -1449,6 +1449,30 @@ class ForemanStore:
         ).fetchone()
         return _row_to_lease(row) if row else None
 
+    def expire_resource_leases(
+        self,
+        *,
+        project_id: str,
+        resource_type: str,
+        resource_id: str,
+    ) -> int:
+        """Mark all active leases for one resource as expired. Returns count of expired leases."""
+        now = utc_now_text()
+        with self._connection:
+            cursor = self._connection.execute(
+                """
+                UPDATE leases
+                SET status = 'expired'
+                WHERE project_id = ?
+                  AND resource_type = ?
+                  AND resource_id = ?
+                  AND status = 'active'
+                  AND expires_at < ?
+                """,
+                (project_id, resource_type, resource_id, now),
+            )
+            return cursor.rowcount
+
     def acquire_lease(
         self,
         *,
@@ -1457,16 +1481,19 @@ class ForemanStore:
         resource_id: str,
         holder_id: str,
         lease_token: str,
-        fencing_token: int = 1,
         duration_seconds: float = 300.0,
     ) -> Lease | None:
         """Atomically acquire a lease on a resource.
 
         Returns the new Lease if acquisition succeeded.
-        Returns None if an active lease already exists.
-        Expired leases are transitioned to 'expired' before acquisition so they
-        never block reacquisition.
+        Returns None if an active lease already exists (enforced by the DB's
+        unique partial index on active leases).
+        Expired leases are transitioned to 'expired' before insertion so they
+        do not block reacquisition.
+
+        The fencing_token is auto-incremented: new leases get MAX(existing) + 1.
         """
+        import sqlite3
         from .leases import compute_lease_expiry
 
         now = utc_now_text()
@@ -1487,36 +1514,41 @@ class ForemanStore:
                 (project_id, resource_type, resource_id, now),
             )
 
-            # Check whether an active lease already exists for this resource.
-            existing = self._connection.execute(
+            # Compute next fencing token: MAX(existing) + 1 for this resource
+            max_token_row = self._connection.execute(
                 """
-                SELECT id FROM leases
+                SELECT COALESCE(MAX(fencing_token), 0) + 1 AS next_token
+                FROM leases
                 WHERE project_id = ?
                   AND resource_type = ?
                   AND resource_id = ?
-                  AND status = 'active'
                 """,
                 (project_id, resource_type, resource_id),
             ).fetchone()
-            if existing is not None:
-                return None
+            next_fencing_token: int = max_token_row["next_token"] if max_token_row else 1
 
-            # Insert the new lease.
+            # Insert the new lease. The unique partial index enforces that only
+            # one active lease per resource exists at a time.
             lease_id = f"lease-{uuid4().hex[:12]}"
-            self._connection.execute(
-                """
-                INSERT INTO leases (
-                    id, project_id, resource_type, resource_id, holder_id,
-                    lease_token, fencing_token, status,
-                    acquired_at, heartbeat_at, expires_at, released_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, NULL)
-                """,
-                (
-                    lease_id, project_id, resource_type, resource_id,
-                    holder_id, lease_token, fencing_token,
-                    now, now, expires_at,
-                ),
-            )
+            try:
+                self._connection.execute(
+                    """
+                    INSERT INTO leases (
+                        id, project_id, resource_type, resource_id, holder_id,
+                        lease_token, fencing_token, status,
+                        acquired_at, heartbeat_at, expires_at, released_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, NULL)
+                    """,
+                    (
+                        lease_id, project_id, resource_type, resource_id,
+                        holder_id, lease_token, next_fencing_token,
+                        now, now, expires_at,
+                    ),
+                )
+            except sqlite3.IntegrityError:
+                # Another connection inserted an active lease between our expiry
+                # update and insert; this is the expected race result.
+                return None
 
         return self.get_lease(lease_id)
 

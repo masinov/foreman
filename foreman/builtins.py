@@ -22,6 +22,7 @@ class BuiltinEventRecord:
 
     event_type: str
     payload: dict[str, Any] = field(default_factory=dict)
+    schema_version: str = "1.0"
 
 
 @dataclass(slots=True)
@@ -204,29 +205,35 @@ class BuiltinExecutor:
                 store=store,
             )
             task.completion_evidence = evidence
-            if evidence is not None:
-                block_reason = self._completion_guard_block_reason(task, evidence)
-                if block_reason is not None:
-                    task.status = "blocked"
-                    task.blocked_reason = block_reason
-                    task.workflow_current_step = None
-                    task.workflow_carried_output = None
-                    return BuiltinResult(
-                        outcome="blocked",
-                        detail=block_reason,
-                        events=(
-                            BuiltinEventRecord(
-                                event_type="engine.completion_guard",
-                                payload={
-                                    "verdict": evidence.verdict,
-                                    "score": evidence.score,
-                                    "score_breakdown": evidence.score_breakdown,
-                                    "changed_files": list(evidence.changed_files),
-                                    "reasons": list(evidence.verdict_reasons),
-                                },
-                            ),
+            if evidence is None:
+                return self._block_task(
+                    task,
+                    detail="Completion evidence could not be built. Cannot merge.",
+                    event_type="engine.completion_guard",
+                    payload={"error": "evidence_build_failed"},
+                )
+            block_reason = self._completion_guard_block_reason(task, evidence, project)
+            if block_reason is not None:
+                task.status = "blocked"
+                task.blocked_reason = block_reason
+                task.workflow_current_step = None
+                task.workflow_carried_output = None
+                return BuiltinResult(
+                    outcome="blocked",
+                    detail=block_reason,
+                    events=(
+                        BuiltinEventRecord(
+                            event_type="engine.completion_guard",
+                            payload={
+                                "verdict": evidence.verdict,
+                                "score": evidence.score,
+                                "score_breakdown": evidence.score_breakdown,
+                                "changed_files": list(evidence.changed_files),
+                                "reasons": list(evidence.verdict_reasons),
+                            },
                         ),
-                    )
+                    ),
+                )
 
         result: GitMergeResult = merge_branch(
             project.repo_path,
@@ -257,7 +264,7 @@ class BuiltinExecutor:
                 f"{result.detail}"
             )
             return BuiltinResult(
-                outcome="conflict",
+                outcome="failure",
                 detail=detail,
                 events=(
                     BuiltinEventRecord(
@@ -340,7 +347,7 @@ class BuiltinExecutor:
                     )
                     task.completion_evidence = evidence
                     if evidence is not None:
-                        block_reason = self._completion_guard_block_reason(task, evidence)
+                        block_reason = self._completion_guard_block_reason(task, evidence, project)
                         if block_reason is not None:
                             task.status = "blocked"
                             task.blocked_reason = block_reason
@@ -438,6 +445,7 @@ class BuiltinExecutor:
         self,
         task: Task,
         evidence: CompletionEvidence,
+        project: Project,
     ) -> str | None:
         """Return a block reason when merge-time evidence is too weak."""
 
@@ -453,6 +461,26 @@ class BuiltinExecutor:
                 f"Completion evidence too weak (verdict: {evidence.verdict}). "
                 "Blocking merge because only docs or tests changed for an implementation task."
             )
+        # Gate on proof status
+        if evidence.proof_status == "failed":
+            reasons = "; ".join(evidence.failure_reasons) if evidence.failure_reasons else "unknown"
+            return (
+                f"Completion proof failed. Blocking merge until proof_status is passed. "
+                f"Failure reasons: {reasons}"
+            )
+        # Gate on reviewer outcomes
+        if evidence.review_outcome not in {"approve", ""}:
+            return (
+                f"Code review not approved (outcome: {evidence.review_outcome!r}). "
+                "Blocking merge until code review approves."
+            )
+        # Gate on security review for secure workflows
+        if project.workflow_id == "development_secure":
+            if evidence.security_review_outcome not in {"approve", ""}:
+                return (
+                    f"Security review not approved (outcome: {evidence.security_review_outcome!r}). "
+                    "Blocking merge until security review approves."
+                )
         return None
 
     def _block_task(
