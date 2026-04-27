@@ -171,6 +171,15 @@ class CompletionEvidence:
     (human or automated) can assess whether the implementation actually
     satisfies the task intent — not just whether the developer marked
     it done or the reviewer approved it.
+
+    New fields added for audit-ready proof object:
+    - base_sha / head_sha / merge_base_sha: git positional reference
+    - commit_count: commits in the branch
+    - test_command / test_exit_code: structured test record
+    - review_outcome / security_review_outcome: reviewer verdicts
+    - criteria_checklist: per-criterion addressed status
+    - proof_status: pending | passed | failed
+    - failure_reasons: reasons for failure (when proof_status=failed)
     """
 
     task_id: str
@@ -191,6 +200,22 @@ class CompletionEvidence:
     verdict: str = "unknown"
     verdict_reasons: tuple[str, ...] = ()
     built_at: str = field(default_factory=utc_now_text)
+    # Git positional reference
+    base_sha: str = ""
+    head_sha: str = ""
+    merge_base_sha: str = ""
+    commit_count: int = 0
+    # Structured test record
+    test_command: str = ""
+    test_exit_code: int | None = None
+    # Review verdicts
+    review_outcome: str = ""
+    security_review_outcome: str = ""
+    # Criteria checklist: list of (criterion, addressed: bool)
+    criteria_checklist: tuple[tuple[str, bool], ...] = field(default_factory=tuple)
+    # Proof status
+    proof_status: str = "pending"
+    failure_reasons: tuple[str, ...] = field(default_factory=tuple)
 
     def __str__(self) -> str:
         parts = [

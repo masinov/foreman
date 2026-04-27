@@ -324,6 +324,29 @@ class ForemanOrchestrator:
         """
         runs = self.store.list_runs(task_id=task.id)
 
+        # Git positional reference
+        base_sha = head_sha(project.repo_path, f"refs/heads/{project.default_branch}") or ""
+        head_sha_val = ""
+        merge_base_sha_val = ""
+        commit_count = 0
+        if task.branch_name:
+            head_sha_val = head_sha(project.repo_path, f"refs/heads/{task.branch_name}") or ""
+            merge_base_result = subprocess.run(
+                ["git", "merge-base", project.default_branch, task.branch_name],
+                cwd=project.repo_path,
+                capture_output=True,
+                text=True,
+            )
+            merge_base_sha_val = merge_base_result.stdout.strip()
+            commit_count_result = subprocess.run(
+                ["git", "rev-list", "--count", f"{project.default_branch}..{task.branch_name}"],
+                cwd=project.repo_path,
+                capture_output=True,
+                text=True,
+            )
+            if commit_count_result.returncode == 0:
+                commit_count = int(commit_count_result.stdout.strip())
+
         # Changed files from git diff
         changed_files: tuple[str, ...] = ()
         diff_context_lines = 0
@@ -351,12 +374,13 @@ class ForemanOrchestrator:
         builtin_test_passed = False
         builtin_test_result = ""
         builtin_test_detail = ""
+        test_exit_code: int | None = None
         for event in sorted(test_events, key=lambda e: e.timestamp):
             payload = event.payload
             if event.event_type == "engine.test_run":
                 builtin_test_result = payload.get("command", "")
-                # Derive passed from exit_code rather than a separate field
-                builtin_test_passed = payload.get("exit_code") == 0
+                test_exit_code = payload.get("exit_code")
+                builtin_test_passed = test_exit_code == 0
             elif event.event_type == "engine.test_output":
                 if payload.get("exit_code") == 0:
                     builtin_test_passed = True
@@ -369,11 +393,13 @@ class ForemanOrchestrator:
         criteria_text = task.acceptance_criteria or ""
         criteria_list = [c.strip() for c in criteria_text.split("\n") if c.strip()]
         criteria_count = len(criteria_list)
+        criteria_checklist: list[tuple[str, bool]] = []
 
         if criteria_list:
             all_output_text = "\n".join(agent_outputs).lower()
             for criterion in criteria_list:
                 addressed, partial = self._criterion_addressed(criterion, all_output_text, changed_files)
+                criteria_checklist.append((criterion, bool(addressed)))
                 if addressed:
                     criteria_addressed += 1
                 elif partial:
@@ -390,6 +416,18 @@ class ForemanOrchestrator:
             agent_outputs=agent_outputs,
         )
         verdict, reasons = self._verdict_from_score(score, criteria_count, criteria_addressed)
+
+        # Derive proof_status and failure_reasons from score and test results
+        proof_status = "pending"
+        failure_reasons: list[str] = []
+        if builtin_test_result and not builtin_test_passed:
+            proof_status = "failed"
+            failure_reasons.append(f"Tests failed (exit code {test_exit_code}).")
+        if score < 50:
+            proof_status = "failed"
+            failure_reasons.append(f"Evidence score too low ({score:.0f}/100).")
+        elif builtin_test_passed and score >= 50:
+            proof_status = "passed"
 
         return CompletionEvidence(
             task_id=task.id,
@@ -409,6 +447,15 @@ class ForemanOrchestrator:
             score_breakdown=breakdown,
             verdict=verdict,
             verdict_reasons=tuple(reasons),
+            base_sha=base_sha,
+            head_sha=head_sha_val,
+            merge_base_sha=merge_base_sha_val,
+            commit_count=commit_count,
+            test_command=builtin_test_result,
+            test_exit_code=test_exit_code,
+            criteria_checklist=tuple(criteria_checklist),
+            proof_status=proof_status,
+            failure_reasons=tuple(failure_reasons),
         )
 
     def _safe_branch_diff(
