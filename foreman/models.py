@@ -188,10 +188,10 @@ class MergeWaiver:
     waiver_type: str  # 'missing_acceptance_criteria' | 'incomplete_criteria' | 'no_code_delta' | 'docs_only_impl_task'
     reason: str
     approved_by: str
-    approved_at: str = field(default_factory=utc_now_text)
     branch_name: str
     head_sha: str
     base_sha: str
+    approved_at: str = field(default_factory=utc_now_text)
     expires_at: str | None = None
     revoked_at: str | None = None
 

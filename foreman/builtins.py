@@ -458,15 +458,29 @@ class BuiltinExecutor:
         if task.task_type not in {"feature", "fix", "refactor"}:
             return None
         if not evidence.changed_files:
-            return (
+            block_reason = (
                 f"Completion evidence too weak (verdict: {evidence.verdict}). "
                 "Blocking merge because the task branch has no material file changes."
             )
+            if store and task.branch_name and evidence.head_sha:
+                waiver = store.get_active_merge_waiver(
+                    task.id, task.branch_name, evidence.head_sha,
+                )
+                if waiver and waiver.waiver_type == "no_code_delta":
+                    return None
+            return block_reason
         if self._changes_are_docs_or_tests_only(evidence.changed_files):
-            return (
+            block_reason = (
                 f"Completion evidence too weak (verdict: {evidence.verdict}). "
                 "Blocking merge because only docs or tests changed for an implementation task."
             )
+            if store and task.branch_name and evidence.head_sha:
+                waiver = store.get_active_merge_waiver(
+                    task.id, task.branch_name, evidence.head_sha,
+                )
+                if waiver and waiver.waiver_type == "docs_only_impl_task":
+                    return None
+            return block_reason
         # Gate on proof status - require explicit "passed"
         if evidence.proof_status != "passed":
             reasons = "; ".join(evidence.failure_reasons) if evidence.failure_reasons else "proof_status is " + evidence.proof_status
@@ -474,9 +488,9 @@ class BuiltinExecutor:
                 f"Completion proof not passed. Blocking merge until proof_status is 'passed'. "
                 f"Current: {evidence.proof_status}. Reasons: {reasons}"
             )
-            # Check for applicable waiver (only for proof-related deficiencies)
+            # Check for applicable waiver (only for proof-related deficiencies, never for tests/score)
             if store and task.branch_name and evidence.head_sha:
-                waiver_type = self._waiver_type_for_failure(evidence.failure_reasons)
+                waiver_type = self._waiver_type_for_proof_failure(evidence.failure_reasons)
                 if waiver_type:
                     waiver = store.get_active_merge_waiver(
                         task.id,
@@ -501,18 +515,37 @@ class BuiltinExecutor:
                 )
         return None
 
-    def _waiver_type_for_failure(self, failure_reasons: tuple[str, ...]) -> str | None:
-        """Determine the waiver type that could apply given failure reasons."""
-        reasons_text = " ".join(failure_reasons).lower()
-        if "no acceptance criteria" in reasons_text or "criteria" not in reasons_text:
-            # Could be missing_acceptance_criteria or incomplete_criteria
-            if "not fully addressed" in reasons_text or "partial" in reasons_text or "unknown" in reasons_text:
-                return "incomplete_criteria"
+    def _waiver_type_for_proof_failure(self, failure_reasons: tuple[str, ...]) -> str | None:
+        """Determine the waiver type that could apply given failure reasons.
+
+        Returns a waiver type only if ALL failures are waiveable proof deficiencies
+        (missing/incomplete criteria). Never returns a waiver type if any failure
+        involves tests, score, reviewer, or security.
+        """
+        non_waivable_markers = (
+            "tests failed",
+            "exit code",
+            "evidence score too low",
+            "review",
+            "security",
+        )
+        reasons_lower = [r.lower() for r in failure_reasons]
+
+        # If there are any non-waivable failures, no waiver can apply
+        for reason in reasons_lower:
+            if any(marker in reason for marker in non_waivable_markers):
+                return None
+
+        # All failures are proof-related — determine waiver type
+        if not reasons_lower:
+            return None
+
+        if all("no acceptance criteria" in r for r in reasons_lower):
             return "missing_acceptance_criteria"
-        if "not fully addressed" in reasons_text or "partial" in reasons_text:
+
+        if all("criterion not fully addressed" in r for r in reasons_lower):
             return "incomplete_criteria"
-        if "no material file changes" in reasons_text or "docs only" in reasons_text:
-            return "docs_only_impl_task"
+
         return None
 
     def _block_task(
