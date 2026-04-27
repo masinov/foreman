@@ -1602,6 +1602,14 @@ class ForemanOrchestrator:
         """Fail stale running runs and reset task state so the slice can be retried safely."""
 
         now = utc_now_text()
+
+        # Capture lease metadata for the recovery event.
+        task_lease = self.store.get_active_lease(
+            project_id=project.id,
+            resource_type="task",
+            resource_id=task.id,
+        )
+
         for run in runs:
             run.status = "failed"
             run.outcome = "error"
@@ -1613,6 +1621,10 @@ class ForemanOrchestrator:
                 "engine.crash_recovery",
                 {
                     "task_id": task.id,
+                    "lease_id": task_lease.id if task_lease else None,
+                    "holder_id": task_lease.holder_id if task_lease else None,
+                    "lease_token": task_lease.lease_token if task_lease else None,
+                    "fencing_token": task_lease.fencing_token if task_lease else None,
                     "message": "Marked stale running run as failed.",
                 },
             )
@@ -1626,16 +1638,38 @@ class ForemanOrchestrator:
         self._restore_branch_if_safe(project.repo_path, project.default_branch)
 
     def _run_is_stale(self, project: Project, run: Run) -> bool:
-        """Return whether a persisted running run has exceeded its allowed ownership window."""
+        """Return whether a persisted running run has exceeded its allowed ownership window.
+
+        A run is considered stale when:
+        1. Its configured timeout has elapsed, AND
+        2. The task's active lease is either missing or held by a different orchestrator
+           (meaning the original holder is gone and the lease has expired).
+        """
 
         timeout_seconds = _active_run_recovery_timeout_seconds(project)
         if timeout_seconds is None or timeout_seconds <= 0:
             return False
+
+        # Check if the run's timeout has elapsed.
         reference = self.store.get_latest_event_timestamp(run.id) or run.started_at or run.created_at
         started = _parse_utc_timestamp(reference)
         if started is None:
             return False
-        return (self.utc_now() - started).total_seconds() > timeout_seconds
+        if (self.utc_now() - started).total_seconds() <= timeout_seconds:
+            return False
+
+        # Timeout has elapsed — check the task's active lease. If a live holder
+        # holds the lease (different holder_id), the run is not ours to recover.
+        task_lease = self.store.get_active_lease(
+            project_id=project.id,
+            resource_type="task",
+            resource_id=run.task_id,
+        )
+        if task_lease is not None and task_lease.holder_id != self.holder_id:
+            # Another orchestrator holds an active lease — not stale.
+            return False
+
+        return True
 
     def prune_old_history(self, project: Project) -> dict[str, int]:
         """Prune old project history according to per-type retention settings.
