@@ -171,6 +171,7 @@ class ForemanOrchestrator:
         self.utc_now = utc_now or (lambda: datetime.now(timezone.utc))
         self.holder_id = holder_id or str(uuid4())
         self._task_lease_tokens: dict[str, str] = {}
+        self._task_started_received: set[str] = set()
 
     def _acquire_task_lease(self, task: Task, project: Project) -> str | None:
         """Acquire a lease on a task. Returns the lease token or None if denied."""
@@ -1111,6 +1112,37 @@ class ForemanOrchestrator:
                                 f"Expected to be on task branch {current_task.branch_name!r} "
                                 f"but found {worktree_branch(project.repo_path)!r}."
                             )
+
+            # ── Autonomous contract: require signal.task_started after first developer step ──
+            mode = str(project.settings.get("task_selection_mode", "directed"))
+            if mode == "autonomous" and current_task.created_by == "orchestrator":
+                if current_task.id not in self._task_started_received:
+                    if step_def.role not in {"_builtin:merge", "_builtin:mark_done"}:
+                        detail = (
+                            "Autonomous task did not emit required signal.task_started. "
+                            "Missing: title, branch, or acceptance_criteria."
+                        )
+                        run = self._create_system_run(
+                            current_task,
+                            workflow_step=current_step,
+                            outcome="blocked",
+                            detail=detail,
+                        )
+                        self._emit_event(
+                            run,
+                            "workflow.autonomous_contract_missing",
+                            {
+                                "task_id": current_task.id,
+                                "step": current_step,
+                                "reason": detail,
+                            },
+                        )
+                        current_task.status = "blocked"
+                        current_task.blocked_reason = detail
+                        self.store.save_task(current_task)
+                        current_step = None
+                        self._release_task_lease(current_task, project)
+                        break
 
             visit_count = current_task.step_visit_counts.get(current_step, 0) + 1
             current_task.step_visit_counts[current_step] = visit_count
@@ -2414,6 +2446,7 @@ class ForemanOrchestrator:
                 payload.get("criteria", task.acceptance_criteria or "")
             ) or task.acceptance_criteria
             self.store.save_task(task)
+            self._task_started_received.add(task.id)
             return
 
         if event_record.event_type == "signal.task_created":
