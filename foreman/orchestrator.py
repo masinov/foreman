@@ -657,7 +657,15 @@ class ForemanOrchestrator:
         branch_name: str,
         task_id: str | None = None,
     ) -> SupervisorMergeResult | None:
-        """Persist task and sprint state after a reviewed supervisor merge."""
+        """Persist task and sprint state after a reviewed supervisor merge.
+
+        **Legacy compatibility path.** Foreman no longer requires external supervisor
+        scripts to finalize merges. The normal completion path uses
+        `_builtin:mark_done` (which constructs evidence and releases the lease)
+        and `_builtin:merge` (which commits the branch). This method is retained
+        only to support existing supervisor workflows that call into it directly.
+        Do not use this as the primary merge finalization path for new work.
+        """
 
         project = self.store.find_project_by_repo_path(repo_path)
         if project is None:
