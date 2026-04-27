@@ -457,30 +457,29 @@ class BuiltinExecutor:
 
         if task.task_type not in {"feature", "fix", "refactor"}:
             return None
+
+        # Track whether an early deficiency was waived; continue checking later gates
+        # even after waiving early blocks (no_code_delta, docs_only_impl_task).
+        waived_early = False
+
         if not evidence.changed_files:
             block_reason = (
                 f"Completion evidence too weak (verdict: {evidence.verdict}). "
                 "Blocking merge because the task branch has no material file changes."
             )
-            if store and task.branch_name and evidence.head_sha:
-                waiver = store.get_active_merge_waiver(
-                    task.id, task.branch_name, evidence.head_sha,
-                )
-                if waiver and waiver.waiver_type == "no_code_delta":
-                    return None
-            return block_reason
+            if self._active_waiver_applies(store, task, evidence, "no_code_delta"):
+                waived_early = True
+            else:
+                return block_reason
         if self._changes_are_docs_or_tests_only(evidence.changed_files):
             block_reason = (
                 f"Completion evidence too weak (verdict: {evidence.verdict}). "
                 "Blocking merge because only docs or tests changed for an implementation task."
             )
-            if store and task.branch_name and evidence.head_sha:
-                waiver = store.get_active_merge_waiver(
-                    task.id, task.branch_name, evidence.head_sha,
-                )
-                if waiver and waiver.waiver_type == "docs_only_impl_task":
-                    return None
-            return block_reason
+            if self._active_waiver_applies(store, task, evidence, "docs_only_impl_task"):
+                waived_early = True
+            else:
+                return block_reason
         # Gate on proof status - require explicit "passed"
         if evidence.proof_status != "passed":
             reasons = "; ".join(evidence.failure_reasons) if evidence.failure_reasons else "proof_status is " + evidence.proof_status
@@ -498,8 +497,13 @@ class BuiltinExecutor:
                         evidence.head_sha,
                     )
                     if waiver and waiver.waiver_type == waiver_type:
-                        return None  # Waiver applies
-            return block_reason
+                        waived_early = True
+                    else:
+                        return block_reason
+                else:
+                    return block_reason
+            else:
+                return block_reason
         # Gate on code review approval - require explicit approve
         if evidence.review_outcome != "approve":
             return (
@@ -547,6 +551,19 @@ class BuiltinExecutor:
             return "incomplete_criteria"
 
         return None
+
+    def _active_waiver_applies(
+        self,
+        store: ForemanStore | None,
+        task: Task,
+        evidence: CompletionEvidence,
+        waiver_type: str,
+    ) -> bool:
+        """Return True if an active waiver of the given type exists for the task/branch."""
+        if not store or not task.branch_name or not evidence.head_sha:
+            return False
+        waiver = store.get_active_merge_waiver(task.id, task.branch_name, evidence.head_sha)
+        return waiver is not None and waiver.waiver_type == waiver_type
 
     def _block_task(
         self,
