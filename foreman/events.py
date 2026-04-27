@@ -250,7 +250,6 @@ def engine_crash_recovery(
     previous_status: str,
     lease_id: str | None = None,
     holder_id: str | None = None,
-    lease_token: str | None = None,
     fencing_token: int | None = None,
 ) -> EventPayload:
     return _build(
@@ -261,7 +260,6 @@ def engine_crash_recovery(
             "previous_status": previous_status,
             "lease_id": lease_id,
             "holder_id": holder_id,
-            "lease_token": lease_token,
             "fencing_token": fencing_token,
         },
     )

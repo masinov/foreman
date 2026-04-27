@@ -387,17 +387,16 @@ class ForemanOrchestrator:
                     builtin_test_passed = True
                 builtin_test_detail = payload.get("output", "")
 
-        # Reviewer outcomes from human gate decisions
+        # Reviewer outcomes from completed reviewer runs
         review_outcome = ""
         security_review_outcome = ""
-        # code_reviewer role corresponds to "review" step
-        code_review = self.store.get_human_gate_decision(task.id, "review")
-        if code_review:
-            review_outcome = code_review.decision
-        # security_reviewer role corresponds to "security_review" step
-        security_review = self.store.get_human_gate_decision(task.id, "security_review")
-        if security_review:
-            security_review_outcome = security_review.decision
+        # code_reviewer role emits outcomes as run completion outcomes
+        reviewer_runs = [r for r in runs if r.role_id in ("code_reviewer", "security_reviewer")]
+        for run in sorted(reviewer_runs, key=lambda r: r.completed_at or "", reverse=True):
+            if run.role_id == "code_reviewer" and not review_outcome:
+                review_outcome = run.outcome or ""
+            if run.role_id == "security_reviewer" and not security_review_outcome:
+                security_review_outcome = run.outcome or ""
 
         # Criteria coverage
         criteria_count = 0
@@ -441,7 +440,7 @@ class ForemanOrchestrator:
         )
         verdict, reasons = self._verdict_from_score(score, criteria_count, criteria_addressed)
 
-        # Derive proof_status and failure_reasons from score and test results
+        # Derive proof_status and failure_reasons from score, tests, and criteria coverage
         proof_status = "pending"
         failure_reasons: list[str] = []
         if builtin_test_result and not builtin_test_passed:
@@ -450,7 +449,21 @@ class ForemanOrchestrator:
         if score < 50:
             proof_status = "failed"
             failure_reasons.append(f"Evidence score too low ({score:.0f}/100).")
-        elif builtin_test_passed and score >= 50:
+        # Require all criteria to be "passed" for proof_status = passed
+        if criteria_checklist:
+            failed_or_partial = [
+                c for c in criteria_checklist if c.get("status") in ("partial", "unknown")
+            ]
+            if failed_or_partial:
+                if proof_status != "failed":
+                    proof_status = "failed"
+                for c in failed_or_partial:
+                    failure_reasons.append(
+                        f"Criterion not fully addressed: {c.get('criterion', '')!r} ({c.get('status')})."
+                    )
+        if proof_status != "failed" and builtin_test_passed and score >= 50 and (
+            not criteria_checklist or all(c.get("status") == "passed" for c in criteria_checklist)
+        ):
             proof_status = "passed"
 
         return CompletionEvidence(

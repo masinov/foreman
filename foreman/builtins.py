@@ -461,22 +461,22 @@ class BuiltinExecutor:
                 f"Completion evidence too weak (verdict: {evidence.verdict}). "
                 "Blocking merge because only docs or tests changed for an implementation task."
             )
-        # Gate on proof status
-        if evidence.proof_status == "failed":
-            reasons = "; ".join(evidence.failure_reasons) if evidence.failure_reasons else "unknown"
+        # Gate on proof status - require explicit "passed"
+        if evidence.proof_status != "passed":
+            reasons = "; ".join(evidence.failure_reasons) if evidence.failure_reasons else "proof_status is " + evidence.proof_status
             return (
-                f"Completion proof failed. Blocking merge until proof_status is passed. "
-                f"Failure reasons: {reasons}"
+                f"Completion proof not passed. Blocking merge until proof_status is 'passed'. "
+                f"Current: {evidence.proof_status}. Reasons: {reasons}"
             )
-        # Gate on reviewer outcomes
-        if evidence.review_outcome not in {"approve", ""}:
+        # Gate on code review approval - require explicit approve
+        if evidence.review_outcome != "approve":
             return (
                 f"Code review not approved (outcome: {evidence.review_outcome!r}). "
                 "Blocking merge until code review approves."
             )
-        # Gate on security review for secure workflows
+        # Gate on security review for secure workflows - require explicit approve
         if project.workflow_id == "development_secure":
-            if evidence.security_review_outcome not in {"approve", ""}:
+            if evidence.security_review_outcome != "approve":
                 return (
                     f"Security review not approved (outcome: {evidence.security_review_outcome!r}). "
                     "Blocking merge until security review approves."
