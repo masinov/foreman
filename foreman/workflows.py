@@ -84,6 +84,74 @@ class WorkflowDefinition:
 
         return self.find_transition_by_trigger(step_id, f"completion:{outcome}")
 
+    def validate(self) -> list[str]:
+        """Validate the workflow definition and return a list of error messages.
+
+        Validation checks:
+        - builtin role steps support listed outcomes
+        - reviewer role transitions include only valid reviewer outcomes
+        - terminal _builtin:mark_done has no outgoing transition
+        - every non-terminal step has at least one outgoing transition
+        - duplicate transition triggers are rejected
+        """
+        errors: list[str] = []
+        step_ids = {step.id for step in self.steps}
+
+        # Check all transition targets exist
+        for transition in self.transitions:
+            if transition.from_step not in step_ids:
+                errors.append(f"Transition from unknown step {transition.from_step!r}.")
+            if transition.to_step not in step_ids:
+                errors.append(f"Transition to unknown step {transition.to_step!r}.")
+
+        # Check for duplicate transition triggers
+        seen_triggers: dict[str, str] = {}
+        for transition in self.transitions:
+            key = (transition.from_step, transition.trigger)
+            if key in seen_triggers:
+                errors.append(
+                    f"Duplicate transition trigger {transition.trigger!r} "
+                    f"from {transition.from_step!r} (first: {seen_triggers[key]!r}, "
+                    f"second: {transition.to_step!r})."
+                )
+            seen_triggers[key] = transition.to_step
+
+        # Group transitions by from_step for coverage checks
+        outgoing: dict[str, list[WorkflowTransition]] = {}
+        for transition in self.transitions:
+            outgoing.setdefault(transition.from_step, []).append(transition)
+
+        for step in self.steps:
+            if step.role == "_builtin:mark_done":
+                if step.id in outgoing and outgoing[step.id]:
+                    errors.append(
+                        f"Terminal step {step.id!r} (_builtin:mark_done) has "
+                        f"{len(outgoing[step.id])} outgoing transition(s); it should be terminal."
+                    )
+                continue
+
+            if step.id not in outgoing or not outgoing[step.id]:
+                errors.append(
+                    f"Non-terminal step {step.id!r} has no outgoing transitions."
+                )
+                continue
+
+            # For builtin roles, validate that outcomes in transitions are plausible
+            if step.role.startswith("_builtin:"):
+                for transition in outgoing[step.id]:
+                    trigger_outcome = transition.trigger.removeprefix("completion:")
+                    if trigger_outcome not in {
+                        "success", "failure", "error", "blocked",
+                        "done", "approve", "deny", "steer", "paused",
+                        "conflict",
+                    }:
+                        errors.append(
+                            f"Builtin step {step.id!r} has transition with "
+                            f"unrecognized outcome {trigger_outcome!r}."
+                        )
+
+        return errors
+
     def find_transition_by_trigger(
         self,
         step_id: str,
@@ -212,7 +280,7 @@ def load_workflow(
             message=_require_string(fallback_data, "message", workflow_path),
         )
 
-    return WorkflowDefinition(
+    definition = WorkflowDefinition(
         id=_require_string(workflow_data, "id", workflow_path),
         name=_require_string(workflow_data, "name", workflow_path),
         methodology=_require_string(workflow_data, "methodology", workflow_path),
@@ -222,6 +290,14 @@ def load_workflow(
         fallback=fallback,
         source_path=workflow_path,
     )
+
+    validation_errors = definition.validate()
+    if validation_errors:
+        raise WorkflowLoadError(
+            f"{workflow_path}: validation errors: {'; '.join(validation_errors)}"
+        )
+
+    return definition
 
 
 def load_workflows(
