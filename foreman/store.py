@@ -7,9 +7,10 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
+from uuid import uuid4
 
 from .migrations import MIGRATIONS
-from .models import CompletionEvidence, DecisionGate, Event, Project, Run, Sprint, TASK_STATUSES, Task
+from .models import CompletionEvidence, DecisionGate, Event, Lease, Project, Run, Sprint, TASK_STATUSES, Task, utc_now_text
 
 _PRUNE_PROTECTED_TASK_STATUSES = ("blocked", "in_progress")
 
@@ -186,6 +187,23 @@ def _row_to_gate(row: sqlite3.Row) -> DecisionGate:
         status=row["status"],  # type: ignore[assignment]
         resolved_at=row["resolved_at"],
         resolved_by=row["resolved_by"],
+    )
+
+
+def _row_to_lease(row: sqlite3.Row) -> Lease:
+    return Lease(
+        id=row["id"],
+        project_id=row["project_id"],
+        resource_type=row["resource_type"],
+        resource_id=row["resource_id"],
+        holder_id=row["holder_id"],
+        lease_token=row["lease_token"],
+        fencing_token=row["fencing_token"],
+        status=row["status"],  # type: ignore[assignment]
+        acquired_at=row["acquired_at"],
+        heartbeat_at=row["heartbeat_at"],
+        expires_at=row["expires_at"],
+        released_at=row["released_at"],
     )
 
 
@@ -1328,3 +1346,296 @@ class ForemanStore:
                 (project_id,),
             ).fetchall()
         return [_row_to_gate(row) for row in rows]
+
+    # ── Leases ────────────────────────────────────────────────────────────────────
+
+    def get_lease(self, lease_id: str) -> Lease | None:
+        """Return one lease by identifier."""
+        row = self._connection.execute(
+            "SELECT * FROM leases WHERE id = ?",
+            (lease_id,),
+        ).fetchone()
+        return _row_to_lease(row) if row else None
+
+    def get_active_lease(
+        self,
+        *,
+        project_id: str,
+        resource_type: str,
+        resource_id: str,
+    ) -> Lease | None:
+        """Return the active lease for one resource, or None."""
+        row = self._connection.execute(
+            """
+            SELECT * FROM leases
+            WHERE project_id = ?
+              AND resource_type = ?
+              AND resource_id = ?
+              AND status = 'active'
+            LIMIT 1
+            """,
+            (project_id, resource_type, resource_id),
+        ).fetchone()
+        return _row_to_lease(row) if row else None
+
+    def acquire_lease(
+        self,
+        *,
+        project_id: str,
+        resource_type: str,
+        resource_id: str,
+        holder_id: str,
+        lease_token: str,
+        fencing_token: int = 1,
+        duration_seconds: float = 300.0,
+    ) -> Lease | None:
+        """Atomically acquire a lease on a resource.
+
+        Returns the new Lease if acquisition succeeded.
+        Returns None if an active lease already exists.
+        Expired leases are transitioned to 'expired' before acquisition so they
+        never block reacquisition.
+        """
+        from .leases import compute_lease_expiry
+
+        now = utc_now_text()
+        expires_at = compute_lease_expiry(duration_seconds)
+
+        with self._connection:
+            # Transition any expired leases for this resource to 'expired'.
+            self._connection.execute(
+                """
+                UPDATE leases
+                SET status = 'expired'
+                WHERE project_id = ?
+                  AND resource_type = ?
+                  AND resource_id = ?
+                  AND status = 'active'
+                  AND expires_at < ?
+                """,
+                (project_id, resource_type, resource_id, now),
+            )
+
+            # Check whether an active lease already exists for this resource.
+            existing = self._connection.execute(
+                """
+                SELECT id FROM leases
+                WHERE project_id = ?
+                  AND resource_type = ?
+                  AND resource_id = ?
+                  AND status = 'active'
+                """,
+                (project_id, resource_type, resource_id),
+            ).fetchone()
+            if existing is not None:
+                return None
+
+            # Insert the new lease.
+            lease_id = f"lease-{uuid4().hex[:12]}"
+            self._connection.execute(
+                """
+                INSERT INTO leases (
+                    id, project_id, resource_type, resource_id, holder_id,
+                    lease_token, fencing_token, status,
+                    acquired_at, heartbeat_at, expires_at, released_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, NULL)
+                """,
+                (
+                    lease_id, project_id, resource_type, resource_id,
+                    holder_id, lease_token, fencing_token,
+                    now, now, expires_at,
+                ),
+            )
+
+        return self.get_lease(lease_id)
+
+    def renew_lease(
+        self,
+        *,
+        project_id: str,
+        resource_type: str,
+        resource_id: str,
+        holder_id: str,
+        lease_token: str,
+        duration_seconds: float = 300.0,
+    ) -> Lease | None:
+        """Renew an active lease if the caller holds it with the correct token.
+
+        Returns the renewed Lease on success.
+        Returns None if: no active lease, holder_id mismatch, or token mismatch.
+        """
+        from .leases import compute_lease_expiry, is_lease_expired
+
+        now = utc_now_text()
+        expires_at = compute_lease_expiry(duration_seconds)
+
+        with self._connection:
+            row = self._connection.execute(
+                """
+                SELECT * FROM leases
+                WHERE project_id = ?
+                  AND resource_type = ?
+                  AND resource_id = ?
+                  AND status = 'active'
+                """,
+                (project_id, resource_type, resource_id),
+            ).fetchone()
+            if row is None:
+                return None
+
+            lease = _row_to_lease(row)
+
+            # Validate holder and token.
+            if lease.holder_id != holder_id or lease.lease_token != lease_token:
+                return None
+
+            # Check expiry (edge case: clock skew or concurrent expiry).
+            if is_lease_expired(lease):
+                self._connection.execute(
+                    "UPDATE leases SET status = 'expired' WHERE id = ?",
+                    (lease.id,),
+                )
+                return None
+
+            # Renew: update heartbeat and expiry.
+            self._connection.execute(
+                """
+                UPDATE leases
+                SET heartbeat_at = ?, expires_at = ?
+                WHERE id = ?
+                """,
+                (now, expires_at, lease.id),
+            )
+
+        return self.get_lease(lease.id)
+
+    def release_lease(
+        self,
+        *,
+        project_id: str,
+        resource_type: str,
+        resource_id: str,
+        holder_id: str,
+        lease_token: str,
+    ) -> bool:
+        """Release an active lease if the caller holds it with the correct token.
+
+        Returns True on successful release.
+        Returns False if: no active lease, holder_id mismatch, or token mismatch.
+        """
+        now = utc_now_text()
+
+        with self._connection:
+            row = self._connection.execute(
+                """
+                SELECT * FROM leases
+                WHERE project_id = ?
+                  AND resource_type = ?
+                  AND resource_id = ?
+                  AND status = 'active'
+                """,
+                (project_id, resource_type, resource_id),
+            ).fetchone()
+            if row is None:
+                return False
+
+            lease = _row_to_lease(row)
+
+            if lease.holder_id != holder_id or lease.lease_token != lease_token:
+                return False
+
+            self._connection.execute(
+                """
+                UPDATE leases
+                SET status = 'released', released_at = ?
+                WHERE id = ?
+                """,
+                (now, lease.id),
+            )
+
+        return True
+
+    def expire_leases(
+        self,
+        *,
+        project_id: str | None = None,
+        holder_id: str | None = None,
+        older_than_seconds: float | None = None,
+    ) -> int:
+        """Mark active leases as expired based on heartbeat age or holder.
+
+        If older_than_seconds is provided, expires leases whose heartbeat is
+        older than that threshold. If holder_id is provided, only expires
+        leases for that holder. If both provided, both conditions must match.
+
+        Returns the number of leases expired.
+        """
+        from datetime import timedelta
+
+        conditions = ["status = 'active'"]
+        params: list[Any] = []
+
+        if older_than_seconds is not None:
+            cutoff = (
+                datetime.now(timezone.utc) - timedelta(seconds=older_than_seconds)
+            ).isoformat(timespec="microseconds").replace("+00:00", "Z")
+            conditions.append("heartbeat_at < ?")
+            params.append(cutoff)
+
+        if holder_id is not None:
+            conditions.append("holder_id = ?")
+            params.append(holder_id)
+
+        if project_id is not None:
+            conditions.append("project_id = ?")
+            params.append(project_id)
+
+        where_clause = " AND ".join(conditions)
+
+        with self._connection:
+            cursor = self._connection.execute(
+                f"""
+                UPDATE leases
+                SET status = 'expired'
+                WHERE {where_clause}
+                """,
+                tuple(params),
+            )
+        return int(cursor.rowcount)
+
+    def list_leases(
+        self,
+        *,
+        project_id: str | None = None,
+        resource_type: str | None = None,
+        resource_id: str | None = None,
+        holder_id: str | None = None,
+        status: str | None = None,
+    ) -> list[Lease]:
+        """List leases with optional filters."""
+        conditions: list[str] = []
+        params: list[Any] = []
+
+        if project_id is not None:
+            conditions.append("project_id = ?")
+            params.append(project_id)
+        if resource_type is not None:
+            conditions.append("resource_type = ?")
+            params.append(resource_type)
+        if resource_id is not None:
+            conditions.append("resource_id = ?")
+            params.append(resource_id)
+        if holder_id is not None:
+            conditions.append("holder_id = ?")
+            params.append(holder_id)
+        if status is not None:
+            conditions.append("status = ?")
+            params.append(status)
+
+        sql = "SELECT * FROM leases"
+        if conditions:
+            sql = f"{sql} WHERE {' AND '.join(conditions)}"
+        sql = f"{sql} ORDER BY acquired_at ASC"
+
+        rows = self._connection.execute(sql, tuple(params)).fetchall()
+        return [_row_to_lease(row) for row in rows]

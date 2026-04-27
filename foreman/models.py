@@ -219,3 +219,24 @@ class Event:
     timestamp: str = field(default_factory=utc_now_text)
     role_id: str | None = None
     payload: JsonDict = field(default_factory=dict)
+
+
+LeaseStatus = Literal["active", "released", "expired"]
+
+
+@dataclass(slots=True)
+class Lease:
+    """A persisted lease on a project resource (task, run, etc.)."""
+
+    id: str
+    project_id: str
+    resource_type: str
+    resource_id: str
+    holder_id: str
+    lease_token: str
+    fencing_token: int = 1
+    status: LeaseStatus = "active"
+    acquired_at: str = field(default_factory=utc_now_text)
+    heartbeat_at: str = field(default_factory=utc_now_text)
+    expires_at: str = field(default_factory=utc_now_text)
+    released_at: str | None = None

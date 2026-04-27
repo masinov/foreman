@@ -161,4 +161,37 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         ALTER TABLE tasks ADD COLUMN completion_evidence_json TEXT NOT NULL DEFAULT '';
         """,
     ),
+    (
+        6,
+        "add leases table for first-class resource locking",
+        """
+        CREATE TABLE IF NOT EXISTS leases (
+            id              TEXT PRIMARY KEY,
+            project_id      TEXT NOT NULL,
+            resource_type   TEXT NOT NULL,
+            resource_id     TEXT NOT NULL,
+            holder_id       TEXT NOT NULL,
+            lease_token     TEXT NOT NULL,
+            fencing_token   INTEGER NOT NULL DEFAULT 1,
+            status          TEXT NOT NULL DEFAULT 'active'
+                            CHECK (status IN ('active', 'released', 'expired')),
+            acquired_at     TEXT NOT NULL,
+            heartbeat_at    TEXT NOT NULL,
+            expires_at      TEXT NOT NULL,
+            released_at     TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_leases_project_resource
+        ON leases(project_id, resource_type, resource_id)
+        WHERE status = 'active';
+
+        CREATE INDEX IF NOT EXISTS idx_leases_holder
+        ON leases(holder_id)
+        WHERE status = 'active';
+
+        CREATE INDEX IF NOT EXISTS idx_leases_expires
+        ON leases(expires_at)
+        WHERE status = 'active';
+        """,
+    ),
 ]
