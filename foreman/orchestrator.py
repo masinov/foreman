@@ -716,6 +716,10 @@ class ForemanOrchestrator:
                     ),
                     "score": completion_evidence.score if completion_evidence else 0.0,
                     "verdict": completion_evidence.verdict if completion_evidence else "unknown",
+                    "proof_status": completion_evidence.proof_status if completion_evidence else "pending",
+                    "failure_reasons": (
+                        list(completion_evidence.failure_reasons) if completion_evidence else []
+                    ),
                 },
             )
 
