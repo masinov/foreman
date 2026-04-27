@@ -1416,6 +1416,18 @@ class ForemanOrchestrator:
                     raise OrchestratorError(f"Unknown role {step_def.role!r}.")
                 current_task.assigned_role = role.id
                 self.store.save_task(current_task)
+
+                self._emit_event(
+                    run,
+                    "engine.role_policy",
+                    {
+                        "role_id": role.id,
+                        "backend": role.agent.backend,
+                        "permission_mode": role.agent.permission_mode,
+                        "disallowed_tools": list(role.agent.tools.disallowed),
+                    },
+                )
+
                 context_projection = build_project_context(
                     self.store,
                     project,
