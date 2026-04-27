@@ -13,6 +13,7 @@ from typing import Any
 
 from .models import Project, Task, utc_now_text
 from .orchestrator import AgentEventRecord, AgentExecutionResult, AgentExecutor
+from .outcomes import DONE, ERROR, KILLED, normalize_agent_outcome
 from .roles import RoleDefinition
 from .runner.base import AgentEvent, AgentRunConfig, InfrastructureError
 from .runner.claude_code import ClaudeCodeRunner
@@ -78,23 +79,25 @@ class ClaudeCodeExecutor:
                 if event.event_type == "agent.completed":
                     cost_usd = event.payload.get("cost_usd", cost_usd)
                     token_count = event.payload.get("token_count", token_count)
-                    outcome = "done"
+                    outcome = normalize_agent_outcome(
+                        event.payload.get("outcome", "done")
+                    )
                     detail = event.payload.get("result", "") or "Completed successfully."
                     status = "completed"
                 elif event.event_type == "agent.error":
                     detail = event.payload.get("error", "Agent error.")
-                    outcome = "error"
+                    outcome = ERROR
                     status = "failed"
                 elif event.event_type == "agent.killed":
                     reason = event.payload.get("reason", "unknown")
                     detail = f"Agent killed: {reason}"
-                    outcome = "killed"
+                    outcome = KILLED
                     status = "failed"
                 elif event.event_type == "signal.completion":
                     # Agent can signal completion with custom outcome
                     signal_outcome = event.payload.get("outcome")
                     if signal_outcome:
-                        outcome = signal_outcome
+                        outcome = normalize_agent_outcome(signal_outcome)
                         detail = event.payload.get("detail", "")
 
         except InfrastructureError as exc:
@@ -105,7 +108,7 @@ class ClaudeCodeExecutor:
                 )
             )
             detail = str(exc)
-            outcome = "error"
+            outcome = ERROR
             status = "failed"
 
         duration_ms = int((time.monotonic() - start_time) * 1000)

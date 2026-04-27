@@ -31,6 +31,7 @@ from .git import (
 )
 from .leases import generate_lease_token
 from .models import CompletionEvidence, Event, Project, Run, Sprint, Task, utc_now_text
+from .outcomes import APPROVE, BLOCKED, DENY, DONE, ERROR, normalize_agent_outcome, normalize_reviewer_decision, STEER
 from .runner import AgentRunConfig, ClaudeCodeRunner, CodexRunner, run_with_retry
 from .runner.base import AgentRunner as NativeAgentRunner
 from .roles import RoleDefinition, default_roles_dir, load_roles
@@ -908,7 +909,7 @@ class ForemanOrchestrator:
     ) -> HumanGateResumeResult:
         """Apply one human-gate decision and continue execution when possible."""
 
-        if outcome not in {"approve", "deny"}:
+        if outcome not in {APPROVE, DENY}:
             raise OrchestratorError(f"Unsupported human-gate outcome {outcome!r}.")
 
         current_task = self.store.get_task(task_id)
@@ -1324,7 +1325,7 @@ class ForemanOrchestrator:
                     detail=result.detail,
                 )
                 self._emit_builtin_events(run, result.events)
-                outcome = result.outcome
+                outcome = normalize_agent_outcome(result.outcome)
                 detail = result.detail
             else:
                 role = self.roles.get(step_def.role)
@@ -1499,7 +1500,7 @@ class ForemanOrchestrator:
                     result = retry_result
                 if role.agent.session_persistence and result.session_id:
                     session_ids[session_key] = result.session_id
-                outcome = result.outcome
+                outcome = normalize_agent_outcome(result.outcome)
                 detail = result.detail
 
             self._emit_event(
@@ -2334,17 +2335,17 @@ class ForemanOrchestrator:
 
         if marker:
             if not _contains_completion_marker(cleaned_text, marker):
-                return ("error", f"Missing completion marker `{marker}`.")
+                return (ERROR, f"Missing completion marker `{marker}`.")
             cleaned_text = _strip_completion_marker(cleaned_text, marker)
 
         if output_config.extract_json:
             json_block = _extract_json_block(cleaned_text)
-            return ("done", json_block or cleaned_text or "Completed without JSON output.")
+            return (DONE, json_block or cleaned_text or "Completed without JSON output.")
 
         if output_config.extract_summary or output_config.extract_branch:
-            return ("done", cleaned_text or "Completed.")
+            return (DONE, cleaned_text or "Completed.")
 
-        return ("done", cleaned_text or "Completed.")
+        return (DONE, cleaned_text or "Completed.")
 
     def _output_contract_retry_reason(
         self,
@@ -2728,24 +2729,24 @@ def _parse_utc_timestamp(value: str | None) -> datetime | None:
 
 def _extract_decision_output(text: str) -> tuple[str, str]:
     if not text:
-        return ("error", "Reviewer returned no decision.")
+        return (ERROR, "Reviewer returned no decision.")
 
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     for raw_line in reversed(lines):
         line = _normalize_decision_line(raw_line)
         if line == "APPROVE":
-            return ("approve", "APPROVE")
+            return (APPROVE, "APPROVE")
         if line == "DENY":
-            return ("deny", "DENY")
+            return (DENY, "DENY")
         if line == "STEER":
-            return ("steer", "STEER")
+            return (STEER, "STEER")
         if line.startswith("DENY:"):
-            return ("deny", line.partition(":")[2].strip() or text)
+            return (DENY, line.partition(":")[2].strip() or text)
         if line.startswith("STEER:"):
-            return ("steer", line.partition(":")[2].strip() or text)
+            return (STEER, line.partition(":")[2].strip() or text)
         if line.startswith("APPROVE:"):
-            return ("approve", line.partition(":")[2].strip() or text)
-    return ("error", text)
+            return (APPROVE, line.partition(":")[2].strip() or text)
+    return (ERROR, text)
 
 
 def _normalize_decision_line(line: str) -> str:
