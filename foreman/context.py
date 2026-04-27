@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from .models import Project, Sprint, Task
+from .models import Lease, Project, Sprint, Task
 from .scaffold import DEFAULT_CONTEXT_DIR
 from .store import ForemanStore
 
@@ -49,6 +49,32 @@ def build_project_context(
     active_tasks = [
         task for task in tasks if active_sprint is not None and task.sprint_id == active_sprint.id
     ]
+
+    # If there's a current task, look up its active lease (without the secret token)
+    active_lease: Lease | None = None
+    if current_task is not None:
+        lease = store.get_active_lease(
+            project_id=project.id,
+            resource_type="task",
+            resource_id=current_task.id,
+        )
+        if lease is not None:
+            # Create a safe view of the lease (no lease_token)
+            active_lease = Lease(
+                id=lease.id,
+                project_id=lease.project_id,
+                resource_type=lease.resource_type,
+                resource_id=lease.resource_id,
+                holder_id=lease.holder_id,
+                lease_token="[REDACTED]",  # Never expose token in context
+                fencing_token=lease.fencing_token,
+                status=lease.status,
+                acquired_at=lease.acquired_at,
+                heartbeat_at=lease.heartbeat_at,
+                expires_at=lease.expires_at,
+                released_at=lease.released_at,
+            )
+
     runtime_dir = context_directory(project)
     return ProjectContextProjection(
         context_path=runtime_dir / "context.md",
@@ -59,6 +85,7 @@ def build_project_context(
             active_tasks,
             current_task=current_task,
             carried_output=carried_output,
+            active_lease=active_lease,
         ),
         status_markdown=render_project_status(
             project,
@@ -115,6 +142,7 @@ def render_sprint_context(
     *,
     current_task: Task | None = None,
     carried_output: str | None = None,
+    active_lease: Lease | None = None,
 ) -> str:
     """Render the sprint-scoped runtime context markdown."""
 
@@ -163,6 +191,8 @@ def render_sprint_context(
             lines.append(f"Branch: {current_task.branch_name}")
         if current_task.blocked_reason:
             lines.append(f"Blocked reason: {current_task.blocked_reason}")
+        if current_task.workflow_current_step:
+            lines.append(f"Workflow step: {current_task.workflow_current_step}")
         lines.extend(
             [
                 "",
@@ -174,8 +204,24 @@ def render_sprint_context(
                 "",
                 "### Carried Feedback",
                 carried_output or "(none)",
+                "",
+                "### Autonomous Signal Contract",
+                "When in autonomous mode, the developer must emit signal.task_started",
+                "before proceeding past the first developer step. Required fields:",
+                "title (not placeholder), branch, criteria.",
             ]
         )
+
+        if active_lease is not None:
+            lines.extend(
+                [
+                    "",
+                    "### Active Lease",
+                    f"Holder: {active_lease.holder_id}",
+                    f"Status: {active_lease.status}",
+                    f"Expires: {active_lease.expires_at}",
+                ]
+            )
 
     return "\n".join(lines) + "\n"
 
