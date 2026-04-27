@@ -141,6 +141,7 @@ class Run:
     token_count: int = 0
     duration_ms: int | None = None
     retry_count: int = 0
+    failure_type: str | None = None  # e.g. 'preflight', 'infrastructure', 'policy', 'gate'
     started_at: str | None = None
     completed_at: str | None = None
     created_at: str = field(default_factory=utc_now_text)

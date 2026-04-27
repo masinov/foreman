@@ -214,4 +214,11 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         ON human_gate_decisions(task_id, workflow_step);
         """,
     ),
+    (
+        8,
+        "add failure_type to runs for classified failure diagnosis",
+        """
+        ALTER TABLE runs ADD COLUMN failure_type TEXT;
+        """,
+    ),
 ]

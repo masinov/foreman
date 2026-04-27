@@ -149,6 +149,7 @@ def _row_to_run(row: sqlite3.Row) -> Run:
         token_count=row["token_count"],
         duration_ms=row["duration_ms"],
         retry_count=row["retry_count"],
+        failure_type=row["failure_type"],
         started_at=row["started_at"],
         completed_at=row["completed_at"],
         created_at=row["created_at"],
@@ -620,8 +621,8 @@ class ForemanStore:
                     id, task_id, project_id, role_id, workflow_step, status, outcome,
                     outcome_detail, agent_backend, model, session_id, branch_name,
                     prompt_text, cost_usd, token_count, duration_ms, retry_count,
-                    started_at, completed_at, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    failure_type, started_at, completed_at, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     task_id = excluded.task_id,
                     project_id = excluded.project_id,
@@ -639,6 +640,7 @@ class ForemanStore:
                     token_count = excluded.token_count,
                     duration_ms = excluded.duration_ms,
                     retry_count = excluded.retry_count,
+                    failure_type = excluded.failure_type,
                     started_at = excluded.started_at,
                     completed_at = excluded.completed_at,
                     created_at = excluded.created_at
@@ -661,6 +663,7 @@ class ForemanStore:
                     run.token_count,
                     run.duration_ms,
                     run.retry_count,
+                    run.failure_type,
                     run.started_at,
                     run.completed_at,
                     run.created_at,
