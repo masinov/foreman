@@ -1478,6 +1478,7 @@ class ForemanStore:
         task_id: str,
         branch_name: str,
         head_sha: str,
+        waiver_type: str | None = None,
     ) -> MergeWaiver | None:
         """Return an active (non-revoked, non-expired) waiver for a task and branch head.
 
@@ -1486,6 +1487,7 @@ class ForemanStore:
         - expires_at is NULL or in the future
         - branch_name matches
         - head_sha matches (waiver is tied to specific branch state)
+        - waiver_type matches if specified
         """
         now = utc_now_text()
         row = self._connection.execute(
@@ -1496,10 +1498,11 @@ class ForemanStore:
               AND head_sha = ?
               AND revoked_at IS NULL
               AND (expires_at IS NULL OR expires_at > ?)
+              AND (? IS NULL OR waiver_type = ?)
             ORDER BY approved_at DESC
             LIMIT 1
             """,
-            (task_id, branch_name, head_sha, now),
+            (task_id, branch_name, head_sha, now, waiver_type, waiver_type),
         ).fetchone()
         return _row_to_merge_waiver(row) if row else None
 

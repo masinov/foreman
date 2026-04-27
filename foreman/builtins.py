@@ -458,27 +458,19 @@ class BuiltinExecutor:
         if task.task_type not in {"feature", "fix", "refactor"}:
             return None
 
-        # Track whether an early deficiency was waived; continue checking later gates
-        # even after waiving early blocks (no_code_delta, docs_only_impl_task).
-        waived_early = False
-
         if not evidence.changed_files:
             block_reason = (
                 f"Completion evidence too weak (verdict: {evidence.verdict}). "
                 "Blocking merge because the task branch has no material file changes."
             )
-            if self._active_waiver_applies(store, task, evidence, "no_code_delta"):
-                waived_early = True
-            else:
+            if not self._active_waiver_applies(store, task, evidence, "no_code_delta"):
                 return block_reason
         if self._changes_are_docs_or_tests_only(evidence.changed_files):
             block_reason = (
                 f"Completion evidence too weak (verdict: {evidence.verdict}). "
                 "Blocking merge because only docs or tests changed for an implementation task."
             )
-            if self._active_waiver_applies(store, task, evidence, "docs_only_impl_task"):
-                waived_early = True
-            else:
+            if not self._active_waiver_applies(store, task, evidence, "docs_only_impl_task"):
                 return block_reason
         # Gate on proof status - require explicit "passed"
         if evidence.proof_status != "passed":
@@ -488,19 +480,9 @@ class BuiltinExecutor:
                 f"Current: {evidence.proof_status}. Reasons: {reasons}"
             )
             # Check for applicable waiver (only for proof-related deficiencies, never for tests/score)
-            if store and task.branch_name and evidence.head_sha:
-                waiver_type = self._waiver_type_for_proof_failure(evidence.failure_reasons)
-                if waiver_type:
-                    waiver = store.get_active_merge_waiver(
-                        task.id,
-                        task.branch_name,
-                        evidence.head_sha,
-                    )
-                    if waiver and waiver.waiver_type == waiver_type:
-                        waived_early = True
-                    else:
-                        return block_reason
-                else:
+            waiver_type = self._waiver_type_for_proof_failure(evidence.failure_reasons)
+            if waiver_type:
+                if not self._active_waiver_applies(store, task, evidence, waiver_type):
                     return block_reason
             else:
                 return block_reason
