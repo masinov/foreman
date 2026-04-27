@@ -54,6 +54,12 @@ def run_git(repo_path: str | Path, *args: str, check: bool = True) -> GitCommand
     return command_result
 
 
+def head_sha(repo_path: str | Path, ref: str = "HEAD") -> str | None:
+    """Return the SHA of a given ref, or None if the ref does not exist."""
+    result = run_git(repo_path, "rev-parse", ref, check=False)
+    return result.stdout if result.returncode == 0 else None
+
+
 def branch_exists(repo_path: str | Path, branch_name: str) -> bool:
     """Return whether the repository already has a local branch."""
 
@@ -93,9 +99,16 @@ def checkout_branch(
 
 def current_branch(repo_path: str | Path) -> str:
     """Return the currently checked out branch name."""
-
     result = run_git(repo_path, "branch", "--show-current")
     return result.stdout
+
+
+def worktree_branch(repo_path: str | Path) -> str | None:
+    """Return the branch checked out in the worktree, or None if detached HEAD."""
+    try:
+        return current_branch(repo_path) or None
+    except GitError:
+        return None
 
 
 def is_worktree_clean(repo_path: str | Path) -> bool:
@@ -226,3 +239,30 @@ def _looks_like_merge_conflict(detail: str) -> bool:
         or "automatic merge failed" in normalized
         or "fix conflicts and then commit" in normalized
     )
+
+
+def assert_not_on_default_branch(repo_path: str, default_branch: str) -> None:
+    """Raise GitError if the worktree is currently on the default branch."""
+    current = worktree_branch(repo_path)
+    if current == default_branch:
+        raise GitError(
+            f"Cannot perform this operation while on the default branch "
+            f"({default_branch!r}). Work on a task branch instead."
+        )
+
+
+def assert_default_branch_unchanged(
+    repo_path: str,
+    default_branch: str,
+    original_sha: str | None,
+) -> None:
+    """Raise GitError if the default branch HEAD SHA has changed from original_sha."""
+    if original_sha is None:
+        return
+    current_sha = head_sha(repo_path, f"refs/heads/{default_branch}")
+    if current_sha != original_sha:
+        raise GitError(
+            f"Default branch {default_branch!r} HEAD changed from "
+            f"{original_sha!r} to {current_sha!r}. "
+            f"The default branch must not be mutated during task execution."
+        )

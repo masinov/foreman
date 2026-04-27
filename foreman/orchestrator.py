@@ -16,13 +16,18 @@ from .context import ProjectContextProjection, build_project_context, relative_p
 from .errors import ForemanError
 from .git import (
     GitError,
+    assert_default_branch_unchanged,
+    assert_not_on_default_branch,
+    branch_exists,
     changed_files,
     checkout_branch,
     current_branch,
+    head_sha,
     is_worktree_clean,
     recent_commits,
     status_text,
     sync_branch_with_base,
+    worktree_branch,
 )
 from .leases import generate_lease_token
 from .models import CompletionEvidence, Event, Project, Run, Sprint, Task, utc_now_text
@@ -1087,6 +1092,26 @@ class ForemanOrchestrator:
                     f"Workflow {workflow.id!r} is missing step {current_step!r}."
                 )
 
+            # ── Before every step: enforce branch invariants ─────────────────
+            default_branch = project.default_branch
+            original_default_sha = head_sha(project.repo_path, f"refs/heads/{default_branch}")
+
+            # Verify task branch exists (for native role steps) or is being created.
+            if step_def.role not in {"_builtin:merge", "_builtin:mark_done"}:
+                if current_task.branch_name:
+                    if not branch_exists(project.repo_path, current_task.branch_name):
+                        raise OrchestratorError(
+                            f"Task branch {current_task.branch_name!r} does not exist."
+                        )
+                    # In directed mode, current branch must be the task branch.
+                    mode = str(project.settings.get("task_selection_mode", "directed"))
+                    if mode == "directed":
+                        if worktree_branch(project.repo_path) != current_task.branch_name:
+                            raise OrchestratorError(
+                                f"Expected to be on task branch {current_task.branch_name!r} "
+                                f"but found {worktree_branch(project.repo_path)!r}."
+                            )
+
             visit_count = current_task.step_visit_counts.get(current_step, 0) + 1
             current_task.step_visit_counts[current_step] = visit_count
             self.store.save_task(current_task)
@@ -1450,6 +1475,17 @@ class ForemanOrchestrator:
                 "workflow.step_completed",
                 {"step": current_step, "outcome": outcome},
             )
+
+            # ── After every step: verify default branch was not mutated.
+            # Merge builtin intentionally changes the default branch — skip check.
+            # If worktree is dirty (e.g. unresolved merge conflicts), skip to avoid
+            # false positives from in-progress recovery workflows.
+            if step_def.role != "_builtin:merge" and is_worktree_clean(project.repo_path):
+                assert_default_branch_unchanged(
+                    project.repo_path,
+                    default_branch,
+                    original_default_sha,
+                )
 
             transition = workflow.find_transition(current_step, outcome)
             if transition is None:
