@@ -266,3 +266,77 @@ def assert_default_branch_unchanged(
             f"{original_sha!r} to {current_sha!r}. "
             f"The default branch must not be mutated during task execution."
         )
+
+
+@dataclass(frozen=True)
+class MergePreflightResult:
+    """Result of merge preflight checks."""
+
+    success: bool
+    detail: str
+    reason: str | None = None  # 'missing_source', 'missing_target', 'dirty_worktree', 'same_branch', 'no_delta', 'checkout_failed'
+
+
+def merge_preflight(
+    repo_path: str | Path,
+    *,
+    source_branch: str,
+    target_branch: str,
+) -> MergePreflightResult:
+    """Validate repository state before attempting a merge.
+
+    Checks:
+    - source branch exists
+    - target branch exists
+    - worktree is clean
+    - source is not the same as target
+    - source contains commits ahead of target
+    """
+    # Source must exist
+    if not branch_exists(repo_path, source_branch):
+        return MergePreflightResult(
+            success=False,
+            detail=f"Source branch {source_branch!r} does not exist.",
+            reason="missing_source",
+        )
+
+    # Target must exist
+    if not branch_exists(repo_path, target_branch):
+        return MergePreflightResult(
+            success=False,
+            detail=f"Target branch {target_branch!r} does not exist.",
+            reason="missing_target",
+        )
+
+    # Source and target must not be the same
+    if source_branch == target_branch:
+        return MergePreflightResult(
+            success=False,
+            detail="Source and target branch are the same.",
+            reason="same_branch",
+        )
+
+    # Worktree must be clean
+    if not is_worktree_clean(repo_path):
+        return MergePreflightResult(
+            success=False,
+            detail="Worktree has uncommitted changes. Commit before merging.",
+            reason="dirty_worktree",
+        )
+
+    # Source must have commits ahead of target
+    result = run_git(
+        repo_path,
+        "log",
+        "--oneline",
+        f"{target_branch}..{source_branch}",
+        check=False,
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        return MergePreflightResult(
+            success=False,
+            detail=f"Source branch {source_branch!r} has no commits ahead of {target_branch!r}.",
+            reason="no_delta",
+        )
+
+    return MergePreflightResult(success=True, detail="Merge preflight passed.")

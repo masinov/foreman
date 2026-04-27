@@ -9,7 +9,7 @@ import subprocess
 from typing import TYPE_CHECKING, Any, Callable
 
 from .context import relative_project_path, write_project_context
-from .git import GitMergeResult, is_worktree_clean, merge_branch, run_git
+from .git import GitMergeResult, is_worktree_clean, merge_branch, merge_preflight, run_git
 from .models import CompletionEvidence, Project, Task, utc_now_text
 
 if TYPE_CHECKING:
@@ -179,33 +179,21 @@ class BuiltinExecutor:
                 ),
             )
 
-        if not is_worktree_clean(project.repo_path):
+        # Run full merge preflight
+        preflight = merge_preflight(
+            project.repo_path,
+            source_branch=task.branch_name,
+            target_branch=project.default_branch,
+        )
+        if not preflight.success:
             return self._block_task(
                 task,
-                detail=(
-                    "Task branch has uncommitted changes. Commit task work before merge."
-                ),
+                detail=preflight.detail,
                 event_type="engine.merge_blocked",
                 payload={
                     "branch": task.branch_name,
                     "target": project.default_branch,
-                    "reason": "dirty_worktree",
-                },
-            )
-
-        has_committed_delta = self._task_branch_has_committed_delta(project, task)
-        if has_committed_delta is False:
-            return self._block_task(
-                task,
-                detail=(
-                    f"Task branch {task.branch_name!r} has no committed changes ahead of "
-                    f"{project.default_branch!r}. Commit task work before merge."
-                ),
-                event_type="engine.merge_blocked",
-                payload={
-                    "branch": task.branch_name,
-                    "target": project.default_branch,
-                    "reason": "no_committed_delta",
+                    "reason": preflight.reason or "preflight_failed",
                 },
             )
 
