@@ -91,6 +91,12 @@ trigger = "completion:failure"
 to = "develop"
 carry_output = true
 
+[[transitions]]
+from = "merge"
+trigger = "completion:conflict"
+to = "develop"
+carry_output = true
+
 [[gates]]
 trigger = "cost_exceeded"
 action = "kill_and_block"

@@ -17,7 +17,8 @@ _VALID_OUTCOMES: dict[str, set[str]] = {
     "_builtin:merge": {"success", "failure", "conflict"},
     "_builtin:run_tests": {"success", "failure"},
     "_builtin:mark_done": {"success"},
-    "_builtin:human_gate": {"paused"},
+    # human_gate emits the human's decision (approve/deny/steer) as workflow outcome
+    "_builtin:human_gate": {"approve", "deny", "steer"},
     "_builtin:orchestrator": {"done", "blocked", "error"},
     "developer": {"done", "blocked", "error"},
     "code_reviewer": {"approve", "deny", "steer"},
