@@ -230,4 +230,27 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         WHERE status = 'active';
         """,
     ),
+    (
+        10,
+        "add merge_waivers table for human override of proof gate",
+        """
+        CREATE TABLE IF NOT EXISTS merge_waivers (
+            id              TEXT PRIMARY KEY,
+            task_id         TEXT NOT NULL,
+            project_id      TEXT NOT NULL,
+            waiver_type     TEXT NOT NULL,
+            reason          TEXT NOT NULL,
+            approved_by     TEXT NOT NULL,
+            approved_at     TEXT NOT NULL,
+            branch_name     TEXT NOT NULL,
+            head_sha        TEXT NOT NULL,
+            base_sha        TEXT NOT NULL,
+            expires_at      TEXT,
+            revoked_at      TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_merge_waivers_task
+        ON merge_waivers(task_id);
+        """,
+    ),
 ]

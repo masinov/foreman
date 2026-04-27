@@ -10,7 +10,7 @@ from typing import Any, Sequence
 from uuid import uuid4
 
 from .migrations import MIGRATIONS
-from .models import CompletionEvidence, DecisionGate, Event, HumanGateDecision, Lease, Project, Run, Sprint, TASK_STATUSES, Task, utc_now_text
+from .models import CompletionEvidence, DecisionGate, Event, HumanGateDecision, Lease, MergeWaiver, Project, Run, Sprint, TASK_STATUSES, Task, utc_now_text
 
 _PRUNE_PROTECTED_TASK_STATUSES = ("blocked", "in_progress")
 
@@ -219,6 +219,23 @@ def _row_to_human_gate_decision(row: sqlite3.Row) -> HumanGateDecision:
         decided_by=row["decided_by"] or "human",
         decided_at=row["decided_at"],
         run_id=row["run_id"],
+    )
+
+
+def _row_to_merge_waiver(row: sqlite3.Row) -> MergeWaiver:
+    return MergeWaiver(
+        id=row["id"],
+        task_id=row["task_id"],
+        project_id=row["project_id"],
+        waiver_type=row["waiver_type"],
+        reason=row["reason"],
+        approved_by=row["approved_by"],
+        approved_at=row["approved_at"],
+        branch_name=row["branch_name"],
+        head_sha=row["head_sha"],
+        base_sha=row["base_sha"],
+        expires_at=row["expires_at"],
+        revoked_at=row["revoked_at"],
     )
 
 
@@ -1417,6 +1434,84 @@ class ForemanStore:
             (task_id, workflow_step),
         ).fetchone()
         return _row_to_human_gate_decision(row) if row else None
+
+    # ── Merge Waivers ─────────────────────────────────────────────────────────────
+
+    def save_merge_waiver(self, waiver: MergeWaiver) -> MergeWaiver:
+        """Insert a merge waiver record."""
+        with self._connection:
+            self._connection.execute(
+                """
+                INSERT INTO merge_waivers (
+                    id, task_id, project_id, waiver_type, reason,
+                    approved_by, approved_at, branch_name, head_sha, base_sha,
+                    expires_at, revoked_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    waiver.id,
+                    waiver.task_id,
+                    waiver.project_id,
+                    waiver.waiver_type,
+                    waiver.reason,
+                    waiver.approved_by,
+                    waiver.approved_at,
+                    waiver.branch_name,
+                    waiver.head_sha,
+                    waiver.base_sha,
+                    waiver.expires_at,
+                    waiver.revoked_at,
+                ),
+            )
+        return waiver
+
+    def get_merge_waiver(self, waiver_id: str) -> MergeWaiver | None:
+        """Return a merge waiver by ID."""
+        row = self._connection.execute(
+            "SELECT * FROM merge_waivers WHERE id = ?",
+            (waiver_id,),
+        ).fetchone()
+        return _row_to_merge_waiver(row) if row else None
+
+    def get_active_merge_waiver(
+        self,
+        task_id: str,
+        branch_name: str,
+        head_sha: str,
+    ) -> MergeWaiver | None:
+        """Return an active (non-revoked, non-expired) waiver for a task and branch head.
+
+        A waiver is active if:
+        - revoked_at is NULL
+        - expires_at is NULL or in the future
+        - branch_name matches
+        - head_sha matches (waiver is tied to specific branch state)
+        """
+        now = utc_now_text()
+        row = self._connection.execute(
+            """
+            SELECT * FROM merge_waivers
+            WHERE task_id = ?
+              AND branch_name = ?
+              AND head_sha = ?
+              AND revoked_at IS NULL
+              AND (expires_at IS NULL OR expires_at > ?)
+            ORDER BY approved_at DESC
+            LIMIT 1
+            """,
+            (task_id, branch_name, head_sha, now),
+        ).fetchone()
+        return _row_to_merge_waiver(row) if row else None
+
+    def revoke_merge_waiver(self, waiver_id: str) -> bool:
+        """Revoke a merge waiver by setting revoked_at. Returns True if found and revoked."""
+        now = utc_now_text()
+        with self._connection:
+            cursor = self._connection.execute(
+                "UPDATE merge_waivers SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL",
+                (now, waiver_id),
+            )
+            return cursor.rowcount > 0
 
     # ── Leases ────────────────────────────────────────────────────────────────────
 

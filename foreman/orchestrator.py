@@ -391,7 +391,11 @@ class ForemanOrchestrator:
         review_outcome = ""
         security_review_outcome = ""
         # code_reviewer role emits outcomes as run completion outcomes
-        reviewer_runs = [r for r in runs if r.role_id in ("code_reviewer", "security_reviewer")]
+        reviewer_runs = [
+            r for r in runs
+            if r.status == "completed"
+            and r.role_id in ("code_reviewer", "security_reviewer")
+        ]
         for run in sorted(reviewer_runs, key=lambda r: r.completed_at or "", reverse=True):
             if run.role_id == "code_reviewer" and not review_outcome:
                 review_outcome = run.outcome or ""
@@ -451,16 +455,20 @@ class ForemanOrchestrator:
             failure_reasons.append(f"Evidence score too low ({score:.0f}/100).")
         # Require all criteria to be "passed" for proof_status = passed
         if criteria_checklist:
-            failed_or_partial = [
-                c for c in criteria_checklist if c.get("status") in ("partial", "unknown")
+            not_passed = [
+                c for c in criteria_checklist if c.get("status") != "passed"
             ]
-            if failed_or_partial:
+            if not_passed:
                 if proof_status != "failed":
                     proof_status = "failed"
-                for c in failed_or_partial:
+                for c in not_passed:
                     failure_reasons.append(
                         f"Criterion not fully addressed: {c.get('criterion', '')!r} ({c.get('status')})."
                     )
+        # Implementation tasks require acceptance criteria
+        if task.task_type in {"feature", "fix", "refactor"} and not criteria_checklist:
+            proof_status = "failed"
+            failure_reasons.append("No acceptance criteria defined.")
         if proof_status != "failed" and builtin_test_passed and score >= 50 and (
             not criteria_checklist or all(c.get("status") == "passed" for c in criteria_checklist)
         ):

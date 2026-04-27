@@ -178,6 +178,24 @@ class HumanGateDecision:
     run_id: str | None = None
 
 
+@dataclass(slots=True)
+class MergeWaiver:
+    """A human-issued waiver allowing a task to merge despite missing proof."""
+
+    id: str
+    task_id: str
+    project_id: str
+    waiver_type: str  # 'missing_acceptance_criteria' | 'incomplete_criteria' | 'no_code_delta' | 'docs_only_impl_task'
+    reason: str
+    approved_by: str
+    approved_at: str = field(default_factory=utc_now_text)
+    branch_name: str
+    head_sha: str
+    base_sha: str
+    expires_at: str | None = None
+    revoked_at: str | None = None
+
+
 @dataclass(slots=True, frozen=True)
 class CompletionEvidence:
     """Structured evidence summary for a task completion decision.

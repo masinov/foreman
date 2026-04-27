@@ -212,7 +212,7 @@ class BuiltinExecutor:
                     event_type="engine.completion_guard",
                     payload={"error": "evidence_build_failed"},
                 )
-            block_reason = self._completion_guard_block_reason(task, evidence, project)
+            block_reason = self._completion_guard_block_reason(task, evidence, project, store)
             if block_reason is not None:
                 task.status = "blocked"
                 task.blocked_reason = block_reason
@@ -347,7 +347,7 @@ class BuiltinExecutor:
                     )
                     task.completion_evidence = evidence
                     if evidence is not None:
-                        block_reason = self._completion_guard_block_reason(task, evidence, project)
+                        block_reason = self._completion_guard_block_reason(task, evidence, project, store)
                         if block_reason is not None:
                             task.status = "blocked"
                             task.blocked_reason = block_reason
@@ -446,8 +446,14 @@ class BuiltinExecutor:
         task: Task,
         evidence: CompletionEvidence,
         project: Project,
+        store: ForemanStore | None = None,
     ) -> str | None:
-        """Return a block reason when merge-time evidence is too weak."""
+        """Return a block reason when merge-time evidence is too weak.
+
+        A MergeWaiver can override blocks due to missing/incomplete acceptance criteria
+        or docs-only-on-impl-task, but not blocks due to test failures,
+        reviewer denial, or security reviewer denial.
+        """
 
         if task.task_type not in {"feature", "fix", "refactor"}:
             return None
@@ -464,10 +470,22 @@ class BuiltinExecutor:
         # Gate on proof status - require explicit "passed"
         if evidence.proof_status != "passed":
             reasons = "; ".join(evidence.failure_reasons) if evidence.failure_reasons else "proof_status is " + evidence.proof_status
-            return (
+            block_reason = (
                 f"Completion proof not passed. Blocking merge until proof_status is 'passed'. "
                 f"Current: {evidence.proof_status}. Reasons: {reasons}"
             )
+            # Check for applicable waiver (only for proof-related deficiencies)
+            if store and task.branch_name and evidence.head_sha:
+                waiver_type = self._waiver_type_for_failure(evidence.failure_reasons)
+                if waiver_type:
+                    waiver = store.get_active_merge_waiver(
+                        task.id,
+                        task.branch_name,
+                        evidence.head_sha,
+                    )
+                    if waiver and waiver.waiver_type == waiver_type:
+                        return None  # Waiver applies
+            return block_reason
         # Gate on code review approval - require explicit approve
         if evidence.review_outcome != "approve":
             return (
@@ -481,6 +499,20 @@ class BuiltinExecutor:
                     f"Security review not approved (outcome: {evidence.security_review_outcome!r}). "
                     "Blocking merge until security review approves."
                 )
+        return None
+
+    def _waiver_type_for_failure(self, failure_reasons: tuple[str, ...]) -> str | None:
+        """Determine the waiver type that could apply given failure reasons."""
+        reasons_text = " ".join(failure_reasons).lower()
+        if "no acceptance criteria" in reasons_text or "criteria" not in reasons_text:
+            # Could be missing_acceptance_criteria or incomplete_criteria
+            if "not fully addressed" in reasons_text or "partial" in reasons_text or "unknown" in reasons_text:
+                return "incomplete_criteria"
+            return "missing_acceptance_criteria"
+        if "not fully addressed" in reasons_text or "partial" in reasons_text:
+            return "incomplete_criteria"
+        if "no material file changes" in reasons_text or "docs only" in reasons_text:
+            return "docs_only_impl_task"
         return None
 
     def _block_task(
