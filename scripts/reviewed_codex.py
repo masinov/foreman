@@ -1,4 +1,23 @@
 #!/usr/bin/env python3
+"""reviewed_codex.py
+
+Autonomous development supervisor using the OpenAI Codex JSON-RPC protocol.
+
+.. warning::
+
+    This script is **bootstrap tooling only** — not product runtime.
+    It exists to support early experimentation and will be removed once
+    the product orchestrator fully replaces it. Do not build new workflow
+    behavior around this script; use ``foreman run`` instead.
+
+The developer loop runs until:
+- The developer ends a turn with REVIEWED_CODEX_TASK_COMPLETE (task done,
+  reviewer pass runs; on APPROVE the branch is merged and the next task starts)
+- The developer ends a turn with REVIEWED_CODEX_SPEC_COMPLETE (backlog
+  genuinely empty, loop exits cleanly)
+- MAX_CONSECUTIVE_API_FAILURES consecutive API/process errors (credits
+  exhausted or provider down, loop exits with an error message)
+"""
 
 import json
 import os

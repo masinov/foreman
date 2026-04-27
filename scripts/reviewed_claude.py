@@ -3,6 +3,13 @@
 
 Autonomous development supervisor using Claude Code (--print mode).
 
+.. warning::
+
+    This script is **bootstrap tooling only** — not product runtime.
+    It exists to support early experimentation and will be removed once
+    the product orchestrator fully replaces it. Do not build new workflow
+    behavior around this script; use ``foreman run`` instead.
+
 Mirrors reviewed_codex.py but drives `claude --print` via subprocess
 instead of the Codex JSON-RPC protocol.
 
