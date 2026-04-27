@@ -24,6 +24,7 @@ from .git import (
     status_text,
     sync_branch_with_base,
 )
+from .leases import generate_lease_token
 from .models import CompletionEvidence, Event, Project, Run, Sprint, Task, utc_now_text
 from .runner import AgentRunConfig, ClaudeCodeRunner, CodexRunner, run_with_retry
 from .runner.base import AgentRunner as NativeAgentRunner
@@ -137,6 +138,7 @@ class ForemanOrchestrator:
         builtin_executor: BuiltinExecutor | None = None,
         runner_sleep: Callable[[float], None] | None = None,
         utc_now: Callable[[], datetime] | None = None,
+        holder_id: str | None = None,
     ) -> None:
         loaded_roles = dict(roles) if roles is not None else load_roles(default_roles_dir())
         loaded_workflows = (
@@ -162,6 +164,47 @@ class ForemanOrchestrator:
         self.builtin_executor = builtin_executor or BuiltinExecutor()
         self.runner_sleep = runner_sleep
         self.utc_now = utc_now or (lambda: datetime.now(timezone.utc))
+        self.holder_id = holder_id or str(uuid4())
+        self._task_lease_tokens: dict[str, str] = {}
+
+    def _acquire_task_lease(self, task: Task, project: Project) -> str | None:
+        """Acquire a lease on a task. Returns the lease token or None if denied."""
+        token = generate_lease_token()
+        lease = self.store.acquire_lease(
+            project_id=project.id,
+            resource_type="task",
+            resource_id=task.id,
+            holder_id=self.holder_id,
+            lease_token=token,
+        )
+        if lease is None:
+            return None
+        self._task_lease_tokens[task.id] = token
+        return token
+
+    def _release_task_lease(self, task: Task, project: Project) -> None:
+        """Release the lease on a task if held by this orchestrator."""
+        token = self._task_lease_tokens.pop(task.id, None)
+        if token is not None:
+            self.store.release_lease(
+                project_id=project.id,
+                resource_type="task",
+                resource_id=task.id,
+                holder_id=self.holder_id,
+                lease_token=token,
+            )
+
+    def _renew_task_lease(self, task: Task, project: Project) -> None:
+        """Renew the lease on a task if held by this orchestrator."""
+        token = self._task_lease_tokens.get(task.id)
+        if token is not None:
+            self.store.renew_lease(
+                project_id=project.id,
+                resource_type="task",
+                resource_id=task.id,
+                holder_id=self.holder_id,
+                lease_token=token,
+            )
 
     def run_project(
         self,
@@ -185,6 +228,12 @@ class ForemanOrchestrator:
             if task is None or task.project_id != project.id:
                 raise OrchestratorError(
                     f"Task {task_id!r} does not belong to project {project.id!r}."
+                )
+            # Acquire the lease before running; skip if task is already leased
+            # by another orchestrator.
+            if self._acquire_task_lease(task, project) is None:
+                raise OrchestratorError(
+                    f"Task {task_id!r} is already leased by another orchestrator."
                 )
             completed = self.run_task(project, workflow, task)
             executed_task_ids.append(completed.id)
@@ -577,6 +626,7 @@ class ForemanOrchestrator:
             completion_evidence = self.build_completion_evidence(task, project)
             task.completion_evidence = completion_evidence
             self.store.save_task(task)
+            self._release_task_lease(task, project)
 
             run = self._create_system_run(
                 task,
@@ -648,6 +698,11 @@ class ForemanOrchestrator:
         tasks_by_id = {task.id: task for task in sprint_tasks}
         for task in sprint_tasks:
             if task.status == "in_progress" and task.workflow_current_step:
+                # For resumption, try to acquire the lease. If the old holder is
+                # still alive (lease not expired), skip this task to avoid stealing
+                # work. If the lease has expired, we take it over.
+                if self._acquire_task_lease(task, project) is None:
+                    return None  # Another orchestrator holds an active lease.
                 return task
         if any(
             task.status == "in_progress" and not task.workflow_current_step
@@ -657,8 +712,13 @@ class ForemanOrchestrator:
         for task in sprint_tasks:
             if task.status != "todo":
                 continue
-            if self._dependencies_satisfied(task, tasks_by_id):
-                return task
+            if not self._dependencies_satisfied(task, tasks_by_id):
+                continue
+            # Lease the task before returning it. If denied, another
+            # orchestrator holds it — skip to the next candidate.
+            if self._acquire_task_lease(task, project) is None:
+                continue
+            return task
         return None
 
     _MAX_AUTONOMOUS_TASKS_DEFAULT = 5
@@ -680,6 +740,11 @@ class ForemanOrchestrator:
         # Resume an in-progress task that has a persisted workflow position.
         for task in sprint_tasks:
             if task.status == "in_progress" and task.workflow_current_step:
+                # For resumption, try to acquire the lease. If the old holder is
+                # still alive (lease not expired), skip this task to avoid
+                # stealing work. If the lease has expired, we take it over.
+                if self._acquire_task_lease(task, project) is None:
+                    return None  # Another orchestrator holds an active lease.
                 return task
         if any(
             task.status == "in_progress" and not task.workflow_current_step
@@ -705,6 +770,14 @@ class ForemanOrchestrator:
             created_by="orchestrator",
         )
         self.store.save_task(placeholder)
+        # Acquire lease for the new placeholder immediately.
+        if self._acquire_task_lease(placeholder, project) is None:
+            # Race: another orchestrator created one first; reload and return it.
+            sprint_tasks = self.store.list_tasks(sprint_id=sprint.id)
+            for task in sprint_tasks:
+                if task.status == "in_progress" and task.workflow_current_step:
+                    return task
+            return None
         return placeholder
 
     def run_task(
@@ -720,6 +793,19 @@ class ForemanOrchestrator:
             raise OrchestratorError(f"Unknown task {task.id!r}.")
         if current_task.status in {"done", "cancelled"}:
             return current_task
+
+        # Verify this orchestrator holds a valid lease on the task.
+        active_lease = self.store.get_active_lease(
+            project_id=project.id,
+            resource_type="task",
+            resource_id=current_task.id,
+        )
+        if active_lease is None or active_lease.holder_id != self.holder_id:
+            raise OrchestratorError(
+                f"Task {task.id!r} is not leased by this orchestrator. "
+                f"Use select_next_task() to acquire a task lease first."
+            )
+
         active_runs = self.store.list_runs(task_id=current_task.id, status="running")
         if active_runs:
             recoverable_runs = [
@@ -1372,6 +1458,7 @@ class ForemanOrchestrator:
                     current_task.workflow_carried_output = None
                     self.store.save_task(current_task)
                     current_step = None
+                    self._release_task_lease(current_task, project)
                     break
 
                 self._emit_event(
@@ -1390,6 +1477,7 @@ class ForemanOrchestrator:
                 current_task.workflow_carried_output = None
                 self.store.save_task(current_task)
                 current_step = None
+                self._release_task_lease(current_task, project)
                 continue
 
             self._emit_event(
@@ -1417,6 +1505,10 @@ class ForemanOrchestrator:
             current_task.workflow_carried_output = None
             self.store.save_task(current_task)
             current_step = transition.to_step
+
+            # Renew lease after each step (heartbeat during workflow execution).
+            if current_step is not None:
+                self._renew_task_lease(current_task, project)
 
         return current_task
 
@@ -2278,6 +2370,7 @@ class ForemanOrchestrator:
                 task.status = "blocked"
                 task.blocked_reason = message
                 self.store.save_task(task)
+                self._release_task_lease(task, project)
 
     def _emit_builtin_events(
         self,
