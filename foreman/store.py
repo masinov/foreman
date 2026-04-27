@@ -10,7 +10,7 @@ from typing import Any, Sequence
 from uuid import uuid4
 
 from .migrations import MIGRATIONS
-from .models import CompletionEvidence, DecisionGate, Event, Lease, Project, Run, Sprint, TASK_STATUSES, Task, utc_now_text
+from .models import CompletionEvidence, DecisionGate, Event, HumanGateDecision, Lease, Project, Run, Sprint, TASK_STATUSES, Task, utc_now_text
 
 _PRUNE_PROTECTED_TASK_STATUSES = ("blocked", "in_progress")
 
@@ -204,6 +204,20 @@ def _row_to_lease(row: sqlite3.Row) -> Lease:
         heartbeat_at=row["heartbeat_at"],
         expires_at=row["expires_at"],
         released_at=row["released_at"],
+    )
+
+
+def _row_to_human_gate_decision(row: sqlite3.Row) -> HumanGateDecision:
+    return HumanGateDecision(
+        id=row["id"],
+        task_id=row["task_id"],
+        project_id=row["project_id"],
+        workflow_step=row["workflow_step"],
+        decision=row["decision"],
+        note=row["note"],
+        decided_by=row["decided_by"] or "human",
+        decided_at=row["decided_at"],
+        run_id=row["run_id"],
     )
 
 
@@ -1357,6 +1371,49 @@ class ForemanStore:
                 (project_id,),
             ).fetchall()
         return [_row_to_gate(row) for row in rows]
+
+    # ── Human gate decisions ──────────────────────────────────────────────────
+
+    def save_human_gate_decision(self, decision: HumanGateDecision) -> HumanGateDecision:
+        """Insert a human gate decision record."""
+        with self._connection:
+            self._connection.execute(
+                """
+                INSERT INTO human_gate_decisions (
+                    id, task_id, project_id, workflow_step,
+                    decision, note, decided_by, decided_at, run_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    decision.id,
+                    decision.task_id,
+                    decision.project_id,
+                    decision.workflow_step,
+                    decision.decision,
+                    decision.note,
+                    decision.decided_by,
+                    decision.decided_at,
+                    decision.run_id,
+                ),
+            )
+        return decision
+
+    def get_human_gate_decision(
+        self,
+        task_id: str,
+        workflow_step: str,
+    ) -> HumanGateDecision | None:
+        """Return the most recent human gate decision for a task/step."""
+        row = self._connection.execute(
+            """
+            SELECT * FROM human_gate_decisions
+            WHERE task_id = ? AND workflow_step = ?
+            ORDER BY decided_at DESC
+            LIMIT 1
+            """,
+            (task_id, workflow_step),
+        ).fetchone()
+        return _row_to_human_gate_decision(row) if row else None
 
     # ── Leases ────────────────────────────────────────────────────────────────────
 

@@ -194,4 +194,24 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         WHERE status = 'active';
         """,
     ),
+    (
+        7,
+        "add human_gate_decisions table for durable human approval records",
+        """
+        CREATE TABLE IF NOT EXISTS human_gate_decisions (
+            id              TEXT PRIMARY KEY,
+            task_id         TEXT NOT NULL REFERENCES tasks(id),
+            project_id      TEXT NOT NULL REFERENCES projects(id),
+            workflow_step   TEXT NOT NULL,
+            decision        TEXT NOT NULL CHECK (decision IN ('approve', 'deny', 'steer')),
+            note            TEXT,
+            decided_by      TEXT NOT NULL DEFAULT 'human',
+            decided_at      TEXT NOT NULL,
+            run_id          TEXT REFERENCES runs(id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_human_gate_decisions_task
+        ON human_gate_decisions(task_id, workflow_step);
+        """,
+    ),
 ]

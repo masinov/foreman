@@ -30,7 +30,7 @@ from .git import (
     worktree_branch,
 )
 from .leases import generate_lease_token
-from .models import CompletionEvidence, Event, Project, Run, Sprint, Task, utc_now_text
+from .models import CompletionEvidence, Event, HumanGateDecision, Project, Run, Sprint, Task, utc_now_text
 from .outcomes import APPROVE, BLOCKED, DENY, DONE, ERROR, normalize_agent_outcome, normalize_reviewer_decision, STEER
 from .runner import AgentRunConfig, ClaudeCodeRunner, CodexRunner, run_with_retry
 from .runner.base import AgentRunner as NativeAgentRunner
@@ -1049,6 +1049,20 @@ class ForemanOrchestrator:
             "workflow.resumed",
             event_payload,
         )
+
+        # Persist human gate decision as a durable audit record
+        human_decision = HumanGateDecision(
+            id=_new_id("hg"),
+            task_id=current_task.id,
+            project_id=project.id,
+            workflow_step=paused_step.id,
+            decision=outcome,
+            note=note,
+            decided_by="human",
+            decided_at=utc_now_text(),
+            run_id=decision_run.id,
+        )
+        self.store.save_human_gate_decision(human_decision)
 
         current_task.status = "in_progress"
         current_task.blocked_reason = None

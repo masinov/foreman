@@ -162,6 +162,21 @@ class DecisionGate:
     resolved_by: str | None = None
 
 
+@dataclass(slots=True)
+class HumanGateDecision:
+    """A durable record of one human decision at a workflow gate."""
+
+    id: str
+    task_id: str
+    project_id: str
+    workflow_step: str
+    decision: str  # 'approve', 'deny', or 'steer'
+    note: str | None = None
+    decided_by: str = "human"
+    decided_at: str = field(default_factory=utc_now_text)
+    run_id: str | None = None
+
+
 @dataclass(slots=True, frozen=True)
 class CompletionEvidence:
     """Structured evidence summary for a task completion decision.
