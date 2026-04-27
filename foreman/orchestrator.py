@@ -2453,6 +2453,7 @@ class ForemanOrchestrator:
             sprint = self.store.get_active_sprint(project.id)
             if sprint is None:
                 return
+            order_index = self.store.next_task_order_index(sprint.id)
             created_task = Task(
                 id=_new_id("task"),
                 sprint_id=sprint.id,
@@ -2461,10 +2462,21 @@ class ForemanOrchestrator:
                 task_type=str(payload.get("task_type", "feature")),
                 description=_optional_string(payload.get("description")),
                 acceptance_criteria=_optional_string(payload.get("criteria")),
+                order_index=order_index,
                 created_by=f"agent:{role_id}",
                 created_at=event_record.timestamp,
             )
             self.store.save_task(created_task)
+            self._emit_event(
+                run,
+                "engine.task_created",
+                {
+                    "task_id": created_task.id,
+                    "title": created_task.title,
+                    "task_type": created_task.task_type,
+                    "created_by": created_task.created_by,
+                },
+            )
             return
 
         if event_record.event_type == "signal.blocker":

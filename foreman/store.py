@@ -556,6 +556,17 @@ class ForemanStore:
         rows = self._connection.execute(sql, tuple(params)).fetchall()
         return [_row_to_task(row) for row in rows]
 
+    def next_task_order_index(self, sprint_id: str) -> int:
+        """Return the next order_index for a task in a sprint (max + 1)."""
+        row = self._connection.execute(
+            """
+            SELECT MAX(order_index) AS max_idx FROM tasks WHERE sprint_id = ?
+            """,
+            (sprint_id,),
+        ).fetchone()
+        max_idx = row["max_idx"] if row and row["max_idx"] is not None else -1
+        return max_idx + 1
+
     def find_task_by_branch(
         self,
         *,
