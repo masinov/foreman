@@ -1288,6 +1288,37 @@ class ForemanOrchestrator:
                 self.store.save_task(current_task)
                 break
 
+            task_duration_ms = sum(
+                run.duration_ms or 0
+                for run in self.store.list_runs(task_id=current_task.id)
+            )
+            time_limit_ms = _int_setting(
+                project,
+                "time_limit_per_task_ms",
+                default=0,
+            )
+            if time_limit_ms > 0 and task_duration_ms >= time_limit_ms:
+                detail = f"Task time {task_duration_ms/1000:.1f}s exceeds limit {time_limit_ms/1000:.1f}s"
+                run = self._create_system_run(
+                    current_task,
+                    workflow_step=current_step,
+                    outcome="blocked",
+                    detail=detail,
+                )
+                self._emit_event(
+                    run,
+                    "gate.time_exceeded",
+                    {
+                        "task_id": current_task.id,
+                        "total_duration_ms": task_duration_ms,
+                        "time_limit_ms": time_limit_ms,
+                    },
+                )
+                current_task.status = "blocked"
+                current_task.blocked_reason = detail
+                self.store.save_task(current_task)
+                break
+
             branch_sync_event: tuple[str, dict[str, Any]] | None = None
             if current_task.branch_name and step_def.role not in {
                 "_builtin:merge",
