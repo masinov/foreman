@@ -240,6 +240,76 @@ The current CLI watch baseline now includes:
 - `.foreman/status.md` still emits an explicit open-decisions placeholder
   because the SQLite schema does not yet persist decision records.
 
+## 2026 tightening items (Items 1–23)
+
+The following items were implemented as hardening before the 1.0 release:
+
+**Lease-based concurrency control (Items 1–3)**
+- `leases` table with one active lease per `(project_id, resource_type, resource_id)`
+- `holder_id` and `lease_token` provide ownership verification
+- `fencing_token` increments on reacquisition after expiry
+- Orchestrator acquires lease before executing a task and renews between steps
+- Stale running run recovery is lease-aware (only expired/missing leases trigger recovery)
+- Active leases are projected into `.foreman/context.md` without the secret token
+
+**Branch enforcement (Item 4)**
+- `git.py` exposes `head_sha`, `branch_exists`, `worktree_branch`, `assert_not_on_default_branch`, `assert_default_branch_unchanged`
+- Before every agent step: default branch HEAD is captured; task branch is checked out
+- After every agent step: default branch HEAD must not have changed unless `_builtin:merge`
+- `engine.branch_violation` is emitted on invariant failure
+
+**Autonomous contract (Item 5)**
+- After the first developer step in autonomous mode, `signal.task_started` is required
+- Missing signal emits `workflow.autonomous_contract_missing` and blocks the task
+
+**Signal validation (Items 6–7)**
+- `foreman/runner/signals.py` now emits `signal.invalid` or `signal.unknown` instead of silently dropping bad signals
+- `signal.task_created` assigns `order_index` from `store.next_task_order_index()` and emits `engine.task_created`
+
+**Outcome normalization (Item 8)**
+- `foreman/outcomes.py` defines canonical constants: DONE, CANCELLED, BLOCKED, SUCCESS, FAILURE, ERROR, KILLED, PAUSED, APPROVE, DENY, STEER
+- All orchestrator step results and reviewer decisions are normalized before transition lookup
+
+**Completion evidence (Items 9–10, 18)**
+- `CompletionEvidence` expanded with git SHAs, commit count, structured test record, proof_status, criteria_checklist, failure_reasons
+- `_builtin:merge` calls `merge_preflight` and gates on `proof_status` before attempting merge
+- `finalize_supervisor_merge` is marked legacy; normal path is `_builtin:mark_done` + `_builtin:merge`
+
+**Versioned event schema (Item 12)**
+- `foreman/events.py` provides typed event constructors with `schema_version` in every payload
+
+**Cost and time gates (Item 13)**
+- Task-level time gate enforced before each workflow step with `gate.time_exceeded` event
+- Cost gate was already present
+
+**Role policy audit (Item 15)**
+- `engine.role_policy` emitted before every agent step: backend, permission_mode, disallowed_tools
+
+**Human gate decisions (Item 16)**
+- `human_gate_decisions` table (migration 7) persists every approve/deny/steer with task_id, workflow_step, decided_by, run_id
+
+**Workflow validation (Item 17)**
+- `WorkflowDefinition.validate()` checks duplicate transition triggers, non-terminal step coverage, builtin outcome validity
+- Called at workflow load time
+
+**Settings validation (Item 20)**
+- `foreman/settings.py` provides `ProjectSettings.from_raw()` with per-field validation
+- Invalid project settings raise `SettingsError` at parse time
+
+**Context projection (Item 21)**
+- `.foreman/context.md` includes workflow step, active lease metadata (without token), and autonomous signal contract reminder
+
+**Failure classification (Item 22)**
+- `Run.failure_type` column (migration 8) classifies failures: preflight, infrastructure, policy, gate, workflow
+
+**Merge preflight (Item 23)**
+- `git.merge_preflight()` validates source exists, target exists, worktree clean, source != target, source has commits ahead
+- `_builtin:merge` runs full preflight before attempting merge
+
+**Bootstrap scripts (Item 19)**
+- `scripts/reviewed_claude.py` and `scripts/reviewed_codex.py` marked with deprecation docstring warnings
+- Not product runtime; `foreman run` is authoritative
+
 ## Next architectural slice
 
 No outstanding architectural gaps in the current baseline.  The next slice
