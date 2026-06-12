@@ -35,6 +35,7 @@ memory changes rather than versioned product releases.
   project switcher, and approve or deny actions
 - a dedicated dashboard sprint event stream for incremental live activity
   updates
+- native runner task-lease heartbeats during streamed Claude/Codex execution
 - `foreman/executor.py` and `tests/test_executor.py`
 - end-to-end runtime coverage for the opt-in `development_secure` workflow
   plus secure workflow initialization coverage in the CLI
@@ -157,6 +158,9 @@ memory changes rather than versioned product releases.
   `engine.run_pruned` and `engine.prompt_stripped` lifecycle events
 - added `tests/test_run_retention.py` with 19 tests covering deletion,
   active-work protection, cascade event removal, and prompt stripping
+- hardened active-run crash recovery so stale task leases are force-expired
+  when a run is recovered and live holders are identified by recent lease
+  heartbeats
 - added browser-driven E2E dashboard validation via Playwright and Chromium:
   `tests/test_e2e.py` with 20 tests covering dashboard load, project and sprint
   navigation, task detail drawer, settings panel, sprint creation, and task

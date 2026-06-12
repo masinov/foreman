@@ -1553,22 +1553,43 @@ class ForemanStore:
         project_id: str,
         resource_type: str,
         resource_id: str,
+        force: bool = False,
     ) -> int:
-        """Mark all active leases for one resource as expired. Returns count of expired leases."""
+        """Mark all active leases for one resource as expired. Returns count of expired leases.
+
+        By default, only leases whose ``expires_at`` is already in the past are
+        transitioned. Pass ``force=True`` to expire every active lease for the
+        resource regardless of ``expires_at``; used by recovery when the
+        original holder is known to be gone and a future lease expiry cannot be
+        waited for.
+        """
         now = utc_now_text()
         with self._connection:
-            cursor = self._connection.execute(
-                """
-                UPDATE leases
-                SET status = 'expired'
-                WHERE project_id = ?
-                  AND resource_type = ?
-                  AND resource_id = ?
-                  AND status = 'active'
-                  AND expires_at < ?
-                """,
-                (project_id, resource_type, resource_id, now),
-            )
+            if force:
+                cursor = self._connection.execute(
+                    """
+                    UPDATE leases
+                    SET status = 'expired'
+                    WHERE project_id = ?
+                      AND resource_type = ?
+                      AND resource_id = ?
+                      AND status = 'active'
+                    """,
+                    (project_id, resource_type, resource_id),
+                )
+            else:
+                cursor = self._connection.execute(
+                    """
+                    UPDATE leases
+                    SET status = 'expired'
+                    WHERE project_id = ?
+                      AND resource_type = ?
+                      AND resource_id = ?
+                      AND status = 'active'
+                      AND expires_at < ?
+                    """,
+                    (project_id, resource_type, resource_id, now),
+                )
             return cursor.rowcount
 
     def acquire_lease(

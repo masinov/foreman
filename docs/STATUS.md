@@ -2,17 +2,14 @@
 
 ## Current sprint
 
-- Active implementation sprint: none; next sprint can resume the deferred
-  active-run lease and heartbeat recovery work unless reprioritized.
+- Active implementation sprint:
+  `sprint-47-active-run-lease-and-heartbeat-recovery`
 - Latest completed sprint: `sprint-46-completion-truth-hardening`
 - Latest completed review sprint: `sprint-47-review-phase-0-correctness`
 - Latest completed model-backend sprint:
   `sprint-48-worker-fleet-minimax-smoke`
 - Last merged branch: `feat/worker-fleet-minimax-smoke`
-- Current implementation branch: none
-- Existing queued SQLite sprint `sprint-47-active-run-lease-and-heartbeat-recovery`
-  remains useful, but should follow a short Phase 1 worker-fleet smoke because
-  Minimax delegation is now the immediate operating constraint.
+- Current implementation branch: `feat/active-run-lease-heartbeat-recovery`
 
 ## Active branches
 
@@ -32,8 +29,20 @@
 
 ## Current focus
 
-- resume the older active-run lease and heartbeat recovery work if it is still
-  relevant
+- finish and merge active-run lease heartbeat recovery after validation
+
+## Latest update - active-run lease heartbeat recovery
+
+- MiniMax M3 through Claude Code drafted the core implementation and tests on
+  `feat/active-run-lease-heartbeat-recovery`; Codex is supervising review,
+  cleanup, docs, validation, and merge.
+- Native runner event streams now periodically renew the task lease while a
+  step is still running, instead of waiting until the workflow step returns.
+- Stale run recovery now treats old task-lease heartbeats as non-live holder
+  evidence and force-expires the recovered task lease before resetting the task
+  to `todo`.
+- New regression tests cover forced lease expiry, crash-recovery payload
+  redaction, live-holder protection, and native stream heartbeat behavior.
 
 ## Latest update — MiniMax worker-model smoke merged
 

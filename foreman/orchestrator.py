@@ -30,7 +30,7 @@ from .git import (
     worktree_branch,
 )
 from .leases import generate_lease_token
-from .models import CompletionEvidence, Event, HumanGateDecision, Project, Run, Sprint, Task, utc_now_text
+from .models import CompletionEvidence, Event, HumanGateDecision, Lease, Project, Run, Sprint, Task, utc_now_text
 from .outcomes import APPROVE, BLOCKED, DENY, DONE, ERROR, normalize_agent_outcome, normalize_reviewer_decision, STEER
 from .runner import AgentRunConfig, ClaudeCodeRunner, CodexRunner, PreflightError, run_with_retry
 from .runner.base import AgentRunner as NativeAgentRunner
@@ -134,6 +134,17 @@ class AgentExecutor(Protocol):
 class ForemanOrchestrator:
     """Drive persisted tasks through declarative workflows."""
 
+    # Minimum interval (seconds) between task-lease renewals while a native
+    # runner step is streaming. The default 30s is well under the 5-minute lease
+    # duration so a long Claude/Codex stream keeps the lease alive.
+    _DEFAULT_NATIVE_STEP_HEARTBEAT_SECONDS = 30.0
+
+    # Maximum heartbeat age (seconds) below which a lease is still considered
+    # alive for active-run recovery. If the lease's heartbeat is older than
+    # this window, recovery treats the holder as gone even if the lease is
+    # technically still within its ``expires_at`` window.
+    _LEASE_LIVENESS_THRESHOLD_SECONDS = 60.0
+
     def __init__(
         self,
         store: ForemanStore,
@@ -146,6 +157,7 @@ class ForemanOrchestrator:
         runner_sleep: Callable[[float], None] | None = None,
         utc_now: Callable[[], datetime] | None = None,
         holder_id: str | None = None,
+        native_step_heartbeat_seconds: float | None = None,
     ) -> None:
         loaded_roles = dict(roles) if roles is not None else load_roles(default_roles_dir())
         loaded_workflows = (
@@ -172,6 +184,13 @@ class ForemanOrchestrator:
         self.runner_sleep = runner_sleep
         self.utc_now = utc_now or (lambda: datetime.now(timezone.utc))
         self.holder_id = holder_id or str(uuid4())
+        if native_step_heartbeat_seconds is not None and native_step_heartbeat_seconds < 0:
+            native_step_heartbeat_seconds = 0.0
+        self._native_step_heartbeat_seconds = (
+            native_step_heartbeat_seconds
+            if native_step_heartbeat_seconds is not None
+            else self._DEFAULT_NATIVE_STEP_HEARTBEAT_SECONDS
+        )
         self._task_lease_tokens: dict[str, str] = {}
         self._task_started_received: set[str] = set()
         self._developer_step_executed: set[str] = set()
@@ -1983,6 +2002,17 @@ class ForemanOrchestrator:
                 },
             )
 
+        # Force-expire any active task lease for the recovered task so the
+        # next orchestrator can acquire it immediately. Without this, a lease
+        # whose `expires_at` is still in the future would block re-acquisition
+        # even after the run is marked failed.
+        self.store.expire_resource_leases(
+            project_id=project.id,
+            resource_type="task",
+            resource_id=task.id,
+            force=True,
+        )
+
         task.status = "todo"
         task.blocked_reason = None
         task.workflow_current_step = None
@@ -1996,8 +2026,10 @@ class ForemanOrchestrator:
 
         A run is considered stale when:
         1. Its configured timeout has elapsed, AND
-        2. The task's active lease is either missing or held by a different orchestrator
-           (meaning the original holder is gone and the lease has expired).
+        2. The task's active lease is either missing, expired, or held by a
+           holder whose heartbeat is older than the liveness threshold
+           (meaning the original holder is gone and the lease is no longer
+           being heartbeated).
         """
 
         timeout_seconds = _active_run_recovery_timeout_seconds(project)
@@ -2012,7 +2044,9 @@ class ForemanOrchestrator:
         if (self.utc_now() - started).total_seconds() <= timeout_seconds:
             return False
 
-        # Timeout has elapsed — expire any stale leases for this task, then check.
+        # Timeout has elapsed: expire any past-due leases for this task, then
+        # check the liveness of the remaining lease by its heartbeat timestamp.
+        # A lease whose heartbeat is stale is treated as if its holder is gone.
         self.store.expire_resource_leases(
             project_id=project.id,
             resource_type="task",
@@ -2024,8 +2058,9 @@ class ForemanOrchestrator:
             resource_id=run.task_id,
         )
         if task_lease is not None and task_lease.holder_id != self.holder_id:
-            # Another orchestrator holds an active lease — not stale.
-            return False
+            if _is_lease_live(task_lease, self.utc_now(), self._LEASE_LIVENESS_THRESHOLD_SECONDS):
+                # Another orchestrator is actively heartbeating, so not stale.
+                return False
 
         return True
 
@@ -2542,11 +2577,28 @@ class ForemanOrchestrator:
         if self.runner_sleep is not None:
             retry_kwargs["sleep"] = self.runner_sleep
 
+        # Heartbeat the task lease while the native runner streams so a long
+        # run keeps the lease alive between steps. We track the last heartbeat
+        # wall-clock time and only renew once the configured interval has
+        # elapsed to avoid hammering SQLite on every event.
+        heartbeat_interval = self._native_step_heartbeat_seconds
+        last_heartbeat: datetime | None = None
+
         for event in run_with_retry(
             runner,
             config,
             **retry_kwargs,
         ):
+            now = self.utc_now()
+            if (
+                heartbeat_interval > 0
+                and (
+                    last_heartbeat is None
+                    or (now - last_heartbeat).total_seconds() >= heartbeat_interval
+                )
+            ):
+                self._renew_task_lease(task, project)
+                last_heartbeat = now
             event_record = AgentEventRecord(
                 event_type=event.event_type,
                 payload=dict(event.payload),
@@ -3042,6 +3094,23 @@ def _active_run_recovery_timeout_seconds(project: Project) -> int:
     if project_timeout <= 0:
         return default_timeout
     return min(project_timeout, default_timeout)
+
+
+def _is_lease_live(
+    lease: Lease,
+    utc_now: datetime,
+    liveness_threshold_seconds: float,
+) -> bool:
+    """Return True if the lease's heartbeat is recent enough to trust the holder.
+
+    A lease is considered live when its ``heartbeat_at`` is within
+    ``liveness_threshold_seconds`` of ``utc_now``. Older heartbeats are
+    treated as if the holder is gone so recovery can take over the resource.
+    """
+    heartbeat = _parse_utc_timestamp(lease.heartbeat_at)
+    if heartbeat is None:
+        return False
+    return (utc_now - heartbeat).total_seconds() <= liveness_threshold_seconds
 
 
 def _parse_utc_timestamp(value: str | None) -> datetime | None:

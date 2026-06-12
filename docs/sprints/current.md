@@ -1,13 +1,26 @@
 # Current Sprint
 
-- Active implementation sprint: none; `sprint-48-worker-fleet-minimax-smoke`
-  is merged.
-- Branch: none for implementation work; docs closeout branch is
-  `docs/minimax-smoke-closeout`.
+- Active implementation sprint:
+  `sprint-47-active-run-lease-and-heartbeat-recovery`
+- Branch: `feat/active-run-lease-heartbeat-recovery`
 - Local Foreman sprint: `sprint-review-phase-0-correctness` in `.foreman.db`
 - Last completed sprint: `sprint-48-worker-fleet-minimax-smoke`
-- Existing queued SQLite sprint: `sprint-47-active-run-lease-and-heartbeat-recovery`
-  can resume unless reprioritized.
+- Current deliverable: harden task lease liveness during native runner streams
+  and crash recovery.
+
+## Sprint 47 Active-Run Lease Recovery
+
+Implemented on `feat/active-run-lease-heartbeat-recovery`:
+
+1. Added in-step native runner lease heartbeats so long Claude/Codex streams
+   renew the task lease before the workflow step returns.
+2. Added stale active-lease liveness checks based on task lease heartbeat age.
+3. Added forced resource-lease expiry for recovered stale runs so reset tasks
+   can be reacquired immediately.
+4. Added regression coverage for forced lease expiry, crash-recovery token
+   redaction, live-holder protection, and native stream heartbeat behavior.
+5. Used MiniMax M3 through Claude Code for the bulk implementation and test
+   drafting; final review, cleanup, docs, and validation are supervised here.
 
 ## Review Integration
 

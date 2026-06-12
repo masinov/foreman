@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -215,6 +216,31 @@ class ScriptedNativeRunner:
             if capture.call_index == call_index:
                 return capture
         raise AssertionError(f"Missing native runner capture for call {call_index}")
+
+
+class _LongStreamingRunner:
+    """Scripted runner that yields many ``agent.message`` events before the
+    terminal ``agent.completed`` event. Used to exercise the in-step lease
+    heartbeat path inside the native event loop.
+    """
+
+    _MESSAGE_COUNT = 25
+
+    def run(self, config: AgentRunConfig) -> Iterator[AgentEvent]:
+        for index in range(self._MESSAGE_COUNT):
+            yield AgentEvent(
+                "agent.message",
+                payload={"text": f"chunk {index}", "phase": "assistant"},
+            )
+        yield AgentEvent(
+            "agent.completed",
+            payload={
+                "session_id": "long-session",
+                "cost_usd": 0.0,
+                "duration_ms": 100,
+                "token_count": 10,
+            },
+        )
 
 
 class ForemanOrchestratorTests(unittest.TestCase):
@@ -2448,6 +2474,340 @@ class ForemanOrchestratorTests(unittest.TestCase):
             refreshed_fresh_run = store.get_run(fresh_run.id)
             assert refreshed_fresh_run is not None
             self.assertEqual(refreshed_fresh_run.status, "running")
+
+    def test_recover_stale_running_runs_expires_active_task_lease(self) -> None:
+        """Recovery must force-expire the active task lease so the next
+        orchestrator can acquire it without waiting for ``expires_at``.
+        """
+        from foreman.leases import generate_lease_token
+
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        # Crashed-orchestrator clock: the lease was acquired long ago and
+        # its heartbeat has not been refreshed since. From the new
+        # orchestrator's perspective the holder is gone.
+        crash_clock = datetime(2026, 3, 30, 12, 20, 0, tzinfo=timezone.utc)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+            project.settings["time_limit_per_run_minutes"] = 1
+            store.save_project(project)
+            task.status = "in_progress"
+            task.branch_name = "feat/task-1-implement-orchestrator-loop"
+            task.started_at = "2026-03-30T12:20:00Z"
+            store.save_task(task)
+            # Acquire the lease as the crashed holder at the crash clock,
+            # then rewind its heartbeat by direct SQL so the liveness check
+            # treats the holder as gone.
+            lease_token = generate_lease_token()
+            lease = store.acquire_lease(
+                project_id=project.id,
+                resource_type="task",
+                resource_id=task.id,
+                holder_id="crashed-holder",
+                lease_token=lease_token,
+                duration_seconds=600.0,
+            )
+            assert lease is not None
+            store._connection.execute(
+                "UPDATE leases SET heartbeat_at = ?, acquired_at = ? WHERE id = ?",
+                (
+                    crash_clock.isoformat(timespec="microseconds").replace("+00:00", "Z"),
+                    crash_clock.isoformat(timespec="microseconds").replace("+00:00", "Z"),
+                    lease.id,
+                ),
+            )
+            stale_run = Run(
+                id="run-stale",
+                task_id=task.id,
+                project_id=project.id,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude_code",
+                status="running",
+                started_at="2026-03-30T12:20:00Z",
+                created_at="2026-03-30T12:20:00Z",
+            )
+            store.save_run(stale_run)
+
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=self.roles,
+                workflows=self.workflows,
+                utc_now=lambda: datetime(2026, 3, 30, 12, 30, 0, tzinfo=timezone.utc),
+            )
+
+            orchestrator.recover_orphaned_tasks(project.id)
+
+            # Run and task should be reset.
+            refreshed_run = store.get_run(stale_run.id)
+            assert refreshed_run is not None
+            self.assertEqual(refreshed_run.status, "failed")
+            refreshed_task = store.get_task(task.id)
+            assert refreshed_task is not None
+            self.assertEqual(refreshed_task.status, "todo")
+
+            # The active task lease must be expired so a new orchestrator can
+            # acquire it without waiting for ``expires_at``.
+            active_lease = store.get_active_lease(
+                project_id=project.id,
+                resource_type="task",
+                resource_id=task.id,
+            )
+            self.assertIsNone(active_lease)
+
+            expired_leases = store.list_leases(
+                project_id=project.id,
+                resource_type="task",
+                resource_id=task.id,
+                status="expired",
+            )
+            self.assertEqual(len(expired_leases), 1)
+            self.assertEqual(expired_leases[0].id, lease.id)
+
+    def test_recover_stale_running_runs_crash_event_omits_lease_token(self) -> None:
+        """``engine.crash_recovery`` events must not leak ``lease_token``;
+        lease tokens are secrets and must not be persisted in event history.
+        """
+        from foreman.leases import generate_lease_token
+
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        crash_clock = datetime(2026, 3, 30, 12, 20, 0, tzinfo=timezone.utc)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+            project.settings["time_limit_per_run_minutes"] = 1
+            store.save_project(project)
+            task.status = "in_progress"
+            task.branch_name = "feat/task-1-implement-orchestrator-loop"
+            task.started_at = "2026-03-30T12:20:00Z"
+            store.save_task(task)
+            lease_token = generate_lease_token()
+            lease = store.acquire_lease(
+                project_id=project.id,
+                resource_type="task",
+                resource_id=task.id,
+                holder_id="crashed-holder",
+                lease_token=lease_token,
+            )
+            assert lease is not None
+            store._connection.execute(
+                "UPDATE leases SET heartbeat_at = ?, acquired_at = ? WHERE id = ?",
+                (
+                    crash_clock.isoformat(timespec="microseconds").replace("+00:00", "Z"),
+                    crash_clock.isoformat(timespec="microseconds").replace("+00:00", "Z"),
+                    lease.id,
+                ),
+            )
+            stale_run = Run(
+                id="run-stale",
+                task_id=task.id,
+                project_id=project.id,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude_code",
+                status="running",
+                started_at="2026-03-30T12:20:00Z",
+                created_at="2026-03-30T12:20:00Z",
+            )
+            store.save_run(stale_run)
+
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=self.roles,
+                workflows=self.workflows,
+                utc_now=lambda: datetime(2026, 3, 30, 12, 30, 0, tzinfo=timezone.utc),
+            )
+
+            orchestrator.recover_orphaned_tasks(project.id)
+
+            events = store.list_events(task_id=task.id)
+            recovery_events = [
+                event for event in events
+                if event.event_type == "engine.crash_recovery"
+            ]
+            self.assertGreaterEqual(len(recovery_events), 1)
+            for event in recovery_events:
+                self.assertNotIn("lease_token", event.payload)
+
+    def test_run_is_stale_treats_lease_held_by_other_holder_as_live(self) -> None:
+        """A run whose task lease is held by a different orchestrator must
+        not be considered stale while that holder is heartbeating.
+        """
+        from foreman.leases import generate_lease_token
+
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+            project.settings["time_limit_per_run_minutes"] = 1
+            store.save_project(project)
+            task.status = "in_progress"
+            task.branch_name = "feat/task-1-implement-orchestrator-loop"
+            task.started_at = "2026-03-30T12:20:00Z"
+            store.save_task(task)
+            # Another orchestrator holds an active lease with a recent
+            # heartbeat, so this run is still owned by a different process.
+            live_lease = store.acquire_lease(
+                project_id=project.id,
+                resource_type="task",
+                resource_id=task.id,
+                holder_id="other-holder",
+                lease_token=generate_lease_token(),
+            )
+            assert live_lease is not None
+            recent_heartbeat = "2026-03-30T12:29:30.000000Z"
+            store._connection.execute(
+                "UPDATE leases SET heartbeat_at = ?, acquired_at = ? WHERE id = ?",
+                (recent_heartbeat, recent_heartbeat, live_lease.id),
+            )
+            stale_run = Run(
+                id="run-active-other-holder",
+                task_id=task.id,
+                project_id=project.id,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude_code",
+                status="running",
+                started_at="2026-03-30T12:20:00Z",
+                created_at="2026-03-30T12:20:00Z",
+            )
+            store.save_run(stale_run)
+
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=self.roles,
+                workflows=self.workflows,
+                holder_id="this-holder",
+                utc_now=lambda: datetime(2026, 3, 30, 12, 30, 0, tzinfo=timezone.utc),
+            )
+
+            self.assertFalse(
+                orchestrator._run_is_stale(project, stale_run),
+                "Run with a live lease held by another holder must not be stale.",
+            )
+
+            # The stale-check must not have touched the run.
+            refreshed_run = store.get_run(stale_run.id)
+            assert refreshed_run is not None
+            self.assertEqual(refreshed_run.status, "running")
+
+    def test_native_runner_step_heartbeats_task_lease_during_long_stream(self) -> None:
+        """A long-running native runner step must heartbeat the task lease
+        so the lease does not expire mid-step.
+        """
+        import time as _time
+
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+            store.save_project(project)
+
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=self.roles,
+                workflows=self.workflows,
+                agent_runners={"claude_code": _LongStreamingRunner()},
+                native_step_heartbeat_seconds=0.001,  # renew on every event
+            )
+            token = orchestrator._acquire_task_lease(task, project)
+            assert token is not None
+            initial_lease = store.get_active_lease(
+                project_id=project.id,
+                resource_type="task",
+                resource_id=task.id,
+            )
+            assert initial_lease is not None
+            initial_heartbeat = initial_lease.heartbeat_at
+            initial_expires = initial_lease.expires_at
+
+            # Force a wall-clock advance so the renewal produces a strictly
+            # later heartbeat timestamp. SQLite stores microsecond precision.
+            _time.sleep(0.01)
+
+            # The scripted runner yields many events, exercising the heartbeat
+            # path. Use the developer role to drive a real native step.
+            developer_role = self.roles["developer"]
+            result = orchestrator._execute_native_runner_step(
+                role=developer_role,
+                project=project,
+                task=task,
+                workflow_step="develop",
+                prompt="do the work",
+                session_id=None,
+            )
+            self.assertEqual(result.status, "completed")
+
+            # The lease must have been heartbeated during the stream, so the
+            # expires_at should be strictly later than the initial value.
+            refreshed_lease = store.get_active_lease(
+                project_id=project.id,
+                resource_type="task",
+                resource_id=task.id,
+            )
+            assert refreshed_lease is not None
+            self.assertEqual(refreshed_lease.id, initial_lease.id)
+            self.assertGreater(refreshed_lease.heartbeat_at, initial_heartbeat)
+            self.assertGreater(refreshed_lease.expires_at, initial_expires)
+
+    def test_native_runner_step_heartbeat_disabled_when_interval_zero(self) -> None:
+        """Setting ``native_step_heartbeat_seconds=0`` disables the in-step
+        heartbeat so the lease is renewed only after the step returns.
+        """
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+            store.save_project(project)
+
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=self.roles,
+                workflows=self.workflows,
+                agent_runners={"claude_code": _LongStreamingRunner()},
+                native_step_heartbeat_seconds=0.0,
+            )
+            token = orchestrator._acquire_task_lease(task, project)
+            assert token is not None
+            initial_lease = store.get_active_lease(
+                project_id=project.id,
+                resource_type="task",
+                resource_id=task.id,
+            )
+            assert initial_lease is not None
+            initial_heartbeat = initial_lease.heartbeat_at
+
+            developer_role = self.roles["developer"]
+            # Even with many events, the heartbeat must not have been bumped
+            # because the interval is zero (disabled).
+            orchestrator._execute_native_runner_step(
+                role=developer_role,
+                project=project,
+                task=task,
+                workflow_step="develop",
+                prompt="do the work",
+                session_id=None,
+            )
+
+            refreshed_lease = store.get_active_lease(
+                project_id=project.id,
+                resource_type="task",
+                resource_id=task.id,
+            )
+            assert refreshed_lease is not None
+            self.assertEqual(refreshed_lease.heartbeat_at, initial_heartbeat)
 
     def test_run_project_prunes_old_done_task_events_and_preserves_blocked_history(self) -> None:
         repo_path, db_path = self.create_workspace()
