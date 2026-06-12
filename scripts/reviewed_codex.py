@@ -25,6 +25,7 @@ import re
 import shlex
 import subprocess
 import sys
+import tempfile
 import textwrap
 from collections import deque
 from dataclasses import dataclass
@@ -49,8 +50,23 @@ BACKLOG_PATH = REPO_ROOT / "docs" / "sprints" / "backlog.md"
 SPEC_PATH = REPO_ROOT / "docs" / "specs" / "engine-design-v3.md"
 MOCKUP_PATH = REPO_ROOT / "docs" / "mockups" / "foreman-mockup-v6.html"
 
-RUN_DIR = REPO_ROOT / ".codex" / "run"
-RUN_DIR.mkdir(parents=True, exist_ok=True)
+def _resolve_run_dir() -> Path:
+    run_dir = REPO_ROOT / ".codex" / "run"
+    try:
+        run_dir.mkdir(parents=True, exist_ok=True)
+        return run_dir
+    except OSError:
+        return Path(tempfile.mkdtemp(prefix="foreman-reviewed-codex-"))
+
+
+def _display_path(path: Path) -> str:
+    try:
+        return str(path.relative_to(REPO_ROOT))
+    except ValueError:
+        return str(path)
+
+
+RUN_DIR = _resolve_run_dir()
 
 DEV_LOG = RUN_DIR / "developer.log"
 REVIEW_LOG = RUN_DIR / "reviewer.log"
@@ -1656,8 +1672,8 @@ def main() -> int:
         "log-reset",
         "Reset developer and reviewer log files.",
         payload={
-            "developer_log": str(DEV_LOG.relative_to(REPO_ROOT)),
-            "reviewer_log": str(REVIEW_LOG.relative_to(REPO_ROOT)),
+            "developer_log": _display_path(DEV_LOG),
+            "reviewer_log": _display_path(REVIEW_LOG),
         },
     )
 

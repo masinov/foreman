@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import subprocess
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 from scripts import reviewed_codex
@@ -224,6 +226,30 @@ class ReviewedCodexFlowTests(unittest.TestCase):
         reason = runner.post_merge_main_violation_reason()
 
         self.assertIsNone(reason)
+
+
+class ResolveRunDirTests(unittest.TestCase):
+    """Cover the run-directory resolution helper that tolerates read-only state."""
+
+    def test_resolve_run_dir_uses_repo_local_path_when_writable(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            with patch("scripts.reviewed_codex.REPO_ROOT", repo_root):
+                resolved = reviewed_codex._resolve_run_dir()
+            self.assertEqual(resolved, repo_root / ".codex" / "run")
+            self.assertTrue(resolved.is_dir())
+
+    def test_resolve_run_dir_falls_back_to_temp_when_repo_dir_is_read_only(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            codex_dir = repo_root / ".codex"
+            codex_dir.mkdir()
+            (codex_dir / "run").write_text("not a directory", encoding="utf-8")
+            with patch("scripts.reviewed_codex.REPO_ROOT", repo_root):
+                resolved = reviewed_codex._resolve_run_dir()
+            self.assertNotEqual(resolved, repo_root / ".codex" / "run")
+            self.assertTrue(resolved.is_dir())
+            self.assertIn("foreman-reviewed-codex-", resolved.name)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,5 @@
 """Tests for the Foreman runner module."""
 
-import json
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -35,39 +34,49 @@ class SignalParsingTests(unittest.TestCase):
 
     def test_extract_signal_events_single_signal(self) -> None:
         """Extract a single FOREMAN_SIGNAL from text."""
-        text = 'Some output\nFOREMAN_SIGNAL: {"type": "progress", "percent": 50}'
+        text = 'Some output\nFOREMAN_SIGNAL: {"type": "progress", "message": "Half done", "percent": 50}'
         cleaned, events = extract_signal_events(text)
         self.assertIn("Some output", cleaned)
         self.assertNotIn("FOREMAN_SIGNAL", cleaned)
         self.assertEqual(len(events), 1)
         self.assertEqual(events[0].event_type, "signal.progress")
+        self.assertEqual(events[0].payload["message"], "Half done")
         self.assertEqual(events[0].payload["percent"], 50)
 
     def test_extract_signal_events_multiple_signals(self) -> None:
         """Extract multiple signals from text."""
         text = """
-FOREMAN_SIGNAL: {"type": "progress", "percent": 50}
+FOREMAN_SIGNAL: {"type": "progress", "message": "Half done", "percent": 50}
 Some other output
-FOREMAN_SIGNAL: {"type": "progress", "percent": 100}
+FOREMAN_SIGNAL: {"type": "progress", "message": "Done", "percent": 100}
 """
         cleaned, events = extract_signal_events(text)
         self.assertEqual(len(events), 2)
+        self.assertEqual(events[0].payload["message"], "Half done")
         self.assertEqual(events[0].payload["percent"], 50)
+        self.assertEqual(events[1].payload["message"], "Done")
         self.assertEqual(events[1].payload["percent"], 100)
 
     def test_extract_signal_events_invalid_json(self) -> None:
-        """Skip signals with invalid JSON."""
+        """Invalid signal JSON is surfaced as a diagnostic event."""
         text = "FOREMAN_SIGNAL: {not valid json}"
         cleaned, events = extract_signal_events(text)
         self.assertNotIn("FOREMAN_SIGNAL", cleaned)
-        self.assertEqual(events, ())
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].event_type, "signal.invalid")
+        self.assertEqual(events[0].payload["reason"], "invalid JSON")
+        self.assertEqual(events[0].payload["raw"], "{not valid json}")
 
     def test_extract_signal_events_unknown_type(self) -> None:
-        """Skip signals with unknown type."""
+        """Unknown signal types are surfaced as diagnostic events."""
         text = 'FOREMAN_SIGNAL: {"type": "unknown_type", "value": 1}'
         cleaned, events = extract_signal_events(text)
         self.assertNotIn("FOREMAN_SIGNAL", cleaned)
-        self.assertEqual(events, ())
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].event_type, "signal.unknown")
+        self.assertEqual(events[0].payload["type"], "unknown_type")
+        self.assertEqual(events[0].payload["reason"], "unknown signal type")
+        self.assertEqual(events[0].payload["value"], 1)
 
 
 class AgentRunConfigTests(unittest.TestCase):

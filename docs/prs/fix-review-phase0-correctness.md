@@ -27,6 +27,9 @@
 - `tests/test_orchestrator.py`
 - `tests/test_cli.py`
 - `tests/test_dashboard.py`
+- `tests/test_runner.py`
+- `tests/test_reviewed_codex.py`
+- `tests/test_e2e.py`
 - `foreman/executor.py`
 - `tests/test_executor.py`
 - `CHANGELOG.md`
@@ -41,13 +44,13 @@
 
 ## Risks
 
-- Full unittest discovery still has known non-slice blockers in this environment:
-  missing optional `pytest`, read-only `.codex/run`, local DB-sensitive CLI
-  discovery expectations, stale workflow transition-count expectations, and
-  stale signal parser test expectations.
-- A direct Minimax M3 Claude Code smoke with tools disabled produced malformed
-  tool-call text, so worker-fleet delegation needs a tighter Phase 1 smoke
-  before unattended use.
+- Full unittest discovery now passes locally. It emits pre-existing
+  `ResourceWarning` output from builtin test subprocess handling, but the tests
+  complete successfully.
+- Simple Minimax M3 Claude Code calls work, including a direct
+  `ClaudeCodeRunner` smoke. A delegated edit attempt through Claude Code hung
+  without producing useful output, so worker-fleet delegation still needs a
+  tighter Phase 1 smoke before unattended edits.
 
 ## Tests
 
@@ -57,8 +60,10 @@
 - `./venv/bin/python -m unittest tests.test_supervisor_state.SupervisorStateTests.test_finalize_supervisor_merge_marks_task_done_and_completes_active_sprint tests.test_supervisor_state.SupervisorStateTests.test_finalize_supervisor_merge_prefers_explicit_task_id -v`
 - `./venv/bin/python -m py_compile foreman/orchestrator.py foreman/cli.py foreman/dashboard_service.py scripts/reviewed_codex.py scripts/reviewed_claude.py scripts/repo_validation.py scripts/validate_repo_memory.py`
 - `./venv/bin/foreman workflows && ./venv/bin/foreman roles`
-- `./venv/bin/python -m unittest discover -s tests -v` attempted; failed on
-  known non-slice blockers listed under Risks.
+- `./venv/bin/python -m unittest tests.test_runner.SignalParsingTests -v`
+- `./venv/bin/python -m unittest tests.test_cli.ForemanCLISmokeTests.test_projects_command_reports_discovery_error_outside_repo tests.test_cli.ForemanCLISmokeTests.test_workflows_command_lists_shipped_workflows -v`
+- `./venv/bin/python -m unittest tests.test_reviewed_codex -v`
+- `./venv/bin/python -m unittest discover -s tests -v` — 500 tests passed.
 
 ## Screenshots or output examples
 
@@ -71,9 +76,9 @@
   coverage.
 - The obsolete executor path is removed.
 - Repo memory records the validation state and next blockers.
+- Full unittest discovery is green in the local repo venv.
 
 ## Follow-ups
 
-- Fix the full-suite blockers separately.
 - Add a reliable Minimax M3 worker smoke as part of Phase 1 before depending on
   cheap-model delegation for unattended edits.

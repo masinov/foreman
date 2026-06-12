@@ -12,13 +12,13 @@
   invalidation, dashboard cancellation cleanup, and executor-path removal.
 - Completion evidence is now defensive when a stored repo path cannot be
   inspected.
+- Full unittest discovery passes locally: 500 tests.
 
 ## What is incomplete
 
-- Full unittest discovery is not green in this environment because of known
-  non-slice blockers documented in `docs/sprints/current.md`.
-- The direct Minimax M3 Claude Code delegation attempt produced malformed
-  tool-call text with tools disabled and was not useful for implementation.
+- Simple Minimax M3 Claude Code calls work, and the direct Foreman
+  `ClaudeCodeRunner` smoke completed. A delegated edit attempt through Claude
+  Code hung without output and was not useful for implementation.
 
 ## Known regressions
 
@@ -31,5 +31,5 @@
 ## Safe branch points
 
 - Branch: `fix/review-phase0-correctness`
-- Last clean focused validation point: after the Phase 0 regression tests and
+- Last clean validation point: after the full unittest discovery and
   py-compile checks listed in `docs/sprints/current.md`.

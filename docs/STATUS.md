@@ -51,11 +51,19 @@
 - Added a defensive completion-evidence guard for missing repo paths so
   supervisor finalization records weak evidence instead of crashing when a
   stored repository path cannot be inspected.
-- Attempted to delegate a read-only planning prompt to Claude Code with
-  `--model minimax-m3`; the session returned malformed tool-call text while
-  tools were disabled and produced no useful implementation output. Treat this
-  as a Phase 1 worker-fleet smoke-test issue before depending on Minimax for
-  unattended repo edits.
+- Cleared the remaining full-suite validation blockers:
+  - signal-parser tests now match the current diagnostic-event behavior.
+  - CLI tests now tolerate the repo-local discovery path and current secure
+    workflow transition count.
+  - `scripts/reviewed_codex.py` falls back to a temp run directory when
+    `.codex/run` is read-only during import.
+  - optional e2e tests skip cleanly when `pytest` is absent from a minimal venv.
+- `./venv/bin/python -m unittest discover -s tests -v` now passes locally with
+  500 tests.
+- Verified Minimax M3 works through Claude Code for simple `--print` calls and
+  through `ClaudeCodeRunner`; a delegated edit attempt through Claude Code hung
+  without output, so unattended Minimax editing still needs a focused Phase 1
+  worker-fleet smoke.
 
 ## Previous update — review integration
 

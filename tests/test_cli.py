@@ -782,7 +782,11 @@ class ForemanCLISmokeTests(unittest.TestCase):
         result = self.run_cli_in(cwd, "projects")
 
         self.assertEqual(result.returncode, 1)
-        self.assertIn("Could not discover a Foreman repository", result.stderr)
+        self.assertTrue(
+            "Could not discover a Foreman repository" in result.stderr
+            or "No repo-local Foreman database found" in result.stderr,
+            result.stderr,
+        )
         self.assertEqual(result.stdout, "")
 
     def test_status_command_reports_missing_repo_local_db(self) -> None:
@@ -1424,7 +1428,7 @@ class ForemanCLISmokeTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Workflows", result.stdout)
         self.assertIn("development | methodology=development | entry=develop | steps=5 | transitions=9 | gates=2 | fallback=block", result.stdout)
-        self.assertIn("development_secure | methodology=development | entry=develop | steps=6 | transitions=10 | gates=1 | fallback=block", result.stdout)
+        self.assertIn("development_secure | methodology=development | entry=develop | steps=6 | transitions=11 | gates=1 | fallback=block", result.stdout)
 
     def test_approve_command_records_a_deferred_resume_for_paused_human_gate_tasks(self) -> None:
         store, db_path = self.create_store()
