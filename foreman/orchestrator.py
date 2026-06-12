@@ -30,8 +30,9 @@ from .git import (
     worktree_branch,
 )
 from .leases import generate_lease_token
+from .judge import judge_criteria, truncate_diff
 from .models import CompletionEvidence, Event, HumanGateDecision, Lease, Project, Run, Sprint, TASK_COMPLEXITIES, Task, utc_now_text
-from .outcomes import APPROVE, BLOCKED, DENY, DONE, ERROR, normalize_agent_outcome, normalize_reviewer_decision, STEER
+from .outcomes import APPROVE, BLOCKED, DENY, DONE, ERROR, ESCALATE, normalize_agent_outcome, normalize_reviewer_decision, STEER
 from .runner import AgentRunConfig, ClaudeCodeRunner, CodexRunner, PreflightError, run_with_retry
 from .runner.base import AgentRunner as NativeAgentRunner
 from .runner.env import resolve_env
@@ -434,27 +435,30 @@ class ForemanOrchestrator:
         criteria_list = [c.strip() for c in criteria_text.split("\n") if c.strip()]
         criteria_count = len(criteria_list)
         criteria_checklist: list[dict[str, str]] = []
+        judged_by = "heuristic"
 
         if criteria_list:
             all_output_text = "\n".join(agent_outputs).lower()
-            for criterion in criteria_list:
-                addressed, partial = self._criterion_addressed(criterion, all_output_text, changed_files)
-                if addressed:
-                    status = "passed"
-                    evidence = "Addressed in agent output or changed files."
-                    criteria_addressed += 1
-                elif partial:
-                    status = "partial"
-                    evidence = "Partially addressed — some key terms missing."
-                    criteria_partially_addressed += 1
-                else:
-                    status = "unknown"
-                    evidence = "No substantive coverage found in output or changed files."
-                criteria_checklist.append({
-                    "criterion": criterion,
-                    "status": status,
-                    "evidence": evidence,
-                })
+            judge_diff = self._safe_branch_diff_content(
+                project.repo_path,
+                project.default_branch,
+                task.branch_name,
+            ) if task.branch_name else ""
+            judgment = judge_criteria(
+                criteria=criteria_list,
+                diff_text=judge_diff,
+                agent_summary=all_output_text,
+                changed_files=changed_files,
+                settings=project.settings,
+            )
+            judged_by = judgment.judged_by
+            criteria_checklist = [dict(item) for item in judgment.checklist]
+            criteria_addressed = sum(
+                1 for item in criteria_checklist if item.get("status") == "passed"
+            )
+            criteria_partially_addressed = sum(
+                1 for item in criteria_checklist if item.get("status") == "partial"
+            )
 
         score, breakdown = self._score_evidence(
             criteria_count=criteria_count,
@@ -539,6 +543,7 @@ class ForemanOrchestrator:
             criteria_checklist=tuple(criteria_checklist),
             proof_status=proof_status,
             failure_reasons=tuple(failure_reasons),
+            judged_by=judged_by,
         )
 
     def _safe_branch_diff(
@@ -624,35 +629,33 @@ class ForemanOrchestrator:
                 outputs.append(f"{role_and_step}: {snippet}")
         return tuple(outputs)
 
-    def _criterion_addressed(
+    def _safe_branch_diff_content(
         self,
-        criterion: str,
-        output_text: str,
-        changed_files: tuple[str, ...],
-    ) -> tuple[bool, bool]:
-        """Return (addressed, partially_addressed) for one acceptance criterion.
-
-        A criterion is addressed when the output text or changed files
-        contain substantive references to its key terms.  Partial coverage
-        is when only a subset of the relevant terms appear.
-        """
-        key_terms = [
-            t.strip().rstrip(".,;:!?()[]{}'\"").strip()
-            for t in re.findall(r"\b\w{4,}\b", criterion.lower())
-        ]
-        if not key_terms:
-            return (False, False)
-
-        matching_terms = sum(
-            1 for term in key_terms if term in output_text or any(term in f.lower() for f in changed_files)
-        )
-        coverage_ratio = matching_terms / len(key_terms)
-
-        if coverage_ratio >= 0.7:
-            return (True, False)
-        if coverage_ratio >= 0.3:
-            return (False, True)
-        return (False, False)
+        repo_path: str,
+        target_branch: str,
+        branch_name: str,
+        *,
+        max_chars: int = 24000,
+    ) -> str:
+        """Return unified ``git diff`` content for one branch, head+tail capped
+        to ``max_chars``, or empty string on failure."""
+        for diff_args in (
+            ["git", "diff", f"{target_branch}...{branch_name}"],
+            ["git", "diff", target_branch, branch_name],
+        ):
+            try:
+                result = subprocess.run(
+                    diff_args,
+                    cwd=str(repo_path),
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+            except Exception:  # pragma: no cover - defensive
+                continue
+            if result.returncode == 0 and result.stdout:
+                return truncate_diff(result.stdout, max_chars)
+        return ""
 
     def _score_evidence(
         self,
@@ -811,6 +814,7 @@ class ForemanOrchestrator:
                     "failure_reasons": (
                         list(completion_evidence.failure_reasons) if completion_evidence else []
                     ),
+                    "judged_by": completion_evidence.judged_by if completion_evidence else "heuristic",
                 },
             )
 
@@ -1749,7 +1753,12 @@ class ForemanOrchestrator:
                     result = retry_result
                 if role.agent.session_persistence and result.session_id:
                     session_ids[session_key] = result.session_id
-                if role.id in {"code_reviewer", "security_reviewer"}:
+                if role.id in {
+                    "code_reviewer",
+                    "security_reviewer",
+                    "triage_reviewer",
+                    "frontier_reviewer",
+                }:
                     outcome = normalize_reviewer_decision(result.outcome)
                 else:
                     outcome = normalize_agent_outcome(result.outcome)
@@ -2314,6 +2323,18 @@ class ForemanOrchestrator:
             "completion_evidence": (
                 str(evidence)
                 if role.id == "code_reviewer" and task.branch_name and evidence is not None
+                else ""
+            ),
+            # Curated diff payload, only for decision roles so they can review
+            # the change without exploring the repo. Other roles get "".
+            "completion_diff": (
+                self._safe_branch_diff_content(
+                    project.repo_path,
+                    project.default_branch,
+                    task.branch_name,
+                    max_chars=_int_setting(project, "review_diff_max_chars", default=16000),
+                )
+                if role.completion.output.extract_decision and task.branch_name
                 else ""
             ),
         }
@@ -3255,12 +3276,16 @@ def _extract_decision_output(text: str) -> tuple[str, str]:
             return (DENY, "DENY")
         if line == "STEER":
             return (STEER, "STEER")
+        if line == "ESCALATE":
+            return (ESCALATE, "ESCALATE")
         if line.startswith("DENY:"):
             return (DENY, line.partition(":")[2].strip() or text)
         if line.startswith("STEER:"):
             return (STEER, line.partition(":")[2].strip() or text)
         if line.startswith("APPROVE:"):
             return (APPROVE, line.partition(":")[2].strip() or text)
+        if line.startswith("ESCALATE:"):
+            return (ESCALATE, line.partition(":")[2].strip() or text)
     return (ERROR, text)
 
 

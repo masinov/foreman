@@ -19,6 +19,7 @@ CONFLICT = "conflict"
 APPROVE = "approve"
 DENY = "deny"
 STEER = "steer"
+ESCALATE = "escalate"
 
 # All canonical outcome values in one frozenset for validation
 CANONICAL_OUTCOMES = frozenset({
@@ -34,6 +35,7 @@ CANONICAL_OUTCOMES = frozenset({
     APPROVE,
     DENY,
     STEER,
+    ESCALATE,
 })
 
 
@@ -81,6 +83,8 @@ def normalize_reviewer_decision(raw: str) -> str:
         return DENY
     if normalized in ("steer", "steering", "redirect", "revise"):
         return STEER
+    if normalized in ("escalate", "escalated", "escalation"):
+        return ESCALATE
 
     # Reject informal approval terms - they should not pass as approve
     if normalized in ("yes", "lgtm", "pass"):

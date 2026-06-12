@@ -23,6 +23,8 @@ _VALID_OUTCOMES: dict[str, set[str]] = {
     "developer": {"done", "blocked", "error"},
     "code_reviewer": {"approve", "deny", "steer"},
     "security_reviewer": {"approve", "deny"},
+    "triage_reviewer": {"approve", "deny", "escalate"},
+    "frontier_reviewer": {"approve", "deny", "steer"},
 }
 
 

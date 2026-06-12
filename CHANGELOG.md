@@ -9,6 +9,15 @@ memory changes rather than versioned product releases.
 
 ### Added
 
+- token-economy evidence and tiered review (sprint 51, review Phases 4–5):
+  `foreman/judge.py` with the keyword heuristic as the single owner plus an
+  opt-in cheap-model criteria judge (direct Anthropic-compatible HTTP call,
+  head/tail diff truncation, heuristic fallback on any error);
+  `CompletionEvidence.judged_by` surfaced in the `engine.completion_evidence`
+  event; the new `escalate` reviewer outcome; `triage_reviewer` and
+  `frontier_reviewer` roles; a `{completion_diff}` curated-diff prompt payload
+  for decision roles (`review_diff_max_chars` setting); and the
+  `development_tiered` workflow (develop → triage → escalate-to-frontier review)
 - per-task executor overrides and a model-escalation ladder (sprint 50, review
   Phase 3): migration 12 (`executor_overrides_json`, `complexity` on tasks);
   `Task.executor_overrides`/`Task.complexity`; role `[agent] model_ladder`;

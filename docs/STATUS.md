@@ -2,11 +2,12 @@
 
 ## Current sprint
 
-- Active implementation sprint: `sprint-50-review-phase-3-executor-overrides`
-  on `feat/executor-overrides-ladder` (stacked on the unmerged
-  `feat/meta-agent-persistence`; not yet merged).
-- Previous in-flight sprint: `sprint-49-review-phase-2-manager-hardening` on
-  `feat/meta-agent-persistence` (not yet merged).
+- Active implementation sprint: `sprint-51-review-phases-4-5-token-economy`
+  on `feat/judge-and-tiered-review` (stacked on the unmerged
+  `feat/executor-overrides-ladder` → `feat/meta-agent-persistence`).
+- In-flight stack (oldest first): `feat/meta-agent-persistence` (Phase 2),
+  `feat/executor-overrides-ladder` (Phase 3), `feat/judge-and-tiered-review`
+  (Phases 4–5). None merged to `main` yet.
 - Latest completed sprint: `sprint-46-completion-truth-hardening`
 - Latest completed review sprint: `sprint-47-review-phase-0-correctness`
 - Latest completed model-backend sprint:
@@ -34,9 +35,23 @@
 
 ## Current focus
 
-- land sprint-49 (Phase 2 meta-agent) and sprint-50 (Phase 3 executor
-  overrides + ladder); the two branches are stacked, then proceed to Phase 4
-  (sprint 51)
+- land the stacked review-roadmap branches (Phase 2 meta-agent, Phase 3
+  executor overrides, Phases 4–5 judge + tiered review), then proceed to
+  Phases 6–7 (sprint 52)
+
+## Latest update — review Phases 4 & 5 token economy
+
+- `feat/judge-and-tiered-review` (stacked on `feat/executor-overrides-ladder`)
+  implements review Phases 4 and 5.
+- `foreman/judge.py` owns the keyword heuristic and adds an opt-in cheap-model
+  criteria judge (direct Anthropic-compatible HTTP call, head/tail diff
+  truncation, heuristic fallback on any error). `CompletionEvidence.judged_by`
+  is now recorded and emitted in `engine.completion_evidence`; the heuristic
+  path is byte-identical to before when the judge is unset.
+- Added the `escalate` outcome, the `triage_reviewer` (cheap) and
+  `frontier_reviewer` (frontier, payload-only) roles, a `{completion_diff}`
+  curated-diff prompt payload for decision roles, and the `development_tiered`
+  workflow (develop → triage → escalate-to-frontier review).
 
 ## Latest update — review Phase 3 executor overrides + escalation ladder
 

@@ -27,6 +27,9 @@ Check for:
 ### Changed Files
 {changed_files}
 
+### Unified Diff (curated payload)
+{completion_diff}
+
 Return exactly one:
 APPROVE
 DENY: <reason with specific file and line references>

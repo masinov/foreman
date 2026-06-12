@@ -32,9 +32,19 @@ class WorkflowLoaderTests(unittest.TestCase):
             {
                 "development",
                 "development_secure",
+                "development_tiered",
                 "development_with_architect",
             },
         )
+        tiered = workflows["development_tiered"]
+        self.assertEqual(tiered.entry_step, "develop")
+        self.assertEqual(
+            [s.id for s in tiered.steps],
+            ["develop", "triage", "review", "test", "merge", "done"],
+        )
+        escalate = tiered.find_transition("triage", "escalate")
+        self.assertIsNotNone(escalate)
+        self.assertEqual(escalate.to_step, "review")
         development = workflows["development"]
         self.assertEqual(development.entry_step, "develop")
         self.assertEqual(len(development.steps), 5)
@@ -90,6 +100,47 @@ class WorkflowLoaderTests(unittest.TestCase):
 
         with self.assertRaises(WorkflowLoadError):
             load_workflows(workflows_dir, available_role_ids={"developer"})
+
+    def test_rejects_invalid_outcome_for_triage_reviewer(self) -> None:
+        workflows_dir = self.create_directory()
+        # triage_reviewer may emit approve/deny/escalate, not steer.
+        broken = textwrap.dedent(
+            """
+            [workflow]
+            id = "broken_tiered"
+            name = "Broken Tiered"
+            methodology = "development"
+
+            [[steps]]
+            id = "develop"
+            role = "developer"
+
+            [[steps]]
+            id = "triage"
+            role = "triage_reviewer"
+
+            [[steps]]
+            id = "done"
+            role = "_builtin:mark_done"
+
+            [[transitions]]
+            from = "develop"
+            trigger = "completion:done"
+            to = "triage"
+
+            [[transitions]]
+            from = "triage"
+            trigger = "completion:steer"
+            to = "done"
+            """
+        ).strip()
+        (workflows_dir / "broken.toml").write_text(broken, encoding="utf-8")
+
+        with self.assertRaises(WorkflowLoadError):
+            load_workflows(
+                workflows_dir,
+                available_role_ids={"developer", "triage_reviewer"},
+            )
 
 
 if __name__ == "__main__":

@@ -1044,6 +1044,147 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 ],
             )
 
+    def test_tiered_triage_escalate_routes_to_frontier_review(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(
+                store, repo_path=repo_path, workflow_id="development_tiered"
+            )
+            project.settings["completion_guard_enabled"] = False
+            store.save_project(project)
+            executor = ScriptedAgentExecutor({})
+
+            def developer_one(*, task, prompt, carried_output):
+                self.write_text(repo_path / "feature.txt", "impl\n")
+                self.write_text(repo_path / "ready.txt", "ready\n")
+                self.commit_all(repo_path, "feat: implement and ready")
+                return AgentExecutionResult(outcome="done", detail="Implemented.")
+
+            def triage_escalate(*, task, prompt, carried_output):
+                del task
+                return AgentExecutionResult(
+                    outcome="escalate", detail="Touches auth; senior review needed."
+                )
+
+            def frontier_approve(*, task, prompt, carried_output):
+                del task
+                # The escalation reason should reach the frontier reviewer.
+                self.assertIn("Touches auth", carried_output or "")
+                return AgentExecutionResult(outcome="approve", detail="Approved by senior.")
+
+            executor.handlers.update(
+                {
+                    ("developer", 1): developer_one,
+                    ("triage_reviewer", 1): triage_escalate,
+                    ("frontier_reviewer", 1): frontier_approve,
+                }
+            )
+
+            orchestrator = ForemanOrchestrator(
+                store, roles=self.roles, workflows=self.workflows, agent_executor=executor
+            )
+            result = orchestrator.run_project(project.id)
+            self.assertEqual(result.executed_task_ids, (task.id,))
+
+            steps = [
+                r.workflow_step
+                for r in store.list_runs(task_id=task.id)
+                if r.role_id != "_builtin:orchestrator"
+            ]
+            self.assertEqual(
+                steps, ["develop", "triage", "review", "test", "merge", "done"]
+            )
+            # The escalate transition is recorded with its trigger.
+            transitions = [
+                event.payload
+                for event in store.list_events(task_id=task.id)
+                if event.event_type == "workflow.transition"
+            ]
+            self.assertIn(
+                {"from_step": "triage", "to_step": "review", "trigger": "completion:escalate"},
+                transitions,
+            )
+
+    def test_tiered_triage_approve_skips_frontier_review(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(
+                store, repo_path=repo_path, workflow_id="development_tiered"
+            )
+            project.settings["completion_guard_enabled"] = False
+            store.save_project(project)
+            executor = ScriptedAgentExecutor({})
+
+            def developer_one(*, task, prompt, carried_output):
+                self.write_text(repo_path / "feature.txt", "impl\n")
+                self.write_text(repo_path / "ready.txt", "ready\n")
+                self.commit_all(repo_path, "feat: implement and ready")
+                return AgentExecutionResult(outcome="done", detail="Implemented.")
+
+            def triage_approve(*, task, prompt, carried_output):
+                del task
+                return AgentExecutionResult(outcome="approve", detail="Looks good.")
+
+            executor.handlers.update(
+                {
+                    ("developer", 1): developer_one,
+                    ("triage_reviewer", 1): triage_approve,
+                }
+            )
+
+            orchestrator = ForemanOrchestrator(
+                store, roles=self.roles, workflows=self.workflows, agent_executor=executor
+            )
+            result = orchestrator.run_project(project.id)
+            self.assertEqual(result.executed_task_ids, (task.id,))
+
+            role_ids = [r.role_id for r in store.list_runs(task_id=task.id)]
+            self.assertIn("triage_reviewer", role_ids)
+            self.assertNotIn("frontier_reviewer", role_ids)
+
+    def test_completion_diff_only_populated_for_decision_roles(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(
+                store, repo_path=repo_path, workflow_id="development_tiered",
+                acceptance_criteria="Implement the widget.",
+                branch_name="feat/task-widget",
+            )
+            project.settings["review_diff_max_chars"] = 200
+            store.save_project(project)
+
+            self.git(repo_path, "checkout", "-b", task.branch_name)
+            # Oversized file so the diff exceeds the cap and is truncated.
+            self.write_text(repo_path / "widget.py", "x = 1\n" * 400)
+            self.commit_all(repo_path, "feat: widget")
+            self.git(repo_path, "checkout", "main")
+
+            orchestrator = ForemanOrchestrator(
+                store, roles=self.roles, workflows=self.workflows
+            )
+            task = store.get_task(task.id)
+            developer_prompt = orchestrator._build_prompt(
+                self.roles["developer"], project, task, None
+            )
+            triage_prompt = orchestrator._build_prompt(
+                self.roles["triage_reviewer"], project, task, None
+            )
+
+            # Developer template carries no diff payload.
+            self.assertNotIn("widget.py", developer_prompt)
+            # Decision role gets the capped diff with the truncation marker.
+            self.assertIn("widget.py", triage_prompt)
+            self.assertIn("truncated", triage_prompt)
+
     def test_merge_conflict_resolution_returns_to_develop_and_back_through_review(self) -> None:
         repo_path, db_path = self.create_workspace()
         self.initialize_repo(repo_path)
@@ -4206,6 +4347,14 @@ class DecisionExtractionTests(unittest.TestCase):
         self.assertEqual(outcome, "deny")
         self.assertEqual(detail, "add the missing migration test")
 
+    def test_extract_decision_output_recognizes_escalate(self) -> None:
+        self.assertEqual(_extract_decision_output("ESCALATE")[0], "escalate")
+        outcome, detail = _extract_decision_output(
+            "Looks risky.\n\nESCALATE: touches the auth module, needs senior review"
+        )
+        self.assertEqual(outcome, "escalate")
+        self.assertEqual(detail, "touches the auth module, needs senior review")
+
     def test_extract_completion_output_accepts_markdown_wrapped_marker(self) -> None:
         role = self.roles["developer"]
 
@@ -5763,6 +5912,95 @@ class CompletionEvidenceTests(unittest.TestCase):
             # Score is at most ~25 (criteria + files) — insufficient without test points
             self.assertLess(evidence.score, 60)
             self.assertEqual(evidence.verdict, "insufficient")
+
+    def test_build_completion_evidence_uses_configured_judge(self) -> None:
+        import httpx
+        from unittest import mock
+
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(
+                store,
+                repo_path=repo_path,
+                acceptance_criteria="Implement the orchestrator.\nWrite tests for it.",
+            )
+            project.settings["judge_base_url"] = "https://judge.example/api"
+            project.settings["judge_model"] = "cheap-judge-1"
+            store.save_project(project)
+
+            self.seed_run(
+                store,
+                project=project,
+                task=task,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude_code",
+                outcome="done",
+                outcome_detail="Implemented the orchestrator module.",
+                created_at="2026-04-22T10:20:00Z",
+            )
+            self.git(repo_path, "checkout", "-b", task.branch_name)
+            self.write_text(repo_path / "orchestrator.py", "def run(): pass\n")
+            self.commit_all(repo_path, "feat: implement orchestrator")
+            self.git(repo_path, "checkout", "main")
+
+            judge_body = {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": (
+                            '[{"criterion": "Implement the orchestrator.", "status": "passed", "evidence": "done"},'
+                            ' {"criterion": "Write tests for it.", "status": "partial", "evidence": "some"}]'
+                        ),
+                    }
+                ]
+            }
+            fake = httpx.Response(
+                status_code=200,
+                json=judge_body,
+                request=httpx.Request("POST", "https://judge.example/api/v1/messages"),
+            )
+
+            orchestrator = ForemanOrchestrator(store, roles=self.roles, workflows=self.workflows)
+            with mock.patch("httpx.post", return_value=fake):
+                evidence = orchestrator.build_completion_evidence(task, project)
+
+            assert evidence is not None
+            self.assertEqual(evidence.judged_by, "cheap-judge-1")
+            self.assertEqual(evidence.criteria_addressed, 1)
+            self.assertEqual(evidence.criteria_partially_addressed, 1)
+            self.assertEqual(
+                [c["status"] for c in evidence.criteria_checklist],
+                ["passed", "partial"],
+            )
+
+    def test_build_completion_evidence_defaults_to_heuristic_judge(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(
+                store,
+                repo_path=repo_path,
+                acceptance_criteria="Implement the orchestrator.",
+            )
+            self.seed_run(
+                store, project=project, task=task, role_id="developer",
+                workflow_step="develop", agent_backend="claude_code",
+                outcome="done", outcome_detail="Implemented orchestrator.",
+                created_at="2026-04-22T10:20:00Z",
+            )
+            self.git(repo_path, "checkout", "-b", task.branch_name)
+            self.write_text(repo_path / "orchestrator.py", "def run(): pass\n")
+            self.commit_all(repo_path, "feat: orchestrator")
+            self.git(repo_path, "checkout", "main")
+            orchestrator = ForemanOrchestrator(store, roles=self.roles, workflows=self.workflows)
+            evidence = orchestrator.build_completion_evidence(task, project)
+            assert evidence is not None
+            self.assertEqual(evidence.judged_by, "heuristic")
 
 
 class EvidenceCachingTests(unittest.TestCase):

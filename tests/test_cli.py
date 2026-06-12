@@ -1551,6 +1551,7 @@ class ForemanCLISmokeTests(unittest.TestCase):
         self.assertIn("Workflows", result.stdout)
         self.assertIn("development | methodology=development | entry=develop | steps=5 | transitions=9 | gates=2 | fallback=block", result.stdout)
         self.assertIn("development_secure | methodology=development | entry=develop | steps=6 | transitions=11 | gates=1 | fallback=block", result.stdout)
+        self.assertIn("development_tiered | methodology=development | entry=develop | steps=6 | transitions=12 | gates=2 | fallback=block", result.stdout)
 
     def test_approve_command_records_a_deferred_resume_for_paused_human_gate_tasks(self) -> None:
         store, db_path = self.create_store()

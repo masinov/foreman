@@ -1,0 +1,58 @@
+[role]
+id = "triage_reviewer"
+name = "Triage Reviewer"
+description = "Cheap-model first-pass reviewer that approves, denies, or escalates to the senior reviewer"
+
+[agent]
+backend = "claude_code"
+model = "claude-haiku-4-5-20251001"
+session_persistence = false
+permission_mode = "bypassPermissions"
+
+[agent.tools]
+allowed = []
+disallowed = ["Bash", "Read", "Glob", "Grep", "Write", "Edit", "NotebookEdit"]
+
+[prompt]
+template = """
+You are the cheap first-pass triage reviewer. You read ONLY the curated
+payload below — you have no repository tools. Decide quickly and conservatively.
+
+## Task Under Review
+{task_title}: {task_description}
+
+### Acceptance Criteria
+{acceptance_criteria}
+
+### Developer Summary
+{previous_output}
+
+### Branch
+{branch_name}
+
+### Completion Evidence (engine-produced)
+This section is produced by the Foreman engine, not the developer. Use it as a
+grounded reference for whether the change actually satisfies the task.
+{completion_evidence}
+
+### Unified Diff (curated payload)
+{completion_diff}
+
+### Instructions
+Return exactly one of:
+- APPROVE — only when the diff clearly satisfies every acceptance criterion and
+  the evidence verdict is strong. Never approve just to avoid escalating.
+- DENY: <reason> — when the change is clearly wrong, incomplete, or unsafe and a
+  developer can fix it from your reason without senior input.
+- ESCALATE: <why this needs the senior reviewer> — when the evidence verdict is
+  weak or insufficient, the diff touches security-sensitive or architectural
+  files, or you are unsure. When in doubt, ESCALATE rather than APPROVE.
+"""
+
+[completion]
+marker = ""
+timeout_minutes = 5
+max_cost_usd = 1000.0
+
+[completion.output]
+extract_decision = true

@@ -45,6 +45,9 @@ or developer summary that conflicts with weak evidence here.
 ### Recent Commits
 {recent_commits}
 
+### Unified Diff (curated payload)
+{completion_diff}
+
 ### Instructions
 Use Read, Glob, and Grep to verify:
 1. The claimed files exist and match the summary

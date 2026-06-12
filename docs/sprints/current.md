@@ -1,13 +1,52 @@
 # Current Sprint
 
-- Active implementation sprint: `sprint-50-review-phase-3-executor-overrides`
-  on `feat/executor-overrides-ladder` (stacked on the unmerged
-  `feat/meta-agent-persistence`; not yet merged).
-- Branch: `feat/executor-overrides-ladder`.
+- Active implementation sprint: `sprint-51-review-phases-4-5-token-economy`
+  on `feat/judge-and-tiered-review` (stacked on the unmerged
+  `feat/executor-overrides-ladder` → `feat/meta-agent-persistence`; not yet
+  merged).
+- Branch: `feat/judge-and-tiered-review`.
 - Last completed sprint: `sprint-47-active-run-lease-and-heartbeat-recovery`.
-- Current deliverable: per-task executor overrides plus an automatic
-  model-escalation ladder, with deterministic per-step model resolution and a
-  `workflow.model_selected` audit event.
+- Current deliverable: opt-in LLM-judged criteria evidence plus a tiered
+  cheap-triage/frontier review workflow with curated diff payloads.
+
+## Sprint 51 Review Phases 4 & 5 Token Economy
+
+Implemented on `feat/judge-and-tiered-review`:
+
+1. `foreman/judge.py`: the keyword heuristic (`heuristic_checklist`,
+   `_criterion_addressed`) is now the single owner; `judge_criteria` adds an
+   opt-in cheap-model judge via a direct Anthropic-compatible `/v1/messages`
+   HTTP call (settings `judge_base_url`, `judge_model`, `judge_api_key_env`,
+   `judge_max_diff_chars`). Head/tail diff truncation; any HTTP/timeout/parse
+   error falls back to the heuristic so evidence never crashes the workflow.
+2. `build_completion_evidence` calls `judge_criteria` (new
+   `_safe_branch_diff_content` helper for full `git diff`); maps the checklist
+   into existing counts; records `CompletionEvidence.judged_by` (default
+   "heuristic", keeps old evidence loadable) and emits it in the
+   `engine.completion_evidence` event. Heuristic path is byte-identical.
+3. New `escalate` outcome (`outcomes.py`, `_extract_decision_output`,
+   `_VALID_OUTCOMES` for `triage_reviewer`/`frontier_reviewer`; reviewer
+   normalization extended).
+4. New roles `triage_reviewer` (cheap, all tools off) and `frontier_reviewer`
+   (frontier, all tools off); both review a curated payload only.
+5. `_build_prompt` adds `{completion_diff}` (capped `default_branch...branch`
+   diff, `review_diff_max_chars` default 16000) populated only for
+   `extract_decision` roles; added to `code_reviewer`, `security_reviewer`,
+   and the two new roles.
+6. New `workflows/development_tiered.toml`: develop → triage; triage
+   approve→test, deny→develop, escalate→frontier review; review
+   approve→test, deny/steer→develop; test/merge/done identical to
+   `development` (including `completion:conflict`).
+
+Passing validation:
+
+- `./venv/bin/python -m unittest tests.test_judge -v` (10)
+- `./venv/bin/python -m unittest tests.test_workflows tests.test_roles -v`
+- `./venv/bin/python -m unittest tests.test_orchestrator.CompletionEvidenceTests -v`
+- `./venv/bin/python -m unittest discover -s tests` (full suite — see PR doc)
+- `./venv/bin/python scripts/validate_repo_memory.py`
+
+## Sprint 50 Review Phase 3 Executor Overrides + Escalation Ladder
 
 ## Sprint 50 Review Phase 3 Executor Overrides + Escalation Ladder
 

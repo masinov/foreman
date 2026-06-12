@@ -28,7 +28,15 @@ class RoleLoaderTests(unittest.TestCase):
 
         self.assertEqual(
             set(roles),
-            {"architect", "code_reviewer", "developer", "developer_worker", "security_reviewer"},
+            {
+                "architect",
+                "code_reviewer",
+                "developer",
+                "developer_worker",
+                "frontier_reviewer",
+                "security_reviewer",
+                "triage_reviewer",
+            },
         )
         self.assertTrue(roles["developer"].agent.session_persistence)
         self.assertTrue(roles["developer_worker"].agent.session_persistence)

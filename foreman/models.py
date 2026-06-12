@@ -300,6 +300,8 @@ class CompletionEvidence:
     # Proof status
     proof_status: str = "pending"
     failure_reasons: tuple[str, ...] = field(default_factory=tuple)
+    # Who judged the criteria checklist: a model id, or "heuristic".
+    judged_by: str = "heuristic"
 
     def __str__(self) -> str:
         parts = [

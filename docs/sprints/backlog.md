@@ -51,10 +51,22 @@ persistence, `foreman task add --complexity`, `foreman task override`, and
 validated `executor_overrides` on `PATCH /api/tasks/{id}`. Pending merge to
 `main` (stacked on the Phase 2 branch).
 
-### Sprint 51 — review Phases 4 and 5 token economy
+### Sprint 51 — review Phases 4 and 5 token economy (implemented on `feat/judge-and-tiered-review`)
 
 Add opt-in LLM-judged criteria evidence, diff payloads for reviewers, cheap
 triage review with `escalate`, and the `development_tiered` workflow.
+
+Done: `foreman/judge.py` (heuristic owner + opt-in Anthropic-compatible LLM
+judge with head/tail diff truncation), `CompletionEvidence.judged_by`, the
+`escalate` outcome, `triage_reviewer`/`frontier_reviewer` roles, the
+`{completion_diff}` decision-role prompt payload (`review_diff_max_chars`),
+and the `development_tiered` workflow. Pending merge to `main` (stacked on the
+Phase 3 branch).
+
+Out of scope (note for later): a tool-enabled "re-review" routing when the
+frontier reviewer answers `STEER: need repository context`. Today that carry-
+output edge sends the request back to develop; a deeper escape hatch that
+re-runs the agentic `code_reviewer` with tools is deferred.
 
 ### Sprint 52 — review Phases 6 and 7 supervision and transport cleanup
 
