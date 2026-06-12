@@ -1,11 +1,13 @@
 # Current Sprint
 
-- Active implementation sprint: `sprint-47-review-phase-0-correctness`
-- Branch: `fix/review-phase0-correctness`
+- Active implementation sprint: none; `sprint-47-review-phase-0-correctness`
+  is merged.
+- Branch: none for implementation work; docs closeout branch is
+  `docs/phase0-closeout-status`.
 - Local Foreman sprint: `sprint-review-phase-0-correctness` in `.foreman.db`
-- Last completed sprint: `sprint-46-completion-truth-hardening`
+- Last completed sprint: `sprint-47-review-phase-0-correctness`
 - Existing queued SQLite sprint: `sprint-47-active-run-lease-and-heartbeat-recovery`
-  remains deferred until review Phase 0 is merged.
+  remains deferred until the immediate Minimax/worker-fleet smoke is reliable.
 
 ## Review Integration
 
@@ -20,7 +22,8 @@ normal engine operation. Two Phase 0 issues are already fixed on `main`:
   workflow step run.
 - merge conflicts now return and route through the explicit `conflict` outcome.
 
-The remaining Phase 0 tasks are implemented on `fix/review-phase0-correctness`:
+The remaining Phase 0 tasks were implemented on `fix/review-phase0-correctness`
+and fast-forward merged to `main` at `5883075`:
 
 1. Fixed `signal.task_created` persistence so `engine.task_created` is attached
    to the active run instead of referencing an unbound local.
@@ -93,8 +96,10 @@ is still valuable, but it now follows the review's correctness pass.
 
 ## Next Planned Sprint
 
-- Sprint: `sprint-47-review-phase-0-correctness`
-- Branch: `fix/review-phase0-correctness`
-- Deliverable: all remaining Phase 0 fixes from `docs/specs/review.md` with
-  regression tests, full unit suite where the local venv is available, and
-  updated PR/checkpoint docs.
+- Sprint: `sprint-48-worker-fleet-minimax-smoke`
+- Suggested branch: `feat/worker-fleet-minimax-smoke`
+- Deliverable: a repeatable Claude Code/MiniMax M3 smoke that can delegate a
+  narrow repo edit without hanging, plus the minimal role/env runner
+  configuration needed to make Phase 1 model-fleet work reliable.
+- After that: resume `sprint-47-active-run-lease-and-heartbeat-recovery` if it
+  is still relevant.

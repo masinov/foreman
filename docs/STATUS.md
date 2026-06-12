@@ -2,19 +2,22 @@
 
 ## Current sprint
 
-- Active implementation sprint: `sprint-47-review-phase-0-correctness`
+- Active implementation sprint: none; next sprint should be created from the
+  Phase 1 worker-fleet/model-backend review items.
 - Latest completed sprint: `sprint-46-completion-truth-hardening`
-- Last merged branch: `fix/backend-correctness-hardening`
-- Current implementation branch: `fix/review-phase0-correctness`
+- Latest completed review sprint: `sprint-47-review-phase-0-correctness`
+- Last merged branch: `fix/review-phase0-correctness`
+- Current implementation branch: none
 - Existing queued SQLite sprint `sprint-47-active-run-lease-and-heartbeat-recovery`
-  should be deferred until the review Phase 0 correctness bugs are fixed.
+  remains useful, but should follow a short Phase 1 worker-fleet smoke because
+  Minimax delegation is now the immediate operating constraint.
 
 ## Active branches
 
-- `fix/review-phase0-correctness` — implements the remaining
-  `docs/specs/review.md` Phase 0 backend correctness fixes with regression
-  tests; uses a local repo `.foreman.db` to exercise Foreman sprint/task state
-  while developing
+- `docs/phase0-closeout-status` — updates repo memory after merging Phase 0
+  into `main`
+- `fix/review-phase0-correctness` — merged to `main` at `5883075`; retained on
+  origin as the completed Phase 0 implementation branch
 - `fix/backend-correctness-hardening` — closes residual backend correctness
   gaps found after transcript logging by tightening persisted builtin event
   schema versioning and adding regression coverage for strict outcome
@@ -23,11 +26,25 @@
 
 ## Current focus
 
-- finish and review `fix/review-phase0-correctness`
-- after Phase 0 is green, resume the older active-run lease and heartbeat
-  recovery work if it is still relevant
+- create the next implementation branch for a narrow Phase 1 worker-fleet
+  smoke: reliable Claude Code delegation with `--model minimax-m3`, role/env
+  configuration needed for model fleet support, and regression coverage around
+  runner behavior
+- after the worker-fleet smoke is stable, resume the older active-run lease and
+  heartbeat recovery work if it is still relevant
 
-## Latest update — review Phase 0 implementation
+## Latest update — review Phase 0 merged
+
+- `fix/review-phase0-correctness` was fast-forward merged to `main` and pushed
+  to `origin/main` at `5883075`.
+- The Phase 0 branch now has full local validation:
+  `./venv/bin/python -m unittest discover -s tests -v` passes with 500 tests.
+- Simple Minimax M3 Claude Code calls and a direct `ClaudeCodeRunner` smoke
+  work, but a delegated edit attempt hung without output. The next slice should
+  turn that into a repeatable smoke and fix the runner/config gaps before
+  relying on unattended cheap-model edits.
+
+## Previous update — review Phase 0 implementation
 
 - Bootstrapped the missing local `./venv` with Python 3.12, installed Foreman
   editable, initialized a local `.foreman.db`, created and activated the
