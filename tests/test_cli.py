@@ -595,6 +595,61 @@ class ForemanCLISmokeTests(unittest.TestCase):
         )
         self.assertEqual(bad_dep.returncode, 1)
 
+    def test_task_override_round_trips_and_is_visible_in_show(self) -> None:
+        store, db_path = self.create_store()
+        project = Project(
+            id="project-ov",
+            name="Foreman Demo",
+            repo_path="/tmp/foreman-demo",
+            workflow_id="development",
+        )
+        sprint = Sprint(
+            id="sprint-ov", project_id=project.id, title="S", status="active"
+        )
+        store.save_project(project)
+        store.save_sprint(sprint)
+
+        add = self.run_cli(
+            "task", "add", project.id,
+            "--title", "Ladder task", "--criteria", "c",
+            "--complexity", "large", "--db", str(db_path),
+        )
+        self.assertEqual(add.returncode, 0, add.stderr)
+        task_id = store.list_tasks(sprint_id=sprint.id)[0].id
+
+        override = self.run_cli(
+            "task", "override", task_id,
+            "--step", "develop=MiniMax-M2",
+            "--step", "review=claude-opus-4-8",
+            "--ladder-start", "1",
+            "--db", str(db_path),
+        )
+        self.assertEqual(override.returncode, 0, override.stderr)
+
+        stored = store.get_task(task_id)
+        assert stored is not None
+        self.assertEqual(stored.complexity, "large")
+        self.assertEqual(
+            stored.executor_overrides,
+            {"models": {"develop": "MiniMax-M2", "review": "claude-opus-4-8"}, "ladder_start": 1},
+        )
+
+        show = self.run_cli("task", "show", task_id, "--db", str(db_path))
+        self.assertEqual(show.returncode, 0, show.stderr)
+        self.assertIn("Complexity: large", show.stdout)
+        self.assertIn("MiniMax-M2", show.stdout)
+
+        # Unknown step is rejected; --clear resets.
+        bad = self.run_cli(
+            "task", "override", task_id, "--step", "ghost=X", "--db", str(db_path)
+        )
+        self.assertEqual(bad.returncode, 1)
+        cleared = self.run_cli(
+            "task", "override", task_id, "--clear", "--db", str(db_path)
+        )
+        self.assertEqual(cleared.returncode, 0, cleared.stderr)
+        self.assertEqual(store.get_task(task_id).executor_overrides, {})
+
     def test_waive_merge_creates_active_waiver(self) -> None:
         store, db_path = self.create_store()
         repo_path = self.create_repo_path()

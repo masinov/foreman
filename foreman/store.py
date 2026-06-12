@@ -123,6 +123,12 @@ def _row_to_task(row: sqlite3.Row) -> Task:
         workflow_current_step=row["workflow_current_step"],
         workflow_carried_output=row["workflow_carried_output"],
         step_visit_counts=_load_json_dict(row["step_visit_counts"]),
+        executor_overrides=(
+            _load_json_dict(row["executor_overrides_json"])
+            if "executor_overrides_json" in row.keys()
+            else {}
+        ),
+        complexity=row["complexity"] if "complexity" in row.keys() else None,
         completion_evidence=completion_evidence,
         created_at=row["created_at"],
         started_at=row["started_at"],
@@ -331,6 +337,16 @@ class ForemanStore:
                 self._connection.execute(
                     "ALTER TABLE tasks ADD COLUMN completion_evidence_json TEXT NOT NULL DEFAULT ''"
                 )
+        if "executor_overrides_json" not in task_columns:
+            with self._connection:
+                self._connection.execute(
+                    "ALTER TABLE tasks ADD COLUMN executor_overrides_json TEXT NOT NULL DEFAULT '{}'"
+                )
+        if "complexity" not in task_columns:
+            with self._connection:
+                self._connection.execute(
+                    "ALTER TABLE tasks ADD COLUMN complexity TEXT"
+                )
 
     def save_project(self, project: Project) -> Project:
         """Insert or update a project record."""
@@ -492,8 +508,9 @@ class ForemanStore:
                     acceptance_criteria, blocked_reason, created_by,
                     depends_on_task_ids, workflow_current_step,
                     workflow_carried_output, step_visit_counts, completion_evidence_json,
+                    executor_overrides_json, complexity,
                     created_at, started_at, completed_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     sprint_id = excluded.sprint_id,
                     project_id = excluded.project_id,
@@ -513,6 +530,8 @@ class ForemanStore:
                     workflow_carried_output = excluded.workflow_carried_output,
                     step_visit_counts = excluded.step_visit_counts,
                     completion_evidence_json = excluded.completion_evidence_json,
+                    executor_overrides_json = excluded.executor_overrides_json,
+                    complexity = excluded.complexity,
                     created_at = excluded.created_at,
                     started_at = excluded.started_at,
                     completed_at = excluded.completed_at
@@ -537,6 +556,8 @@ class ForemanStore:
                     task.workflow_carried_output,
                     _json_dumps(task.step_visit_counts),
                     _serialize_evidence(getattr(task, "completion_evidence", None)),
+                    _json_dumps(getattr(task, "executor_overrides", {}) or {}),
+                    getattr(task, "complexity", None),
                     task.created_at,
                     task.started_at,
                     task.completed_at,

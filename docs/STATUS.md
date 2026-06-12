@@ -2,8 +2,11 @@
 
 ## Current sprint
 
-- Active implementation sprint: `sprint-49-review-phase-2-manager-hardening`
-  on `feat/meta-agent-persistence` (not yet merged).
+- Active implementation sprint: `sprint-50-review-phase-3-executor-overrides`
+  on `feat/executor-overrides-ladder` (stacked on the unmerged
+  `feat/meta-agent-persistence`; not yet merged).
+- Previous in-flight sprint: `sprint-49-review-phase-2-manager-hardening` on
+  `feat/meta-agent-persistence` (not yet merged).
 - Latest completed sprint: `sprint-46-completion-truth-hardening`
 - Latest completed review sprint: `sprint-47-review-phase-0-correctness`
 - Latest completed model-backend sprint:
@@ -31,8 +34,25 @@
 
 ## Current focus
 
-- land sprint-49 review Phase 2 (store-backed meta-agent + honest CLI contract)
-  on `feat/meta-agent-persistence`, then proceed to Phase 3 (sprint 50)
+- land sprint-49 (Phase 2 meta-agent) and sprint-50 (Phase 3 executor
+  overrides + ladder); the two branches are stacked, then proceed to Phase 4
+  (sprint 51)
+
+## Latest update — review Phase 3 executor overrides + escalation ladder
+
+- `feat/executor-overrides-ladder` (stacked on `feat/meta-agent-persistence`)
+  implements review Phase 3.
+- Migration 12 adds `tasks.executor_overrides_json` and `tasks.complexity`;
+  `Task` carries `executor_overrides` and `complexity`.
+- Roles gained an optional `[agent] model_ladder`; the new pure
+  `resolve_step_model` resolves a per-step model by precedence (override →
+  ladder → role model → project default → none) and the workflow loop and
+  native runner now emit a `workflow.model_selected` event per agent step.
+- The architect `complexity` from `signal.task_created` is now persisted and
+  feeds the ladder start index.
+- New CLI: `foreman task add --complexity` and `foreman task override`; the
+  dashboard `PATCH /api/tasks/{id}` accepts a validated `executor_overrides`
+  object and task payloads expose `executor_overrides`/`complexity`.
 
 ## Latest update — review Phase 2 manager hardening
 

@@ -9,6 +9,15 @@ memory changes rather than versioned product releases.
 
 ### Added
 
+- per-task executor overrides and a model-escalation ladder (sprint 50, review
+  Phase 3): migration 12 (`executor_overrides_json`, `complexity` on tasks);
+  `Task.executor_overrides`/`Task.complexity`; role `[agent] model_ladder`;
+  the pure `resolve_step_model` model-resolution function wired into the
+  workflow loop and native runner with a `workflow.model_selected` event per
+  agent step; architect `complexity` persisted from `signal.task_created`;
+  `foreman task add --complexity`; `foreman task override` CLI; and
+  `executor_overrides` on the dashboard `PATCH /api/tasks/{id}` plus task
+  payloads
 - durable, store-backed meta-agent chat (sprint 49, review Phase 2): migration
   11 (`meta_sessions`, `meta_turns`); store methods for session/turn
   persistence and cursor paging; a compact `build_state_header()` snapshot

@@ -37,6 +37,53 @@ TASK_TYPES: tuple[TaskType, ...] = (
     "spike",
     "chore",
 )
+TASK_COMPLEXITIES: tuple[str, ...] = ("small", "medium", "large")
+
+
+def validate_executor_overrides(
+    value: Any,
+    *,
+    valid_steps: set[str] | None = None,
+) -> dict[str, Any]:
+    """Validate and normalize a per-task executor-overrides object.
+
+    Shape:
+
+        {"models": {"<step>": "<model>", ...}, "ladder_start": <int>}
+
+    Unknown top-level keys are rejected. ``models`` keys are workflow step ids;
+    when ``valid_steps`` is provided they are checked against it. Raises
+    ``ValueError`` on any violation.
+    """
+
+    if not isinstance(value, dict):
+        raise ValueError("executor_overrides must be an object.")
+    unknown = set(value) - {"models", "ladder_start"}
+    if unknown:
+        raise ValueError(f"Unknown executor_overrides keys: {sorted(unknown)}.")
+
+    result: dict[str, Any] = {}
+    models = value.get("models")
+    if models is not None:
+        if not isinstance(models, dict):
+            raise ValueError("executor_overrides.models must be an object.")
+        normalized_models: dict[str, str] = {}
+        for step, model in models.items():
+            if not isinstance(step, str) or not isinstance(model, str) or not model:
+                raise ValueError("executor_overrides.models must map step ids to model strings.")
+            if valid_steps is not None and step not in valid_steps:
+                raise ValueError(f"Unknown workflow step {step!r} in executor_overrides.models.")
+            normalized_models[step] = model
+        if normalized_models:
+            result["models"] = normalized_models
+
+    ladder_start = value.get("ladder_start")
+    if ladder_start is not None:
+        if isinstance(ladder_start, bool) or not isinstance(ladder_start, int):
+            raise ValueError("executor_overrides.ladder_start must be an integer.")
+        result["ladder_start"] = ladder_start
+
+    return result
 RUN_STATUSES: tuple[RunStatus, ...] = (
     "pending",
     "running",
@@ -114,6 +161,8 @@ class Task:
     workflow_current_step: str | None = None
     workflow_carried_output: str | None = None
     step_visit_counts: dict[str, int] = field(default_factory=dict)
+    executor_overrides: dict[str, Any] = field(default_factory=dict)
+    complexity: str | None = None
     completion_evidence: CompletionEvidence | None = None
     created_at: str = field(default_factory=utc_now_text)
     started_at: str | None = None

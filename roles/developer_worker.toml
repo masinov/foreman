@@ -9,6 +9,18 @@ model = ""
 session_persistence = true
 permission_mode = "bypassPermissions"
 
+# Optional escalation ladder. When set, the engine selects the rung by step
+# visit count (visit 1 -> index 0, visit 2 -> index 1, ...), so repeated
+# failures automatically escalate to a more capable model. `model` above stays
+# as the single-model fallback when no ladder is configured.
+#
+# Limitation: every rung in this ladder runs through THIS role's [agent.env],
+# so all rungs share one endpoint/credentials. If different rungs need
+# different endpoints, model them as different roles per workflow step rather
+# than as ladder rungs here -- per-model env maps are intentionally not
+# supported.
+# model_ladder = ["MiniMax-M2", "claude-sonnet-4-6", "claude-opus-4-8"]
+
 [agent.flags]
 verbose = true
 

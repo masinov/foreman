@@ -110,6 +110,43 @@ class AgentSignalPersistenceTests(unittest.TestCase):
                 self.assertEqual(created_events[0].run_id, run.id)
                 self.assertEqual(created_events[0].payload["task_id"], created[0].id)
 
+    def test_signal_task_created_persists_valid_complexity_and_ignores_invalid(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "foreman.db"
+            with ForemanStore(db_path) as store:
+                store.initialize()
+                project = Project(id="p", name="P", repo_path=temp_dir, workflow_id="development")
+                sprint = Sprint(id="s", project_id="p", title="A", status="active")
+                task = Task(id="t", sprint_id="s", project_id="p", title="Parent", status="in_progress")
+                run = Run(
+                    id="r", task_id="t", project_id="p", role_id="architect",
+                    workflow_step="plan", agent_backend="claude_code", status="running",
+                )
+                for obj in (project, sprint, task, run):
+                    getattr(store, f"save_{type(obj).__name__.lower()}")(obj)
+
+                orchestrator = ForemanOrchestrator(store)
+                orchestrator._persist_agent_event(
+                    run, task, project, "architect",
+                    AgentEventRecord(
+                        event_type="signal.task_created",
+                        payload={"title": "Big task", "complexity": "large"},
+                        timestamp="2026-06-12T10:00:00Z",
+                    ),
+                )
+                orchestrator._persist_agent_event(
+                    run, task, project, "architect",
+                    AgentEventRecord(
+                        event_type="signal.task_created",
+                        payload={"title": "Bogus complexity", "complexity": "enormous"},
+                        timestamp="2026-06-12T10:01:00Z",
+                    ),
+                )
+
+                created = {t.title: t for t in store.list_tasks(sprint_id="s") if t.id != "t"}
+                self.assertEqual(created["Big task"].complexity, "large")
+                self.assertIsNone(created["Bogus complexity"].complexity)
+
 
 @dataclass(slots=True)
 class PromptCapture:
@@ -914,6 +951,97 @@ class ForemanOrchestratorTests(unittest.TestCase):
                     "trigger": "completion:failure",
                 },
                 transitions,
+            )
+
+    def test_model_ladder_escalates_developer_model_across_repeated_visits(self) -> None:
+        """A role model_ladder escalates the develop model on each revisit and
+        records the progression in ``workflow.model_selected`` events."""
+
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        # Inject a developer role whose model is chosen from a ladder.
+        ladder = ("ladder-A", "ladder-B", "ladder-C")
+        base_dev = self.roles["developer"]
+        ladder_dev = replace(
+            base_dev, agent=replace(base_dev.agent, model="", model_ladder=ladder)
+        )
+        roles = dict(self.roles)
+        roles["developer"] = ladder_dev
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+            project.settings["completion_guard_enabled"] = False
+            store.save_project(project)
+            executor = ScriptedAgentExecutor({})
+
+            def developer_one(*, task, prompt, carried_output):
+                self.write_text(repo_path / "feature.txt", "v1\n")
+                self.commit_all(repo_path, "feat: v1")
+                return AgentExecutionResult(outcome="done", detail="v1 done.")
+
+            def reviewer_deny(*, task, prompt, carried_output):
+                del task
+                return AgentExecutionResult(outcome="deny", detail="Needs ready marker.")
+
+            def developer_two(*, task, prompt, carried_output):
+                self.write_text(repo_path / "feature.txt", "v2\n")
+                self.commit_all(repo_path, "feat: v2")
+                return AgentExecutionResult(outcome="done", detail="v2 done.")
+
+            def developer_three(*, task, prompt, carried_output):
+                self.write_text(repo_path / "ready.txt", "ready\n")
+                self.commit_all(repo_path, "fix: ready marker")
+                return AgentExecutionResult(outcome="done", detail="v3 done.")
+
+            def reviewer_approve(*, task, prompt, carried_output):
+                del task
+                return AgentExecutionResult(outcome="approve", detail="Approved.")
+
+            executor.handlers.update(
+                {
+                    ("developer", 1): developer_one,
+                    ("code_reviewer", 1): reviewer_deny,
+                    ("developer", 2): developer_two,
+                    ("code_reviewer", 2): reviewer_approve,
+                    ("developer", 3): developer_three,
+                    ("code_reviewer", 3): reviewer_approve,
+                }
+            )
+
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=roles,
+                workflows=self.workflows,
+                agent_executor=executor,
+            )
+
+            result = orchestrator.run_project(project.id)
+            self.assertEqual(result.executed_task_ids, (task.id,))
+
+            # The develop runs should record escalating ladder models.
+            develop_models = [
+                run.model
+                for run in store.list_runs(task_id=task.id)
+                if run.workflow_step == "develop"
+            ]
+            self.assertEqual(develop_models, ["ladder-A", "ladder-B", "ladder-C"])
+
+            # The workflow.model_selected events mirror that progression.
+            selections = [
+                event.payload
+                for event in store.list_events(task_id=task.id)
+                if event.event_type == "workflow.model_selected"
+                and event.payload.get("step") == "develop"
+            ]
+            self.assertEqual(
+                [(s["visit_count"], s["model"], s["source"]) for s in selections],
+                [
+                    (1, "ladder-A", "ladder"),
+                    (2, "ladder-B", "ladder"),
+                    (3, "ladder-C", "ladder"),
+                ],
             )
 
     def test_merge_conflict_resolution_returns_to_develop_and_back_through_review(self) -> None:
@@ -3935,6 +4063,119 @@ class AutonomousTaskSelectionTests(unittest.TestCase):
 
         with self.assertRaises(OrchestratorError):
             orc.select_next_task(project)
+
+
+class ResolveStepModelTests(unittest.TestCase):
+    """Unit coverage for the pure per-step model resolution function."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.roles = load_roles(default_roles_dir())
+
+    def _role(self, *, model: str = "", ladder: tuple[str, ...] = ()):
+        base = self.roles["developer"]
+        return replace(base, agent=replace(base.agent, model=model, model_ladder=ladder))
+
+    def _project(self, *, default_model: str = "") -> Project:
+        return Project(
+            id="p",
+            name="P",
+            repo_path="/x",
+            workflow_id="development",
+            settings={"default_model": default_model} if default_model else {},
+        )
+
+    def _task(self, **kw) -> Task:
+        return Task(id="t", sprint_id="s", project_id="p", title="T", **kw)
+
+    def _resolve(self, **kw) -> str | None:
+        from foreman.orchestrator import resolve_step_model
+
+        return resolve_step_model(**kw)
+
+    def test_branch1_override_pinned_when_absent_from_ladder(self) -> None:
+        task = self._task(executor_overrides={"models": {"develop": "PINNED"}})
+        role = self._role(ladder=("A", "B"))
+        for visit in (1, 2, 3):
+            self.assertEqual(
+                self._resolve(
+                    task=task, role=role, project=self._project(),
+                    step_id="develop", visit_count=visit,
+                ),
+                "PINNED",
+            )
+
+    def test_branch1_override_in_ladder_resumes_escalation(self) -> None:
+        task = self._task(executor_overrides={"models": {"develop": "B"}})
+        role = self._role(ladder=("A", "B", "C"))
+        results = [
+            self._resolve(
+                task=task, role=role, project=self._project(),
+                step_id="develop", visit_count=v,
+            )
+            for v in (1, 2, 3)
+        ]
+        self.assertEqual(results, ["B", "C", "C"])
+
+    def test_branch2_ladder_indexed_by_visit(self) -> None:
+        role = self._role(ladder=("A", "B", "C"))
+        task = self._task()
+        self.assertEqual(
+            [
+                self._resolve(
+                    task=task, role=role, project=self._project(),
+                    step_id="develop", visit_count=v,
+                )
+                for v in (1, 2, 3, 4)
+            ],
+            ["A", "B", "C", "C"],
+        )
+
+    def test_branch2_ladder_start_from_complexity_and_override(self) -> None:
+        role = self._role(ladder=("A", "B", "C"))
+        # complexity large → start index 1
+        self.assertEqual(
+            self._resolve(
+                task=self._task(complexity="large"), role=role,
+                project=self._project(), step_id="develop", visit_count=1,
+            ),
+            "B",
+        )
+        # explicit ladder_start override wins over complexity
+        self.assertEqual(
+            self._resolve(
+                task=self._task(complexity="large", executor_overrides={"ladder_start": 2}),
+                role=role, project=self._project(), step_id="develop", visit_count=1,
+            ),
+            "C",
+        )
+
+    def test_branch3_role_model(self) -> None:
+        self.assertEqual(
+            self._resolve(
+                task=self._task(), role=self._role(model="role-model"),
+                project=self._project(), step_id="develop", visit_count=1,
+            ),
+            "role-model",
+        )
+
+    def test_branch4_project_default(self) -> None:
+        self.assertEqual(
+            self._resolve(
+                task=self._task(), role=self._role(),
+                project=self._project(default_model="proj-default"),
+                step_id="develop", visit_count=1,
+            ),
+            "proj-default",
+        )
+
+    def test_branch5_none_when_nothing_configured(self) -> None:
+        self.assertIsNone(
+            self._resolve(
+                task=self._task(), role=self._role(),
+                project=self._project(), step_id="develop", visit_count=1,
+            )
+        )
 
 
 if __name__ == "__main__":

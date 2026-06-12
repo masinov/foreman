@@ -1,11 +1,53 @@
 # Current Sprint
 
-- Active implementation sprint: `sprint-49-review-phase-2-manager-hardening`
-  on `feat/meta-agent-persistence` (not yet merged).
-- Branch: `feat/meta-agent-persistence`.
+- Active implementation sprint: `sprint-50-review-phase-3-executor-overrides`
+  on `feat/executor-overrides-ladder` (stacked on the unmerged
+  `feat/meta-agent-persistence`; not yet merged).
+- Branch: `feat/executor-overrides-ladder`.
 - Last completed sprint: `sprint-47-active-run-lease-and-heartbeat-recovery`.
-- Current deliverable: make the meta-agent chat panel a durable, store-backed
-  planning partner with always-fresh world state and an honest CLI contract.
+- Current deliverable: per-task executor overrides plus an automatic
+  model-escalation ladder, with deterministic per-step model resolution and a
+  `workflow.model_selected` audit event.
+
+## Sprint 50 Review Phase 3 Executor Overrides + Escalation Ladder
+
+Implemented on `feat/executor-overrides-ladder`:
+
+1. Migration 12 adds `tasks.executor_overrides_json` and `tasks.complexity`,
+   with additive schema-repair fallbacks. `Task` gains
+   `executor_overrides: dict` and `complexity: str | None`; store row mapping
+   and `save_task` updated.
+2. Role `[agent]` gains optional `model_ladder` (`AgentConfig.model_ladder`);
+   when present it supersedes `model` for tier selection.
+3. `resolve_step_model` / `resolve_step_model_selection` (pure functions)
+   implement the five-branch precedence: per-step override (ladder resumes
+   above an override that appears in the ladder; otherwise pinned), role ladder
+   indexed by `ladder_start + visit_count - 1` (ladder_start from override else
+   a complexity map else 0), role `model`, project `default_model`, else None.
+   Wired into the workflow loop and the native runner; a
+   `workflow.model_selected` event records `{step, model, visit_count, source}`
+   per agent step.
+4. `signal.task_created` accepts and validates an optional `complexity`
+   (`small|medium|large`) and persists it.
+5. `foreman task add --complexity`; new `foreman task override TASK_ID
+   [--step STEP=MODEL]... [--ladder-start N] [--clear]` (step ids validated
+   against the project workflow); overrides/complexity shown in `task show`.
+6. Dashboard `PATCH /api/tasks/{id}` accepts a validated full-object
+   `executor_overrides`; task payloads expose `executor_overrides` and
+   `complexity`.
+7. `roles/developer_worker.toml` documents a commented `model_ladder` example
+   and the per-role-per-endpoint limitation (no per-model env maps).
+
+Passing validation:
+
+- `./venv/bin/python -m unittest tests.test_orchestrator.ResolveStepModelTests -v`
+- `./venv/bin/python -m unittest tests.test_orchestrator.ForemanOrchestratorTests.test_model_ladder_escalates_developer_model_across_repeated_visits -v`
+- `./venv/bin/python -m unittest tests.test_cli.ForemanCLISmokeTests.test_task_override_round_trips_and_is_visible_in_show -v`
+- `./venv/bin/python -m unittest tests.test_dashboard.DashboardSprintLifecycleTests.test_update_task_executor_overrides_validated_and_returned -v`
+- `./venv/bin/python -m unittest discover -s tests` (full suite — see PR doc)
+- `./venv/bin/python scripts/validate_repo_memory.py`
+
+## Sprint 49 Review Phase 2 Manager Hardening
 
 ## Sprint 49 Review Phase 2 Manager Hardening
 

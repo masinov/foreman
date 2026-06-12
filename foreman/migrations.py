@@ -277,4 +277,12 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         ON meta_turns(project_id, created_at);
         """,
     ),
+    (
+        12,
+        "add per-task executor overrides and architect complexity",
+        """
+        ALTER TABLE tasks ADD COLUMN executor_overrides_json TEXT NOT NULL DEFAULT '{}';
+        ALTER TABLE tasks ADD COLUMN complexity TEXT;
+        """,
+    ),
 ]

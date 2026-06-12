@@ -289,8 +289,11 @@ class MetaAgentPersistenceMigrationTests(unittest.TestCase):
             try:
                 conn.row_factory = sqlite3.Row
                 conn.executescript(_SCHEMA_MIGRATIONS_DDL)
-                # Apply every migration except the last (11) to model an older DB.
-                for version, description, sql in MIGRATIONS[:-1]:
+                # Apply only the migrations before 11 to model an older DB that
+                # predates meta-agent persistence.
+                for version, description, sql in MIGRATIONS:
+                    if version >= 11:
+                        continue
                     conn.executescript(sql)
                     conn.execute(
                         "INSERT INTO schema_migrations (version, description, applied_at)"

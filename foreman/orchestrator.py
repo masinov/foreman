@@ -30,7 +30,7 @@ from .git import (
     worktree_branch,
 )
 from .leases import generate_lease_token
-from .models import CompletionEvidence, Event, HumanGateDecision, Lease, Project, Run, Sprint, Task, utc_now_text
+from .models import CompletionEvidence, Event, HumanGateDecision, Lease, Project, Run, Sprint, TASK_COMPLEXITIES, Task, utc_now_text
 from .outcomes import APPROVE, BLOCKED, DENY, DONE, ERROR, normalize_agent_outcome, normalize_reviewer_decision, STEER
 from .runner import AgentRunConfig, ClaudeCodeRunner, CodexRunner, PreflightError, run_with_retry
 from .runner.base import AgentRunner as NativeAgentRunner
@@ -1570,19 +1570,32 @@ class ForemanOrchestrator:
                     carried_output,
                     context_projection=context_projection,
                 )
-                model = role.agent.model or _string_setting(
-                    project,
-                    "default_model",
-                    default="",
+                model_selection = resolve_step_model_selection(
+                    task=current_task,
+                    role=role,
+                    project=project,
+                    step_id=current_step,
+                    visit_count=visit_count,
                 )
+                model = model_selection.model or ""
                 run = self._create_running_run(
                     current_task,
                     role_id=role.id,
                     workflow_step=current_step,
                     agent_backend=role.agent.backend,
-                    model=model or None,
+                    model=model_selection.model,
                     branch_name=current_task.branch_name,
                     prompt_text=prompt,
+                )
+                self._emit_event(
+                    run,
+                    "workflow.model_selected",
+                    {
+                        "step": current_step,
+                        "model": model_selection.model,
+                        "visit_count": visit_count,
+                        "source": model_selection.source,
+                    },
                 )
                 self._emit_event(
                     run,
@@ -1633,6 +1646,7 @@ class ForemanOrchestrator:
                     prompt=prompt,
                     session_id=session_id,
                     carried_output=carried_output,
+                    model=model_selection.model,
                     event_recorder=lambda event_record: self._persist_agent_event(
                         run,
                         current_task,
@@ -1703,6 +1717,7 @@ class ForemanOrchestrator:
                         prompt=retry_prompt,
                         session_id=retry_session_id,
                         carried_output=carried_output,
+                        model=model_selection.model,
                         event_recorder=lambda event_record: self._persist_agent_event(
                             retry_run,
                             current_task,
@@ -2470,6 +2485,7 @@ class ForemanOrchestrator:
         prompt: str,
         session_id: str | None,
         carried_output: str | None,
+        model: str | None = None,
         event_recorder: Callable[[AgentEventRecord], None] | None = None,
     ) -> AgentExecutionResult:
         try:
@@ -2490,6 +2506,7 @@ class ForemanOrchestrator:
                 workflow_step=workflow_step,
                 prompt=prompt,
                 session_id=session_id,
+                model=model,
                 event_recorder=event_recorder,
             )
         except Exception as exc:  # pragma: no cover - defensive fallback
@@ -2514,6 +2531,7 @@ class ForemanOrchestrator:
         workflow_step: str,
         prompt: str,
         session_id: str | None,
+        model: str | None = None,
         event_recorder: Callable[[AgentEventRecord], None] | None = None,
     ) -> AgentExecutionResult:
         runner = self.agent_runners.get(role.agent.backend)
@@ -2522,11 +2540,15 @@ class ForemanOrchestrator:
                 f"No native runner is configured for backend {role.agent.backend!r}."
             )
 
-        model = role.agent.model or _string_setting(
-            project,
-            "default_model",
-            default="",
-        )
+        if model is None:
+            model = resolve_step_model(
+                task=task,
+                role=role,
+                project=project,
+                step_id=workflow_step,
+                visit_count=task.step_visit_counts.get(workflow_step, 1) or 1,
+            )
+        model = model or ""
         try:
             resolved_env = resolve_env(role.agent.env)
         except PreflightError as exc:
@@ -2833,6 +2855,8 @@ class ForemanOrchestrator:
             if sprint is None:
                 return
             order_index = self.store.next_task_order_index(sprint.id)
+            raw_complexity = _optional_string(payload.get("complexity"))
+            complexity = raw_complexity if raw_complexity in TASK_COMPLEXITIES else None
             created_task = Task(
                 id=_new_id("task"),
                 sprint_id=sprint.id,
@@ -2841,6 +2865,7 @@ class ForemanOrchestrator:
                 task_type=str(payload.get("task_type", "feature")),
                 description=_optional_string(payload.get("description")),
                 acceptance_criteria=_optional_string(payload.get("criteria")),
+                complexity=complexity,
                 order_index=order_index,
                 created_by=f"agent:{role_id}",
                 created_at=event_record.timestamp,
@@ -3002,6 +3027,97 @@ def generate_branch_name(task: Task) -> str:
 
 def _new_id(prefix: str) -> str:
     return f"{prefix}-{uuid4().hex[:12]}"
+
+
+# Complexity → ladder start index when no explicit ladder_start override is set.
+_COMPLEXITY_LADDER_START: dict[str, int] = {"small": 0, "medium": 0, "large": 1}
+
+
+@dataclass(slots=True)
+class ModelSelection:
+    """The model chosen for one agent step plus the rule that chose it."""
+
+    model: str | None
+    source: str  # "override" | "ladder" | "role" | "project_default"
+
+
+def resolve_step_model_selection(
+    *,
+    task: Task,
+    role: RoleDefinition,
+    project: Project,
+    step_id: str,
+    visit_count: int,
+) -> ModelSelection:
+    """Resolve the model for one workflow step, recording the deciding rule.
+
+    Precedence (see review.md Phase 3.3):
+
+    1. a per-task override for this step. The ladder still escalates above an
+       override that itself appears in the role ladder (resume from its index);
+       an override absent from the ladder is pinned for every visit.
+    2. the role ``model_ladder`` indexed by ``ladder_start + visit_count - 1``,
+       where ``ladder_start`` comes from the task override, else a complexity
+       map, else 0.
+    3. the role's single ``model``.
+    4. the project ``default_model`` setting.
+    5. ``None`` (harness default).
+    """
+
+    overrides = task.executor_overrides or {}
+    ladder = tuple(role.agent.model_ladder)
+    step_visit_index = max(visit_count - 1, 0)
+
+    override_model = None
+    models_map = overrides.get("models")
+    if isinstance(models_map, dict):
+        override_model = models_map.get(step_id)
+
+    if override_model:
+        if ladder and override_model in ladder:
+            base_index = ladder.index(override_model)
+            index = min(base_index + step_visit_index, len(ladder) - 1)
+            chosen = ladder[index]
+            source = "override" if index == base_index else "ladder"
+            return ModelSelection(model=chosen, source=source)
+        # Pinned deliberately by the manager; keep it for every visit.
+        return ModelSelection(model=str(override_model), source="override")
+
+    if ladder:
+        ladder_start = overrides.get("ladder_start")
+        if not isinstance(ladder_start, int) or isinstance(ladder_start, bool):
+            ladder_start = _COMPLEXITY_LADDER_START.get(task.complexity or "", 0)
+        index = min(ladder_start + step_visit_index, len(ladder) - 1)
+        index = max(index, 0)
+        return ModelSelection(model=ladder[index], source="ladder")
+
+    if role.agent.model:
+        return ModelSelection(model=role.agent.model, source="role")
+
+    default_model = _string_setting(project, "default_model", default="")
+    if default_model:
+        return ModelSelection(model=default_model, source="project_default")
+
+    return ModelSelection(model=None, source="project_default")
+
+
+def resolve_step_model(
+    *,
+    task: Task,
+    role: RoleDefinition,
+    project: Project,
+    step_id: str,
+    visit_count: int,
+) -> str | None:
+    """Return only the resolved model id for one step (see ``ModelSelection``)."""
+
+    return resolve_step_model_selection(
+        task=task,
+        role=role,
+        project=project,
+        step_id=step_id,
+        visit_count=visit_count,
+    ).model
 
 
 def _string_setting(project: Project, key: str, *, default: str) -> str:

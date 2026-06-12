@@ -1149,6 +1149,31 @@ class DashboardSprintLifecycleTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 400)
 
+    def test_update_task_executor_overrides_validated_and_returned(self):
+        """PATCH /api/tasks/{id} accepts a validated executor_overrides object."""
+        _, _, task = self._seed_active_project()
+        response = self._request(
+            "PATCH",
+            f"/api/tasks/{task.id}",
+            json={"executor_overrides": {"models": {"develop": "MiniMax-M2"}, "ladder_start": 1}},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        data = response.json()
+        self.assertEqual(
+            data["executor_overrides"],
+            {"models": {"develop": "MiniMax-M2"}, "ladder_start": 1},
+        )
+
+    def test_update_task_executor_overrides_rejects_unknown_step(self):
+        """PATCH /api/tasks/{id} rejects an override for an unknown workflow step."""
+        _, _, task = self._seed_active_project()
+        response = self._request(
+            "PATCH",
+            f"/api/tasks/{task.id}",
+            json={"executor_overrides": {"models": {"not-a-step": "X"}}},
+        )
+        self.assertEqual(response.status_code, 400)
+
     def test_stop_agent_blocks_in_progress_tasks(self):
         """POST /api/projects/{id}/agent/stop marks in-progress tasks as blocked."""
         project, _, task = self._seed_active_project()

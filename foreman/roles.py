@@ -45,6 +45,7 @@ class AgentConfig:
     model: str
     session_persistence: bool
     permission_mode: str
+    model_ladder: tuple[str, ...] = ()
     flags: dict[str, Any] = field(default_factory=dict)
     env: dict[str, str] = field(default_factory=dict)
     tools: AgentToolConfig = field(default_factory=AgentToolConfig)
@@ -122,6 +123,9 @@ def load_role(path: str | Path) -> RoleDefinition:
             model=_require_string(agent_data, "model", role_path),
             session_persistence=_require_bool(agent_data, "session_persistence", role_path),
             permission_mode=_require_string(agent_data, "permission_mode", role_path),
+            model_ladder=tuple(
+                _require_string_list(agent_data, "model_ladder", role_path, default=())
+            ),
             flags=_as_mapping(agent_data.get("flags"), default={}),
             env=_require_string_mapping(agent_data, "env", role_path, default={}),
             tools=AgentToolConfig(

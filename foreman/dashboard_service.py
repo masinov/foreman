@@ -459,6 +459,8 @@ class DashboardService:
                     "blocked_reason": task.blocked_reason,
                     "acceptance_criteria": task.acceptance_criteria,
                     "workflow_current_step": task.workflow_current_step,
+                    "complexity": task.complexity,
+                    "executor_overrides": task.executor_overrides,
                     "totals": {
                         "total_token_count": metrics.get("total_token_count", 0),
                         "total_cost_usd": metrics.get("total_cost_usd", 0.0),
@@ -569,6 +571,8 @@ class DashboardService:
             "workflow_current_step": task.workflow_current_step,
             "step_visit_counts": task.step_visit_counts or {},
             "depends_on_task_ids": task.depends_on_task_ids or [],
+            "complexity": task.complexity,
+            "executor_overrides": task.executor_overrides or {},
             "totals": self.store.run_totals(task_id=task_id),
             "runs": runs_data,
         }
@@ -672,10 +676,17 @@ class DashboardService:
         can account for it on its next run.
         """
 
-        from .models import TASK_TYPES
+        from .models import TASK_TYPES, validate_executor_overrides
 
         task = self._require_task(task_id)
-        allowed_fields = {"title", "task_type", "acceptance_criteria", "description", "priority"}
+        allowed_fields = {
+            "title",
+            "task_type",
+            "acceptance_criteria",
+            "description",
+            "priority",
+            "executor_overrides",
+        }
         unknown = set(updates) - allowed_fields
         if unknown:
             raise DashboardValidationError(f"Unknown task fields: {sorted(unknown)}")
@@ -718,6 +729,17 @@ class DashboardService:
             if int_value != task.priority:
                 changed["priority"] = int_value
             task.priority = int_value
+        if "executor_overrides" in updates:
+            try:
+                normalized = validate_executor_overrides(
+                    updates["executor_overrides"],
+                    valid_steps=self._project_workflow_step_ids(task.project_id),
+                )
+            except ValueError as exc:
+                raise DashboardValidationError(str(exc)) from exc
+            if normalized != (task.executor_overrides or {}):
+                changed["executor_overrides"] = normalized
+            task.executor_overrides = normalized
 
         self.store.save_task(task)
 
@@ -927,6 +949,25 @@ class DashboardService:
             "event_id": event.id,
             "task_id": task_id,
         }
+
+    def _project_workflow_step_ids(self, project_id: str) -> set[str] | None:
+        """Return the workflow step ids for a project, or ``None`` if unresolved."""
+
+        from .roles import RoleLoadError, load_roles
+        from .workflows import WorkflowLoadError, load_workflows
+
+        project = self.store.get_project(project_id)
+        if project is None:
+            return None
+        try:
+            roles = load_roles()
+            workflows = load_workflows(available_role_ids=set(roles))
+        except (RoleLoadError, WorkflowLoadError):
+            return None
+        workflow = workflows.get(project.workflow_id)
+        if workflow is None:
+            return None
+        return {step.id for step in workflow.steps}
 
     def list_roles(self) -> dict[str, Any]:
         """Return all available role definitions."""

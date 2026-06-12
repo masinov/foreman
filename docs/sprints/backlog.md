@@ -38,11 +38,18 @@ with crash-safe turn persistence, `build_state_header`/`build_operating_contract
 `meta_agent_model` setting, paginated `meta/history`, and `foreman task add`
 `--description`/`--sprint`/`--depends-on`. Pending merge to `main`.
 
-### Sprint 50 — review Phase 3 executor overrides and escalation ladder
+### Sprint 50 — review Phase 3 executor overrides and escalation ladder (implemented on `feat/executor-overrides-ladder`)
 
 Add task executor overrides, task complexity, role `model_ladder`, deterministic
 model resolution, `workflow.model_selected` events, CLI/API override surfaces,
 and architect-created complexity persistence.
+
+Done: migration 12, `Task.executor_overrides`/`complexity`, role
+`model_ladder`, `resolve_step_model` wired into the workflow loop + native
+runner with `workflow.model_selected` events, `signal.task_created` complexity
+persistence, `foreman task add --complexity`, `foreman task override`, and
+validated `executor_overrides` on `PATCH /api/tasks/{id}`. Pending merge to
+`main` (stacked on the Phase 2 branch).
 
 ### Sprint 51 — review Phases 4 and 5 token economy
 

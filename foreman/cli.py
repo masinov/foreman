@@ -19,7 +19,7 @@ from .dashboard_runtime import (
     STREAM_POLL_INTERVAL_SECONDS,
     run_dashboard_server,
 )
-from .models import Event, Project, Sprint, TASK_TYPES, Task, utc_now_text
+from .models import Event, Project, Sprint, TASK_COMPLEXITIES, TASK_TYPES, Task, utc_now_text
 from .orchestrator import ForemanOrchestrator, OrchestratorError
 from .roles import RoleLoadError, default_roles_dir, load_roles
 from .scaffold import (
@@ -786,6 +786,12 @@ def handle_task_show(args: argparse.Namespace) -> int:
         lines.append(f"Assigned role: {task.assigned_role}")
     if task.workflow_current_step:
         lines.append(f"Current step: {task.workflow_current_step}")
+    if task.complexity:
+        lines.append(f"Complexity: {task.complexity}")
+    if task.executor_overrides:
+        lines.append(
+            f"Executor overrides: {json.dumps(task.executor_overrides, sort_keys=True)}"
+        )
     if task.blocked_reason:
         lines.append(f"Blocked reason: {task.blocked_reason}")
 
@@ -1562,6 +1568,32 @@ def handle_sprint_complete(args: argparse.Namespace) -> int:
     return 0
 
 
+def _project_workflow_step_ids(store: ForemanStore, project: Project) -> set[str] | None:
+    """Return the set of agent-step ids for a project's workflow.
+
+    Returns ``None`` (after printing) when workflows cannot be loaded so callers
+    can surface the failure as a non-zero exit.
+    """
+
+    try:
+        roles = load_roles(default_roles_dir())
+        workflows = load_workflows(
+            default_workflows_dir(), available_role_ids=set(roles)
+        )
+    except (RoleLoadError, WorkflowLoadError) as exc:
+        print(f"Failed to load workflow definitions: {exc}", file=sys.stderr)
+        return None
+
+    workflow = workflows.get(project.workflow_id)
+    if workflow is None:
+        print(
+            f"Project {project.id} references unknown workflow {project.workflow_id!r}.",
+            file=sys.stderr,
+        )
+        return None
+    return {step.id for step in workflow.steps}
+
+
 def handle_task_add(args: argparse.Namespace) -> int:
     """Handle ``foreman task add``."""
 
@@ -1626,6 +1658,7 @@ def handle_task_add(args: argparse.Namespace) -> int:
             task_type=args.task_type,
             acceptance_criteria=args.criteria,
             depends_on_task_ids=depends_on_ids,
+            complexity=getattr(args, "complexity", None),
             order_index=_next_order_index([item.order_index for item in existing_tasks]),
         )
         store.save_task(task)
@@ -1640,7 +1673,77 @@ def handle_task_add(args: argparse.Namespace) -> int:
         f"Type: {task.task_type}",
         f"Criteria: {task.acceptance_criteria or 'n/a'}",
         f"Depends on: {', '.join(task.depends_on_task_ids) if task.depends_on_task_ids else 'none'}",
+        f"Complexity: {task.complexity or 'n/a'}",
         f"Status: {task.status}",
+    )
+    return 0
+
+
+def handle_task_override(args: argparse.Namespace) -> int:
+    """Handle ``foreman task override``."""
+
+    db_path = _resolve_db_path_or_print(args.db)
+    if db_path is None:
+        return 1
+
+    with ForemanStore(db_path) as store:
+        store.initialize()
+        task = store.get_task(args.task_id)
+        if task is None:
+            print(f"Unknown task: {args.task_id}", file=sys.stderr)
+            return 1
+
+        project = store.get_project(task.project_id)
+        if project is None:
+            print(f"Unknown project: {task.project_id}", file=sys.stderr)
+            return 1
+
+        valid_steps = _project_workflow_step_ids(store, project)
+        if valid_steps is None:
+            return 1
+
+        if args.clear:
+            overrides: dict[str, object] = {}
+        else:
+            overrides = dict(task.executor_overrides or {})
+            models = dict(overrides.get("models") or {})
+            for raw in args.step_models:
+                if "=" not in raw:
+                    print(
+                        f"Invalid --step value {raw!r}; expected STEP=MODEL.",
+                        file=sys.stderr,
+                    )
+                    return 1
+                step, model = raw.split("=", 1)
+                step = step.strip()
+                model = model.strip()
+                if step not in valid_steps:
+                    print(
+                        f"Unknown workflow step {step!r}. Valid steps: "
+                        f"{', '.join(sorted(valid_steps))}.",
+                        file=sys.stderr,
+                    )
+                    return 1
+                if not model:
+                    models.pop(step, None)
+                else:
+                    models[step] = model
+            if models:
+                overrides["models"] = models
+            else:
+                overrides.pop("models", None)
+            if args.ladder_start is not None:
+                overrides["ladder_start"] = args.ladder_start
+
+        task.executor_overrides = overrides
+        store.save_task(task)
+        db_path = store.db_path
+
+    _print_lines(
+        "Updated task executor overrides",
+        f"Database: {db_path}",
+        f"Task: {task.id} | {task.title}",
+        f"Overrides: {json.dumps(task.executor_overrides, sort_keys=True)}",
     )
     return 0
 
@@ -2105,11 +2208,46 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="TASK_IDS",
         help="Comma-separated task ids this task depends on (must exist in the same project).",
     )
+    task_add.add_argument(
+        "--complexity",
+        choices=TASK_COMPLEXITIES,
+        help="Optional architect-style complexity hint used for model-ladder start selection.",
+    )
     _add_db_option(
         task_add,
         help_text=f"Path to the SQLite store containing the project. {DB_OPTION_NOTE}",
     )
     _set_handler(task_add, handle_task_add, "task add")
+
+    task_override = task_commands.add_parser(
+        "override",
+        help="Set per-task executor model overrides for workflow steps.",
+    )
+    task_override.add_argument("task_id", help="Task identifier.")
+    task_override.add_argument(
+        "--step",
+        dest="step_models",
+        action="append",
+        metavar="STEP=MODEL",
+        default=[],
+        help="Pin a model for one workflow step (repeatable), e.g. --step develop=MiniMax-M2.",
+    )
+    task_override.add_argument(
+        "--ladder-start",
+        dest="ladder_start",
+        type=int,
+        help="Override the model-ladder start index for this task.",
+    )
+    task_override.add_argument(
+        "--clear",
+        action="store_true",
+        help="Reset all executor overrides for this task to empty.",
+    )
+    _add_db_option(
+        task_override,
+        help_text=f"Path to the SQLite store containing the task. {DB_OPTION_NOTE}",
+    )
+    _set_handler(task_override, handle_task_override, "task override")
 
     task_list = task_commands.add_parser("list", help="List project tasks.")
     task_list.add_argument("project_id", help="Project identifier.")
