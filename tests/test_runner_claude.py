@@ -122,6 +122,69 @@ class ClaudeCodeRunnerTests(unittest.TestCase):
         self.assertIn("--effort", command)
         self.assertIn("medium", command)
 
+    def test_run_passes_merged_environment_only_when_configured(self) -> None:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        repo_path = Path(temp_dir.name)
+        config = self.create_config(repo_path)
+        config.env["ANTHROPIC_BASE_URL"] = "https://api.minimax.io/anthropic"
+        config.env["ANTHROPIC_AUTH_TOKEN"] = "test-token"
+        process = _FakeProcess(
+            lines=[
+                json.dumps(
+                    {
+                        "type": "result",
+                        "is_error": False,
+                        "session_id": "sess-123",
+                        "result": "TASK_COMPLETE",
+                    }
+                )
+                + "\n",
+            ]
+        )
+        popen = _PopenRecorder(process)
+        runner = ClaudeCodeRunner(
+            popen_factory=popen,
+            clock=lambda: 0.0,
+            which=lambda _: "/usr/bin/claude",
+        )
+
+        list(runner.run(config))
+
+        env = popen.calls[0][1]["env"]
+        self.assertIsInstance(env, dict)
+        self.assertEqual(env["ANTHROPIC_BASE_URL"], "https://api.minimax.io/anthropic")
+        self.assertEqual(env["ANTHROPIC_AUTH_TOKEN"], "test-token")
+
+    def test_run_omits_environment_kwarg_when_unconfigured(self) -> None:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        repo_path = Path(temp_dir.name)
+        config = self.create_config(repo_path)
+        process = _FakeProcess(
+            lines=[
+                json.dumps(
+                    {
+                        "type": "result",
+                        "is_error": False,
+                        "session_id": "sess-123",
+                        "result": "TASK_COMPLETE",
+                    }
+                )
+                + "\n",
+            ]
+        )
+        popen = _PopenRecorder(process)
+        runner = ClaudeCodeRunner(
+            popen_factory=popen,
+            clock=lambda: 0.0,
+            which=lambda _: "/usr/bin/claude",
+        )
+
+        list(runner.run(config))
+
+        self.assertNotIn("env", popen.calls[0][1])
+
     def test_run_maps_stream_json_events_and_strips_signal_lines_from_messages(self) -> None:
         temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(temp_dir.cleanup)

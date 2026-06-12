@@ -8,6 +8,7 @@ import tempfile
 import unittest
 
 from foreman.runner import AgentRunConfig, CodexRunner, InfrastructureError, PreflightError
+from foreman.runner.codex import _JsonRpcClient
 
 
 class _FakeInput:
@@ -110,6 +111,43 @@ class CodexRunnerTests(unittest.TestCase):
         command = runner.build_command()
 
         self.assertEqual(command, ["codex", "app-server", "--listen", "stdio://"])
+
+    def test_json_rpc_client_passes_merged_environment_only_when_configured(self) -> None:
+        process = _FakeProcess(
+            lines=[
+                json.dumps({"jsonrpc": "2.0", "id": 1, "result": {"userAgent": "codex-tests"}}) + "\n",
+            ]
+        )
+        popen = _PopenRecorder(process)
+
+        client = _JsonRpcClient(
+            ["codex", "app-server", "--listen", "stdio://"],
+            cwd=Path("/tmp"),
+            popen_factory=popen,
+            env={"FOREMAN_CODEX_TEST": "enabled"},
+        )
+        client.close()
+
+        env = popen.calls[0][1]["env"]
+        self.assertIsInstance(env, dict)
+        self.assertEqual(env["FOREMAN_CODEX_TEST"], "enabled")
+
+    def test_json_rpc_client_omits_environment_kwarg_when_unconfigured(self) -> None:
+        process = _FakeProcess(
+            lines=[
+                json.dumps({"jsonrpc": "2.0", "id": 1, "result": {"userAgent": "codex-tests"}}) + "\n",
+            ]
+        )
+        popen = _PopenRecorder(process)
+
+        client = _JsonRpcClient(
+            ["codex", "app-server", "--listen", "stdio://"],
+            cwd=Path("/tmp"),
+            popen_factory=popen,
+        )
+        client.close()
+
+        self.assertNotIn("env", popen.calls[0][1])
 
     def test_run_starts_thread_and_maps_rpc_notifications(self) -> None:
         temp_dir = tempfile.TemporaryDirectory()

@@ -28,11 +28,93 @@ class RoleLoaderTests(unittest.TestCase):
 
         self.assertEqual(
             set(roles),
-            {"architect", "code_reviewer", "developer", "security_reviewer"},
+            {"architect", "code_reviewer", "developer", "developer_worker", "security_reviewer"},
         )
         self.assertTrue(roles["developer"].agent.session_persistence)
+        self.assertTrue(roles["developer_worker"].agent.session_persistence)
+        self.assertEqual(roles["developer_worker"].agent.model, "")
         self.assertEqual(roles["code_reviewer"].completion.max_cost_usd, 1000.0)
         self.assertTrue(roles["architect"].completion.output.extract_json)
+
+    def test_loads_agent_env_table(self) -> None:
+        roles_dir = self.create_directory()
+        role_text = textwrap.dedent(
+            """
+            [role]
+            id = "worker"
+            name = "Worker"
+            description = "Used for env validation"
+
+            [agent]
+            backend = "claude_code"
+            model = "minimax-m3"
+            session_persistence = true
+            permission_mode = "bypassPermissions"
+
+            [agent.env]
+            ANTHROPIC_BASE_URL = "https://api.minimax.io/anthropic"
+            ANTHROPIC_AUTH_TOKEN = "env:MINIMAX_API_KEY"
+
+            [agent.tools]
+            allowed = []
+            disallowed = []
+
+            [prompt]
+            template = "Hello {task_title}"
+
+            [completion]
+            marker = "TASK_COMPLETE"
+            timeout_minutes = 5
+            max_cost_usd = 1.0
+            """
+        ).strip()
+        (roles_dir / "worker.toml").write_text(role_text, encoding="utf-8")
+
+        role = load_roles(roles_dir)["worker"]
+
+        self.assertEqual(
+            role.agent.env,
+            {
+                "ANTHROPIC_BASE_URL": "https://api.minimax.io/anthropic",
+                "ANTHROPIC_AUTH_TOKEN": "env:MINIMAX_API_KEY",
+            },
+        )
+
+    def test_rejects_non_string_agent_env_values(self) -> None:
+        roles_dir = self.create_directory()
+        role_text = textwrap.dedent(
+            """
+            [role]
+            id = "worker"
+            name = "Worker"
+            description = "Used for env validation"
+
+            [agent]
+            backend = "claude_code"
+            model = "minimax-m3"
+            session_persistence = true
+            permission_mode = "bypassPermissions"
+
+            [agent.env]
+            ANTHROPIC_AUTH_TOKEN = 123
+
+            [agent.tools]
+            allowed = []
+            disallowed = []
+
+            [prompt]
+            template = "Hello {task_title}"
+
+            [completion]
+            marker = "TASK_COMPLETE"
+            timeout_minutes = 5
+            max_cost_usd = 1.0
+            """
+        ).strip()
+        (roles_dir / "worker.toml").write_text(role_text, encoding="utf-8")
+
+        with self.assertRaises(RoleLoadError):
+            load_roles(roles_dir)
 
     def test_render_prompt_injects_completion_marker_and_signal_docs(self) -> None:
         developer = load_roles(default_roles_dir())["developer"]

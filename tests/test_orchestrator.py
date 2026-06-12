@@ -177,6 +177,7 @@ class RunnerCapture:
     prompt: str
     working_dir: Path
     disallowed_tools: tuple[str, ...]
+    env: dict[str, str]
     timeout_seconds: int
 
 
@@ -198,6 +199,7 @@ class ScriptedNativeRunner:
                 prompt=config.prompt,
                 working_dir=config.working_dir,
                 disallowed_tools=config.disallowed_tools,
+                env=dict(config.env),
                 timeout_seconds=config.timeout_seconds,
             )
         )
@@ -1701,6 +1703,99 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 [run.outcome for run in workflow_runs],
                 ["done", "approve", "success", "success", "success"],
             )
+
+    def test_native_runner_resolves_role_env_before_execution(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+            project.settings["default_model"] = "minimax-m3"
+            project.settings["completion_guard_enabled"] = False
+            store.save_project(project)
+            roles = {
+                role_id: (
+                    replace(
+                        role,
+                        agent=replace(
+                            role.agent,
+                            env={
+                                "ANTHROPIC_BASE_URL": "https://api.minimax.io/anthropic",
+                                "ANTHROPIC_AUTH_TOKEN": "env:FOREMAN_TEST_MINIMAX_TOKEN?test-token",
+                                "CLAUDE_CONFIG_DIR": "env:FOREMAN_TEST_MINIMAX_CONFIG_DIR?~/.foreman/claude-minimax-test",
+                            },
+                        ),
+                    )
+                    if role_id == "developer"
+                    else role
+                )
+                for role_id, role in self.roles.items()
+            }
+            runner = ScriptedNativeRunner(
+                {
+                    1: lambda config: self._native_developer_success(repo_path, config),
+                    2: lambda config: self._native_reviewer_approve(config),
+                }
+            )
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=roles,
+                workflows=self.workflows,
+                agent_runners={"claude_code": runner},
+            )
+
+            result = orchestrator.run_project(project.id)
+
+            self.assertEqual(result.executed_task_ids, (task.id,))
+            capture = runner.capture(1)
+            self.assertEqual(capture.model, "minimax-m3")
+            self.assertEqual(capture.env["ANTHROPIC_BASE_URL"], "https://api.minimax.io/anthropic")
+            self.assertEqual(capture.env["ANTHROPIC_AUTH_TOKEN"], "test-token")
+            self.assertTrue(capture.env["CLAUDE_CONFIG_DIR"].endswith(".foreman/claude-minimax-test"))
+
+    def test_missing_required_role_env_fails_once_without_runner_retry(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+            store.save_project(project)
+            roles = {
+                role_id: (
+                    replace(
+                        role,
+                        agent=replace(
+                            role.agent,
+                            env={"ANTHROPIC_AUTH_TOKEN": "env:FOREMAN_TEST_MISSING_MINIMAX_TOKEN"},
+                        ),
+                    )
+                    if role_id == "developer"
+                    else role
+                )
+                for role_id, role in self.roles.items()
+            }
+            runner = ScriptedNativeRunner({})
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=roles,
+                workflows=self.workflows,
+                agent_runners={"claude_code": runner},
+            )
+
+            result = orchestrator.run_project(project.id)
+
+            self.assertEqual(result.executed_task_ids, (task.id,))
+            self.assertEqual(result.blocked_task_ids, (task.id,))
+            self.assertEqual(runner.call_count, 0)
+            error_events = [
+                event for event in store.list_events(task_id=task.id)
+                if event.event_type == "agent.error"
+            ]
+            self.assertEqual(len(error_events), 1)
+            self.assertTrue(error_events[0].payload["preflight_failed"])
+            self.assertIn("FOREMAN_TEST_MISSING_MINIMAX_TOKEN", error_events[0].payload["error"])
 
     def test_native_runner_reuses_persistent_developer_sessions_after_review_denial(self) -> None:
         repo_path, db_path = self.create_workspace()

@@ -43,6 +43,9 @@ memory changes rather than versioned product releases.
 - live-tail `foreman watch` support across project, sprint, and run scopes
 - `docs/adr/ADR-0003-web-ui-api-boundary.md`
 - `docs/adr/ADR-0004-dashboard-backend-framework.md`
+- `docs/adr/ADR-0009-multi-model-endpoints-via-role-env.md`
+- per-role `[agent.env]` resolution for native runner environment injection
+- `roles/developer_worker.toml` as the sequential worker-model role example
 - production-hardening audit and detour planning docs
 - `foreman/dashboard_service.py` as the extracted dashboard service layer
 - `foreman/dashboard_backend.py` as the FastAPI dashboard transport

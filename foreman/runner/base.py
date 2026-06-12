@@ -24,6 +24,7 @@ class AgentRunConfig:
     permission_mode: str
     disallowed_tools: tuple[str, ...] = ()
     extra_flags: dict[str, Any] = field(default_factory=dict)
+    env: dict[str, str] = field(default_factory=dict)
     timeout_seconds: int = 0
     max_cost_usd: float = 0.0
 

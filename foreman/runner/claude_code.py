@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 import json
+import os
 from pathlib import Path
 import shlex
 import shutil
@@ -68,6 +69,9 @@ class ClaudeCodeRunner(AgentRunner):
         self._preflight()
         command = self.build_command(config)
         try:
+            popen_kwargs: dict[str, Any] = {}
+            if config.env:
+                popen_kwargs["env"] = {**os.environ, **config.env}
             proc = self._popen_factory(
                 command,
                 cwd=str(config.working_dir),
@@ -76,6 +80,7 @@ class ClaudeCodeRunner(AgentRunner):
                 stderr=subprocess.PIPE,
                 text=True,
                 bufsize=1,
+                **popen_kwargs,
             )
         except OSError as exc:
             raise PreflightError(

@@ -96,6 +96,7 @@ class AgentRunConfigTests(unittest.TestCase):
         self.assertIsNone(config.model)
         self.assertEqual(config.prompt, "")
         self.assertEqual(config.permission_mode, "auto")
+        self.assertEqual(config.env, {})
         self.assertEqual(config.timeout_seconds, 0)
         self.assertEqual(config.max_cost_usd, 0.0)
 
@@ -110,12 +111,14 @@ class AgentRunConfigTests(unittest.TestCase):
             permission_mode="ask",
             disallowed_tools=("Bash",),
             extra_flags={"verbose": True},
+            env={"ANTHROPIC_BASE_URL": "https://api.minimax.io/anthropic"},
             timeout_seconds=600,
             max_cost_usd=5.0,
         )
         self.assertEqual(config.model, "claude-sonnet-4-6")
         self.assertEqual(config.session_id, "sess-123")
         self.assertEqual(config.disallowed_tools, ("Bash",))
+        self.assertEqual(config.env["ANTHROPIC_BASE_URL"], "https://api.minimax.io/anthropic")
 
 
 class AgentEventTests(unittest.TestCase):

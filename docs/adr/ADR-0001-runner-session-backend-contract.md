@@ -46,6 +46,7 @@ All native backends must implement the shared `AgentRunner` protocol and accept
 - `permission_mode`
 - `disallowed_tools`
 - `extra_flags`
+- `env`
 - `timeout_seconds`
 - `max_cost_usd`
 

@@ -32,8 +32,9 @@ from .git import (
 from .leases import generate_lease_token
 from .models import CompletionEvidence, Event, HumanGateDecision, Project, Run, Sprint, Task, utc_now_text
 from .outcomes import APPROVE, BLOCKED, DENY, DONE, ERROR, normalize_agent_outcome, normalize_reviewer_decision, STEER
-from .runner import AgentRunConfig, ClaudeCodeRunner, CodexRunner, run_with_retry
+from .runner import AgentRunConfig, ClaudeCodeRunner, CodexRunner, PreflightError, run_with_retry
 from .runner.base import AgentRunner as NativeAgentRunner
+from .runner.env import resolve_env
 from .roles import RoleDefinition, default_roles_dir, load_roles
 from .store import ForemanStore
 from .workflows import WorkflowDefinition, default_workflows_dir, load_workflows
@@ -2491,6 +2492,24 @@ class ForemanOrchestrator:
             "default_model",
             default="",
         )
+        try:
+            resolved_env = resolve_env(role.agent.env)
+        except PreflightError as exc:
+            return AgentExecutionResult(
+                outcome=ERROR,
+                detail=str(exc),
+                status="failed",
+                model=model or None,
+                events=(
+                    AgentEventRecord(
+                        event_type="agent.error",
+                        payload={
+                            "error": str(exc),
+                            "preflight_failed": True,
+                        },
+                    ),
+                ),
+            )
         config = AgentRunConfig(
             backend=role.agent.backend,
             model=model or None,
@@ -2500,6 +2519,7 @@ class ForemanOrchestrator:
             permission_mode=role.agent.permission_mode,
             disallowed_tools=role.agent.tools.disallowed,
             extra_flags=role.agent.flags,
+            env=resolved_env,
             timeout_seconds=_project_timeout_seconds(
                 project,
                 role_timeout_minutes=role.completion.timeout_minutes,

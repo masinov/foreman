@@ -46,6 +46,7 @@ class AgentConfig:
     session_persistence: bool
     permission_mode: str
     flags: dict[str, Any] = field(default_factory=dict)
+    env: dict[str, str] = field(default_factory=dict)
     tools: AgentToolConfig = field(default_factory=AgentToolConfig)
 
 
@@ -122,6 +123,7 @@ def load_role(path: str | Path) -> RoleDefinition:
             session_persistence=_require_bool(agent_data, "session_persistence", role_path),
             permission_mode=_require_string(agent_data, "permission_mode", role_path),
             flags=_as_mapping(agent_data.get("flags"), default={}),
+            env=_require_string_mapping(agent_data, "env", role_path, default={}),
             tools=AgentToolConfig(
                 allowed=_require_string_list(tools_data, "allowed", role_path, default=()),
                 disallowed=_require_string_list(tools_data, "disallowed", role_path, default=()),
@@ -261,3 +263,19 @@ def _require_string_list(
     if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
         raise RoleLoadError(f"{path}: expected {key!r} to be a list of strings.")
     return tuple(value)
+
+
+def _require_string_mapping(
+    data: Mapping[str, Any],
+    key: str,
+    path: Path,
+    *,
+    default: dict[str, str],
+) -> dict[str, str]:
+    value = data.get(key, default)
+    if not isinstance(value, dict) or any(
+        not isinstance(item_key, str) or not isinstance(item_value, str)
+        for item_key, item_value in value.items()
+    ):
+        raise RoleLoadError(f"{path}: expected {key!r} to be a table of strings.")
+    return dict(value)

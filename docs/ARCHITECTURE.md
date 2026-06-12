@@ -116,6 +116,8 @@ The current runtime supports:
 - explicit non-retryable backend preflight before `agent.started`,
 - normalized event capture into Foreman `events`,
 - role-level approval policy and disallowed-tool handling,
+- role-level `[agent.env]` injection for Anthropic-compatible endpoints such
+  as MiniMax M3 through the existing Claude Code harness,
 - persisted `session_id`, `token_count`, `cost_usd`, and `duration_ms`.
 
 ### Inspection and dashboard surfaces
@@ -230,6 +232,9 @@ The current CLI watch baseline now includes:
   persisted session from SQLite for persistent roles.
 - Codex token usage is persisted accurately, but the current app-server
   contract does not expose USD pricing, so Codex `cost_usd` remains zero.
+- Third-party Claude Code endpoints should use distinct `CLAUDE_CONFIG_DIR`
+  values in `[agent.env]` so persisted session ids do not cross provider
+  boundaries.
 - the dashboard live transport currently uses server-sent events through the
   FastAPI backend, with store polling inside the stream loop and the
   extracted `foreman.dashboard_service` layer acting as the service boundary

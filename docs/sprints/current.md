@@ -1,9 +1,7 @@
 # Current Sprint
 
-- Active implementation sprint: none; `sprint-47-review-phase-0-correctness`
-  is merged.
-- Branch: none for implementation work; docs closeout branch is
-  `docs/phase0-closeout-status`.
+- Active implementation sprint: `sprint-48-worker-fleet-minimax-smoke`
+- Branch: `feat/worker-fleet-minimax-smoke`
 - Local Foreman sprint: `sprint-review-phase-0-correctness` in `.foreman.db`
 - Last completed sprint: `sprint-47-review-phase-0-correctness`
 - Existing queued SQLite sprint: `sprint-47-active-run-lease-and-heartbeat-recovery`
@@ -88,18 +86,48 @@ sandboxed shell.
 - The stale hidden host-side Foreman and Claude processes were identified and
   stopped before sprint closeout.
 
-## Why No New Active Sprint Yet
-
-Before starting more autonomous work, Foreman needs the open Phase 0 review
-bugs fixed and covered by regression tests. The old queued lease-recovery work
-is still valuable, but it now follows the review's correctness pass.
-
-## Next Planned Sprint
+## Current Sprint 48
 
 - Sprint: `sprint-48-worker-fleet-minimax-smoke`
-- Suggested branch: `feat/worker-fleet-minimax-smoke`
+- Branch: `feat/worker-fleet-minimax-smoke`
 - Deliverable: a repeatable Claude Code/MiniMax M3 smoke that can delegate a
   narrow repo edit without hanging, plus the minimal role/env runner
   configuration needed to make Phase 1 model-fleet work reliable.
 - After that: resume `sprint-47-active-run-lease-and-heartbeat-recovery` if it
   is still relevant.
+
+## Sprint 48 Progress
+
+Implemented on `feat/worker-fleet-minimax-smoke`:
+
+1. Added `AgentRunConfig.env` and per-role `[agent.env]` loading.
+2. Added `foreman.runner.env.resolve_env()` with literal, `env:NAME`,
+   `env:NAME?fallback`, missing-required, and `_DIR` or `_PATH` expansion
+   behavior.
+3. Wired Claude Code and Codex runners to pass merged process environment only
+   when role env is configured.
+4. Wired the orchestrator to resolve role env before native execution; missing
+   required env vars produce one preflight-style `agent.error` and consume no
+   runner retries.
+5. Added `roles/developer_worker.toml` as the sequential worker-model role
+   example with commented MiniMax settings and isolated `CLAUDE_CONFIG_DIR`.
+6. Documented the working MiniMax CLI smoke and the no-worker-pool boundary.
+
+Manual MiniMax result:
+
+- Sandbox-local MiniMax smoke reached Claude CLI API retries and timed out with
+  `apiKeySource: none`, so the sandbox did not see the normal host-side
+  Claude/MiniMax configuration.
+- Escalated host-side smoke passed:
+  `timeout 90 claude --print --model minimax-m3 "Reply with exactly: minimax-ok"`.
+- Escalated host-side edit smoke passed with
+  `--permission-mode bypassPermissions`: MiniMax M3 used Claude Code `Write`,
+  created `/tmp/foreman-minimax-smoke/minimax_smoke.txt`, and returned
+  `TASK_COMPLETE`.
+
+Passing focused validation:
+
+- `./venv/bin/python -m unittest tests.test_runner_env tests.test_roles tests.test_runner tests.test_runner_claude tests.test_runner_codex -v`
+- `./venv/bin/python -m unittest tests.test_orchestrator.ForemanOrchestratorTests.test_native_runner_resolves_role_env_before_execution tests.test_orchestrator.ForemanOrchestratorTests.test_missing_required_role_env_fails_once_without_runner_retry tests.test_cli.ForemanCLISmokeTests.test_roles_command_lists_shipped_roles -v`
+- `./venv/bin/python -m unittest discover -s tests -v` — 513 tests passed in
+  148.910 seconds.

@@ -2,20 +2,21 @@
 
 ## Current sprint
 
-- Active implementation sprint: none; next sprint should be created from the
-  Phase 1 worker-fleet/model-backend review items.
+- Active implementation sprint: `sprint-48-worker-fleet-minimax-smoke`
 - Latest completed sprint: `sprint-46-completion-truth-hardening`
 - Latest completed review sprint: `sprint-47-review-phase-0-correctness`
 - Last merged branch: `fix/review-phase0-correctness`
-- Current implementation branch: none
+- Current implementation branch: `feat/worker-fleet-minimax-smoke`
 - Existing queued SQLite sprint `sprint-47-active-run-lease-and-heartbeat-recovery`
   remains useful, but should follow a short Phase 1 worker-fleet smoke because
   Minimax delegation is now the immediate operating constraint.
 
 ## Active branches
 
-- `docs/phase0-closeout-status` — updates repo memory after merging Phase 0
-  into `main`
+- `feat/worker-fleet-minimax-smoke` — implements the Phase 1 role env runner
+  seam and validates sequential MiniMax M3 execution through Claude Code
+- `docs/phase0-closeout-status` — merged to `main` at `6f149f5`; retained on
+  origin as the Phase 0 closeout docs branch
 - `fix/review-phase0-correctness` — merged to `main` at `5883075`; retained on
   origin as the completed Phase 0 implementation branch
 - `fix/backend-correctness-hardening` — closes residual backend correctness
@@ -26,14 +27,33 @@
 
 ## Current focus
 
-- create the next implementation branch for a narrow Phase 1 worker-fleet
-  smoke: reliable Claude Code delegation with `--model minimax-m3`, role/env
-  configuration needed for model fleet support, and regression coverage around
-  runner behavior
+- finish and merge `feat/worker-fleet-minimax-smoke`
 - after the worker-fleet smoke is stable, resume the older active-run lease and
   heartbeat recovery work if it is still relevant
 
-## Latest update — review Phase 0 merged
+## Latest update — MiniMax worker-model smoke
+
+- Created `feat/worker-fleet-minimax-smoke` from `main`.
+- Implemented per-role `[agent.env]` loading and `AgentRunConfig.env`.
+- Added `foreman.runner.env.resolve_env()` for literal values, required
+  `env:NAME`, optional `env:NAME?fallback`, and `_DIR` or `_PATH` expansion.
+- Claude Code and Codex runners now pass merged process env only when a role
+  env is configured, preserving previous fake-runner behavior otherwise.
+- The orchestrator resolves role env before native execution; missing required
+  env vars produce one preflight-style `agent.error` with
+  `preflight_failed=true` and do not enter runner retry loops.
+- Added `roles/developer_worker.toml` with commented MiniMax settings and a
+  distinct `CLAUDE_CONFIG_DIR` example.
+- Manual MiniMax findings:
+  - sandboxed Claude CLI smoke timed out in API retries with `apiKeySource:
+    none`, so it was not seeing normal host auth/config.
+  - escalated host-side `claude --print --model minimax-m3` returned
+    `minimax-ok`.
+  - escalated host-side edit smoke with `--permission-mode bypassPermissions`
+    used Claude Code `Write`, created `/tmp/foreman-minimax-smoke/minimax_smoke.txt`,
+    and returned `TASK_COMPLETE`.
+
+## Previous update — review Phase 0 merged
 
 - `fix/review-phase0-correctness` was fast-forward merged to `main` and pushed
   to `origin/main` at `5883075`.

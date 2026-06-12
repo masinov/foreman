@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import deque
 from collections.abc import Iterator
 import json
+import os
 from pathlib import Path
 import shlex
 import shutil
@@ -62,6 +63,7 @@ class CodexRunner(AgentRunner):
                 self.build_command(),
                 cwd=config.working_dir,
                 popen_factory=self._popen_factory,
+                env=config.env,
             )
             thread_method, thread_params = _build_thread_request(config)
             thread_result = client.call(thread_method, thread_params)
@@ -323,9 +325,13 @@ class _JsonRpcClient:
         *,
         cwd: Path,
         popen_factory: Any,
+        env: dict[str, str] | None = None,
     ) -> None:
         self.command = list(command)
         try:
+            popen_kwargs: dict[str, Any] = {}
+            if env:
+                popen_kwargs["env"] = {**os.environ, **env}
             self.proc = popen_factory(
                 self.command,
                 cwd=str(cwd),
@@ -334,6 +340,7 @@ class _JsonRpcClient:
                 stderr=subprocess.PIPE,
                 text=True,
                 bufsize=1,
+                **popen_kwargs,
             )
         except OSError as exc:
             raise InfrastructureError(f"Failed to launch Codex app server: {exc}") from exc

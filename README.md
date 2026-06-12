@@ -120,6 +120,49 @@ Operator recovery:
 2. verify the backend manually from the shell,
 3. rerun the blocked task or project once the backend startup path is healthy.
 
+## Multi-model Claude Code endpoints
+
+Foreman can point any Claude Code role at an Anthropic-compatible endpoint by
+adding an `[agent.env]` table to the role TOML. This is intended for sequential
+worker-model execution through the existing Claude Code harness; it does not
+add worker pools, parallel task execution, or multi-worktree behavior.
+
+Environment values support three forms:
+
+- `literal value`
+- `env:NAME` for a required host environment variable
+- `env:NAME?fallback` for an optional host environment variable
+
+Keys ending in `_DIR` or `_PATH` expand `~`. Use a distinct
+`CLAUDE_CONFIG_DIR` per provider so resumed Claude Code sessions do not mix
+endpoint state.
+
+MiniMax example:
+
+```toml
+[agent]
+backend = "claude_code"
+model = "minimax-m3"
+session_persistence = true
+permission_mode = "bypassPermissions"
+
+[agent.env]
+ANTHROPIC_BASE_URL = "https://api.minimax.io/anthropic"
+ANTHROPIC_AUTH_TOKEN = "env:MINIMAX_API_KEY"
+CLAUDE_CONFIG_DIR = "env:FOREMAN_MINIMAX_CONFIG_DIR?~/.foreman/claude-minimax"
+```
+
+Manual smoke:
+
+```bash
+claude --print --model minimax-m3 'Reply with exactly: minimax-ok'
+```
+
+For edit-capable Foreman-style runs, use `permission_mode = "bypassPermissions"`
+or an equivalent non-interactive approval setup. A manual smoke on this branch
+confirmed MiniMax M3 can use Claude Code `Write` and return `TASK_COMPLETE`
+with `--permission-mode bypassPermissions`.
+
 ## Event retention
 
 Foreman can now prune old `events` rows on orchestrator startup when a

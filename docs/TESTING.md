@@ -32,6 +32,8 @@ The current suite covers:
   queries, and event retention pruning
 - `tests/test_roles.py` and `tests/test_workflows.py` for shipped declarative
   configuration loading and validation
+- `tests/test_runner_env.py` for role `[agent.env]` value resolution and
+  missing-secret preflight classification
 - `tests/test_scaffold.py` for generated `AGENTS.md`, idempotent `.gitignore`
   updates, default `.foreman.db` ignore behavior, and repo re-initialization
   behavior
@@ -47,10 +49,11 @@ The current suite covers:
   monitoring command subprocess behavior, and the shipped project, sprint,
   task, run, and config command flows
 - `tests/test_runner_claude.py` for Claude Code command construction, startup
-  preflight, event mapping, signal extraction, and failure handling
-- `tests/test_runner_codex.py` for Codex app-server startup, thread start or
-  resume, startup preflight, approval responses, streamed event mapping, and
+  preflight, optional env passing, event mapping, signal extraction, and
   failure handling
+- `tests/test_runner_codex.py` for Codex app-server startup, thread start or
+  resume, startup preflight, optional env passing, approval responses, streamed
+  event mapping, and failure handling
 - `tests/test_dashboard.py` for the extracted dashboard service contract,
   FastAPI HTTP routes, built frontend shell delivery, frontend-dev redirect
   behavior, task detail data, human message persistence, incremental

@@ -1420,6 +1420,7 @@ class ForemanCLISmokeTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Roles", result.stdout)
         self.assertIn("developer | backend=claude_code | model=project-default | session=persistent", result.stdout)
+        self.assertIn("developer_worker | backend=claude_code | model=project-default | session=persistent", result.stdout)
         self.assertIn("code_reviewer | backend=claude_code | model=claude-sonnet-4-6 | session=ephemeral", result.stdout)
 
     def test_workflows_command_lists_shipped_workflows(self) -> None:
