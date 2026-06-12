@@ -10,6 +10,7 @@ import sqlite3
 import sys
 import time
 from typing import Any, Callable, Sequence
+from uuid import uuid4
 
 from . import __version__
 from .migrations import MIGRATIONS

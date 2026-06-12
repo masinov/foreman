@@ -53,6 +53,11 @@ memory changes rather than versioned product releases.
   replaced
 - `docs/checkpoints/react-dashboard-foundation.md`
 
+### Removed
+
+- obsolete `foreman/executor.py` and `tests/test_executor.py`; the orchestrator
+  native runner path is the maintained execution surface
+
 ### Changed
 
 - repurposed the transplanted project-memory docs from Apparatus to Foreman

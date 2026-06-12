@@ -11,6 +11,7 @@ import unittest
 
 from foreman.models import Event, Project, Run, Sprint, Task
 from foreman.orchestrator import (
+    AgentEventRecord,
     AgentExecutionResult,
     CompletionEvidence,
     ForemanOrchestrator,
@@ -30,6 +31,83 @@ from foreman.workflows import (
     default_workflows_dir,
     load_workflows,
 )
+
+
+class AgentSignalPersistenceTests(unittest.TestCase):
+    """Regression coverage for persisted agent-created task signals."""
+
+    def test_signal_task_created_persists_engine_event_on_active_run(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "foreman.db"
+            with ForemanStore(db_path) as store:
+                store.initialize()
+                project = Project(
+                    id="project-1",
+                    name="Foreman Demo",
+                    repo_path=temp_dir,
+                    workflow_id="development",
+                )
+                sprint = Sprint(
+                    id="sprint-1",
+                    project_id=project.id,
+                    title="Active Sprint",
+                    status="active",
+                    order_index=0,
+                )
+                task = Task(
+                    id="task-1",
+                    sprint_id=sprint.id,
+                    project_id=project.id,
+                    title="Parent task",
+                    status="in_progress",
+                )
+                run = Run(
+                    id="run-1",
+                    task_id=task.id,
+                    project_id=project.id,
+                    role_id="developer",
+                    workflow_step="develop",
+                    agent_backend="claude_code",
+                    status="running",
+                )
+                store.save_project(project)
+                store.save_sprint(sprint)
+                store.save_task(task)
+                store.save_run(run)
+
+                event_record = AgentEventRecord(
+                    event_type="signal.task_created",
+                    payload={
+                        "title": "Follow-up task",
+                        "task_type": "fix",
+                        "description": "Created from an agent signal.",
+                        "criteria": "Follow-up is persisted.",
+                    },
+                    timestamp="2026-06-12T10:00:00Z",
+                )
+
+                orchestrator = ForemanOrchestrator(store)
+                orchestrator._persist_agent_event(
+                    run,
+                    task,
+                    project,
+                    "developer",
+                    event_record,
+                )
+
+                tasks = store.list_tasks(sprint_id=sprint.id)
+                created = [item for item in tasks if item.id != task.id]
+                self.assertEqual(len(created), 1)
+                self.assertEqual(created[0].title, "Follow-up task")
+                self.assertEqual(created[0].created_by, "agent:developer")
+
+                events = store.list_events(task_id=task.id)
+                created_events = [
+                    event for event in events if event.event_type == "engine.task_created"
+                ]
+                self.assertEqual(len(created_events), 1)
+                self.assertEqual(created_events[0].run_id, run.id)
+                self.assertEqual(created_events[0].payload["task_id"], created[0].id)
 
 
 @dataclass(slots=True)
@@ -5045,6 +5123,51 @@ class EvidenceCachingTests(unittest.TestCase):
         self.write_text(repo_path / "README.md", "# Temp Repo\n")
         self.commit_all(repo_path, "chore: initial commit")
 
+    def test_developer_prompt_does_not_build_completion_evidence(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project = Project(
+                id="project-1",
+                name="Foreman Demo",
+                repo_path=str(repo_path),
+                spec_path="docs/specs/engine-design-v3.md",
+                workflow_id="development",
+                default_branch="main",
+            )
+            sprint = Sprint(
+                id="sprint-1",
+                project_id=project.id,
+                title="Orchestrator",
+                status="active",
+            )
+            task = Task(
+                id="task-1",
+                sprint_id=sprint.id,
+                project_id=project.id,
+                title="Implement scheduler queue",
+                status="in_progress",
+                task_type="feature",
+                branch_name="feat/scheduler",
+                acceptance_criteria="Add a queue implementation.",
+            )
+            store.save_project(project)
+            store.save_sprint(sprint)
+            store.save_task(task)
+
+            orchestrator = ForemanOrchestrator(store, roles=self.roles, workflows=self.workflows)
+
+            def fail_build(task_: Task, project_: Project):
+                raise AssertionError("developer prompts must not build completion evidence")
+
+            orchestrator.build_completion_evidence = fail_build  # type: ignore[method-assignment]
+            prompt = orchestrator._build_prompt(self.roles["developer"], project, task, None)
+
+            self.assertIn("Implement scheduler queue", prompt)
+            self.assertIsNone(task.completion_evidence)
+
     def test_build_prompt_caches_evidence_on_second_call(self) -> None:
         """Second _build_prompt call must reuse the cached evidence without rebuilding.
 
@@ -5155,6 +5278,87 @@ class EvidenceCachingTests(unittest.TestCase):
             prompt3 = orchestrator._build_prompt(role, project, task, None)
             self.assertEqual(call_count[0], 1)
             self.assertIs(task.completion_evidence, first_evidence)
+
+    def test_reviewer_prompt_rebuilds_completion_evidence_when_branch_head_moves(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project = Project(
+                id="project-1",
+                name="Foreman Demo",
+                repo_path=str(repo_path),
+                spec_path="docs/specs/engine-design-v3.md",
+                workflow_id="development",
+                default_branch="main",
+                settings={"default_model": "claude-sonnet-4-7"},
+            )
+            sprint = Sprint(
+                id="sprint-1",
+                project_id=project.id,
+                title="Orchestrator",
+                status="active",
+            )
+            task = Task(
+                id="task-1",
+                sprint_id=sprint.id,
+                project_id=project.id,
+                title="Implement scheduler queue",
+                status="in_progress",
+                task_type="feature",
+                branch_name="feat/scheduler",
+                acceptance_criteria="Add a queue implementation.",
+            )
+            store.save_project(project)
+            store.save_sprint(sprint)
+            store.save_task(task)
+            store.save_run(
+                Run(
+                    id="run-1",
+                    task_id=task.id,
+                    project_id=project.id,
+                    role_id="developer",
+                    workflow_step="develop",
+                    agent_backend="claude_code",
+                    status="completed",
+                    outcome="done",
+                    outcome_detail="Implemented the scheduler queue.",
+                )
+            )
+
+            self.git(repo_path, "checkout", "-b", "feat/scheduler")
+            self.write_text(repo_path / "scheduler.py", "class Queue:\n    pass\n")
+            self.commit_all(repo_path, "feat: add scheduler stub")
+            self.git(repo_path, "checkout", "main")
+
+            orchestrator = ForemanOrchestrator(store, roles=self.roles, workflows=self.workflows)
+            original_build = orchestrator.build_completion_evidence
+            call_count = [0]
+
+            def spying_build(task_: Task, project_: Project):
+                call_count[0] += 1
+                return original_build(task_, project_)
+
+            orchestrator.build_completion_evidence = spying_build  # type: ignore[method-assignment]
+            role = self.roles["code_reviewer"]
+
+            orchestrator._build_prompt(role, project, task, None)
+            self.assertEqual(call_count[0], 1)
+            first_evidence = task.completion_evidence
+            self.assertIsNotNone(first_evidence)
+            assert first_evidence is not None
+
+            self.git(repo_path, "checkout", "feat/scheduler")
+            self.write_text(repo_path / "scheduler.py", "class Queue:\n    def pop(self):\n        return None\n")
+            self.commit_all(repo_path, "feat: extend scheduler stub")
+            self.git(repo_path, "checkout", "main")
+
+            orchestrator._build_prompt(role, project, task, None)
+            self.assertEqual(call_count[0], 2)
+            self.assertIsNotNone(task.completion_evidence)
+            assert task.completion_evidence is not None
+            self.assertNotEqual(task.completion_evidence.head_sha, first_evidence.head_sha)
 
     def test_build_prompt_injects_all_12_evidence_fields(self) -> None:
         """_build_prompt must inject all 12 completion evidence fields into the context."""

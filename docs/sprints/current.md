@@ -1,12 +1,11 @@
 # Current Sprint
 
-- No active implementation sprint.
+- Active implementation sprint: `sprint-47-review-phase-0-correctness`
+- Branch: `fix/review-phase0-correctness`
+- Local Foreman sprint: `sprint-review-phase-0-correctness` in `.foreman.db`
 - Last completed sprint: `sprint-46-completion-truth-hardening`
-- Last merged branch: `fix/backend-correctness-hardening` at `b396fda`
-- Planning branch: `docs/integrate-review-plan`
-- Next implementation sprint: `sprint-47-review-phase-0-correctness`
 - Existing queued SQLite sprint: `sprint-47-active-run-lease-and-heartbeat-recovery`
-  is deferred until review Phase 0 is complete.
+  remains deferred until review Phase 0 is merged.
 
 ## Review Integration
 
@@ -21,22 +20,39 @@ normal engine operation. Two Phase 0 issues are already fixed on `main`:
   workflow step run.
 - merge conflicts now return and route through the explicit `conflict` outcome.
 
-The remaining Phase 0 tasks should be implemented before the older lease
-recovery sprint resumes:
+The remaining Phase 0 tasks are implemented on `fix/review-phase0-correctness`:
 
-1. Fix `signal.task_created` persistence so `engine.task_created` is attached
+1. Fixed `signal.task_created` persistence so `engine.task_created` is attached
    to the active run instead of referencing an unbound local.
-2. Import `uuid4` for `foreman waive-merge` and cover the command end to end.
-3. Make dashboard human/stop events FK-safe by sharing a synthetic-run helper
+2. Imported `uuid4` for `foreman waive-merge` and covered the command end to end.
+3. Made dashboard human/stop events FK-safe by sharing a synthetic-run helper
    and using the latest run for human messages.
-4. Move dashboard run process tracking out of per-request service instances,
+4. Moved dashboard run process tracking out of per-request service instances,
    terminate spawned runs on Stop, and expose `agent_running` in project
    payloads.
-5. Restrict completion-evidence construction to decision roles and invalidate
+5. Restricted completion-evidence construction to decision roles and invalidates
    cached evidence when the task branch head changes.
-6. Align dashboard task cancellation with CLI cancellation by clearing workflow
+6. Aligned dashboard task cancellation with CLI cancellation by clearing workflow
    resume fields and setting `completed_at`.
-7. Remove the dead `foreman/executor.py` path and its tests.
+7. Removed the dead `foreman/executor.py` path and its tests.
+
+## Validation Notes
+
+Passing focused validation:
+
+- `./venv/bin/python -m unittest tests.test_orchestrator.AgentSignalPersistenceTests tests.test_orchestrator.EvidenceCachingTests -v`
+- `./venv/bin/python -m unittest tests.test_dashboard.DashboardApproveDenyIntegrationTests.test_message_endpoint_creates_synthetic_run_for_runless_task tests.test_dashboard.DashboardSprintLifecycleTests.test_stop_agent_blocks_in_progress_tasks tests.test_dashboard.DashboardSprintTaskBacklogTests.test_cancel_task_sets_cancelled_status tests.test_dashboard.DashboardTier2Tests.test_start_and_stop_agent_registry_survives_service_instances -v`
+- `./venv/bin/python -m unittest tests.test_cli.ForemanCLISmokeTests.test_waive_merge_creates_active_waiver -v`
+- `./venv/bin/python -m unittest tests.test_supervisor_state.SupervisorStateTests.test_finalize_supervisor_merge_marks_task_done_and_completes_active_sprint tests.test_supervisor_state.SupervisorStateTests.test_finalize_supervisor_merge_prefers_explicit_task_id -v`
+- `./venv/bin/python -m py_compile foreman/orchestrator.py foreman/cli.py foreman/dashboard_service.py scripts/reviewed_codex.py scripts/reviewed_claude.py scripts/repo_validation.py scripts/validate_repo_memory.py`
+- `./venv/bin/foreman workflows && ./venv/bin/foreman roles`
+
+Full `./venv/bin/python -m unittest discover -s tests -v` currently does not
+pass in this environment because of known non-slice blockers: optional `pytest`
+is not installed for `tests/test_e2e.py`; `.codex/run` is read-only for
+`tests/test_reviewed_codex.py`; CLI discovery tests are sensitive to local
+runtime DB state; workflow transition-count and signal-parser tests have stale
+expectations relative to current behavior.
 
 ## Most Recent Completed Sprint Outcome
 

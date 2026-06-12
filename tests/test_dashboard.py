@@ -16,6 +16,8 @@ from foreman.dashboard_service import (
     DashboardActionError,
     DashboardNotFoundError,
     DashboardValidationError,
+    _RUNNING_PROCS,
+    _RUNNING_PROCS_LOCK,
 )
 from foreman.dashboard_backend import create_dashboard_app
 from foreman.models import DecisionGate, Event, Project, Run, Sprint, Task
@@ -600,6 +602,55 @@ class DashboardApproveDenyIntegrationTests(unittest.TestCase):
             )
         )
 
+        updated_store.close()
+
+    def test_message_endpoint_creates_synthetic_run_for_runless_task(self):
+        """Human messages on fresh tasks are FK-safe and reference a real run."""
+        store = ForemanStore(self.db_path)
+        store.initialize()
+
+        project = Project(
+            id="proj-message-runless",
+            name="Runless Message Project",
+            repo_path="/tmp/test-project",
+            workflow_id="development",
+        )
+        sprint = Sprint(
+            id="sprint-message-runless",
+            project_id=project.id,
+            title="Test Sprint",
+            status="active",
+        )
+        task = Task(
+            id="task-message-runless",
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="Task without runs",
+            status="todo",
+            task_type="feature",
+        )
+        store.save_project(project)
+        store.save_sprint(sprint)
+        store.save_task(task)
+        store.close()
+
+        response = self.request(
+            "POST",
+            f"/api/tasks/{task.id}/messages",
+            json={"text": "Please handle the edge case."},
+        )
+
+        updated_store = ForemanStore(self.db_path)
+        updated_store.initialize()
+        runs = updated_store.list_runs(task_id=task.id)
+        events = updated_store.list_events(task_id=task.id)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(runs), 1)
+        human_events = [event for event in events if event.event_type == "human.message"]
+        self.assertEqual(len(human_events), 1)
+        self.assertEqual(human_events[0].run_id, runs[0].id)
+        self.assertNotEqual(human_events[0].run_id, "none")
         updated_store.close()
 
 
@@ -1251,15 +1302,27 @@ class DashboardSprintTaskBacklogTests(unittest.TestCase):
     def test_cancel_task_sets_cancelled_status(self):
         """POST /api/tasks/{id}/cancel marks task as cancelled."""
         _, _, task = self._seed_active()
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        task.workflow_current_step = "review"
+        task.workflow_carried_output = "Needs another pass."
+        task.blocked_reason = "Paused before cancellation."
+        store.save_task(task)
+        store.close()
+
         response = self._request("POST", f"/api/tasks/{task.id}/cancel")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["status"], "cancelled")
 
-        store = ForemanStore(self.db_path)
-        store.initialize()
-        updated = store.get_task(task.id)
+        check_store = ForemanStore(self.db_path)
+        check_store.initialize()
+        updated = check_store.get_task(task.id)
         self.assertEqual(updated.status, "cancelled")
-        store.close()
+        self.assertIsNone(updated.blocked_reason)
+        self.assertIsNone(updated.workflow_current_step)
+        self.assertIsNone(updated.workflow_carried_output)
+        self.assertIsNotNone(updated.completed_at)
+        check_store.close()
 
     def test_cancel_task_rejects_done_task(self):
         """POST /api/tasks/{id}/cancel returns 400 when task is already done."""
@@ -1766,6 +1829,10 @@ class DashboardTier2Tests(unittest.TestCase):
 
     _counter = 0
 
+    def setUp(self):
+        with _RUNNING_PROCS_LOCK:
+            _RUNNING_PROCS.clear()
+
     def _next_id(self, prefix):
         DashboardTier2Tests._counter += 1
         return f"{prefix}-{DashboardTier2Tests._counter}"
@@ -2021,6 +2088,93 @@ class DashboardTier2Tests(unittest.TestCase):
             popen_args[1:7],
             ["run", project.id, "--db", str(self.db_path), "--task", task.id],
         )
+
+    def test_start_and_stop_agent_registry_survives_service_instances(self):
+        """The dashboard process registry is shared across request-scoped services."""
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        project = Project(
+            id=self._next_id("proj-reg"),
+            name="Registry Project",
+            repo_path="/tmp/registry",
+            workflow_id="development",
+        )
+        sprint = Sprint(
+            id=self._next_id("sprint-reg"),
+            project_id=project.id,
+            title="Registry Sprint",
+            status="active",
+            order_index=0,
+        )
+        task = Task(
+            id=self._next_id("task-reg"),
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="Running task",
+            status="in_progress",
+            task_type="feature",
+        )
+        store.save_project(project)
+        store.save_sprint(sprint)
+        store.save_task(task)
+
+        class FakeProc:
+            def __init__(self):
+                self.alive = True
+                self.terminated = False
+                self.killed = False
+
+            def poll(self):
+                return None if self.alive else 0
+
+            def terminate(self):
+                self.terminated = True
+                self.alive = False
+
+            def kill(self):
+                self.killed = True
+                self.alive = False
+
+            def wait(self, timeout=None):
+                return 0
+
+        class NoopThread:
+            def __init__(self, target, daemon=False):
+                self.target = target
+                self.daemon = daemon
+
+            def start(self):
+                return None
+
+        import unittest.mock as mock
+
+        fake_proc = FakeProc()
+        with mock.patch("subprocess.Popen", return_value=fake_proc), mock.patch(
+            "foreman.dashboard_service.threading.Thread",
+            NoopThread,
+        ):
+            first_service = DashboardService(store)
+            self.assertTrue(first_service.start_agent(project.id)["started"])
+            self.assertTrue(first_service.get_project(project.id)["agent_running"])
+
+            second_service = DashboardService(store)
+            with self.assertRaises(DashboardValidationError):
+                second_service.start_agent(project.id)
+
+            stop_result = second_service.stop_agent(project.id)
+
+        self.assertTrue(fake_proc.terminated)
+        self.assertTrue(stop_result["agent_stopped"])
+        self.assertEqual(stop_result["stopped"], 1)
+        self.assertFalse(DashboardService(store).get_project(project.id)["agent_running"])
+        updated = store.get_task(task.id)
+        assert updated is not None
+        self.assertEqual(updated.status, "blocked")
+        events = store.list_events(task_id=task.id)
+        stop_events = [event for event in events if event.event_type == "human.stop_requested"]
+        self.assertEqual(len(stop_events), 1)
+        self.assertNotEqual(stop_events[0].run_id, "none")
+        store.close()
 
     def test_start_agent_returns_400_when_no_sprints(self):
         """POST /api/projects/{id}/agent/start returns 400 when no planned or active sprint exists."""

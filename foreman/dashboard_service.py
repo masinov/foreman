@@ -29,6 +29,9 @@ STREAM_BATCH_LIMIT = 100
 STREAM_HEARTBEAT_SECONDS = 10.0
 STREAM_POLL_INTERVAL_SECONDS = 0.5
 
+_RUNNING_PROCS: dict[str, subprocess.Popen[bytes]] = {}
+_RUNNING_PROCS_LOCK = threading.Lock()
+
 
 class DashboardServiceError(Exception):
     """Base error for dashboard service failures."""
@@ -104,7 +107,6 @@ class DashboardService:
     ) -> None:
         self.store = store
         self._now = now_factory or (lambda: datetime.now(timezone.utc))
-        self._running_procs: dict[str, subprocess.Popen[bytes]] = {}
 
     def list_projects(self) -> dict[str, Any]:
         """Return the project summary collection used by the dashboard landing screen."""
@@ -118,6 +120,7 @@ class DashboardService:
                     "name": project.name,
                     "workflow_id": project.workflow_id,
                     "status": self.get_project_status(project.id),
+                    "agent_running": self._agent_running(project.id),
                     "active_sprint": (
                         {
                             "id": active_sprint.id,
@@ -147,6 +150,7 @@ class DashboardService:
             "spec_path": project.spec_path,
             "methodology": project.methodology,
             "autonomy_level": project.autonomy_level,
+            "agent_running": self._agent_running(project_id),
             "totals": self.store.run_totals(project_id=project_id),
         }
 
@@ -266,11 +270,14 @@ class DashboardService:
         if project is None:
             raise DashboardNotFoundError(f"Project not found: {project_id}")
 
-        existing = self._running_procs.get(project_id)
-        if existing is not None and existing.poll() is None:
-            raise DashboardValidationError(
-                f"Agent is already running for project {project_id}."
-            )
+        with _RUNNING_PROCS_LOCK:
+            existing = _RUNNING_PROCS.get(project_id)
+            if existing is not None and existing.poll() is None:
+                raise DashboardValidationError(
+                    f"Agent is already running for project {project_id}."
+                )
+            if existing is not None:
+                _RUNNING_PROCS.pop(project_id, None)
 
         if task_id is None and self.store.get_active_sprint(project_id) is None:
             next_sprint = self.store.get_next_planned_sprint(project_id)
@@ -293,12 +300,14 @@ class DashboardService:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-        self._running_procs[project_id] = proc
+        with _RUNNING_PROCS_LOCK:
+            _RUNNING_PROCS[project_id] = proc
 
         def _cleanup() -> None:
             proc.wait()
-            if self._running_procs.get(project_id) is proc:
-                self._running_procs.pop(project_id, None)
+            with _RUNNING_PROCS_LOCK:
+                if _RUNNING_PROCS.get(project_id) is proc:
+                    _RUNNING_PROCS.pop(project_id, None)
 
         threading.Thread(target=_cleanup, daemon=True).start()
 
@@ -715,25 +724,7 @@ class DashboardService:
         if changed and task.status in {"in_progress", "blocked"}:
             now = self._now()
             now_text = now.isoformat()
-            runs = self.store.list_runs(task_id=task_id)
-            if runs:
-                run_id = runs[0].id
-            else:
-                synthetic_run = Run(
-                    id=f"run-edit-{now.strftime('%Y%m%d%H%M%S%f')}-{task_id[:8]}",
-                    task_id=task_id,
-                    project_id=task.project_id,
-                    role_id="human",
-                    workflow_step="edit",
-                    agent_backend="dashboard",
-                    status="completed",
-                    outcome="edit",
-                    started_at=now_text,
-                    completed_at=now_text,
-                    created_at=now_text,
-                )
-                self.store.save_run(synthetic_run)
-                run_id = synthetic_run.id
+            run_id = self._ensure_event_run(task, step="edit", outcome="edit", now=now)
             event = Event(
                 id=f"evt-{now.strftime('%Y%m%d%H%M%S%f')}-edit-{task_id[:8]}",
                 run_id=run_id,
@@ -788,9 +779,10 @@ class DashboardService:
         if project is None:
             raise DashboardNotFoundError(f"Project not found: {project_id}")
 
+        agent_stopped = self._terminate_registered_agent(project_id)
         active_sprint = self.store.get_active_sprint(project_id)
         if active_sprint is None:
-            return {"stopped": 0, "project_id": project_id}
+            return {"stopped": 0, "project_id": project_id, "agent_stopped": agent_stopped}
 
         now = self._now()
         tasks = self.store.list_tasks(sprint_id=active_sprint.id)
@@ -802,10 +794,10 @@ class DashboardService:
             task.blocked_reason = "Stop requested from dashboard."
             self.store.save_task(task)
 
-            runs = self.store.list_runs(task_id=task.id)
+            run_id = self._ensure_event_run(task, step="stop", outcome="stopped", now=now)
             event = Event(
                 id=f"evt-{now.strftime('%Y%m%d%H%M%S%f')}-stop-{task.id[:8]}",
-                run_id=runs[0].id if runs else "none",
+                run_id=run_id,
                 task_id=task.id,
                 project_id=project_id,
                 event_type="human.stop_requested",
@@ -820,6 +812,7 @@ class DashboardService:
             "stopped": stopped,
             "project_id": project_id,
             "sprint_id": active_sprint.id,
+            "agent_stopped": agent_stopped,
         }
 
     def stop_task(self, task_id: str) -> dict[str, Any]:
@@ -836,25 +829,7 @@ class DashboardService:
 
         now = self._now()
         now_text = now.isoformat()
-        runs = self.store.list_runs(task_id=task.id)
-        if runs:
-            run_id = runs[0].id
-        else:
-            synthetic_run = Run(
-                id=f"run-stop-{now.strftime('%Y%m%d%H%M%S%f')}-{task.id[:8]}",
-                task_id=task.id,
-                project_id=task.project_id,
-                role_id="human",
-                workflow_step="stop",
-                agent_backend="dashboard",
-                status="completed",
-                outcome="stopped",
-                started_at=now_text,
-                completed_at=now_text,
-                created_at=now_text,
-            )
-            self.store.save_run(synthetic_run)
-            run_id = synthetic_run.id
+        run_id = self._ensure_event_run(task, step="stop", outcome="stopped", now=now)
         event = Event(
             id=f"evt-{now.strftime('%Y%m%d%H%M%S%f')}-stop-{task.id[:8]}",
             run_id=run_id,
@@ -887,6 +862,10 @@ class DashboardService:
                 f"Cannot cancel a task with status '{task.status}'."
             )
         task.status = "cancelled"
+        task.blocked_reason = None
+        task.workflow_current_step = None
+        task.workflow_carried_output = None
+        task.completed_at = self._now().isoformat()
         self.store.save_task(task)
         return {"status": "cancelled", "task_id": task_id}
 
@@ -930,11 +909,11 @@ class DashboardService:
         if not normalized_text:
             raise DashboardValidationError("Message text required")
 
-        runs = self.store.list_runs(task_id=task_id)
         now = self._now()
+        run_id = self._ensure_event_run(task, step="message", outcome="message", now=now)
         event = Event(
             id=f"evt-{now.strftime('%Y%m%d%H%M%S%f')}-{task_id[:8]}",
-            run_id=runs[0].id if runs else "none",
+            run_id=run_id,
             task_id=task_id,
             project_id=task.project_id,
             event_type="human.message",
@@ -1027,6 +1006,69 @@ class DashboardService:
         if task is None:
             raise DashboardNotFoundError(f"Task not found: {task_id}")
         return task
+
+    def _agent_running(self, project_id: str) -> bool:
+        with _RUNNING_PROCS_LOCK:
+            proc = _RUNNING_PROCS.get(project_id)
+            if proc is None:
+                return False
+            if proc.poll() is None:
+                return True
+            _RUNNING_PROCS.pop(project_id, None)
+            return False
+
+    def _terminate_registered_agent(self, project_id: str) -> bool:
+        with _RUNNING_PROCS_LOCK:
+            proc = _RUNNING_PROCS.get(project_id)
+            if proc is None:
+                return False
+            if proc.poll() is not None:
+                _RUNNING_PROCS.pop(project_id, None)
+                return False
+
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+
+        with _RUNNING_PROCS_LOCK:
+            if _RUNNING_PROCS.get(project_id) is proc:
+                _RUNNING_PROCS.pop(project_id, None)
+        return True
+
+    def _ensure_event_run(
+        self,
+        task: Task,
+        *,
+        step: str,
+        outcome: str,
+        now: datetime | None = None,
+    ) -> str:
+        """Return a real run id for dashboard-authored task events."""
+
+        runs = self.store.list_runs(task_id=task.id)
+        if runs:
+            return runs[-1].id
+
+        timestamp = now or self._now()
+        timestamp_text = timestamp.isoformat()
+        synthetic_run = Run(
+            id=f"run-{step}-{timestamp.strftime('%Y%m%d%H%M%S%f')}-{task.id[:8]}",
+            task_id=task.id,
+            project_id=task.project_id,
+            role_id="human",
+            workflow_step=step,
+            agent_backend="dashboard",
+            status="completed",
+            outcome=outcome,
+            started_at=timestamp_text,
+            completed_at=timestamp_text,
+            created_at=timestamp_text,
+        )
+        self.store.save_run(synthetic_run)
+        return synthetic_run.id
 
     # ── Decision gates ────────────────────────────────────────────────────────
 

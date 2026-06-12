@@ -2,16 +2,19 @@
 
 ## Current sprint
 
-- No active sprint.
+- Active implementation sprint: `sprint-47-review-phase-0-correctness`
 - Latest completed sprint: `sprint-46-completion-truth-hardening`
 - Last merged branch: `fix/backend-correctness-hardening`
-- Current planning branch: `docs/integrate-review-plan`
-- Next implementation sprint: `sprint-47-review-phase-0-correctness`
+- Current implementation branch: `fix/review-phase0-correctness`
 - Existing queued SQLite sprint `sprint-47-active-run-lease-and-heartbeat-recovery`
   should be deferred until the review Phase 0 correctness bugs are fixed.
 
 ## Active branches
 
+- `fix/review-phase0-correctness` — implements the remaining
+  `docs/specs/review.md` Phase 0 backend correctness fixes with regression
+  tests; uses a local repo `.foreman.db` to exercise Foreman sprint/task state
+  while developing
 - `fix/backend-correctness-hardening` — closes residual backend correctness
   gaps found after transcript logging by tightening persisted builtin event
   schema versioning and adding regression coverage for strict outcome
@@ -20,13 +23,41 @@
 
 ## Current focus
 
-- integrate `docs/specs/review.md` into the sprint flow
-- fix remaining review Phase 0 correctness bugs before delegating more work to
-  Foreman
+- finish and review `fix/review-phase0-correctness`
 - after Phase 0 is green, resume the older active-run lease and heartbeat
   recovery work if it is still relevant
 
-## Latest update — review integration
+## Latest update — review Phase 0 implementation
+
+- Bootstrapped the missing local `./venv` with Python 3.12, installed Foreman
+  editable, initialized a local `.foreman.db`, created and activated the
+  `Review Phase 0 correctness` sprint, and added the Phase 0 task through
+  Foreman's own CLI.
+- Implemented the open Phase 0 fixes:
+  - `signal.task_created` now receives the active `Run` and persists
+    `engine.task_created` against that run.
+  - `foreman waive-merge` imports `uuid4`; a CLI regression creates an active
+    merge waiver against a temp git repo.
+  - dashboard human/edit/stop events share a FK-safe synthetic-run helper and
+    use the latest run when one exists.
+  - dashboard Run/Stop process tracking moved to a module-level locked
+    registry; Stop terminates registered subprocesses and project payloads
+    expose `agent_running`.
+  - completion evidence is built only for decision-extracting roles and is
+    rebuilt when the task branch head changes.
+  - dashboard task cancellation now clears stale resume fields and sets
+    `completed_at`.
+  - removed obsolete `foreman/executor.py` and `tests/test_executor.py`.
+- Added a defensive completion-evidence guard for missing repo paths so
+  supervisor finalization records weak evidence instead of crashing when a
+  stored repository path cannot be inspected.
+- Attempted to delegate a read-only planning prompt to Claude Code with
+  `--model minimax-m3`; the session returned malformed tool-call text while
+  tools were disabled and produced no useful implementation output. Treat this
+  as a Phase 1 worker-fleet smoke-test issue before depending on Minimax for
+  unattended repo edits.
+
+## Previous update — review integration
 
 - `fix/backend-correctness-hardening` was fast-forward merged to `main` at
   `b396fda` and pushed to `origin/main`.

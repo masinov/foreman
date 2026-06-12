@@ -57,9 +57,6 @@ The current suite covers:
   sprint-event stream payloads, and approve or deny integration behavior
 - `frontend/src/App.test.jsx` for React dashboard navigation, message
   submission, and stream-driven activity updates
-- `tests/test_executor.py` for runner-backed execution config, event
-  translation, completion handling, and infrastructure-error behavior in
-  `foreman.executor`
 - `tests/test_reviewed_codex.py` for reviewed Codex continuation behavior
 
 ## Expected testing layers

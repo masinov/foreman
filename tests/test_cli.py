@@ -98,6 +98,20 @@ class ForemanCLISmokeTests(unittest.TestCase):
         repo_path.mkdir(parents=True)
         return repo_path
 
+    def git(self, repo_path: Path, *args: str) -> subprocess.CompletedProcess[str]:
+        result = subprocess.run(
+            ["git", *args],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise AssertionError(
+                f"git {' '.join(args)} failed\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+            )
+        return result
+
     def create_repo_store(self) -> tuple[ForemanStore, Path, Path]:
         repo_path = self.create_repo_path()
         (repo_path / "AGENTS.md").write_text("# Repo Instructions\n", encoding="utf-8")
@@ -514,6 +528,71 @@ class ForemanCLISmokeTests(unittest.TestCase):
         assert task is not None
         self.assertEqual(task.status, "cancelled")
         self.assertIsNotNone(task.completed_at)
+
+    def test_waive_merge_creates_active_waiver(self) -> None:
+        store, db_path = self.create_store()
+        repo_path = self.create_repo_path()
+        self.git(repo_path, "init")
+        self.git(repo_path, "checkout", "-b", "main")
+        self.git(repo_path, "config", "user.email", "foreman-tests@example.com")
+        self.git(repo_path, "config", "user.name", "Foreman Tests")
+        (repo_path / "README.md").write_text("# Waiver repo\n", encoding="utf-8")
+        self.git(repo_path, "add", ".")
+        self.git(repo_path, "commit", "-m", "chore: initial")
+        self.git(repo_path, "checkout", "-b", "feature/waiver")
+        (repo_path / "feature.txt").write_text("waiver material\n", encoding="utf-8")
+        self.git(repo_path, "add", ".")
+        self.git(repo_path, "commit", "-m", "feat: waiver branch")
+        self.git(repo_path, "checkout", "main")
+
+        project = Project(
+            id="proj-cli-waiver",
+            name="CLI Waiver Project",
+            repo_path=str(repo_path),
+            workflow_id="development",
+        )
+        sprint = Sprint(
+            id="sprint-cli-waiver",
+            project_id=project.id,
+            title="Waiver Sprint",
+            status="active",
+        )
+        task = Task(
+            id="task-cli-waiver",
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="Waived task",
+            status="blocked",
+            branch_name="feature/waiver",
+        )
+        store.save_project(project)
+        store.save_sprint(sprint)
+        store.save_task(task)
+
+        result = self.run_cli(
+            "waive-merge",
+            task.id,
+            "--project",
+            project.id,
+            "--type",
+            "no_code_delta",
+            "--reason",
+            "Human reviewed the exceptional case.",
+            "--db",
+            str(db_path),
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        head = self.git(repo_path, "rev-parse", "refs/heads/feature/waiver").stdout.strip()
+        waiver = store.get_active_merge_waiver(
+            task.id,
+            "feature/waiver",
+            head,
+            waiver_type="no_code_delta",
+        )
+        self.assertIsNotNone(waiver)
+        assert waiver is not None
+        self.assertEqual(waiver.reason, "Human reviewed the exceptional case.")
 
     def test_task_unblock_rejects_human_gate_tasks(self) -> None:
         store, db_path = self.create_store()

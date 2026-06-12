@@ -326,27 +326,31 @@ class ForemanOrchestrator:
         runs = self.store.list_runs(task_id=task.id)
 
         # Git positional reference
-        base_sha = head_sha(project.repo_path, f"refs/heads/{project.default_branch}") or ""
+        base_sha = ""
         head_sha_val = ""
         merge_base_sha_val = ""
         commit_count = 0
-        if task.branch_name:
-            head_sha_val = head_sha(project.repo_path, f"refs/heads/{task.branch_name}") or ""
-            merge_base_result = subprocess.run(
-                ["git", "merge-base", project.default_branch, task.branch_name],
-                cwd=project.repo_path,
-                capture_output=True,
-                text=True,
-            )
-            merge_base_sha_val = merge_base_result.stdout.strip()
-            commit_count_result = subprocess.run(
-                ["git", "rev-list", "--count", f"{project.default_branch}..{task.branch_name}"],
-                cwd=project.repo_path,
-                capture_output=True,
-                text=True,
-            )
-            if commit_count_result.returncode == 0:
-                commit_count = int(commit_count_result.stdout.strip())
+        try:
+            base_sha = head_sha(project.repo_path, f"refs/heads/{project.default_branch}") or ""
+            if task.branch_name:
+                head_sha_val = head_sha(project.repo_path, f"refs/heads/{task.branch_name}") or ""
+                merge_base_result = subprocess.run(
+                    ["git", "merge-base", project.default_branch, task.branch_name],
+                    cwd=project.repo_path,
+                    capture_output=True,
+                    text=True,
+                )
+                merge_base_sha_val = merge_base_result.stdout.strip()
+                commit_count_result = subprocess.run(
+                    ["git", "rev-list", "--count", f"{project.default_branch}..{task.branch_name}"],
+                    cwd=project.repo_path,
+                    capture_output=True,
+                    text=True,
+                )
+                if commit_count_result.returncode == 0:
+                    commit_count = int(commit_count_result.stdout.strip())
+        except (FileNotFoundError, GitError, OSError, ValueError):
+            pass
 
         # Changed files from git diff
         changed_files: tuple[str, ...] = ()
@@ -2230,7 +2234,10 @@ class ForemanOrchestrator:
         # Reuse cached evidence on the task record to avoid recomputing on
         # repeated reviewer prompts. Built once at first reviewer render.
         evidence = task.completion_evidence
-        if evidence is None and role.id in self.roles:
+        if evidence is not None and self._completion_evidence_stale(evidence, task, project):
+            evidence = None
+            task.completion_evidence = None
+        if evidence is None and role.completion.output.extract_decision:
             evidence = self.build_completion_evidence(task, project)
             task.completion_evidence = evidence
             self.store.save_task(task)
@@ -2275,6 +2282,20 @@ class ForemanOrchestrator:
                 "completion_builtin_test_detail": evidence.builtin_test_detail,
             })
         return role.render_prompt(context)
+
+    def _completion_evidence_stale(
+        self,
+        evidence: CompletionEvidence,
+        task: Task,
+        project: Project,
+    ) -> bool:
+        if not task.branch_name:
+            return False
+        try:
+            current_head = head_sha(project.repo_path, f"refs/heads/{task.branch_name}") or ""
+        except Exception:
+            return False
+        return bool(evidence.head_sha and current_head and evidence.head_sha != current_head)
 
     def _load_repo_instructions(self, repo_path: str) -> str:
         agents_path = Path(repo_path) / "AGENTS.md"
@@ -2694,7 +2715,7 @@ class ForemanOrchestrator:
                 role_id=role_id,
                 timestamp=event_record.timestamp,
             )
-            self._apply_agent_signal(task, project, role_id, event_record)
+            self._apply_agent_signal(run, task, project, role_id, event_record)
 
     def _persist_agent_event(
         self,
@@ -2713,10 +2734,11 @@ class ForemanOrchestrator:
             role_id=role_id,
             timestamp=event_record.timestamp,
         )
-        self._apply_agent_signal(task, project, role_id, event_record)
+        self._apply_agent_signal(run, task, project, role_id, event_record)
 
     def _apply_agent_signal(
         self,
+        run: Run,
         task: Task,
         project: Project,
         role_id: str,
