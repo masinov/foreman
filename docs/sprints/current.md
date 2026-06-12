@@ -1,8 +1,9 @@
 # Current Sprint
 
-- Active implementation sprint:
-  `sprint-47-active-run-lease-and-heartbeat-recovery`
-- Branch: `feat/active-run-lease-heartbeat-recovery`
+- Active implementation sprint: none; `sprint-47-active-run-lease-and-heartbeat-recovery`
+  is merged.
+- Branch: none for implementation work; docs closeout branch is
+  `docs/active-run-lease-closeout`.
 - Local Foreman sprint: `sprint-review-phase-0-correctness` in `.foreman.db`
 - Last completed sprint: `sprint-48-worker-fleet-minimax-smoke`
 - Current deliverable: harden task lease liveness during native runner streams
@@ -10,7 +11,8 @@
 
 ## Sprint 47 Active-Run Lease Recovery
 
-Implemented on `feat/active-run-lease-heartbeat-recovery`:
+Implemented on `feat/active-run-lease-heartbeat-recovery` and merged to
+`main` at `5fbfc26`:
 
 1. Added in-step native runner lease heartbeats so long Claude/Codex streams
    renew the task lease before the workflow step returns.
@@ -21,6 +23,14 @@ Implemented on `feat/active-run-lease-heartbeat-recovery`:
    redaction, live-holder protection, and native stream heartbeat behavior.
 5. Used MiniMax M3 through Claude Code for the bulk implementation and test
    drafting; final review, cleanup, docs, and validation are supervised here.
+
+Passing validation:
+
+- `./venv/bin/python -m unittest tests.test_orchestrator -v`
+- `./venv/bin/python -m unittest tests.test_leases -v`
+- `./venv/bin/python scripts/validate_repo_memory.py`
+- `git diff --check`
+- `./venv/bin/python -m unittest discover -s tests -v` - 518 tests passed
 
 ## Review Integration
 

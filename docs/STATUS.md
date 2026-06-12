@@ -2,14 +2,16 @@
 
 ## Current sprint
 
-- Active implementation sprint:
-  `sprint-47-active-run-lease-and-heartbeat-recovery`
+- Active implementation sprint: none; `sprint-47-active-run-lease-and-heartbeat-recovery`
+  is merged.
 - Latest completed sprint: `sprint-46-completion-truth-hardening`
 - Latest completed review sprint: `sprint-47-review-phase-0-correctness`
 - Latest completed model-backend sprint:
   `sprint-48-worker-fleet-minimax-smoke`
-- Last merged branch: `feat/worker-fleet-minimax-smoke`
-- Current implementation branch: `feat/active-run-lease-heartbeat-recovery`
+- Latest completed recovery sprint:
+  `sprint-47-active-run-lease-and-heartbeat-recovery`
+- Last merged branch: `feat/active-run-lease-heartbeat-recovery`
+- Current implementation branch: none
 
 ## Active branches
 
@@ -29,13 +31,15 @@
 
 ## Current focus
 
-- finish and merge active-run lease heartbeat recovery after validation
+- select the next review-roadmap sprint from `docs/sprints/backlog.md`
 
-## Latest update - active-run lease heartbeat recovery
+## Latest update - active-run lease heartbeat recovery merged
 
 - MiniMax M3 through Claude Code drafted the core implementation and tests on
   `feat/active-run-lease-heartbeat-recovery`; Codex is supervising review,
   cleanup, docs, validation, and merge.
+- `feat/active-run-lease-heartbeat-recovery` was fast-forward merged to
+  `main` and pushed to `origin/main` at `5fbfc26`.
 - Native runner event streams now periodically renew the task lease while a
   step is still running, instead of waiting until the workflow step returns.
 - Stale run recovery now treats old task-lease heartbeats as non-live holder
@@ -43,6 +47,8 @@
   to `todo`.
 - New regression tests cover forced lease expiry, crash-recovery payload
   redaction, live-holder protection, and native stream heartbeat behavior.
+- Full local validation passed:
+  `./venv/bin/python -m unittest discover -s tests -v` ran 518 tests.
 
 ## Latest update — MiniMax worker-model smoke merged
 
