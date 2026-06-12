@@ -33,14 +33,15 @@ sandboxed shell.
 
 ## Why No New Active Sprint Yet
 
-Before starting more autonomous work, Foreman needs stronger auditability.
-The next implementation slice will focus on durable transcript logging so every
-agent prompt, streamed output item, and builtin command result can be inspected
-live and after the run without relying on inference from branch state.
+Before starting more autonomous work, Foreman needs the backend hardening that
+was exposed by the first supervised runs to be reconciled on `main`.
+Transcript logging has landed, and the current manual branch is closing the
+remaining correctness gaps around event schema persistence, outcome strictness,
+lease fencing, active lease uniqueness, and recovery-token redaction.
 
 ## Next Planned Sprint In Queue
 
 - Sprint: `sprint-47-active-run-lease-and-heartbeat-recovery`
 - Status: planned in SQLite
 - Queue position: next planned sprint, ahead of the older deferred `sprint-008`
-- Note: do not start it until transcript logging hardening lands
+- Note: do not start it until `fix/backend-correctness-hardening` lands

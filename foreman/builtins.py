@@ -264,7 +264,7 @@ class BuiltinExecutor:
                 f"{result.detail}"
             )
             return BuiltinResult(
-                outcome="failure",
+                outcome="conflict",
                 detail=detail,
                 events=(
                     BuiltinEventRecord(

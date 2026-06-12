@@ -134,10 +134,13 @@ class EngineEventTests(unittest.TestCase):
             task_id="task-1",
             previous_status="running",
             holder_id="holder-1",
-            lease_token="tok-abc",
+            lease_id="lease-1",
+            fencing_token=7,
         )
         self.assertEqual(evt.event_type, "engine.crash_recovery")
-        self.assertEqual(evt.payload["lease_token"], "tok-abc")
+        self.assertEqual(evt.payload["lease_id"], "lease-1")
+        self.assertEqual(evt.payload["fencing_token"], 7)
+        self.assertNotIn("lease_token", evt.payload)
 
     def test_engine_branch_violation(self) -> None:
         evt = engine_branch_violation(branch="main", detail="Default branch was mutated.")

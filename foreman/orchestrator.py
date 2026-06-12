@@ -450,15 +450,24 @@ class ForemanOrchestrator:
         if builtin_test_result and not builtin_test_passed:
             proof_status = "failed"
             failure_reasons.append(f"Tests failed (exit code {test_exit_code}).")
-        if score < 50:
+        review_backed_small_delta = (
+            review_outcome == "approve"
+            and builtin_test_passed
+            and bool(changed_files)
+            and score >= 40
+        )
+        if score < 50 and not review_backed_small_delta:
             proof_status = "failed"
             failure_reasons.append(f"Evidence score too low ({score:.0f}/100).")
-        # Require all criteria to be "passed" for proof_status = passed
+        # Require all criteria to be machine-addressed until code review has
+        # explicitly approved the work. The heuristic cannot fully judge
+        # semantic acceptance; after review approval, tests and score remain
+        # hard proof gates while reviewer approval satisfies semantic coverage.
         if criteria_checklist:
             not_passed = [
                 c for c in criteria_checklist if c.get("status") != "passed"
             ]
-            if not_passed:
+            if not_passed and review_outcome != "approve":
                 if proof_status != "failed":
                     proof_status = "failed"
                 for c in not_passed:
@@ -469,8 +478,11 @@ class ForemanOrchestrator:
         if task.task_type in {"feature", "fix", "refactor"} and not criteria_checklist:
             proof_status = "failed"
             failure_reasons.append("No acceptance criteria defined.")
-        if proof_status != "failed" and builtin_test_passed and score >= 50 and (
-            not criteria_checklist or all(c.get("status") == "passed" for c in criteria_checklist)
+        sufficient_score = score >= 50 or review_backed_small_delta
+        if proof_status != "failed" and builtin_test_passed and sufficient_score and (
+            not criteria_checklist
+            or all(c.get("status") == "passed" for c in criteria_checklist)
+            or review_outcome == "approve"
         ):
             proof_status = "passed"
 
@@ -1230,6 +1242,15 @@ class ForemanOrchestrator:
                         # In directed mode, current branch must be the task branch.
                         mode = str(project.settings.get("task_selection_mode", "directed"))
                         if mode == "directed":
+                            active_branch = worktree_branch(project.repo_path)
+                            if active_branch != current_task.branch_name:
+                                if is_worktree_clean(project.repo_path):
+                                    checkout_branch(project.repo_path, current_task.branch_name)
+                                else:
+                                    raise OrchestratorError(
+                                        f"Expected to be on task branch {current_task.branch_name!r} "
+                                        f"but found {active_branch!r}."
+                                    )
                             if worktree_branch(project.repo_path) != current_task.branch_name:
                                 raise OrchestratorError(
                                     f"Expected to be on task branch {current_task.branch_name!r} "
@@ -1512,17 +1533,6 @@ class ForemanOrchestrator:
                 current_task.assigned_role = role.id
                 self.store.save_task(current_task)
 
-                self._emit_event(
-                    run,
-                    "engine.role_policy",
-                    {
-                        "role_id": role.id,
-                        "backend": role.agent.backend,
-                        "permission_mode": role.agent.permission_mode,
-                        "disallowed_tools": list(role.agent.tools.disallowed),
-                    },
-                )
-
                 context_projection = build_project_context(
                     self.store,
                     project,
@@ -1549,6 +1559,16 @@ class ForemanOrchestrator:
                     model=model or None,
                     branch_name=current_task.branch_name,
                     prompt_text=prompt,
+                )
+                self._emit_event(
+                    run,
+                    "engine.role_policy",
+                    {
+                        "role_id": role.id,
+                        "backend": role.agent.backend,
+                        "permission_mode": role.agent.permission_mode,
+                        "disallowed_tools": list(role.agent.tools.disallowed),
+                    },
                 )
                 self._write_runtime_context(
                     run,
@@ -1690,7 +1710,10 @@ class ForemanOrchestrator:
                     result = retry_result
                 if role.agent.session_persistence and result.session_id:
                     session_ids[session_key] = result.session_id
-                outcome = normalize_agent_outcome(result.outcome)
+                if role.id in {"code_reviewer", "security_reviewer"}:
+                    outcome = normalize_reviewer_decision(result.outcome)
+                else:
+                    outcome = normalize_agent_outcome(result.outcome)
                 detail = result.detail
 
             # ── Autonomous contract check: after developer step executes ──
@@ -2766,7 +2789,9 @@ class ForemanOrchestrator:
     ) -> None:
         """Persist one builtin event immediately while the builtin step is active."""
 
-        self._emit_event(run, event_record.event_type, event_record.payload)
+        payload = dict(event_record.payload)
+        payload["schema_version"] = event_record.schema_version
+        self._emit_event(run, event_record.event_type, payload)
 
     def _create_running_run(
         self,

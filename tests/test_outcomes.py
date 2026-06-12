@@ -17,6 +17,7 @@ from foreman.outcomes import (
     STEER,
     SUCCESS,
     CANONICAL_OUTCOMES,
+    CONFLICT,
     normalize_agent_outcome,
     normalize_reviewer_decision,
 )
@@ -48,18 +49,23 @@ class NormalizeAgentOutcomeTests(unittest.TestCase):
     def test_paused(self) -> None:
         self.assertEqual(normalize_agent_outcome("paused"), PAUSED)
 
+    def test_conflict(self) -> None:
+        self.assertEqual(normalize_agent_outcome("conflict"), CONFLICT)
+
     def test_unknown_passthrough(self) -> None:
         result = normalize_agent_outcome("some_custom_outcome")
-        self.assertEqual(result, "some_custom_outcome")
+        self.assertEqual(result, ERROR)
 
 
 class NormalizeReviewerDecisionTests(unittest.TestCase):
     def test_approve_variants(self) -> None:
         self.assertEqual(normalize_reviewer_decision("approve"), APPROVE)
         self.assertEqual(normalize_reviewer_decision("approved"), APPROVE)
-        self.assertEqual(normalize_reviewer_decision("yes"), APPROVE)
-        self.assertEqual(normalize_reviewer_decision("lgtm"), APPROVE)
-        self.assertEqual(normalize_reviewer_decision("pass"), APPROVE)
+
+    def test_informal_approvals_are_denied(self) -> None:
+        self.assertEqual(normalize_reviewer_decision("yes"), DENY)
+        self.assertEqual(normalize_reviewer_decision("lgtm"), DENY)
+        self.assertEqual(normalize_reviewer_decision("pass"), DENY)
 
     def test_deny_variants(self) -> None:
         self.assertEqual(normalize_reviewer_decision("deny"), DENY)
@@ -90,6 +96,7 @@ class CanonicalOutcomesTests(unittest.TestCase):
         self.assertIn(ERROR, CANONICAL_OUTCOMES)
         self.assertIn(KILLED, CANONICAL_OUTCOMES)
         self.assertIn(PAUSED, CANONICAL_OUTCOMES)
+        self.assertIn(CONFLICT, CANONICAL_OUTCOMES)
         self.assertIn(APPROVE, CANONICAL_OUTCOMES)
         self.assertIn(DENY, CANONICAL_OUTCOMES)
         self.assertIn(STEER, CANONICAL_OUTCOMES)

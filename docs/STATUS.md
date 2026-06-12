@@ -4,19 +4,46 @@
 
 - No active sprint.
 - Latest completed sprint: `sprint-46-completion-truth-hardening`
-- Branch: `feat/full-run-transcript-logging`
+- Branch: `fix/backend-correctness-hardening`
 - Next queued sprint in SQLite: `sprint-47-active-run-lease-and-heartbeat-recovery`
 
 ## Active branches
 
-- `feat/full-run-transcript-logging` — persists raw runner output and full
-  builtin test output into SQLite events, and adds a CLI transcript reader so
-  runs can be audited without guessing from branch state
+- `fix/backend-correctness-hardening` — closes residual backend correctness
+  gaps found after transcript logging by tightening persisted builtin event
+  schema versioning and adding regression coverage for strict outcome
+  normalization, lease fencing, lease uniqueness, and crash-recovery token
+  redaction
 
 ## Current focus
 
-- durable transcript logging before delegating more work to Foreman
-- keep sprint 47 queued but inactive until transcript visibility is in place
+- backend correctness hardening before delegating more work to Foreman
+- keep sprint 47 queued but inactive until the current hardening branch lands
+
+## Latest update — backend correctness hardening
+
+- Moved the untracked backend bug note out of `docs/specs/` and preserved it as
+  `docs/checkpoints/2026-04-29-backend-correctness-bug-triage.md`, because
+  `docs/specs/` is reserved for authoritative product direction.
+- Confirmed several alleged bugs were already fixed on `main`: secure merge
+  conflict routing, proof-status merge gating, review/security merge gating,
+  branch-violation event persistence, crash-recovery token redaction, lease
+  fencing, and autonomous `task_started` post-developer-step enforcement.
+- Fixed the remaining confirmed persistence gap: streamed builtin events now
+  get `schema_version` before they are written to SQLite.
+- Fixed conflict recovery so `_builtin:merge` returns the explicit `conflict`
+  outcome and directed recovery can resume from a clean checkout left on
+  `main` after an aborted merge.
+- Fixed reviewer routing after strict outcome normalization: reviewer and
+  security-reviewer runs now use reviewer-decision normalization, while
+  unknown generic agent outcomes still normalize to `error`.
+- Tuned completion proof status so explicit code-review approval plus passing
+  tests can satisfy semantic criteria coverage for small real diffs, avoiding
+  deadlocks from heuristic criteria matching misses.
+- Updated regression tests so they assert the intended safety behavior:
+  unknown agent outcomes normalize to `error`; informal reviewer approvals do
+  not approve; crash-recovery events do not persist lease tokens; lease fencing
+  increments on reacquisition; the active-resource lease index is unique.
 
 ## New findings this session
 

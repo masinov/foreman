@@ -405,7 +405,7 @@ class AcquireLeaseTests(unittest.TestCase):
     def test_expired_lease_can_be_reclaimed(self) -> None:
         store = self.create_store()
         token_a = generate_lease_token()
-        store.acquire_lease(
+        first = store.acquire_lease(
             project_id="p1",
             resource_type="task",
             resource_id="t1",
@@ -413,6 +413,7 @@ class AcquireLeaseTests(unittest.TestCase):
             lease_token=token_a,
             duration_seconds=0.0,  # Immediately expires.
         )
+        assert first is not None
         # Expire all stale leases.
         store.expire_leases(older_than_seconds=0)
         # New holder can now acquire.
@@ -427,17 +428,19 @@ class AcquireLeaseTests(unittest.TestCase):
         self.assertIsNotNone(reclaimed)
         assert reclaimed is not None
         self.assertEqual(reclaimed.holder_id, "holder-b")
+        self.assertEqual(reclaimed.fencing_token, first.fencing_token + 1)
 
     def test_released_lease_can_be_reclaimed(self) -> None:
         store = self.create_store()
         token_a = generate_lease_token()
-        store.acquire_lease(
+        first = store.acquire_lease(
             project_id="p1",
             resource_type="task",
             resource_id="t1",
             holder_id="holder-a",
             lease_token=token_a,
         )
+        assert first is not None
         store.release_lease(
             project_id="p1",
             resource_type="task",
@@ -456,6 +459,7 @@ class AcquireLeaseTests(unittest.TestCase):
         self.assertIsNotNone(reclaimed)
         assert reclaimed is not None
         self.assertEqual(reclaimed.holder_id, "holder-b")
+        self.assertEqual(reclaimed.fencing_token, first.fencing_token + 1)
 
     def test_different_resource_types_do_not_conflict(self) -> None:
         store = self.create_store()
@@ -633,6 +637,14 @@ class MigrationTests(unittest.TestCase):
                 f"SELECT name FROM sqlite_master WHERE type='index' AND name='{idx}'"
             ).fetchone()
             self.assertIsNotNone(row, f"Index {idx} not found")
+        unique_row = store._connection.execute(
+            """
+            SELECT sql FROM sqlite_master
+            WHERE type='index' AND name='idx_leases_active_resource_unique'
+            """
+        ).fetchone()
+        self.assertIsNotNone(unique_row)
+        self.assertIn("CREATE UNIQUE INDEX", unique_row["sql"])
 
     def test_leases_migration_upgrades_existing_db(self) -> None:
         # Simulate a pre-migration-6 database with data.
@@ -643,8 +655,9 @@ class MigrationTests(unittest.TestCase):
         # Create store and initialize up to version 5.
         store = ForemanStore(db_path)
         store.initialize()
-        # Override schema version to simulate pre-6 state.
-        store._connection.execute("DELETE FROM schema_migrations WHERE version = 6")
+        # Override schema version to simulate pre-6 state. Later migrations must
+        # also be removed because schema_version() reports MAX(version).
+        store._connection.execute("DELETE FROM schema_migrations WHERE version >= 6")
 
         # Verify migration 6 is not yet applied.
         version = store.schema_version()
@@ -654,7 +667,7 @@ class MigrationTests(unittest.TestCase):
         store2 = ForemanStore(db_path)
         store2.initialize()
         version2 = store2.schema_version()
-        self.assertEqual(version2, 6)
+        self.assertGreaterEqual(version2, 6)
 
         # Leases table should now exist.
         rows = store2._connection.execute(
