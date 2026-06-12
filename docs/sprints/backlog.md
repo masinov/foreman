@@ -1,5 +1,55 @@
 # Backlog
 
+## Review roadmap from `docs/specs/review.md`
+
+The deep backend review is now the forward implementation roadmap, after the
+already-merged backend hardening branch. Execute these phases in order unless a
+production defect forces an emergency fix.
+
+### Sprint 47 — review Phase 0 correctness
+
+Fix the remaining Phase 0 bugs with regression tests:
+
+- `signal.task_created` must persist `engine.task_created` against the active
+  run.
+- `foreman waive-merge` must import and exercise `uuid4`.
+- dashboard human/stop events must always reference a real run id.
+- dashboard Run/Stop process registry must survive request boundaries and
+  terminate spawned `foreman run` processes.
+- completion evidence should only be built for decision roles and should be
+  invalidated when branch head changes.
+- dashboard cancellation should clear stale workflow resume state.
+- remove the dead `foreman/executor.py` path.
+
+### Sprint 48 — review Phase 1 multi-model fleet
+
+Add per-role `[agent.env]` resolution, runner env plumbing, endpoint session
+isolation docs, token-accounting visibility for zero-cost token runs, and the
+`developer_worker` example role.
+
+### Sprint 49 — review Phase 2 manager hardening
+
+Persist meta-agent sessions and turns, rebuild compact state on every turn,
+make the manager contract honest through CLI gaps, and preserve chat history
+across dashboard restarts.
+
+### Sprint 50 — review Phase 3 executor overrides and escalation ladder
+
+Add task executor overrides, task complexity, role `model_ladder`, deterministic
+model resolution, `workflow.model_selected` events, CLI/API override surfaces,
+and architect-created complexity persistence.
+
+### Sprint 51 — review Phases 4 and 5 token economy
+
+Add opt-in LLM-judged criteria evidence, diff payloads for reviewers, cheap
+triage review with `escalate`, and the `development_tiered` workflow.
+
+### Sprint 52 — review Phases 6 and 7 supervision and transport cleanup
+
+Add manager supervision turns for attention-needed events, optimize SSE/watch
+polling through SQLite `data_version`, persist retry counts, and complete the
+documentation pass for the multi-model/tiered workflow.
+
 ## Tier 3 — Architecture / spec gaps (remaining)
 
 ### SSE transport hardening (deferred)

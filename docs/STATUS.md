@@ -4,8 +4,11 @@
 
 - No active sprint.
 - Latest completed sprint: `sprint-46-completion-truth-hardening`
-- Branch: `fix/backend-correctness-hardening`
-- Next queued sprint in SQLite: `sprint-47-active-run-lease-and-heartbeat-recovery`
+- Last merged branch: `fix/backend-correctness-hardening`
+- Current planning branch: `docs/integrate-review-plan`
+- Next implementation sprint: `sprint-47-review-phase-0-correctness`
+- Existing queued SQLite sprint `sprint-47-active-run-lease-and-heartbeat-recovery`
+  should be deferred until the review Phase 0 correctness bugs are fixed.
 
 ## Active branches
 
@@ -17,10 +20,36 @@
 
 ## Current focus
 
-- backend correctness hardening before delegating more work to Foreman
-- keep sprint 47 queued but inactive until the current hardening branch lands
+- integrate `docs/specs/review.md` into the sprint flow
+- fix remaining review Phase 0 correctness bugs before delegating more work to
+  Foreman
+- after Phase 0 is green, resume the older active-run lease and heartbeat
+  recovery work if it is still relevant
 
-## Latest update — backend correctness hardening
+## Latest update — review integration
+
+- `fix/backend-correctness-hardening` was fast-forward merged to `main` at
+  `b396fda` and pushed to `origin/main`.
+- `docs/specs/review.md` is now treated as the implementation review roadmap.
+  It is not a replacement for `docs/specs/engine-design-v3.md`, which remains
+  the product behavior source of truth.
+- The review's Phase 0 list was compared against current code:
+  - already fixed on `main`: `engine.role_policy` is emitted after run
+    creation; merge conflicts now use the explicit `conflict` outcome and
+    `completion:conflict` routing.
+  - still open and next up: `signal.task_created` references an unbound `run`;
+    `foreman waive-merge` uses `uuid4()` without importing it; dashboard human
+    messages can persist invalid `run_id="none"` events; dashboard run process
+    tracking is per-request and cannot reliably stop spawned runs; completion
+    evidence is built too broadly and can go stale; dashboard task cancellation
+    leaves workflow resume fields intact; the dead `foreman/executor.py` path
+    remains.
+- Phase 1+ from the review becomes the forward path after Phase 0: per-role
+  environment injection for model fleet support, store-backed manager chat,
+  per-task executor overrides and escalation ladders, judged completion
+  evidence, tiered review, supervision turns, and SSE cleanup.
+
+## Previous update — backend correctness hardening
 
 - Moved the untracked backend bug note out of `docs/specs/` and preserved it as
   `docs/checkpoints/2026-04-29-backend-correctness-bug-triage.md`, because
