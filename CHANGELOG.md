@@ -9,6 +9,14 @@ memory changes rather than versioned product releases.
 
 ### Added
 
+- durable, store-backed meta-agent chat (sprint 49, review Phase 2): migration
+  11 (`meta_sessions`, `meta_turns`); store methods for session/turn
+  persistence and cursor paging; a compact `build_state_header()` snapshot
+  rebuilt every turn; a first-turn operating contract; crash-safe assistant-turn
+  persistence; a configurable `meta_agent_model` setting; `limit`/`before`/
+  `has_more` paging on the meta history endpoint
+- `foreman task add --description`, `--sprint SPRINT_ID`, and `--depends-on`
+  (validated against tasks in the same project)
 - Foreman-specific repo instructions in `AGENTS.md`
 - active sprint and backlog docs for the first Foreman implementation slice
 - repository templates for PR summaries, checkpoints, and sprint archives

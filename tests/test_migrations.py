@@ -268,5 +268,58 @@ class SchemaRepairTests(unittest.TestCase):
                 self.assertIn("completion_evidence_json", after)
 
 
+class MetaAgentPersistenceMigrationTests(unittest.TestCase):
+    """Migration 11 must create the meta-agent persistence tables."""
+
+    def test_fresh_db_has_meta_tables(self) -> None:
+        with _make_store() as store:
+            tables = {
+                row["name"]
+                for row in store._connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                ).fetchall()
+            }
+            self.assertIn("meta_sessions", tables)
+            self.assertIn("meta_turns", tables)
+
+    def test_existing_db_upgraded_adds_meta_tables(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "foreman.db"
+            conn = sqlite3.connect(db_path)
+            try:
+                conn.row_factory = sqlite3.Row
+                conn.executescript(_SCHEMA_MIGRATIONS_DDL)
+                # Apply every migration except the last (11) to model an older DB.
+                for version, description, sql in MIGRATIONS[:-1]:
+                    conn.executescript(sql)
+                    conn.execute(
+                        "INSERT INTO schema_migrations (version, description, applied_at)"
+                        " VALUES (?, ?, datetime('now'))",
+                        (version, description),
+                    )
+                conn.commit()
+                before = {
+                    row["name"]
+                    for row in conn.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table'"
+                    ).fetchall()
+                }
+                self.assertNotIn("meta_turns", before)
+            finally:
+                conn.close()
+
+            with ForemanStore(db_path) as store:
+                store.initialize()
+                self.assertEqual(store.schema_version(), len(MIGRATIONS))
+                tables = {
+                    row["name"]
+                    for row in store._connection.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table'"
+                    ).fetchall()
+                }
+                self.assertIn("meta_sessions", tables)
+                self.assertIn("meta_turns", tables)
+
+
 if __name__ == "__main__":
     unittest.main()

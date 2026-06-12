@@ -1,12 +1,14 @@
-"""Meta-agent service: persistent Claude Code session per project.
+"""Meta-agent service: durable, store-backed planning chat per project.
 
-Each project gets one long-lived session. Messages are sent to a Claude Code
-subprocess (via --resume) so the agent retains full conversation context and
-tool history. The first message in a new session prepends a rich Foreman
-context block so the agent understands the project structure.
+Each project gets one long-lived Claude Code session. Sessions and turns are
+persisted in SQLite (``meta_sessions`` / ``meta_turns``) so chat history and
+session resumption survive dashboard restarts. The Claude Code resume id is
+read from and written to the store rather than an in-process registry.
 
-Conversation history is kept in memory and returned to the frontend when the
-panel reopens.
+Every turn rebuilds a compact, authoritative state header from the database so
+the manager always reasons about current world state instead of stale memory.
+The first turn of a session also injects an explicit operating contract that
+enumerates exactly what the manager may do through the ``foreman`` CLI.
 
 NDJSON event types emitted by process_message():
   {"type": "text_delta", "text": "..."}       — streaming text fragment
@@ -25,89 +27,162 @@ from typing import Any
 
 
 # ---------------------------------------------------------------------------
-# In-memory session registry
+# Store-backed history wrappers
 # ---------------------------------------------------------------------------
 
-class _Session:
-    __slots__ = ("session_id", "history")
-
-    def __init__(self) -> None:
-        self.session_id: str | None = None  # Claude --resume session ID
-        self.history: list[dict[str, Any]] = []  # [{role, text, tool_uses}]
-
-
-_sessions: dict[str, _Session] = {}
-
-
-def _get_session(project_id: str) -> _Session:
-    if project_id not in _sessions:
-        _sessions[project_id] = _Session()
-    return _sessions[project_id]
+def get_history(
+    store: Any,
+    project_id: str,
+    *,
+    limit: int = 50,
+    before_id: str | None = None,
+) -> tuple[list[dict[str, Any]], bool]:
+    """Return persisted conversation turns (oldest-first) plus ``has_more``."""
+    return store.list_meta_turns(project_id, limit=limit, before_id=before_id)
 
 
-def get_history(project_id: str) -> list[dict[str, Any]]:
-    """Return the stored conversation turns for one project."""
-    session = _sessions.get(project_id)
-    if session is None:
-        return []
-    return list(session.history)
-
-
-def clear_session(project_id: str) -> None:
-    """Discard the in-memory session for one project."""
-    _sessions.pop(project_id, None)
+def clear_session(store: Any, project_id: str) -> None:
+    """Delete the persisted session row and all turns for one project."""
+    store.clear_meta_session(project_id)
 
 
 # ---------------------------------------------------------------------------
-# Context injection
+# Compact world-state header (rebuilt every turn)
 # ---------------------------------------------------------------------------
 
-def _build_context(project: Any, sprints: list[dict[str, Any]]) -> str:
-    """Return the system context injected at the start of a new session."""
+_NOTEWORTHY_EVENT_MARKERS = ("blocked", "evidence", "sprint", "conflict", "error")
 
+
+def _truncate(text: str | None, width: int) -> str:
+    value = (text or "").replace("\n", " ").strip()
+    if len(value) <= width:
+        return value
+    return value[: max(0, width - 1)].rstrip() + "…"
+
+
+def build_state_header(store: Any, project: Any) -> str:
+    """Return a compact, fixed-format snapshot of current project state.
+
+    The header is regenerated on every turn and reflects the database now. It
+    is deliberately bounded (≈≤1,500 tokens) so it can be cheaply re-injected.
+    """
+
+    settings = project.settings or {}
     lines: list[str] = [
-        "You are a meta-operator for the Foreman project management system.",
+        "## FOREMAN STATE (regenerated each turn)",
+        (
+            "This state block is regenerated each turn and reflects the database "
+            "now; trust it over your memory of earlier turns."
+        ),
         "",
-        f"Project: {project.name}",
-        f"Repository: {project.repo_path}",
-        f"Autonomy level: {project.autonomy_level}",
+        f"Project: {project.name} ({project.id})",
+        f"Workflow: {project.workflow_id} | Autonomy: {project.autonomy_level}",
         "",
-        "You have full access to the repository file system, git, and the `foreman` CLI.",
-        "Use your tools to inspect code, run tests, create branches, update tasks, and",
-        "make concrete changes — do not just describe what could be done.",
-        "",
-        "## Current sprint plan",
+        "### Sprints",
     ]
 
+    sprints = store.list_sprints(project.id)
     if not sprints:
-        lines.append("No sprints exist yet.")
+        lines.append("(none)")
     else:
-        for s in sprints:
-            counts = s.get("task_counts") or {}
-            total = sum(counts.values())
-            status = s.get("status", "unknown")
+        for sprint in sprints:
+            tasks = store.list_tasks(sprint_id=sprint.id)
+            counts: dict[str, int] = {}
+            for task in tasks:
+                counts[task.status] = counts.get(task.status, 0) + 1
+            count_text = ", ".join(
+                f"{status}={n}" for status, n in sorted(counts.items())
+            ) or "0 tasks"
             lines.append(
-                f"  [{status}] {s.get('title', s.get('id', '?'))} "
-                f"({total} tasks)"
+                f"- [{sprint.status}] {sprint.title} ({sprint.id}) — {count_text}"
             )
-            if s.get("goal"):
-                lines.append(f"    Goal: {s['goal']}")
 
-    active = next((s for s in sprints if s.get("status") == "active"), None)
-    if active:
-        lines += [
-            "",
-            f"Active sprint: {active.get('title', active.get('id'))}",
-        ]
-        if active.get("goal"):
-            lines.append(f"Goal: {active['goal']}")
+    active = store.get_active_sprint(project.id)
+    if active is not None:
+        lines += ["", f"### Active sprint task table — {active.title} ({active.id})"]
+        active_tasks = store.list_tasks(sprint_id=active.id)
+        if not active_tasks:
+            lines.append("(no tasks)")
+        else:
+            lines.append("id | status | type | title | model_override | blocked_reason")
+            for task in active_tasks:
+                override = getattr(task, "assigned_role", None) or "-"
+                lines.append(
+                    f"{task.id} | {task.status} | {task.task_type} | "
+                    f"{_truncate(task.title, 40)} | {override} | "
+                    f"{_truncate(task.blocked_reason, 80) or '-'}"
+                )
 
-    lines += [
-        "",
-        "---",
-        "The user's message follows.",
+    gates = store.list_decision_gates(project.id, status="pending")
+    lines += ["", "### Pending decision gates"]
+    if not gates:
+        lines.append("(none)")
+    else:
+        for gate in gates:
+            lines.append(f"- {gate.id}: {_truncate(gate.conflict_description, 100)}")
+
+    lines += ["", "### Recent noteworthy events (newest first)"]
+    recent = store.list_recent_events(project_id=project.id, limit=40)
+    noteworthy = [
+        event
+        for event in recent
+        if any(marker in event.event_type for marker in _NOTEWORTHY_EVENT_MARKERS)
     ]
+    if not noteworthy:
+        lines.append("(none)")
+    else:
+        for event in noteworthy[:5]:
+            lines.append(f"- {event.timestamp} {event.event_type}")
+
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# First-turn operating contract
+# ---------------------------------------------------------------------------
+
+def build_operating_contract(project: Any) -> str:
+    """Return the explicit manager operating contract for a fresh session."""
+
+    pid = project.id
+    return "\n".join(
+        [
+            "## OPERATING CONTRACT",
+            "You are the manager seat for the Foreman engine. You plan and steer",
+            "work through the `foreman` CLI. You operate in the project repository",
+            f"at {project.repo_path}.",
+            "",
+            "Inspect:",
+            f"  foreman board {pid}",
+            "  foreman task show <task-id>",
+            f"  foreman history {pid}",
+            f"  foreman cost {pid}",
+            f"  foreman sprint list {pid}",
+            "",
+            "Plan:",
+            f"  foreman sprint add {pid} --title ... --goal ...",
+            "",
+            "Promote (create a task):",
+            f"  foreman task add {pid} --title ... --type ... --criteria ... \\",
+            "      --description ... --sprint <sprint-id> --depends-on <task-id,...>",
+            "",
+            "Assign (per-task model override; Phase 3):",
+            "  foreman task override <task-id> --step develop --model ... [--ladder-start N]",
+            "",
+            "Steer:",
+            "  foreman approve <task-id> --note ...",
+            "  foreman deny <task-id> --note ...",
+            "  foreman task block/unblock/cancel <task-id>",
+            "",
+            "Hard rules:",
+            "- Never edit anything under `.foreman/` (tool-managed runtime state).",
+            "- Never merge branches manually.",
+            "- Never run `foreman run` yourself; the human or supervision loop",
+            "  triggers engine runs.",
+            "- Always re-read the FOREMAN STATE header above before acting; it is",
+            "  the source of truth and overrides your memory.",
+        ]
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -115,13 +190,14 @@ def _build_context(project: Any, sprints: list[dict[str, Any]]) -> str:
 # ---------------------------------------------------------------------------
 
 async def _run_claude(
-    session: _Session,
+    session_id: str | None,
     prompt: str,
     *,
     repo_path: str,
-    executable: str = "claude",
-) -> AsyncIterator[str]:
-    """Invoke Claude Code and yield NDJSON event strings."""
+    executable: str,
+    model: str | None,
+) -> AsyncIterator[dict[str, Any]]:
+    """Invoke Claude Code and yield structured event dicts."""
 
     cmd = [
         executable,
@@ -130,8 +206,10 @@ async def _run_claude(
         "--output-format", "stream-json",
         "--permission-mode", "bypassPermissions",
     ]
-    if session.session_id:
-        cmd.extend(["--resume", session.session_id])
+    if model:
+        cmd.extend(["--model", model])
+    if session_id:
+        cmd.extend(["--resume", session_id])
 
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -142,7 +220,7 @@ async def _run_claude(
             cwd=repo_path,
         )
     except (OSError, FileNotFoundError) as exc:
-        yield json.dumps({"type": "error", "message": f"Failed to start Claude Code: {exc}"}) + "\n"
+        yield {"type": "error", "message": f"Failed to start Claude Code: {exc}"}
         return
 
     assert proc.stdin is not None
@@ -157,12 +235,8 @@ async def _run_claude(
             proc.kill()
         except OSError:
             pass
-        yield json.dumps({"type": "error", "message": f"Failed to write prompt: {exc}"}) + "\n"
+        yield {"type": "error", "message": f"Failed to write prompt: {exc}"}
         return
-
-    assistant_text = ""
-    tool_uses: list[dict[str, Any]] = []
-    new_session_id: str | None = None
 
     async for raw_line in proc.stdout:
         line = raw_line.decode("utf-8", errors="replace").strip()
@@ -188,38 +262,25 @@ async def _run_claude(
                 if block.get("type") == "text":
                     text = str(block.get("text", ""))
                     if text:
-                        assistant_text += text
-                        yield json.dumps({"type": "text_delta", "text": text}) + "\n"
+                        yield {"type": "text_delta", "text": text}
                 elif block.get("type") == "tool_use":
-                    tool_name = str(block.get("name", "tool"))
-                    tool_input = block.get("input") or {}
-                    tool_uses.append({"name": tool_name, "input": tool_input})
-                    yield json.dumps({"type": "tool_use", "name": tool_name}) + "\n"
+                    yield {
+                        "type": "tool_use",
+                        "name": str(block.get("name", "tool")),
+                        "input": block.get("input") or {},
+                    }
 
         elif event_type == "result":
             sid = event.get("session_id")
             if sid:
-                new_session_id = str(sid)
-            is_error = bool(event.get("is_error"))
-            if is_error:
+                yield {"type": "session", "session_id": str(sid)}
+            if bool(event.get("is_error")):
                 result_text = str(event.get("result") or "Claude Code returned an error.")
-                yield json.dumps({"type": "error", "message": result_text}) + "\n"
+                yield {"type": "error", "message": result_text}
                 await proc.wait()
                 return
 
     await proc.wait()
-
-    if new_session_id:
-        session.session_id = new_session_id
-
-    yield json.dumps({"type": "done", "session_id": session.session_id}) + "\n"
-
-    # Persist assistant turn after successful completion
-    session.history.append({
-        "role": "assistant",
-        "text": assistant_text,
-        "tool_uses": tool_uses,
-    })
 
 
 # ---------------------------------------------------------------------------
@@ -230,23 +291,19 @@ async def process_message(
     project_id: str,
     message: str,
     *,
+    store: Any,
     project: Any,
-    sprints: list[dict[str, Any]],
     executable: str = "claude",
 ) -> AsyncIterator[str]:
-    """Stream NDJSON events for one user message turn.
+    """Stream NDJSON events for one user message turn, persisting both turns.
 
-    Args:
-        project_id: Identifies the session to use.
-        message: The user's raw input.
-        project: The Project model instance (needs .repo_path, .settings, .autonomy_level).
-        sprints: List of sprint dicts from DashboardService (for context injection).
-        executable: Claude CLI binary name.
+    The user turn is persisted before the model is invoked. The assistant turn
+    is persisted in the ``finally`` path with whatever text accumulated, flagged
+    ``interrupted`` if the stream errored or was cancelled, so a crash never
+    silently drops a turn.
     """
 
-    session = _get_session(project_id)
     backend = (project.settings or {}).get("meta_agent_backend", "claude")
-
     if backend != "claude":
         yield json.dumps({
             "type": "error",
@@ -264,20 +321,64 @@ async def process_message(
         }) + "\n"
         return
 
-    # Record user turn before sending (so history survives even if stream fails)
-    session.history.append({"role": "user", "text": message, "tool_uses": []})
+    session_id = store.get_meta_session(project_id)
+    is_first_turn = session_id is None
 
-    # First message in a fresh session: prepend rich Foreman context
-    is_new_session = session.session_id is None and len(session.history) == 1
-    if is_new_session:
-        prompt = _build_context(project, sprints) + "\n\n" + message
-    else:
-        prompt = message
+    # Persist the user turn up front so it survives a mid-stream failure.
+    store.append_meta_turn(project_id, role="user", text=message)
 
-    async for chunk in _run_claude(
-        session,
-        prompt,
-        repo_path=project.repo_path,
-        executable=executable,
-    ):
-        yield chunk
+    state_header = build_state_header(store, project)
+    parts = [state_header, "---"]
+    if is_first_turn:
+        parts += [build_operating_contract(project), "---"]
+    parts.append(message)
+    prompt = "\n\n".join(parts)
+
+    model = (project.settings or {}).get("meta_agent_model") or None
+
+    assistant_text = ""
+    tool_uses: list[dict[str, Any]] = []
+    interrupted = False
+    new_session_id = session_id
+
+    try:
+        async for event in _run_claude(
+            session_id,
+            prompt,
+            repo_path=project.repo_path,
+            executable=executable,
+            model=model,
+        ):
+            etype = event["type"]
+            if etype == "text_delta":
+                assistant_text += event["text"]
+                yield json.dumps({"type": "text_delta", "text": event["text"]}) + "\n"
+            elif etype == "tool_use":
+                tool_uses.append({"name": event["name"], "input": event["input"]})
+                yield json.dumps({"type": "tool_use", "name": event["name"]}) + "\n"
+            elif etype == "session":
+                new_session_id = event["session_id"]
+            elif etype == "error":
+                interrupted = True
+                yield json.dumps({"type": "error", "message": event["message"]}) + "\n"
+    except (asyncio.CancelledError, GeneratorExit):
+        interrupted = True
+        raise
+    except Exception as exc:  # noqa: BLE001 - surface any backend failure as a turn error
+        interrupted = True
+        yield json.dumps({"type": "error", "message": f"Meta-agent stream failed: {exc}"}) + "\n"
+    finally:
+        if new_session_id and new_session_id != session_id:
+            store.save_meta_session(project_id, new_session_id)
+        persisted_tool_uses = list(tool_uses)
+        if interrupted:
+            persisted_tool_uses.append({"interrupted": True})
+        store.append_meta_turn(
+            project_id,
+            role="assistant",
+            text=assistant_text,
+            tool_uses=persisted_tool_uses,
+        )
+
+    if not interrupted:
+        yield json.dumps({"type": "done", "session_id": new_session_id}) + "\n"

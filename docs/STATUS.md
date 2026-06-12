@@ -2,8 +2,8 @@
 
 ## Current sprint
 
-- Active implementation sprint: none; `sprint-47-active-run-lease-and-heartbeat-recovery`
-  is merged.
+- Active implementation sprint: `sprint-49-review-phase-2-manager-hardening`
+  on `feat/meta-agent-persistence` (not yet merged).
 - Latest completed sprint: `sprint-46-completion-truth-hardening`
 - Latest completed review sprint: `sprint-47-review-phase-0-correctness`
 - Latest completed model-backend sprint:
@@ -31,7 +31,26 @@
 
 ## Current focus
 
-- select the next review-roadmap sprint from `docs/sprints/backlog.md`
+- land sprint-49 review Phase 2 (store-backed meta-agent + honest CLI contract)
+  on `feat/meta-agent-persistence`, then proceed to Phase 3 (sprint 50)
+
+## Latest update — review Phase 2 manager hardening
+
+- `feat/meta-agent-persistence` implements review Phase 2: the meta-agent chat
+  panel is now durable and store-backed.
+- Migration 11 adds `meta_sessions` and `meta_turns`; the in-memory
+  `_sessions` registry is removed and chat history plus Claude Code session
+  resumption now survive dashboard restarts.
+- Every turn rebuilds a compact `build_state_header()` world snapshot from
+  SQLite, and the first turn of a session injects `build_operating_contract()`
+  enumerating the manager's exact `foreman` CLI surface and hard rules.
+- The assistant turn is persisted in a `finally` path flagged `interrupted` on
+  error/cancel, so a crash never silently drops a turn; `meta_agent_model`
+  selects the manager model.
+- `foreman task add` gained `--description`, `--sprint`, and `--depends-on` so
+  the contract's promotion surface is honest.
+- Full local validation passed:
+  `./venv/bin/python -m unittest discover -s tests` ran 528 tests.
 
 ## Latest update - active-run lease heartbeat recovery merged
 

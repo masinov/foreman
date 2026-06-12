@@ -1,13 +1,50 @@
 # Current Sprint
 
-- Active implementation sprint: none; `sprint-47-active-run-lease-and-heartbeat-recovery`
-  is merged.
-- Branch: none for implementation work; docs closeout branch is
-  `docs/active-run-lease-closeout`.
-- Local Foreman sprint: `sprint-review-phase-0-correctness` in `.foreman.db`
-- Last completed sprint: `sprint-48-worker-fleet-minimax-smoke`
-- Current deliverable: harden task lease liveness during native runner streams
-  and crash recovery.
+- Active implementation sprint: `sprint-49-review-phase-2-manager-hardening`
+  on `feat/meta-agent-persistence` (not yet merged).
+- Branch: `feat/meta-agent-persistence`.
+- Last completed sprint: `sprint-47-active-run-lease-and-heartbeat-recovery`.
+- Current deliverable: make the meta-agent chat panel a durable, store-backed
+  planning partner with always-fresh world state and an honest CLI contract.
+
+## Sprint 49 Review Phase 2 Manager Hardening
+
+Implemented on `feat/meta-agent-persistence`:
+
+1. Migration 11 adds `meta_sessions` and `meta_turns` plus
+   `idx_meta_turns_project`; applies cleanly on fresh and existing DBs.
+2. `ForemanStore` gains `get_meta_session`, `save_meta_session`,
+   `append_meta_turn`, `list_meta_turns` (oldest-first with `has_more` cursor
+   paging), and `clear_meta_session`.
+3. `foreman/meta_agent.py` is now store-backed: the in-memory `_sessions`
+   registry is gone, session id and history come from SQLite, the assistant
+   turn is persisted in a `finally` path (flagged `interrupted` on
+   error/cancel) so a crash never silently drops a turn, and `--model` is
+   passed from the `meta_agent_model` project setting.
+4. `build_state_header()` regenerates a compact, fixed-format world snapshot
+   each turn (project/workflow/autonomy, sprint list with task counts, active
+   sprint task table with 80-char blocked-reason truncation, pending decision
+   gates, last 5 noteworthy events) with an explicit "trust this over your
+   memory" disclaimer.
+5. `build_operating_contract()` enumerates the manager's exact CLI surface and
+   hard rules on the first turn of a session (re-injected after
+   `clear_session`).
+6. The dashboard `meta/history` endpoint supports `limit`/`before`/`has_more`;
+   `meta/message` keeps the store open for the full streaming turn.
+7. `foreman task add` gained `--description`, `--sprint SPRINT_ID`, and
+   `--depends-on` (comma-separated, validated to exist in the same project).
+
+Passing validation:
+
+- `./venv/bin/python -m unittest tests.test_meta_agent -v` (7 new)
+- `./venv/bin/python -m unittest tests.test_migrations -v`
+- `./venv/bin/python -m unittest tests.test_cli.ForemanCLISmokeTests.test_task_add_targets_explicit_sprint_with_description_and_dependencies -v`
+- `./venv/bin/python -m unittest tests.test_dashboard.DashboardMetaAgentTests -v`
+- `./venv/bin/python -m unittest discover -s tests` — 528 tests passed
+- `./venv/bin/python scripts/validate_repo_memory.py`
+- `git diff --check`
+
+## Sprint 47 Active-Run Lease Recovery
 
 ## Sprint 47 Active-Run Lease Recovery
 

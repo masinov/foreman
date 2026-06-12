@@ -2918,12 +2918,17 @@ class DashboardMetaAgentTests(unittest.TestCase):
         self.assertEqual(response.status_code, 404)
 
     def test_meta_history_reflects_cleared_session(self):
-        """After clearing session, history returns empty list again."""
-        from foreman.meta_agent import _sessions, _get_session
+        """After clearing session, persisted history returns empty list again."""
         project = self._seed()
-        # Seed an in-memory session manually
-        sess = _get_session(project.id)
-        sess.history = [{"role": "user", "text": "hello", "tool_uses": []}]
+        # Persist a session + turn directly in the store.
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        store.save_meta_session(project.id, "session-xyz")
+        store.append_meta_turn(project.id, role="user", text="hello")
+        store.close()
+        # History should reflect the persisted turn.
+        resp0 = self._request("GET", f"/api/projects/{project.id}/meta/history")
+        self.assertEqual(len(resp0.json()["turns"]), 1)
         # Clear via API
         resp = self._request("DELETE", f"/api/projects/{project.id}/meta/session")
         self.assertEqual(resp.status_code, 200)

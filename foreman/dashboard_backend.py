@@ -331,22 +331,28 @@ def create_dashboard_app(
         if not message:
             raise DashboardValidationError("message cannot be empty.")
 
+        # Validate up front; the streaming generator opens its own store so it
+        # can keep state available for the full turn (history + session writes).
         with _open_store(db_path) as store:
-            project = store.get_project(project_id)
-            if project is None:
+            if store.get_project(project_id) is None:
                 raise DashboardNotFoundError(f"Project not found: {project_id}")
-            sprints_payload = DashboardService(store).list_project_sprints(project_id)
-
-        sprints = sprints_payload.get("sprints", [])
 
         async def _stream():
-            async for chunk in meta_process_message(
-                project_id,
-                message,
-                project=project,
-                sprints=sprints,
-            ):
-                yield chunk.encode("utf-8")
+            with _open_store(db_path) as store:
+                project = store.get_project(project_id)
+                if project is None:
+                    yield (json.dumps({
+                        "type": "error",
+                        "message": f"Project not found: {project_id}",
+                    }) + "\n").encode("utf-8")
+                    return
+                async for chunk in meta_process_message(
+                    project_id,
+                    message,
+                    store=store,
+                    project=project,
+                ):
+                    yield chunk.encode("utf-8")
 
         return StreamingResponse(
             _stream(),
@@ -355,25 +361,33 @@ def create_dashboard_app(
         )
 
     @app.get("/api/projects/{project_id}/meta/history")
-    async def meta_history(project_id: str) -> dict[str, Any]:
+    async def meta_history(
+        project_id: str,
+        limit: int = 50,
+        before: str | None = None,
+    ) -> dict[str, Any]:
         from .meta_agent import get_history as meta_get_history
 
         with _open_store(db_path) as store:
-            project = store.get_project(project_id)
-            if project is None:
+            if store.get_project(project_id) is None:
                 raise DashboardNotFoundError(f"Project not found: {project_id}")
-        turns = meta_get_history(project_id)
-        return {"project_id": project_id, "turns": turns}
+            turns, has_more = meta_get_history(
+                store, project_id, limit=limit, before_id=before
+            )
+        return {
+            "project_id": project_id,
+            "turns": turns,
+            "has_more": has_more,
+        }
 
     @app.delete("/api/projects/{project_id}/meta/session")
     async def clear_meta_session(project_id: str) -> dict[str, Any]:
         from .meta_agent import clear_session as meta_clear_session
 
         with _open_store(db_path) as store:
-            project = store.get_project(project_id)
-            if project is None:
+            if store.get_project(project_id) is None:
                 raise DashboardNotFoundError(f"Project not found: {project_id}")
-        meta_clear_session(project_id)
+            meta_clear_session(store, project_id)
         return {"project_id": project_id, "cleared": True}
 
     @app.post("/api/projects/{project_id}/gates")

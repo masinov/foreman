@@ -1582,13 +1582,39 @@ def handle_task_add(args: argparse.Namespace) -> int:
         if project is None:
             return 1
 
-        sprint = _select_task_creation_sprint(store, project.id)
-        if sprint is None:
-            print(
-                f"Project {project.id} has no active or planned sprint. Create one with `foreman sprint add` first.",
-                file=sys.stderr,
-            )
-            return 1
+        sprint_id = getattr(args, "sprint_id", None)
+        if sprint_id:
+            sprint = store.get_sprint(sprint_id)
+            if sprint is None or sprint.project_id != project.id:
+                print(
+                    f"Sprint {sprint_id} not found in project {project.id}.",
+                    file=sys.stderr,
+                )
+                return 1
+        else:
+            sprint = _select_task_creation_sprint(store, project.id)
+            if sprint is None:
+                print(
+                    f"Project {project.id} has no active or planned sprint. Create one with `foreman sprint add` first.",
+                    file=sys.stderr,
+                )
+                return 1
+
+        depends_on_ids: list[str] = []
+        raw_depends = getattr(args, "depends_on", None)
+        if raw_depends:
+            for dep_id in (part.strip() for part in raw_depends.split(",")):
+                if not dep_id:
+                    continue
+                dep_task = store.get_task(dep_id)
+                if dep_task is None or dep_task.project_id != project.id:
+                    print(
+                        f"Dependency task {dep_id} not found in project {project.id}.",
+                        file=sys.stderr,
+                    )
+                    return 1
+                if dep_id not in depends_on_ids:
+                    depends_on_ids.append(dep_id)
 
         existing_tasks = store.list_tasks(sprint_id=sprint.id)
         task = Task(
@@ -1596,8 +1622,10 @@ def handle_task_add(args: argparse.Namespace) -> int:
             sprint_id=sprint.id,
             project_id=project.id,
             title=args.title,
+            description=getattr(args, "description", None),
             task_type=args.task_type,
             acceptance_criteria=args.criteria,
+            depends_on_task_ids=depends_on_ids,
             order_index=_next_order_index([item.order_index for item in existing_tasks]),
         )
         store.save_task(task)
@@ -1611,6 +1639,7 @@ def handle_task_add(args: argparse.Namespace) -> int:
         f"Task: {task.id} | {task.title}",
         f"Type: {task.task_type}",
         f"Criteria: {task.acceptance_criteria or 'n/a'}",
+        f"Depends on: {', '.join(task.depends_on_task_ids) if task.depends_on_task_ids else 'none'}",
         f"Status: {task.status}",
     )
     return 0
@@ -2063,6 +2092,19 @@ def build_parser() -> argparse.ArgumentParser:
     task_add.add_argument("--title", required=True, help="Task title.")
     task_add.add_argument("--type", dest="task_type", default="feature", help="Task type.")
     task_add.add_argument("--criteria", required=True, help="Acceptance criteria.")
+    task_add.add_argument("--description", help="Task description.")
+    task_add.add_argument(
+        "--sprint",
+        dest="sprint_id",
+        metavar="SPRINT_ID",
+        help="Target sprint id. Defaults to the active sprint, else the first planned sprint.",
+    )
+    task_add.add_argument(
+        "--depends-on",
+        dest="depends_on",
+        metavar="TASK_IDS",
+        help="Comma-separated task ids this task depends on (must exist in the same project).",
+    )
     _add_db_option(
         task_add,
         help_text=f"Path to the SQLite store containing the project. {DB_OPTION_NOTE}",

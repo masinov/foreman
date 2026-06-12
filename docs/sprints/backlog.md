@@ -27,11 +27,16 @@ Add per-role `[agent.env]` resolution, runner env plumbing, endpoint session
 isolation docs, token-accounting visibility for zero-cost token runs, and the
 `developer_worker` example role.
 
-### Sprint 49 — review Phase 2 manager hardening
+### Sprint 49 — review Phase 2 manager hardening (implemented on `feat/meta-agent-persistence`)
 
 Persist meta-agent sessions and turns, rebuild compact state on every turn,
 make the manager contract honest through CLI gaps, and preserve chat history
 across dashboard restarts.
+
+Done: migration 11 (`meta_sessions`/`meta_turns`), store-backed `meta_agent`
+with crash-safe turn persistence, `build_state_header`/`build_operating_contract`,
+`meta_agent_model` setting, paginated `meta/history`, and `foreman task add`
+`--description`/`--sprint`/`--depends-on`. Pending merge to `main`.
 
 ### Sprint 50 — review Phase 3 executor overrides and escalation ladder
 

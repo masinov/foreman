@@ -529,6 +529,72 @@ class ForemanCLISmokeTests(unittest.TestCase):
         self.assertEqual(task.status, "cancelled")
         self.assertIsNotNone(task.completed_at)
 
+    def test_task_add_targets_explicit_sprint_with_description_and_dependencies(self) -> None:
+        store, db_path = self.create_store()
+        project = Project(
+            id="project-deps",
+            name="Foreman Demo",
+            repo_path="/tmp/foreman-demo",
+            workflow_id="development",
+        )
+        active_sprint = Sprint(
+            id="sprint-active",
+            project_id=project.id,
+            title="Active",
+            status="active",
+        )
+        planned_sprint = Sprint(
+            id="sprint-planned",
+            project_id=project.id,
+            title="Planned",
+            status="planned",
+            order_index=1,
+        )
+        store.save_project(project)
+        store.save_sprint(active_sprint)
+        store.save_sprint(planned_sprint)
+
+        # Seed a dependency task in the active sprint.
+        base = self.run_cli(
+            "task", "add", project.id,
+            "--title", "Base task",
+            "--criteria", "done",
+            "--db", str(db_path),
+        )
+        self.assertEqual(base.returncode, 0, base.stderr)
+        base_task = store.list_tasks(sprint_id=active_sprint.id)[0]
+
+        # Add a task explicitly into the planned sprint that depends on the base.
+        result = self.run_cli(
+            "task", "add", project.id,
+            "--title", "Dependent task",
+            "--criteria", "linked",
+            "--description", "needs the base done first",
+            "--sprint", planned_sprint.id,
+            "--depends-on", base_task.id,
+            "--db", str(db_path),
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(base_task.id, result.stdout)
+
+        dependent = store.list_tasks(sprint_id=planned_sprint.id)[0]
+        self.assertEqual(dependent.description, "needs the base done first")
+        self.assertEqual(dependent.depends_on_task_ids, [base_task.id])
+
+        # Unknown sprint and unknown dependency are both rejected.
+        bad_sprint = self.run_cli(
+            "task", "add", project.id,
+            "--title", "x", "--criteria", "c",
+            "--sprint", "no-such-sprint", "--db", str(db_path),
+        )
+        self.assertEqual(bad_sprint.returncode, 1)
+        bad_dep = self.run_cli(
+            "task", "add", project.id,
+            "--title", "y", "--criteria", "c",
+            "--depends-on", "ghost-task", "--db", str(db_path),
+        )
+        self.assertEqual(bad_dep.returncode, 1)
+
     def test_waive_merge_creates_active_waiver(self) -> None:
         store, db_path = self.create_store()
         repo_path = self.create_repo_path()

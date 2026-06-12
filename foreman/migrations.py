@@ -253,4 +253,28 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         ON merge_waivers(task_id);
         """,
     ),
+    (
+        11,
+        "add meta_sessions and meta_turns for durable meta-agent chat",
+        """
+        CREATE TABLE IF NOT EXISTS meta_sessions (
+            project_id   TEXT PRIMARY KEY REFERENCES projects(id),
+            session_id   TEXT,
+            updated_at   TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS meta_turns (
+            id             TEXT PRIMARY KEY,
+            project_id     TEXT NOT NULL REFERENCES projects(id),
+            role           TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
+            text           TEXT NOT NULL,
+            tool_uses_json TEXT NOT NULL DEFAULT '[]',
+            origin         TEXT NOT NULL DEFAULT 'chat',
+            created_at     TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_meta_turns_project
+        ON meta_turns(project_id, created_at);
+        """,
+    ),
 ]
