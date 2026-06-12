@@ -1,11 +1,13 @@
 # Current Sprint
 
-- Active implementation sprint: `sprint-48-worker-fleet-minimax-smoke`
-- Branch: `feat/worker-fleet-minimax-smoke`
+- Active implementation sprint: none; `sprint-48-worker-fleet-minimax-smoke`
+  is merged.
+- Branch: none for implementation work; docs closeout branch is
+  `docs/minimax-smoke-closeout`.
 - Local Foreman sprint: `sprint-review-phase-0-correctness` in `.foreman.db`
-- Last completed sprint: `sprint-47-review-phase-0-correctness`
+- Last completed sprint: `sprint-48-worker-fleet-minimax-smoke`
 - Existing queued SQLite sprint: `sprint-47-active-run-lease-and-heartbeat-recovery`
-  remains deferred until the immediate Minimax/worker-fleet smoke is reliable.
+  can resume unless reprioritized.
 
 ## Review Integration
 
@@ -86,15 +88,16 @@ sandboxed shell.
 - The stale hidden host-side Foreman and Claude processes were identified and
   stopped before sprint closeout.
 
-## Current Sprint 48
+## Sprint 48 Outcome
 
 - Sprint: `sprint-48-worker-fleet-minimax-smoke`
 - Branch: `feat/worker-fleet-minimax-smoke`
-- Deliverable: a repeatable Claude Code/MiniMax M3 smoke that can delegate a
-  narrow repo edit without hanging, plus the minimal role/env runner
-  configuration needed to make Phase 1 model-fleet work reliable.
-- After that: resume `sprint-47-active-run-lease-and-heartbeat-recovery` if it
-  is still relevant.
+- Merged to `main`: `07649e6`
+- Deliverable: repeatable Claude Code/MiniMax M3 smoke plus the minimal
+  role/env runner configuration needed to make Phase 1 model-endpoint work
+  reliable.
+- Next: resume `sprint-47-active-run-lease-and-heartbeat-recovery` if it is
+  still relevant.
 
 ## Sprint 48 Progress
 

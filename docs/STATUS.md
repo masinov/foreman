@@ -2,19 +2,24 @@
 
 ## Current sprint
 
-- Active implementation sprint: `sprint-48-worker-fleet-minimax-smoke`
+- Active implementation sprint: none; next sprint can resume the deferred
+  active-run lease and heartbeat recovery work unless reprioritized.
 - Latest completed sprint: `sprint-46-completion-truth-hardening`
 - Latest completed review sprint: `sprint-47-review-phase-0-correctness`
-- Last merged branch: `fix/review-phase0-correctness`
-- Current implementation branch: `feat/worker-fleet-minimax-smoke`
+- Latest completed model-backend sprint:
+  `sprint-48-worker-fleet-minimax-smoke`
+- Last merged branch: `feat/worker-fleet-minimax-smoke`
+- Current implementation branch: none
 - Existing queued SQLite sprint `sprint-47-active-run-lease-and-heartbeat-recovery`
   remains useful, but should follow a short Phase 1 worker-fleet smoke because
   Minimax delegation is now the immediate operating constraint.
 
 ## Active branches
 
-- `feat/worker-fleet-minimax-smoke` — implements the Phase 1 role env runner
-  seam and validates sequential MiniMax M3 execution through Claude Code
+- `docs/minimax-smoke-closeout` — updates repo memory after merging the
+  MiniMax role-env smoke to `main`
+- `feat/worker-fleet-minimax-smoke` — merged to `main` at `07649e6`; retained
+  on origin as the completed MiniMax role-env implementation branch
 - `docs/phase0-closeout-status` — merged to `main` at `6f149f5`; retained on
   origin as the Phase 0 closeout docs branch
 - `fix/review-phase0-correctness` — merged to `main` at `5883075`; retained on
@@ -27,11 +32,19 @@
 
 ## Current focus
 
-- finish and merge `feat/worker-fleet-minimax-smoke`
-- after the worker-fleet smoke is stable, resume the older active-run lease and
-  heartbeat recovery work if it is still relevant
+- resume the older active-run lease and heartbeat recovery work if it is still
+  relevant
 
-## Latest update — MiniMax worker-model smoke
+## Latest update — MiniMax worker-model smoke merged
+
+- `feat/worker-fleet-minimax-smoke` was fast-forward merged to `main` and
+  pushed to `origin/main` at `07649e6`.
+- The branch passed full local validation:
+  `./venv/bin/python -m unittest discover -s tests -v` passed with 513 tests.
+- MiniMax M3 is now verified through Claude Code for a sequential
+  edit-capable run on the host-side configuration.
+
+## Previous update — MiniMax worker-model smoke
 
 - Created `feat/worker-fleet-minimax-smoke` from `main`.
 - Implemented per-role `[agent.env]` loading and `AgentRunConfig.env`.
