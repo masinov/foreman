@@ -1,13 +1,47 @@
 # Current Sprint
 
-- Active implementation sprint: `sprint-51-review-phases-4-5-token-economy`
-  on `feat/judge-and-tiered-review` (stacked on the unmerged
-  `feat/executor-overrides-ladder` → `feat/meta-agent-persistence`; not yet
-  merged).
-- Branch: `feat/judge-and-tiered-review`.
+- Active implementation sprint: `sprint-52-review-phases-6-7-supervision-transport`
+  on `feat/supervision-and-transport` (top of the unmerged stack:
+  `feat/meta-agent-persistence` → `feat/executor-overrides-ladder` →
+  `feat/judge-and-tiered-review` → `feat/supervision-and-transport`).
+- Branch: `feat/supervision-and-transport`.
 - Last completed sprint: `sprint-47-active-run-lease-and-heartbeat-recovery`.
-- Current deliverable: opt-in LLM-judged criteria evidence plus a tiered
-  cheap-triage/frontier review workflow with curated diff payloads.
+- Current deliverable: engine→manager supervision turns plus SSE/watch
+  data_version polling, persisted retry counts, and the docs/ADR pass.
+
+## Sprint 52 Review Phases 6 & 7 Supervision and Transport
+
+Implemented on `feat/supervision-and-transport`:
+
+1. `foreman/digest.py` `build_attention_digest` — compact supervision digest
+   (trigger, affected task row, evidence verdict + failure reasons, last run
+   detail, allowed responses; directed mode forbids mutation).
+2. Orchestrator emits exactly one `engine.attention_needed` per block via
+   `_create_system_run` (centralized) plus the `signal.blocker` path; loop
+   limit is tagged `loop_limit`.
+3. `POST /api/projects/{id}/meta/supervise` — builds the digest, runs one
+   `origin="supervision"` meta turn, streams NDJSON; idempotent on the consumed
+   `event_id` (409 on replay); validates the event is `engine.attention_needed`.
+4. `process_message` gained `origin` and `consumed_event_id`; turns persist
+   provenance; `ForemanStore.has_consumed_supervision_event` is the dedup guard.
+5. `ForemanStore.data_version()` (PRAGMA) gates the SSE stream loop and the
+   `foreman watch` loop so the expensive query only runs after another
+   connection commits; poll interval lowered to 0.25s.
+6. `Run.retry_count` is now written: `_execute_native_runner_step` counts
+   `agent.infra_error` events and `_complete_run` persists the count.
+7. Token-economy settings registered in `ProjectSettings` (`meta_agent_model`,
+   `judge_*`, `review_diff_max_chars`); README multi-model/supervision section;
+   ADR-0010.
+
+Passing validation:
+
+- `./venv/bin/python -m unittest tests.test_digest tests.test_settings -v`
+- `./venv/bin/python -m unittest tests.test_dashboard.DashboardMetaAgentTests -v`
+- `./venv/bin/python -m unittest tests.test_orchestrator.AgentSignalPersistenceTests -v`
+- `./venv/bin/python -m unittest discover -s tests` (full suite — see PR doc)
+- `./venv/bin/python scripts/validate_repo_memory.py`
+
+## Sprint 51 Review Phases 4 & 5 Token Economy
 
 ## Sprint 51 Review Phases 4 & 5 Token Economy
 

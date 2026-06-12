@@ -293,6 +293,20 @@ class ForemanStore:
             return 0
         return int(row["v"])
 
+    def data_version(self) -> int:
+        """Return SQLite's ``PRAGMA data_version`` for this connection.
+
+        The value changes whenever *another* connection commits to the
+        database. A reader holding its own connection (a stream or watch loop)
+        can poll this cheaply and skip its expensive query when nothing has
+        changed since the last tick.
+        """
+
+        row = self._connection.execute("PRAGMA data_version").fetchone()
+        if row is None:
+            return 0
+        return int(row[0])
+
     def migrate(self) -> list[int]:
         """Apply all unapplied migrations in version order.
 
@@ -1650,6 +1664,25 @@ class ForemanStore:
             for row in reversed(rows)
         ]
         return turns, has_more
+
+    def has_consumed_supervision_event(self, project_id: str, event_id: str) -> bool:
+        """Return True if a supervision turn already consumed ``event_id``.
+
+        Idempotency guard for the supervise endpoint: the consumed
+        ``engine.attention_needed`` event id is stored in the user turn's
+        ``tool_uses_json`` metadata.
+        """
+        like = f'%"consumed_event_id": "{event_id}"%'
+        row = self._connection.execute(
+            """
+            SELECT 1 FROM meta_turns
+            WHERE project_id = ? AND origin = 'supervision'
+              AND tool_uses_json LIKE ?
+            LIMIT 1
+            """,
+            (project_id, like),
+        ).fetchone()
+        return row is not None
 
     def clear_meta_session(self, project_id: str) -> None:
         """Delete the stored session row and all turns for a project."""

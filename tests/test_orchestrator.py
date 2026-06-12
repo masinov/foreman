@@ -110,6 +110,40 @@ class AgentSignalPersistenceTests(unittest.TestCase):
                 self.assertEqual(created_events[0].run_id, run.id)
                 self.assertEqual(created_events[0].payload["task_id"], created[0].id)
 
+    def test_signal_blocker_emits_exactly_one_attention_needed(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "foreman.db"
+            with ForemanStore(db_path) as store:
+                store.initialize()
+                project = Project(id="p", name="P", repo_path=temp_dir, workflow_id="development")
+                sprint = Sprint(id="s", project_id="p", title="A", status="active")
+                task = Task(id="t", sprint_id="s", project_id="p", title="T", status="in_progress")
+                run = Run(
+                    id="r", task_id="t", project_id="p", role_id="developer",
+                    workflow_step="develop", agent_backend="claude_code", status="running",
+                )
+                for obj in (project, sprint, task, run):
+                    getattr(store, f"save_{type(obj).__name__.lower()}")(obj)
+
+                orchestrator = ForemanOrchestrator(store)
+                orchestrator._persist_agent_event(
+                    run, task, project, "developer",
+                    AgentEventRecord(
+                        event_type="signal.blocker",
+                        payload={"message": "Cannot proceed without the API key."},
+                        timestamp="2026-06-13T10:00:00Z",
+                    ),
+                )
+
+                attention = [
+                    e for e in store.list_events(task_id="t")
+                    if e.event_type == "engine.attention_needed"
+                ]
+                self.assertEqual(len(attention), 1)
+                self.assertEqual(attention[0].payload["trigger"], "task_blocked")
+                self.assertEqual(attention[0].payload["task_id"], "t")
+                self.assertEqual(store.get_task("t").status, "blocked")
+
     def test_signal_task_created_persists_valid_complexity_and_ignores_invalid(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             db_path = Path(temp_dir) / "foreman.db"
@@ -1998,6 +2032,46 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 [run.outcome for run in workflow_runs],
                 ["done", "approve", "success", "success", "success"],
             )
+
+    def test_native_runner_records_retry_count_from_infra_errors(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+            project.settings["default_model"] = "claude-sonnet-4-6"
+            store.save_project(project)
+            # Call 1 aborts with an InfrastructureError (run_with_retry replays),
+            # call 2 is the developer success, call 3 is the reviewer approval.
+            runner = ScriptedNativeRunner(
+                {
+                    1: InfrastructureError("transient backend failure"),
+                    2: lambda config: self._native_developer_success(repo_path, config),
+                    3: lambda config: self._native_reviewer_approve(config),
+                }
+            )
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=self.roles,
+                workflows=self.workflows,
+                agent_runners={"claude_code": runner},
+                runner_sleep=lambda _seconds: None,
+            )
+
+            result = orchestrator.run_project(project.id)
+            self.assertEqual(result.executed_task_ids, (task.id,))
+
+            develop_run = next(
+                r for r in store.list_runs(task_id=task.id) if r.workflow_step == "develop"
+            )
+            self.assertEqual(develop_run.retry_count, 1)
+            # The retry replay also left an agent.infra_error in the transcript.
+            infra_events = [
+                e for e in store.list_events(task_id=task.id)
+                if e.event_type == "agent.infra_error"
+            ]
+            self.assertEqual(len(infra_events), 1)
 
     def test_native_runner_resolves_role_env_before_execution(self) -> None:
         repo_path, db_path = self.create_workspace()

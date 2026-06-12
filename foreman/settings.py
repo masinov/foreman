@@ -32,6 +32,15 @@ class ProjectSettings:
     runner_max_cost_usd: float = 1000.0
     runner_permission_mode: str = "auto"
     default_model: str = ""
+    # Manager (meta-agent) model — see review Phase 2.
+    meta_agent_model: str = ""
+    # Criteria judge — opt-in; unset base_url/model falls back to the heuristic.
+    judge_base_url: str = ""
+    judge_model: str = ""
+    judge_api_key_env: str = ""
+    judge_max_diff_chars: int = 24000
+    # Reviewer prompt diff payload cap — see review Phase 5.
+    review_diff_max_chars: int = 16000
 
     @classmethod
     def from_raw(cls, raw: dict[str, Any]) -> ProjectSettings:
@@ -61,6 +70,16 @@ class ProjectSettings:
             ),
             runner_permission_mode=str(raw.get("runner_permission_mode", "auto") or "auto"),
             default_model=str(raw.get("default_model") or ""),
+            meta_agent_model=str(raw.get("meta_agent_model") or ""),
+            judge_base_url=str(raw.get("judge_base_url") or ""),
+            judge_model=str(raw.get("judge_model") or ""),
+            judge_api_key_env=str(raw.get("judge_api_key_env") or ""),
+            judge_max_diff_chars=_validate_positive_int(
+                raw.get("judge_max_diff_chars"), default=24000
+            ),
+            review_diff_max_chars=_validate_positive_int(
+                raw.get("review_diff_max_chars"), default=16000
+            ),
         )
 
 

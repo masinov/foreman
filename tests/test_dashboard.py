@@ -2960,3 +2960,135 @@ class DashboardMetaAgentTests(unittest.TestCase):
         # History should now be empty
         resp2 = self._request("GET", f"/api/projects/{project.id}/meta/history")
         self.assertEqual(resp2.json()["turns"], [])
+
+    def _seed_attention(self, autonomy="supervised"):
+        """Seed a blocked task + engine.attention_needed event; return ids."""
+        from foreman import meta_agent
+
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        project = Project(
+            id=self._next_id("proj-sup"), name="Supervise",
+            repo_path="/tmp/meta-test", workflow_id="development",
+            autonomy_level=autonomy,
+        )
+        store.save_project(project)
+        sprint = Sprint(id=self._next_id("sp"), project_id=project.id, title="S", status="active")
+        store.save_sprint(sprint)
+        task = Task(
+            id=self._next_id("task"), sprint_id=sprint.id, project_id=project.id,
+            title="Blocked task", status="blocked",
+            blocked_reason="needs the API key", workflow_current_step="develop",
+        )
+        store.save_task(task)
+        run = Run(
+            id=self._next_id("run"), task_id=task.id, project_id=project.id,
+            role_id="developer", workflow_step="develop",
+            agent_backend="claude_code", status="running",
+        )
+        store.save_run(run)
+        event = Event(
+            id=self._next_id("ev"), run_id=run.id, task_id=task.id,
+            project_id=project.id, event_type="engine.attention_needed",
+            payload={"trigger": "task_blocked", "task_id": task.id},
+        )
+        store.save_event(event)
+        store.close()
+
+        # Fake the Claude subprocess so no real CLI is needed.
+        captured = {}
+
+        async def _fake_run(session_id, prompt, *, repo_path, executable, model):
+            captured["prompt"] = prompt
+            yield {"type": "text_delta", "text": "ack"}
+            yield {"type": "session", "session_id": "sess-sup"}
+
+        meta_agent.shutil.which = lambda _e: "/usr/bin/claude"
+        meta_agent._run_claude = _fake_run
+        return project, task, event, captured
+
+    def test_supervise_persists_supervision_turn_with_digest(self):
+        from foreman import meta_agent
+
+        orig_which, orig_run = meta_agent.shutil.which, meta_agent._run_claude
+        try:
+            project, task, event, captured = self._seed_attention()
+            resp = self._request(
+                "POST", f"/api/projects/{project.id}/meta/supervise",
+                json={"event_id": event.id},
+            )
+            self.assertEqual(resp.status_code, 200, resp.text)
+            # The digest (now the prompt) contains the blocked reason.
+            self.assertIn("needs the API key", captured["prompt"])
+
+            store = ForemanStore(self.db_path)
+            store.initialize()
+            turns, _ = store.list_meta_turns(project.id)
+            store.close()
+            self.assertEqual([t["origin"] for t in turns], ["supervision", "supervision"])
+            self.assertEqual(turns[0]["role"], "user")
+            self.assertIn(
+                {"consumed_event_id": event.id}, turns[0]["tool_uses"]
+            )
+        finally:
+            meta_agent.shutil.which, meta_agent._run_claude = orig_which, orig_run
+
+    def test_supervise_duplicate_event_returns_409(self):
+        from foreman import meta_agent
+
+        orig_which, orig_run = meta_agent.shutil.which, meta_agent._run_claude
+        try:
+            project, task, event, _ = self._seed_attention()
+            first = self._request(
+                "POST", f"/api/projects/{project.id}/meta/supervise",
+                json={"event_id": event.id},
+            )
+            self.assertEqual(first.status_code, 200, first.text)
+            second = self._request(
+                "POST", f"/api/projects/{project.id}/meta/supervise",
+                json={"event_id": event.id},
+            )
+            self.assertEqual(second.status_code, 409)
+        finally:
+            meta_agent.shutil.which, meta_agent._run_claude = orig_which, orig_run
+
+    def test_supervise_directed_project_forbids_mutation_in_prompt(self):
+        from foreman import meta_agent
+
+        orig_which, orig_run = meta_agent.shutil.which, meta_agent._run_claude
+        try:
+            project, task, event, captured = self._seed_attention(autonomy="directed")
+            resp = self._request(
+                "POST", f"/api/projects/{project.id}/meta/supervise",
+                json={"event_id": event.id},
+            )
+            self.assertEqual(resp.status_code, 200, resp.text)
+            self.assertIn("may NOT run state-mutating", captured["prompt"])
+        finally:
+            meta_agent.shutil.which, meta_agent._run_claude = orig_which, orig_run
+
+    def test_supervise_rejects_non_attention_event(self):
+        project = self._seed()
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        sprint = Sprint(id=self._next_id("sp"), project_id=project.id, title="S", status="active")
+        store.save_sprint(sprint)
+        task = Task(id=self._next_id("task"), sprint_id=sprint.id, project_id=project.id, title="T")
+        store.save_task(task)
+        run = Run(
+            id=self._next_id("run"), task_id=task.id, project_id=project.id,
+            role_id="developer", workflow_step="develop",
+            agent_backend="claude_code", status="running",
+        )
+        store.save_run(run)
+        event = Event(
+            id=self._next_id("ev"), run_id=run.id, task_id=task.id,
+            project_id=project.id, event_type="agent.message", payload={},
+        )
+        store.save_event(event)
+        store.close()
+        resp = self._request(
+            "POST", f"/api/projects/{project.id}/meta/supervise",
+            json={"event_id": event.id},
+        )
+        self.assertEqual(resp.status_code, 400)

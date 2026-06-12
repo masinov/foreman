@@ -27,7 +27,9 @@ _VALID_SPRINT_TRANSITIONS: dict[str, tuple[SprintStatus, ...]] = {
 ACTIVITY_EVENT_LIMIT = 50
 STREAM_BATCH_LIMIT = 100
 STREAM_HEARTBEAT_SECONDS = 10.0
-STREAM_POLL_INTERVAL_SECONDS = 0.5
+# Each tick now costs one PRAGMA data_version unless the DB actually changed, so
+# we can poll more responsively without hammering the full sprint-events query.
+STREAM_POLL_INTERVAL_SECONDS = 0.25
 
 _RUNNING_PROCS: dict[str, subprocess.Popen[bytes]] = {}
 _RUNNING_PROCS_LOCK = threading.Lock()

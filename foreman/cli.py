@@ -1002,8 +1002,23 @@ def handle_watch(args: argparse.Namespace) -> int:
 
         last_event_id = plan.recent_events[-1].id if plan.recent_events else None
         last_activity_at = time.monotonic()
+        # Only run the event query when another connection (the engine) has
+        # committed since the last tick; PRAGMA data_version is the cheap check.
+        last_data_version: int | None = None
         try:
             while True:
+                data_version = store.data_version()
+                if data_version == last_data_version:
+                    now = time.monotonic()
+                    if args.idle_timeout is not None and now - last_activity_at >= args.idle_timeout:
+                        if args.idle_timeout > 0:
+                            _print_stream_lines(
+                                f"Watch ended after {args.idle_timeout:.1f}s without new activity."
+                            )
+                        return 0
+                    time.sleep(STREAM_POLL_INTERVAL_SECONDS)
+                    continue
+                last_data_version = data_version
                 recent_events = plan.fetch_events(last_event_id, WATCH_STREAM_BATCH_LIMIT)
                 now = time.monotonic()
                 if recent_events:

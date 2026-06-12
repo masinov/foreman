@@ -1004,6 +1004,25 @@ class ForemanStoreTests(unittest.TestCase):
                 [first_event, second_event],
             )
 
+    def test_data_version_changes_when_another_connection_commits(self) -> None:
+        db_path = self.create_db_path()
+        with ForemanStore(db_path) as reader:
+            reader.initialize()
+            before = reader.data_version()
+            # A separate connection (mirrors the engine process) commits a write.
+            with ForemanStore(db_path) as writer:
+                writer.initialize()
+                writer.save_project(
+                    Project(
+                        id="p-dv", name="DV", repo_path="/x",
+                        workflow_id="development",
+                    )
+                )
+            after = reader.data_version()
+            self.assertNotEqual(before, after)
+            # Stable when nothing new commits.
+            self.assertEqual(after, reader.data_version())
+
 
 if __name__ == "__main__":
     unittest.main()

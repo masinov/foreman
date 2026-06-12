@@ -68,11 +68,21 @@ frontier reviewer answers `STEER: need repository context`. Today that carry-
 output edge sends the request back to develop; a deeper escape hatch that
 re-runs the agentic `code_reviewer` with tools is deferred.
 
-### Sprint 52 — review Phases 6 and 7 supervision and transport cleanup
+### Sprint 52 — review Phases 6 and 7 supervision and transport cleanup (implemented on `feat/supervision-and-transport`)
 
 Add manager supervision turns for attention-needed events, optimize SSE/watch
 polling through SQLite `data_version`, persist retry counts, and complete the
 documentation pass for the multi-model/tiered workflow.
+
+Done: `foreman/digest.py`, single `engine.attention_needed` emission per block,
+`POST /meta/supervise` (origin=supervision, 409 idempotency, directed
+recommend-only), `ForemanStore.data_version()`-gated SSE + watch loops,
+persisted `Run.retry_count`, `ProjectSettings` token-economy fields, README +
+ADR-0010. This closes the review roadmap. Pending merge to `main` (top of the
+stacked branches).
+
+Deferred follow-up: a tool-enabled agentic re-review when the frontier reviewer
+answers `STEER: need repository context` (today routes back to develop).
 
 ## Tier 3 — Architecture / spec gaps (remaining)
 

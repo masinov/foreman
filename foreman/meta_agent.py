@@ -294,6 +294,8 @@ async def process_message(
     store: Any,
     project: Any,
     executable: str = "claude",
+    origin: str = "chat",
+    consumed_event_id: str | None = None,
 ) -> AsyncIterator[str]:
     """Stream NDJSON events for one user message turn, persisting both turns.
 
@@ -301,6 +303,11 @@ async def process_message(
     is persisted in the ``finally`` path with whatever text accumulated, flagged
     ``interrupted`` if the stream errored or was cancelled, so a crash never
     silently drops a turn.
+
+    ``origin`` flags the turn provenance (``"chat"`` or ``"supervision"``).
+    ``consumed_event_id`` records, in the user turn metadata, the
+    ``engine.attention_needed`` event that triggered a supervision turn so it
+    cannot be replayed.
     """
 
     backend = (project.settings or {}).get("meta_agent_backend", "claude")
@@ -325,7 +332,16 @@ async def process_message(
     is_first_turn = session_id is None
 
     # Persist the user turn up front so it survives a mid-stream failure.
-    store.append_meta_turn(project_id, role="user", text=message)
+    user_tool_uses: list[dict[str, Any]] = []
+    if consumed_event_id:
+        user_tool_uses.append({"consumed_event_id": consumed_event_id})
+    store.append_meta_turn(
+        project_id,
+        role="user",
+        text=message,
+        tool_uses=user_tool_uses,
+        origin=origin,
+    )
 
     state_header = build_state_header(store, project)
     parts = [state_header, "---"]
@@ -378,6 +394,7 @@ async def process_message(
             role="assistant",
             text=assistant_text,
             tool_uses=persisted_tool_uses,
+            origin=origin,
         )
 
     if not interrupted:

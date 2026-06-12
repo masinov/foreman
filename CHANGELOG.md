@@ -9,6 +9,17 @@ memory changes rather than versioned product releases.
 
 ### Added
 
+- supervision turns and transport polish (sprint 52, review Phases 6–7):
+  `foreman/digest.py` `build_attention_digest`; an `engine.attention_needed`
+  event emitted exactly once when a task transitions to blocked (loop-limit and
+  signal-blocker paths tagged with their trigger); a
+  `POST /api/projects/{id}/meta/supervise` endpoint that runs one
+  `origin="supervision"` meta turn from the digest, gating mutation on
+  `autonomy_level` and rejecting replayed events with 409;
+  `ForemanStore.data_version()` with `data_version`-gated SSE and `foreman
+  watch` polling (interval lowered to 0.25s); persisted `Run.retry_count` from
+  `agent.infra_error` events; the token-economy project settings registered in
+  `ProjectSettings`; and ADR-0010
 - token-economy evidence and tiered review (sprint 51, review Phases 4–5):
   `foreman/judge.py` with the keyword heuristic as the single owner plus an
   opt-in cheap-model criteria judge (direct Anthropic-compatible HTTP call,

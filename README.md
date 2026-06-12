@@ -163,6 +163,59 @@ or an equivalent non-interactive approval setup. A manual smoke on this branch
 confirmed MiniMax M3 can use Claude Code `Write` and return `TASK_COMPLETE`
 with `--permission-mode bypassPermissions`.
 
+### Escalation ladder and per-task overrides
+
+A role may define `[agent] model_ladder = ["cheap", "mid", "frontier"]`. The
+engine selects the rung by workflow step-visit count, so repeated failures
+escalate the model automatically; `model` stays the single-model fallback. Each
+agent step emits a `workflow.model_selected` event recording the chosen model
+and the rule (`override` / `ladder` / `role` / `project_default`).
+
+A manager can differentiate dispatch per task:
+
+```bash
+foreman task add <project> --title ... --criteria ... --complexity large
+foreman task override <task-id> --step develop=MiniMax-M2 --step review=claude-opus-4-8 --ladder-start 1
+```
+
+Different ladder rungs share one role's `[agent.env]`; rungs that need different
+endpoints must be modeled as different roles. See ADR-0010.
+
+### LLM-judged completion evidence (opt-in)
+
+By default acceptance criteria are judged by a keyword heuristic. Set these
+project settings to use a cheap model instead (any failure falls back to the
+heuristic, so it never blocks the workflow):
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `judge_base_url` / `judge_model` | unset | Anthropic-compatible judge endpoint; unset → heuristic |
+| `judge_api_key_env` | unset | host env var holding the judge API key |
+| `judge_max_diff_chars` | 24000 | diff cap fed to the judge |
+| `review_diff_max_chars` | 16000 | diff cap in reviewer prompts |
+| `meta_agent_model` | unset | `--model` for the manager chat session |
+
+`CompletionEvidence.judged_by` records the model (or `heuristic`) and is emitted
+in the `engine.completion_evidence` event.
+
+### Tiered review workflow
+
+`development_tiered` inserts a cheap `triage_reviewer` between develop and the
+frontier `review`. Triage returns `APPROVE` / `DENY` / `ESCALATE`; only
+`ESCALATE` reaches the tool-less `frontier_reviewer`, which adjudicates from a
+curated `{completion_diff}` payload. Select it at init with
+`--workflow development_tiered`.
+
+### Supervision turns
+
+When a task blocks, hits the loop limit, or its evidence fails, the engine emits
+one `engine.attention_needed` event. The dashboard (or an operator) can call
+`POST /api/projects/{id}/meta/supervise` with `{ "event_id": ... }` to run one
+supervision turn through the persisted manager session; the turn is flagged
+`origin="supervision"` and replayed events are rejected with 409. In `directed`
+projects the supervise prompt forbids state-mutating commands and asks for a
+recommendation only.
+
 ## Event retention
 
 Foreman can now prune old `events` rows on orchestrator startup when a

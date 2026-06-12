@@ -2,12 +2,13 @@
 
 ## Current sprint
 
-- Active implementation sprint: `sprint-51-review-phases-4-5-token-economy`
-  on `feat/judge-and-tiered-review` (stacked on the unmerged
-  `feat/executor-overrides-ladder` → `feat/meta-agent-persistence`).
+- Active implementation sprint:
+  `sprint-52-review-phases-6-7-supervision-transport` on
+  `feat/supervision-and-transport`.
 - In-flight stack (oldest first): `feat/meta-agent-persistence` (Phase 2),
   `feat/executor-overrides-ladder` (Phase 3), `feat/judge-and-tiered-review`
-  (Phases 4–5). None merged to `main` yet.
+  (Phases 4–5), `feat/supervision-and-transport` (Phases 6–7). None merged to
+  `main` yet.
 - Latest completed sprint: `sprint-46-completion-truth-hardening`
 - Latest completed review sprint: `sprint-47-review-phase-0-correctness`
 - Latest completed model-backend sprint:
@@ -35,9 +36,23 @@
 
 ## Current focus
 
-- land the stacked review-roadmap branches (Phase 2 meta-agent, Phase 3
-  executor overrides, Phases 4–5 judge + tiered review), then proceed to
-  Phases 6–7 (sprint 52)
+- land the stacked review-roadmap branches (Phases 2, 3, 4–5, 6–7). The review
+  roadmap is now fully implemented across the stack; next is merge + closeout.
+
+## Latest update — review Phases 6 & 7 supervision and transport
+
+- `feat/supervision-and-transport` (top of the stack) implements review Phases
+  6 and 7, completing the review roadmap.
+- Engine→manager supervision: `foreman/digest.py`, an
+  `engine.attention_needed` event emitted exactly once per block, and a
+  `POST /api/projects/{id}/meta/supervise` endpoint that runs one
+  `origin="supervision"` meta turn (409 on replay; directed mode is
+  recommend-only).
+- Transport polish: `ForemanStore.data_version()` gates the SSE and
+  `foreman watch` loops (poll interval 0.25s); `Run.retry_count` is now
+  persisted from `agent.infra_error` events.
+- Token-economy settings registered in `ProjectSettings`; README and ADR-0010
+  added.
 
 ## Latest update — review Phases 4 & 5 token economy
 

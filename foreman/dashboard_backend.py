@@ -275,9 +275,22 @@ def create_dashboard_app(
 
             with _open_store(db_path) as store:
                 api = DashboardService(store)
+                # Track SQLite's data_version so we only run the (relatively)
+                # expensive sprint-events query when another connection (the
+                # engine) has actually committed since the last tick.
+                last_data_version: int | None = None
                 while True:
                     if await request.is_disconnected():
                         break
+
+                    data_version = store.data_version()
+                    if data_version == last_data_version:
+                        if time.monotonic() - last_heartbeat_at >= STREAM_HEARTBEAT_SECONDS:
+                            yield b": keepalive\n\n"
+                            last_heartbeat_at = time.monotonic()
+                        await asyncio.sleep(STREAM_POLL_INTERVAL_SECONDS)
+                        continue
+                    last_data_version = data_version
 
                     messages = api.list_sprint_stream_messages(
                         sprint_id,
@@ -389,6 +402,67 @@ def create_dashboard_app(
                 raise DashboardNotFoundError(f"Project not found: {project_id}")
             meta_clear_session(store, project_id)
         return {"project_id": project_id, "cleared": True}
+
+    @app.post("/api/projects/{project_id}/meta/supervise")
+    async def meta_supervise(project_id: str, request: Request):
+        from .meta_agent import process_message as meta_process_message
+        from .digest import build_attention_digest
+
+        data = await _read_json_body(request)
+        event_id = str(data.get("event_id", "")).strip()
+        if not event_id:
+            raise DashboardValidationError("event_id is required.")
+
+        # Validate and run the idempotency check up front, before streaming.
+        with _open_store(db_path) as store:
+            project = store.get_project(project_id)
+            if project is None:
+                raise DashboardNotFoundError(f"Project not found: {project_id}")
+            event = store.get_event(event_id)
+            if (
+                event is None
+                or event.project_id != project_id
+                or event.event_type != "engine.attention_needed"
+            ):
+                raise DashboardValidationError(
+                    "event_id must reference an engine.attention_needed event "
+                    "for this project."
+                )
+            if store.has_consumed_supervision_event(project_id, event_id):
+                return JSONResponse(
+                    {"error": "supervision event already consumed"},
+                    status_code=409,
+                )
+            trigger = str(event.payload.get("trigger", "task_blocked"))
+            task_id = event.payload.get("task_id")
+
+        async def _stream():
+            with _open_store(db_path) as store:
+                project = store.get_project(project_id)
+                if project is None:
+                    yield (json.dumps({
+                        "type": "error",
+                        "message": f"Project not found: {project_id}",
+                    }) + "\n").encode("utf-8")
+                    return
+                digest = build_attention_digest(
+                    store, project, trigger=trigger, task_id=task_id
+                )
+                async for chunk in meta_process_message(
+                    project_id,
+                    digest,
+                    store=store,
+                    project=project,
+                    origin="supervision",
+                    consumed_event_id=event_id,
+                ):
+                    yield chunk.encode("utf-8")
+
+        return StreamingResponse(
+            _stream(),
+            media_type="application/x-ndjson",
+            headers={"X-Accel-Buffering": "no"},
+        )
 
     @app.post("/api/projects/{project_id}/gates")
     async def create_gate(project_id: str, request: Request) -> dict[str, Any]:

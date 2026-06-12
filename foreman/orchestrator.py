@@ -77,6 +77,7 @@ class AgentExecutionResult:
     model: str | None = None
     events: tuple[AgentEventRecord, ...] = ()
     events_streamed: bool = False
+    retry_count: int = 0
 
 
 @dataclass(slots=True)
@@ -1356,6 +1357,7 @@ class ForemanOrchestrator:
                     workflow_step=current_step,
                     outcome="blocked",
                     detail=detail,
+                    attention_trigger="loop_limit",
                 )
                 self._emit_event(
                     run,
@@ -1671,6 +1673,7 @@ class ForemanOrchestrator:
                     cost_usd=result.cost_usd,
                     token_count=result.token_count,
                     duration_ms=result.duration_ms,
+                    retry_count=result.retry_count,
                 )
                 retry_reason = self._output_contract_retry_reason(role, result)
                 if retry_reason is not None:
@@ -1748,6 +1751,7 @@ class ForemanOrchestrator:
                         cost_usd=retry_result.cost_usd,
                         token_count=retry_result.token_count,
                         duration_ms=retry_result.duration_ms,
+                        retry_count=retry_result.retry_count,
                     )
                     run = retry_run
                     result = retry_result
@@ -2728,6 +2732,13 @@ class ForemanOrchestrator:
         if not detail:
             detail = "Agent execution finished without output."
 
+        # Each agent.infra_error means run_with_retry aborted an attempt and
+        # replayed the step; surface that as the run's retry count so partial
+        # duplicate transcripts are diagnosable.
+        infra_retry_count = sum(
+            1 for record in events if record.event_type == "agent.infra_error"
+        )
+
         return AgentExecutionResult(
             outcome=outcome,
             detail=detail,
@@ -2739,6 +2750,7 @@ class ForemanOrchestrator:
             model=model or None,
             events=tuple(events),
             events_streamed=event_recorder is not None,
+            retry_count=infra_retry_count,
         )
 
     def _extract_completion_output(
@@ -2911,6 +2923,7 @@ class ForemanOrchestrator:
                 task.blocked_reason = message
                 self.store.save_task(task)
                 self._release_task_lease(task, project)
+                self._emit_attention_needed(run, task.id, "task_blocked")
 
     def _emit_builtin_events(
         self,
@@ -2971,6 +2984,7 @@ class ForemanOrchestrator:
         detail: str,
         role_id: str = "_builtin:orchestrator",
         agent_backend: str = "orchestrator",
+        attention_trigger: str | None = None,
     ) -> Run:
         now = utc_now_text()
         run = Run(
@@ -2988,7 +3002,21 @@ class ForemanOrchestrator:
             created_at=now,
         )
         self.store.save_run(run)
+        # A blocked system run means the task is transitioning to blocked: raise
+        # exactly one attention-needed signal so a manager/human can intervene.
+        if outcome == "blocked":
+            self._emit_attention_needed(
+                run, task.id, attention_trigger or "task_blocked"
+            )
         return run
+
+    def _emit_attention_needed(self, run: Run, task_id: str, trigger: str) -> None:
+        """Emit one ``engine.attention_needed`` event for a supervision turn."""
+        self._emit_event(
+            run,
+            "engine.attention_needed",
+            {"trigger": trigger, "task_id": task_id},
+        )
 
     def _complete_run(
         self,
@@ -3002,6 +3030,7 @@ class ForemanOrchestrator:
         cost_usd: float | None = None,
         token_count: int | None = None,
         duration_ms: int | None = None,
+        retry_count: int | None = None,
     ) -> None:
         run.status = status
         run.outcome = outcome
@@ -3012,6 +3041,8 @@ class ForemanOrchestrator:
             run.cost_usd = cost_usd
         if token_count is not None:
             run.token_count = token_count
+        if retry_count is not None:
+            run.retry_count = retry_count
         run.duration_ms = duration_ms
         run.completed_at = utc_now_text()
         self.store.save_run(run)
