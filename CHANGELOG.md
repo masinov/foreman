@@ -7,6 +7,13 @@ memory changes rather than versioned product releases.
 
 ## [Unreleased]
 
+### Milestone
+
+- **Review roadmap complete (Phases 0–7).** The stacked review branches
+  (Sprints 49–52) were fast-forwarded to `main` in order on 2026-06-13
+  (`62c2e25` → `2ca7b49` → `b53f930` → `35b667c`) and the sprints archived under
+  `docs/sprints/archive/`. Full suite: 571 tests passing.
+
 ### Added
 
 - supervision turns and transport polish (sprint 52, review Phases 6–7):

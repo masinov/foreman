@@ -2,20 +2,16 @@
 
 ## Current sprint
 
-- Active implementation sprint:
-  `sprint-52-review-phases-6-7-supervision-transport` on
-  `feat/supervision-and-transport`.
-- In-flight stack (oldest first): `feat/meta-agent-persistence` (Phase 2),
-  `feat/executor-overrides-ladder` (Phase 3), `feat/judge-and-tiered-review`
-  (Phases 4–5), `feat/supervision-and-transport` (Phases 6–7). None merged to
-  `main` yet.
-- Latest completed sprint: `sprint-46-completion-truth-hardening`
-- Latest completed review sprint: `sprint-47-review-phase-0-correctness`
-- Latest completed model-backend sprint:
-  `sprint-48-worker-fleet-minimax-smoke`
-- Latest completed recovery sprint:
-  `sprint-47-active-run-lease-and-heartbeat-recovery`
-- Last merged branch: `feat/active-run-lease-heartbeat-recovery`
+- Active implementation sprint: **none.** The review roadmap
+  (`docs/specs/review.md`, Phases 0–7) is fully implemented and merged to
+  `main`.
+- The review stack was fast-forwarded to `main` in order on 2026-06-13:
+  `feat/meta-agent-persistence` (`62c2e25`) → `feat/executor-overrides-ladder`
+  (`2ca7b49`) → `feat/judge-and-tiered-review` (`b53f930`) →
+  `feat/supervision-and-transport` (`35b667c`, current `main` tip).
+- Sprints 49–52 are archived under `docs/sprints/archive/`.
+- Latest completed sprint: `sprint-52-review-phases-6-7-supervision-transport`
+- Last merged branch: `feat/supervision-and-transport`
 - Current implementation branch: none
 
 ## Active branches
@@ -36,8 +32,9 @@
 
 ## Current focus
 
-- land the stacked review-roadmap branches (Phases 2, 3, 4–5, 6–7). The review
-  roadmap is now fully implemented across the stack; next is merge + closeout.
+- The review roadmap (Phases 0–7) is complete and merged. No active
+  implementation sprint. Next sprint pulls from `docs/sprints/backlog.md`
+  (Tier 3 architecture / parking-lot items) when opened.
 
 ## Latest update — review Phases 6 & 7 supervision and transport
 

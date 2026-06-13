@@ -1,10 +1,12 @@
 # Backlog
 
-## Review roadmap from `docs/specs/review.md`
+## Review roadmap from `docs/specs/review.md` — COMPLETE
 
-The deep backend review is now the forward implementation roadmap, after the
-already-merged backend hardening branch. Execute these phases in order unless a
-production defect forces an emergency fix.
+The deep backend review was the forward implementation roadmap. **All phases
+(0–7) are now merged to `main`** (top at `35b667c`, 2026-06-13) and the sprints
+are archived under `docs/sprints/archive/`. The per-sprint entries below are
+retained for traceability; none are pending. The only open item from the
+roadmap is the deferred tool-enabled re-review follow-up (see Sprint 51 note).
 
 ### Sprint 47 — review Phase 0 correctness
 
@@ -36,7 +38,8 @@ across dashboard restarts.
 Done: migration 11 (`meta_sessions`/`meta_turns`), store-backed `meta_agent`
 with crash-safe turn persistence, `build_state_header`/`build_operating_contract`,
 `meta_agent_model` setting, paginated `meta/history`, and `foreman task add`
-`--description`/`--sprint`/`--depends-on`. Pending merge to `main`.
+`--description`/`--sprint`/`--depends-on`. Merged to `main` at `62c2e25`;
+archived at `archive/sprint-49-meta-agent-persistence.md`.
 
 ### Sprint 50 — review Phase 3 executor overrides and escalation ladder (implemented on `feat/executor-overrides-ladder`)
 
@@ -48,8 +51,8 @@ Done: migration 12, `Task.executor_overrides`/`complexity`, role
 `model_ladder`, `resolve_step_model` wired into the workflow loop + native
 runner with `workflow.model_selected` events, `signal.task_created` complexity
 persistence, `foreman task add --complexity`, `foreman task override`, and
-validated `executor_overrides` on `PATCH /api/tasks/{id}`. Pending merge to
-`main` (stacked on the Phase 2 branch).
+validated `executor_overrides` on `PATCH /api/tasks/{id}`. Merged to `main` at
+`2ca7b49`; archived at `archive/sprint-50-executor-overrides-ladder.md`.
 
 ### Sprint 51 — review Phases 4 and 5 token economy (implemented on `feat/judge-and-tiered-review`)
 
@@ -60,8 +63,8 @@ Done: `foreman/judge.py` (heuristic owner + opt-in Anthropic-compatible LLM
 judge with head/tail diff truncation), `CompletionEvidence.judged_by`, the
 `escalate` outcome, `triage_reviewer`/`frontier_reviewer` roles, the
 `{completion_diff}` decision-role prompt payload (`review_diff_max_chars`),
-and the `development_tiered` workflow. Pending merge to `main` (stacked on the
-Phase 3 branch).
+and the `development_tiered` workflow. Merged to `main` at `b53f930`; archived
+at `archive/sprint-51-judge-and-tiered-review.md`.
 
 Out of scope (note for later): a tool-enabled "re-review" routing when the
 frontier reviewer answers `STEER: need repository context`. Today that carry-
@@ -78,8 +81,8 @@ Done: `foreman/digest.py`, single `engine.attention_needed` emission per block,
 `POST /meta/supervise` (origin=supervision, 409 idempotency, directed
 recommend-only), `ForemanStore.data_version()`-gated SSE + watch loops,
 persisted `Run.retry_count`, `ProjectSettings` token-economy fields, README +
-ADR-0010. This closes the review roadmap. Pending merge to `main` (top of the
-stacked branches).
+ADR-0010. This closes the review roadmap. Merged to `main` at `35b667c`;
+archived at `archive/sprint-52-supervision-and-transport.md`.
 
 Deferred follow-up: a tool-enabled agentic re-review when the frontier reviewer
 answers `STEER: need repository context` (today routes back to develop).
