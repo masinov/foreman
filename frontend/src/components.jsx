@@ -1765,7 +1765,6 @@ export function TaskFormFields({ value, onChange, dependencyOptions = [], showCo
               </button>
             ))}
           </div>
-          <span className="form-hint">Sets the model-ladder start rung for this task.</span>
         </div>
       ) : null}
       {dependencyOptions.length > 0 ? (
