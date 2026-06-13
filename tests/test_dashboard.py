@@ -1454,6 +1454,47 @@ class DashboardSprintTaskBacklogTests(unittest.TestCase):
         self.assertEqual(tasks[1].title, "Second task")
         store.close()
 
+    def test_create_sprint_initial_tasks_persist_description_and_complexity(self):
+        """initial_tasks carry the unified form's description + complexity."""
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        project = Project(
+            id=self._next_id("proj-init2"),
+            name="Init Tasks Project 2",
+            repo_path="/tmp/it2",
+            workflow_id="development",
+        )
+        store.save_project(project)
+        store.close()
+
+        response = self._request(
+            "POST",
+            f"/api/projects/{project.id}/sprints",
+            json={
+                "title": "Rich Initial Tasks",
+                "initial_tasks": [
+                    {
+                        "title": "Rich task",
+                        "task_type": "feature",
+                        "description": "context here",
+                        "complexity": "large",
+                    },
+                    {"title": "Bad complexity", "complexity": "huge"},
+                ],
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        sprint_id = response.json()["id"]
+
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        tasks = {t.title: t for t in store.list_tasks(sprint_id=sprint_id)}
+        store.close()
+        self.assertEqual(tasks["Rich task"].description, "context here")
+        self.assertEqual(tasks["Rich task"].complexity, "large")
+        # An invalid complexity is dropped, not persisted or errored.
+        self.assertIsNone(tasks["Bad complexity"].complexity)
+
     def test_create_sprint_without_initial_tasks_still_works(self):
         """POST /api/projects/{id}/sprints without initial_tasks creates no tasks."""
         store = ForemanStore(self.db_path)

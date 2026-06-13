@@ -316,9 +316,7 @@ export function SprintList({ project, sprints, pendingGates, onSelectSprint, onO
   const [expandedLoading, setExpandedLoading] = useState(false);
   const [exTitleDraft, setExTitleDraft] = useState("");
   const [exGoalDraft, setExGoalDraft] = useState("");
-  const [exNewTaskTitle, setExNewTaskTitle] = useState("");
-  const [exNewTaskType, setExNewTaskType] = useState("feature");
-  const [exNewTaskCriteria, setExNewTaskCriteria] = useState("");
+  const [exTaskForm, setExTaskForm] = useState(EMPTY_TASK_FORM);
   const [dragOverId, setDragOverId] = useState(null);
   const dragSrcId = useRef(null);
 
@@ -330,9 +328,7 @@ export function SprintList({ project, sprints, pendingGates, onSelectSprint, onO
     setExpandedSprintId(sprint.id);
     setExTitleDraft(sprint.title);
     setExGoalDraft(sprint.goal || "");
-    setExNewTaskTitle("");
-    setExNewTaskCriteria("");
-    setExNewTaskType("feature");
+    setExTaskForm(EMPTY_TASK_FORM);
     if (services) {
       setExpandedLoading(true);
       try {
@@ -358,12 +354,9 @@ export function SprintList({ project, sprints, pendingGates, onSelectSprint, onO
   }
 
   async function addExTask(sprintId) {
-    const trimmed = exNewTaskTitle.trim();
-    if (!trimmed || !services) return;
-    await services.createTask(sprintId, { title: trimmed, taskType: exNewTaskType, acceptanceCriteria: exNewTaskCriteria.trim() || undefined });
-    setExNewTaskTitle("");
-    setExNewTaskCriteria("");
-    setExNewTaskType("feature");
+    if (!exTaskForm.title.trim() || !services) return;
+    await services.createTask(sprintId, taskFormToPayload(exTaskForm));
+    setExTaskForm(EMPTY_TASK_FORM);
     const payload = await services.listSprintTasks(sprintId);
     setExpandedTasks(payload.tasks || []);
     onSprintsChanged?.();
@@ -464,36 +457,16 @@ export function SprintList({ project, sprints, pendingGates, onSelectSprint, onO
               <div className="sc-expanded-empty">No tasks yet.</div>
             )}
             <div className="sc-expanded-add">
-              <input
-                className="form-input"
-                type="text"
-                placeholder="New task title"
-                value={exNewTaskTitle}
-                onChange={(e) => setExNewTaskTitle(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addExTask(sprint.id); } }}
-              />
-              <textarea
-                className="form-input"
-                placeholder="Acceptance criteria (optional)"
-                value={exNewTaskCriteria}
-                onChange={(e) => setExNewTaskCriteria(e.target.value)}
-                rows={2}
+              <TaskFormFields
+                value={exTaskForm}
+                onChange={setExTaskForm}
+                dependencyOptions={expandedTasks}
               />
               <div className="sc-expanded-add-footer">
-                <div className="form-chips">
-                  {TASK_TYPE_CHIPS.map((type) => (
-                    <button
-                      key={type}
-                      type="button"
-                      className={`form-chip ${exNewTaskType === type ? "selected" : ""}`}
-                      onClick={() => setExNewTaskType(type)}
-                    >{type}</button>
-                  ))}
-                </div>
                 <button
                   className="btn-action"
                   type="button"
-                  disabled={!exNewTaskTitle.trim()}
+                  disabled={!exTaskForm.title.trim()}
                   onClick={() => addExTask(sprint.id)}
                 >Add task</button>
               </div>
@@ -1546,37 +1519,37 @@ export function NewSprintModal({ onSubmit, onClose }) {
   const [goal, setGoal] = useState("");
   const [pendingTasks, setPendingTasks] = useState([]);
   const [editingIndex, setEditingIndex] = useState(null); // null = new task form
-  const [taskTitle, setTaskTitle] = useState("");
-  const [taskType, setTaskType] = useState("feature");
-  const [taskCriteria, setTaskCriteria] = useState("");
-  const [taskContext, setTaskContext] = useState("");
+  const [taskForm, setTaskForm] = useState(EMPTY_TASK_FORM);
   const bodyRef = useRef(null);
 
   function openEditTask(index) {
     const t = pendingTasks[index];
     setEditingIndex(index);
-    setTaskTitle(t.title);
-    setTaskType(t.task_type || "feature");
-    setTaskCriteria(t.acceptance_criteria || "");
-    setTaskContext(t.description || "");
+    setTaskForm({
+      title: t.title || "",
+      acceptanceCriteria: t.acceptance_criteria || "",
+      description: t.description || "",
+      taskType: t.task_type || "feature",
+      complexity: t.complexity || "",
+      dependsOn: [],
+    });
   }
 
   function clearTaskForm() {
     setEditingIndex(null);
-    setTaskTitle("");
-    setTaskType("feature");
-    setTaskCriteria("");
-    setTaskContext("");
+    setTaskForm(EMPTY_TASK_FORM);
   }
 
   function commitTask() {
-    const trimmed = taskTitle.trim();
+    const trimmed = taskForm.title.trim();
     if (!trimmed) return;
+    // Shape matches the create_sprint `initial_tasks` contract (snake_case).
     const task = {
       title: trimmed,
-      task_type: taskType,
-      acceptance_criteria: taskCriteria.trim() || undefined,
-      description: taskContext.trim() || undefined,
+      task_type: taskForm.taskType,
+      acceptance_criteria: taskForm.acceptanceCriteria.trim() || undefined,
+      description: taskForm.description.trim() || undefined,
+      complexity: taskForm.complexity || undefined,
     };
     if (editingIndex !== null) {
       setPendingTasks((prev) => prev.map((t, i) => i === editingIndex ? task : t));
@@ -1660,45 +1633,13 @@ export function NewSprintModal({ onSubmit, onClose }) {
                     <button className="pending-task-form-cancel" type="button" onClick={clearTaskForm}>cancel</button>
                   ) : null}
                 </div>
-                <input
-                  className="form-input"
-                  type="text"
-                  value={taskTitle}
-                  onChange={(e) => setTaskTitle(e.target.value)}
-                  placeholder="Task title"
-                />
-                <textarea
-                  className="form-input"
-                  style={{ minHeight: "48px" }}
-                  value={taskCriteria}
-                  onChange={(e) => setTaskCriteria(e.target.value)}
-                  placeholder="Acceptance criteria"
-                />
-                <textarea
-                  className="form-input"
-                  style={{ minHeight: "48px" }}
-                  value={taskContext}
-                  onChange={(e) => setTaskContext(e.target.value)}
-                  placeholder="Description (optional)"
-                />
+                <TaskFormFields value={taskForm} onChange={setTaskForm} />
                 <div className="pending-task-form-footer">
-                  <div className="form-chips">
-                    {TASK_TYPE_CHIPS.map((type) => (
-                      <button
-                        key={type}
-                        type="button"
-                        className={`form-chip ${taskType === type ? "selected" : ""}`}
-                        onClick={() => setTaskType(type)}
-                      >
-                        {type}
-                      </button>
-                    ))}
-                  </div>
                   <button
                     className="btn-action"
                     type="button"
                     onClick={commitTask}
-                    disabled={!taskTitle.trim()}
+                    disabled={!taskForm.title.trim()}
                   >
                     {editingIndex !== null ? "Save" : "Add task"}
                   </button>
@@ -1718,29 +1659,134 @@ export function NewSprintModal({ onSubmit, onClose }) {
 
 const TASK_TYPE_CHIPS = ["feature", "fix", "refactor", "docs", "spike", "chore"];
 
-export function NewTaskModal({ onSubmit, onClose, existingTasks = [] }) {
-  const [title, setTitle] = useState("");
-  const [taskType, setTaskType] = useState("feature");
-  const [criteria, setCriteria] = useState("");
-  const [description, setDescription] = useState("");
-  const [complexity, setComplexity] = useState("");
-  const [dependsOn, setDependsOn] = useState([]);
+export const EMPTY_TASK_FORM = {
+  title: "",
+  acceptanceCriteria: "",
+  description: "",
+  taskType: "feature",
+  complexity: "",
+  dependsOn: [],
+};
 
-  function toggleDep(id) {
-    setDependsOn((prev) => (prev.includes(id) ? prev.filter((d) => d !== id) : [...prev, id]));
-  }
+// Normalize an internal task-form value into the camelCase payload the
+// `createTask` service expects (and that `handleCreateTask` forwards).
+export function taskFormToPayload(form) {
+  return {
+    title: form.title.trim(),
+    taskType: form.taskType,
+    acceptanceCriteria: form.acceptanceCriteria.trim() || undefined,
+    description: form.description.trim() || undefined,
+    complexity: form.complexity || undefined,
+    dependsOn: form.dependsOn,
+  };
+}
+
+// The single task field set shared by every task-entry surface (the New Task
+// modal, the New Sprint modal's initial tasks, and the inline queue editor) so
+// they never drift in capability again.
+export function TaskFormFields({ value, onChange, dependencyOptions = [], showComplexity = true, autoFocus = false }) {
+  const set = (patch) => onChange({ ...value, ...patch });
+  const toggleDep = (id) =>
+    set({
+      dependsOn: value.dependsOn.includes(id)
+        ? value.dependsOn.filter((d) => d !== id)
+        : [...value.dependsOn, id],
+    });
+
+  return (
+    <>
+      <div className="form-group">
+        <label className="form-label">Title</label>
+        <input
+          className="form-input"
+          type="text"
+          value={value.title}
+          onChange={(e) => set({ title: e.target.value })}
+          placeholder="Short description of the task"
+          autoFocus={autoFocus}
+        />
+      </div>
+      <div className="form-group">
+        <label className="form-label">Acceptance criteria</label>
+        <textarea
+          className="form-input"
+          style={{ minHeight: "48px" }}
+          value={value.acceptanceCriteria}
+          onChange={(e) => set({ acceptanceCriteria: e.target.value })}
+          placeholder="What must be true for this task to be done?"
+        />
+      </div>
+      <div className="form-group">
+        <label className="form-label">Description (optional)</label>
+        <textarea
+          className="form-input"
+          style={{ minHeight: "48px" }}
+          value={value.description}
+          onChange={(e) => set({ description: e.target.value })}
+          placeholder="Relevant files, reproduction steps, references..."
+        />
+      </div>
+      <div className="form-group">
+        <label className="form-label">Label (optional)</label>
+        <div className="form-chips">
+          {TASK_TYPE_CHIPS.map((type) => (
+            <button
+              key={type}
+              type="button"
+              className={`form-chip ${value.taskType === type ? "selected" : ""}`}
+              onClick={() => set({ taskType: type })}
+            >
+              {type}
+            </button>
+          ))}
+        </div>
+      </div>
+      {showComplexity ? (
+        <div className="form-group">
+          <label className="form-label">Complexity (optional)</label>
+          <div className="form-chips">
+            {["small", "medium", "large"].map((c) => (
+              <button
+                key={c}
+                type="button"
+                className={`form-chip ${value.complexity === c ? "selected" : ""}`}
+                onClick={() => set({ complexity: value.complexity === c ? "" : c })}
+              >
+                {c}
+              </button>
+            ))}
+          </div>
+          <span className="form-hint">Sets the model-ladder start rung for this task.</span>
+        </div>
+      ) : null}
+      {dependencyOptions.length > 0 ? (
+        <div className="form-group">
+          <label className="form-label">Depends on (optional)</label>
+          <div className="form-deps">
+            {dependencyOptions.map((t) => (
+              <label key={t.id} className={`form-dep ${value.dependsOn.includes(t.id) ? "selected" : ""}`}>
+                <input
+                  type="checkbox"
+                  checked={value.dependsOn.includes(t.id)}
+                  onChange={() => toggleDep(t.id)}
+                />
+                <span>{t.title}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+export function NewTaskModal({ onSubmit, onClose, existingTasks = [] }) {
+  const [form, setForm] = useState(EMPTY_TASK_FORM);
 
   function handleSubmit(e) {
     e.preventDefault();
-    if (!title.trim()) return;
-    onSubmit({
-      title: title.trim(),
-      taskType,
-      acceptanceCriteria: criteria.trim() || undefined,
-      description: description.trim() || undefined,
-      complexity: complexity || undefined,
-      dependsOn,
-    });
+    if (!form.title.trim()) return;
+    onSubmit(taskFormToPayload(form));
   }
 
   return (
@@ -1752,70 +1798,16 @@ export function NewTaskModal({ onSubmit, onClose, existingTasks = [] }) {
             <button className="modal-close" type="button" onClick={onClose}>×</button>
           </div>
           <div className="modal-body">
-            <div className="form-group">
-              <label className="form-label">Title</label>
-              <input className="form-input" type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Short description of the task" autoFocus />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Acceptance criteria</label>
-              <textarea className="form-input" style={{ minHeight: "48px" }} value={criteria} onChange={(e) => setCriteria(e.target.value)} placeholder="What must be true for this task to be done?" />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Description (optional)</label>
-              <textarea className="form-input" style={{ minHeight: "48px" }} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Relevant files, reproduction steps, references..." />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Label (optional)</label>
-              <div className="form-chips">
-                {TASK_TYPE_CHIPS.map((type) => (
-                  <button
-                    key={type}
-                    type="button"
-                    className={`form-chip ${taskType === type ? "selected" : ""}`}
-                    onClick={() => setTaskType(type)}
-                  >
-                    {type}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="form-group">
-              <label className="form-label">Complexity (optional)</label>
-              <div className="form-chips">
-                {["small", "medium", "large"].map((c) => (
-                  <button
-                    key={c}
-                    type="button"
-                    className={`form-chip ${complexity === c ? "selected" : ""}`}
-                    onClick={() => setComplexity(complexity === c ? "" : c)}
-                  >
-                    {c}
-                  </button>
-                ))}
-              </div>
-              <span className="form-hint">Sets the model-ladder start rung for this task.</span>
-            </div>
-            {existingTasks.length > 0 ? (
-              <div className="form-group">
-                <label className="form-label">Depends on (optional)</label>
-                <div className="form-deps">
-                  {existingTasks.map((t) => (
-                    <label key={t.id} className={`form-dep ${dependsOn.includes(t.id) ? "selected" : ""}`}>
-                      <input
-                        type="checkbox"
-                        checked={dependsOn.includes(t.id)}
-                        onChange={() => toggleDep(t.id)}
-                      />
-                      <span>{t.title}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            ) : null}
+            <TaskFormFields
+              value={form}
+              onChange={setForm}
+              dependencyOptions={existingTasks}
+              autoFocus
+            />
           </div>
           <div className="modal-footer">
             <button className="btn-cancel" type="button" onClick={onClose}>Cancel</button>
-            <button className="btn-primary" type="submit" disabled={!title.trim()}>Create task</button>
+            <button className="btn-primary" type="submit" disabled={!form.title.trim()}>Create task</button>
           </div>
         </form>
       </div>

@@ -402,7 +402,7 @@ class DashboardService:
         if not title.strip():
             raise DashboardValidationError("Sprint title is required.")
 
-        from .models import TASK_TYPES
+        from .models import TASK_COMPLEXITIES, TASK_TYPES
 
         sprints = self.store.list_sprints(project_id)
         sprint_id = f"sprint-{_stable_slug(title)}"
@@ -442,6 +442,9 @@ class DashboardService:
             description = task_data.get("description") or None
             if description:
                 description = str(description).strip() or None
+            complexity = task_data.get("complexity") or None
+            if complexity is not None and complexity not in TASK_COMPLEXITIES:
+                complexity = None
             task = Task(
                 id=task_id,
                 sprint_id=sprint_id,
@@ -450,6 +453,7 @@ class DashboardService:
                 task_type=task_type,
                 acceptance_criteria=acceptance_criteria,
                 description=description,
+                complexity=complexity,
                 order_index=i,
                 created_by="human",
                 created_at=now,
