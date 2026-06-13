@@ -10,6 +10,7 @@ import {
   formatEventSummary,
   formatEventTime,
   formatProjectStatus,
+  formatSprintStatus,
   formatTaskStatus,
   formatTokenCount,
   formatWorkflowCounts,
@@ -62,6 +63,7 @@ export function Topbar({
   onSelectProject,
   onSelectSprint,
   onToggleSettings,
+  onOpenRoles,
 }) {
   const [openSegment, setOpenSegment] = useState(null);
 
@@ -144,7 +146,7 @@ export function Topbar({
                         onClick={() => { closeAll(); onSelectSprint(sprint.id); }}
                       >
                         <span>{sprint.title}</span>
-                        <span className={`opt-status ${statusClass}`}>{sprint.status}</span>
+                        <span className={`opt-status ${statusClass}`}>{formatSprintStatus(sprint.status)}</span>
                       </div>
                     );
                   })}
@@ -160,6 +162,11 @@ export function Topbar({
           <span className="dot" />
           <span>{formatProjectStatus(projectStatus || "idle")}</span>
         </div>
+        {onOpenRoles ? (
+          <button className="topbar-btn topbar-btn-text" title="Manage roles" onClick={onOpenRoles}>
+            Roles
+          </button>
+        ) : null}
         {onToggleSettings ? (
           <button className="topbar-btn" title="Settings" onClick={onToggleSettings}>
             <svg viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 00-2 2v.18a2 2 0 01-1 1.73l-.43.25a2 2 0 01-2 0l-.15-.08a2 2 0 00-2.73.73l-.22.38a2 2 0 00.73 2.73l.15.1a2 2 0 011 1.72v.51a2 2 0 01-1 1.74l-.15.09a2 2 0 00-.73 2.73l.22.38a2 2 0 002.73.73l.15-.08a2 2 0 012 0l.43.25a2 2 0 011 1.73V20a2 2 0 002 2h.44a2 2 0 002-2v-.18a2 2 0 011-1.73l.43-.25a2 2 0 012 0l.15.08a2 2 0 002.73-.73l.22-.39a2 2 0 00-.73-2.73l-.15-.08a2 2 0 01-1-1.74v-.5a2 2 0 011-1.74l.15-.09a2 2 0 00.73-2.73l-.22-.38a2 2 0 00-2.73-.73l-.15.08a2 2 0 01-2 0l-.43-.25a2 2 0 01-1-1.73V4a2 2 0 00-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -489,7 +496,7 @@ export function SprintList({ project, sprints, pendingGates, onSelectSprint, onO
           onClick={() => isPlanned ? toggleExpandSprint(sprint) : onSelectSprint(sprint.id)}
         >
           {isPlanned ? <span className="sc-expand-chevron" aria-hidden="true">▸</span> : null}
-          {!hideStatus && <div className={`sc-status ${statusClass}`}>{sprint.status}</div>}
+          {!hideStatus && <div className={`sc-status ${statusClass}`}>{formatSprintStatus(sprint.status)}</div>}
           <div className="sc-body">
             <div className="sc-body-main">
               <span className="sc-title">{sprint.title}</span>
@@ -668,7 +675,7 @@ export function SprintList({ project, sprints, pendingGates, onSelectSprint, onO
                         <li key={t.id} className={`pq-task-row pq-task-row--${t.status.replace("_", "-")}`}>
                           <span className="pq-task-dot" />
                           <span className="pq-task-row-title">{t.title}</span>
-                          <span className="pq-task-row-status">{t.status.replace("_", " ")}</span>
+                          <span className="pq-task-row-status">{formatTaskStatus(t.status)}</span>
                         </li>
                       ))}
                     </ul>
@@ -720,7 +727,7 @@ export function SprintList({ project, sprints, pendingGates, onSelectSprint, onO
                   </div>
                 ))
               ) : (
-                <div className="pq-empty-col">no sprints queued</div>
+                <div className="pq-empty-col">No sprints queued</div>
               )}
               {onOpenNewSprint ? (
                 <button className="sprint-add-btn" type="button" onClick={onOpenNewSprint}>
@@ -1815,6 +1822,124 @@ export function NewTaskModal({ onSubmit, onClose, existingTasks = [] }) {
   );
 }
 
+export function RolesModal({ services, onClose }) {
+  const [roles, setRoles] = useState(null);
+  const [drafts, setDrafts] = useState({}); // roleId -> { model, backend, permission_mode }
+  const [error, setError] = useState("");
+  const [savingId, setSavingId] = useState(null);
+
+  useEffect(() => {
+    services.listRoles()
+      .then((payload) => setRoles(payload.roles || []))
+      .catch((err) => setError(err.message));
+  }, [services]);
+
+  function fieldValue(role, field) {
+    const draft = drafts[role.id] || {};
+    return field in draft ? draft[field] : (role[field] ?? "");
+  }
+
+  function setField(roleId, field, value) {
+    setDrafts((prev) => ({ ...prev, [roleId]: { ...(prev[roleId] || {}), [field]: value } }));
+  }
+
+  async function saveRole(role) {
+    const draft = drafts[role.id];
+    if (!draft) return;
+    setSavingId(role.id);
+    setError("");
+    try {
+      const updated = await services.updateRole(role.id, draft);
+      setRoles((prev) => prev.map((r) => (r.id === role.id ? { ...r, ...updated } : r)));
+      setDrafts((prev) => {
+        const next = { ...prev };
+        delete next[role.id];
+        return next;
+      });
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  return (
+    <div className="modal-backdrop visible" onClick={onClose}>
+      <div className="modal" style={{ width: "640px" }} onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3>Roles</h3>
+          <button className="modal-close" type="button" onClick={onClose}>×</button>
+        </div>
+        <div className="modal-body">
+          <div className="form-hint">
+            Roles are shared across projects. Editing writes the role's TOML file in
+            the <code>roles/</code> directory.
+          </div>
+          {error ? <div className="meta-error">{error}</div> : null}
+          {roles === null ? (
+            <div className="empty-panel">Loading roles…</div>
+          ) : (
+            <div className="roles-list">
+              {roles.map((role) => {
+                const dirty = Boolean(drafts[role.id]);
+                return (
+                  <div key={role.id} className="role-row">
+                    <div className="role-row-head">
+                      <span className="role-row-name">{role.name || role.id}</span>
+                      <span className="role-row-id">{role.id}</span>
+                      <span className="role-row-session">{role.session_persistence ? "persistent" : "ephemeral"}</span>
+                    </div>
+                    <div className="role-row-fields">
+                      <label className="role-field">
+                        <span>Model</span>
+                        <input
+                          className="form-input"
+                          type="text"
+                          placeholder="project default"
+                          value={fieldValue(role, "model")}
+                          onChange={(e) => setField(role.id, "model", e.target.value)}
+                        />
+                      </label>
+                      <label className="role-field">
+                        <span>Backend</span>
+                        <select
+                          className="form-input"
+                          value={fieldValue(role, "backend")}
+                          onChange={(e) => setField(role.id, "backend", e.target.value)}
+                        >
+                          <option value="claude_code">claude_code</option>
+                          <option value="codex">codex</option>
+                        </select>
+                      </label>
+                      <label className="role-field">
+                        <span>Permission mode</span>
+                        <input
+                          className="form-input"
+                          type="text"
+                          value={fieldValue(role, "permission_mode")}
+                          onChange={(e) => setField(role.id, "permission_mode", e.target.value)}
+                        />
+                      </label>
+                      <button
+                        className="btn-primary role-save"
+                        type="button"
+                        disabled={!dirty || savingId === role.id}
+                        onClick={() => saveRole(role)}
+                      >
+                        {savingId === role.id ? "Saving…" : "Save"}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function NewProjectModal({ onSubmit, onClose }) {
   const [name, setName] = useState("");
   const [repoPath, setRepoPath] = useState("");
@@ -1973,30 +2098,62 @@ export function SupervisionBanner({ event, services, projectId, taskIndex, onDis
   );
 }
 
+const META_HISTORY_PAGE = 50;
+
+function mapPersistedTurn(t) {
+  return {
+    id: t.id,
+    role: t.role,
+    origin: t.origin || "chat",
+    text: t.text || "",
+    toolUses: (t.tool_uses || []).map((u) => ({ name: u.name, status: "done" })),
+    done: true,
+  };
+}
+
 export function MetaAgentPanel({ projectId, services, onSprintsChanged, onCollapse }) {
   const [input, setInput] = useState("");
   const [turns, setTurns] = useState([]);
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState("");
   const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const bottomRef = useRef(null);
 
-  // Load history when panel mounts
+  // Load the most recent page of history when the panel mounts.
   useEffect(() => {
     if (historyLoaded) return;
-    services.metaHistory(projectId)
+    services.metaHistory(projectId, { limit: META_HISTORY_PAGE })
       .then((payload) => {
-        const rawTurns = payload.turns || [];
-        setTurns(rawTurns.map((t) => ({
-          role: t.role,
-          text: t.text || "",
-          toolUses: (t.tool_uses || []).map((u) => ({ name: u.name, status: "done" })),
-          done: true,
-        })));
+        setTurns((payload.turns || []).map(mapPersistedTurn));
+        setHasMore(Boolean(payload.has_more));
         setHistoryLoaded(true);
       })
       .catch(() => setHistoryLoaded(true));
   }, [historyLoaded, projectId, services]);
+
+  async function loadOlder() {
+    if (loadingMore) return;
+    const oldest = turns.find((t) => t.id);
+    if (!oldest) return;
+    setLoadingMore(true);
+    try {
+      const payload = await services.metaHistory(projectId, {
+        limit: META_HISTORY_PAGE,
+        before: oldest.id,
+      });
+      const older = (payload.turns || []).map(mapPersistedTurn);
+      if (older.length > 0) {
+        setTurns((prev) => [...older, ...prev]);
+      }
+      setHasMore(Boolean(payload.has_more));
+    } catch (err) {
+      setError(err.message || "Failed to load older history.");
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   function scrollToBottom() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -2078,8 +2235,8 @@ export function MetaAgentPanel({ projectId, services, onSprintsChanged, onCollap
     <div className="meta-panel">
       <div className="meta-panel-header">
         <div className="meta-panel-title-row">
-          <span className="meta-panel-title">Agent</span>
-          <span className="meta-panel-subtitle">Claude Code — project operator</span>
+          <span className="meta-panel-title">Manager</span>
+          <span className="meta-panel-subtitle">Planning &amp; supervision</span>
         </div>
         <div className="meta-panel-actions">
           <button className="meta-action-btn" type="button" onClick={handleClear} title="Clear session">
@@ -2092,6 +2249,16 @@ export function MetaAgentPanel({ projectId, services, onSprintsChanged, onCollap
       </div>
 
       <div className="meta-panel-body">
+        {historyLoaded && hasMore ? (
+          <button
+            className="meta-load-older"
+            type="button"
+            disabled={loadingMore}
+            onClick={loadOlder}
+          >
+            {loadingMore ? "Loading…" : "Load older messages"}
+          </button>
+        ) : null}
         {!historyLoaded ? (
           <div className="meta-panel-empty">Loading…</div>
         ) : turns.length === 0 ? (
@@ -2100,7 +2267,12 @@ export function MetaAgentPanel({ projectId, services, onSprintsChanged, onCollap
           </div>
         ) : (
           turns.map((turn, i) => (
-            <div key={i} className={`meta-turn meta-turn-${turn.role}`}>
+            <div key={turn.id || `live-${i}`} className={`meta-turn meta-turn-${turn.role}`}>
+              {turn.origin === "supervision" ? (
+                <span className="meta-origin-badge" title="Triggered by the engine, not a chat message">
+                  supervision
+                </span>
+              ) : null}
               {turn.toolUses.length > 0 ? (
                 <div className="meta-tool-uses">
                   {turn.toolUses.map((t, j) => (

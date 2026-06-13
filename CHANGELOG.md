@@ -35,6 +35,20 @@ memory changes rather than versioned product releases.
   `description`, `complexity`, and `depends_on` (matching the CLI); `get_task`
   serializes `completion_evidence`.
 
+### Frontend UX (Tier 2 cont.)
+
+- unified the three task-creation surfaces (New Task modal, New Sprint modal
+  initial tasks, inline queue editor) on a shared `TaskFormFields` component so
+  they no longer diverge in capability; `create_sprint` initial tasks persist
+  complexity.
+- meta-agent panel: paginated history with a "Load older messages" control,
+  a `supervision` origin badge on engine-triggered turns, and a model-agnostic
+  "Manager — Planning & supervision" header (was hardcoded "Claude Code").
+- added a **Roles** topbar surface (`RolesModal`) to inspect and edit role
+  model / backend / permission mode via `GET`/`PATCH /api/roles`.
+- normalized status casing (sprint badges, queue task rows now Title-Cased) and
+  tidied empty-state copy.
+
 ### Frontend UX (Tier 2)
 
 - Approve/Deny are now scoped to tasks actually paused at a human gate, via a

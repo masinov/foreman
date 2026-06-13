@@ -201,6 +201,12 @@ export function createDashboardServices({
     listRoles() {
       return requestJson(fetchImpl, "/api/roles");
     },
+    updateRole(roleId, updates) {
+      return requestJson(fetchImpl, `/api/roles/${encodeURIComponent(roleId)}`, {
+        method: "PATCH",
+        body: updates,
+      });
+    },
     clearMetaSession(projectId) {
       return requestJson(fetchImpl, `/api/projects/${encodeURIComponent(projectId)}/meta/session`, {
         method: "DELETE",

@@ -186,6 +186,19 @@ function createMockServices() {
       return () => {};
     }),
     listGates: vi.fn().mockResolvedValue({ gates: [] }),
+    listRoles: vi.fn().mockResolvedValue({
+      roles: [
+        {
+          id: "developer",
+          name: "Developer",
+          backend: "claude_code",
+          model: "claude-sonnet-4-6",
+          permission_mode: "bypassPermissions",
+          session_persistence: true,
+        },
+      ],
+    }),
+    updateRole: vi.fn().mockResolvedValue({ id: "developer", model: "minimax-m3" }),
     createTask: vi.fn().mockResolvedValue({ id: "task-new" }),
     superviseMeta: vi.fn().mockImplementation(async function* () {
       yield { type: "text_delta", text: "Recommend unblocking and retrying." };
@@ -297,5 +310,18 @@ describe("React dashboard foundation", () => {
       expect(services.superviseMeta).toHaveBeenCalledWith("proj-1", "event-attn");
     });
     expect(await screen.findByText("Recommend unblocking and retrying.")).toBeInTheDocument();
+  });
+
+  it("opens the roles modal from the topbar and lists roles", async () => {
+    const { services } = createMockServices();
+    render(<App services={services} browser={window} />);
+
+    expect(await screen.findByText("Projects")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Roles" }));
+
+    await waitFor(() => {
+      expect(services.listRoles).toHaveBeenCalled();
+    });
+    expect(await screen.findByText("Developer")).toBeInTheDocument();
   });
 });

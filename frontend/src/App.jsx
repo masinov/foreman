@@ -8,6 +8,7 @@ import {
   NewSprintModal,
   NewTaskModal,
   ProjectOverview,
+  RolesModal,
   SettingsPanel,
   SprintList,
   STATUS_COLUMNS,
@@ -16,7 +17,7 @@ import {
   TaskDetailDrawer,
   Topbar,
 } from "./components";
-import { deriveEngineState, formatCompactCount, formatCount } from "./format";
+import { deriveEngineState, formatCompactCount, formatCount, formatSprintStatus } from "./format";
 import { buildDashboardPath, buildProjectPath, buildSprintPath, parseRoute } from "./routing";
 
 const INITIAL_EVENTS_LIMIT = 50;
@@ -75,6 +76,7 @@ export default function App({ services, browser }) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const [dismissedAttentionIds, setDismissedAttentionIds] = useState(() => new Set());
+  const [rolesOpen, setRolesOpen] = useState(false);
 
   const refreshTimerRef = useRef(null);
   const routeRef = useRef(route);
@@ -682,6 +684,7 @@ export default function App({ services, browser }) {
         onSelectProject={(projectId) => navigateTo(buildProjectPath(projectId))}
         onSelectSprint={(sprintId) => navigateTo(buildSprintPath(route.projectId, sprintId))}
         onToggleSettings={route.projectId ? handleOpenSettings : undefined}
+        onOpenRoles={() => setRolesOpen(true)}
       />
       <ErrorBanner message={errorMessage} onDismiss={() => setErrorMessage("")} />
       {isBootstrapping ? (
@@ -761,7 +764,7 @@ export default function App({ services, browser }) {
                         >
                           ✎
                         </button>
-                        <span className={`sprint-status-badge ss-${currentSprint.status}`}>{currentSprint.status}</span>
+                        <span className={`sprint-status-badge ss-${currentSprint.status}`}>{formatSprintStatus(currentSprint.status)}</span>
                       </>
                     )}
                   </div>
@@ -1040,7 +1043,7 @@ export default function App({ services, browser }) {
                 </span>
                 <span className="sprint-statusbar-sep" aria-hidden="true">·</span>
                 <span className="sprint-stat">
-                  <span className={`sprint-status-badge ss-${currentSprint.status}`}>{currentSprint.status}</span>
+                  <span className={`sprint-status-badge ss-${currentSprint.status}`}>{formatSprintStatus(currentSprint.status)}</span>
                 </span>
               </footer>
             </div>
@@ -1055,6 +1058,9 @@ export default function App({ services, browser }) {
           onUpdate={handleUpdateSettings}
           onClose={() => setSettingsOpen(false)}
         />
+      ) : null}
+      {rolesOpen ? (
+        <RolesModal services={services} onClose={() => setRolesOpen(false)} />
       ) : null}
       {newProjectOpen ? (
         <NewProjectModal

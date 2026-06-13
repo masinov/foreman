@@ -106,9 +106,15 @@ against the real backend payloads and event taxonomy.
   (no longer double-click only); planned sprint cards show an expand chevron and
   "Click to expand" affordance.
 
-Remaining (Tier 2/3): unify the two task-creation forms (inline queue editor vs
-modal); roles inspection/editing surface; meta-history pagination + origin
-badges; status-casing and empty-state-copy normalization.
+- **Tier 2 (cont.):** unified all three task-creation surfaces on a shared
+  `TaskFormFields`; added meta-history pagination + a `supervision` origin badge
+  + a model-agnostic manager header; added a Roles topbar surface (`RolesModal`,
+  `GET`/`PATCH /api/roles`); normalized sprint/task status casing and some
+  empty-state copy.
+
+Remaining (Tier 3, minor): an icon-system consistency pass (SVG vs unicode
+glyphs); fuller empty-state copy normalization; surfacing `zero_cost_token_runs`
+in totals.
 
 ## Suggested priority
 

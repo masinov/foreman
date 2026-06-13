@@ -63,8 +63,20 @@ changes.
   "Click to expand" title so they're distinguishable from navigate-on-click
   cards.
 
-## Follow-ups (remaining UX review items)
+## Tier 2 (cont., same branch)
 
-- Unify the two task-creation forms (inline queue editor vs modal).
-- Roles inspection/editing surface; meta-history pagination + origin badges.
-- Status-casing and empty-state-copy normalization.
+- **Task-form unification:** shared `TaskFormFields` (+ `EMPTY_TASK_FORM` /
+  `taskFormToPayload`) used by the New Task modal, New Sprint modal initial
+  tasks, and the inline queue editor; `create_sprint` initial tasks persist
+  complexity (+1 backend test).
+- **Meta panel:** paginated history ("Load older messages"), `supervision`
+  origin badge, model-agnostic "Manager" header.
+- **Roles surface:** `RolesModal` opened from a new topbar Roles button;
+  `updateRole` client method over `PATCH /api/roles/{id}` (+1 frontend test).
+- **Casing/copy:** `formatSprintStatus`; Title-Cased sprint badges + queue task
+  rows; tidied empty-state strings.
+
+## Follow-ups (remaining UX review items, minor)
+
+- Icon-system consistency pass (SVG vs unicode glyphs).
+- Surface `zero_cost_token_runs` in totals; broader empty-state copy pass.

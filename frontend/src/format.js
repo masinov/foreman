@@ -96,6 +96,13 @@ export function formatProjectStatus(status) {
   }
 }
 
+export function formatSprintStatus(status) {
+  if (!status) {
+    return "";
+  }
+  return status.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
 export function formatTaskStatus(status) {
   switch (status) {
     case "in_progress":
