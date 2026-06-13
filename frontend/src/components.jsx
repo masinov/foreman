@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
+  costUnknownNote,
   deriveEngineState,
   eventMatchesFilter,
   formatCompactCount,
@@ -36,7 +37,8 @@ export const EVENT_FILTERS = [
 function totalsSummaryLine(projectTotals) {
   const project = projectTotals?.total_token_count ? formatCompactCount(projectTotals.total_token_count) : null;
   if (project) {
-    return `${project} tokens`;
+    const note = costUnknownNote(projectTotals);
+    return note ? `${project} tokens · ${note}` : `${project} tokens`;
   }
   return "No tokens used yet";
 }
@@ -430,8 +432,8 @@ export function SprintList({ project, sprints, pendingGates, onSelectSprint, onO
             <button className="sc-expanded-open" type="button" onClick={() => onSelectSprint(sprint.id)}>
               Open →
             </button>
-            <button className="sc-expanded-collapse" type="button" onClick={() => setExpandedSprintId(null)}>
-              ✕
+            <button className="sc-expanded-collapse" type="button" onClick={() => setExpandedSprintId(null)} aria-label="Collapse">
+              ×
             </button>
           </div>
           <textarea
@@ -444,7 +446,7 @@ export function SprintList({ project, sprints, pendingGates, onSelectSprint, onO
           />
           <div className="sc-expanded-tasks">
             {expandedLoading ? (
-              <div className="sc-expanded-loading">loading…</div>
+              <div className="sc-expanded-loading">Loading…</div>
             ) : expandedTasks.length > 0 ? (
               <ul className="sc-expanded-task-list">
                 {expandedTasks.map((t) => (

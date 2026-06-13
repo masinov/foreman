@@ -17,7 +17,7 @@ import {
   TaskDetailDrawer,
   Topbar,
 } from "./components";
-import { deriveEngineState, formatCompactCount, formatCount, formatSprintStatus } from "./format";
+import { costUnknownNote, deriveEngineState, formatCompactCount, formatCount, formatSprintStatus } from "./format";
 import { buildDashboardPath, buildProjectPath, buildSprintPath, parseRoute } from "./routing";
 
 const INITIAL_EVENTS_LIMIT = 50;
@@ -1032,8 +1032,14 @@ export default function App({ services, browser }) {
                 />
               </div>
               <footer className="sprint-statusbar">
-                <span className="sprint-stat">
+                <span
+                  className="sprint-stat"
+                  title={costUnknownNote(currentSprint.totals) || undefined}
+                >
                   <span className="sv">{formatCompactCount(currentSprint.totals.total_token_count)}</span> tokens
+                  {costUnknownNote(currentSprint.totals) ? (
+                    <span className="sprint-stat-note"> ({costUnknownNote(currentSprint.totals)})</span>
+                  ) : null}
                 </span>
                 <span className="sprint-stat">
                   <span className="sv">{formatCount(currentSprint.totals.run_count)}</span> runs

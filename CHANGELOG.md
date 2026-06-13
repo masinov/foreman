@@ -35,6 +35,14 @@ memory changes rather than versioned product releases.
   `description`, `complexity`, and `depends_on` (matching the CLI); `get_task`
   serializes `completion_evidence`.
 
+### Frontend UX (Tier 3 polish)
+
+- surfaced `zero_cost_token_runs`: token totals in the sprint status bar and the
+  topbar now show "cost unknown for N runs" so third-party (zero-cost) endpoints
+  read honestly.
+- consistency pass: unified the inline-card close control to the standard `×`
+  glyph and normalized remaining lowercase copy ("Loading…").
+
 ### Frontend UX (Tier 2 cont.)
 
 - unified the three task-creation surfaces (New Task modal, New Sprint modal

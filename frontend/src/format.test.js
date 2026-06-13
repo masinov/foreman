@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 
 import {
+  costUnknownNote,
   deriveEngineState,
   eventMatchesFilter,
   formatEventSummary,
@@ -48,6 +49,15 @@ describe("deriveEngineState", () => {
     expect(deriveEngineState({ status: "running" })).toBe("running");
     expect(deriveEngineState({ status: "blocked" })).toBe("blocked");
     expect(deriveEngineState(null)).toBe("idle");
+  });
+});
+
+describe("costUnknownNote", () => {
+  it("notes runs with unknown cost, and stays empty when all costs are known", () => {
+    expect(costUnknownNote({ zero_cost_token_runs: 3 })).toBe("cost unknown for 3 runs");
+    expect(costUnknownNote({ zero_cost_token_runs: 1 })).toBe("cost unknown for 1 run");
+    expect(costUnknownNote({ zero_cost_token_runs: 0 })).toBe("");
+    expect(costUnknownNote(undefined)).toBe("");
   });
 });
 

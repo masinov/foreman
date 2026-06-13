@@ -42,6 +42,17 @@ export function formatCurrency(value) {
   return currencyFormatter.format(value || 0);
 }
 
+// Third-party Anthropic-compatible endpoints report $0 cost while token counts
+// stay accurate; the engine tracks how many runs that affected so the UI can be
+// honest about cost coverage. Returns "" when every run has a known cost.
+export function costUnknownNote(totals) {
+  const n = totals?.zero_cost_token_runs || 0;
+  if (n <= 0) {
+    return "";
+  }
+  return `cost unknown for ${formatCount(n)} run${n === 1 ? "" : "s"}`;
+}
+
 export function formatDuration(value) {
   const duration = value || 0;
   if (duration >= 1000) {

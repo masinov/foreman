@@ -112,9 +112,13 @@ against the real backend payloads and event taxonomy.
   `GET`/`PATCH /api/roles`); normalized sprint/task status casing and some
   empty-state copy.
 
-Remaining (Tier 3, minor): an icon-system consistency pass (SVG vs unicode
-glyphs); fuller empty-state copy normalization; surfacing `zero_cost_token_runs`
-in totals.
+- **Tier 3 (polish):** surfaced `zero_cost_token_runs` ("cost unknown for N
+  runs") in the sprint status bar and topbar token totals; normalized the
+  inline-card close glyph to `×` and remaining lowercase copy.
+
+Not done (deliberately deferred — a larger design decision best made with eyes
+on the live UI): a full icon-system overhaul replacing the mixed
+unicode-glyph/SVG set with one consistent SVG icon library.
 
 ## Suggested priority
 

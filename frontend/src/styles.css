@@ -3968,3 +3968,9 @@ select.form-input {
 }
 .role-field { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--text-tertiary); min-width: 0; }
 .role-save { white-space: nowrap; }
+
+/* Cost-coverage note next to token totals */
+.sprint-stat-note {
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
