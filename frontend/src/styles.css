@@ -2657,6 +2657,38 @@ button {
 }
 
 /* ═══ Sprint goal inline edit ═════════════════════ */
+.sprint-goal-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.sprint-edit-btn {
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 4px;
+  line-height: 1;
+  transition: var(--transition);
+  flex-shrink: 0;
+  opacity: 0.55;
+}
+
+.sprint-edit-btn:hover {
+  color: var(--text-primary);
+  opacity: 1;
+}
+
+.sc-expand-chevron {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  margin-right: 2px;
+  flex-shrink: 0;
+}
+
 .sprint-goal-text {
   font-size: 13px;
   color: var(--text-tertiary);

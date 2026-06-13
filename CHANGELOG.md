@@ -35,6 +35,20 @@ memory changes rather than versioned product releases.
   `description`, `complexity`, and `depends_on` (matching the CLI); `get_task`
   serializes `completion_evidence`.
 
+### Frontend UX (Tier 2)
+
+- Approve/Deny are now scoped to tasks actually paused at a human gate, via a
+  new backend `awaiting_human_gate` flag on the task payloads (computed from the
+  task's current workflow step role); tasks blocked for other reasons
+  (cost/time/loop/evidence) show an explanatory note instead of approve/deny
+  buttons that wouldn't apply.
+- the sprint board shows a **Cancelled** lane when the sprint has cancelled
+  tasks (previously they vanished from the board).
+- sprint title and goal gained visible ✎ edit buttons (previously editable only
+  via an undiscoverable double-click); planned sprint cards show an expand
+  chevron + "Click to expand" affordance so they're distinguishable from
+  navigate-on-click active/archived cards.
+
 ### Frontend correctness & polish
 
 - fixed the New Task form offering an invalid `bug` task type (which the backend

@@ -511,9 +511,11 @@ export function SprintList({ project, sprints, pendingGates, onSelectSprint, onO
         <button
           className="sc-main"
           type="button"
-          aria-label={`Open sprint ${sprint.title}`}
+          aria-label={isPlanned ? `Expand sprint ${sprint.title}` : `Open sprint ${sprint.title}`}
+          title={isPlanned ? "Click to expand and edit" : "Open sprint"}
           onClick={() => isPlanned ? toggleExpandSprint(sprint) : onSelectSprint(sprint.id)}
         >
+          {isPlanned ? <span className="sc-expand-chevron" aria-hidden="true">▸</span> : null}
           {!hideStatus && <div className={`sc-status ${statusClass}`}>{sprint.status}</div>}
           <div className="sc-body">
             <div className="sc-body-main">
@@ -832,7 +834,7 @@ export function TaskCard({ task, selected, onSelect, onApprove, onDeny, onStop }
           </button>
         </div>
       ) : null}
-      {task.status === "blocked" ? (
+      {(task.awaiting_human_gate ?? (task.status === "blocked")) ? (
         <div className="card-actions" onClick={(event) => event.stopPropagation()}>
           <button className="btn btn-approve" type="button" onClick={() => onApprove(task.id)}>
             Approve
@@ -1115,7 +1117,7 @@ export function TaskDetailDrawer({
             <div className="detail-text blocked-text">{task.blocked_reason}</div>
           </div>
         ) : null}
-        {task.status === "blocked" ? (
+        {(task.awaiting_human_gate ?? (task.status === "blocked")) ? (
           <div className="detail-section">
             <div className="detail-section-title">Human Gate</div>
             <div className="detail-actions">
@@ -1134,6 +1136,15 @@ export function TaskDetailDrawer({
               onChange={(event) => onDenyNoteChange(event.target.value)}
               placeholder="Explain what needs to change before this task can continue."
             />
+          </div>
+        ) : task.status === "blocked" ? (
+          <div className="detail-section">
+            <div className="detail-section-title">Blocked</div>
+            <p className="detail-empty">
+              This task is blocked but not at a human gate, so it can't be approved
+              or denied here. Resolve the underlying cause (see the reason above),
+              adjust settings, or ask the manager, then re-run.
+            </p>
           </div>
         ) : null}
         {onStop && task.status === "in_progress" ? (

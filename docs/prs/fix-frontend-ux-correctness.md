@@ -48,9 +48,23 @@ changes.
 - "Running" reflects a live agent consistently across landing, topbar, and
   breadcrumb.
 
+## Tier 2 (same branch)
+
+- **Approve/Deny scoped to real human gates.** New backend `awaiting_human_gate`
+  flag on `get_task` and `list_sprint_tasks` (a task is at a gate when it's
+  `blocked` and its `workflow_current_step` is a `_builtin:human_gate` step).
+  `TaskCard`/`TaskDetailDrawer` show Approve/Deny only when the flag is set;
+  other blocks get an explanatory note. (`dashboard_service.py`
+  `_human_gate_step_ids`/`_at_human_gate`; +1 backend test.)
+- **Cancelled lane.** The board renders a "Cancelled" column when the sprint has
+  cancelled tasks.
+- **Edit affordances.** Visible ✎ buttons on the sprint title and goal.
+- **Planned-card cue.** Planned sprint cards show an expand chevron and
+  "Click to expand" title so they're distinguishable from navigate-on-click
+  cards.
+
 ## Follow-ups (remaining UX review items)
 
 - Unify the two task-creation forms (inline queue editor vs modal).
-- Visible edit affordances on sprint title/goal (replace double-click).
-- A `cancelled` task lane/filter; scope Approve/Deny to real human gates.
-- Planned-sprint card behaviour parity (inline-expand vs navigate).
+- Roles inspection/editing surface; meta-history pagination + origin badges.
+- Status-casing and empty-state-copy normalization.

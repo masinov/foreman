@@ -1545,6 +1545,58 @@ class DashboardSprintTaskBacklogTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIsNone(response.json()["completion_evidence"])
 
+    def test_awaiting_human_gate_flag_distinguishes_gate_blocks(self):
+        """A task blocked AT a human-gate step is flagged; other blocks are not."""
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        project = Project(
+            id=self._next_id("proj-gate"),
+            name="Gate Project",
+            repo_path="/tmp/gate",
+            workflow_id="development_with_architect",  # has a human_approval gate
+        )
+        store.save_project(project)
+        sprint = Sprint(
+            id=self._next_id("sprint-gate"),
+            project_id=project.id,
+            title="Gate Sprint",
+            status="active",
+        )
+        store.save_sprint(sprint)
+        gated = Task(
+            id=self._next_id("task-gated"),
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="At the gate",
+            status="blocked",
+            workflow_current_step="human_approval",
+            blocked_reason="Awaiting human approval",
+        )
+        cost_blocked = Task(
+            id=self._next_id("task-cost"),
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="Cost blocked",
+            status="blocked",
+            workflow_current_step=None,
+            blocked_reason="Task cost exceeds limit",
+        )
+        store.save_task(gated)
+        store.save_task(cost_blocked)
+        store.close()
+
+        gated_payload = self._request("GET", f"/api/tasks/{gated.id}").json()
+        cost_payload = self._request("GET", f"/api/tasks/{cost_blocked.id}").json()
+        self.assertTrue(gated_payload["awaiting_human_gate"])
+        self.assertFalse(cost_payload["awaiting_human_gate"])
+
+        board = {
+            t["id"]: t
+            for t in self._request("GET", f"/api/sprints/{sprint.id}/tasks").json()["tasks"]
+        }
+        self.assertTrue(board[gated.id]["awaiting_human_gate"])
+        self.assertFalse(board[cost_blocked.id]["awaiting_human_gate"])
+
     # ── Event load-more (before_event_id) ────────────────────────────────────
 
     def test_list_sprint_events_before_cursor_returns_older_events(self):

@@ -752,6 +752,15 @@ export default function App({ services, browser }) {
                     ) : (
                       <>
                         <span className="sprint-title-text" title={currentSprint.title} onDoubleClick={() => { setTitleDraft(currentSprint.title); setEditingTitle(true); }}>{currentSprint.title}</span>
+                        <button
+                          className="sprint-edit-btn"
+                          type="button"
+                          aria-label="Edit sprint title"
+                          title="Edit title"
+                          onClick={() => { setTitleDraft(currentSprint.title); setEditingTitle(true); }}
+                        >
+                          ✎
+                        </button>
                         <span className={`sprint-status-badge ss-${currentSprint.status}`}>{currentSprint.status}</span>
                       </>
                     )}
@@ -781,8 +790,19 @@ export default function App({ services, browser }) {
                       </button>
                     </div>
                   ) : (
-                    <div className="sprint-goal-text" onDoubleClick={() => { setGoalDraft(currentSprint.goal || ""); setEditingGoal(true); }} title={currentSprint.goal || undefined}>
-                      {currentSprint.goal || "No sprint goal recorded."}
+                    <div className="sprint-goal-row">
+                      <div className="sprint-goal-text" onDoubleClick={() => { setGoalDraft(currentSprint.goal || ""); setEditingGoal(true); }} title={currentSprint.goal || undefined}>
+                        {currentSprint.goal || "No sprint goal recorded."}
+                      </div>
+                      <button
+                        className="sprint-edit-btn"
+                        type="button"
+                        aria-label="Edit sprint goal"
+                        title="Edit goal"
+                        onClick={() => { setGoalDraft(currentSprint.goal || ""); setEditingGoal(true); }}
+                      >
+                        ✎
+                      </button>
                     </div>
                   )}
                 </div>
@@ -888,7 +908,10 @@ export default function App({ services, browser }) {
               <div className={`sprint-body ${activityCollapsed ? "activity-hidden" : "with-activity"}`}>
                 <div className="board">
                   <div className="board-columns">
-                    {STATUS_COLUMNS.map((column) => {
+                    {(tasks.some((task) => task.status === "cancelled")
+                      ? [...STATUS_COLUMNS, { key: "cancelled", label: "Cancelled" }]
+                      : STATUS_COLUMNS
+                    ).map((column) => {
                       const columnTasks = tasks.filter((task) => task.status === column.key);
                       return (
                         <div key={column.key} className="column">

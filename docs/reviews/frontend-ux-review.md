@@ -92,10 +92,23 @@ against the real backend payloads and event taxonomy.
   existing CSS-variable palette, so evidence/supervision colors won't track the
   theme.
 
-## Already addressed in this branch
+## Already addressed
 
 - The sprint board's lone (dead) **Stop** button is replaced by a Run↔Stop
   toggle driven by `agent_running`, so an idle sprint shows a usable **Run**.
+- **Tier 1** (branch `fix/frontend-ux-correctness`): invalid `bug` task type,
+  dead activity filters + event summaries, `agent_running` consistency, the
+  `cancelled` breadcrumb miscolour, the "awaiting approval" label, the sprint
+  modal "Context" label, and CSS-token alignment.
+- **Tier 2 (this slice):** Approve/Deny are now scoped to real human gates via a
+  backend `awaiting_human_gate` flag; the sprint board adds a **cancelled** lane
+  when cancelled tasks exist; sprint title/goal gained visible ✎ edit buttons
+  (no longer double-click only); planned sprint cards show an expand chevron and
+  "Click to expand" affordance.
+
+Remaining (Tier 2/3): unify the two task-creation forms (inline queue editor vs
+modal); roles inspection/editing surface; meta-history pagination + origin
+badges; status-casing and empty-state-copy normalization.
 
 ## Suggested priority
 

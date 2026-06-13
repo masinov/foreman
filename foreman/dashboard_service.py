@@ -474,6 +474,11 @@ class DashboardService:
             str(row["task_id"]): row
             for row in self.store.task_run_totals(sprint_id=sprint_id)
         }
+        sprint = self.store.get_sprint(sprint_id)
+        project = self.store.get_project(sprint.project_id) if sprint else None
+        gate_step_ids = (
+            self._human_gate_step_ids(project.workflow_id) if project else set()
+        )
         result = []
         for task in self.store.list_tasks(sprint_id=sprint_id):
             metrics = task_totals.get(task.id, {})
@@ -489,6 +494,7 @@ class DashboardService:
                     "blocked_reason": task.blocked_reason,
                     "acceptance_criteria": task.acceptance_criteria,
                     "workflow_current_step": task.workflow_current_step,
+                    "awaiting_human_gate": self._at_human_gate(task, gate_step_ids),
                     "complexity": task.complexity,
                     "executor_overrides": task.executor_overrides,
                     "totals": {
@@ -563,6 +569,8 @@ class DashboardService:
         if task is None:
             raise DashboardNotFoundError(f"Task not found: {task_id}")
 
+        project = self.store.get_project(task.project_id)
+
         runs_data = []
         for run in self.store.list_runs(task_id=task_id):
             runs_data.append(
@@ -603,6 +611,10 @@ class DashboardService:
             "depends_on_task_ids": task.depends_on_task_ids or [],
             "complexity": task.complexity,
             "executor_overrides": task.executor_overrides or {},
+            "awaiting_human_gate": self._at_human_gate(
+                task,
+                self._human_gate_step_ids(project.workflow_id) if project else set(),
+            ),
             "completion_evidence": _serialize_completion_evidence(task.completion_evidence),
             "totals": self.store.run_totals(task_id=task_id),
             "runs": runs_data,
@@ -1032,6 +1044,34 @@ class DashboardService:
         if workflow is None:
             return None
         return {step.id for step in workflow.steps}
+
+    def _human_gate_step_ids(self, workflow_id: str) -> set[str]:
+        """Return the ids of ``_builtin:human_gate`` steps for a workflow.
+
+        Used to distinguish a task paused at a human gate (which the human
+        Approve/Deny, resolving the gate) from a task blocked for another reason
+        (cost/time/loop/evidence), which Approve/Deny cannot resolve.
+        """
+        from .roles import RoleLoadError, load_roles
+        from .workflows import WorkflowLoadError, load_workflows
+
+        try:
+            roles = load_roles()
+            workflows = load_workflows(available_role_ids=set(roles))
+        except (RoleLoadError, WorkflowLoadError):
+            return set()
+        workflow = workflows.get(workflow_id)
+        if workflow is None:
+            return set()
+        return {step.id for step in workflow.steps if step.role == "_builtin:human_gate"}
+
+    @staticmethod
+    def _at_human_gate(task: Task, gate_step_ids: set[str]) -> bool:
+        return (
+            task.status == "blocked"
+            and bool(task.workflow_current_step)
+            and task.workflow_current_step in gate_step_ids
+        )
 
     def list_roles(self) -> dict[str, Any]:
         """Return all available role definitions."""
