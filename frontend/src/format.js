@@ -64,6 +64,27 @@ export function formatDate(value) {
   return dateFormatter.format(new Date(value));
 }
 
+// Single source of truth for the displayed engine state, so "Running" always
+// means a live agent process (`agent_running`) rather than an inferred
+// task-status. Falls back to the legacy `status` field when `agent_running`
+// isn't present in the payload.
+export function deriveEngineState(project) {
+  if (!project) {
+    return "idle";
+  }
+  if (project.agent_running) {
+    return "running";
+  }
+  if (project.agent_running === undefined && project.status === "running") {
+    // Older payloads without agent_running: keep the inferred status.
+    return "running";
+  }
+  if ((project.task_counts?.blocked || 0) > 0 || project.status === "blocked") {
+    return "blocked";
+  }
+  return "idle";
+}
+
 export function formatProjectStatus(status) {
   switch (status) {
     case "running":
@@ -93,11 +114,16 @@ export function formatWorkflowCounts(stepVisitCounts) {
 }
 
 export function getTaskTypeClass(taskType) {
+  // Keys match the backend TASK_TYPES (feature/fix/refactor/docs/spike/chore).
   switch (taskType) {
-    case "bug":
-      return "tag-bug";
+    case "fix":
+      return "tag-fix";
     case "refactor":
       return "tag-refactor";
+    case "docs":
+      return "tag-docs";
+    case "spike":
+      return "tag-spike";
     case "chore":
       return "tag-chore";
     default:
@@ -105,24 +131,28 @@ export function getTaskTypeClass(taskType) {
   }
 }
 
+// Map any event type to a display category. Every category here has a matching
+// `dot-<category>` style and a corresponding activity filter, so no filter is
+// ever dead.
 export function getEventCategory(eventType) {
-  if (eventType.startsWith("agent.command")) {
-    return "command";
-  }
-  if (eventType.startsWith("agent.file")) {
-    return "file";
-  }
   if (eventType.startsWith("human.")) {
     return "human";
   }
-  if (eventType.startsWith("workflow.") || eventType.startsWith("engine.")) {
-    return "workflow";
-  }
-  if (eventType.includes("review") || eventType.includes("approval")) {
+  if (
+    eventType === "engine.attention_needed" ||
+    eventType === "engine.completion_evidence" ||
+    eventType === "engine.completion_guard" ||
+    eventType.startsWith("gate.") ||
+    eventType.includes("review") ||
+    eventType.includes("approval")
+  ) {
     return "review";
   }
-  if (eventType.startsWith("agent.message")) {
+  if (eventType.startsWith("agent.") || eventType.startsWith("signal.")) {
     return "message";
+  }
+  if (eventType.startsWith("workflow.") || eventType.startsWith("engine.")) {
+    return "workflow";
   }
   return "signal";
 }
@@ -151,6 +181,30 @@ export function formatEventSummary(event) {
   if (event.event_type === "human.task_edited") {
     const fields = payload.changed_fields ? Object.keys(payload.changed_fields).join(", ") : "fields";
     return `Task edited: ${fields}`;
+  }
+  if (event.event_type === "engine.attention_needed") {
+    return `Attention needed: ${payload.trigger || "decision"}`;
+  }
+  if (event.event_type === "engine.completion_evidence") {
+    const bits = [];
+    if (payload.verdict) bits.push(payload.verdict);
+    if (payload.proof_status) bits.push(`proof ${payload.proof_status}`);
+    if (payload.judged_by) bits.push(`judged by ${payload.judged_by}`);
+    return `Evidence: ${bits.join(" · ") || "built"}`;
+  }
+  if (event.event_type === "workflow.model_selected") {
+    const where = payload.step ? ` @ ${payload.step}` : "";
+    const why = payload.source ? ` (${payload.source})` : "";
+    return `Model: ${payload.model || "default"}${why}${where}`;
+  }
+  if (event.event_type === "engine.completion_guard") {
+    return `Merge guard: ${payload.verdict || payload.error || "blocked"}`;
+  }
+  if (event.event_type === "gate.cost_exceeded") {
+    return `Cost gate: $${payload.actual_usd ?? "?"} ≥ $${payload.limit_usd ?? "?"} (${payload.scope || "task"})`;
+  }
+  if (event.event_type === "gate.time_exceeded") {
+    return "Time limit exceeded";
   }
   if (event.event_type === "workflow.resumed") {
     const details = [];

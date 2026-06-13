@@ -35,6 +35,24 @@ memory changes rather than versioned product releases.
   `description`, `complexity`, and `depends_on` (matching the CLI); `get_task`
   serializes `completion_evidence`.
 
+### Frontend correctness & polish
+
+- fixed the New Task form offering an invalid `bug` task type (which the backend
+  rejected with a 400) and omitting `fix`/`docs`/`spike`; the chip list and the
+  `getTaskTypeClass` colour map now match the backend `TASK_TYPES`.
+- removed the two dead activity filters (`File changes`, `Review` matched event
+  types the engine never emits); the feed now filters into Agent / Workflow /
+  Decisions / Human, every bucket populated, and the new roadmap events
+  (`engine.attention_needed`, `engine.completion_evidence`,
+  `workflow.model_selected`, guard/gate events) get readable summaries.
+- "Running" now consistently means a live agent (`agent_running`) across the
+  landing cards, the topbar engine status, and the breadcrumb — resolving the
+  contradiction with the Run/Stop control; the breadcrumb sprint dropdown no
+  longer miscolours `cancelled`.
+- relabelled the misleading "{n} awaiting approval" project badge to "{n}
+  blocked"; aligned the sprint modal's task "Context" field to "Description";
+  moved the evidence/supervision colours onto the theme tokens.
+
 ### Fixed
 
 - supervision now emits the full attention-trigger taxonomy: a completion/merge

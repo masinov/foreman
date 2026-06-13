@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
+  deriveEngineState,
   eventMatchesFilter,
   formatCompactCount,
   formatCount,
@@ -25,11 +26,10 @@ export const STATUS_COLUMNS = [
 
 export const EVENT_FILTERS = [
   { key: "all", label: "All events" },
-  { key: "message", label: "Agent messages" },
-  { key: "file", label: "File changes" },
+  { key: "message", label: "Agent" },
   { key: "workflow", label: "Workflow" },
+  { key: "review", label: "Decisions" },
   { key: "human", label: "Human" },
-  { key: "review", label: "Review" },
 ];
 
 function totalsSummaryLine(projectTotals) {
@@ -100,18 +100,21 @@ export function Topbar({
                   &#9662;
                 </button>
                 <div className="breadcrumb-dropdown">
-                  {projects.map((project) => (
-                    <div
-                      key={project.id}
-                      className={`breadcrumb-option ${project.id === currentProject.id ? "active-option" : ""}`}
-                      onClick={() => { closeAll(); onSelectProject(project.id); }}
-                    >
-                      <span>{project.name}</span>
-                      <span className={`opt-status ${projectStatusClass(project.status)}`}>
-                        {formatProjectStatus(project.status)}
-                      </span>
-                    </div>
-                  ))}
+                  {projects.map((project) => {
+                    const state = deriveEngineState(project);
+                    return (
+                      <div
+                        key={project.id}
+                        className={`breadcrumb-option ${project.id === currentProject.id ? "active-option" : ""}`}
+                        onClick={() => { closeAll(); onSelectProject(project.id); }}
+                      >
+                        <span>{project.name}</span>
+                        <span className={`opt-status ${projectStatusClass(state)}`}>
+                          {formatProjectStatus(state)}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </>
@@ -131,7 +134,8 @@ export function Topbar({
                 <div className="breadcrumb-dropdown">
                   {(currentProject?.sprints || []).map((sprint) => {
                     const statusClass = sprint.status === "active" ? "opt-s-active"
-                      : sprint.status === "done" ? "opt-s-done"
+                      : sprint.status === "completed" ? "opt-s-done"
+                      : sprint.status === "cancelled" ? "opt-s-blocked"
                       : "opt-s-planned";
                     return (
                       <div
@@ -184,6 +188,7 @@ export function ProjectOverview({ projects, onSelectProject, onNewProject }) {
       </div>
       <div className="dashboard-grid">
         {projects.map((project) => {
+          const engineState = deriveEngineState(project);
           return (
             <button
               key={project.id}
@@ -194,7 +199,12 @@ export function ProjectOverview({ projects, onSelectProject, onNewProject }) {
             >
               <div className="pc-header">
                 <div className="pc-name">{project.name}</div>
-                <div className={`pc-status s-${project.status}`}>{formatProjectStatus(project.status)}</div>
+                <div className={`pc-status s-${engineState}`}>
+                  {engineState === "running" ? (
+                    <span className="pc-running-dot" aria-hidden="true" />
+                  ) : null}
+                  {formatProjectStatus(engineState)}
+                </div>
               </div>
               <div className="pc-sprint">
                 {project.active_sprint
@@ -632,7 +642,10 @@ export function SprintList({ project, sprints, pendingGates, onSelectSprint, onO
               </div>
               {project.task_counts?.blocked > 0 ? (
                 <div className="project-badges">
-                  <span className="badge badge-warn">{project.task_counts.blocked} awaiting approval</span>
+                  <span className="badge badge-warn">
+                    {project.task_counts.blocked} blocked
+                    {project.task_counts.blocked !== 1 ? " tasks" : " task"}
+                  </span>
                 </div>
               ) : null}
             </div>
@@ -1655,7 +1668,7 @@ export function NewSprintModal({ onSubmit, onClose }) {
                   style={{ minHeight: "48px" }}
                   value={taskContext}
                   onChange={(e) => setTaskContext(e.target.value)}
-                  placeholder="Context (optional)"
+                  placeholder="Description (optional)"
                 />
                 <div className="pending-task-form-footer">
                   <div className="form-chips">
@@ -1692,7 +1705,7 @@ export function NewSprintModal({ onSubmit, onClose }) {
   );
 }
 
-const TASK_TYPE_CHIPS = ["feature", "bug", "refactor", "chore"];
+const TASK_TYPE_CHIPS = ["feature", "fix", "refactor", "docs", "spike", "chore"];
 
 export function NewTaskModal({ onSubmit, onClose, existingTasks = [] }) {
   const [title, setTitle] = useState("");

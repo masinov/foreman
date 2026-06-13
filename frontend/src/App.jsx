@@ -16,7 +16,7 @@ import {
   TaskDetailDrawer,
   Topbar,
 } from "./components";
-import { formatCompactCount, formatCount } from "./format";
+import { deriveEngineState, formatCompactCount, formatCount } from "./format";
 import { buildDashboardPath, buildProjectPath, buildSprintPath, parseRoute } from "./routing";
 
 const INITIAL_EVENTS_LIMIT = 50;
@@ -677,7 +677,7 @@ export default function App({ services, browser }) {
         currentProject={topbarProject}
         currentSprint={currentSprint}
         projectTotals={topbarProjectTotals}
-        projectStatus={projects.find((project) => project.id === route.projectId)?.status}
+        projectStatus={deriveEngineState(currentProject || projects.find((project) => project.id === route.projectId))}
         onOpenDashboard={() => navigateTo(buildDashboardPath())}
         onSelectProject={(projectId) => navigateTo(buildProjectPath(projectId))}
         onSelectSprint={(sprintId) => navigateTo(buildSprintPath(route.projectId, sprintId))}
@@ -943,11 +943,10 @@ export default function App({ services, browser }) {
                         onChange={(event) => setActivityFilter(event.target.value)}
                       >
                         <option value="all">All events</option>
-                        <option value="message">Agent messages</option>
-                        <option value="file">File changes</option>
+                        <option value="message">Agent</option>
                         <option value="workflow">Workflow</option>
+                        <option value="review">Decisions</option>
                         <option value="human">Human</option>
-                        <option value="review">Review</option>
                       </select>
                     </label>
                   </div>
