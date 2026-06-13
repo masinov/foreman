@@ -1742,7 +1742,7 @@ export function TaskFormFields({ value, onChange, dependencyOptions = [], showCo
             <button
               key={type}
               type="button"
-              className={`form-chip ${value.taskType === type ? "selected" : ""}`}
+              className={`card-tag type-chip ${getTaskTypeClass(type)} ${value.taskType === type ? "chip-selected" : ""}`}
               onClick={() => set({ taskType: type })}
             >
               {type}
