@@ -36,6 +36,20 @@
   implementation sprint. Next sprint pulls from `docs/sprints/backlog.md`
   (Tier 3 architecture / parking-lot items) when opened.
 
+## Latest update — frontend↔backend binding
+
+- Branch `feat/frontend-backend-binding`. Closes Tiers 1–2 of the frontend gap
+  analysis (`docs/reviews/frontend-gap-analysis.md`): completion-evidence and
+  per-run model in the task drawer, an `engine.attention_needed` supervision
+  banner wired to `POST …/meta/supervise`, a settings panel rebuilt against the
+  real `ProjectSettings` (token economy, judge, gates) with `development_tiered`
+  selectable, and richer task creation (description/complexity/dependencies).
+- Fixed dropped-context, `agent_running`, and dead/dangerous settings bugs.
+  Backend: `create_task` gained description/complexity/depends_on; `get_task`
+  serializes completion evidence.
+- Validation: backend suite 582 passing (+5); frontend 4 passing (added a
+  supervision-banner test, fixed two pre-existing failures); dist rebuilt.
+
 ## Latest update — supervision-trigger completion + operator manual
 
 - Branch `feat/supervision-triggers-and-docs`. Closes the one gap found by the

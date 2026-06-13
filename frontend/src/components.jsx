@@ -582,7 +582,8 @@ export function SprintList({ project, sprints, pendingGates, onSelectSprint, onO
     );
   }
 
-  const runStopButton = project.status === "running" ? (
+  const agentRunning = project.agent_running ?? (project.status === "running");
+  const runStopButton = agentRunning ? (
     <button
       className="btn-stop"
       type="button"
@@ -660,7 +661,7 @@ export function SprintList({ project, sprints, pendingGates, onSelectSprint, onO
               <div className="pq-panel-label">
                 Active
                 {activeSprint ? (
-                  <span className={`pq-running-dot ${project.status === "running" ? "is-running" : ""}`} />
+                  <span className={`pq-running-dot ${agentRunning ? "is-running" : ""}`} />
                 ) : null}
               </div>
               {activeSprint ? (
@@ -869,6 +870,46 @@ export function EventList({ events, filterKey, taskIndex, containerRef, onScroll
 
 const TASK_TYPE_OPTIONS = ["feature", "fix", "refactor", "docs", "spike", "chore"];
 
+function CompletionEvidenceSection({ evidence }) {
+  const verdict = evidence.verdict || "unknown";
+  const proof = evidence.proof_status || "pending";
+  return (
+    <div className="detail-section">
+      <div className="detail-section-title">Completion Evidence</div>
+      <div className="evidence-badges">
+        <span className={`evidence-badge verdict-${verdict}`}>{verdict}</span>
+        <span className={`evidence-badge proof-${proof}`}>proof: {proof}</span>
+        <span className="evidence-badge evidence-score">{Math.round(evidence.score || 0)}/100</span>
+        <span className="evidence-badge evidence-judge" title="Who judged the criteria">
+          judged by {evidence.judged_by || "heuristic"}
+        </span>
+      </div>
+      {Array.isArray(evidence.criteria_checklist) && evidence.criteria_checklist.length > 0 ? (
+        <ul className="evidence-checklist">
+          {evidence.criteria_checklist.map((item, i) => (
+            <li key={i} className={`evidence-item evidence-${item.status}`}>
+              <span className="evidence-item-status">
+                {item.status === "passed" ? "✓" : item.status === "partial" ? "~" : "✗"}
+              </span>
+              <span className="evidence-item-text" title={item.evidence || ""}>{item.criterion}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {Array.isArray(evidence.failure_reasons) && evidence.failure_reasons.length > 0 ? (
+        <div className="evidence-failures">
+          {evidence.failure_reasons.map((reason, i) => (
+            <div key={i} className="evidence-failure">• {reason}</div>
+          ))}
+        </div>
+      ) : null}
+      {evidence.branch_diff_stat ? (
+        <div className="evidence-diffstat">{evidence.branch_diff_stat}</div>
+      ) : null}
+    </div>
+  );
+}
+
 export function TaskDetailDrawer({
   task,
   taskIndex,
@@ -1006,6 +1047,22 @@ export function TaskDetailDrawer({
             <span className="detail-field-label">Step visits</span>
             <span className="detail-field-value">{formatWorkflowCounts(task.step_visit_counts)}</span>
           </div>
+          {task.complexity ? (
+            <div className="detail-field">
+              <span className="detail-field-label">Complexity</span>
+              <span className="detail-field-value">{task.complexity}</span>
+            </div>
+          ) : null}
+          {task.executor_overrides && task.executor_overrides.models && Object.keys(task.executor_overrides.models).length > 0 ? (
+            <div className="detail-field">
+              <span className="detail-field-label">Model overrides</span>
+              <span className="detail-field-value">
+                {Object.entries(task.executor_overrides.models)
+                  .map(([step, model]) => `${step}→${model}`)
+                  .join(", ")}
+              </span>
+            </div>
+          ) : null}
         </div>
         {task.depends_on_task_ids && task.depends_on_task_ids.length > 0 ? (
           <div className="detail-section">
@@ -1036,6 +1093,9 @@ export function TaskDetailDrawer({
             <div className="detail-criteria">{task.acceptance_criteria || <span className="detail-empty">None specified.</span>}</div>
           )}
         </div>
+        {task.completion_evidence ? (
+          <CompletionEvidenceSection evidence={task.completion_evidence} />
+        ) : null}
         {task.blocked_reason ? (
           <div className="detail-section">
             <div className="detail-section-title">Blocked Reason</div>
@@ -1106,7 +1166,9 @@ export function TaskDetailDrawer({
                 <div key={run.id} className="run-entry">
                   <span className="run-role">{run.role_id}</span>
                   <span className="run-detail-text">
-                    {run.workflow_step}{run.duration_ms ? ` · ${formatDuration(run.duration_ms)}` : ""}
+                    {run.workflow_step}
+                    {run.model ? ` · ${run.model}` : ""}
+                    {run.duration_ms ? ` · ${formatDuration(run.duration_ms)}` : ""}
                   </span>
                   <span className="run-entry-right">
                     <span className={`run-outcome outcome-${run.status}`}>{run.status}</span>
@@ -1147,6 +1209,7 @@ export function ErrorBanner({ message, onDismiss }) {
 
 const WORKFLOW_OPTIONS = [
   { value: "development", label: "development" },
+  { value: "development_tiered", label: "development_tiered" },
   { value: "development_with_architect", label: "development_with_architect" },
   { value: "development_secure", label: "development_secure" },
 ];
@@ -1233,54 +1296,96 @@ export function SettingsPanel({ settings, onUpdate, onClose }) {
               </div>
             </div>
             <SettingsToggle
-              label="Approve merges"
-              description="Require human approval before merging to target branch"
-              checked={innerSettings.approve_merges ?? true}
-              onChange={(checked) => handleChange("approve_merges", checked)}
-            />
-            <SettingsToggle
-              label="Approve task completion"
-              description="Require human sign-off before marking a task done"
-              checked={innerSettings.approve_task_completion ?? true}
-              onChange={(checked) => handleChange("approve_task_completion", checked)}
-            />
-            <SettingsToggle
-              label="Approve sprint completion"
-              description="Require human sign-off before closing a sprint"
-              checked={innerSettings.approve_sprint_completion ?? true}
-              onChange={(checked) => handleChange("approve_sprint_completion", checked)}
-            />
-            <SettingsToggle
               label="Allow autonomous task selection"
               description="Engine picks the next task instead of waiting for assignment"
               checked={innerSettings.task_selection_mode === "autonomous"}
               onChange={(checked) => handleChange("task_selection_mode", checked ? "autonomous" : "directed")}
             />
             <SettingsToggle
-              label="Allow agent to create tasks"
-              description="Engine may add tasks to the sprint during a run"
-              checked={innerSettings.agent_can_create_tasks ?? true}
-              onChange={(checked) => handleChange("agent_can_create_tasks", checked)}
-            />
-            <SettingsToggle
-              label="Approve architect plans"
-              description="Require human approval of architect-generated plans"
-              checked={innerSettings.approve_architect_plans ?? true}
-              onChange={(checked) => handleChange("approve_architect_plans", checked)}
+              label="Completion proof gate"
+              description="Block merges whose completion evidence does not pass the proof gate"
+              checked={innerSettings.completion_guard_enabled ?? true}
+              onChange={(checked) => handleChange("completion_guard_enabled", checked)}
             />
           </div>
           <div className="settings-section">
-            <div className="settings-section-title">Meta Agent</div>
+            <div className="settings-section-title">Models &amp; Token Economy</div>
             <div className="form-group">
-              <label className="form-label">Backend</label>
-              <select
+              <label className="form-label">Default model</label>
+              <input
                 className="form-input"
-                value={innerSettings.meta_agent_backend || "claude"}
-                onChange={(e) => handleChange("meta_agent_backend", e.target.value)}
-              >
-                <option value="claude">Claude Code</option>
-                <option value="codex">Codex</option>
-              </select>
+                type="text"
+                placeholder="harness default"
+                value={innerSettings.default_model ?? ""}
+                onChange={(e) => handleChange("default_model", e.target.value)}
+              />
+              <span className="form-hint">Used when a role pins no model.</span>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Manager (meta-agent) model</label>
+              <input
+                className="form-input"
+                type="text"
+                placeholder="harness default"
+                value={innerSettings.meta_agent_model ?? ""}
+                onChange={(e) => handleChange("meta_agent_model", e.target.value)}
+              />
+              <span className="form-hint">Seat the frontier model here for planning &amp; supervision.</span>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Reviewer diff cap (chars)</label>
+              <input
+                className="form-input"
+                type="number"
+                min="1"
+                value={innerSettings.review_diff_max_chars ?? 16000}
+                onChange={(e) => handleChange("review_diff_max_chars", Number(e.target.value))}
+              />
+            </div>
+          </div>
+          <div className="settings-section">
+            <div className="settings-section-title">Criteria Judge (optional)</div>
+            <span className="settings-section-hint">
+              Leave base URL / model empty to use the zero-config keyword heuristic.
+            </span>
+            <div className="form-group">
+              <label className="form-label">Judge base URL</label>
+              <input
+                className="form-input"
+                type="text"
+                placeholder="https://api.example.io/anthropic"
+                value={innerSettings.judge_base_url ?? ""}
+                onChange={(e) => handleChange("judge_base_url", e.target.value)}
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Judge model</label>
+              <input
+                className="form-input"
+                type="text"
+                value={innerSettings.judge_model ?? ""}
+                onChange={(e) => handleChange("judge_model", e.target.value)}
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Judge API key env var</label>
+              <input
+                className="form-input"
+                type="text"
+                placeholder="e.g. JUDGE_API_KEY"
+                value={innerSettings.judge_api_key_env ?? ""}
+                onChange={(e) => handleChange("judge_api_key_env", e.target.value)}
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Judge diff cap (chars)</label>
+              <input
+                className="form-input"
+                type="number"
+                min="1"
+                value={innerSettings.judge_max_diff_chars ?? 24000}
+                onChange={(e) => handleChange("judge_max_diff_chars", Number(e.target.value))}
+              />
             </div>
           </div>
           <div className="settings-section">
@@ -1319,17 +1424,6 @@ export function SettingsPanel({ settings, onUpdate, onClose }) {
           <div className="settings-section">
             <div className="settings-section-title">Resource Limits</div>
             <div className="form-group">
-              <label className="form-label">Max tokens per task</label>
-              <input
-                className="form-input"
-                type="number"
-                min="0"
-                style={{ fontVariantNumeric: "tabular-nums" }}
-                value={innerSettings.max_tokens_per_task ?? 200000}
-                onChange={(e) => handleChange("max_tokens_per_task", Number(e.target.value))}
-              />
-            </div>
-            <div className="form-group">
               <label className="form-label">Max step visits (loop limit)</label>
               <input
                 className="form-input"
@@ -1340,13 +1434,55 @@ export function SettingsPanel({ settings, onUpdate, onClose }) {
               />
             </div>
             <div className="form-group">
-              <label className="form-label">Max retries on infrastructure error</label>
+              <label className="form-label">Cost limit per task (USD, 0 = off)</label>
               <input
                 className="form-input"
                 type="number"
                 min="0"
-                value={innerSettings.max_infra_retries ?? 3}
-                onChange={(e) => handleChange("max_infra_retries", Number(e.target.value))}
+                step="0.01"
+                value={innerSettings.cost_limit_per_task_usd ?? 0}
+                onChange={(e) => handleChange("cost_limit_per_task_usd", Number(e.target.value))}
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Cost limit per sprint (USD, 0 = off)</label>
+              <input
+                className="form-input"
+                type="number"
+                min="0"
+                step="0.01"
+                value={innerSettings.cost_limit_per_sprint_usd ?? 0}
+                onChange={(e) => handleChange("cost_limit_per_sprint_usd", Number(e.target.value))}
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Time limit per task (ms, 0 = off)</label>
+              <input
+                className="form-input"
+                type="number"
+                min="0"
+                value={innerSettings.time_limit_per_task_ms ?? 0}
+                onChange={(e) => handleChange("time_limit_per_task_ms", Number(e.target.value))}
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Event retention (days)</label>
+              <input
+                className="form-input"
+                type="number"
+                min="1"
+                value={innerSettings.event_retention_days ?? 90}
+                onChange={(e) => handleChange("event_retention_days", Number(e.target.value))}
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Test command</label>
+              <input
+                className="form-input"
+                type="text"
+                placeholder="e.g. ./venv/bin/python -m unittest discover -s tests"
+                value={innerSettings.test_command ?? ""}
+                onChange={(e) => handleChange("test_command", e.target.value)}
               />
             </div>
           </div>
@@ -1558,11 +1694,17 @@ export function NewSprintModal({ onSubmit, onClose }) {
 
 const TASK_TYPE_CHIPS = ["feature", "bug", "refactor", "chore"];
 
-export function NewTaskModal({ onSubmit, onClose }) {
+export function NewTaskModal({ onSubmit, onClose, existingTasks = [] }) {
   const [title, setTitle] = useState("");
   const [taskType, setTaskType] = useState("feature");
   const [criteria, setCriteria] = useState("");
-  const [context, setContext] = useState("");
+  const [description, setDescription] = useState("");
+  const [complexity, setComplexity] = useState("");
+  const [dependsOn, setDependsOn] = useState([]);
+
+  function toggleDep(id) {
+    setDependsOn((prev) => (prev.includes(id) ? prev.filter((d) => d !== id) : [...prev, id]));
+  }
 
   function handleSubmit(e) {
     e.preventDefault();
@@ -1571,7 +1713,9 @@ export function NewTaskModal({ onSubmit, onClose }) {
       title: title.trim(),
       taskType,
       acceptanceCriteria: criteria.trim() || undefined,
-      context: context.trim() || undefined,
+      description: description.trim() || undefined,
+      complexity: complexity || undefined,
+      dependsOn,
     });
   }
 
@@ -1593,8 +1737,8 @@ export function NewTaskModal({ onSubmit, onClose }) {
               <textarea className="form-input" style={{ minHeight: "48px" }} value={criteria} onChange={(e) => setCriteria(e.target.value)} placeholder="What must be true for this task to be done?" />
             </div>
             <div className="form-group">
-              <label className="form-label">Context (optional)</label>
-              <textarea className="form-input" style={{ minHeight: "48px" }} value={context} onChange={(e) => setContext(e.target.value)} placeholder="Relevant files, reproduction steps, references..." />
+              <label className="form-label">Description (optional)</label>
+              <textarea className="form-input" style={{ minHeight: "48px" }} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Relevant files, reproduction steps, references..." />
             </div>
             <div className="form-group">
               <label className="form-label">Label (optional)</label>
@@ -1611,6 +1755,39 @@ export function NewTaskModal({ onSubmit, onClose }) {
                 ))}
               </div>
             </div>
+            <div className="form-group">
+              <label className="form-label">Complexity (optional)</label>
+              <div className="form-chips">
+                {["small", "medium", "large"].map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    className={`form-chip ${complexity === c ? "selected" : ""}`}
+                    onClick={() => setComplexity(complexity === c ? "" : c)}
+                  >
+                    {c}
+                  </button>
+                ))}
+              </div>
+              <span className="form-hint">Sets the model-ladder start rung for this task.</span>
+            </div>
+            {existingTasks.length > 0 ? (
+              <div className="form-group">
+                <label className="form-label">Depends on (optional)</label>
+                <div className="form-deps">
+                  {existingTasks.map((t) => (
+                    <label key={t.id} className={`form-dep ${dependsOn.includes(t.id) ? "selected" : ""}`}>
+                      <input
+                        type="checkbox"
+                        checked={dependsOn.includes(t.id)}
+                        onChange={() => toggleDep(t.id)}
+                      />
+                      <span>{t.title}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </div>
           <div className="modal-footer">
             <button className="btn-cancel" type="button" onClick={onClose}>Cancel</button>
@@ -1691,6 +1868,91 @@ export function NewProjectModal({ onSubmit, onClose }) {
           </div>
         </form>
       </div>
+    </div>
+  );
+}
+
+const ATTENTION_TRIGGER_LABELS = {
+  task_blocked: "A task was blocked and needs a decision.",
+  evidence_failed: "Completion evidence failed the proof gate.",
+  loop_limit: "A task hit the workflow step-visit loop limit.",
+  sprint_resolved: "A sprint finished — confirm the next move.",
+};
+
+export function SupervisionBanner({ event, services, projectId, taskIndex, onDismiss, onActed }) {
+  const [streaming, setStreaming] = useState(false);
+  const [recommendation, setRecommendation] = useState("");
+  const [status, setStatus] = useState(""); // "", "done", "duplicate", "error"
+  const [error, setError] = useState("");
+
+  if (!event) return null;
+
+  const trigger = event.payload?.trigger || "task_blocked";
+  const affectedTaskId = event.payload?.task_id;
+  const affectedTask = affectedTaskId ? taskIndex?.get(affectedTaskId) : null;
+
+  async function askManager() {
+    if (streaming || typeof services.superviseMeta !== "function") return;
+    setStreaming(true);
+    setRecommendation("");
+    setError("");
+    setStatus("");
+    try {
+      for await (const chunk of services.superviseMeta(projectId, event.id)) {
+        if (chunk.type === "text_delta") {
+          setRecommendation((prev) => prev + chunk.text);
+        } else if (chunk.type === "error") {
+          setError(chunk.message);
+          setStatus("error");
+        } else if (chunk.type === "done") {
+          setStatus("done");
+          onActed?.();
+        }
+      }
+    } catch (err) {
+      const msg = err.message || "Supervision request failed.";
+      if (msg.includes("409") || /already/i.test(msg)) {
+        setStatus("duplicate");
+      } else {
+        setError(msg);
+        setStatus("error");
+      }
+    } finally {
+      setStreaming(false);
+    }
+  }
+
+  return (
+    <div className="supervision-banner">
+      <div className="supervision-banner-main">
+        <span className="supervision-icon" aria-hidden="true">⚠</span>
+        <div className="supervision-text">
+          <div className="supervision-title">{ATTENTION_TRIGGER_LABELS[trigger] || `Engine raised: ${trigger}`}</div>
+          {affectedTask ? (
+            <div className="supervision-subtitle">Task: {affectedTask.title}</div>
+          ) : null}
+        </div>
+        <div className="supervision-actions">
+          <button
+            className="btn-action"
+            type="button"
+            disabled={streaming || status === "done" || status === "duplicate"}
+            onClick={askManager}
+          >
+            {streaming ? "Asking…" : "Ask the manager"}
+          </button>
+          <button className="btn-secondary" type="button" onClick={() => onDismiss?.(event.id)}>
+            Dismiss
+          </button>
+        </div>
+      </div>
+      {recommendation ? (
+        <div className="supervision-recommendation">{recommendation}</div>
+      ) : null}
+      {status === "duplicate" ? (
+        <div className="supervision-note">This attention event was already handled.</div>
+      ) : null}
+      {error ? <div className="supervision-error">{error}</div> : null}
     </div>
   );
 }

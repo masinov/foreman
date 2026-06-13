@@ -231,12 +231,18 @@ def create_dashboard_app(
     @app.post("/api/sprints/{sprint_id}/tasks")
     async def create_task(sprint_id: str, request: Request) -> dict[str, Any]:
         data = await _read_json_body(request)
+        depends_on = data.get("depends_on")
+        if depends_on is not None and not isinstance(depends_on, list):
+            raise DashboardValidationError("'depends_on' must be a list of task ids.")
         return with_api(
             lambda api: api.create_task(
                 sprint_id,
                 title=str(data.get("title", "")),
                 task_type=str(data.get("task_type", "feature")),
                 acceptance_criteria=data.get("acceptance_criteria"),
+                description=data.get("description"),
+                complexity=data.get("complexity") or None,
+                depends_on=depends_on,
             )
         )
 

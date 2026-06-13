@@ -14,6 +14,25 @@ memory changes rather than versioned product releases.
   (`62c2e25` → `2ca7b49` → `b53f930` → `35b667c`) and the sprints archived under
   `docs/sprints/archive/`. Full suite: 571 tests passing.
 
+### Frontend
+
+- tied the React dashboard to the finished backend (see
+  `docs/reviews/frontend-gap-analysis.md`): the task drawer now shows completion
+  evidence (verdict / proof status / score / judged-by + per-criterion
+  checklist) and the per-run model; an `engine.attention_needed` supervision
+  banner runs one manager turn via `POST …/meta/supervise`; the settings panel
+  binds to the real `ProjectSettings` (models/token-economy, criteria judge,
+  cost/time gates, `completion_guard_enabled`) and can select
+  `development_tiered`; new-task creation carries description, complexity, and
+  dependencies.
+- fixed frontend bugs: the new-task "Context" field was silently dropped; the
+  Run/Stop toggle inferred agent state from task status instead of the
+  authoritative `agent_running` field; the settings panel wrote inert keys and
+  offered a Codex meta-backend option that broke the manager.
+- backend: `POST /api/sprints/{id}/tasks` (`create_task`) now accepts
+  `description`, `complexity`, and `depends_on` (matching the CLI); `get_task`
+  serializes `completion_evidence`.
+
 ### Fixed
 
 - supervision now emits the full attention-trigger taxonomy: a completion/merge

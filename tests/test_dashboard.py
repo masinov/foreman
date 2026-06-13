@@ -821,6 +821,49 @@ class DashboardSettingsTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 404)
 
+    def test_create_task_accepts_description_complexity_and_dependencies(self):
+        project, sprint = self._seed_project()
+        first = self._request(
+            "POST",
+            f"/api/sprints/{sprint.id}/tasks",
+            json={"title": "Base task", "acceptance_criteria": "c"},
+        ).json()
+        response = self._request(
+            "POST",
+            f"/api/sprints/{sprint.id}/tasks",
+            json={
+                "title": "Rich task",
+                "task_type": "feature",
+                "acceptance_criteria": "Must pass",
+                "description": "Lots of context here.",
+                "complexity": "large",
+                "depends_on": [first["id"]],
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["description"], "Lots of context here.")
+        self.assertEqual(data["complexity"], "large")
+        self.assertEqual(data["depends_on_task_ids"], [first["id"]])
+
+    def test_create_task_rejects_invalid_complexity(self):
+        _, sprint = self._seed_project()
+        response = self._request(
+            "POST",
+            f"/api/sprints/{sprint.id}/tasks",
+            json={"title": "Bad complexity", "complexity": "huge"},
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_create_task_rejects_unknown_dependency(self):
+        _, sprint = self._seed_project()
+        response = self._request(
+            "POST",
+            f"/api/sprints/{sprint.id}/tasks",
+            json={"title": "Dep task", "depends_on": ["task-does-not-exist"]},
+        )
+        self.assertEqual(response.status_code, 400)
+
     def test_service_create_sprint_generates_stable_id(self):
         project, _ = self._seed_project()
         store = ForemanStore(self.db_path)
@@ -1457,6 +1500,50 @@ class DashboardSprintTaskBacklogTests(unittest.TestCase):
         data = response.json()
         self.assertIn("depends_on_task_ids", data)
         self.assertEqual(data["depends_on_task_ids"], [blocker.id])
+
+    def test_get_task_serializes_completion_evidence(self):
+        """GET /api/tasks/{id} surfaces completion evidence (verdict, proof, judge)."""
+        from foreman.models import CompletionEvidence
+
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        _, sprint, task = self._seed_active()
+        task.completion_evidence = CompletionEvidence(
+            task_id=task.id,
+            task_title=task.title,
+            acceptance_criteria="c",
+            verdict="weak",
+            proof_status="failed",
+            judged_by="claude-haiku-4-5-20251001",
+            score=42.0,
+            criteria_checklist=(
+                {"criterion": "c", "status": "failed", "evidence": "missing"},
+            ),
+            failure_reasons=("Evidence score too low (42/100).",),
+        )
+        store.save_task(task)
+        store.close()
+
+        response = self._request("GET", f"/api/tasks/{task.id}")
+        self.assertEqual(response.status_code, 200)
+        evidence = response.json()["completion_evidence"]
+        self.assertIsNotNone(evidence)
+        self.assertEqual(evidence["verdict"], "weak")
+        self.assertEqual(evidence["proof_status"], "failed")
+        self.assertEqual(evidence["judged_by"], "claude-haiku-4-5-20251001")
+        self.assertEqual(len(evidence["criteria_checklist"]), 1)
+        self.assertEqual(evidence["failure_reasons"], ["Evidence score too low (42/100)."])
+
+    def test_get_task_completion_evidence_none_when_absent(self):
+        """A task with no evidence yet returns completion_evidence: null."""
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        _, sprint, task = self._seed_active()
+        store.close()
+
+        response = self._request("GET", f"/api/tasks/{task.id}")
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.json()["completion_evidence"])
 
     # ── Event load-more (before_event_id) ────────────────────────────────────
 

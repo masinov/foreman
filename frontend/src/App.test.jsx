@@ -185,6 +185,12 @@ function createMockServices() {
       streamHandlers.onError = handlers.onError;
       return () => {};
     }),
+    listGates: vi.fn().mockResolvedValue({ gates: [] }),
+    createTask: vi.fn().mockResolvedValue({ id: "task-new" }),
+    superviseMeta: vi.fn().mockImplementation(async function* () {
+      yield { type: "text_delta", text: "Recommend unblocking and retrying." };
+      yield { type: "done", session_id: "sess-1" };
+    }),
   };
 
   return {
@@ -218,7 +224,8 @@ describe("React dashboard foundation", () => {
 
     render(<App services={services} browser={window} />);
 
-    expect(await screen.findByText("Build the frontend")).toBeInTheDocument();
+    // Select the task so its context is the target for human guidance.
+    fireEvent.click(await screen.findByText("Build the frontend"));
     const textarea = await screen.findByLabelText("Human guidance");
     fireEvent.change(textarea, { target: { value: "Add a regression test for the stream reconnect path." } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -256,5 +263,39 @@ describe("React dashboard foundation", () => {
 
     expect(await screen.findByText("Approved. Continue to the merge step.")).toBeInTheDocument();
     expect(services.openSprintStream).toHaveBeenCalled();
+  });
+
+  it("surfaces a supervision banner for attention_needed and asks the manager", async () => {
+    const { services, emitEvent } = createMockServices();
+    window.history.replaceState({}, "", "/dashboard/projects/proj-1/sprints/sprint-1");
+
+    render(<App services={services} browser={window} />);
+    expect(await screen.findByText("Building the new dashboard shell.")).toBeInTheDocument();
+
+    await act(async () => {
+      emitEvent({
+        type: "event",
+        event: {
+          id: "event-attn",
+          task_id: "task-3",
+          project_id: "proj-1",
+          event_type: "engine.attention_needed",
+          timestamp: "2026-03-31T09:06:00Z",
+          role_id: "_builtin:orchestrator",
+          payload: { trigger: "evidence_failed", task_id: "task-3" },
+        },
+      });
+    });
+
+    expect(await screen.findByText("Completion evidence failed the proof gate.")).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Ask the manager" }));
+    });
+
+    await waitFor(() => {
+      expect(services.superviseMeta).toHaveBeenCalledWith("proj-1", "event-attn");
+    });
+    expect(await screen.findByText("Recommend unblocking and retrying.")).toBeInTheDocument();
   });
 });

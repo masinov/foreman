@@ -98,6 +98,34 @@ def _stable_slug(text: str) -> str:
     return slug[:48] or "untitled"
 
 
+def _serialize_completion_evidence(evidence: "Any") -> dict[str, Any] | None:
+    """Serialize a ``CompletionEvidence`` for the task detail payload.
+
+    Returns ``None`` when the task has no evidence yet (the common case before a
+    decision role runs).
+    """
+    if evidence is None:
+        return None
+    return {
+        "verdict": evidence.verdict,
+        "verdict_reasons": list(evidence.verdict_reasons),
+        "proof_status": evidence.proof_status,
+        "judged_by": evidence.judged_by,
+        "score": evidence.score,
+        "score_breakdown": evidence.score_breakdown,
+        "criteria_count": evidence.criteria_count,
+        "criteria_addressed": evidence.criteria_addressed,
+        "criteria_partially_addressed": evidence.criteria_partially_addressed,
+        "criteria_checklist": [dict(item) for item in evidence.criteria_checklist],
+        "changed_files": list(evidence.changed_files),
+        "branch_diff_stat": evidence.branch_diff_stat,
+        "builtin_test_passed": evidence.builtin_test_passed,
+        "builtin_test_detail": evidence.builtin_test_detail,
+        "failure_reasons": list(evidence.failure_reasons),
+        "built_at": evidence.built_at,
+    }
+
+
 class DashboardService:
     """Store-backed dashboard service used by FastAPI transport and UI clients."""
 
@@ -575,6 +603,7 @@ class DashboardService:
             "depends_on_task_ids": task.depends_on_task_ids or [],
             "complexity": task.complexity,
             "executor_overrides": task.executor_overrides or {},
+            "completion_evidence": _serialize_completion_evidence(task.completion_evidence),
             "totals": self.store.run_totals(task_id=task_id),
             "runs": runs_data,
         }
@@ -586,8 +615,18 @@ class DashboardService:
         title: str,
         task_type: str = "feature",
         acceptance_criteria: str | None = None,
+        description: str | None = None,
+        complexity: str | None = None,
+        depends_on: list[str] | None = None,
     ) -> dict[str, Any]:
-        """Create one task in a sprint."""
+        """Create one task in a sprint.
+
+        Mirrors the ``foreman task add`` CLI surface: optional ``description``,
+        ``complexity`` (``small``/``medium``/``large``), and ``depends_on`` task
+        ids (validated to exist in the same project).
+        """
+
+        from .models import TASK_COMPLEXITIES, TASK_TYPES
 
         sprint = self.store.get_sprint(sprint_id)
         if sprint is None:
@@ -595,13 +634,30 @@ class DashboardService:
         if not title.strip():
             raise DashboardValidationError("Task title is required.")
 
-        from .models import TASK_TYPES
-
         if task_type not in TASK_TYPES:
             raise DashboardValidationError(
                 f"Unsupported task type: {task_type}. "
                 f"Expected one of: {', '.join(TASK_TYPES)}."
             )
+
+        if complexity is not None and complexity not in TASK_COMPLEXITIES:
+            raise DashboardValidationError(
+                f"Unsupported complexity: {complexity}. "
+                f"Expected one of: {', '.join(TASK_COMPLEXITIES)}."
+            )
+
+        depends_on_ids: list[str] = []
+        for dep_id in depends_on or []:
+            dep_id = str(dep_id).strip()
+            if not dep_id:
+                continue
+            dep_task = self.store.get_task(dep_id)
+            if dep_task is None or dep_task.project_id != sprint.project_id:
+                raise DashboardValidationError(
+                    f"Dependency task not found in this project: {dep_id}"
+                )
+            if dep_id not in depends_on_ids:
+                depends_on_ids.append(dep_id)
 
         existing_tasks = self.store.list_tasks(sprint_id=sprint_id)
         task_id = f"task-{_stable_slug(title)}"
@@ -618,6 +674,9 @@ class DashboardService:
             title=title.strip(),
             task_type=task_type,
             acceptance_criteria=acceptance_criteria.strip() if acceptance_criteria else None,
+            description=description.strip() if description and description.strip() else None,
+            complexity=complexity,
+            depends_on_task_ids=depends_on_ids,
             order_index=max((t.order_index for t in existing_tasks), default=-1) + 1,
             created_by="human",
             created_at=now,
@@ -629,6 +688,9 @@ class DashboardService:
             "status": task.status,
             "task_type": task.task_type,
             "acceptance_criteria": task.acceptance_criteria,
+            "description": task.description,
+            "complexity": task.complexity,
+            "depends_on_task_ids": task.depends_on_task_ids,
             "order_index": task.order_index,
             "created_at": task.created_at,
         }

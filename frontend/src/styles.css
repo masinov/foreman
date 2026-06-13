@@ -3715,3 +3715,131 @@ select.form-input {
     grid-template-columns: 1fr;
   }
 }
+
+/* ── Frontend↔backend binding additions ─────────────────────────────────── */
+
+.form-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-dim, #8a93a3);
+}
+
+.settings-section-hint {
+  display: block;
+  margin: -4px 0 8px;
+  font-size: 11px;
+  color: var(--text-dim, #8a93a3);
+}
+
+.form-deps {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 140px;
+  overflow-y: auto;
+}
+
+.form-dep {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.form-dep.selected {
+  font-weight: 600;
+}
+
+/* Completion evidence in the task drawer */
+.evidence-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.evidence-badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--surface-2, #1c2230);
+  border: 1px solid var(--border, #2a3242);
+  white-space: nowrap;
+}
+
+.evidence-badge.verdict-strong,
+.evidence-badge.proof-passed { color: #4caf50; border-color: #2e7d32; }
+.evidence-badge.verdict-adequate { color: #9ccc65; }
+.evidence-badge.verdict-weak,
+.evidence-badge.verdict-insufficient,
+.evidence-badge.proof-failed { color: #ef5350; border-color: #c62828; }
+
+.evidence-checklist {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.evidence-item {
+  display: flex;
+  gap: 6px;
+  font-size: 12px;
+  align-items: flex-start;
+}
+
+.evidence-item-status { flex: 0 0 auto; width: 14px; text-align: center; }
+.evidence-item.evidence-passed .evidence-item-status { color: #4caf50; }
+.evidence-item.evidence-partial .evidence-item-status { color: #ffb300; }
+.evidence-item.evidence-failed .evidence-item-status,
+.evidence-item.evidence-unknown .evidence-item-status { color: #ef5350; }
+
+.evidence-failures {
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: #ef9a9a;
+}
+
+.evidence-diffstat {
+  font-family: var(--mono, monospace);
+  font-size: 11px;
+  color: var(--text-dim, #8a93a3);
+  white-space: pre-wrap;
+}
+
+/* Supervision banner */
+.supervision-banner {
+  margin: 0 0 12px;
+  padding: 12px 16px;
+  border: 1px solid #b8860b;
+  border-left: 4px solid #ffb300;
+  border-radius: 6px;
+  background: rgba(255, 179, 0, 0.08);
+}
+
+.supervision-banner-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.supervision-icon { font-size: 18px; color: #ffb300; }
+.supervision-text { flex: 1 1 auto; min-width: 0; }
+.supervision-title { font-weight: 600; font-size: 13px; }
+.supervision-subtitle { font-size: 12px; color: var(--text-dim, #8a93a3); }
+.supervision-actions { display: flex; gap: 8px; flex: 0 0 auto; }
+
+.supervision-recommendation {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 179, 0, 0.25);
+  font-size: 13px;
+  white-space: pre-wrap;
+}
+
+.supervision-note { margin-top: 8px; font-size: 12px; color: var(--text-dim, #8a93a3); }
+.supervision-error { margin-top: 8px; font-size: 12px; color: #ef5350; }

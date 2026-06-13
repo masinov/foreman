@@ -11,6 +11,7 @@ import {
   SettingsPanel,
   SprintList,
   STATUS_COLUMNS,
+  SupervisionBanner,
   TaskCard,
   TaskDetailDrawer,
   Topbar,
@@ -73,6 +74,7 @@ export default function App({ services, browser }) {
   const [goalDraft, setGoalDraft] = useState("");
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
+  const [dismissedAttentionIds, setDismissedAttentionIds] = useState(() => new Set());
 
   const refreshTimerRef = useRef(null);
   const routeRef = useRef(route);
@@ -462,11 +464,18 @@ export default function App({ services, browser }) {
     }
   }
 
-  async function handleCreateTask({ title, taskType, acceptanceCriteria }) {
+  async function handleCreateTask({ title, taskType, acceptanceCriteria, description, complexity, dependsOn }) {
     if (!route.sprintId) return;
     setErrorMessage("");
     try {
-      await services.createTask(route.sprintId, { title, taskType, acceptanceCriteria });
+      await services.createTask(route.sprintId, {
+        title,
+        taskType,
+        acceptanceCriteria,
+        description,
+        complexity,
+        dependsOn,
+      });
       setNewTaskOpen(false);
       await refreshAllVisibleState();
     } catch (error) {
@@ -635,6 +644,23 @@ export default function App({ services, browser }) {
   }, [events]);
 
   const taskIndex = new Map(tasks.map((task) => [task.id, task]));
+  const latestAttentionEvent = (() => {
+    for (let i = events.length - 1; i >= 0; i -= 1) {
+      const event = events[i];
+      if (event.event_type === "engine.attention_needed" && !dismissedAttentionIds.has(event.id)) {
+        return event;
+      }
+    }
+    return null;
+  })();
+
+  function dismissAttention(eventId) {
+    setDismissedAttentionIds((prev) => {
+      const next = new Set(prev);
+      next.add(eventId);
+      return next;
+    });
+  }
   const topbarProject = currentProject
     ? {
         ...currentProject,
@@ -796,7 +822,7 @@ export default function App({ services, browser }) {
                       <button
                         className="btn-stop"
                         type="button"
-                        disabled={isActionPending || currentProject?.status !== "running"}
+                        disabled={isActionPending || !currentProject?.agent_running}
                         title="Stop agent"
                         aria-label="Stop agent"
                         onClick={handleStopAgent}
@@ -837,6 +863,15 @@ export default function App({ services, browser }) {
                   ) : null}
                 </div>
               </header>
+              {latestAttentionEvent ? (
+                <SupervisionBanner
+                  event={latestAttentionEvent}
+                  services={services}
+                  projectId={route.projectId}
+                  taskIndex={taskIndex}
+                  onDismiss={dismissAttention}
+                />
+              ) : null}
               <div className={`sprint-body ${activityCollapsed ? "activity-hidden" : "with-activity"}`}>
                 <div className="board">
                   <div className="board-columns">
@@ -1000,6 +1035,7 @@ export default function App({ services, browser }) {
       ) : null}
       {newTaskOpen ? (
         <NewTaskModal
+          existingTasks={tasks}
           onSubmit={handleCreateTask}
           onClose={() => setNewTaskOpen(false)}
         />

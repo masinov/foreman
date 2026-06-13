@@ -103,13 +103,16 @@ export function createDashboardServices({
         method: "POST",
       });
     },
-    createTask(sprintId, { title, taskType, acceptanceCriteria }) {
+    createTask(sprintId, { title, taskType, acceptanceCriteria, description, complexity, dependsOn }) {
       return requestJson(fetchImpl, `/api/sprints/${encodeURIComponent(sprintId)}/tasks`, {
         method: "POST",
         body: {
           title,
           task_type: taskType || "feature",
           acceptance_criteria: acceptanceCriteria || undefined,
+          description: description || undefined,
+          complexity: complexity || undefined,
+          depends_on: dependsOn && dependsOn.length > 0 ? dependsOn : undefined,
         },
       });
     },
@@ -162,8 +165,41 @@ export function createDashboardServices({
         }
       }
     },
-    metaHistory(projectId) {
-      return requestJson(fetchImpl, `/api/projects/${encodeURIComponent(projectId)}/meta/history`);
+    metaHistory(projectId, { limit, before } = {}) {
+      const params = new URLSearchParams();
+      if (typeof limit === "number") params.set("limit", String(limit));
+      if (before) params.set("before", before);
+      const suffix = params.size > 0 ? `?${params.toString()}` : "";
+      return requestJson(fetchImpl, `/api/projects/${encodeURIComponent(projectId)}/meta/history${suffix}`);
+    },
+    async *superviseMeta(projectId, eventId) {
+      const response = await fetchImpl(`/api/projects/${encodeURIComponent(projectId)}/meta/supervise`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ event_id: eventId }),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error || `Request failed: ${response.status}`);
+      }
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop();
+        for (const line of lines) {
+          if (line.trim()) {
+            try { yield JSON.parse(line); } catch {}
+          }
+        }
+      }
+    },
+    listRoles() {
+      return requestJson(fetchImpl, "/api/roles");
     },
     clearMetaSession(projectId) {
       return requestJson(fetchImpl, `/api/projects/${encodeURIComponent(projectId)}/meta/session`, {
