@@ -812,6 +812,7 @@ Migrations added by the review roadmap:
 |---|---|
 | 11 | `meta_sessions`, `meta_turns` + index (manager persistence) |
 | 12 | `tasks.executor_overrides_json`, `tasks.complexity` |
+| 13 | `projects.task_key_prefix`, `tasks.task_key` (Jira-style keys) |
 
 ---
 

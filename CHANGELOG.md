@@ -35,6 +35,20 @@ memory changes rather than versioned product releases.
   `description`, `complexity`, and `depends_on` (matching the CLI); `get_task`
   serializes `completion_evidence`.
 
+### Task keys + dependency picker
+
+- added Jira-style per-project task keys (`FOR-102`): migration 13
+  (`projects.task_key_prefix`, `tasks.task_key`), write-once key assignment in
+  `ForemanStore.save_task` with a per-project sequence, a derived prefix
+  (`derive_task_key_prefix`), and a one-time backfill for existing tasks. Keys
+  are surfaced in the task card, the detail drawer, the active-sprint list, and
+  dependency chips, and in the `get_task` / `list_sprint_tasks` / `create_task`
+  payloads.
+- replaced the dependency checkbox list with a Jira/Linear-style **search-to-add
+  picker**: type to filter by key or title, selected dependencies render as
+  removable chips (key shown, full title on hover). Scales to large sprints and
+  matches the form styling.
+
 ### Frontend UX (Tier 3 polish)
 
 - surfaced `zero_cost_token_runs`: token totals in the sprint status bar and the

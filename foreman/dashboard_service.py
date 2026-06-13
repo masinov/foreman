@@ -365,7 +365,7 @@ class DashboardService:
             }
             if sprint.status == "active":
                 entry["tasks"] = [
-                    {"id": t.id, "title": t.title, "status": t.status, "task_type": t.task_type}
+                    {"id": t.id, "task_key": t.task_key, "title": t.title, "status": t.status, "task_type": t.task_type}
                     for t in self.store.list_tasks(sprint_id=sprint.id)
                 ]
             result.append(entry)
@@ -459,7 +459,7 @@ class DashboardService:
                 created_at=now,
             )
             self.store.save_task(task)
-            created_tasks.append({"id": task.id, "title": task.title, "task_type": task.task_type})
+            created_tasks.append({"id": task.id, "task_key": task.task_key, "title": task.title, "task_type": task.task_type})
 
         return {
             "id": sprint.id,
@@ -489,6 +489,7 @@ class DashboardService:
             result.append(
                 {
                     "id": task.id,
+                    "task_key": task.task_key,
                     "title": task.title,
                     "status": task.status,
                     "task_type": task.task_type,
@@ -600,6 +601,7 @@ class DashboardService:
 
         return {
             "id": task.id,
+            "task_key": task.task_key,
             "title": task.title,
             "status": task.status,
             "task_type": task.task_type,
@@ -697,9 +699,10 @@ class DashboardService:
             created_by="human",
             created_at=now,
         )
-        self.store.save_task(task)
+        task = self.store.save_task(task)
         return {
             "id": task.id,
+            "task_key": task.task_key,
             "title": task.title,
             "status": task.status,
             "task_type": task.task_type,

@@ -119,6 +119,11 @@ class ForemanStoreTests(unittest.TestCase):
             store.save_event(started_event)
             store.save_event(completion_event)
 
+        # Saving the first task derives and persists the project's task-key
+        # prefix ("Foreman" -> "FOR") and assigns the task "FOR-1".
+        project.task_key_prefix = "FOR"
+        task.task_key = "FOR-1"
+
         with ForemanStore(db_path) as reopened:
             reopened.initialize()
 

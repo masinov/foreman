@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -64,6 +65,24 @@ def _serialize_evidence(evidence: Any) -> str:
         return _json_dumps({"error": str(evidence)})
 
 
+def derive_task_key_prefix(name: str) -> str:
+    """Derive a short uppercase project key prefix from a project name.
+
+    Multi-word names use the initials of the first words (e.g. "My Project" ->
+    "MP"); single words use their first three letters ("Foreman" -> "FOR").
+    Falls back to "TASK" when no alphanumerics are present.
+    """
+
+    words = re.findall(r"[A-Za-z0-9]+", name or "")
+    if not words:
+        return "TASK"
+    if len(words) >= 2:
+        initials = "".join(word[0] for word in words[:4]).upper()
+        if len(initials) >= 2:
+            return initials
+    return words[0][:3].upper()
+
+
 def _row_to_project(row: sqlite3.Row) -> Project:
     return Project(
         id=row["id"],
@@ -75,6 +94,7 @@ def _row_to_project(row: sqlite3.Row) -> Project:
         default_branch=row["default_branch"],
         autonomy_level=row["autonomy_level"] if "autonomy_level" in row.keys() else "supervised",  # type: ignore[assignment]
         settings=_load_json_dict(row["settings_json"]),
+        task_key_prefix=row["task_key_prefix"] if "task_key_prefix" in row.keys() else "",
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
@@ -109,6 +129,7 @@ def _row_to_task(row: sqlite3.Row) -> Task:
         sprint_id=row["sprint_id"],
         project_id=row["project_id"],
         title=row["title"],
+        task_key=row["task_key"] if "task_key" in row.keys() else "",
         description=row["description"],
         status=row["status"],
         task_type=row["task_type"],
@@ -281,6 +302,7 @@ class ForemanStore:
             self._connection.executescript(_SCHEMA_MIGRATIONS_DDL)
         applied = self.migrate()
         self._repair_known_schema_drift()
+        self._backfill_task_keys()
         return applied
 
     def schema_version(self) -> int:
@@ -361,6 +383,21 @@ class ForemanStore:
                 self._connection.execute(
                     "ALTER TABLE tasks ADD COLUMN complexity TEXT"
                 )
+        if "task_key" not in task_columns:
+            with self._connection:
+                self._connection.execute(
+                    "ALTER TABLE tasks ADD COLUMN task_key TEXT NOT NULL DEFAULT ''"
+                )
+
+        project_columns = {
+            str(row["name"])
+            for row in self._connection.execute("PRAGMA table_info(projects)").fetchall()
+        }
+        if "task_key_prefix" not in project_columns:
+            with self._connection:
+                self._connection.execute(
+                    "ALTER TABLE projects ADD COLUMN task_key_prefix TEXT NOT NULL DEFAULT ''"
+                )
 
     def save_project(self, project: Project) -> Project:
         """Insert or update a project record."""
@@ -370,8 +407,9 @@ class ForemanStore:
                 """
                 INSERT INTO projects (
                     id, name, repo_path, spec_path, methodology, workflow_id,
-                    default_branch, autonomy_level, settings_json, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    default_branch, autonomy_level, settings_json, task_key_prefix,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     name = excluded.name,
                     repo_path = excluded.repo_path,
@@ -381,6 +419,7 @@ class ForemanStore:
                     default_branch = excluded.default_branch,
                     autonomy_level = excluded.autonomy_level,
                     settings_json = excluded.settings_json,
+                    task_key_prefix = excluded.task_key_prefix,
                     created_at = excluded.created_at,
                     updated_at = excluded.updated_at
                 """,
@@ -394,6 +433,7 @@ class ForemanStore:
                     project.default_branch,
                     project.autonomy_level,
                     _json_dumps(project.settings),
+                    project.task_key_prefix,
                     project.created_at,
                     project.updated_at,
                 ),
@@ -511,20 +551,27 @@ class ForemanStore:
         return _row_to_sprint(row) if row else None
 
     def save_task(self, task: Task) -> Task:
-        """Insert or update a task record."""
+        """Insert or update a task record.
+
+        Assigns a Jira-style ``task_key`` (e.g. ``FOR-102``) to brand-new tasks.
+        The key is write-once: it is set on INSERT and never changed by updates.
+        """
+
+        if not task.task_key and self.get_task(task.id) is None:
+            task.task_key = self._next_task_key(task.project_id)
 
         with self._connection:
             self._connection.execute(
                 """
                 INSERT INTO tasks (
-                    id, sprint_id, project_id, title, description, status, task_type,
+                    id, sprint_id, project_id, title, task_key, description, status, task_type,
                     priority, order_index, branch_name, assigned_role,
                     acceptance_criteria, blocked_reason, created_by,
                     depends_on_task_ids, workflow_current_step,
                     workflow_carried_output, step_visit_counts, completion_evidence_json,
                     executor_overrides_json, complexity,
                     created_at, started_at, completed_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     sprint_id = excluded.sprint_id,
                     project_id = excluded.project_id,
@@ -555,6 +602,7 @@ class ForemanStore:
                     task.sprint_id,
                     task.project_id,
                     task.title,
+                    task.task_key,
                     task.description,
                     task.status,
                     task.task_type,
@@ -578,6 +626,65 @@ class ForemanStore:
                 ),
             )
         return task
+
+    def _ensure_project_key_prefix(self, project_id: str) -> str:
+        """Return the project's task-key prefix, deriving and persisting one if unset."""
+
+        row = self._connection.execute(
+            "SELECT name, task_key_prefix FROM projects WHERE id = ?",
+            (project_id,),
+        ).fetchone()
+        if row is None:
+            return "TASK"
+        prefix = (row["task_key_prefix"] or "").strip()
+        if prefix:
+            return prefix
+        prefix = derive_task_key_prefix(row["name"])
+        self._connection.execute(
+            "UPDATE projects SET task_key_prefix = ? WHERE id = ?",
+            (prefix, project_id),
+        )
+        return prefix
+
+    def _next_task_key(self, project_id: str) -> str:
+        """Return the next ``PREFIX-N`` key for a project (max existing + 1)."""
+
+        prefix = self._ensure_project_key_prefix(project_id)
+        rows = self._connection.execute(
+            "SELECT task_key FROM tasks WHERE project_id = ?",
+            (project_id,),
+        ).fetchall()
+        pattern = re.compile(rf"^{re.escape(prefix)}-(\d+)$")
+        highest = 0
+        for row in rows:
+            match = pattern.match(row["task_key"] or "")
+            if match:
+                highest = max(highest, int(match.group(1)))
+        return f"{prefix}-{highest + 1}"
+
+    def _backfill_task_keys(self) -> None:
+        """Assign keys to any pre-existing keyless tasks (one-time, idempotent)."""
+
+        missing = self._connection.execute(
+            "SELECT 1 FROM tasks WHERE task_key = '' LIMIT 1"
+        ).fetchone()
+        if missing is None:
+            return
+        with self._connection:
+            project_ids = [
+                row["id"] for row in self._connection.execute("SELECT id FROM projects")
+            ]
+            for project_id in project_ids:
+                keyless = self._connection.execute(
+                    "SELECT id FROM tasks WHERE project_id = ? AND task_key = '' "
+                    "ORDER BY created_at, id",
+                    (project_id,),
+                ).fetchall()
+                for row in keyless:
+                    self._connection.execute(
+                        "UPDATE tasks SET task_key = ? WHERE id = ?",
+                        (self._next_task_key(project_id), row["id"]),
+                    )
 
     def get_task(self, task_id: str) -> Task | None:
         """Return one task by identifier."""

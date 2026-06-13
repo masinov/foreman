@@ -676,6 +676,7 @@ export function SprintList({ project, sprints, pendingGates, onSelectSprint, onO
                       {activeSprint.tasks.map((t) => (
                         <li key={t.id} className={`pq-task-row pq-task-row--${t.status.replace("_", "-")}`}>
                           <span className="pq-task-dot" />
+                          {t.task_key ? <span className="pq-task-row-key">{t.task_key}</span> : null}
                           <span className="pq-task-row-title">{t.title}</span>
                           <span className="pq-task-row-status">{formatTaskStatus(t.status)}</span>
                         </li>
@@ -798,6 +799,7 @@ export function TaskCard({ task, selected, onSelect, onApprove, onDeny, onStop }
       onClick={() => onSelect(task.id)}
       onKeyDown={handleKeyDown}
     >
+      {task.task_key ? <div className="card-key">{task.task_key}</div> : null}
       <div className="card-title">{task.title}</div>
       <div className="card-meta">
         <span className={`card-tag ${getTaskTypeClass(task.task_type)}`}>{task.task_type}</span>
@@ -953,6 +955,7 @@ export function TaskDetailDrawer({
   return (
     <aside className="detail-overlay" id="detail-panel" aria-label="Task detail">
       <div className="detail-header">
+        {task.task_key && !editing ? <div className="detail-key">{task.task_key}</div> : null}
         <div className="detail-header-title-row">
           {editing ? (
             <input
@@ -1068,8 +1071,8 @@ export function TaskDetailDrawer({
               {task.depends_on_task_ids.map((depId) => {
                 const depTask = taskIndex?.get(depId);
                 return (
-                  <span key={depId} className="dep-chip">
-                    {depTask ? depTask.title : depId}
+                  <span key={depId} className="dep-chip" title={depTask ? depTask.title : depId}>
+                    <span className="dep-chip-label">{depTask ? (depTask.task_key || depTask.title) : depId}</span>
                   </span>
                 );
               })}
@@ -1693,14 +1696,67 @@ export function taskFormToPayload(form) {
 // The single task field set shared by every task-entry surface (the New Task
 // modal, the New Sprint modal's initial tasks, and the inline queue editor) so
 // they never drift in capability again.
+// Jira/Linear-style relation picker: search to add, removable chips to show.
+// Scales to large sprints (you search instead of scrolling a checkbox wall) and
+// labels each task by its short key with the full title on hover.
+function DependencyPicker({ options, selected, onChange }) {
+  const [query, setQuery] = useState("");
+  const byId = new Map(options.map((o) => [o.id, o]));
+  const selectedItems = selected.map((id) => byId.get(id)).filter(Boolean);
+  const q = query.trim().toLowerCase();
+  const matches = q
+    ? options
+        .filter(
+          (o) =>
+            !selected.includes(o.id) &&
+            ((o.task_key || "").toLowerCase().includes(q) || o.title.toLowerCase().includes(q)),
+        )
+        .slice(0, 6)
+    : [];
+
+  const add = (id) => { onChange([...selected, id]); setQuery(""); };
+  const remove = (id) => onChange(selected.filter((x) => x !== id));
+
+  return (
+    <div className="dep-picker">
+      {selectedItems.length > 0 ? (
+        <div className="dep-chips">
+          {selectedItems.map((o) => (
+            <span key={o.id} className="dep-chip" title={o.title}>
+              <span className="dep-chip-label">{o.task_key || o.title}</span>
+              <button
+                type="button"
+                className="dep-chip-remove"
+                onClick={() => remove(o.id)}
+                aria-label={`Remove dependency ${o.task_key || o.title}`}
+              >×</button>
+            </span>
+          ))}
+        </div>
+      ) : null}
+      <input
+        className="form-input"
+        type="text"
+        placeholder="Search tasks by key or title…"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+      />
+      {matches.length > 0 ? (
+        <div className="dep-results">
+          {matches.map((o) => (
+            <button key={o.id} type="button" className="dep-result" onClick={() => add(o.id)}>
+              {o.task_key ? <span className="dep-result-key">{o.task_key}</span> : null}
+              <span className="dep-result-title">{o.title}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function TaskFormFields({ value, onChange, dependencyOptions = [], showComplexity = true, autoFocus = false }) {
   const set = (patch) => onChange({ ...value, ...patch });
-  const toggleDep = (id) =>
-    set({
-      dependsOn: value.dependsOn.includes(id)
-        ? value.dependsOn.filter((d) => d !== id)
-        : [...value.dependsOn, id],
-    });
 
   return (
     <>
@@ -1770,18 +1826,11 @@ export function TaskFormFields({ value, onChange, dependencyOptions = [], showCo
       {dependencyOptions.length > 0 ? (
         <div className="form-group">
           <label className="form-label">Depends on (optional)</label>
-          <div className="form-deps">
-            {dependencyOptions.map((t) => (
-              <label key={t.id} className={`form-dep ${value.dependsOn.includes(t.id) ? "selected" : ""}`}>
-                <input
-                  type="checkbox"
-                  checked={value.dependsOn.includes(t.id)}
-                  onChange={() => toggleDep(t.id)}
-                />
-                <span>{t.title}</span>
-              </label>
-            ))}
-          </div>
+          <DependencyPicker
+            options={dependencyOptions}
+            selected={value.dependsOn}
+            onChange={(deps) => set({ dependsOn: deps })}
+          />
         </div>
       ) : null}
     </>

@@ -846,6 +846,34 @@ class DashboardSettingsTests(unittest.TestCase):
         self.assertEqual(data["complexity"], "large")
         self.assertEqual(data["depends_on_task_ids"], [first["id"]])
 
+    def test_create_task_assigns_and_exposes_jira_style_key(self):
+        project, sprint = self._seed_project()
+        first = self._request(
+            "POST",
+            f"/api/sprints/{sprint.id}/tasks",
+            json={"title": "First task"},
+        ).json()
+        second = self._request(
+            "POST",
+            f"/api/sprints/{sprint.id}/tasks",
+            json={"title": "Second task"},
+        ).json()
+
+        # Keys are PREFIX-N, sequential per project.
+        self.assertRegex(first["task_key"], r"^[A-Z]+-\d+$")
+        _, num1 = first["task_key"].rsplit("-", 1)
+        _, num2 = second["task_key"].rsplit("-", 1)
+        self.assertEqual(int(num2), int(num1) + 1)
+
+        # Surfaced in the board payload and the task detail payload.
+        board = {
+            t["id"]: t
+            for t in self._request("GET", f"/api/sprints/{sprint.id}/tasks").json()["tasks"]
+        }
+        self.assertEqual(board[first["id"]]["task_key"], first["task_key"])
+        detail = self._request("GET", f"/api/tasks/{first['id']}").json()
+        self.assertEqual(detail["task_key"], first["task_key"])
+
     def test_create_task_rejects_invalid_complexity(self):
         _, sprint = self._seed_project()
         response = self._request(

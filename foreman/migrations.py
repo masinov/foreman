@@ -285,4 +285,15 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         ALTER TABLE tasks ADD COLUMN complexity TEXT;
         """,
     ),
+    (
+        13,
+        "add Jira-style task keys (per-project prefix + task key)",
+        """
+        ALTER TABLE projects ADD COLUMN task_key_prefix TEXT NOT NULL DEFAULT '';
+        ALTER TABLE tasks ADD COLUMN task_key TEXT NOT NULL DEFAULT '';
+
+        CREATE INDEX IF NOT EXISTS idx_tasks_task_key
+        ON tasks(project_id, task_key);
+        """,
+    ),
 ]

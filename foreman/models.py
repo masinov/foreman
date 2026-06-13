@@ -120,6 +120,7 @@ class Project:
     default_branch: str = "main"
     autonomy_level: AutonomyLevel = "supervised"
     settings: JsonDict = field(default_factory=dict)
+    task_key_prefix: str = ""
     created_at: str = field(default_factory=utc_now_text)
     updated_at: str = field(default_factory=utc_now_text)
 
@@ -147,6 +148,7 @@ class Task:
     sprint_id: str
     project_id: str
     title: str
+    task_key: str = ""
     description: str | None = None
     status: TaskStatus = "todo"
     task_type: TaskType = "feature"
