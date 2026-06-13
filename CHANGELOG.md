@@ -28,7 +28,9 @@ memory changes rather than versioned product releases.
 - fixed frontend bugs: the new-task "Context" field was silently dropped; the
   Run/Stop toggle inferred agent state from task status instead of the
   authoritative `agent_running` field; the settings panel wrote inert keys and
-  offered a Codex meta-backend option that broke the manager.
+  offered a Codex meta-backend option that broke the manager; the active-sprint
+  header showed a dead "Stop" button when idle — it is now a Run↔Stop toggle so
+  an idle sprint exposes a usable "Run".
 - backend: `POST /api/sprints/{id}/tasks` (`create_task`) now accepts
   `description`, `complexity`, and `depends_on` (matching the CLI); `get_task`
   serializes `completion_evidence`.

@@ -819,17 +819,30 @@ export default function App({ services, browser }) {
                   ) : null}
                   {currentSprint.status === "active" ? (
                     <>
-                      <button
-                        className="btn-stop"
-                        type="button"
-                        disabled={isActionPending || !currentProject?.agent_running}
-                        title="Stop agent"
-                        aria-label="Stop agent"
-                        onClick={handleStopAgent}
-                      >
-                        <svg viewBox="0 0 16 16" width="12" height="12"><rect x="3" y="3" width="10" height="10" rx="1"/></svg>
-                        Stop
-                      </button>
+                      {currentProject?.agent_running ? (
+                        <button
+                          className="btn-stop"
+                          type="button"
+                          disabled={isActionPending}
+                          title="Stop the running agent"
+                          aria-label="Stop agent"
+                          onClick={handleStopAgent}
+                        >
+                          <svg viewBox="0 0 16 16" width="12" height="12"><rect x="3" y="3" width="10" height="10" rx="1"/></svg>
+                          Stop
+                        </button>
+                      ) : (
+                        <button
+                          className="btn-action"
+                          type="button"
+                          disabled={isActionPending}
+                          title="Run the agent on this sprint"
+                          aria-label="Run agent"
+                          onClick={handleStartAgent}
+                        >
+                          ▶ Run
+                        </button>
+                      )}
                       <button
                         className="btn-secondary"
                         type="button"
