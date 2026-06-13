@@ -18,12 +18,19 @@ coverage. It does not mean product code may use throwaway architecture.
 
 ## Key references
 
+- **Usage manual (start here for operating Foreman): `docs/MANUAL.md`**
 - Agent operating instructions: `AGENTS.md`
 - Project status: `docs/STATUS.md`
 - Current sprint: `docs/sprints/current.md`
 - Backlog: `docs/sprints/backlog.md`
 - Architecture baseline: `docs/ARCHITECTURE.md`
 - Roadmap: `docs/ROADMAP.md`
+
+`docs/MANUAL.md` is the complete operator's guide — installation, a quickstart,
+the full CLI reference, roles/workflows, the multi-model fleet, completion
+evidence and the proof gate, tiered review, the meta-agent and supervision
+turns, the dashboard HTTP API, settings, the event taxonomy, and
+troubleshooting. The sections below are repo-memory and project state.
 
 ## Current state
 
@@ -301,21 +308,18 @@ Both wrappers expect these files to be current:
 
 ## Next implementation slice
 
-The most recently completed sprint is
-`sprint-41-sprint-queue-and-advancement`.
+The review roadmap (`docs/specs/review.md`, Phases 0–7) is fully implemented and
+merged to `main`; sprints 49–52 are archived under `docs/sprints/archive/`. No
+implementation sprint is currently active.
 
-No new in-progress sprint is recorded yet. The next documented architecture
-gap in `docs/sprints/backlog.md` is:
+Remaining documented follow-ups in `docs/sprints/backlog.md`:
 
-- harden the dashboard SSE transport so the stream wakes on writes instead of
-  polling SQLite on a fixed interval.
-
-Additional documented follow-ups include:
-
-- persisting meta-agent session history to SQLite,
-- expanding E2E coverage for newer dashboard surfaces,
-- confirming or fixing dashboard `Run` subprocess wiring to match the current
-  CLI `foreman run` contract.
+- **SSE transport hardening (Tier 3):** the data_version gate landed in Phase 7,
+  but the final design replaces fixed-interval polling with an in-process
+  pub/sub bus so the stream wakes on writes. Lowest urgency.
+- a tool-enabled agentic re-review when the frontier reviewer answers
+  `STEER: need repository context` (today routes back to develop),
+- expanding E2E coverage for newer dashboard surfaces and the meta-agent panel.
 
 ## Validation
 

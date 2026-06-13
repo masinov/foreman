@@ -83,6 +83,18 @@ class AttentionDigestTests(unittest.TestCase):
         )
         self.assertIn("not found", digest)
 
+    def test_sprint_resolved_without_task_leads_with_handoff(self) -> None:
+        # This is the shape the orchestrator emits for a sprint handoff: a
+        # sprint_resolved trigger with no specific task.
+        project = self._seed()
+        digest = build_attention_digest(
+            self.store, project, trigger="sprint_resolved", task_id=None
+        )
+        self.assertIn("Trigger: sprint_resolved", digest)
+        self.assertIn("A sprint finished", digest)
+        self.assertNotIn("### Affected task", digest)
+        self.assertIn("Your allowed responses", digest)
+
 
 if __name__ == "__main__":
     unittest.main()

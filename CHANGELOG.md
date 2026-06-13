@@ -14,6 +14,24 @@ memory changes rather than versioned product releases.
   (`62c2e25` → `2ca7b49` → `b53f930` → `35b667c`) and the sprints archived under
   `docs/sprints/archive/`. Full suite: 571 tests passing.
 
+### Fixed
+
+- supervision now emits the full attention-trigger taxonomy: a completion/merge
+  guard block whose proof gate failed raises `engine.attention_needed` with
+  trigger `evidence_failed` (vs. the generic `task_blocked`), and a sprint that
+  resolves while the engine stops (supervised/directed handoff, or no further
+  work) raises trigger `sprint_resolved`. Previously only `task_blocked` and
+  `loop_limit` were emitted, so two triggers defined in the digest never fired.
+
+### Documentation
+
+- added `docs/MANUAL.md`, a complete operator's guide (install, quickstart, CLI
+  reference, roles/workflows, multi-model fleet, completion evidence + proof
+  gate, tiered review, meta-agent + supervision, dashboard HTTP API, settings,
+  event taxonomy, troubleshooting); README now points to it.
+- added `docs/reviews/review-md-backend-audit.md`, the independent backend audit
+  of the `review.md` implementation.
+
 ### Added
 
 - supervision turns and transport polish (sprint 52, review Phases 6–7):

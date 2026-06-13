@@ -36,6 +36,19 @@
   implementation sprint. Next sprint pulls from `docs/sprints/backlog.md`
   (Tier 3 architecture / parking-lot items) when opened.
 
+## Latest update — supervision-trigger completion + operator manual
+
+- Branch `feat/supervision-triggers-and-docs`. Closes the one gap found by the
+  independent backend audit (`docs/reviews/review-md-backend-audit.md`): the
+  orchestrator now emits `engine.attention_needed` with trigger
+  `evidence_failed` on a proof-gate-failed guard block and `sprint_resolved`
+  when the engine stops at a sprint boundary — previously only `task_blocked`
+  and `loop_limit` were raised.
+- Added `docs/MANUAL.md`, the complete operator's usage manual, linked from the
+  README.
+- Validation: full suite 577 passing (was 571; +6 regression tests);
+  `scripts/validate_repo_memory.py` clean.
+
 ## Latest update — review Phases 6 & 7 supervision and transport
 
 - `feat/supervision-and-transport` (top of the stack) implements review Phases

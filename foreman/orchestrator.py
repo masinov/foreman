@@ -1554,6 +1554,16 @@ class ForemanOrchestrator:
                     detail=result.detail,
                 )
                 self._emit_builtin_events(run, result.events)
+                # A builtin that blocks (e.g. the merge/mark_done completion
+                # guard rejecting weak evidence) sets the task to blocked itself
+                # and never routes through ``_create_system_run``; raise the one
+                # attention-needed turn here so supervision still fires.
+                if result.outcome == BLOCKED:
+                    self._emit_attention_needed(
+                        run,
+                        current_task.id,
+                        self._attention_trigger_for_block(current_task),
+                    )
                 outcome = normalize_agent_outcome(result.outcome)
                 detail = result.detail
             else:
@@ -2219,6 +2229,8 @@ class ForemanOrchestrator:
 
         next_sprint = self.store.get_next_planned_sprint(project.id)
         if next_sprint is None:
+            # Work is exhausted; the manager may want to plan more.
+            self._emit_sprint_attention(project, sprint)
             return "idle"
 
         if project.autonomy_level == "autonomous":
@@ -2237,6 +2249,8 @@ class ForemanOrchestrator:
                 "sprint_id": next_sprint.id,
                 "sprint_title": next_sprint.title,
             }, sprint=sprint)
+        # The engine stops here and hands the next move to the manager/human.
+        self._emit_sprint_attention(project, sprint)
         return "sprint_complete"
 
     def _emit_sprint_event(
@@ -3010,13 +3024,47 @@ class ForemanOrchestrator:
             )
         return run
 
-    def _emit_attention_needed(self, run: Run, task_id: str, trigger: str) -> None:
+    def _emit_attention_needed(
+        self, run: Run, task_id: str | None, trigger: str
+    ) -> None:
         """Emit one ``engine.attention_needed`` event for a supervision turn."""
         self._emit_event(
             run,
             "engine.attention_needed",
             {"trigger": trigger, "task_id": task_id},
         )
+
+    def _attention_trigger_for_block(self, task: Task) -> str:
+        """Pick the supervision trigger for a freshly-blocked task.
+
+        A block driven by a failed completion-evidence proof gate is surfaced as
+        ``evidence_failed`` so the digest leads with the proof verdict; any other
+        block is the generic ``task_blocked``.
+        """
+        evidence = task.completion_evidence
+        if evidence is not None and getattr(evidence, "proof_status", None) == "failed":
+            return "evidence_failed"
+        return "task_blocked"
+
+    def _emit_sprint_attention(self, project: Project, sprint: Sprint) -> None:
+        """Raise one ``sprint_resolved`` attention turn when a sprint finishes and
+        the engine stops (a supervised/directed handoff, or no further sprints).
+
+        Autonomous runs that auto-advance to the next sprint do not call this.
+        """
+        tasks = self.store.list_tasks(sprint_id=sprint.id)
+        anchor = tasks[0] if tasks else self._select_project_system_task(project.id)
+        if anchor is None:
+            return
+        run = self._create_system_run(
+            anchor,
+            workflow_step="orchestrator",
+            outcome="success",
+            detail=f"sprint_resolved: {sprint.title}",
+        )
+        # task_id is None: the digest should lead with the sprint handoff, not a
+        # single (already-done) task row.
+        self._emit_attention_needed(run, None, "sprint_resolved")
 
     def _complete_run(
         self,

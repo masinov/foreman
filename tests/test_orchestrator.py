@@ -6933,6 +6933,93 @@ class CompletionGuardTests(unittest.TestCase):
         self.assertIn("no commits ahead", result.detail)
         self.assertEqual(task.status, "blocked")
 
+    def test_merge_guard_block_emits_evidence_failed_attention(self) -> None:
+        """A merge blocked by the completion guard raises exactly one
+        engine.attention_needed turn, tagged ``evidence_failed`` because the
+        rebuilt proof gate lands ``failed``."""
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+        store = ForemanStore(db_path)
+        self.addCleanup(store.close)
+        store.initialize()
+
+        project, sprint, task = self.seed_project(
+            store,
+            repo_path=repo_path,
+            acceptance_criteria="Add auth module with token validation",
+        )
+
+        # Docs-only delta on a feature task → low score, no approval → the
+        # proof gate fails and the merge guard blocks.
+        self.git(repo_path, "checkout", "-b", task.branch_name)
+        self.write_text(repo_path / "docs" / "auth.md", "# Auth module\n")
+        self.commit_all(repo_path, "docs: outline auth module")
+        self.git(repo_path, "checkout", "main")
+        task.status = "in_progress"
+        store.save_task(task)
+
+        orchestrator = ForemanOrchestrator(
+            store, roles=self.roles, workflows=self.workflows
+        )
+        orchestrator.run_workflow_from_step(
+            project,
+            self.workflows["development"],
+            task,
+            step="merge",
+            carried_output=None,
+        )
+
+        attention = [
+            e for e in store.list_events(task_id=task.id)
+            if e.event_type == "engine.attention_needed"
+        ]
+        self.assertEqual(len(attention), 1)
+        self.assertEqual(attention[0].payload["trigger"], "evidence_failed")
+        self.assertEqual(attention[0].payload["task_id"], task.id)
+        self.assertEqual(store.get_task(task.id).status, "blocked")
+
+    def test_attention_trigger_for_block_selects_by_proof_status(self) -> None:
+        """``_attention_trigger_for_block`` returns ``evidence_failed`` only when
+        the task carries failed completion evidence."""
+        from foreman.models import CompletionEvidence
+
+        repo_path, db_path = self.create_workspace()
+        store = ForemanStore(db_path)
+        self.addCleanup(store.close)
+        store.initialize()
+        orchestrator = ForemanOrchestrator(store)
+
+        base = Task(id="t", sprint_id="s", project_id="p", title="T")
+        self.assertEqual(
+            orchestrator._attention_trigger_for_block(base), "task_blocked"
+        )
+
+        failed = replace(
+            base,
+            completion_evidence=CompletionEvidence(
+                task_id="t",
+                task_title="T",
+                acceptance_criteria="c",
+                proof_status="failed",
+            ),
+        )
+        self.assertEqual(
+            orchestrator._attention_trigger_for_block(failed), "evidence_failed"
+        )
+
+        passed = replace(
+            base,
+            completion_evidence=CompletionEvidence(
+                task_id="t",
+                task_title="T",
+                acceptance_criteria="c",
+                proof_status="passed",
+            ),
+        )
+        self.assertEqual(
+            orchestrator._attention_trigger_for_block(passed), "task_blocked"
+        )
+
 
 class MarkDoneCompletionGuardTests(unittest.TestCase):
     """Regression coverage for the _builtin:mark_done completion guard.
@@ -8294,3 +8381,41 @@ class SprintAdvancementTests(unittest.TestCase):
         s = next(s for s in self.store.list_sprints(project.id) if s.id == sprint.id)
         self.assertEqual(s.status, "completed")
         self.assertEqual(result.stop_reason, "idle")
+
+    def _sprint_resolved_triggers(self, task_id: str) -> list[str]:
+        return [
+            e.payload.get("trigger")
+            for e in self.store.list_events(task_id=task_id)
+            if e.event_type == "engine.attention_needed"
+        ]
+
+    def test_supervised_sprint_completion_emits_sprint_resolved_attention(self) -> None:
+        project = self._make_project("supervised")
+        sprint0 = self._make_sprint(project.id, order_index=0, status="active")
+        self._make_sprint(project.id, order_index=1, status="planned")
+        task = self._make_done_task(sprint0)
+
+        self._orchestrator().run_project(project.id)
+
+        self.assertEqual(self._sprint_resolved_triggers(task.id), ["sprint_resolved"])
+
+    def test_directed_idle_emits_sprint_resolved_attention(self) -> None:
+        project = self._make_project("directed")
+        sprint = self._make_sprint(project.id, order_index=0, status="active")
+        task = self._make_done_task(sprint)
+
+        result = self._orchestrator().run_project(project.id)
+
+        self.assertEqual(result.stop_reason, "idle")
+        self.assertEqual(self._sprint_resolved_triggers(task.id), ["sprint_resolved"])
+
+    def test_autonomous_auto_advance_does_not_emit_sprint_resolved(self) -> None:
+        project = self._make_project("autonomous")
+        sprint0 = self._make_sprint(project.id, order_index=0, status="active")
+        self._make_sprint(project.id, order_index=1, status="planned")
+        task = self._make_done_task(sprint0)
+
+        self._orchestrator().run_project(project.id)
+
+        # Autonomous mode advances itself; no manager handoff is needed.
+        self.assertEqual(self._sprint_resolved_triggers(task.id), [])
