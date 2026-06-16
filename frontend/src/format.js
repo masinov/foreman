@@ -123,6 +123,32 @@ export function formatTaskStatus(status) {
   }
 }
 
+const SELECTION_MODE_LABELS = {
+  directed: "Directed",
+  supervised: "Supervised",
+  autonomous: "Autonomous",
+};
+
+const WORKFLOW_LABELS = {
+  development: "Standard workflow",
+  development_tiered: "Tiered workflow",
+  development_with_architect: "Architect workflow",
+};
+
+function titleizeId(value) {
+  return String(value || "")
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+export function formatSelectionMode(mode) {
+  return SELECTION_MODE_LABELS[mode] || titleizeId(mode) || "Directed";
+}
+
+export function formatWorkflowLabel(workflowId) {
+  return WORKFLOW_LABELS[workflowId] || titleizeId(workflowId) || "Standard workflow";
+}
+
 export function formatWorkflowCounts(stepVisitCounts) {
   const entries = Object.entries(stepVisitCounts || {});
   if (entries.length === 0) {

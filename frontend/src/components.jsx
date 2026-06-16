@@ -11,10 +11,12 @@ import {
   formatEventSummary,
   formatEventTime,
   formatProjectStatus,
+  formatSelectionMode,
   formatSprintStatus,
   formatTaskStatus,
   formatTokenCount,
   formatWorkflowCounts,
+  formatWorkflowLabel,
   getEventCategory,
   getTaskTypeClass,
 } from "./format";
@@ -186,7 +188,7 @@ export function ProjectOverview({ projects, onSelectProject, onNewProject }) {
         <div>
           <div className="page-title">Projects</div>
           <div className="page-subtitle">
-            SQLite-backed project state, active sprint summaries, and aggregate engine totals.
+            Pick a project to see its active sprint, task progress, and engine activity.
           </div>
         </div>
         {onNewProject ? (
@@ -239,7 +241,7 @@ export function ProjectOverview({ projects, onSelectProject, onNewProject }) {
                   {project.active_sprint ? "sprint" : "total"}{" "}
                   <span className="v">{formatCompactCount(project.totals?.total_token_count)} tokens</span>
                 </div>
-                <div>{project.settings?.task_selection_mode || "directed"} · {project.workflow_id || "development"}</div>
+                <div>{formatSelectionMode(project.settings?.task_selection_mode)} · {formatWorkflowLabel(project.workflow_id)}</div>
               </div>
             </button>
           );

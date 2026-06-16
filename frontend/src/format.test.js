@@ -5,9 +5,23 @@ import {
   deriveEngineState,
   eventMatchesFilter,
   formatEventSummary,
+  formatSelectionMode,
+  formatWorkflowLabel,
   getEventCategory,
   getTaskTypeClass,
 } from "./format";
+
+describe("formatSelectionMode + formatWorkflowLabel", () => {
+  it("renders friendly landing-card labels instead of raw ids", () => {
+    expect(formatSelectionMode("directed")).toBe("Directed");
+    expect(formatSelectionMode("autonomous")).toBe("Autonomous");
+    expect(formatSelectionMode(undefined)).toBe("Directed");
+    expect(formatWorkflowLabel("development_tiered")).toBe("Tiered workflow");
+    expect(formatWorkflowLabel("development")).toBe("Standard workflow");
+    expect(formatWorkflowLabel(undefined)).toBe("Standard workflow");
+    expect(formatWorkflowLabel("custom_flow")).toBe("Custom Flow");
+  });
+});
 
 describe("getTaskTypeClass", () => {
   it("maps every backend task type to a styled class (no invalid 'bug')", () => {

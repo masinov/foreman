@@ -56,6 +56,12 @@ memory changes rather than versioned product releases.
   read honestly.
 - consistency pass: unified the inline-card close control to the standard `×`
   glyph and normalized remaining lowercase copy ("Loading…").
+- landing copy: replaced the dev-jargon project-overview subtitle
+  ("SQLite-backed project state, active sprint summaries, and aggregate engine
+  totals.") with plain language, and reframed the project-card footer's raw
+  `task_selection_mode · workflow_id` (`directed · development_tiered`) through
+  new `formatSelectionMode` / `formatWorkflowLabel` helpers
+  (e.g. "Directed · Tiered workflow").
 
 ### Frontend UX (Tier 2 cont.)
 
