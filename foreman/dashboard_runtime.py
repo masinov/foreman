@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import ipaddress
 import os
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from .dashboard_service import (
@@ -52,6 +54,74 @@ def build_frontend_dev_redirect_url(frontend_dev_url: str, path: str) -> str:
     return f"{normalize_frontend_dev_url(frontend_dev_url)}{normalized_path}"
 
 
+def is_loopback_host(host: str) -> bool:
+    """Return whether a bind host only reaches this machine."""
+
+    candidate = host.strip().lower()
+    if candidate in {"localhost", "ip6-localhost"}:
+        return True
+    try:
+        return ipaddress.ip_address(candidate).is_loopback
+    except ValueError:
+        return False
+
+
+@dataclass(frozen=True)
+class DashboardSecurity:
+    """Resolved security posture for one dashboard process."""
+
+    host: str
+    auth_token: str | None
+    manager_enabled: bool
+    notices: tuple[str, ...] = field(default_factory=tuple)
+
+
+def dashboard_security_policy(
+    host: str,
+    *,
+    auth_token: str | None,
+    allow_insecure_network: bool = False,
+    allow_remote_manager: bool = False,
+) -> DashboardSecurity:
+    """Decide what a bind host is allowed to expose.
+
+    A non-loopback bind needs a shared token unless the operator explicitly
+    accepts an open network; the manager chat, which runs a full-access agent
+    on the server, stays loopback-only unless explicitly allowed.
+    """
+
+    loopback = is_loopback_host(host)
+    notices: list[str] = []
+    if not loopback and not auth_token and not allow_insecure_network:
+        raise RuntimeError(
+            f"Refusing to bind the dashboard to {host!r} without a token. Pass --token "
+            "(or set FOREMAN_DASHBOARD_TOKEN), or pass --allow-insecure-network on a "
+            "network you trust."
+        )
+    if not loopback and not auth_token:
+        notices.append(
+            f"WARNING: the dashboard is reachable on {host} without a token; anyone on "
+            "the network can start and stop agents."
+        )
+    manager_enabled = loopback or allow_remote_manager
+    if not manager_enabled:
+        notices.append(
+            "Manager chat disabled: it runs a full-access agent session on this host and "
+            "is loopback-only unless --allow-remote-manager is passed."
+        )
+    elif not loopback:
+        notices.append(
+            "WARNING: the manager chat is enabled on a non-loopback bind; every token "
+            "holder can run an agent with full access to the project repositories."
+        )
+    return DashboardSecurity(
+        host=host,
+        auth_token=auth_token or None,
+        manager_enabled=manager_enabled,
+        notices=tuple(notices),
+    )
+
+
 def run_dashboard_server(
     db_path: str,
     *,
@@ -60,10 +130,21 @@ def run_dashboard_server(
     frontend_mode: str = "dist",
     frontend_dev_url: str = DEFAULT_FRONTEND_DEV_URL,
     reload: bool = False,
+    auth_token: str | None = None,
+    allowed_origins: tuple[str, ...] = (),
+    allow_insecure_network: bool = False,
+    allow_remote_manager: bool = False,
 ) -> None:
     """Run the dashboard web server through the FastAPI backend."""
 
     from .dashboard_backend import create_dashboard_app
+
+    security = dashboard_security_policy(
+        host,
+        auth_token=auth_token,
+        allow_insecure_network=allow_insecure_network,
+        allow_remote_manager=allow_remote_manager,
+    )
 
     try:
         import uvicorn
@@ -91,10 +172,19 @@ def run_dashboard_server(
         print(f"Foreman dashboard backend running at http://{host}:{port}")
         print(f"Frontend dev server: {frontend_dev_url}/dashboard")
     print(f"Database: {db_path}")
+    print("Access token: required" if security.auth_token else "Access token: none (loopback only)")
+    for notice in security.notices:
+        print(notice)
     print("Press Ctrl+C to stop.")
     if reload:
         os.environ["FOREMAN_DASHBOARD_DB_PATH"] = db_path
         os.environ["FOREMAN_DASHBOARD_FRONTEND_MODE"] = frontend_mode
+        if security.auth_token:
+            os.environ["FOREMAN_DASHBOARD_TOKEN"] = security.auth_token
+        else:
+            os.environ.pop("FOREMAN_DASHBOARD_TOKEN", None)
+        os.environ["FOREMAN_DASHBOARD_ALLOWED_ORIGINS"] = ",".join(allowed_origins)
+        os.environ["FOREMAN_DASHBOARD_MANAGER"] = "1" if security.manager_enabled else "0"
         if frontend_mode == "dev":
             os.environ["FOREMAN_DASHBOARD_FRONTEND_DEV_URL"] = frontend_dev_url
         else:
@@ -106,6 +196,9 @@ def run_dashboard_server(
             db_path,
             frontend_mode=frontend_mode,
             frontend_dev_url=frontend_dev_url if frontend_mode == "dev" else None,
+            auth_token=security.auth_token,
+            allowed_origins=allowed_origins,
+            manager_enabled=security.manager_enabled,
         )
         app_kwargs = {}
 

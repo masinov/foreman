@@ -1,3 +1,45 @@
+const TOKEN_STORAGE_KEY = "foreman.dashboard.token";
+
+export class UnauthorizedError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "UnauthorizedError";
+    this.status = 401;
+  }
+}
+
+function defaultStorage() {
+  try {
+    return globalThis.localStorage || null;
+  } catch {
+    return null;
+  }
+}
+
+export function getDashboardToken(storage = defaultStorage()) {
+  try {
+    return storage?.getItem(TOKEN_STORAGE_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+export function setDashboardToken(token, storage = defaultStorage()) {
+  try {
+    if (token) {
+      storage?.setItem(TOKEN_STORAGE_KEY, token);
+    } else {
+      storage?.removeItem(TOKEN_STORAGE_KEY);
+    }
+  } catch {
+    // Storage may be unavailable (private mode); the token then lives for the page only.
+  }
+}
+
+function authHeaders(token) {
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 function normalizeErrorMessage(status, payload) {
   if (payload && typeof payload === "object" && typeof payload.error === "string") {
     return payload.error;
@@ -5,56 +47,79 @@ function normalizeErrorMessage(status, payload) {
   return `Request failed (${status})`;
 }
 
-async function requestJson(fetchImpl, path, options = {}) {
+async function requestJson(fetchImpl, path, options = {}, tokenProvider = getDashboardToken) {
   const response = await fetchImpl(path, {
+    ...options,
     headers: {
       Accept: "application/json",
       ...(options.body ? { "Content-Type": "application/json" } : {}),
+      ...authHeaders(tokenProvider()),
       ...(options.headers || {}),
     },
-    ...options,
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
 
   const payload = await response.json().catch(() => ({}));
+  if (response.status === 401) {
+    throw new UnauthorizedError(normalizeErrorMessage(response.status, payload));
+  }
   if (!response.ok) {
     throw new Error(normalizeErrorMessage(response.status, payload));
   }
   return payload;
 }
 
-function buildStreamPath(sprintId, afterEventId) {
+export function buildStreamPath(sprintId, afterEventId, token = "") {
   const path = `/api/sprints/${encodeURIComponent(sprintId)}/stream`;
-  if (!afterEventId) {
-    return path;
+  const params = new URLSearchParams();
+  if (afterEventId) params.set("after", afterEventId);
+  // EventSource cannot send headers, so the token travels as a query parameter.
+  if (token) params.set("token", token);
+  return params.size > 0 ? `${path}?${params.toString()}` : path;
+}
+
+async function streamNdjson(fetchImpl, path, body, tokenProvider) {
+  const response = await fetchImpl(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(tokenProvider()) },
+    body: JSON.stringify(body),
+  });
+  if (response.status === 401) {
+    const err = await response.json().catch(() => ({}));
+    throw new UnauthorizedError(err.error || "Unauthorized");
   }
-  const params = new URLSearchParams({ after: afterEventId });
-  return `${path}?${params.toString()}`;
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || `Request failed: ${response.status}`);
+  }
+  return response;
 }
 
 export function createDashboardServices({
   fetchImpl = globalThis.fetch,
   EventSourceImpl = globalThis.EventSource,
+  tokenProvider = getDashboardToken,
 } = {}) {
   if (typeof fetchImpl !== "function") {
     throw new Error("A fetch implementation is required for the dashboard frontend.");
   }
+  const request = (path, options) => requestJson(fetchImpl, path, options, tokenProvider);
 
   return {
     listProjects() {
-      return requestJson(fetchImpl, "/api/projects");
+      return request("/api/projects");
     },
     getProject(projectId) {
-      return requestJson(fetchImpl, `/api/projects/${encodeURIComponent(projectId)}`);
+      return request(`/api/projects/${encodeURIComponent(projectId)}`);
     },
     listProjectSprints(projectId) {
-      return requestJson(fetchImpl, `/api/projects/${encodeURIComponent(projectId)}/sprints`);
+      return request(`/api/projects/${encodeURIComponent(projectId)}/sprints`);
     },
     getSprint(sprintId) {
-      return requestJson(fetchImpl, `/api/sprints/${encodeURIComponent(sprintId)}`);
+      return request(`/api/sprints/${encodeURIComponent(sprintId)}`);
     },
     listSprintTasks(sprintId) {
-      return requestJson(fetchImpl, `/api/sprints/${encodeURIComponent(sprintId)}/tasks`);
+      return request(`/api/sprints/${encodeURIComponent(sprintId)}/tasks`);
     },
     listSprintEvents(sprintId, { afterEventId, beforeEventId, limit } = {}) {
       const params = new URLSearchParams();
@@ -62,49 +127,49 @@ export function createDashboardServices({
       if (beforeEventId) params.set("before", beforeEventId);
       if (typeof limit === "number") params.set("limit", String(limit));
       const suffix = params.size > 0 ? `?${params.toString()}` : "";
-      return requestJson(fetchImpl, `/api/sprints/${encodeURIComponent(sprintId)}/events${suffix}`);
+      return request(`/api/sprints/${encodeURIComponent(sprintId)}/events${suffix}`);
     },
     getTask(taskId) {
-      return requestJson(fetchImpl, `/api/tasks/${encodeURIComponent(taskId)}`);
+      return request(`/api/tasks/${encodeURIComponent(taskId)}`);
     },
     approveTask(taskId) {
-      return requestJson(fetchImpl, `/api/tasks/${encodeURIComponent(taskId)}/approve`, {
+      return request(`/api/tasks/${encodeURIComponent(taskId)}/approve`, {
         method: "POST",
       });
     },
     denyTask(taskId, note) {
-      return requestJson(fetchImpl, `/api/tasks/${encodeURIComponent(taskId)}/deny`, {
+      return request(`/api/tasks/${encodeURIComponent(taskId)}/deny`, {
         method: "POST",
         body: { note },
       });
     },
     getProjectSettings(projectId) {
-      return requestJson(fetchImpl, `/api/projects/${encodeURIComponent(projectId)}/settings`);
+      return request(`/api/projects/${encodeURIComponent(projectId)}/settings`);
     },
     updateProjectSettings(projectId, updates) {
-      return requestJson(fetchImpl, `/api/projects/${encodeURIComponent(projectId)}/settings`, {
+      return request(`/api/projects/${encodeURIComponent(projectId)}/settings`, {
         method: "PATCH",
         body: updates,
       });
     },
     createSprint(projectId, { title, goal, initialTasks }) {
-      return requestJson(fetchImpl, `/api/projects/${encodeURIComponent(projectId)}/sprints`, {
+      return request(`/api/projects/${encodeURIComponent(projectId)}/sprints`, {
         method: "POST",
         body: { title, goal, initial_tasks: initialTasks || undefined },
       });
     },
     stopTask(taskId) {
-      return requestJson(fetchImpl, `/api/tasks/${encodeURIComponent(taskId)}/stop`, {
+      return request(`/api/tasks/${encodeURIComponent(taskId)}/stop`, {
         method: "POST",
       });
     },
     cancelTask(taskId) {
-      return requestJson(fetchImpl, `/api/tasks/${encodeURIComponent(taskId)}/cancel`, {
+      return request(`/api/tasks/${encodeURIComponent(taskId)}/cancel`, {
         method: "POST",
       });
     },
     createTask(sprintId, { title, taskType, acceptanceCriteria, description, complexity, dependsOn }) {
-      return requestJson(fetchImpl, `/api/sprints/${encodeURIComponent(sprintId)}/tasks`, {
+      return request(`/api/sprints/${encodeURIComponent(sprintId)}/tasks`, {
         method: "POST",
         body: {
           title,
@@ -117,38 +182,35 @@ export function createDashboardServices({
       });
     },
     transitionSprint(sprintId, status) {
-      return requestJson(fetchImpl, `/api/sprints/${encodeURIComponent(sprintId)}`, {
+      return request(`/api/sprints/${encodeURIComponent(sprintId)}`, {
         method: "PATCH",
         body: { status },
       });
     },
     updateSprint(sprintId, updates) {
-      return requestJson(fetchImpl, `/api/sprints/${encodeURIComponent(sprintId)}`, {
+      return request(`/api/sprints/${encodeURIComponent(sprintId)}`, {
         method: "PATCH",
         body: updates,
       });
     },
     updateTask(taskId, updates) {
-      return requestJson(fetchImpl, `/api/tasks/${encodeURIComponent(taskId)}`, {
+      return request(`/api/tasks/${encodeURIComponent(taskId)}`, {
         method: "PATCH",
         body: updates,
       });
     },
     stopAgent(projectId) {
-      return requestJson(fetchImpl, `/api/projects/${encodeURIComponent(projectId)}/agent/stop`, {
+      return request(`/api/projects/${encodeURIComponent(projectId)}/agent/stop`, {
         method: "POST",
       });
     },
     async *metaMessage(projectId, message) {
-      const response = await fetchImpl(`/api/projects/${encodeURIComponent(projectId)}/meta/message`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message }),
-      });
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        throw new Error(err.error || `Request failed: ${response.status}`);
-      }
+      const response = await streamNdjson(
+        fetchImpl,
+        `/api/projects/${encodeURIComponent(projectId)}/meta/message`,
+        { message },
+        tokenProvider,
+      );
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
@@ -170,18 +232,15 @@ export function createDashboardServices({
       if (typeof limit === "number") params.set("limit", String(limit));
       if (before) params.set("before", before);
       const suffix = params.size > 0 ? `?${params.toString()}` : "";
-      return requestJson(fetchImpl, `/api/projects/${encodeURIComponent(projectId)}/meta/history${suffix}`);
+      return request(`/api/projects/${encodeURIComponent(projectId)}/meta/history${suffix}`);
     },
     async *superviseMeta(projectId, eventId) {
-      const response = await fetchImpl(`/api/projects/${encodeURIComponent(projectId)}/meta/supervise`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ event_id: eventId }),
-      });
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        throw new Error(err.error || `Request failed: ${response.status}`);
-      }
+      const response = await streamNdjson(
+        fetchImpl,
+        `/api/projects/${encodeURIComponent(projectId)}/meta/supervise`,
+        { event_id: eventId },
+        tokenProvider,
+      );
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
@@ -199,37 +258,37 @@ export function createDashboardServices({
       }
     },
     listRoles() {
-      return requestJson(fetchImpl, "/api/roles");
+      return request("/api/roles");
     },
     updateRole(roleId, updates) {
-      return requestJson(fetchImpl, `/api/roles/${encodeURIComponent(roleId)}`, {
+      return request(`/api/roles/${encodeURIComponent(roleId)}`, {
         method: "PATCH",
         body: updates,
       });
     },
     clearMetaSession(projectId) {
-      return requestJson(fetchImpl, `/api/projects/${encodeURIComponent(projectId)}/meta/session`, {
+      return request(`/api/projects/${encodeURIComponent(projectId)}/meta/session`, {
         method: "DELETE",
       });
     },
     listGates(projectId, { status } = {}) {
       const params = status ? `?status=${encodeURIComponent(status)}` : "";
-      return requestJson(fetchImpl, `/api/projects/${encodeURIComponent(projectId)}/gates${params}`);
+      return request(`/api/projects/${encodeURIComponent(projectId)}/gates${params}`);
     },
     resolveGate(gateId, { resolution, resolvedBy = "human" } = {}) {
-      return requestJson(fetchImpl, `/api/gates/${encodeURIComponent(gateId)}`, {
+      return request(`/api/gates/${encodeURIComponent(gateId)}`, {
         method: "PATCH",
         body: { resolution, resolved_by: resolvedBy },
       });
     },
     startAgent(projectId, { taskId } = {}) {
-      return requestJson(fetchImpl, `/api/projects/${encodeURIComponent(projectId)}/agent/start`, {
+      return request(`/api/projects/${encodeURIComponent(projectId)}/agent/start`, {
         method: "POST",
         body: { task_id: taskId || undefined },
       });
     },
     createProject({ name, repoPath, workflowId }) {
-      return requestJson(fetchImpl, "/api/projects", {
+      return request("/api/projects", {
         method: "POST",
         body: {
           name,
@@ -239,17 +298,17 @@ export function createDashboardServices({
       });
     },
     deleteTask(taskId) {
-      return requestJson(fetchImpl, `/api/tasks/${encodeURIComponent(taskId)}`, {
+      return request(`/api/tasks/${encodeURIComponent(taskId)}`, {
         method: "DELETE",
       });
     },
     deleteSprint(sprintId) {
-      return requestJson(fetchImpl, `/api/sprints/${encodeURIComponent(sprintId)}`, {
+      return request(`/api/sprints/${encodeURIComponent(sprintId)}`, {
         method: "DELETE",
       });
     },
     createHumanMessage(taskId, text) {
-      return requestJson(fetchImpl, `/api/tasks/${encodeURIComponent(taskId)}/messages`, {
+      return request(`/api/tasks/${encodeURIComponent(taskId)}/messages`, {
         method: "POST",
         body: { text },
       });
@@ -263,7 +322,7 @@ export function createDashboardServices({
         throw new Error("EventSource is not available in this browser.");
       }
 
-      const stream = new EventSourceImpl(buildStreamPath(sprintId, afterEventId));
+      const stream = new EventSourceImpl(buildStreamPath(sprintId, afterEventId, tokenProvider()));
       stream.onmessage = (message) => {
         try {
           const payload = JSON.parse(message.data);

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 import json
+import os
 from pathlib import Path
 import sqlite3
 import sys
@@ -2132,6 +2133,13 @@ def handle_dashboard(args: argparse.Namespace) -> int:
     if db_path is None:
         return 1
 
+    token = args.token
+    if args.token_file:
+        try:
+            token = Path(args.token_file).expanduser().read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            print(f"Failed to read --token-file: {exc}", file=sys.stderr)
+            return 1
     try:
         run_dashboard_server(
             db_path=db_path,
@@ -2140,6 +2148,10 @@ def handle_dashboard(args: argparse.Namespace) -> int:
             frontend_mode=args.frontend_mode,
             frontend_dev_url=args.frontend_dev_url,
             reload=args.reload,
+            auth_token=token or None,
+            allowed_origins=tuple(args.allowed_origins),
+            allow_insecure_network=args.allow_insecure_network,
+            allow_remote_manager=args.allow_remote_manager,
         )
     except (OSError, RuntimeError) as exc:
         print(f"Failed to start dashboard: {exc}", file=sys.stderr)
@@ -2620,6 +2632,42 @@ def build_parser() -> argparse.ArgumentParser:
         "--reload",
         action="store_true",
         help="Enable uvicorn reload support for local dashboard backend development.",
+    )
+    dashboard_parser.add_argument(
+        "--token",
+        default=os.environ.get("FOREMAN_DASHBOARD_TOKEN"),
+        help=(
+            "Shared access token required on every /api request "
+            "(default: FOREMAN_DASHBOARD_TOKEN). Required for non-loopback binds."
+        ),
+    )
+    dashboard_parser.add_argument(
+        "--token-file",
+        dest="token_file",
+        help="Read the access token from a file instead of the command line.",
+    )
+    dashboard_parser.add_argument(
+        "--allowed-origin",
+        dest="allowed_origins",
+        action="append",
+        default=[],
+        metavar="ORIGIN",
+        help="Allow cross-origin browser requests from ORIGIN (repeatable). Off by default.",
+    )
+    dashboard_parser.add_argument(
+        "--allow-insecure-network",
+        dest="allow_insecure_network",
+        action="store_true",
+        help="Permit a non-loopback bind without a token (trusted networks only).",
+    )
+    dashboard_parser.add_argument(
+        "--allow-remote-manager",
+        dest="allow_remote_manager",
+        action="store_true",
+        help=(
+            "Keep the manager chat enabled on a non-loopback bind. It runs a "
+            "full-access agent session on this host; off by default off-loopback."
+        ),
     )
     _set_handler(dashboard_parser, handle_dashboard, "dashboard")
 

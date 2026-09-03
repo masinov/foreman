@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import shutil
 import re
 import unittest
 from datetime import datetime, timezone
@@ -2083,17 +2084,29 @@ class DashboardTier2Tests(unittest.TestCase):
 
     # ── Project creation ──────────────────────────────────────────────────────
 
+    def _repo_dir(self, name: str) -> str:
+        """Return a real git-shaped directory; project paths are validated now."""
+
+        root = getattr(self, "_repo_root", None)
+        if root is None:
+            root = tempfile.mkdtemp(prefix="foreman-repo-")
+            self._repo_root = root
+            self.addCleanup(shutil.rmtree, root, True)
+        repo = Path(root) / name
+        (repo / ".git").mkdir(parents=True, exist_ok=True)
+        return str(repo)
+
     def test_create_project_returns_200(self):
         """POST /api/projects creates a project and returns it."""
         response = self._request(
             "POST",
             "/api/projects",
-            json={"name": "New Dashboard Project", "repo_path": "/tmp/ndp"},
+            json={"name": "New Dashboard Project", "repo_path": self._repo_dir("ndp")},
         )
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data["name"], "New Dashboard Project")
-        self.assertEqual(data["repo_path"], "/tmp/ndp")
+        self.assertEqual(data["repo_path"], self._repo_dir("ndp"))
         self.assertEqual(data["workflow_id"], "development")
         self.assertIn("id", data)
 
@@ -2104,7 +2117,7 @@ class DashboardTier2Tests(unittest.TestCase):
             "/api/projects",
             json={
                 "name": "Secure Project",
-                "repo_path": "/tmp/sec",
+                "repo_path": self._repo_dir("sec"),
                 "workflow_id": "development_secure",
             },
         )
@@ -2134,7 +2147,7 @@ class DashboardTier2Tests(unittest.TestCase):
         response = self._request(
             "POST",
             "/api/projects",
-            json={"name": "Listed Project", "repo_path": "/tmp/lp"},
+            json={"name": "Listed Project", "repo_path": self._repo_dir("lp")},
         )
         project_id = response.json()["id"]
         list_response = self._request("GET", "/api/projects")

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 import mimetypes
 import os
@@ -82,13 +83,59 @@ async def _read_json_body(request: Request) -> dict[str, Any]:
     return data
 
 
+class DashboardForbiddenError(Exception):
+    """Raised when a route is disabled by the dashboard's security policy."""
+
+
+MAX_EVENTS_PAGE_LIMIT = 500
+TOKEN_HEADER = "X-Foreman-Token"
+
+
+def _presented_token(request: Request) -> str | None:
+    """Return the token a request presents, from header or query string.
+
+    The header forms serve fetch calls; the ``token`` query parameter exists
+    for ``EventSource``, which cannot set headers.
+    """
+
+    authorization = request.headers.get("Authorization", "")
+    if authorization.lower().startswith("bearer "):
+        return authorization[7:].strip()
+    header_token = request.headers.get(TOKEN_HEADER)
+    if header_token:
+        return header_token.strip()
+    query_token = request.query_params.get("token")
+    if query_token:
+        return query_token.strip()
+    return None
+
+
+def _token_matches(request: Request, expected: str) -> bool:
+    presented = _presented_token(request)
+    if not presented:
+        return False
+    return hmac.compare_digest(presented.encode("utf-8"), expected.encode("utf-8"))
+
+
 def create_dashboard_app(
     db_path: str,
     *,
     frontend_mode: str = "dist",
     frontend_dev_url: str | None = None,
+    auth_token: str | None = None,
+    allowed_origins: tuple[str, ...] | list[str] = (),
+    manager_enabled: bool = True,
 ) -> FastAPI:
-    """Create the FastAPI application used for dashboard delivery."""
+    """Create the FastAPI application used for dashboard delivery.
+
+    ``auth_token`` protects every ``/api`` route with a shared token
+    (``Authorization: Bearer``, ``X-Foreman-Token``, or ``?token=`` for the
+    event stream). ``allowed_origins`` enables CORS only for the listed
+    origins; the shipped frontend is same-origin and needs none.
+    ``manager_enabled`` gates the manager chat, which runs a full-access
+    agent session on the server and must stay off on non-loopback binds
+    unless explicitly allowed.
+    """
 
     if frontend_mode == "dist":
         ensure_dashboard_assets()
@@ -114,12 +161,35 @@ def create_dashboard_app(
     app.state.db_path = db_path
     app.state.frontend_mode = frontend_mode
     app.state.frontend_dev_url = frontend_dev_url
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    app.state.auth_token = auth_token or None
+    app.state.manager_enabled = bool(manager_enabled)
+    origins = tuple(origin.strip() for origin in allowed_origins if origin and origin.strip())
+    if origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=list(origins),
+            allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+            allow_headers=["Authorization", "Content-Type", TOKEN_HEADER],
+        )
+
+    @app.middleware("http")
+    async def require_dashboard_token(request: Request, call_next):
+        expected = app.state.auth_token
+        if expected and request.url.path.startswith("/api/"):
+            if request.method != "OPTIONS" and not _token_matches(request, expected):
+                return JSONResponse(
+                    {"error": "Unauthorized: a dashboard token is required."},
+                    status_code=401,
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+        return await call_next(request)
+
+    def _require_manager() -> None:
+        if not app.state.manager_enabled:
+            raise DashboardForbiddenError(
+                "The manager chat is disabled on non-loopback binds. Bind the dashboard "
+                "to localhost or start it with --allow-remote-manager."
+            )
 
     @app.exception_handler(DashboardNotFoundError)
     async def handle_not_found(_: Request, exc: DashboardNotFoundError) -> JSONResponse:
@@ -132,6 +202,10 @@ def create_dashboard_app(
     @app.exception_handler(DashboardActionError)
     async def handle_action(_: Request, exc: DashboardActionError) -> JSONResponse:
         return JSONResponse({"error": str(exc)}, status_code=500)
+
+    @app.exception_handler(DashboardForbiddenError)
+    async def handle_forbidden(_: Request, exc: DashboardForbiddenError) -> JSONResponse:
+        return JSONResponse({"error": str(exc)}, status_code=403)
 
     def with_api(callback):
         with _open_store(db_path) as store:
@@ -269,6 +343,9 @@ def create_dashboard_app(
             parsed_limit = int(limit)
         except ValueError as exc:
             raise DashboardValidationError("Invalid limit") from exc
+        if parsed_limit < 1:
+            raise DashboardValidationError("Invalid limit")
+        parsed_limit = min(parsed_limit, MAX_EVENTS_PAGE_LIMIT)
         return with_api(
             lambda api: api.list_sprint_events(
                 sprint_id,
@@ -357,6 +434,7 @@ def create_dashboard_app(
     async def meta_message(project_id: str, request: Request) -> StreamingResponse:
         from .meta_agent import process_message as meta_process_message
 
+        _require_manager()
         data = await _read_json_body(request)
         message = str(data.get("message", "")).strip()
         if not message:
@@ -415,6 +493,7 @@ def create_dashboard_app(
     async def clear_meta_session(project_id: str) -> dict[str, Any]:
         from .meta_agent import clear_session as meta_clear_session
 
+        _require_manager()
         with _open_store(db_path) as store:
             if store.get_project(project_id) is None:
                 raise DashboardNotFoundError(f"Project not found: {project_id}")
@@ -426,6 +505,7 @@ def create_dashboard_app(
         from .meta_agent import process_message as meta_process_message
         from .digest import build_attention_digest
 
+        _require_manager()
         data = await _read_json_body(request)
         event_id = str(data.get("event_id", "")).strip()
         if not event_id:
@@ -572,8 +652,16 @@ def create_dashboard_app_from_env() -> FastAPI:
 
     frontend_mode = os.environ.get("FOREMAN_DASHBOARD_FRONTEND_MODE", "dist")
     frontend_dev_url = os.environ.get("FOREMAN_DASHBOARD_FRONTEND_DEV_URL")
+    auth_token = os.environ.get("FOREMAN_DASHBOARD_TOKEN") or None
+    allowed_origins = tuple(
+        origin for origin in os.environ.get("FOREMAN_DASHBOARD_ALLOWED_ORIGINS", "").split(",") if origin
+    )
+    manager_enabled = os.environ.get("FOREMAN_DASHBOARD_MANAGER", "1") != "0"
     return create_dashboard_app(
         db_path,
         frontend_mode=frontend_mode,
         frontend_dev_url=frontend_dev_url,
+        auth_token=auth_token,
+        allowed_origins=allowed_origins,
+        manager_enabled=manager_enabled,
     )

@@ -17,6 +17,7 @@ import {
   TaskDetailDrawer,
   Topbar,
 } from "./components";
+import { setDashboardToken } from "./api";
 import { costUnknownNote, deriveEngineState, formatCompactCount, formatCount, formatSprintStatus } from "./format";
 import { buildDashboardPath, buildProjectPath, buildSprintPath, parseRoute } from "./routing";
 
@@ -35,6 +36,40 @@ function pickDefaultTaskId(tasks) {
     }
   }
   return tasks[0].id;
+}
+
+function TokenPrompt({ onSubmit }) {
+  const [draft, setDraft] = useState("");
+  return (
+    <div className="token-prompt" role="dialog" aria-labelledby="token-prompt-title">
+      <form
+        className="token-prompt-card"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSubmit(draft.trim());
+        }}
+      >
+        <div className="token-prompt-eyebrow">Access</div>
+        <h2 id="token-prompt-title">This dashboard needs an access token</h2>
+        <p>
+          The server was started with a token. Paste it here; it is kept in this
+          browser only.
+        </p>
+        <input
+          type="password"
+          autoComplete="off"
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          placeholder="Dashboard token"
+          aria-label="Dashboard token"
+          autoFocus
+        />
+        <button type="submit" className="btn-action" disabled={!draft.trim()}>
+          Continue
+        </button>
+      </form>
+    </div>
+  );
 }
 
 function appendEvent(existingEvents, nextEvent) {
@@ -61,6 +96,7 @@ export default function App({ services, browser }) {
   const [messageText, setMessageText] = useState("");
   const [denyNote, setDenyNote] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [authRequired, setAuthRequired] = useState(false);
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const [isActionPending, setIsActionPending] = useState(false);
   const [streamSeedEventId, setStreamSeedEventId] = useState(undefined);
@@ -77,6 +113,21 @@ export default function App({ services, browser }) {
   const [titleDraft, setTitleDraft] = useState("");
   const [dismissedAttentionIds, setDismissedAttentionIds] = useState(() => new Set());
   const [rolesOpen, setRolesOpen] = useState(false);
+
+  function handleError(error) {
+    if (error && error.status === 401) {
+      setAuthRequired(true);
+      setErrorMessage("");
+      return;
+    }
+    setErrorMessage(error?.message || "Request failed.");
+  }
+
+  function submitDashboardToken(token) {
+    setDashboardToken(token);
+    setAuthRequired(false);
+    browser.location.reload?.();
+  }
 
   const refreshTimerRef = useRef(null);
   const routeRef = useRef(route);
@@ -198,7 +249,7 @@ export default function App({ services, browser }) {
     refreshProjects()
       .catch((error) => {
         if (!cancelled) {
-          setErrorMessage(error.message);
+          handleError(error);
         }
       })
       .finally(() => {
@@ -219,7 +270,7 @@ export default function App({ services, browser }) {
     refreshProjectScope(route.projectId)
       .catch((error) => {
         if (!cancelled) {
-          setErrorMessage(error.message);
+          handleError(error);
         }
       });
 
@@ -244,7 +295,7 @@ export default function App({ services, browser }) {
       })
       .catch((error) => {
         if (!cancelled) {
-          setErrorMessage(error.message);
+          handleError(error);
         }
       });
 
@@ -261,7 +312,7 @@ export default function App({ services, browser }) {
       .catch((error) => {
         if (!cancelled) {
           setTaskDetail(null);
-          setErrorMessage(error.message);
+          handleError(error);
         }
       });
 
@@ -299,12 +350,12 @@ export default function App({ services, browser }) {
                 await refreshTaskDetail(selectedTaskIdRef.current);
               }
             } catch (error) {
-              setErrorMessage(error.message);
+              handleError(error);
             }
           }, STREAM_REFRESH_DELAY_MS);
         },
         onError: (error) => {
-          setErrorMessage(error.message);
+          handleError(error);
         },
       },
     );
@@ -332,7 +383,7 @@ export default function App({ services, browser }) {
         await refreshTaskDetail(selectedTaskIdRef.current);
       }
     } catch (error) {
-      setErrorMessage(error.message);
+      handleError(error);
     }
   }
 
@@ -343,7 +394,7 @@ export default function App({ services, browser }) {
       await services.approveTask(taskId);
       await refreshAllVisibleState();
     } catch (error) {
-      setErrorMessage(error.message);
+      handleError(error);
     } finally {
       setIsActionPending(false);
     }
@@ -357,7 +408,7 @@ export default function App({ services, browser }) {
       setDenyNote("");
       await refreshAllVisibleState();
     } catch (error) {
-      setErrorMessage(error.message);
+      handleError(error);
     } finally {
       setIsActionPending(false);
     }
@@ -375,7 +426,7 @@ export default function App({ services, browser }) {
       setMessageText("");
       await refreshAllVisibleState();
     } catch (error) {
-      setErrorMessage(error.message);
+      handleError(error);
     } finally {
       setIsActionPending(false);
     }
@@ -389,7 +440,7 @@ export default function App({ services, browser }) {
       setProjectSettings(payload);
       setSettingsOpen(true);
     } catch (error) {
-      setErrorMessage(error.message);
+      handleError(error);
     }
   }
 
@@ -401,7 +452,7 @@ export default function App({ services, browser }) {
       setProjectSettings(payload);
       await refreshAllVisibleState({ keepSelectedTask: false });
     } catch (error) {
-      setErrorMessage(error.message);
+      handleError(error);
     }
   }
 
@@ -413,7 +464,7 @@ export default function App({ services, browser }) {
       setNewSprintOpen(false);
       await refreshAllVisibleState({ keepSelectedTask: false });
     } catch (error) {
-      setErrorMessage(error.message);
+      handleError(error);
     }
   }
 
@@ -433,7 +484,7 @@ export default function App({ services, browser }) {
         setHasMoreEvents(false);
       }
     } catch (error) {
-      setErrorMessage(error.message);
+      handleError(error);
     } finally {
       setIsLoadingMoreEvents(false);
     }
@@ -446,7 +497,7 @@ export default function App({ services, browser }) {
       await services.stopTask(taskId);
       await refreshAllVisibleState();
     } catch (error) {
-      setErrorMessage(error.message);
+      handleError(error);
     } finally {
       setIsActionPending(false);
     }
@@ -460,7 +511,7 @@ export default function App({ services, browser }) {
       setSelectedTaskId(null);
       await refreshAllVisibleState({ keepSelectedTask: false });
     } catch (error) {
-      setErrorMessage(error.message);
+      handleError(error);
     } finally {
       setIsActionPending(false);
     }
@@ -481,7 +532,7 @@ export default function App({ services, browser }) {
       setNewTaskOpen(false);
       await refreshAllVisibleState();
     } catch (error) {
-      setErrorMessage(error.message);
+      handleError(error);
     }
   }
 
@@ -493,7 +544,7 @@ export default function App({ services, browser }) {
       await services.stopAgent(route.projectId);
       await refreshAllVisibleState();
     } catch (error) {
-      setErrorMessage(error.message);
+      handleError(error);
     } finally {
       setIsActionPending(false);
     }
@@ -507,7 +558,7 @@ export default function App({ services, browser }) {
       await services.startAgent(route.projectId);
       await refreshAllVisibleState();
     } catch (error) {
-      setErrorMessage(error.message);
+      handleError(error);
     } finally {
       setIsActionPending(false);
     }
@@ -519,7 +570,7 @@ export default function App({ services, browser }) {
       await services.resolveGate(gateId, { resolution });
       await refreshProjectScope(routeRef.current.projectId);
     } catch (error) {
-      setErrorMessage(error.message);
+      handleError(error);
     }
   }
 
@@ -531,7 +582,7 @@ export default function App({ services, browser }) {
       await refreshProjects();
       navigateTo(buildProjectPath(payload.id));
     } catch (error) {
-      setErrorMessage(error.message);
+      handleError(error);
     }
   }
 
@@ -541,7 +592,7 @@ export default function App({ services, browser }) {
       await services.transitionSprint(sprintId, status);
       await refreshAllVisibleState({ keepSelectedTask: false });
     } catch (error) {
-      setErrorMessage(error.message);
+      handleError(error);
     }
   }
 
@@ -552,7 +603,7 @@ export default function App({ services, browser }) {
       await refreshTaskDetail(taskId);
       await refreshSprintScope(routeRef.current.sprintId);
     } catch (error) {
-      setErrorMessage(error.message);
+      handleError(error);
     }
   }
 
@@ -564,7 +615,7 @@ export default function App({ services, browser }) {
       const sprintPayload = await services.getSprint(sprintId);
       setCurrentSprint(sprintPayload);
     } catch (error) {
-      setErrorMessage(error.message);
+      handleError(error);
     }
   }
 
@@ -578,7 +629,7 @@ export default function App({ services, browser }) {
       setCurrentSprint(sprintPayload);
       await refreshProjectScope(routeRef.current.projectId);
     } catch (error) {
-      setErrorMessage(error.message);
+      handleError(error);
     }
   }
 
@@ -591,7 +642,7 @@ export default function App({ services, browser }) {
       setSelectedTaskId(null);
       await refreshAllVisibleState({ keepSelectedTask: false });
     } catch (error) {
-      setErrorMessage(error.message);
+      handleError(error);
     } finally {
       setIsActionPending(false);
     }
@@ -611,7 +662,7 @@ export default function App({ services, browser }) {
         await refreshAllVisibleState({ keepSelectedTask: false });
       }
     } catch (error) {
-      setErrorMessage(error.message);
+      handleError(error);
     } finally {
       setIsActionPending(false);
     }
@@ -632,7 +683,7 @@ export default function App({ services, browser }) {
       ));
       await refreshProjectScope(routeRef.current.projectId);
     } catch (error) {
-      setErrorMessage(error.message);
+      handleError(error);
     }
   }
 
@@ -671,6 +722,10 @@ export default function App({ services, browser }) {
     : null;
 
   const topbarProjectTotals = currentProject?.totals || projects.find((p) => p.id === route.projectId)?.totals || null;
+
+  if (authRequired) {
+    return <TokenPrompt onSubmit={submitDashboardToken} />;
+  }
 
   return (
     <div className="app-shell">

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
@@ -125,6 +126,34 @@ def _serialize_completion_evidence(evidence: "Any") -> dict[str, Any] | None:
         "failure_reasons": list(evidence.failure_reasons),
         "built_at": evidence.built_at,
     }
+
+
+def _validate_repo_path(repo_path: str) -> None:
+    """Refuse project paths that are not existing git repositories.
+
+    The manager chat and the engine run agents inside ``repo_path``, so it
+    must never be an arbitrary directory on the host. When
+    ``FOREMAN_DASHBOARD_REPO_ROOTS`` is set (``os.pathsep``-separated), the
+    path must also sit under one of those roots.
+    """
+
+    repo_dir = Path(repo_path).expanduser()
+    if not repo_dir.is_dir():
+        raise DashboardValidationError(
+            f"Repo path does not exist or is not a directory: {repo_path}"
+        )
+    if not (repo_dir / ".git").exists():
+        raise DashboardValidationError(
+            f"Repo path is not a git repository (no .git found): {repo_path}"
+        )
+    roots_setting = os.environ.get("FOREMAN_DASHBOARD_REPO_ROOTS", "").strip()
+    if roots_setting:
+        resolved = repo_dir.resolve()
+        roots = [Path(root).expanduser().resolve() for root in roots_setting.split(os.pathsep) if root]
+        if not any(resolved == root or root in resolved.parents for root in roots):
+            raise DashboardValidationError(
+                f"Repo path {repo_path} is outside the allowed repository roots."
+            )
 
 
 class DashboardService:
@@ -265,6 +294,7 @@ class DashboardService:
         repo_path = repo_path.strip()
         if not repo_path:
             raise DashboardValidationError("Repo path cannot be empty.")
+        _validate_repo_path(repo_path)
         workflow_id = (workflow_id or "development").strip()
         if not workflow_id:
             raise DashboardValidationError("Workflow ID cannot be empty.")
