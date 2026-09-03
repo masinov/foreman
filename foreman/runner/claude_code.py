@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 import json
-import os
 from pathlib import Path
 import shlex
 import shutil
@@ -19,6 +18,7 @@ from .base import (
     InfrastructureError,
     PreflightError,
 )
+from .process import DEFAULT_TICK_SECONDS, ManagedProcess, popen_kwargs
 from .signals import extract_signal_events
 
 _FILE_TOOLS = {"Read", "Write", "Edit", "NotebookEdit"}
@@ -34,11 +34,13 @@ class ClaudeCodeRunner(AgentRunner):
         popen_factory: Any = subprocess.Popen,
         clock: Any = time.monotonic,
         which: Any = shutil.which,
+        tick_seconds: float = DEFAULT_TICK_SECONDS,
     ) -> None:
         self.executable = executable
         self._popen_factory = popen_factory
         self._clock = clock
         self._which = which
+        self.tick_seconds = tick_seconds
 
     def build_command(self, config: AgentRunConfig) -> list[str]:
         """Build the Claude CLI command for one run."""
@@ -64,103 +66,117 @@ class ClaudeCodeRunner(AgentRunner):
         return command
 
     def run(self, config: AgentRunConfig) -> Iterator[AgentEvent]:
-        """Run Claude Code and yield normalized agent events."""
+        """Run Claude Code and yield normalized agent events.
+
+        Output is read on a pump thread. While the child is silent the loop
+        wakes every ``tick_seconds`` to enforce the time and cost gates and to
+        yield an ``agent.tick`` so the orchestrator can heartbeat its lease.
+        Whatever ends the generator, the child's process group is terminated.
+        """
 
         self._preflight()
         command = self.build_command(config)
         try:
-            popen_kwargs: dict[str, Any] = {}
-            if config.env:
-                popen_kwargs["env"] = {**os.environ, **config.env}
             proc = self._popen_factory(
                 command,
-                cwd=str(config.working_dir),
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                bufsize=1,
-                **popen_kwargs,
+                **popen_kwargs(cwd=config.working_dir, env=config.env),
             )
         except OSError as exc:
             raise PreflightError(
                 f"Claude Code preflight failed: unable to launch `{self.executable}`: {exc}"
             ) from exc
 
-        assert proc.stdin is not None
-        assert proc.stdout is not None
-        start_time = self._clock()
-        last_cost_usd = 0.0
-        saw_terminal_event = False
-
+        managed = ManagedProcess(proc, name="claude", tick_seconds=self.tick_seconds)
         try:
-            proc.stdin.write(config.prompt)
-            proc.stdin.close()
-        except OSError as exc:
+            assert proc.stdin is not None
             try:
-                proc.kill()
-            except OSError:
-                pass
-            raise PreflightError(
-                f"Claude Code preflight failed: unable to write the initial prompt: {exc}"
-            ) from exc
+                proc.stdin.write(config.prompt)
+                proc.stdin.close()
+            except (OSError, ValueError) as exc:
+                managed.kill()
+                raise PreflightError(
+                    f"Claude Code preflight failed: unable to write the initial prompt: {exc}"
+                ) from exc
 
-        yield AgentEvent(
-            "agent.started",
-            payload={
-                "command": shlex.join(command),
-                "cwd": str(config.working_dir),
-            },
-        )
-
-        for raw_line in proc.stdout:
-            line = raw_line.strip()
-            if not line:
-                continue
+            start_time = self._clock()
+            last_cost_usd = 0.0
+            saw_terminal_event = False
 
             yield AgentEvent(
-                "agent.raw_output",
-                payload={"stream": "stdout", "line": line},
+                "agent.started",
+                payload={
+                    "command": shlex.join(command),
+                    "cwd": str(config.working_dir),
+                },
             )
 
-            for event in self._parse_stream_line(
-                line,
-                working_dir=config.working_dir,
-            ):
-                if event.event_type == "agent.cost_update":
-                    last_cost_usd = _coerce_float(
-                        event.payload.get("cumulative_usd"),
-                        default=last_cost_usd,
+            for raw_line in managed.iter_lines():
+                if raw_line is None:
+                    gate_event = self._check_gates(
+                        managed,
+                        config,
+                        start_time=start_time,
+                        last_cost_usd=last_cost_usd,
                     )
-                if event.event_type in {"agent.completed", "agent.error"}:
-                    saw_terminal_event = True
-                yield event
+                    if gate_event is not None:
+                        yield gate_event
+                        return
+                    yield AgentEvent(
+                        "agent.tick",
+                        payload={"elapsed_seconds": round(self._clock() - start_time, 1)},
+                    )
+                    continue
 
-                gate_event = self._check_gates(
-                    proc,
-                    config,
-                    start_time=start_time,
-                    last_cost_usd=last_cost_usd,
-                )
-                if gate_event is not None:
-                    yield gate_event
-                    return
+                line = raw_line.strip()
+                if not line:
+                    continue
 
-        proc.wait()
-        stderr = proc.stderr.read().strip() if proc.stderr is not None else ""
-        if stderr:
-            for line in stderr.splitlines():
                 yield AgentEvent(
                     "agent.raw_output",
-                    payload={"stream": "stderr", "line": line},
+                    payload={"stream": "stdout", "line": line},
                 )
-        if saw_terminal_event:
-            return
 
-        if proc.returncode != 0:
-            detail = stderr or f"Claude Code exited with code {proc.returncode}."
-            raise InfrastructureError(detail)
-        raise InfrastructureError("Claude Code stream ended without a terminal result event.")
+                for event in self._parse_stream_line(
+                    line,
+                    working_dir=config.working_dir,
+                ):
+                    if event.event_type == "agent.cost_update":
+                        last_cost_usd = _coerce_float(
+                            event.payload.get("cumulative_usd"),
+                            default=last_cost_usd,
+                        )
+                    if event.event_type in {"agent.completed", "agent.error"}:
+                        saw_terminal_event = True
+                    yield event
+
+                    gate_event = self._check_gates(
+                        managed,
+                        config,
+                        start_time=start_time,
+                        last_cost_usd=last_cost_usd,
+                    )
+                    if gate_event is not None:
+                        yield gate_event
+                        return
+
+            managed.wait()
+            stderr = managed.stderr_text()
+            if stderr:
+                for line in stderr.splitlines():
+                    yield AgentEvent(
+                        "agent.raw_output",
+                        payload={"stream": "stderr", "line": line},
+                    )
+            if saw_terminal_event:
+                return
+
+            returncode = managed.poll()
+            if returncode not in (0, None):
+                detail = stderr or f"Claude Code exited with code {returncode}."
+                raise InfrastructureError(detail)
+            raise InfrastructureError("Claude Code stream ended without a terminal result event.")
+        finally:
+            managed.close()
 
     def _preflight(self) -> None:
         if self._which(self.executable) is None:
@@ -315,7 +331,7 @@ class ClaudeCodeRunner(AgentRunner):
 
     def _check_gates(
         self,
-        proc: Any,
+        managed: ManagedProcess,
         config: AgentRunConfig,
         *,
         start_time: float,
@@ -323,7 +339,7 @@ class ClaudeCodeRunner(AgentRunner):
     ) -> AgentEvent | None:
         elapsed_seconds = self._clock() - start_time
         if config.timeout_seconds > 0 and elapsed_seconds > config.timeout_seconds:
-            _kill_process(proc)
+            managed.kill()
             return AgentEvent(
                 "agent.killed",
                 payload={
@@ -333,7 +349,7 @@ class ClaudeCodeRunner(AgentRunner):
             )
 
         if config.max_cost_usd > 0 and last_cost_usd > config.max_cost_usd:
-            _kill_process(proc)
+            managed.kill()
             return AgentEvent(
                 "agent.killed",
                 payload={
@@ -392,17 +408,6 @@ def _has_token_data(event: dict[str, Any]) -> bool:
     if not isinstance(usage, dict):
         return False
     return any(key in usage for key in ("total_tokens", "input_tokens", "output_tokens"))
-
-
-def _kill_process(proc: Any) -> None:
-    try:
-        proc.kill()
-    except OSError:
-        pass
-    try:
-        proc.wait()
-    except OSError:
-        pass
 
 
 def _optional_string(value: Any) -> str | None:

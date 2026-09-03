@@ -6,11 +6,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 import selectors
 import subprocess
+import time
 from typing import TYPE_CHECKING, Any, Callable
 
 from .context import relative_project_path, write_project_context
 from .git import GitMergeResult, is_worktree_clean, merge_branch, merge_preflight, run_git
 from .models import CompletionEvidence, Project, Task, utc_now_text
+from .runner.process import ManagedProcess
+
+DEFAULT_TEST_TIMEOUT_SECONDS = 1800
 
 if TYPE_CHECKING:
     from .store import ForemanStore
@@ -97,58 +101,91 @@ class BuiltinExecutor:
             )
             return BuiltinResult(outcome="failure", detail=detail, events=tuple(emitted_events))
 
-        emit("engine.test_started", {"command": command})
+        timeout_seconds = _int_setting(
+            project, "test_timeout_seconds", default=DEFAULT_TEST_TIMEOUT_SECONDS
+        )
+        emit("engine.test_started", {"command": command, "timeout_seconds": timeout_seconds})
         proc = subprocess.Popen(
             ["bash", "-lc", command],
             cwd=Path(project.repo_path),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
+            encoding="utf-8",
+            errors="replace",
             bufsize=1,
+            start_new_session=True,
         )
         assert proc.stdout is not None
         assert proc.stderr is not None
+        # Registered (not pumped) so a shutdown signal kills the whole test
+        # process group along with any agent processes.
+        managed = ManagedProcess(proc, name="tests", pump=False)
 
         selector = selectors.DefaultSelector()
         selector.register(proc.stdout, selectors.EVENT_READ, "stdout")
         selector.register(proc.stderr, selectors.EVENT_READ, "stderr")
         stdout_chunks: list[str] = []
         stderr_chunks: list[str] = []
+        deadline = time.monotonic() + timeout_seconds if timeout_seconds > 0 else None
+        timed_out = False
 
-        while selector.get_map():
-            for key, _ in selector.select():
-                stream_name = str(key.data)
-                line = key.fileobj.readline()
-                if line == "":
-                    selector.unregister(key.fileobj)
-                    continue
-                text = line.rstrip("\n")
-                if stream_name == "stdout":
-                    stdout_chunks.append(line)
-                else:
-                    stderr_chunks.append(line)
-                emit(
-                    "engine.test_output",
-                    {
-                        "command": command,
-                        "stream": stream_name,
-                        "text": text,
-                    },
-                )
+        try:
+            while selector.get_map():
+                remaining: float | None = None
+                if deadline is not None:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        timed_out = True
+                        break
+                for key, _ in selector.select(timeout=remaining):
+                    stream_name = str(key.data)
+                    line = key.fileobj.readline()
+                    if line == "":
+                        selector.unregister(key.fileobj)
+                        continue
+                    text = line.rstrip("\n")
+                    if stream_name == "stdout":
+                        stdout_chunks.append(line)
+                    else:
+                        stderr_chunks.append(line)
+                    emit(
+                        "engine.test_output",
+                        {
+                            "command": command,
+                            "stream": stream_name,
+                            "text": text,
+                        },
+                    )
+        finally:
+            selector.close()
+            if timed_out:
+                managed.kill()
+            else:
+                proc.wait()
+                managed.close()
 
-        proc.wait()
         stdout_text = "".join(stdout_chunks).strip()
         stderr_text = "".join(stderr_chunks).strip()
         output = _combine_output(stdout_text, stderr_text)
         output_tail = _tail_lines(output, 200)
-        outcome = "success" if proc.returncode == 0 else "failure"
-        detail = output_tail or f"Command exited with {proc.returncode}."
+        if timed_out:
+            outcome = "failure"
+            detail = (
+                f"Test command timed out after {timeout_seconds}s and was killed."
+                + (f"\n\n{output_tail}" if output_tail else "")
+            )
+            exit_code: int | None = None
+        else:
+            outcome = "success" if proc.returncode == 0 else "failure"
+            detail = output_tail or f"Command exited with {proc.returncode}."
+            exit_code = proc.returncode
         emit(
             "engine.test_run",
             {
                 "command": command,
-                "exit_code": proc.returncode,
-                "passed": proc.returncode == 0,
+                "exit_code": exit_code,
+                "passed": exit_code == 0,
+                "timed_out": timed_out,
                 "stdout": stdout_text,
                 "stderr": stderr_text,
                 "output_tail": output_tail,
@@ -625,6 +662,15 @@ class BuiltinExecutor:
         if name.startswith("test_") or name.endswith("_test.py"):
             return True
         return False
+
+
+def _int_setting(project: Project, key: str, *, default: int) -> int:
+    value = project.settings.get(key)
+    if value is None or isinstance(value, bool):
+        return default
+    if isinstance(value, (int, float)):
+        return int(value)
+    return default
 
 
 def _bool_setting(project: Project, key: str, *, default: bool) -> bool:

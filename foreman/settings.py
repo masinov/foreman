@@ -22,6 +22,8 @@ class ProjectSettings:
     max_autonomous_tasks: int = 5
     max_step_visits: int = 5
     test_command: str = ""
+    # Wall-clock cap for _builtin:run_tests; 0 disables the timeout.
+    test_timeout_seconds: int = 1800
     time_limit_per_run_minutes: int = 0
     cost_limit_per_task_usd: float = 0.0
     cost_limit_per_sprint_usd: float = 0.0
@@ -58,6 +60,9 @@ class ProjectSettings:
             max_autonomous_tasks=_validate_positive_int(raw.get("max_autonomous_tasks"), default=5),
             max_step_visits=_validate_positive_int(raw.get("max_step_visits"), default=5),
             test_command=str(raw.get("test_command", "") or ""),
+            test_timeout_seconds=_validate_non_negative_int(
+                raw.get("test_timeout_seconds"), default=1800
+            ),
             time_limit_per_run_minutes=_validate_non_negative_int(
                 raw.get("time_limit_per_run_minutes"), default=0
             ),

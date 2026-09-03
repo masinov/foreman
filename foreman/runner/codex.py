@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections import deque
 from collections.abc import Iterator
 import json
-import os
 from pathlib import Path
 import shlex
 import shutil
@@ -20,9 +19,11 @@ from .base import (
     InfrastructureError,
     PreflightError,
 )
+from .process import DEFAULT_TICK_SECONDS, ManagedProcess, popen_kwargs
 from .signals import extract_signal_events
 
 _WRITE_TOOL_NAMES = {"Write", "Edit", "NotebookEdit"}
+DEFAULT_STARTUP_TIMEOUT_SECONDS = 60.0
 
 
 class CodexRunner(AgentRunner):
@@ -35,11 +36,15 @@ class CodexRunner(AgentRunner):
         popen_factory: Any = subprocess.Popen,
         clock: Any = time.monotonic,
         which: Any = shutil.which,
+        tick_seconds: float = DEFAULT_TICK_SECONDS,
+        startup_timeout_seconds: float = DEFAULT_STARTUP_TIMEOUT_SECONDS,
     ) -> None:
         self.executable = executable
         self._popen_factory = popen_factory
         self._clock = clock
         self._which = which
+        self.tick_seconds = tick_seconds
+        self.startup_timeout_seconds = startup_timeout_seconds
 
     def build_command(self) -> list[str]:
         """Build the Codex app-server command."""
@@ -64,6 +69,8 @@ class CodexRunner(AgentRunner):
                 cwd=config.working_dir,
                 popen_factory=self._popen_factory,
                 env=config.env,
+                tick_seconds=self.tick_seconds,
+                startup_timeout_seconds=self.startup_timeout_seconds,
             )
             thread_method, thread_params = _build_thread_request(config)
             thread_result = client.call(thread_method, thread_params)
@@ -103,6 +110,22 @@ class CodexRunner(AgentRunner):
 
             while True:
                 message = client.next_message()
+                if message is None:
+                    # Silent tick: enforce the gates and let the orchestrator
+                    # heartbeat its lease even though the agent said nothing.
+                    gate_event = self._check_gates(
+                        client,
+                        config,
+                        start_time=start_time,
+                    )
+                    if gate_event is not None:
+                        yield gate_event
+                        return
+                    yield AgentEvent(
+                        "agent.tick",
+                        payload={"elapsed_seconds": round(self._clock() - start_time, 1)},
+                    )
+                    continue
                 if not isinstance(message, dict):
                     continue
 
@@ -326,29 +349,29 @@ class _JsonRpcClient:
         cwd: Path,
         popen_factory: Any,
         env: dict[str, str] | None = None,
+        tick_seconds: float = DEFAULT_TICK_SECONDS,
+        startup_timeout_seconds: float = DEFAULT_STARTUP_TIMEOUT_SECONDS,
     ) -> None:
         self.command = list(command)
         try:
-            popen_kwargs: dict[str, Any] = {}
-            if env:
-                popen_kwargs["env"] = {**os.environ, **env}
-            self.proc = popen_factory(
-                self.command,
-                cwd=str(cwd),
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                bufsize=1,
-                **popen_kwargs,
-            )
+            self.proc = popen_factory(self.command, **popen_kwargs(cwd=cwd, env=env))
         except OSError as exc:
             raise InfrastructureError(f"Failed to launch Codex app server: {exc}") from exc
+        self.managed = ManagedProcess(self.proc, name="codex", tick_seconds=tick_seconds)
+        self.startup_timeout_seconds = startup_timeout_seconds
         self._next_id = 1
         self._pending_messages: deque[dict[str, Any]] = deque()
         self.call("initialize", {"clientInfo": {"name": "foreman", "version": "0.1.0"}})
 
-    def call(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+    def call(
+        self,
+        method: str,
+        params: dict[str, Any],
+        *,
+        timeout_seconds: float | None = None,
+    ) -> dict[str, Any]:
+        """Send one request and wait for its response, bounded by a wall clock."""
+
         request_id = self._next_id
         self._next_id += 1
         self._write_json(
@@ -359,8 +382,18 @@ class _JsonRpcClient:
                 "params": params,
             }
         )
+        budget = self.startup_timeout_seconds if timeout_seconds is None else timeout_seconds
+        deadline = time.monotonic() + budget
         while True:
-            message = self._read_message()
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                self.kill()
+                raise InfrastructureError(
+                    f"Codex app server did not answer {method} within {budget:.0f}s."
+                )
+            message = self._read_message(timeout=min(remaining, self.managed.tick_seconds))
+            if message is None:
+                continue
             if message.get("id") == request_id and "method" not in message:
                 if "error" in message:
                     raise RuntimeError(f"Codex RPC error for {method}: {message['error']}")
@@ -379,41 +412,40 @@ class _JsonRpcClient:
             }
         )
 
-    def next_message(self) -> dict[str, Any]:
+    def next_message(self) -> dict[str, Any] | None:
+        """Return the next server message, or ``None`` after one silent tick."""
+
         if self._pending_messages:
             return self._pending_messages.popleft()
-        return self._read_message()
+        return self._read_message(timeout=self.managed.tick_seconds)
 
     def kill(self) -> None:
-        _kill_process(self.proc)
+        self.managed.kill()
 
     def close(self) -> None:
-        try:
-            if self.proc.poll() is None:
-                self.proc.terminate()
-                try:
-                    self.proc.wait(timeout=1)
-                except subprocess.TimeoutExpired:
-                    self.proc.kill()
-                    self.proc.wait(timeout=1)
-        except (OSError, subprocess.TimeoutExpired):
-            pass
+        if self.managed.is_running():
+            self.managed.terminate(grace_seconds=1.0)
+            return
+        self.managed.close()
 
     def _write_json(self, payload: dict[str, Any]) -> None:
         assert self.proc.stdin is not None
-        self.proc.stdin.write(json.dumps(payload) + "\n")
-        self.proc.stdin.flush()
+        try:
+            self.proc.stdin.write(json.dumps(payload) + "\n")
+            self.proc.stdin.flush()
+        except (OSError, ValueError) as exc:
+            raise InfrastructureError(f"Codex app server stdin is closed: {exc}") from exc
 
-    def _read_message(self) -> dict[str, Any]:
-        assert self.proc.stdout is not None
+    def _read_message(self, *, timeout: float) -> dict[str, Any] | None:
         while True:
-            line = self.proc.stdout.readline()
-            if not line:
-                stderr = ""
-                if self.proc.stderr is not None:
-                    stderr = self.proc.stderr.read().strip()
-                if self.proc.poll() not in {None, 0}:
-                    detail = stderr or f"Codex app server exited with code {self.proc.returncode}."
+            line = self.managed.readline(timeout=timeout)
+            if line is None:
+                return None
+            if line == "":
+                stderr = self.managed.stderr_text()
+                returncode = self.managed.poll()
+                if returncode not in {None, 0}:
+                    detail = stderr or f"Codex app server exited with code {returncode}."
                     raise InfrastructureError(detail)
                 raise InfrastructureError("Codex app server closed unexpectedly.")
             stripped = line.strip()
@@ -533,10 +565,3 @@ def _coerce_int(value: Any, *, default: int = 0) -> int:
         except ValueError:
             return default
     return default
-
-
-def _kill_process(proc: Any) -> None:
-    try:
-        proc.kill()
-    except OSError:
-        pass

@@ -35,6 +35,7 @@ from .models import CompletionEvidence, Event, HumanGateDecision, Lease, Project
 from .outcomes import APPROVE, BLOCKED, DENY, DONE, ERROR, ESCALATE, normalize_agent_outcome, normalize_reviewer_decision, STEER
 from .runner import AgentRunConfig, ClaudeCodeRunner, CodexRunner, PreflightError, run_with_retry
 from .runner.base import AgentRunner as NativeAgentRunner
+from .runner.process import EngineShutdown
 from .runner.env import resolve_env
 from .roles import RoleDefinition, default_roles_dir, load_roles
 from .settings import ProjectSettings, SettingsError
@@ -53,6 +54,15 @@ _BRANCH_PREFIXES = {
 
 class OrchestratorError(ForemanError):
     """Raised when Foreman cannot execute the requested workflow slice."""
+
+
+class LeaseLostError(OrchestratorError):
+    """Raised when this engine's task lease is renewed and found to be gone.
+
+    Another engine has taken the task over, or the lease expired while the
+    agent was silent. The active agent is stopped and this engine exits
+    without touching the task, which the new holder now owns.
+    """
 
 
 @dataclass(slots=True)
@@ -225,17 +235,31 @@ class ForemanOrchestrator:
                 lease_token=token,
             )
 
-    def _renew_task_lease(self, task: Task, project: Project) -> None:
-        """Renew the lease on a task if held by this orchestrator."""
+    def _renew_task_lease(self, task: Task, project: Project) -> bool:
+        """Renew the lease on a task held by this orchestrator.
+
+        Returns True when renewed, False when this orchestrator holds no
+        token for the task. Raises ``LeaseLostError`` when the token exists
+        but the store refuses the renewal, meaning the lease expired or was
+        taken over: continuing would race the new holder in the same checkout.
+        """
         token = self._task_lease_tokens.get(task.id)
-        if token is not None:
-            self.store.renew_lease(
-                project_id=project.id,
-                resource_type="task",
-                resource_id=task.id,
-                holder_id=self.holder_id,
-                lease_token=token,
+        if token is None:
+            return False
+        renewed = self.store.renew_lease(
+            project_id=project.id,
+            resource_type="task",
+            resource_id=task.id,
+            holder_id=self.holder_id,
+            lease_token=token,
+        )
+        if renewed is None:
+            self._task_lease_tokens.pop(task.id, None)
+            raise LeaseLostError(
+                f"Lease on task {task.id!r} was lost (expired or taken over by another "
+                "engine). Stopping this engine without touching the task."
             )
+        return True
 
     def run_project(
         self,
@@ -1656,7 +1680,8 @@ class ForemanOrchestrator:
                         )
                         if session_id:
                             session_ids[session_key] = session_id
-                result = self._execute_agent_step(
+                result = self._execute_agent_step_guarded(
+                    run=run,
                     role=role,
                     project=project,
                     task=current_task,
@@ -1728,7 +1753,8 @@ class ForemanOrchestrator:
                             "retry_attempt": 1,
                         },
                     )
-                    retry_result = self._execute_agent_step(
+                    retry_result = self._execute_agent_step_guarded(
+                        run=retry_run,
                         role=role,
                         project=project,
                         task=current_task,
@@ -2518,6 +2544,66 @@ class ForemanOrchestrator:
                 {"path": relative_project_path(project, path)},
             )
 
+    def _execute_agent_step_guarded(
+        self,
+        *,
+        run: Run,
+        task: Task,
+        project: Project,
+        **kwargs: Any,
+    ) -> AgentExecutionResult:
+        """Run one agent step and settle its run row if the engine is interrupted.
+
+        A shutdown signal or a lost lease is not an agent outcome: the run is
+        recorded as ``killed`` with an explicit ``agent.killed`` event, the
+        task keeps the resume point persisted before the step, and the
+        interruption propagates so the engine exits.
+        """
+
+        try:
+            return self._execute_agent_step(task=task, project=project, **kwargs)
+        except LeaseLostError as exc:
+            self._abandon_run(
+                run,
+                task,
+                project,
+                reason=str(exc),
+                gate_type="lease_lost",
+                release_lease=False,
+            )
+            raise
+        except (EngineShutdown, KeyboardInterrupt) as exc:
+            self._abandon_run(
+                run,
+                task,
+                project,
+                reason=f"Engine stopped before the agent finished: {exc}",
+                gate_type="shutdown",
+                release_lease=True,
+            )
+            raise
+
+    def _abandon_run(
+        self,
+        run: Run,
+        task: Task,
+        project: Project,
+        *,
+        reason: str,
+        gate_type: str,
+        release_lease: bool,
+    ) -> None:
+        self._emit_event(
+            run,
+            "agent.killed",
+            {"reason": reason, "gate_type": gate_type},
+        )
+        self._complete_run(run, status="killed", outcome=ERROR, detail=reason)
+        if release_lease:
+            self._release_task_lease(task, project)
+        else:
+            self._task_lease_tokens.pop(task.id, None)
+
     def _execute_agent_step(
         self,
         *,
@@ -2552,6 +2638,8 @@ class ForemanOrchestrator:
                 model=model,
                 event_recorder=event_recorder,
             )
+        except LeaseLostError:
+            raise
         except Exception as exc:  # pragma: no cover - defensive fallback
             return AgentExecutionResult(
                 outcome="error",
@@ -2664,6 +2752,10 @@ class ForemanOrchestrator:
             ):
                 self._renew_task_lease(task, project)
                 last_heartbeat = now
+            if event.event_type == "agent.tick":
+                # Silent-child ticks exist only to drive the heartbeat above;
+                # they are never persisted.
+                continue
             event_record = AgentEventRecord(
                 event_type=event.event_type,
                 payload=dict(event.payload),

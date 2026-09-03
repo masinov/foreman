@@ -22,6 +22,7 @@ from .dashboard_runtime import (
 from .models import Event, Project, Sprint, TASK_COMPLEXITIES, TASK_TYPES, Task, utc_now_text
 from .orchestrator import ForemanOrchestrator, OrchestratorError
 from .roles import RoleLoadError, default_roles_dir, load_roles
+from .runner.process import EngineShutdown, install_shutdown_handlers
 from .scaffold import (
     DEFAULT_DB_FILENAME,
     DEFAULT_DEFAULT_BRANCH,
@@ -1944,8 +1945,17 @@ def handle_run(args: argparse.Namespace) -> int:
             return 1
 
         orchestrator = ForemanOrchestrator(store)
+        install_shutdown_handlers()
         try:
             result = orchestrator.run_project(project.id, task_id=args.task)
+        except (EngineShutdown, KeyboardInterrupt) as exc:
+            reason = str(exc) or "interrupted"
+            print(
+                f"Run stopped: {reason} Agent processes were terminated; the active "
+                "task keeps its resume point and its lease was released.",
+                file=sys.stderr,
+            )
+            return 130
         except OrchestratorError as exc:
             print(f"Failed to run project: {exc}", file=sys.stderr)
             return 1
