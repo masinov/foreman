@@ -958,7 +958,7 @@ class ForemanCLISmokeTests(unittest.TestCase):
         self.assertTrue((repo_path / ".foreman").is_dir())
         self.assertEqual(
             (repo_path / ".gitignore").read_text(encoding="utf-8"),
-            ".foreman/\n.foreman.db\n",
+            ".foreman/\n.foreman.db\n.foreman.db-wal\n.foreman.db-shm\n",
         )
         self.assertIn("Project: Sample Project", (repo_path / "AGENTS.md").read_text(encoding="utf-8"))
 
@@ -1095,7 +1095,7 @@ class ForemanCLISmokeTests(unittest.TestCase):
         self.assertEqual(projects[0].settings["test_command"], "pytest -q")
         self.assertEqual(
             (repo_path / ".gitignore").read_text(encoding="utf-8"),
-            ".foreman/\n.foreman.db\n",
+            ".foreman/\n.foreman.db\n.foreman.db-wal\n.foreman.db-shm\n",
         )
 
     def test_projects_command_can_read_store_with_db_path(self) -> None:

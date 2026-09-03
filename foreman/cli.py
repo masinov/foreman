@@ -33,6 +33,7 @@ from .scaffold import (
     resolve_spec_path,
     scaffold_repository,
 )
+from .settings import ProjectSettings, SettingsError
 from .store import ForemanStore
 from .workflows import WorkflowLoadError, default_workflows_dir, load_workflows
 
@@ -1990,7 +1991,14 @@ def handle_config(args: argparse.Namespace) -> int:
             except CliResolutionError as exc:
                 print(str(exc), file=sys.stderr)
                 return 1
-            project.settings[key] = value
+            candidate = dict(project.settings)
+            candidate[key] = value
+            try:
+                ProjectSettings.from_raw(candidate)
+            except SettingsError as exc:
+                print(f"Invalid setting {key}: {exc}", file=sys.stderr)
+                return 1
+            project.settings = candidate
             project.updated_at = utc_now_text()
             store.save_project(project)
             assignment_summary = f"{key}={_format_setting_value(value)}"

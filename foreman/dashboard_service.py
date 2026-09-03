@@ -14,6 +14,7 @@ from typing import Any, Callable
 from .models import AUTONOMY_LEVELS, DecisionGate, Event, Project, Run, Sprint, SprintStatus, Task
 from .orchestrator import ForemanOrchestrator, OrchestratorError
 from .scaffold import generate_project_id
+from .settings import ProjectSettings, SettingsError
 from .store import ForemanStore
 
 _VALID_SPRINT_TRANSITIONS: dict[str, tuple[SprintStatus, ...]] = {
@@ -222,7 +223,13 @@ class DashboardService:
         if settings_updates is not None:
             if not isinstance(settings_updates, dict):
                 raise DashboardValidationError("Settings must be a JSON object.")
-            project.settings.update(settings_updates)
+            merged = dict(project.settings)
+            merged.update(settings_updates)
+            try:
+                ProjectSettings.from_raw(merged)
+            except SettingsError as exc:
+                raise DashboardValidationError(f"Invalid settings: {exc}") from exc
+            project.settings = merged
 
         if "workflow_id" in updates:
             project.workflow_id = str(updates["workflow_id"])

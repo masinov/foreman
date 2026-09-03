@@ -26,7 +26,15 @@ class ProjectSettings:
     cost_limit_per_task_usd: float = 0.0
     cost_limit_per_sprint_usd: float = 0.0
     time_limit_per_task_ms: int = 0
-    event_retention_days: int = 90
+    # Retention is opt-in: ``None`` disables that pruning type.  Audit-grade
+    # events (decisions, evidence) are not yet separated from telemetry, so
+    # the engine must never prune by default.
+    event_retention_days: int | None = None
+    run_retention_days: int | None = None
+    prompt_retention_days: int | None = None
+    # Engine resilience knobs read by the orchestrator.
+    max_infra_retries: int = 3
+    active_run_recovery_timeout_minutes: int = 0
     context_dir: str = ""
     completion_guard_enabled: bool = True
     runner_max_cost_usd: float = 1000.0
@@ -62,7 +70,15 @@ class ProjectSettings:
             time_limit_per_task_ms=_validate_non_negative_int(
                 raw.get("time_limit_per_task_ms"), default=0
             ),
-            event_retention_days=_validate_positive_int(raw.get("event_retention_days"), default=90),
+            event_retention_days=_validate_optional_positive_int(raw.get("event_retention_days")),
+            run_retention_days=_validate_optional_positive_int(raw.get("run_retention_days")),
+            prompt_retention_days=_validate_optional_positive_int(
+                raw.get("prompt_retention_days")
+            ),
+            max_infra_retries=_validate_non_negative_int(raw.get("max_infra_retries"), default=3),
+            active_run_recovery_timeout_minutes=_validate_non_negative_int(
+                raw.get("active_run_recovery_timeout_minutes"), default=0
+            ),
             context_dir=str(raw.get("context_dir") or ""),
             completion_guard_enabled=bool(raw.get("completion_guard_enabled", True)),
             runner_max_cost_usd=_validate_non_negative_float(
@@ -106,6 +122,14 @@ def _validate_positive_int(value: Any, *, default: int) -> int:
     if int_val <= 0:
         raise SettingsError(f"Expected positive integer for setting, got {int_val!r}")
     return int_val
+
+
+def _validate_optional_positive_int(value: Any) -> int | None:
+    """Return None when unset, otherwise a validated positive integer."""
+
+    if value is None:
+        return None
+    return _validate_positive_int(value, default=1)
 
 
 def _validate_non_negative_int(value: Any, *, default: int) -> int:

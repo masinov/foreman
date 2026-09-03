@@ -215,3 +215,5 @@ __marimo__/
 frontend/node_modules/
 frontend/.vite/
 .foreman.db
+.foreman.db-wal
+.foreman.db-shm

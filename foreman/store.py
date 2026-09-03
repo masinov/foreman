@@ -5,15 +5,59 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence, TypeVar
 from uuid import uuid4
 
+from .errors import ForemanError
 from .migrations import MIGRATIONS
 from .models import CompletionEvidence, DecisionGate, Event, HumanGateDecision, Lease, MergeWaiver, Project, Run, Sprint, TASK_STATUSES, Task, utc_now_text
 
 _PRUNE_PROTECTED_TASK_STATUSES = ("blocked", "in_progress")
+
+_T = TypeVar("_T")
+
+
+class MigrationError(ForemanError):
+    """Raised when a schema migration fails; the database is left unchanged."""
+
+
+def _split_sql_statements(sql: str) -> list[str]:
+    """Split a migration script into individual statements.
+
+    Uses ``sqlite3.complete_statement`` so semicolons inside comments or string
+    literals do not split a statement. Chunks that contain only comments and
+    whitespace are dropped.
+    """
+
+    statements: list[str] = []
+    buffer: list[str] = []
+    for line in sql.splitlines():
+        buffer.append(line)
+        candidate = "\n".join(buffer)
+        if sqlite3.complete_statement(candidate):
+            if _has_sql_content(candidate):
+                statements.append(candidate.strip())
+            buffer = []
+    leftover = "\n".join(buffer)
+    if _has_sql_content(leftover):
+        statements.append(leftover.strip())
+    return statements
+
+
+def _has_sql_content(chunk: str) -> bool:
+    for line in chunk.splitlines():
+        stripped = line.strip()
+        if stripped and not stripped.startswith("--"):
+            return True
+    return False
+
+
+def _is_locked_error(exc: sqlite3.OperationalError) -> bool:
+    message = str(exc).lower()
+    return "database is locked" in message or "database table is locked" in message
 
 _SCHEMA_MIGRATIONS_DDL = """
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -269,16 +313,68 @@ def _row_to_merge_waiver(row: sqlite3.Row) -> MergeWaiver:
 class ForemanStore:
     """Persist and query Foreman entities in SQLite."""
 
-    def __init__(self, db_path: str | Path) -> None:
+    #: Default wait for a busy database before a write attempt fails.
+    DEFAULT_BUSY_TIMEOUT_SECONDS = 30.0
+    #: Retries for hot writes after the busy timeout expires.
+    DEFAULT_WRITE_RETRIES = 5
+
+    def __init__(
+        self,
+        db_path: str | Path,
+        *,
+        busy_timeout_seconds: float = DEFAULT_BUSY_TIMEOUT_SECONDS,
+        write_retries: int = DEFAULT_WRITE_RETRIES,
+    ) -> None:
         if str(db_path) == ":memory:":
             self.db_path = ":memory:"
         else:
             path = Path(db_path).expanduser()
             path.parent.mkdir(parents=True, exist_ok=True)
             self.db_path = str(path)
-        self._connection = sqlite3.connect(self.db_path)
+        self._busy_timeout_seconds = float(busy_timeout_seconds)
+        self._write_retries = max(0, int(write_retries))
+        self._connection = sqlite3.connect(self.db_path, timeout=self._busy_timeout_seconds)
         self._connection.row_factory = sqlite3.Row
         self._connection.execute("PRAGMA foreign_keys = ON")
+        if self.db_path != ":memory:":
+            self._configure_file_database()
+
+    def _configure_file_database(self) -> None:
+        """Configure a file-backed database for multi-process sharing.
+
+        The engine, the dashboard, and the CLI all open the same file. WAL mode
+        lets readers proceed while a writer commits, and ``synchronous=NORMAL``
+        keeps WAL durable across process crashes without an fsync per commit.
+        Failures (read-only media, unsupported filesystems) fall back to the
+        default journal silently; correctness does not depend on WAL.
+        """
+
+        try:
+            self._connection.execute("PRAGMA journal_mode = WAL").fetchone()
+            self._connection.execute("PRAGMA synchronous = NORMAL")
+        except sqlite3.OperationalError:
+            pass
+
+    def _write(self, operation: Callable[[sqlite3.Connection], _T]) -> _T:
+        """Run one write transaction, retrying when another process holds the lock.
+
+        ``operation`` runs inside ``with self._connection`` so it commits on
+        success and rolls back on any exception. A lock error after the busy
+        timeout is retried with a short backoff; the whole operation is
+        replayed, so callers must not rely on side effects from a failed
+        attempt.
+        """
+
+        attempt = 0
+        while True:
+            try:
+                with self._connection:
+                    return operation(self._connection)
+            except sqlite3.OperationalError as exc:
+                if not _is_locked_error(exc) or attempt >= self._write_retries:
+                    raise
+                attempt += 1
+                time.sleep(min(0.05 * (2 ** attempt), 1.0))
 
     def __enter__(self) -> ForemanStore:
         return self
@@ -329,28 +425,56 @@ class ForemanStore:
             return 0
         return int(row[0])
 
-    def migrate(self) -> list[int]:
+    def migrate(
+        self,
+        migrations: Sequence[tuple[int, str, str]] | None = None,
+    ) -> list[int]:
         """Apply all unapplied migrations in version order.
+
+        Each migration's statements and its ledger row are applied inside one
+        ``BEGIN IMMEDIATE`` transaction: a failure rolls the whole migration
+        back and raises ``MigrationError``. The ledger is re-checked inside
+        the transaction so two processes migrating concurrently cannot apply
+        the same version twice.
 
         Returns the list of version numbers that were applied in this call.
         Calling migrate() on an up-to-date database is a no-op that returns an
         empty list.
         """
 
+        entries = sorted(MIGRATIONS if migrations is None else migrations, key=lambda m: m[0])
         current = self.schema_version()
         applied: list[int] = []
         now = datetime.now(timezone.utc).isoformat()
+        connection = self._connection
 
-        for version, description, sql in sorted(MIGRATIONS, key=lambda m: m[0]):
+        for version, description, sql in entries:
             if version <= current:
                 continue
-            with self._connection:
-                self._connection.executescript(sql)
-                self._connection.execute(
+            if connection.in_transaction:
+                connection.commit()
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                already = connection.execute(
+                    "SELECT 1 FROM schema_migrations WHERE version = ?",
+                    (version,),
+                ).fetchone()
+                if already is not None:
+                    connection.rollback()
+                    continue
+                for statement in _split_sql_statements(sql):
+                    connection.execute(statement)
+                connection.execute(
                     "INSERT INTO schema_migrations (version, description, applied_at)"
                     " VALUES (?, ?, ?)",
                     (version, description, now),
                 )
+                connection.commit()
+            except Exception as exc:
+                connection.rollback()
+                raise MigrationError(
+                    f"Migration {version} ({description}) failed and was rolled back: {exc}"
+                ) from exc
             applied.append(version)
 
         return applied
@@ -557,11 +681,13 @@ class ForemanStore:
         The key is write-once: it is set on INSERT and never changed by updates.
         """
 
-        if not task.task_key and self.get_task(task.id) is None:
-            task.task_key = self._next_task_key(task.project_id)
+        is_new = not task.task_key and self.get_task(task.id) is None
 
-        with self._connection:
-            self._connection.execute(
+        def _write_task(connection: sqlite3.Connection) -> str:
+            # Allocate inside the transaction so the sequence bump and the
+            # INSERT commit together; a rolled-back attempt leaves no gap.
+            task_key = task.task_key or (self._next_task_key(task.project_id) if is_new else "")
+            connection.execute(
                 """
                 INSERT INTO tasks (
                     id, sprint_id, project_id, title, task_key, description, status, task_type,
@@ -602,7 +728,7 @@ class ForemanStore:
                     task.sprint_id,
                     task.project_id,
                     task.title,
-                    task.task_key,
+                    task_key,
                     task.description,
                     task.status,
                     task.task_type,
@@ -625,6 +751,9 @@ class ForemanStore:
                     task.completed_at,
                 ),
             )
+            return task_key
+
+        task.task_key = self._write(_write_task)
         return task
 
     def _ensure_project_key_prefix(self, project_id: str) -> str:
@@ -647,20 +776,33 @@ class ForemanStore:
         return prefix
 
     def _next_task_key(self, project_id: str) -> str:
-        """Return the next ``PREFIX-N`` key for a project (max existing + 1)."""
+        """Allocate the next ``PREFIX-N`` key from the project's sequence.
+
+        Must be called inside the caller's write transaction. The ``UPDATE``
+        takes the database write lock, so concurrent writers serialize on the
+        sequence and can never mint the same key. Keys that already exist
+        (explicitly assigned rows) are skipped.
+        """
 
         prefix = self._ensure_project_key_prefix(project_id)
-        rows = self._connection.execute(
-            "SELECT task_key FROM tasks WHERE project_id = ?",
-            (project_id,),
-        ).fetchall()
-        pattern = re.compile(rf"^{re.escape(prefix)}-(\d+)$")
-        highest = 0
-        for row in rows:
-            match = pattern.match(row["task_key"] or "")
-            if match:
-                highest = max(highest, int(match.group(1)))
-        return f"{prefix}-{highest + 1}"
+        while True:
+            self._connection.execute(
+                "UPDATE projects SET task_key_seq = task_key_seq + 1 WHERE id = ?",
+                (project_id,),
+            )
+            row = self._connection.execute(
+                "SELECT task_key_seq FROM projects WHERE id = ?",
+                (project_id,),
+            ).fetchone()
+            if row is None:
+                return f"{prefix}-1"
+            candidate = f"{prefix}-{int(row['task_key_seq'])}"
+            taken = self._connection.execute(
+                "SELECT 1 FROM tasks WHERE project_id = ? AND task_key = ? LIMIT 1",
+                (project_id, candidate),
+            ).fetchone()
+            if taken is None:
+                return candidate
 
     def _backfill_task_keys(self) -> None:
         """Assign keys to any pre-existing keyless tasks (one-time, idempotent)."""
@@ -773,8 +915,8 @@ class ForemanStore:
     def save_run(self, run: Run) -> Run:
         """Insert or update a run record."""
 
-        with self._connection:
-            self._connection.execute(
+        def _write_run(connection: sqlite3.Connection) -> None:
+            connection.execute(
                 """
                 INSERT INTO runs (
                     id, task_id, project_id, role_id, workflow_step, status, outcome,
@@ -828,6 +970,8 @@ class ForemanStore:
                     run.created_at,
                 ),
             )
+
+        self._write(_write_run)
         return run
 
     def get_run(self, run_id: str) -> Run | None:
@@ -935,8 +1079,8 @@ class ForemanStore:
     def save_event(self, event: Event) -> Event:
         """Insert or update an event record."""
 
-        with self._connection:
-            self._connection.execute(
+        def _write_event(connection: sqlite3.Connection) -> None:
+            connection.execute(
                 """
                 INSERT INTO events (
                     id, run_id, task_id, project_id, event_type, role_id, timestamp,
@@ -962,6 +1106,8 @@ class ForemanStore:
                     _json_dumps(event.payload),
                 ),
             )
+
+        self._write(_write_event)
         return event
 
     def get_event(self, event_id: str) -> Event | None:
@@ -1241,6 +1387,12 @@ class ForemanStore:
                 f"DELETE FROM events WHERE run_id IN ({qualifying_sql})",
                 qualifying_params,
             )
+            # Gate decisions are audit records: keep them, drop the run link.
+            self._connection.execute(
+                f"UPDATE human_gate_decisions SET run_id = NULL"
+                f" WHERE run_id IN ({qualifying_sql})",
+                qualifying_params,
+            )
             cursor = self._connection.execute(
                 f"DELETE FROM runs WHERE id IN ({qualifying_sql})",
                 qualifying_params,
@@ -1401,37 +1553,64 @@ class ForemanStore:
         ]
 
     def delete_task(self, task_id: str) -> dict[str, str]:
-        """Delete a task and all its runs and events (cascade)."""
+        """Delete a task and everything that hangs off it, in one transaction."""
 
         with self._connection:
-            self._connection.execute(
-                "DELETE FROM events WHERE run_id IN"
-                " (SELECT id FROM runs WHERE task_id = ?)",
-                (task_id,),
-            )
-            self._connection.execute("DELETE FROM runs WHERE task_id = ?", (task_id,))
+            self._delete_task_dependents(self._connection, "SELECT ? AS id", (task_id,))
             self._connection.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
         return {"ok": "deleted"}
 
     def delete_sprint(self, sprint_id: str) -> dict[str, str]:
-        """Delete a sprint and all its tasks, runs, and events (cascade)."""
+        """Delete a sprint and everything that hangs off it, in one transaction."""
 
         with self._connection:
-            self._connection.execute(
-                "DELETE FROM events WHERE run_id IN"
-                " (SELECT r.id FROM runs r"
-                "  JOIN tasks t ON t.id = r.task_id"
-                "  WHERE t.sprint_id = ?)",
-                (sprint_id,),
-            )
-            self._connection.execute(
-                "DELETE FROM runs WHERE task_id IN"
-                " (SELECT id FROM tasks WHERE sprint_id = ?)",
+            self._delete_task_dependents(
+                self._connection,
+                "SELECT id FROM tasks WHERE sprint_id = ?",
                 (sprint_id,),
             )
             self._connection.execute("DELETE FROM tasks WHERE sprint_id = ?", (sprint_id,))
+            self._connection.execute(
+                "DELETE FROM decision_gates WHERE sprint_id = ?", (sprint_id,)
+            )
             self._connection.execute("DELETE FROM sprints WHERE id = ?", (sprint_id,))
         return {"ok": "deleted"}
+
+    @staticmethod
+    def _delete_task_dependents(
+        connection: sqlite3.Connection,
+        task_ids_sql: str,
+        params: tuple[Any, ...],
+    ) -> None:
+        """Delete rows that reference the tasks selected by ``task_ids_sql``.
+
+        Covers events, runs, human gate decisions, merge waivers, and task
+        leases. Ordered so every foreign key is satisfied even on databases
+        whose gate tables predate the ON DELETE rules from migration 14.
+        """
+
+        connection.execute(
+            f"DELETE FROM events WHERE task_id IN ({task_ids_sql})"
+            f" OR run_id IN (SELECT id FROM runs WHERE task_id IN ({task_ids_sql}))",
+            (*params, *params),
+        )
+        connection.execute(
+            f"DELETE FROM human_gate_decisions WHERE task_id IN ({task_ids_sql})",
+            params,
+        )
+        connection.execute(
+            f"DELETE FROM merge_waivers WHERE task_id IN ({task_ids_sql})",
+            params,
+        )
+        connection.execute(
+            f"DELETE FROM leases WHERE resource_type = 'task'"
+            f" AND resource_id IN ({task_ids_sql})",
+            params,
+        )
+        connection.execute(
+            f"DELETE FROM runs WHERE task_id IN ({task_ids_sql})",
+            params,
+        )
 
     def count_projects(self) -> int:
         """Return the number of tracked projects."""

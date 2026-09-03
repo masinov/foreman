@@ -175,7 +175,12 @@ def _ensure_directory(path: Path) -> ArtifactAction:
 
 
 def _ensure_gitignore_entry(path: Path) -> ArtifactAction:
-    entries = (f"{DEFAULT_CONTEXT_DIR}/", DEFAULT_DB_FILENAME)
+    entries = (
+        f"{DEFAULT_CONTEXT_DIR}/",
+        DEFAULT_DB_FILENAME,
+        f"{DEFAULT_DB_FILENAME}-wal",
+        f"{DEFAULT_DB_FILENAME}-shm",
+    )
     if not path.exists():
         path.write_text("".join(f"{entry}\n" for entry in entries), encoding="utf-8")
         return "created"

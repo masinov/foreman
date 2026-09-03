@@ -7,9 +7,10 @@ the ``schema_migrations`` table.
 
 Rules for adding a migration:
 - Append to the end of MIGRATIONS.  Never reorder or remove existing entries.
-- Use a single SQL statement per migration where possible.  For multi-statement
-  migrations, separate statements with semicolons; the runner calls
-  ``executescript`` which handles that correctly.
+- Separate statements with semicolons.  The runner splits the script into
+  statements and applies every statement of one migration plus its ledger row
+  inside a single ``BEGIN IMMEDIATE`` transaction, so a failing migration
+  leaves the database exactly as it was.
 - Prefer ``ALTER TABLE ... ADD COLUMN`` for additive schema changes.
 - Never mutate data inside a migration unless the change is idempotent and safe
   to replay on a live database.
@@ -294,6 +295,89 @@ MIGRATIONS: list[tuple[int, str, str]] = [
 
         CREATE INDEX IF NOT EXISTS idx_tasks_task_key
         ON tasks(project_id, task_key);
+        """,
+    ),
+    (
+        14,
+        "store safety: cascading gate tables, events(task_id) index, task-key sequence",
+        """
+        -- human_gate_decisions: rebuild with ON DELETE rules so pruning runs
+        -- keeps the decision (run_id -> NULL) and deleting a task or project
+        -- removes its decisions instead of failing the foreign-key check.
+        CREATE TABLE human_gate_decisions_v14 (
+            id              TEXT PRIMARY KEY,
+            task_id         TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+            project_id      TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            workflow_step   TEXT NOT NULL,
+            decision        TEXT NOT NULL CHECK (decision IN ('approve', 'deny', 'steer')),
+            note            TEXT,
+            decided_by      TEXT NOT NULL DEFAULT 'human',
+            decided_at      TEXT NOT NULL,
+            run_id          TEXT REFERENCES runs(id) ON DELETE SET NULL
+        );
+        INSERT INTO human_gate_decisions_v14 (
+            id, task_id, project_id, workflow_step, decision, note, decided_by,
+            decided_at, run_id
+        )
+        SELECT id, task_id, project_id, workflow_step, decision, note, decided_by,
+               decided_at, run_id
+        FROM human_gate_decisions;
+        DROP TABLE human_gate_decisions;
+        ALTER TABLE human_gate_decisions_v14 RENAME TO human_gate_decisions;
+        CREATE INDEX IF NOT EXISTS idx_human_gate_decisions_task
+        ON human_gate_decisions(task_id, workflow_step);
+
+        -- decision_gates: rebuild so deleting a sprint or project cascades.
+        CREATE TABLE decision_gates_v14 (
+            id                   TEXT PRIMARY KEY,
+            project_id           TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            sprint_id            TEXT NOT NULL REFERENCES sprints(id) ON DELETE CASCADE,
+            raised_at            TEXT NOT NULL,
+            conflict_description TEXT NOT NULL,
+            suggested_order      TEXT NOT NULL DEFAULT '[]',
+            suggested_reason     TEXT NOT NULL DEFAULT '',
+            status               TEXT NOT NULL DEFAULT 'pending',
+            resolved_at          TEXT,
+            resolved_by          TEXT
+        );
+        INSERT INTO decision_gates_v14 (
+            id, project_id, sprint_id, raised_at, conflict_description,
+            suggested_order, suggested_reason, status, resolved_at, resolved_by
+        )
+        SELECT id, project_id, sprint_id, raised_at, conflict_description,
+               suggested_order, suggested_reason, status, resolved_at, resolved_by
+        FROM decision_gates;
+        DROP TABLE decision_gates;
+        ALTER TABLE decision_gates_v14 RENAME TO decision_gates;
+        CREATE INDEX IF NOT EXISTS idx_decision_gates_project
+        ON decision_gates(project_id, status);
+
+        -- The sprint activity query joins events to tasks by task_id.
+        CREATE INDEX IF NOT EXISTS idx_events_task
+        ON events(task_id, timestamp);
+
+        -- Per-project task-key sequence, bumped inside the task INSERT
+        -- transaction so concurrent writers can never mint the same key.
+        ALTER TABLE projects ADD COLUMN task_key_seq INTEGER NOT NULL DEFAULT 0;
+
+        -- Blank out duplicate keys minted by the old scan-based allocator
+        -- (keep the earliest row); the store backfills blanks from the sequence.
+        UPDATE tasks SET task_key = ''
+        WHERE task_key <> ''
+          AND rowid NOT IN (
+              SELECT MIN(rowid) FROM tasks GROUP BY project_id, task_key
+          );
+
+        UPDATE projects SET task_key_seq = COALESCE((
+            SELECT MAX(CAST(substr(t.task_key, instr(t.task_key, '-') + 1) AS INTEGER))
+            FROM tasks t
+            WHERE t.project_id = projects.id
+              AND t.task_key <> ''
+              AND instr(t.task_key, '-') > 0
+        ), 0);
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_task_key_unique
+        ON tasks(project_id, task_key) WHERE task_key <> '';
         """,
     ),
 ]

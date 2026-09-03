@@ -37,8 +37,14 @@ from .store import ForemanStore
 
 @contextmanager
 def _open_store(db_path: str) -> Iterator[ForemanStore]:
+    """Open a short-lived store for one request.
+
+    The schema is initialized once in ``create_dashboard_app``; per-request
+    stores only open a connection so requests never race each other through
+    the migration runner.
+    """
+
     store = ForemanStore(db_path)
-    store.initialize()
     try:
         yield store
     finally:
@@ -94,6 +100,12 @@ def create_dashboard_app(
         raise RuntimeError(
             f"Unsupported dashboard frontend mode: {frontend_mode}. Expected `dist` or `dev`."
         )
+
+    init_store = ForemanStore(db_path)
+    try:
+        init_store.initialize()
+    finally:
+        init_store.close()
 
     app = FastAPI(
         title="Foreman Dashboard API",

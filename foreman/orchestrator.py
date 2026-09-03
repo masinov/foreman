@@ -37,6 +37,7 @@ from .runner import AgentRunConfig, ClaudeCodeRunner, CodexRunner, PreflightErro
 from .runner.base import AgentRunner as NativeAgentRunner
 from .runner.env import resolve_env
 from .roles import RoleDefinition, default_roles_dir, load_roles
+from .settings import ProjectSettings, SettingsError
 from .store import ForemanStore
 from .workflows import WorkflowDefinition, default_workflows_dir, load_workflows
 
@@ -247,8 +248,9 @@ class ForemanOrchestrator:
         project = self.store.get_project(project_id)
         if project is None:
             raise OrchestratorError(f"Unknown project {project_id!r}.")
+        settings = resolve_project_settings(project)
         workflow = self._load_workflow_for_project(project)
-        self.prune_old_history(project)
+        self.prune_old_history(project, settings=settings)
         self.recover_orphaned_tasks(project.id)
 
         executed_task_ids: list[str] = []
@@ -2102,24 +2104,30 @@ class ForemanOrchestrator:
 
         return True
 
-    def prune_old_history(self, project: Project) -> dict[str, int]:
+    def prune_old_history(
+        self,
+        project: Project,
+        *,
+        settings: ProjectSettings | None = None,
+    ) -> dict[str, int]:
         """Prune old project history according to per-type retention settings.
 
-        Reads three optional integer project settings:
+        Reads three optional retention settings through the validated
+        ``ProjectSettings`` model:
 
-        - ``event_retention_days`` — hard-delete old events (existing behavior)
+        - ``event_retention_days`` — hard-delete old events
         - ``run_retention_days`` — hard-delete old terminal runs and their events
         - ``prompt_retention_days`` — null out prompt_text on old terminal runs
 
-        Each setting is independent.  Omitting a key disables that pruning type.
-        Returns a dict with counts for each type that was actually pruned.
+        Each setting is independent and disabled when unset. Returns a dict
+        with counts for each type that was actually pruned.
         """
 
         counts: dict[str, int] = {}
+        if settings is None:
+            settings = resolve_project_settings(project)
 
-        event_days = _coerce_int_value(
-            project.settings.get("event_retention_days"), default=None
-        )
+        event_days = settings.event_retention_days
         if event_days is not None:
             cutoff = self._retention_cutoff(event_days)
             n = self.store.prune_old_events(project_id=project.id, older_than=cutoff)
@@ -2127,9 +2135,7 @@ class ForemanOrchestrator:
                 counts["events"] = n
                 self._emit_pruned_event(project, "engine.event_pruned", n, cutoff)
 
-        run_days = _coerce_int_value(
-            project.settings.get("run_retention_days"), default=None
-        )
+        run_days = settings.run_retention_days
         if run_days is not None:
             cutoff = self._retention_cutoff(run_days)
             n = self.store.prune_old_runs(project_id=project.id, older_than=cutoff)
@@ -2137,9 +2143,7 @@ class ForemanOrchestrator:
                 counts["runs"] = n
                 self._emit_pruned_event(project, "engine.run_pruned", n, cutoff)
 
-        prompt_days = _coerce_int_value(
-            project.settings.get("prompt_retention_days"), default=None
-        )
+        prompt_days = settings.prompt_retention_days
         if prompt_days is not None:
             cutoff = self._retention_cutoff(prompt_days)
             n = self.store.strip_old_run_prompts(project_id=project.id, older_than=cutoff)
@@ -3218,6 +3222,21 @@ def resolve_step_model(
         step_id=step_id,
         visit_count=visit_count,
     ).model
+
+
+def resolve_project_settings(project: Project) -> ProjectSettings:
+    """Validate a project's raw settings blob, or fail fast with a clear error.
+
+    An unattended engine must not run a misconfigured project on silent
+    defaults; invalid settings stop the run before any task is touched.
+    """
+
+    try:
+        return ProjectSettings.from_raw(project.settings)
+    except SettingsError as exc:
+        raise OrchestratorError(
+            f"Project {project.id!r} has invalid settings: {exc}"
+        ) from exc
 
 
 def _string_setting(project: Project, key: str, *, default: str) -> str:
