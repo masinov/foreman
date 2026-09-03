@@ -269,6 +269,12 @@ Use the shipped runtime when you want the packaged product surface:
 ./venv/bin/foreman dashboard
 ```
 
+That binds to `localhost` with no token. To expose the dashboard on a
+network, set `FOREMAN_DASHBOARD_TOKEN` (or pass `--token` / `--token-file`)
+and bind with `--host`; every `/api` request must then carry the token, and
+the manager chat stays loopback-only unless `--allow-remote-manager`. See
+the manual's "Access and exposure" section.
+
 Use the dedicated frontend workflow when you want Vite HMR against the live
 FastAPI backend:
 

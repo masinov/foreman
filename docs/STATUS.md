@@ -5,20 +5,23 @@
 - Active implementation sprint: `sprint-53-phase0-unattended-safety`
   (`docs/sprints/current.md`), opened 2026-09-04 from Phase 0 of
   `docs/reviews/production-readiness-review.md`.
-- Slices 1–4 are done (`fix/store-concurrency-safety`,
+- Slices 1–5 are done (`fix/store-concurrency-safety`,
   `fix/runner-process-lifecycle`, `fix/output-contract-and-signals`,
-  `fix/workflow-test-before-review`); slices 5–6 (dashboard minimum safety,
-  cleanup) are queued in the sprint doc.
+  `fix/workflow-test-before-review`, `fix/dashboard-minimum-safety`); slice
+  6 (cleanup) is queued in the sprint doc.
 - Latest completed sprint: `sprint-52-review-phases-6-7-supervision-transport`
   (archived under `docs/sprints/archive/`).
-- Last merged branch: `fix/output-contract-and-signals` (`2d9829a`).
-- Current implementation branch: `fix/workflow-test-before-review`
+- Last merged branch: `fix/workflow-test-before-review` (`10333ef`).
+- Current implementation branch: `fix/dashboard-minimum-safety`
 
 ## Active branches
 
-- `fix/workflow-test-before-review` — sprint 53 slice 4: test before
-  review in every workflow, policy-driven `merge_approval` gate,
-  `merge_approval` / `plan_approval` settings, per-task gate overrides
+- `fix/dashboard-minimum-safety` — sprint 53 slice 5: shared-token auth on
+  `/api`, no wildcard CORS, non-loopback binds refused without a token,
+  manager chat loopback-only by default, repo-path validation, bounded
+  events page, frontend token prompt
+- `fix/workflow-test-before-review` — merged to `main` at `10333ef`; sprint
+  53 slice 4
 - `fix/output-contract-and-signals` — merged to `main` at `2d9829a`; sprint
   53 slice 3
 - `fix/runner-process-lifecycle` — merged to `main` at `79d499a`; sprint 53
@@ -42,13 +45,32 @@
 ## Current focus
 
 - Sprint 53 executes Phase 0 of the production readiness review: make an
-  unattended run safe on one machine. Slices 1–4 landed; slice 5 (dashboard
-  minimum safety) is next.
+  unattended run safe on one machine. Slices 1–5 landed; slice 6 (cleanup)
+  closes the sprint.
 - Phase 1 (resident worker, intake endpoint, policy matrix, planner step,
   worktree isolation, pull-request integration) is queued in
   `docs/sprints/backlog.md`.
 
-## Latest update — sprint 53 slice 4: workflow order and merge gate
+## Latest update — sprint 53 slice 5: dashboard minimum safety
+
+- Branch `fix/dashboard-minimum-safety`. The dashboard no longer sends
+  wildcard CORS headers; an explicit `--allowed-origin` list enables CORS.
+  A shared token (`--token` / `FOREMAN_DASHBOARD_TOKEN`) is required on
+  every `/api` route once configured (bearer header, `X-Foreman-Token`, or
+  `?token=` for the event stream), compared in constant time.
+- `dashboard_security_policy` refuses a non-loopback bind without a token
+  unless `--allow-insecure-network`, and keeps the manager chat (a
+  full-access agent session on the host) loopback-only unless
+  `--allow-remote-manager`; disabled manager routes answer 403.
+- `create_project` rejects paths that are not existing git repositories and,
+  with `FOREMAN_DASHBOARD_REPO_ROOTS`, paths outside the allowed roots;
+  the events endpoint caps `limit` at 500.
+- The frontend sends the stored token, puts it on the stream URL, and shows
+  a token prompt on 401. Bundle rebuilt.
+- Validation: 661 backend tests (+12 in `tests/test_dashboard_safety.py`),
+  18 frontend tests (+5 in `api.test.js`).
+
+## Previous update — sprint 53 slice 4: workflow order and merge gate
 
 - Branch `fix/workflow-test-before-review`. All four shipped workflows now
   run `develop → test → reviews → merge_approval → merge → done`, so

@@ -54,6 +54,16 @@ memory changes rather than versioned product releases.
   with a `workflow.gate_auto_approved` event and a `policy:<name>` decision
   record; the reviewer prompt's developer summary now comes from the latest
   agent run instead of the test built-in.
+- **slice 5, dashboard minimum safety** (`fix/dashboard-minimum-safety`):
+  wildcard CORS removed (explicit `--allowed-origin` allowlist only); a
+  shared access token (`--token` / `FOREMAN_DASHBOARD_TOKEN`) guards every
+  `/api` route via bearer header, `X-Foreman-Token`, or `?token=` on the
+  event stream; non-loopback binds are refused without a token unless
+  `--allow-insecure-network`; the manager chat is loopback-only unless
+  `--allow-remote-manager` (disabled routes answer 403); project creation
+  requires an existing git repository path, optionally inside
+  `FOREMAN_DASHBOARD_REPO_ROOTS`; the events page size is capped at 500;
+  the frontend sends the token and prompts for it on 401.
 
 ### Milestone
 

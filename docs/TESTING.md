@@ -50,6 +50,13 @@ The current suite covers:
   per-task overrides, auto-approval with a decision record, a human gate that
   pauses and resumes to merge, and test failures returning to develop before
   any review
+- `tests/test_dashboard_safety.py` for token authentication on `/api`
+  (header, alternate header, query), open shell and assets, CORS off by
+  default and allowlisted origins, manager routes forbidden when disabled,
+  the bounded events page, the bind security policy and its CLI flags, and
+  repository path validation on project creation
+- `frontend/src/api.test.js` for the bearer header, the stream URL token,
+  `UnauthorizedError`, and token storage
 - `tests/test_roles.py` and `tests/test_workflows.py` for shipped declarative
   configuration loading and validation
 - `tests/test_runner_env.py` for role `[agent.env]` value resolution and

@@ -793,6 +793,39 @@ thing that touches the store. A fresh service is constructed per request, but
 the running-agent subprocess registry is **module-level and lock-guarded** so
 Run/Stop survives request boundaries.
 
+### Access and exposure
+
+The dashboard binds to `localhost` by default and is open on that bind. To
+expose it on a network, start it with a shared token:
+
+```bash
+export FOREMAN_DASHBOARD_TOKEN="$(openssl rand -hex 24)"
+./venv/bin/foreman dashboard --host 0.0.0.0            # token read from the env
+./venv/bin/foreman dashboard --host 0.0.0.0 --token-file ~/.foreman/dashboard.token
+```
+
+- Every `/api` request must carry the token: `Authorization: Bearer <token>`,
+  `X-Foreman-Token: <token>`, or `?token=<token>` (used by the event stream,
+  because `EventSource` cannot set headers). Missing or wrong tokens get
+  **401**. The React shell asks for the token once and keeps it in the
+  browser's local storage.
+- A non-loopback bind **without** a token is refused. Pass
+  `--allow-insecure-network` only on a network you trust.
+- The **manager chat** runs a full-access agent session on the server. It is
+  enabled on loopback binds and disabled elsewhere (its routes answer **403**)
+  unless you pass `--allow-remote-manager`, in which case every token holder
+  can run that agent.
+- Cross-origin browser calls are off. The shipped frontend is same-origin
+  (served by FastAPI, or proxied by Vite). Pass `--allowed-origin <origin>`
+  (repeatable) if another web app must call the API from a browser.
+- `POST /api/projects` accepts only an existing git repository path; set
+  `FOREMAN_DASHBOARD_REPO_ROOTS` (`os.pathsep`-separated) to confine projects
+  to specific directories.
+- `GET /api/sprints/{id}/events` caps `limit` at 500.
+
+A shared token is not identity: every holder is the same actor. Per-user
+login and actor attribution arrive in Phase 1.
+
 ### Endpoint map
 
 | Method & path | Purpose |

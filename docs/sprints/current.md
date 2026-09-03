@@ -15,7 +15,7 @@
 | 2 | Runner process lifecycle | `fix/runner-process-lifecycle` | done | Reader thread with wall-clock time, cost, and heartbeat enforcement; process groups and group kill; stderr drained; UTF-8 with replacement; SIGTERM and atexit cleanup that kills the group and releases the lease; timeout on `_builtin:run_tests` |
 | 3 | Output contract and signals | `fix/output-contract-and-signals` | done | Marker and verdict extracted from the final assistant message only; multiple distinct verdicts become `error`; signals parsed once and deduplicated; per-role signal allowlist; reviewer outcomes declared in role TOML instead of hardcoded role ids |
 | 4 | Workflow order and merge gate | `fix/workflow-test-before-review` | done | `develop → test → review → merge` in all four shipped workflows; a project setting that inserts a human gate before merge in the default workflow |
-| 5 | Dashboard minimum safety | `fix/dashboard-minimum-safety` | todo | Loopback bind by default, no wildcard CORS, shared-token auth dependency on every route, manager chat refused on non-loopback binds until Phase 1 hardens it |
+| 5 | Dashboard minimum safety | `fix/dashboard-minimum-safety` | done | Loopback bind by default, no wildcard CORS, shared-token auth dependency on every route, manager chat refused on non-loopback binds until Phase 1 hardens it |
 | 6 | Cleanup | `chore/remove-bootstrap-supervisors` | todo | Remove `scripts/reviewed_claude.py`, `scripts/reviewed_codex.py`, and their tests; drop the unused `anthropic` dependency; gate autonomous-mode contract checks behind the mode flag |
 
 ## Sprint acceptance

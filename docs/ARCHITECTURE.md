@@ -219,6 +219,11 @@ The current CLI watch baseline now includes:
 - backend preflight failures now fail once before `agent.started`, while
   post-start transport and process failures remain retryable infrastructure
   errors.
+- the dashboard is loopback-only by default; a network bind requires a shared
+  token checked on every `/api` route, CORS is allowlist-only, the manager
+  chat is disabled off-loopback unless explicitly allowed, and project paths
+  must be existing git repositories (optionally under configured roots).
+  Per-user identity replaces the shared token in Phase 1.
 - every shipped workflow tests before it reviews and ends in a
   `merge_approval` human gate; gate steps carry a `policy` resolved from a
   per-task override, then the project setting, then a default, and an `auto`
