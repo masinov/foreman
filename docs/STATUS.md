@@ -5,20 +5,22 @@
 - Active implementation sprint: `sprint-53-phase0-unattended-safety`
   (`docs/sprints/current.md`), opened 2026-09-04 from Phase 0 of
   `docs/reviews/production-readiness-review.md`.
-- Slices 1 (`fix/store-concurrency-safety`) and 2
-  (`fix/runner-process-lifecycle`) are done; slices 3–6 (output contract and
-  signals, workflow order and merge gate, dashboard minimum safety, cleanup)
-  are queued in the sprint doc.
+- Slices 1 (`fix/store-concurrency-safety`), 2
+  (`fix/runner-process-lifecycle`), and 3 (`fix/output-contract-and-signals`)
+  are done; slices 4–6 (workflow order and merge gate, dashboard minimum
+  safety, cleanup) are queued in the sprint doc.
 - Latest completed sprint: `sprint-52-review-phases-6-7-supervision-transport`
   (archived under `docs/sprints/archive/`).
-- Last merged branch: `fix/store-concurrency-safety` (`9d23fe0`).
-- Current implementation branch: `fix/runner-process-lifecycle`
+- Last merged branch: `fix/runner-process-lifecycle` (`79d499a`).
+- Current implementation branch: `fix/output-contract-and-signals`
 
 ## Active branches
 
-- `fix/runner-process-lifecycle` — sprint 53 slice 2: managed child
-  processes with wall-clock ticks, process-group termination, stderr
-  draining, shutdown handlers, lease-loss handling, test-command timeout
+- `fix/output-contract-and-signals` — sprint 53 slice 3: final-message
+  contract, decision grammar with ambiguity errors, role-declared outcomes,
+  review kinds and signal allowlists, fence-aware deduplicated signals
+- `fix/runner-process-lifecycle` — merged to `main` at `79d499a`; sprint 53
+  slice 2
 - `fix/store-concurrency-safety` — merged to `main` at `9d23fe0`; sprint 53
   slice 1
 - `docs/minimax-smoke-closeout` — updates repo memory after merging the
@@ -38,14 +40,33 @@
 ## Current focus
 
 - Sprint 53 executes Phase 0 of the production readiness review: make an
-  unattended run safe on one machine. With slice 2 landed, a silent or
-  crashed agent can no longer hang the engine or outlive it; slice 3 (output
-  contract and signals) is next.
+  unattended run safe on one machine. Slices 1–3 landed; slice 4 (workflow
+  order and a configurable merge gate) is next.
 - Phase 1 (resident worker, intake endpoint, policy matrix, planner step,
   worktree isolation, pull-request integration) is queued in
   `docs/sprints/backlog.md`.
 
-## Latest update — sprint 53 slice 2: runner process lifecycle
+## Latest update — sprint 53 slice 3: output contract and signals
+
+- Branch `fix/output-contract-and-signals`. The role contract is applied to
+  the agent's final message only: a marker echoed in an early plan no longer
+  completes a task, and a reviewer's restated options no longer flip the
+  verdict. The decision grammar accepts `Decision:` / `Verdict:` prefixes,
+  ignores placeholder option lines, and treats multiple distinct verdicts or
+  an undeclared verdict as an error that triggers the corrective retry.
+- Roles declare `[completion] outcomes`, `[completion] review_kind`, and
+  `[signals] allowed`; the orchestrator, the workflow validator, and the
+  evidence builder read those instead of hardcoded reviewer ids. This also
+  fixes tiered review: a frontier approval now satisfies the merge guard,
+  which previously only passed with the guard disabled.
+- Signals are parsed once (not again from the Claude `result` text), only
+  outside code fences and quotes, accept pretty-printed JSON, are
+  deduplicated per step, and are rejected with a `signal.rejected` event when
+  a role is not allowed to emit them.
+- Validation: 638 backend tests passing (+18 in
+  `tests/test_output_contract.py`).
+
+## Previous update — sprint 53 slice 2: runner process lifecycle
 
 - Branch `fix/runner-process-lifecycle`. New `foreman/runner/process.py`:
   `ManagedProcess` pumps stdout and stderr on threads, yields ticks while

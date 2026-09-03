@@ -33,6 +33,18 @@ memory changes rather than versioned product releases.
   run `killed` on shutdown or lease loss while leaving the task resumable;
   `foreman run` exits 130 on SIGTERM or Ctrl+C; `_builtin:run_tests` honors a
   new `test_timeout_seconds` setting and kills its process group on timeout.
+- **slice 3, output contract and signals**
+  (`fix/output-contract-and-signals`): the completion marker and reviewer
+  verdict are read from the agent's final message only; the decision grammar
+  accepts `Decision:`/`Verdict:` prefixes, ignores placeholder option lines,
+  and turns multiple distinct verdicts or an undeclared verdict into an error
+  that triggers the corrective retry; roles declare `[completion] outcomes`,
+  `[completion] review_kind`, and `[signals] allowed`, which replace the
+  engine's hardcoded reviewer ids in normalization, workflow validation, and
+  completion evidence (tiered-review approvals now satisfy the merge guard);
+  signals are parsed once, only outside code fences and quotes, accept
+  pretty-printed JSON, are deduplicated per step, and are recorded as
+  `signal.rejected` when a role may not emit them.
 
 ### Milestone
 

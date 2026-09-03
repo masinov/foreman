@@ -219,6 +219,10 @@ The current CLI watch baseline now includes:
 - backend preflight failures now fail once before `agent.started`, while
   post-start transport and process failures remain retryable infrastructure
   errors.
+- the role contract (completion marker or verdict) is read from the agent's
+  final message only; decision roles declare `outcomes`, `review_kind`, and
+  allowed `signals` in TOML, and the orchestrator, workflow validator, and
+  evidence builder read those declarations instead of role ids.
 - every agent and test process runs through `foreman/runner/process.py`:
   pumped streams, wall-clock ticks while the child is silent, its own
   session, process-group termination, and a registry drained on SIGTERM,

@@ -313,7 +313,7 @@ ANTHROPIC_AUTH_TOKEN = "env:EXAMPLE_API_KEY"
 CLAUDE_CONFIG_DIR = "env:EXAMPLE_CONFIG_DIR?~/.foreman/claude-example"
 
 [completion]
-# How the engine interprets this role's terminal output.
+# How the engine interprets this role's final message.
 [completion.output]
 extract_decision = true            # decision role: parse APPROVE/DENY/STEER/ESCALATE
 
@@ -325,6 +325,40 @@ template = """..."""                # supports {task_title}, {acceptance_criteri
 `extract_decision = true` marks a role as a **decision role**: it receives the
 completion-evidence block and the curated `{completion_diff}` payload, and its
 output is parsed into a canonical reviewer decision.
+
+---
+
+### The output contract
+
+The engine reads the role's contract from the agent's **final message** (the
+Claude `result`, the Codex `final_answer`, or the last message otherwise).
+A developer must end that message with the completion marker; a marker
+mentioned earlier in the transcript does not count. A decision role must
+state exactly one verdict there: `APPROVE`, `DENY: <reason>`,
+`STEER: <action>`, or `ESCALATE: <why>`, optionally prefixed with
+`Decision:` or `Verdict:`. Two different verdicts in one message, or a verdict
+the role does not declare, are errors; the engine replays the step once with
+a correction that lists the role's own options.
+
+Role files declare the contract:
+
+```toml
+[completion]
+marker = ""
+outcomes = ["approve", "deny", "escalate"]   # what this role may return
+review_kind = "code"                          # or "security"; used by evidence
+
+[signals]
+allowed = ["progress", "blocker"]             # reviewers may not create tasks
+```
+
+`outcomes` defaults to approve/deny/steer for decision roles and
+done/blocked/error otherwise. Workflow validation checks every transition
+against the declared outcomes, and completion evidence counts the latest
+`code` and `security` verdicts by `review_kind`, so a new reviewer role needs
+no engine change. Signals a role is not allowed to emit are recorded as
+`signal.rejected` and never applied; signals inside code fences or quoted
+lines are ignored, and the same signal is applied once per step.
 
 ---
 

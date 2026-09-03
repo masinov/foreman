@@ -40,6 +40,11 @@ The current suite covers:
   handler), silent-agent time gates in both runners, the Codex startup
   timeout, the test built-in timeout, and orchestrator tick, shutdown, and
   lease-loss handling
+- `tests/test_output_contract.py` for the decision grammar (prefixes,
+  placeholders, ambiguity, undeclared verdicts), fence-aware and multi-line
+  signal parsing, Claude result-signal deduplication, role-declared outcomes,
+  review kinds and signal allowlists, the final-message marker rule, and a
+  custom TOML reviewer plus tiered review flowing through the merge guard
 - `tests/test_roles.py` and `tests/test_workflows.py` for shipped declarative
   configuration loading and validation
 - `tests/test_runner_env.py` for role `[agent.env]` value resolution and
