@@ -12,19 +12,16 @@ from .errors import ForemanError
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
-# Role-specific valid outcome sets for workflow validation
-_VALID_OUTCOMES: dict[str, set[str]] = {
+# Outcome contracts for built-in steps. Agent roles declare their own
+# outcomes in TOML (``[completion] outcomes``); callers pass those through
+# ``role_outcomes`` so the validator never hardcodes role ids.
+_BUILTIN_OUTCOMES: dict[str, set[str]] = {
     "_builtin:merge": {"success", "failure", "conflict"},
     "_builtin:run_tests": {"success", "failure"},
     "_builtin:mark_done": {"success"},
     # human_gate emits the human's decision (approve/deny/steer) as workflow outcome
     "_builtin:human_gate": {"approve", "deny", "steer"},
     "_builtin:orchestrator": {"done", "blocked", "error"},
-    "developer": {"done", "blocked", "error"},
-    "code_reviewer": {"approve", "deny", "steer"},
-    "security_reviewer": {"approve", "deny"},
-    "triage_reviewer": {"approve", "deny", "escalate"},
-    "frontier_reviewer": {"approve", "deny", "steer"},
 }
 
 
@@ -99,8 +96,15 @@ class WorkflowDefinition:
 
         return self.find_transition_by_trigger(step_id, f"completion:{outcome}")
 
-    def validate(self) -> list[str]:
+    def validate(
+        self,
+        *,
+        role_outcomes: Mapping[str, Collection[str]] | None = None,
+    ) -> list[str]:
         """Validate the workflow definition and return a list of error messages.
+
+        ``role_outcomes`` maps agent role ids to the outcomes they declare;
+        steps using those roles may only transition on declared outcomes.
 
         Validation checks:
         - builtin role steps support listed outcomes
@@ -112,6 +116,9 @@ class WorkflowDefinition:
         """
         errors: list[str] = []
         step_ids = {step.id for step in self.steps}
+        contracts: dict[str, set[str]] = dict(_BUILTIN_OUTCOMES)
+        for role_id, outcomes in (role_outcomes or {}).items():
+            contracts[role_id] = set(outcomes)
 
         # Check all transition targets exist
         for transition in self.transitions:
@@ -152,9 +159,9 @@ class WorkflowDefinition:
                 )
                 continue
 
-            # For builtin roles and known roles, validate outcomes against contract
-            if step.role in _VALID_OUTCOMES:
-                valid_outcomes = _VALID_OUTCOMES[step.role]
+            # For builtin roles and declared roles, validate outcomes against contract
+            if step.role in contracts:
+                valid_outcomes = contracts[step.role]
                 for transition in outgoing[step.id]:
                     trigger_outcome = transition.trigger.removeprefix("completion:")
                     if trigger_outcome not in valid_outcomes:
@@ -201,6 +208,7 @@ def load_workflow(
     path: str | Path,
     *,
     available_role_ids: Collection[str] | None = None,
+    role_outcomes: Mapping[str, Collection[str]] | None = None,
 ) -> WorkflowDefinition:
     """Load one workflow definition from disk."""
 
@@ -317,7 +325,7 @@ def load_workflow(
         source_path=workflow_path,
     )
 
-    validation_errors = definition.validate()
+    validation_errors = definition.validate(role_outcomes=role_outcomes)
     if validation_errors:
         raise WorkflowLoadError(
             f"{workflow_path}: validation errors: {'; '.join(validation_errors)}"
@@ -330,6 +338,7 @@ def load_workflows(
     directory: str | Path | None = None,
     *,
     available_role_ids: Collection[str] | None = None,
+    role_outcomes: Mapping[str, Collection[str]] | None = None,
 ) -> dict[str, WorkflowDefinition]:
     """Load all workflow definitions from one directory."""
 
@@ -339,7 +348,11 @@ def load_workflows(
 
     workflows: dict[str, WorkflowDefinition] = {}
     for path in sorted(workflows_dir.glob("*.toml")):
-        workflow = load_workflow(path, available_role_ids=available_role_ids)
+        workflow = load_workflow(
+            path,
+            available_role_ids=available_role_ids,
+            role_outcomes=role_outcomes,
+        )
         if workflow.id in workflows:
             raise WorkflowLoadError(
                 f"{path}: duplicate workflow id {workflow.id!r}; already defined in {workflows[workflow.id].source_path}."

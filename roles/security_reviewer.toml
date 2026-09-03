@@ -37,8 +37,13 @@ DENY: <reason with specific file and line references>
 
 [completion]
 marker = ""
+outcomes = ['approve', 'deny']
+review_kind = "security"
 timeout_minutes = 10
 max_cost_usd = 1000.0
 
 [completion.output]
 extract_decision = true
+
+[signals]
+allowed = ['progress', 'blocker']

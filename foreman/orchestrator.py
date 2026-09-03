@@ -6,6 +6,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import json
 import re
 import subprocess
 from typing import Any, Protocol
@@ -179,6 +180,10 @@ class ForemanOrchestrator:
             else load_workflows(
                 default_workflows_dir(),
                 available_role_ids=set(loaded_roles),
+                role_outcomes={
+                    role_id: role.completion.outcomes
+                    for role_id, role in loaded_roles.items()
+                },
             )
         )
         self.store = store
@@ -439,19 +444,25 @@ class ForemanOrchestrator:
                     builtin_test_passed = True
                 builtin_test_detail = payload.get("output", "")
 
-        # Reviewer outcomes from completed reviewer runs
+        # Reviewer outcomes from completed decision-role runs. Roles declare
+        # whether their verdict is a code review or a security review, so any
+        # reviewer (triage, frontier, a custom QA role) counts by contract.
         review_outcome = ""
         security_review_outcome = ""
-        # code_reviewer role emits outcomes as run completion outcomes
+        review_kind_by_role = {
+            role_id: role.completion.review_kind
+            for role_id, role in self.roles.items()
+            if role.completion.output.extract_decision
+        }
         reviewer_runs = [
             r for r in runs
-            if r.status == "completed"
-            and r.role_id in ("code_reviewer", "security_reviewer")
+            if r.status == "completed" and r.role_id in review_kind_by_role
         ]
         for run in sorted(reviewer_runs, key=lambda r: r.completed_at or "", reverse=True):
-            if run.role_id == "code_reviewer" and not review_outcome:
+            kind = review_kind_by_role[run.role_id]
+            if kind == "code" and not review_outcome:
                 review_outcome = run.outcome or ""
-            if run.role_id == "security_reviewer" and not security_review_outcome:
+            if kind == "security" and not security_review_outcome:
                 security_review_outcome = run.outcome or ""
 
         # Criteria coverage
@@ -1571,6 +1582,7 @@ class ForemanOrchestrator:
                     step_id=current_step,
                     carried_output=carried_output,
                     store=self.store,
+                    evidence_builder=self.build_completion_evidence,
                 )
                 self.store.save_task(current_task)
                 self._complete_run(
@@ -1795,12 +1807,7 @@ class ForemanOrchestrator:
                     result = retry_result
                 if role.agent.session_persistence and result.session_id:
                     session_ids[session_key] = result.session_id
-                if role.id in {
-                    "code_reviewer",
-                    "security_reviewer",
-                    "triage_reviewer",
-                    "frontier_reviewer",
-                }:
+                if role.completion.output.extract_decision:
                     outcome = normalize_reviewer_decision(result.outcome)
                 else:
                     outcome = normalize_agent_outcome(result.outcome)
@@ -2370,7 +2377,9 @@ class ForemanOrchestrator:
             "recent_commits": self._safe_recent_commits(project.repo_path, task.branch_name),
             "completion_evidence": (
                 str(evidence)
-                if role.id == "code_reviewer" and task.branch_name and evidence is not None
+                if role.completion.output.extract_decision
+                and task.branch_name
+                and evidence is not None
                 else ""
             ),
             # Curated diff payload, only for decision roles so they can review
@@ -2718,6 +2727,9 @@ class ForemanOrchestrator:
 
         events: list[AgentEventRecord] = []
         message_fragments: list[str] = []
+        final_message = ""
+        saw_final_phase = False
+        seen_signals: set[str] = set()
         final_status = "failed"
         outcome = "error"
         detail = ""
@@ -2756,6 +2768,15 @@ class ForemanOrchestrator:
                 # Silent-child ticks exist only to drive the heartbeat above;
                 # they are never persisted.
                 continue
+            if event.event_type.startswith("signal."):
+                # A backend may surface the same signal from more than one
+                # stream event, and a replayed attempt re-emits earlier ones.
+                signal_key = event.event_type + json.dumps(
+                    event.payload, sort_keys=True, default=str
+                )
+                if signal_key in seen_signals:
+                    continue
+                seen_signals.add(signal_key)
             event_record = AgentEventRecord(
                 event_type=event.event_type,
                 payload=dict(event.payload),
@@ -2768,6 +2789,13 @@ class ForemanOrchestrator:
                 text = _optional_string(event.payload.get("text"))
                 if text and (not message_fragments or message_fragments[-1] != text):
                     message_fragments.append(text)
+                if text:
+                    phase = _optional_string(event.payload.get("phase"))
+                    if phase in _FINAL_MESSAGE_PHASES:
+                        final_message = text
+                        saw_final_phase = True
+                    elif not saw_final_phase:
+                        final_message = text
                 continue
 
             if event.event_type == "agent.cost_update":
@@ -2799,7 +2827,8 @@ class ForemanOrchestrator:
                 )
                 outcome, detail = self._extract_completion_output(
                     role,
-                    "\n\n".join(message_fragments),
+                    final_message,
+                    transcript="\n\n".join(message_fragments),
                 )
                 final_status = "completed"
                 continue
@@ -2867,18 +2896,31 @@ class ForemanOrchestrator:
         self,
         role: RoleDefinition,
         text: str,
+        *,
+        transcript: str | None = None,
     ) -> tuple[str, str]:
+        """Apply the role's completion contract to the agent's final message.
+
+        ``text`` is the final assistant message: the marker or verdict must
+        appear there, not anywhere in the transcript, so a plan that mentions
+        the marker or a reviewer that restates the options never counts.
+        ``transcript`` is only a fallback for the returned detail when the
+        final message is empty once the marker is stripped.
+        """
+
         cleaned_text = text.strip()
         output_config = role.completion.output
         marker = role.completion.marker.strip()
 
         if output_config.extract_decision:
-            return _extract_decision_output(cleaned_text)
+            return _extract_decision_output(cleaned_text, allowed=role.completion.outcomes)
 
         if marker:
             if not _contains_completion_marker(cleaned_text, marker):
                 return (ERROR, f"Missing completion marker `{marker}`.")
             cleaned_text = _strip_completion_marker(cleaned_text, marker)
+            if not cleaned_text and transcript:
+                cleaned_text = _strip_completion_marker(transcript.strip(), marker)
 
         if output_config.extract_json:
             json_block = _extract_json_block(cleaned_text)
@@ -2917,13 +2959,12 @@ class ForemanOrchestrator:
         """Append a minimal corrective instruction for one malformed-output retry."""
 
         if reason == "decision_format":
+            options = "\n".join(_decision_option_lines(role.completion.outcomes))
             correction = (
                 "Your previous response did not follow the required final output format.\n"
                 "Do not do more review work.\n"
                 "Return exactly one line and nothing else:\n"
-                "APPROVE\n"
-                "DENY: <reason>\n"
-                "STEER: <specific corrective action>"
+                f"{options}"
             )
         elif reason == "missing_completion_marker":
             correction = (
@@ -2982,6 +3023,25 @@ class ForemanOrchestrator:
         event_record: AgentEventRecord,
     ) -> None:
         payload = event_record.payload
+        if event_record.event_type.startswith("signal.") and event_record.event_type not in {
+            "signal.invalid",
+            "signal.unknown",
+            "signal.rejected",
+        }:
+            signal_name = event_record.event_type.removeprefix("signal.")
+            role = self.roles.get(role_id)
+            if role is not None and signal_name not in role.signals:
+                self._emit_event(
+                    run,
+                    "signal.rejected",
+                    {
+                        "signal": signal_name,
+                        "role_id": role_id,
+                        "reason": f"Role {role_id!r} may not emit {signal_name}.",
+                    },
+                    role_id=role_id,
+                )
+                return
         if event_record.event_type == "signal.task_started":
             task.title = str(payload.get("title", task.title))
             task.task_type = str(payload.get("task_type", task.task_type))
@@ -3453,30 +3513,87 @@ def _parse_utc_timestamp(value: str | None) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
-def _extract_decision_output(text: str) -> tuple[str, str]:
+_FINAL_MESSAGE_PHASES = frozenset({"result", "final_answer"})
+_DECISION_PREFIX_RE = re.compile(
+    r"^(?:(?:final\s+)?(?:decision|verdict|result)\s*[:\-\u2013\u2014]\s*)",
+    re.IGNORECASE,
+)
+_DECISION_LINE_RE = re.compile(r"^(APPROVE|DENY|STEER|ESCALATE)(?![A-Z])\s*(.*)$")
+_DECISION_OPTION_TEMPLATES = {
+    "approve": "APPROVE",
+    "deny": "DENY: <reason>",
+    "steer": "STEER: <specific corrective action>",
+    "escalate": "ESCALATE: <why the senior reviewer is needed>",
+}
+
+
+def _decision_option_lines(outcomes: tuple[str, ...]) -> list[str]:
+    lines = [_DECISION_OPTION_TEMPLATES[o] for o in outcomes if o in _DECISION_OPTION_TEMPLATES]
+    return lines or list(_DECISION_OPTION_TEMPLATES.values())[:3]
+
+
+def _parse_decision_line(raw_line: str) -> tuple[str, str] | None:
+    """Return ``(verdict, reason)`` when a line carries a reviewer verdict.
+
+    Accepts the bare word, ``VERDICT: reason``, markdown emphasis, list
+    markers, and a ``Decision:`` / ``Verdict:`` prefix. Lines whose reason is
+    a ``<placeholder>`` are option restatements, not verdicts, and are ignored.
+    """
+
+    line = _normalize_decision_line(raw_line)
+    line = _DECISION_PREFIX_RE.sub("", line)
+    line = line.strip("*_` ").strip()
+    match = _DECISION_LINE_RE.match(line)
+    if match is None:
+        return None
+    verdict = match.group(1).lower()
+    reason = match.group(2).strip()
+    reason = reason.lstrip(":-\u2013\u2014 ").strip().strip("*_`").strip()
+    if reason.startswith("<") and reason.endswith(">"):
+        return None
+    return (verdict, reason)
+
+
+def _extract_decision_output(
+    text: str,
+    *,
+    allowed: tuple[str, ...] | None = None,
+) -> tuple[str, str]:
+    """Extract exactly one reviewer verdict from the final message.
+
+    More than one distinct verdict is an error rather than a guess, and a
+    verdict the role does not declare is an error naming the allowed set;
+    both trigger the one-shot output-contract retry.
+    """
+
     if not text:
         return (ERROR, "Reviewer returned no decision.")
 
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
-    for raw_line in reversed(lines):
-        line = _normalize_decision_line(raw_line)
-        if line == "APPROVE":
-            return (APPROVE, "APPROVE")
-        if line == "DENY":
-            return (DENY, "DENY")
-        if line == "STEER":
-            return (STEER, "STEER")
-        if line == "ESCALATE":
-            return (ESCALATE, "ESCALATE")
-        if line.startswith("DENY:"):
-            return (DENY, line.partition(":")[2].strip() or text)
-        if line.startswith("STEER:"):
-            return (STEER, line.partition(":")[2].strip() or text)
-        if line.startswith("APPROVE:"):
-            return (APPROVE, line.partition(":")[2].strip() or text)
-        if line.startswith("ESCALATE:"):
-            return (ESCALATE, line.partition(":")[2].strip() or text)
-    return (ERROR, text)
+    found: list[tuple[str, str]] = []
+    for raw_line in text.splitlines():
+        parsed = _parse_decision_line(raw_line)
+        if parsed is not None:
+            found.append(parsed)
+    if not found:
+        return (ERROR, text)
+
+    verdicts = {verdict for verdict, _ in found}
+    if len(verdicts) > 1:
+        return (
+            ERROR,
+            "Ambiguous decision: found "
+            + ", ".join(sorted(v.upper() for v in verdicts))
+            + ". Return exactly one verdict.",
+        )
+    verdict, reason = found[-1]
+    if allowed and verdict not in allowed:
+        return (
+            ERROR,
+            f"Decision {verdict.upper()} is not valid for this role; expected one of "
+            + ", ".join(o.upper() for o in allowed)
+            + ".",
+        )
+    return (verdict, reason or verdict.upper())
 
 
 def _normalize_decision_line(line: str) -> str:

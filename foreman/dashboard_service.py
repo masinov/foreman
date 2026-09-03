@@ -1051,7 +1051,10 @@ class DashboardService:
             return None
         try:
             roles = load_roles()
-            workflows = load_workflows(available_role_ids=set(roles))
+            workflows = load_workflows(
+                available_role_ids=set(roles),
+                role_outcomes={rid: role.completion.outcomes for rid, role in roles.items()},
+            )
         except (RoleLoadError, WorkflowLoadError):
             return None
         workflow = workflows.get(project.workflow_id)
@@ -1071,7 +1074,10 @@ class DashboardService:
 
         try:
             roles = load_roles()
-            workflows = load_workflows(available_role_ids=set(roles))
+            workflows = load_workflows(
+                available_role_ids=set(roles),
+                role_outcomes={rid: role.completion.outcomes for rid, role in roles.items()},
+            )
         except (RoleLoadError, WorkflowLoadError):
             return set()
         workflow = workflows.get(workflow_id)

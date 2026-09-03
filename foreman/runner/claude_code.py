@@ -101,6 +101,7 @@ class ClaudeCodeRunner(AgentRunner):
             start_time = self._clock()
             last_cost_usd = 0.0
             saw_terminal_event = False
+            saw_assistant_text = False
 
             yield AgentEvent(
                 "agent.started",
@@ -136,10 +137,18 @@ class ClaudeCodeRunner(AgentRunner):
                     payload={"stream": "stdout", "line": line},
                 )
 
-                for event in self._parse_stream_line(
+                parsed_events = self._parse_stream_line(
                     line,
                     working_dir=config.working_dir,
+                    emit_result_signals=not saw_assistant_text,
+                )
+                if any(
+                    event.event_type == "agent.message"
+                    and event.payload.get("phase") == "assistant"
+                    for event in parsed_events
                 ):
+                    saw_assistant_text = True
+                for event in parsed_events:
                     if event.event_type == "agent.cost_update":
                         last_cost_usd = _coerce_float(
                             event.payload.get("cumulative_usd"),
@@ -189,6 +198,7 @@ class ClaudeCodeRunner(AgentRunner):
         line: str,
         *,
         working_dir: Path,
+        emit_result_signals: bool = True,
     ) -> tuple[AgentEvent, ...]:
         timestamp_events: list[AgentEvent] = []
 
@@ -236,7 +246,11 @@ class ClaudeCodeRunner(AgentRunner):
                             payload={"text": cleaned_text, "phase": "result"},
                         )
                     )
-                timestamp_events.extend(signal_events)
+                # The result repeats the final assistant text, whose signals
+                # were already emitted from the assistant block; emitting them
+                # again would apply every signal twice.
+                if emit_result_signals:
+                    timestamp_events.extend(signal_events)
             cost_event = _build_cost_update_event(event)
             if cost_event is not None:
                 timestamp_events.append(cost_event)

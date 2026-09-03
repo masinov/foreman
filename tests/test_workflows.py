@@ -140,6 +140,10 @@ class WorkflowLoaderTests(unittest.TestCase):
             load_workflows(
                 workflows_dir,
                 available_role_ids={"developer", "triage_reviewer"},
+                role_outcomes={
+                    "developer": ("done", "blocked", "error"),
+                    "triage_reviewer": ("approve", "deny", "escalate"),
+                },
             )
 
 

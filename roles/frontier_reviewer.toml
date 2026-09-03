@@ -51,8 +51,12 @@ STEER: <specific corrective action; if you need repository context the
 
 [completion]
 marker = ""
+outcomes = ['approve', 'deny', 'steer']
 timeout_minutes = 15
 max_cost_usd = 1000.0
 
 [completion.output]
 extract_decision = true
+
+[signals]
+allowed = ['progress', 'blocker']

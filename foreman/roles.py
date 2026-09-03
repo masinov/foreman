@@ -9,6 +9,7 @@ from string import Formatter
 from typing import Any
 
 from ._toml import load_toml_file
+from .outcomes import CANONICAL_OUTCOMES
 from .errors import ForemanError
 
 _FORMATTER = Formatter()
@@ -19,6 +20,13 @@ SIGNAL_FORMAT_DOC = """Available signals:
 - FOREMAN_SIGNAL: {"type": "task_created", "title": "...", "task_type": "...", "description": "...", "criteria": "..."}
 - FOREMAN_SIGNAL: {"type": "progress", "message": "..."}
 - FOREMAN_SIGNAL: {"type": "blocker", "message": "..."}"""
+
+
+#: Every signal an agent may emit; roles narrow this with ``[signals] allowed``.
+ALL_SIGNALS: tuple[str, ...] = ("task_started", "task_created", "progress", "blocker")
+_DECISION_DEFAULT_OUTCOMES: tuple[str, ...] = ("approve", "deny", "steer")
+REVIEW_KINDS: tuple[str, ...] = ("code", "security")
+_AGENT_DEFAULT_OUTCOMES: tuple[str, ...] = ("done", "blocked", "error")
 
 
 class RoleLoadError(ForemanError):
@@ -69,6 +77,13 @@ class CompletionConfig:
     timeout_minutes: int
     max_cost_usd: float
     output: CompletionOutputConfig = field(default_factory=CompletionOutputConfig)
+    #: Outcomes this role may produce. Decision roles default to
+    #: approve/deny/steer; other roles to done/blocked/error. Workflow
+    #: validation and decision parsing read this instead of role ids.
+    outcomes: tuple[str, ...] = ()
+    #: For decision roles: which review this verdict counts as in completion
+    #: evidence ("code" or "security"). Ignored for non-decision roles.
+    review_kind: str = "code"
 
 
 @dataclass(slots=True)
@@ -83,6 +98,9 @@ class RoleDefinition:
     completion: CompletionConfig
     source_path: Path
     template_variables: tuple[str, ...]
+    #: Signals this role is allowed to emit; anything else is recorded as
+    #: ``signal.rejected`` and never applied.
+    signals: tuple[str, ...] = ALL_SIGNALS
 
     def render_prompt(self, context: Mapping[str, Any] | None = None) -> str:
         """Render the role prompt template with the provided context."""
@@ -112,7 +130,33 @@ def load_role(path: str | Path) -> RoleDefinition:
 
     tools_data = _as_mapping(agent_data.get("tools"), default={})
     output_data = _as_mapping(completion_data.get("output"), default={})
+    signals_data = _as_mapping(data.get("signals"), default={})
     prompt_template = _require_string(prompt_data, "template", role_path)
+
+    extract_decision = _require_bool(output_data, "extract_decision", role_path, default=False)
+    outcomes = tuple(_require_string_list(completion_data, "outcomes", role_path, default=()))
+    if not outcomes:
+        outcomes = _DECISION_DEFAULT_OUTCOMES if extract_decision else _AGENT_DEFAULT_OUTCOMES
+    invalid_outcomes = [value for value in outcomes if value not in CANONICAL_OUTCOMES]
+    if invalid_outcomes:
+        raise RoleLoadError(
+            f"{role_path}: completion.outcomes contains unknown outcome(s) "
+            f"{', '.join(sorted(invalid_outcomes))}."
+        )
+    review_kind = str(completion_data.get("review_kind", "code") or "code")
+    if review_kind not in REVIEW_KINDS:
+        raise RoleLoadError(
+            f"{role_path}: completion.review_kind must be one of {', '.join(REVIEW_KINDS)}."
+        )
+    allowed_signals = tuple(
+        _require_string_list(signals_data, "allowed", role_path, default=ALL_SIGNALS)
+    )
+    invalid_signals = [value for value in allowed_signals if value not in ALL_SIGNALS]
+    if invalid_signals:
+        raise RoleLoadError(
+            f"{role_path}: signals.allowed contains unknown signal(s) "
+            f"{', '.join(sorted(invalid_signals))}."
+        )
 
     return RoleDefinition(
         id=_require_string(role_data, "id", role_path),
@@ -141,12 +185,15 @@ def load_role(path: str | Path) -> RoleDefinition:
             output=CompletionOutputConfig(
                 extract_summary=_require_bool(output_data, "extract_summary", role_path, default=False),
                 extract_branch=_require_bool(output_data, "extract_branch", role_path, default=False),
-                extract_decision=_require_bool(output_data, "extract_decision", role_path, default=False),
+                extract_decision=extract_decision,
                 extract_json=_require_bool(output_data, "extract_json", role_path, default=False),
             ),
+            outcomes=outcomes,
+            review_kind=review_kind,
         ),
         source_path=role_path,
         template_variables=_extract_template_variables(prompt_template),
+        signals=allowed_signals,
     )
 
 

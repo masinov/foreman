@@ -1056,7 +1056,11 @@ def handle_init(args: argparse.Namespace) -> int:
         return 1
     try:
         roles = load_roles(roles_dir)
-        workflows = load_workflows(workflows_dir, available_role_ids=set(roles))
+        workflows = load_workflows(
+            workflows_dir,
+            available_role_ids=set(roles),
+            role_outcomes=_role_outcomes(roles),
+        )
         spec_reference, _ = resolve_spec_path(repo_path, args.spec)
     except (RoleLoadError, WorkflowLoadError, ScaffoldError) as exc:
         print(f"Failed to initialize project: {exc}", file=sys.stderr)
@@ -1344,14 +1348,24 @@ def handle_roles(_: argparse.Namespace) -> int:
     return 0
 
 
+def _role_outcomes(roles: dict[str, Any]) -> dict[str, tuple[str, ...]]:
+    """Map loaded roles to the outcomes they declare, for workflow validation."""
+
+    return {role_id: role.completion.outcomes for role_id, role in roles.items()}
+
+
 def handle_workflows(_: argparse.Namespace) -> int:
     """Handle ``foreman workflows``."""
 
     roles_dir = default_roles_dir()
     workflows_dir = default_workflows_dir()
     try:
-        role_ids = set(load_roles(roles_dir))
-        workflows = load_workflows(workflows_dir, available_role_ids=role_ids)
+        roles = load_roles(roles_dir)
+        workflows = load_workflows(
+            workflows_dir,
+            available_role_ids=set(roles),
+            role_outcomes=_role_outcomes(roles),
+        )
     except (RoleLoadError, WorkflowLoadError) as exc:
         print(f"Failed to load workflows: {exc}", file=sys.stderr)
         return 1
@@ -1595,7 +1609,9 @@ def _project_workflow_step_ids(store: ForemanStore, project: Project) -> set[str
     try:
         roles = load_roles(default_roles_dir())
         workflows = load_workflows(
-            default_workflows_dir(), available_role_ids=set(roles)
+            default_workflows_dir(),
+            available_role_ids=set(roles),
+            role_outcomes=_role_outcomes(roles),
         )
     except (RoleLoadError, WorkflowLoadError) as exc:
         print(f"Failed to load workflow definitions: {exc}", file=sys.stderr)

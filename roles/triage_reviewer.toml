@@ -51,8 +51,12 @@ Return exactly one of:
 
 [completion]
 marker = ""
+outcomes = ['approve', 'deny', 'escalate']
 timeout_minutes = 5
 max_cost_usd = 1000.0
 
 [completion.output]
 extract_decision = true
+
+[signals]
+allowed = ['progress', 'blocker']

@@ -49,3 +49,6 @@ max_cost_usd = 1000.0
 
 [completion.output]
 extract_json = true
+
+[signals]
+allowed = ["task_created", "progress", "blocker"]

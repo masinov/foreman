@@ -69,8 +69,12 @@ STEER: <specific corrective action>
 
 [completion]
 marker = ""
+outcomes = ['approve', 'deny', 'steer']
 timeout_minutes = 10
 max_cost_usd = 1000.0
 
 [completion.output]
 extract_decision = true
+
+[signals]
+allowed = ['progress', 'blocker']

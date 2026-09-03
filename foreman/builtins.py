@@ -51,8 +51,14 @@ class BuiltinExecutor:
         carried_output: str | None,
         store: ForemanStore | None = None,
         event_recorder: Callable[[BuiltinEventRecord], None] | None = None,
+        evidence_builder: Callable[[Task, Project], CompletionEvidence | None] | None = None,
     ) -> BuiltinResult:
-        """Dispatch one built-in role by identifier."""
+        """Dispatch one built-in role by identifier.
+
+        ``evidence_builder`` lets the orchestrator supply its own completion
+        evidence builder, so the merge guard sees the same role definitions
+        (and their declared review kinds) that executed the workflow.
+        """
 
         if role_id == "_builtin:run_tests":
             return self._run_tests(project=project, event_recorder=event_recorder)
@@ -64,9 +70,13 @@ class BuiltinExecutor:
                 carried_output=carried_output,
             )
         if role_id == "_builtin:merge":
-            return self._merge(project=project, task=task, store=store)
+            return self._merge(
+                project=project, task=task, store=store, evidence_builder=evidence_builder
+            )
         if role_id == "_builtin:mark_done":
-            return self._mark_done(task=task, project=project, store=store)
+            return self._mark_done(
+                task=task, project=project, store=store, evidence_builder=evidence_builder
+            )
         if role_id == "_builtin:human_gate":
             return self._human_gate(task=task, step_id=step_id, carried_output=carried_output)
         raise ValueError(f"Unsupported builtin role: {role_id}")
@@ -203,6 +213,7 @@ class BuiltinExecutor:
         project: Project,
         task: Task,
         store: ForemanStore | None,
+        evidence_builder: Callable[[Task, Project], CompletionEvidence | None] | None = None,
     ) -> BuiltinResult:
         if not task.branch_name:
             detail = "Task branch is not set."
@@ -240,6 +251,7 @@ class BuiltinExecutor:
                 project=project,
                 task=task,
                 store=store,
+                evidence_builder=evidence_builder,
             )
             task.completion_evidence = evidence
             if evidence is None:
@@ -335,6 +347,7 @@ class BuiltinExecutor:
         task: Task,
         project: Project,
         store: ForemanStore,
+        evidence_builder: Callable[[Task, Project], CompletionEvidence | None] | None = None,
     ) -> BuiltinResult:
         if task.branch_name and not is_worktree_clean(project.repo_path):
             return self._block_task(
@@ -381,6 +394,7 @@ class BuiltinExecutor:
                         project=project,
                         task=task,
                         store=store,
+                        evidence_builder=evidence_builder,
                     )
                     task.completion_evidence = evidence
                     if evidence is not None:
@@ -466,12 +480,15 @@ class BuiltinExecutor:
         project: Project,
         task: Task,
         store: ForemanStore | None,
+        evidence_builder: Callable[[Task, Project], CompletionEvidence | None] | None = None,
     ) -> CompletionEvidence | None:
         """Best-effort completion evidence build for pre-merge guard checks."""
 
-        if store is None:
-            return None
         try:
+            if evidence_builder is not None:
+                return evidence_builder(task, project)
+            if store is None:
+                return None
             from .orchestrator import ForemanOrchestrator
 
             return ForemanOrchestrator(store).build_completion_evidence(task, project)

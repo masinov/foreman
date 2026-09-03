@@ -40,19 +40,68 @@ def extract_signal_events(
 
     cleaned_lines: list[str] = []
     events: list[AgentEvent] = []
+    lines = text.splitlines()
+    in_fence = False
+    index = 0
 
-    for raw_line in text.splitlines():
+    while index < len(lines):
+        raw_line = lines[index]
         stripped = raw_line.strip()
-        if not stripped.startswith(SIGNAL_PREFIX):
+        if stripped.startswith(("```", "~~~")):
+            # Signals quoted inside a code fence are documentation, not intent.
+            in_fence = not in_fence
             cleaned_lines.append(raw_line)
+            index += 1
+            continue
+        if in_fence or stripped.startswith(">") or not stripped.startswith(SIGNAL_PREFIX):
+            cleaned_lines.append(raw_line)
+            index += 1
             continue
 
-        signal = _parse_signal_line(stripped, timestamp=timestamp)
+        payload_text = stripped[len(SIGNAL_PREFIX):].strip()
+        consumed = 1
+        # Pretty-printed JSON: keep consuming lines while braces are open.
+        while _brace_depth(payload_text) > 0 and consumed < _MAX_SIGNAL_LINES:
+            next_index = index + consumed
+            if next_index >= len(lines):
+                break
+            payload_text += "\n" + lines[next_index].strip()
+            consumed += 1
+
+        signal = _parse_signal_payload(payload_text, timestamp=timestamp)
         if signal is not None:
             events.append(signal)
+        index += consumed
 
     cleaned_text = "\n".join(cleaned_lines).strip()
     return cleaned_text, tuple(events)
+
+
+_MAX_SIGNAL_LINES = 40
+
+
+def _brace_depth(text: str) -> int:
+    """Return the net depth of unclosed braces, ignoring quoted strings."""
+
+    depth = 0
+    in_string = False
+    escaped = False
+    for char in text:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char in "{[":
+            depth += 1
+        elif char in "}]":
+            depth -= 1
+    return depth
 
 
 def _parse_signal_line(
@@ -60,7 +109,14 @@ def _parse_signal_line(
     *,
     timestamp: str | None,
 ) -> AgentEvent | None:
-    payload_text = line[len(SIGNAL_PREFIX) :].strip()
+    return _parse_signal_payload(line[len(SIGNAL_PREFIX) :].strip(), timestamp=timestamp)
+
+
+def _parse_signal_payload(
+    payload_text: str,
+    *,
+    timestamp: str | None,
+) -> AgentEvent | None:
     try:
         payload = json.loads(payload_text)
     except json.JSONDecodeError:
