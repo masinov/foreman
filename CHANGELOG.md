@@ -7,6 +7,22 @@ memory changes rather than versioned product releases.
 
 ## [Unreleased]
 
+### Sprint 53 — Phase 0 unattended safety
+
+- opened sprint 53 from Phase 0 of the production readiness review
+  (`docs/reviews/production-readiness-review.md`); Phases 1–2 queued in the
+  backlog.
+- **slice 1, store safety** (`fix/store-concurrency-safety`): migration 14
+  rebuilds the gate tables with `ON DELETE` rules so run pruning and task or
+  sprint deletion no longer fail on foreign keys, indexes `events(task_id,
+  timestamp)`, and replaces scan-based task keys with a per-project sequence
+  under a unique index; migrations apply atomically per version; file-backed
+  stores use WAL with a busy timeout and retrying hot writes; deletes are
+  dependent-aware; the dashboard initializes the schema once; project settings
+  are validated at run start, at the dashboard settings endpoint, and at
+  `foreman config --set`, with event, run, and prompt retention now explicit
+  opt-in settings.
+
 ### Milestone
 
 - **Review roadmap complete (Phases 0–7).** The stacked review branches

@@ -30,6 +30,11 @@ The current suite covers:
 - `tests/test_store.py` for SQLite round-trips, status-filtered reads, run
   totals, recent-event slices, incremental event cursors, sprint-scoped event
   queries, and event retention pruning
+- `tests/test_store_safety.py` for WAL and busy handling, hot-write retries
+  under a foreign lock, sequence-based task keys under concurrent writers,
+  dependent-aware deletes and pruning, atomic migrations, the v13 to v14
+  upgrade on a legacy database, and settings validation at the orchestrator,
+  dashboard, and CLI boundaries
 - `tests/test_roles.py` and `tests/test_workflows.py` for shipped declarative
   configuration loading and validation
 - `tests/test_runner_env.py` for role `[agent.env]` value resolution and

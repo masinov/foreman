@@ -219,7 +219,19 @@ The current CLI watch baseline now includes:
 - backend preflight failures now fail once before `agent.started`, while
   post-start transport and process failures remain retryable infrastructure
   errors.
-- `event_retention_days` now prunes old project events on startup, but current
+- file-backed stores run in WAL mode with a 30 s busy timeout and retrying
+  hot writes so the engine, dashboard, and CLI can share one database file;
+  migrations apply atomically per version inside `BEGIN IMMEDIATE`.
+- gate decisions and decision gates carry `ON DELETE` rules (migration 14),
+  and store deletes are dependent-aware, so retention and deletion never
+  violate a foreign key; a pruned run leaves its gate decision with a null
+  run link.
+- task keys come from a per-project sequence bumped inside the insert
+  transaction and are unique per project by index.
+- project settings are validated through `ProjectSettings` at the start of
+  every run, at the dashboard settings endpoint, and at `foreman config
+  --set`; event, run, and prompt retention are opt-in.
+- `event_retention_days` prunes old project events on startup when set, but current
   schema constraints force `engine.event_pruned` to ride on a synthetic
   task-bound orchestrator run instead of a pure project-level event.
 - product-facing CLI surfaces now ship as explicit commands rather than a

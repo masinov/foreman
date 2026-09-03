@@ -675,7 +675,10 @@ task blocks and a gate event fires:
 ## 16. Project settings reference
 
 Set with `foreman config <project-id> --set key=value` (or the dashboard
-settings endpoint). Validated by `foreman/settings.py`.
+settings endpoint). Validated by `foreman/settings.py`: an invalid value is
+rejected at `--set` time and by the dashboard endpoint, and `foreman run`
+refuses to start a project whose stored settings fail validation, naming the
+offending value, rather than running on silent defaults.
 
 | Setting | Default | Meaning |
 |---|---|---|
@@ -689,7 +692,11 @@ settings endpoint). Validated by `foreman/settings.py`.
 | `cost_limit_per_sprint_usd` | 0 (off) | per-sprint cost ceiling |
 | `runner_max_cost_usd` | 1000 | single-stream cost abort |
 | `runner_permission_mode` | `auto` | native runner approval policy |
-| `event_retention_days` | 90 | startup event pruning cutoff |
+| `event_retention_days` | unset (off) | prune events older than N days at engine start |
+| `run_retention_days` | unset (off) | prune terminal runs older than N days; gate decisions keep their record with the run link nulled |
+| `prompt_retention_days` | unset (off) | null stored prompt text on terminal runs older than N days |
+| `max_infra_retries` | 3 | infrastructure retries per agent step |
+| `active_run_recovery_timeout_minutes` | 0 (derived) | stale-run ownership window for crash recovery |
 | `context_dir` | `""` | override for `.foreman/` projection dir |
 | `completion_guard_enabled` | `true` | enforce the merge proof gate |
 | `default_model` | `""` | fallback model when a role pins none |
@@ -803,16 +810,26 @@ foreman db version          # current applied schema version
 foreman db migrate          # apply any pending migrations
 ```
 
-`ForemanStore.initialize()` additionally performs idempotent additive
-schema-repair so an older DB gains new columns/tables safely.
+Each migration is applied atomically: its statements and its ledger row run
+inside one `BEGIN IMMEDIATE` transaction, so a failing migration leaves the
+database at the previous version and raises `MigrationError`. Two processes
+that initialize the same database at once cannot double-apply a version.
+`ForemanStore.initialize()` additionally performs a narrow additive
+schema-repair for long-lived local databases; it is scheduled for removal.
 
-Migrations added by the review roadmap:
+File-backed databases open in WAL mode with `synchronous=NORMAL` and a 30 s
+busy timeout so the engine, the dashboard, and the CLI can share one file.
+Expect `.foreman.db-wal` and `.foreman.db-shm` sidecar files next to the
+database; scaffolded repositories ignore them. WAL needs a local filesystem.
+
+Recent migrations:
 
 | # | Contents |
 |---|---|
 | 11 | `meta_sessions`, `meta_turns` + index (manager persistence) |
 | 12 | `tasks.executor_overrides_json`, `tasks.complexity` |
 | 13 | `projects.task_key_prefix`, `tasks.task_key` (Jira-style keys) |
+| 14 | gate tables rebuilt with `ON DELETE` rules, `events(task_id, timestamp)` index, `projects.task_key_seq` + unique task keys |
 
 ---
 

@@ -1,5 +1,56 @@
 # Backlog
 
+## Production readiness roadmap — `docs/reviews/production-readiness-review.md`
+
+The readiness review is the forward roadmap. Phase 0 is sprint 53
+(`docs/sprints/current.md`). Phases 1 and 2 are queued here in order.
+
+### Phase 1 — unattended pilot (next sprints)
+
+- `foreman serve` resident worker: project lock, SIGTERM handling, structured
+  logging, a command table the dashboard writes to, dead-letter state for
+  tasks that exhaust their retry budget.
+- Intake endpoint: project-level, API-token authenticated, idempotent on an
+  external reference, source metadata, policy-chosen initial status
+  (`triage` or `todo`); sprints optional over a continuous queue.
+- Policy matrix v1: project defaults, task-type rules, per-task overrides for
+  triage, plan approval, merge authorization, and notification.
+- Planner step per task producing criteria and a protected acceptance test;
+  the architect role repurposed from once-per-sprint to once-per-task.
+- Worktree per task under a Foreman-owned directory; remove
+  operator-checkout assumptions.
+- Pull-request integration: push, open PR with evidence, watch checks and
+  approvals, auto-merge or wait per policy, mark done on merge; waivers as
+  labels.
+- Facts-based verification: drop the numeric score and verdict ladder, LLM
+  judge on by default, acceptance tests in a protected path.
+- Login and actor identity; Slack or email on attention events and waiting
+  gates.
+- Manager chat hardened: per-user sessions, turn lock, kill on disconnect,
+  runner-launched with a declared tool set, cost per turn.
+- Session key on model and endpoint; invalidate on resume failure;
+  session-aware infrastructure retry.
+- Migrations run as a deploy step; ledger the task-key backfill; retire
+  `_repair_known_schema_drift`.
+- Database moved out of the repository directory; raw output capped and
+  redacted into its own table; audit-grade events split from telemetry
+  before retention is enabled by default.
+- Frontend split by view; bundle built in CI; navigation race and stream
+  reconnect fixed; SSE batch stall fixed.
+
+### Phase 2 — scale and full autonomy
+
+- Parallel workers across worktrees; container execution; per-task leases
+  return for parallelism.
+- Planner-driven backlog from the spec and agent-discovered follow-ups,
+  accepted automatically where policy allows.
+- Reply-to-chat from Slack or email notifications.
+- Multi-repository projects and per-repository settings; a price table for
+  third-party endpoints; per-day budgets per project.
+- In-process pub/sub for the stream; cost and throughput dashboards.
+- Codex promoted from experimental only after a real-binary smoke test and
+  cost reporting.
+
 ## Review roadmap from `docs/specs/review.md` — COMPLETE
 
 The deep backend review was the forward implementation roadmap. **All phases

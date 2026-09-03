@@ -2,20 +2,22 @@
 
 ## Current sprint
 
-- Active implementation sprint: **none.** The review roadmap
-  (`docs/specs/review.md`, Phases 0–7) is fully implemented and merged to
-  `main`.
-- The review stack was fast-forwarded to `main` in order on 2026-06-13:
-  `feat/meta-agent-persistence` (`62c2e25`) → `feat/executor-overrides-ladder`
-  (`2ca7b49`) → `feat/judge-and-tiered-review` (`b53f930`) →
-  `feat/supervision-and-transport` (`35b667c`, current `main` tip).
-- Sprints 49–52 are archived under `docs/sprints/archive/`.
+- Active implementation sprint: `sprint-53-phase0-unattended-safety`
+  (`docs/sprints/current.md`), opened 2026-09-04 from Phase 0 of
+  `docs/reviews/production-readiness-review.md`.
+- Slice 1 (`fix/store-concurrency-safety`) is done; slices 2–6 (runner
+  process lifecycle, output contract and signals, workflow order and merge
+  gate, dashboard minimum safety, cleanup) are queued in the sprint doc.
 - Latest completed sprint: `sprint-52-review-phases-6-7-supervision-transport`
-- Last merged branch: `feat/supervision-and-transport`
-- Current implementation branch: none
+  (archived under `docs/sprints/archive/`).
+- Last merged branch: `fix/frontend-landing-copy` (`dfba0a6`).
+- Current implementation branch: `fix/store-concurrency-safety`
 
 ## Active branches
 
+- `fix/store-concurrency-safety` — sprint 53 slice 1: migration 14, WAL and
+  busy handling, atomic migrations, sequence-based task keys,
+  dependent-aware deletes, validated settings at every write boundary
 - `docs/minimax-smoke-closeout` — updates repo memory after merging the
   MiniMax role-env smoke to `main`
 - `feat/worker-fleet-minimax-smoke` — merged to `main` at `07649e6`; retained
@@ -32,11 +34,36 @@
 
 ## Current focus
 
-- The review roadmap (Phases 0–7) is complete and merged. No active
-  implementation sprint. Next sprint pulls from `docs/sprints/backlog.md`
-  (Tier 3 architecture / parking-lot items) when opened.
+- Sprint 53 executes Phase 0 of the production readiness review: make an
+  unattended run safe on one machine. Slice 2 (runner process lifecycle) is
+  next and is the blocking item for any unattended use, including running
+  Foreman against this repository.
+- Phase 1 (resident worker, intake endpoint, policy matrix, planner step,
+  worktree isolation, pull-request integration) is queued in
+  `docs/sprints/backlog.md`.
 
-## Latest update — frontend↔backend binding
+## Latest update — sprint 53 slice 1: store safety
+
+- Branch `fix/store-concurrency-safety`. Migration 14 rebuilds
+  `human_gate_decisions` and `decision_gates` with `ON DELETE` rules, adds
+  `idx_events_task`, and introduces `projects.task_key_seq` plus a unique
+  partial index on task keys after blanking duplicates from the old scan
+  allocator.
+- `ForemanStore.migrate` now applies each migration's statements and ledger
+  row inside one `BEGIN IMMEDIATE` transaction and raises `MigrationError` on
+  failure; file-backed stores use WAL, `synchronous=NORMAL`, a 30 s busy
+  timeout, and retrying hot writes.
+- `delete_task`, `delete_sprint`, and `prune_old_runs` are dependent-aware;
+  gate decisions survive run pruning with their run link nulled.
+- `ProjectSettings` gained optional run and prompt retention plus
+  `max_infra_retries` and `active_run_recovery_timeout_minutes`; event
+  retention is opt-in. The orchestrator validates settings at run start and
+  refuses a misconfigured project; the dashboard endpoint and
+  `foreman config --set` reject invalid values.
+- Validation: 605 backend tests passing (+20 in `tests/test_store_safety.py`);
+  migration 14 dry-run against a copy of the dogfood database is clean.
+
+## Previous update — frontend↔backend binding
 
 - Branch `feat/frontend-backend-binding`. Closes Tiers 1–2 of the frontend gap
   analysis (`docs/reviews/frontend-gap-analysis.md`): completion-evidence and
@@ -688,6 +715,11 @@
   if the build is stale.
 - the sprint SSE path still polls SQLite directly inside the FastAPI stream
   loop; that is acceptable for now, but it is not a final transport design.
+- file-backed stores run in WAL mode, which needs a local filesystem; on
+  media where the pragma fails the store silently keeps the rollback journal,
+  and `.foreman.db-wal` / `-shm` sidecars appear next to the database.
+- event, run, and prompt retention are opt-in; audit-grade events are not yet
+  separated from telemetry, so enabling retention prunes both.
 - Native backend preflight now validates executable presence and Codex startup
   handshake assumptions, but it does not yet prove downstream auth or service
   reachability beyond startup.
