@@ -40,14 +40,14 @@ class WorkflowLoaderTests(unittest.TestCase):
         self.assertEqual(tiered.entry_step, "develop")
         self.assertEqual(
             [s.id for s in tiered.steps],
-            ["develop", "triage", "review", "test", "merge", "done"],
+            ["develop", "test", "triage", "review", "merge_approval", "merge", "done"],
         )
         escalate = tiered.find_transition("triage", "escalate")
         self.assertIsNotNone(escalate)
         self.assertEqual(escalate.to_step, "review")
         development = workflows["development"]
         self.assertEqual(development.entry_step, "develop")
-        self.assertEqual(len(development.steps), 5)
+        self.assertEqual(len(development.steps), 6)
         self.assertEqual(len(development.gates), 2)
         deny_transition = development.find_transition("review", "deny")
         self.assertIsNotNone(deny_transition)

@@ -509,8 +509,8 @@ class OrchestratorLifecycleTests(unittest.TestCase):
                 orchestrator.run_project(project.id)
 
             runs = [r for r in store.list_runs(task_id=task.id) if r.role_id != "_builtin:orchestrator"]
-            self.assertEqual([run.workflow_step for run in runs], ["develop", "review"])
-            develop_run, review_run = runs
+            self.assertEqual([run.workflow_step for run in runs], ["develop", "test", "review"])
+            develop_run, _test_run, review_run = runs
             self.assertEqual(develop_run.status, "completed")
             self.assertEqual(develop_run.outcome, "done")
             tick_events = [

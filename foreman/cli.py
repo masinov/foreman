@@ -19,7 +19,7 @@ from .dashboard_runtime import (
     STREAM_POLL_INTERVAL_SECONDS,
     run_dashboard_server,
 )
-from .models import Event, Project, Sprint, TASK_COMPLEXITIES, TASK_TYPES, Task, utc_now_text
+from .models import Event, GATE_POLICY_NAMES, Project, Sprint, TASK_COMPLEXITIES, TASK_TYPES, Task, utc_now_text
 from .orchestrator import ForemanOrchestrator, OrchestratorError
 from .roles import RoleLoadError, default_roles_dir, load_roles
 from .runner.process import EngineShutdown, install_shutdown_handlers
@@ -1767,6 +1767,36 @@ def handle_task_override(args: argparse.Namespace) -> int:
                 overrides.pop("models", None)
             if args.ladder_start is not None:
                 overrides["ladder_start"] = args.ladder_start
+            gates = dict(overrides.get("gates") or {})
+            for raw in args.gate_policies:
+                if "=" not in raw:
+                    print(
+                        f"Invalid --gate value {raw!r}; expected POLICY=auto|human.",
+                        file=sys.stderr,
+                    )
+                    return 1
+                policy, decision = (part.strip() for part in raw.split("=", 1))
+                if policy not in GATE_POLICY_NAMES:
+                    print(
+                        f"Unknown gate policy {policy!r}. Valid policies: "
+                        f"{', '.join(sorted(GATE_POLICY_NAMES))}.",
+                        file=sys.stderr,
+                    )
+                    return 1
+                if not decision:
+                    gates.pop(policy, None)
+                elif decision not in ("auto", "human"):
+                    print(
+                        f"Gate policy {policy!r} must be 'auto' or 'human', got {decision!r}.",
+                        file=sys.stderr,
+                    )
+                    return 1
+                else:
+                    gates[policy] = decision
+            if gates:
+                overrides["gates"] = gates
+            else:
+                overrides.pop("gates", None)
 
         task.executor_overrides = overrides
         store.save_task(task)
@@ -2286,6 +2316,17 @@ def build_parser() -> argparse.ArgumentParser:
         dest="ladder_start",
         type=int,
         help="Override the model-ladder start index for this task.",
+    )
+    task_override.add_argument(
+        "--gate",
+        dest="gate_policies",
+        action="append",
+        metavar="POLICY=auto|human",
+        default=[],
+        help=(
+            "Override a gate policy for this task (repeatable), e.g. "
+            "--gate merge_approval=human. An empty value removes the override."
+        ),
     )
     task_override.add_argument(
         "--clear",

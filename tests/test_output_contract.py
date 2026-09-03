@@ -547,7 +547,7 @@ class OrchestratorContractTests(unittest.TestCase):
             self.assertEqual(done.status, "done")
             self.assertEqual(done.completion_evidence.review_outcome, "approve")
             steps = [r.workflow_step for r in store.list_runs(task_id=task.id) if r.role_id != "_builtin:orchestrator"]
-            self.assertEqual(steps, ["develop", "triage", "review", "test", "merge", "done"])
+            self.assertEqual(steps, ["develop", "test", "triage", "review", "merge_approval", "merge", "done"])
 
     def test_retry_correction_lists_the_roles_declared_outcomes(self) -> None:
         repo, db_path = self._workspace()

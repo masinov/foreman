@@ -31,10 +31,16 @@ class WorkflowLoadError(ForemanError):
 
 @dataclass(slots=True)
 class WorkflowStep:
-    """One named workflow step."""
+    """One named workflow step.
+
+    ``policy`` names the project setting that decides whether a
+    ``_builtin:human_gate`` step needs a person (``human``) or auto-approves
+    (``auto``). Gate steps without a policy always wait for a person.
+    """
 
     id: str
     role: str
+    policy: str | None = None
 
 
 @dataclass(slots=True)
@@ -198,6 +204,24 @@ class WorkflowDefinition:
         return None
 
 
+GATE_POLICIES: tuple[str, ...] = ("merge_approval", "plan_approval")
+
+
+def _optional_policy(step_data: Mapping[str, Any], workflow_path: Path) -> str | None:
+    value = step_data.get("policy")
+    if value is None:
+        return None
+    if not isinstance(value, str) or value not in GATE_POLICIES:
+        raise WorkflowLoadError(
+            f"{workflow_path}: step policy must be one of {', '.join(GATE_POLICIES)}, got {value!r}."
+        )
+    if step_data.get("role") != "_builtin:human_gate":
+        raise WorkflowLoadError(
+            f"{workflow_path}: only _builtin:human_gate steps may declare a policy."
+        )
+    return value
+
+
 def default_workflows_dir() -> Path:
     """Return the shipped workflows directory."""
 
@@ -235,6 +259,7 @@ def load_workflow(
         WorkflowStep(
             id=_require_string(step_data, "id", workflow_path),
             role=_require_string(step_data, "role", workflow_path),
+            policy=_optional_policy(step_data, workflow_path),
         )
         for step_data in steps_data
     )

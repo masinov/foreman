@@ -542,11 +542,11 @@ class ForemanOrchestratorTests(unittest.TestCase):
             agent_runs = [r for r in runs if r.role_id != "_builtin:orchestrator"]
             self.assertEqual(
                 [r.workflow_step for r in agent_runs],
-                ["develop", "review", "test", "merge", "done"],
+                ["develop", "test", "review", "merge_approval", "merge", "done"],
             )
             self.assertEqual(
                 [r.outcome for r in agent_runs],
-                ["done", "approve", "success", "success", "success"],
+                ["done", "success", "approve", "approve", "success", "success"],
             )
 
             event_types = [event.event_type for event in store.list_events(task_id=task.id)]
@@ -637,9 +637,10 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 updated_task.step_visit_counts,
                 {
                     "develop": 1,
+                    "test": 1,
                     "code_review": 1,
                     "security_review": 1,
-                    "test": 1,
+                    "merge_approval": 1,
                     "merge": 1,
                     "done": 1,
                 },
@@ -649,11 +650,11 @@ class ForemanOrchestratorTests(unittest.TestCase):
             agent_runs = [r for r in runs if r.role_id != "_builtin:orchestrator"]
             self.assertEqual(
                 [r.workflow_step for r in agent_runs],
-                ["develop", "code_review", "security_review", "test", "merge", "done"],
+                ["develop", "test", "code_review", "security_review", "merge_approval", "merge", "done"],
             )
             self.assertEqual(
                 [r.outcome for r in agent_runs],
-                ["done", "approve", "approve", "success", "success", "success"],
+                ["done", "success", "approve", "approve", "approve", "success", "success"],
             )
 
             transitions = [
@@ -672,7 +673,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
             self.assertIn(
                 {
                     "from_step": "security_review",
-                    "to_step": "test",
+                    "to_step": "merge_approval",
                     "trigger": "completion:approve",
                 },
                 transitions,
@@ -786,9 +787,10 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 updated_task.step_visit_counts,
                 {
                     "develop": 2,
+                    "test": 2,
                     "code_review": 2,
                     "security_review": 2,
-                    "test": 1,
+                    "merge_approval": 1,
                     "merge": 1,
                     "done": 1,
                 },
@@ -805,12 +807,14 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 ],
                 [
                     "develop",
+                    "test",
                     "code_review",
                     "security_review",
                     "develop",
+                    "test",
                     "code_review",
                     "security_review",
-                    "test",
+                    "merge_approval",
                     "merge",
                     "done",
                 ],
@@ -851,19 +855,32 @@ class ForemanOrchestratorTests(unittest.TestCase):
                     detail="Initial implementation complete.",
                 )
 
+            def developer_two(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
+                del task
+                # Tests run before review: the failure comes straight back.
+                self.assertEqual(carried_output, "Command exited with 1.")
+                self.assertIn("Command exited with 1.", prompt)
+                self.write_text(repo_path / "ready.txt", "ready now\n")
+                self.commit_all(repo_path, "fix: add ready marker")
+                return AgentExecutionResult(
+                    outcome="done",
+                    detail="Added the ready marker after test failure.",
+                )
+
             def reviewer_one(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
                 del task
                 self.assertIsNone(carried_output)
-                self.assertIn("Initial implementation complete.", prompt)
+                # The reviewer sees the developer's summary, not the test output.
+                self.assertIn("Added the ready marker after test failure.", prompt)
                 return AgentExecutionResult(
                     outcome="deny",
-                    detail="Please add the ready marker.",
+                    detail="Please document the ready marker.",
                 )
 
-            def developer_two(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
+            def developer_three(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
                 del task
-                self.assertEqual(carried_output, "Please add the ready marker.")
-                self.assertIn("Please add the ready marker.", prompt)
+                self.assertEqual(carried_output, "Please document the ready marker.")
+                self.assertIn("Please document the ready marker.", prompt)
                 self.write_text(repo_path / "feature.txt", "updated after review\n")
                 self.commit_all(repo_path, "feat: address review guidance")
                 return AgentExecutionResult(
@@ -877,37 +894,16 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 self.assertIn("Updated after review feedback.", prompt)
                 return AgentExecutionResult(
                     outcome="approve",
-                    detail="Approved for testing.",
-                )
-
-            def developer_three(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
-                del task
-                self.assertEqual(carried_output, "Command exited with 1.")
-                self.assertIn("Command exited with 1.", prompt)
-                self.write_text(repo_path / "ready.txt", "ready now\n")
-                self.commit_all(repo_path, "fix: add ready marker")
-                return AgentExecutionResult(
-                    outcome="done",
-                    detail="Added the ready marker after test failure.",
-                )
-
-            def reviewer_three(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
-                del task
-                self.assertIsNone(carried_output)
-                self.assertIn("Added the ready marker after test failure.", prompt)
-                return AgentExecutionResult(
-                    outcome="approve",
-                    detail="Approved after the test fix.",
+                    detail="Approved after the review fix.",
                 )
 
             executor.handlers.update(
                 {
                     ("developer", 1): developer_one,
-                    ("code_reviewer", 1): reviewer_one,
                     ("developer", 2): developer_two,
-                    ("code_reviewer", 2): reviewer_two,
+                    ("code_reviewer", 1): reviewer_one,
                     ("developer", 3): developer_three,
-                    ("code_reviewer", 3): reviewer_three,
+                    ("code_reviewer", 2): reviewer_two,
                 }
             )
 
@@ -929,8 +925,9 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 updated_task.step_visit_counts,
                 {
                     "develop": 3,
-                    "review": 3,
-                    "test": 2,
+                    "test": 3,
+                    "review": 2,
+                    "merge_approval": 1,
                     "merge": 1,
                     "done": 1,
                 },
@@ -944,24 +941,25 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 ],
                 [
                     "develop",
-                    "review",
-                    "develop",
-                    "review",
                     "test",
                     "develop",
-                    "review",
                     "test",
+                    "review",
+                    "develop",
+                    "test",
+                    "review",
+                    "merge_approval",
                     "merge",
                     "done",
                 ],
             )
             self.assertEqual(
                 executor.capture("developer", 2).carried_output,
-                "Please add the ready marker.",
+                "Command exited with 1.",
             )
             self.assertEqual(
                 executor.capture("developer", 3).carried_output,
-                "Command exited with 1.",
+                "Please document the ready marker.",
             )
 
             events = store.list_events(task_id=task.id)
@@ -1015,10 +1013,6 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 self.commit_all(repo_path, "feat: v1")
                 return AgentExecutionResult(outcome="done", detail="v1 done.")
 
-            def reviewer_deny(*, task, prompt, carried_output):
-                del task
-                return AgentExecutionResult(outcome="deny", detail="Needs ready marker.")
-
             def developer_two(*, task, prompt, carried_output):
                 self.write_text(repo_path / "feature.txt", "v2\n")
                 self.commit_all(repo_path, "feat: v2")
@@ -1035,12 +1029,11 @@ class ForemanOrchestratorTests(unittest.TestCase):
 
             executor.handlers.update(
                 {
+                    # Two test failures escalate the ladder before review runs.
                     ("developer", 1): developer_one,
-                    ("code_reviewer", 1): reviewer_deny,
                     ("developer", 2): developer_two,
-                    ("code_reviewer", 2): reviewer_approve,
                     ("developer", 3): developer_three,
-                    ("code_reviewer", 3): reviewer_approve,
+                    ("code_reviewer", 1): reviewer_approve,
                 }
             )
 
@@ -1129,7 +1122,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 if r.role_id != "_builtin:orchestrator"
             ]
             self.assertEqual(
-                steps, ["develop", "triage", "review", "test", "merge", "done"]
+                steps, ["develop", "test", "triage", "review", "merge_approval", "merge", "done"]
             )
             # The escalate transition is recorded with its trigger.
             transitions = [
@@ -1327,12 +1320,14 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 ],
                 [
                     "develop",
-                    "review",
                     "test",
+                    "review",
+                    "merge_approval",
                     "merge",
                     "develop",
-                    "review",
                     "test",
+                    "review",
+                    "merge_approval",
                     "merge",
                     "done",
                 ],
@@ -1344,15 +1339,8 @@ class ForemanOrchestratorTests(unittest.TestCase):
                     if r.role_id != "_builtin:orchestrator"
                 ],
                 [
-                    "done",
-                    "approve",
-                    "success",
-                    "conflict",
-                    "done",
-                    "approve",
-                    "success",
-                    "success",
-                    "success",
+                    "done", "success", "approve", "approve", "conflict",
+                    "done", "success", "approve", "approve", "success", "success",
                 ],
             )
             assert executor.capture("developer", 2).carried_output is not None
@@ -1476,8 +1464,9 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 updated_task.step_visit_counts,
                 {
                     "develop": 1,
-                    "review": 1,
                     "test": 1,
+                    "review": 1,
+                    "merge_approval": 1,
                     "merge": 1,
                     "done": 1,
                 },
@@ -1639,11 +1628,11 @@ class ForemanOrchestratorTests(unittest.TestCase):
             runs = store.list_runs(task_id=task.id)
             self.assertEqual(
                 [run.workflow_step for run in runs if run.role_id != "_builtin:orchestrator"],
-                ["plan", "human_approval", "human_approval", "develop", "review", "test", "merge", "done"],
+                ["plan", "human_approval", "human_approval", "develop", "test", "review", "merge_approval", "merge", "done"],
             )
             self.assertEqual(
                 [run.outcome for run in runs],
-                ["done", "paused", "approve", "done", "approve", "success", "success", "success"],
+                ["done", "paused", "approve", "done", "success", "approve", "approve", "success", "success"],
             )
 
             resumed_events = [
@@ -2025,12 +2014,12 @@ class ForemanOrchestratorTests(unittest.TestCase):
             workflow_runs = [r for r in runs if r.role_id != "_builtin:orchestrator"]
             self.assertEqual(
                 [run.workflow_step for run in workflow_runs],
-                ["develop", "review", "test", "merge", "done"],
+                ["develop", "test", "review", "merge_approval", "merge", "done"],
             )
             self.assertEqual(workflow_runs[0].session_id, "dev-session")
             self.assertEqual(
                 [run.outcome for run in workflow_runs],
-                ["done", "approve", "success", "success", "success"],
+                ["done", "success", "approve", "approve", "success", "success"],
             )
 
     def test_native_runner_records_retry_count_from_infra_errors(self) -> None:
@@ -2206,8 +2195,9 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 updated_task.step_visit_counts,
                 {
                     "develop": 2,
+                    "test": 2,
                     "review": 2,
-                    "test": 1,
+                    "merge_approval": 1,
                     "merge": 1,
                     "done": 1,
                 },
@@ -3341,10 +3331,12 @@ class ForemanOrchestratorTests(unittest.TestCase):
             runs = store.list_runs(task_id=task.id)
             self.assertEqual(
                 [run.workflow_step for run in runs if run.role_id != "_builtin:orchestrator"],
-                ["develop", "review", "test", "merge", "done"],
+                ["develop", "test", "review", "merge_approval", "merge", "done"],
             )
             self.assertEqual(runs[0].agent_backend, "codex")
-            self.assertEqual(runs[1].agent_backend, "codex")
+            self.assertEqual(
+                next(r for r in runs if r.workflow_step == "review").agent_backend, "codex"
+            )
             self.assertEqual(runs[0].session_id, "dev-session")
 
     def test_native_runner_reuses_persistent_codex_sessions_after_review_denial(self) -> None:
@@ -3517,9 +3509,11 @@ class ForemanOrchestratorTests(unittest.TestCase):
             runs = store.list_runs(task_id=task.id)
             self.assertEqual(
                 [run.workflow_step for run in runs if run.role_id != "_builtin:orchestrator"],
-                ["human_approval", "develop", "review", "test", "merge", "done"],
+                ["human_approval", "develop", "test", "review", "merge_approval", "merge", "done"],
             )
-            self.assertEqual(runs[1].agent_backend, "codex")
+            self.assertEqual(
+                next(r for r in runs if r.workflow_step == "review").agent_backend, "codex"
+            )
 
     def _native_developer_success(
         self,
@@ -3553,6 +3547,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
     ) -> tuple[AgentEvent, ...]:
         self.assertIsNone(config.session_id)
         self.write_text(repo_path / "feature.txt", "initial implementation\n")
+        self.write_text(repo_path / "ready.txt", "ready\n")
         self.commit_all(repo_path, "feat: initial native runner implementation")
         return (
             AgentEvent(
@@ -3664,6 +3659,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 del task
                 self.assertIsNone(carried_output)
                 self.write_text(repo_path / "feature.txt", "implemented\n")
+                self.write_text(repo_path / "ready.txt", "ready\n")
                 self.commit_all(repo_path, "feat: implement fallback scenario")
                 return AgentExecutionResult(
                     outcome="done",

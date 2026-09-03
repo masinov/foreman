@@ -40,6 +40,9 @@ TASK_TYPES: tuple[TaskType, ...] = (
 TASK_COMPLEXITIES: tuple[str, ...] = ("small", "medium", "large")
 
 
+GATE_POLICY_NAMES: frozenset[str] = frozenset({"merge_approval", "plan_approval"})
+
+
 def validate_executor_overrides(
     value: Any,
     *,
@@ -49,20 +52,39 @@ def validate_executor_overrides(
 
     Shape:
 
-        {"models": {"<step>": "<model>", ...}, "ladder_start": <int>}
+        {"models": {"<step>": "<model>", ...}, "ladder_start": <int>,
+         "gates": {"merge_approval": "human", ...}}
 
     Unknown top-level keys are rejected. ``models`` keys are workflow step ids;
-    when ``valid_steps`` is provided they are checked against it. Raises
-    ``ValueError`` on any violation.
+    when ``valid_steps`` is provided they are checked against it. ``gates``
+    maps a gate policy name to ``auto`` or ``human`` and overrides the
+    project setting for this task. Raises ``ValueError`` on any violation.
     """
 
     if not isinstance(value, dict):
         raise ValueError("executor_overrides must be an object.")
-    unknown = set(value) - {"models", "ladder_start"}
+    unknown = set(value) - {"models", "ladder_start", "gates"}
     if unknown:
         raise ValueError(f"Unknown executor_overrides keys: {sorted(unknown)}.")
 
     result: dict[str, Any] = {}
+    gates = value.get("gates")
+    if gates is not None:
+        if not isinstance(gates, dict):
+            raise ValueError("executor_overrides.gates must be an object.")
+        normalized_gates: dict[str, str] = {}
+        for policy, decision in gates.items():
+            if not isinstance(policy, str) or policy not in GATE_POLICY_NAMES:
+                raise ValueError(
+                    f"Unknown gate policy {policy!r}; expected one of {sorted(GATE_POLICY_NAMES)}."
+                )
+            if decision not in ("auto", "human"):
+                raise ValueError(
+                    f"Gate policy {policy!r} must be 'auto' or 'human', got {decision!r}."
+                )
+            normalized_gates[policy] = decision
+        if normalized_gates:
+            result["gates"] = normalized_gates
     models = value.get("models")
     if models is not None:
         if not isinstance(models, dict):

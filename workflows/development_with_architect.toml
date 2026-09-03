@@ -10,18 +10,24 @@ role = "architect"
 [[steps]]
 id = "human_approval"
 role = "_builtin:human_gate"
+policy = "plan_approval"
 
 [[steps]]
 id = "develop"
 role = "developer"
 
 [[steps]]
+id = "test"
+role = "_builtin:run_tests"
+
+[[steps]]
 id = "review"
 role = "code_reviewer"
 
 [[steps]]
-id = "test"
-role = "_builtin:run_tests"
+id = "merge_approval"
+role = "_builtin:human_gate"
+policy = "merge_approval"
 
 [[steps]]
 id = "merge"
@@ -50,12 +56,23 @@ carry_output = true
 [[transitions]]
 from = "develop"
 trigger = "completion:done"
+to = "test"
+
+[[transitions]]
+from = "test"
+trigger = "completion:success"
 to = "review"
+
+[[transitions]]
+from = "test"
+trigger = "completion:failure"
+to = "develop"
+carry_output = true
 
 [[transitions]]
 from = "review"
 trigger = "completion:approve"
-to = "test"
+to = "merge_approval"
 
 [[transitions]]
 from = "review"
@@ -70,43 +87,44 @@ to = "develop"
 carry_output = true
 
 [[transitions]]
-from = "test"
-trigger = "completion:success"
+from = "merge_approval"
+trigger = "completion:approve"
 to = "merge"
-
 [[transitions]]
-from = "test"
-trigger = "completion:failure"
+from = "merge_approval"
+trigger = "completion:deny"
 to = "develop"
 carry_output = true
-
+[[transitions]]
+from = "merge_approval"
+trigger = "completion:steer"
+to = "develop"
+carry_output = true
 [[transitions]]
 from = "merge"
 trigger = "completion:success"
 to = "done"
-
-[[transitions]]
-from = "merge"
-trigger = "completion:failure"
-to = "develop"
-carry_output = true
-
 [[transitions]]
 from = "merge"
 trigger = "completion:conflict"
+to = "develop"
+carry_output = true
+[[transitions]]
+from = "merge"
+trigger = "completion:failure"
 to = "develop"
 carry_output = true
 
 [[gates]]
 trigger = "cost_exceeded"
 action = "kill_and_block"
-message = "Cost limit exceeded."
+message = "Cost limit exceeded. Requires human review."
 
 [[gates]]
 trigger = "time_exceeded"
 action = "kill_and_block"
-message = "Time limit exceeded."
+message = "Time limit exceeded. Requires human review."
 
 [fallback]
 action = "block"
-message = "Unhandled workflow outcome."
+message = "Unhandled workflow outcome. Requires human review."

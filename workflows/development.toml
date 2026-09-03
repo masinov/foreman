@@ -8,12 +8,17 @@ id = "develop"
 role = "developer"
 
 [[steps]]
+id = "test"
+role = "_builtin:run_tests"
+
+[[steps]]
 id = "review"
 role = "code_reviewer"
 
 [[steps]]
-id = "test"
-role = "_builtin:run_tests"
+id = "merge_approval"
+role = "_builtin:human_gate"
+policy = "merge_approval"
 
 [[steps]]
 id = "merge"
@@ -26,12 +31,23 @@ role = "_builtin:mark_done"
 [[transitions]]
 from = "develop"
 trigger = "completion:done"
+to = "test"
+
+[[transitions]]
+from = "test"
+trigger = "completion:success"
 to = "review"
+
+[[transitions]]
+from = "test"
+trigger = "completion:failure"
+to = "develop"
+carry_output = true
 
 [[transitions]]
 from = "review"
 trigger = "completion:approve"
-to = "test"
+to = "merge_approval"
 
 [[transitions]]
 from = "review"
@@ -46,27 +62,28 @@ to = "develop"
 carry_output = true
 
 [[transitions]]
-from = "test"
-trigger = "completion:success"
+from = "merge_approval"
+trigger = "completion:approve"
 to = "merge"
-
 [[transitions]]
-from = "test"
-trigger = "completion:failure"
+from = "merge_approval"
+trigger = "completion:deny"
 to = "develop"
 carry_output = true
-
+[[transitions]]
+from = "merge_approval"
+trigger = "completion:steer"
+to = "develop"
+carry_output = true
 [[transitions]]
 from = "merge"
 trigger = "completion:success"
 to = "done"
-
 [[transitions]]
 from = "merge"
 trigger = "completion:conflict"
 to = "develop"
 carry_output = true
-
 [[transitions]]
 from = "merge"
 trigger = "completion:failure"

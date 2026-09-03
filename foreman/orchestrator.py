@@ -41,7 +41,7 @@ from .runner.env import resolve_env
 from .roles import RoleDefinition, default_roles_dir, load_roles
 from .settings import ProjectSettings, SettingsError
 from .store import ForemanStore
-from .workflows import WorkflowDefinition, default_workflows_dir, load_workflows
+from .workflows import WorkflowDefinition, WorkflowStep, default_workflows_dir, load_workflows
 
 _BRANCH_PREFIXES = {
     "feature": "feat",
@@ -1539,31 +1539,37 @@ class ForemanOrchestrator:
                     "workflow.step_started",
                     {"step": current_step, "visit_count": visit_count},
                 )
-                result = self.builtin_executor.execute(
-                    step_def.role,
-                    project=project,
-                    task=current_task,
-                    step_id=current_step,
-                    carried_output=carried_output,
-                    store=self.store,
-                    event_recorder=lambda event_record: self._persist_builtin_event(run, event_record),
-                )
-                self.store.save_task(current_task)
-                self._complete_run(
-                    run,
-                    status="completed",
-                    outcome=result.outcome,
-                    detail=result.detail,
-                )
-                self._emit_builtin_events(run, result.events)
-                self._emit_event(
-                    run,
-                    "workflow.paused",
-                    {"step": current_step, "reason": "human_gate"},
-                )
-                return current_task
+                gate_policy = self._gate_policy_decision(project, current_task, step_def)
+                if gate_policy == "auto":
+                    outcome, detail = self._auto_approve_gate(
+                        run, project, current_task, step_def
+                    )
+                else:
+                    result = self.builtin_executor.execute(
+                        step_def.role,
+                        project=project,
+                        task=current_task,
+                        step_id=current_step,
+                        carried_output=carried_output,
+                        store=self.store,
+                        event_recorder=lambda event_record: self._persist_builtin_event(run, event_record),
+                    )
+                    self.store.save_task(current_task)
+                    self._complete_run(
+                        run,
+                        status="completed",
+                        outcome=result.outcome,
+                        detail=result.detail,
+                    )
+                    self._emit_builtin_events(run, result.events)
+                    self._emit_event(
+                        run,
+                        "workflow.paused",
+                        {"step": current_step, "reason": "human_gate", "policy": step_def.policy},
+                    )
+                    return current_task
 
-            if step_def.role.startswith("_builtin:"):
+            elif step_def.role.startswith("_builtin:"):
                 run = self._create_running_run(
                     current_task,
                     role_id=step_def.role,
@@ -1959,6 +1965,63 @@ class ForemanOrchestrator:
 
         return current_task
 
+    _GATE_POLICY_DEFAULTS = {"merge_approval": "auto", "plan_approval": "human"}
+
+    def _gate_policy_decision(
+        self,
+        project: Project,
+        task: Task,
+        step: WorkflowStep,
+    ) -> str:
+        """Return ``auto`` or ``human`` for one human-gate step.
+
+        Precedence: the task's ``executor_overrides.gates`` entry, then the
+        project setting named by the step's policy, then the policy default.
+        Gate steps without a policy always require a person.
+        """
+
+        policy = step.policy
+        if not policy:
+            return "human"
+        overrides = getattr(task, "executor_overrides", None) or {}
+        gate_overrides = overrides.get("gates") if isinstance(overrides, dict) else None
+        if isinstance(gate_overrides, dict) and gate_overrides.get(policy) in ("auto", "human"):
+            return str(gate_overrides[policy])
+        default = self._GATE_POLICY_DEFAULTS.get(policy, "human")
+        value = _string_setting(project, policy, default=default)
+        return value if value in ("auto", "human") else default
+
+    def _auto_approve_gate(
+        self,
+        run: Run,
+        project: Project,
+        task: Task,
+        step: WorkflowStep,
+    ) -> tuple[str, str]:
+        """Approve a policy-governed gate on the engine's behalf, with an audit record."""
+
+        detail = f"Auto-approved by policy ({step.policy}=auto)."
+        self._emit_event(
+            run,
+            "workflow.gate_auto_approved",
+            {"step": step.id, "policy": step.policy},
+        )
+        self._complete_run(run, status="completed", outcome=APPROVE, detail=detail)
+        self.store.save_human_gate_decision(
+            HumanGateDecision(
+                id=_new_id("hg"),
+                task_id=task.id,
+                project_id=project.id,
+                workflow_step=step.id,
+                decision="approve",
+                note=detail,
+                decided_by=f"policy:{step.policy}",
+                decided_at=utc_now_text(),
+                run_id=run.id,
+            )
+        )
+        return (APPROVE, detail)
+
     def _blocked_reason_for_unhandled_outcome(
         self,
         *,
@@ -2308,6 +2371,22 @@ class ForemanOrchestrator:
         )
         self._emit_event(run, event_type, payload)
 
+    def _latest_agent_run(self, task_id: str) -> Run | None:
+        """Return the most recent completed agent (non-builtin) run for a task.
+
+        Prompts that quote the "previous output" want the last thing an agent
+        said, not the output of the test or merge built-in that ran after it.
+        """
+
+        candidates = [
+            run
+            for run in self.store.list_runs(task_id=task_id)
+            if not run.role_id.startswith("_builtin:")
+            and run.status == "completed"
+            and run.outcome_detail
+        ]
+        return candidates[-1] if candidates else None
+
     def _load_workflow_for_project(self, project: Project) -> WorkflowDefinition:
         workflow = self.workflows.get(project.workflow_id)
         if workflow is None:
@@ -2338,7 +2417,7 @@ class ForemanOrchestrator:
         *,
         context_projection: ProjectContextProjection | None = None,
     ) -> str:
-        latest_run = self.store.get_latest_run(task.id)
+        latest_run = self._latest_agent_run(task.id)
         if context_projection is None:
             context_projection = build_project_context(
                 self.store,

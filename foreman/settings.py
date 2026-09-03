@@ -39,6 +39,10 @@ class ProjectSettings:
     active_run_recovery_timeout_minutes: int = 0
     context_dir: str = ""
     completion_guard_enabled: bool = True
+    # Gate policies: "auto" lets the engine approve the gate on its own and
+    # records a policy decision; "human" pauses the task for a person.
+    merge_approval: str = "auto"
+    plan_approval: str = "human"
     runner_max_cost_usd: float = 1000.0
     runner_permission_mode: str = "auto"
     default_model: str = ""
@@ -86,6 +90,8 @@ class ProjectSettings:
             ),
             context_dir=str(raw.get("context_dir") or ""),
             completion_guard_enabled=bool(raw.get("completion_guard_enabled", True)),
+            merge_approval=_validate_gate_policy(raw.get("merge_approval"), default="auto"),
+            plan_approval=_validate_gate_policy(raw.get("plan_approval"), default="human"),
             runner_max_cost_usd=_validate_non_negative_float(
                 raw.get("runner_max_cost_usd"), default=1000.0
             ),
@@ -102,6 +108,19 @@ class ProjectSettings:
                 raw.get("review_diff_max_chars"), default=16000
             ),
         )
+
+
+GATE_POLICY_VALUES: tuple[str, ...] = ("auto", "human")
+
+
+def _validate_gate_policy(value: Any, *, default: str) -> str:
+    if value is None:
+        return default
+    if not isinstance(value, str) or value not in GATE_POLICY_VALUES:
+        raise SettingsError(
+            f"Gate policy must be one of {', '.join(GATE_POLICY_VALUES)}, got {value!r}"
+        )
+    return value
 
 
 def _validate_task_selection_mode(value: Any) -> str:
