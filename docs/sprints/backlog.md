@@ -2,8 +2,9 @@
 
 ## Production readiness roadmap — `docs/reviews/production-readiness-review.md`
 
-The readiness review is the forward roadmap. Phase 0 is sprint 53
-(`docs/sprints/current.md`). Phases 1 and 2 are queued here in order.
+The readiness review is the forward roadmap. Phase 0 shipped as sprint 53
+(archived at `docs/sprints/archive/sprint-53-phase0-unattended-safety.md`).
+Phases 1 and 2 are queued here in order; sprint 54 opens Phase 1.
 
 ### Phase 1 — unattended pilot (next sprints)
 

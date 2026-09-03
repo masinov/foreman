@@ -308,7 +308,7 @@ The following items were implemented as hardening before the 1.0 release:
 **Completion evidence (Items 9–10, 18)**
 - `CompletionEvidence` expanded with git SHAs, commit count, structured test record, proof_status, criteria_checklist, failure_reasons
 - `_builtin:merge` calls `merge_preflight` and gates on `proof_status` before attempting merge
-- `finalize_supervisor_merge` is marked legacy; normal path is `_builtin:mark_done` + `_builtin:merge`
+- the legacy `finalize_supervisor_merge` path was removed in sprint 53; the only completion path is `_builtin:mark_done` + `_builtin:merge`
 
 **Versioned event schema (Item 12)**
 - `foreman/events.py` provides typed event constructors with `schema_version` in every payload
@@ -342,8 +342,8 @@ The following items were implemented as hardening before the 1.0 release:
 - `_builtin:merge` runs full preflight before attempting merge
 
 **Bootstrap scripts (Item 19)**
-- `scripts/reviewed_claude.py` and `scripts/reviewed_codex.py` marked with deprecation docstring warnings
-- Not product runtime; `foreman run` is authoritative
+- `scripts/reviewed_claude.py` and `scripts/reviewed_codex.py` were deprecated here and removed in sprint 53
+- `foreman run` is the only autonomous entry point
 
 ## Next architectural slice
 

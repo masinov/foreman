@@ -115,19 +115,6 @@ class HumanGateResumeResult:
     note: str | None = None
 
 
-@dataclass(slots=True)
-class SupervisorMergeResult:
-    """Summary of one supervisor merge finalization."""
-
-    project_id: str
-    task_id: str
-    sprint_id: str
-    task_status: str
-    sprint_status: str
-    stop_reason: str | None = None
-    completion_evidence: "CompletionEvidence | None" = None
-
-
 class AgentExecutor(Protocol):
     """Execution protocol for workflow agent steps."""
 
@@ -773,104 +760,6 @@ class ForemanOrchestrator:
             reasons.append("Unable to determine verdict from available evidence")
 
         return verdict, reasons
-
-    def finalize_supervisor_merge(
-        self,
-        *,
-        repo_path: str,
-        branch_name: str,
-        task_id: str | None = None,
-    ) -> SupervisorMergeResult | None:
-        """Persist task and sprint state after a reviewed supervisor merge.
-
-        **Legacy compatibility path.** Foreman no longer requires external supervisor
-        scripts to finalize merges. The normal completion path uses
-        `_builtin:mark_done` (which constructs evidence and releases the lease)
-        and `_builtin:merge` (which commits the branch). This method is retained
-        only to support existing supervisor workflows that call into it directly.
-        Do not use this as the primary merge finalization path for new work.
-        """
-
-        project = self.store.find_project_by_repo_path(repo_path)
-        if project is None:
-            return None
-
-        task = self.store.get_task(task_id) if task_id else None
-        if task is not None and task.project_id != project.id:
-            return None
-        if task is None:
-            task = self.store.find_task_by_branch(project_id=project.id, branch_name=branch_name)
-        if task is None:
-            return None
-
-        completion_evidence: CompletionEvidence | None = None
-        if task.status != "done":
-            task.status = "done"
-            task.blocked_reason = None
-            task.workflow_current_step = None
-            task.workflow_carried_output = None
-            task.completed_at = task.completed_at or utc_now_text()
-            completion_evidence = self.build_completion_evidence(task, project)
-            task.completion_evidence = completion_evidence
-            self.store.save_task(task)
-            self._release_task_lease(task, project)
-
-            run = self._create_system_run(
-                task,
-                workflow_step="supervisor_finalize",
-                outcome="success",
-                detail=f"Supervisor merged {branch_name} into {project.default_branch}.",
-            )
-            self._emit_event(
-                run,
-                "engine.supervisor_merge",
-                {
-                    "branch": branch_name,
-                    "target": project.default_branch,
-                    "task_id": task.id,
-                    "evidence_score": completion_evidence.score if completion_evidence else None,
-                    "evidence_verdict": completion_evidence.verdict if completion_evidence else None,
-                },
-            )
-            self._emit_event(
-                run,
-                "engine.completion_evidence",
-                {
-                    "task_id": task.id,
-                    "criteria_count": completion_evidence.criteria_count if completion_evidence else 0,
-                    "criteria_addressed": completion_evidence.criteria_addressed if completion_evidence else 0,
-                    "criteria_partially_addressed": (
-                        completion_evidence.criteria_partially_addressed if completion_evidence else 0
-                    ),
-                    "changed_files": list(completion_evidence.changed_files) if completion_evidence else [],
-                    "builtin_test_passed": (
-                        completion_evidence.builtin_test_passed if completion_evidence else False
-                    ),
-                    "score": completion_evidence.score if completion_evidence else 0.0,
-                    "verdict": completion_evidence.verdict if completion_evidence else "unknown",
-                    "proof_status": completion_evidence.proof_status if completion_evidence else "pending",
-                    "failure_reasons": (
-                        list(completion_evidence.failure_reasons) if completion_evidence else []
-                    ),
-                    "judged_by": completion_evidence.judged_by if completion_evidence else "heuristic",
-                },
-            )
-
-        sprint = self.store.get_sprint(task.sprint_id)
-        stop_reason: str | None = None
-        if sprint is not None and sprint.status == "active" and self._sprint_fully_resolved(sprint):
-            stop_reason = self._advance_sprint(project, sprint)
-            sprint = self.store.get_sprint(task.sprint_id) or sprint
-
-        return SupervisorMergeResult(
-            project_id=project.id,
-            task_id=task.id,
-            sprint_id=task.sprint_id,
-            task_status=task.status,
-            sprint_status=sprint.status if sprint is not None else "unknown",
-            stop_reason=stop_reason,
-            completion_evidence=completion_evidence,
-        )
 
     def select_next_task(self, project: Project) -> Task | None:
         """Return the next runnable task for one project."""

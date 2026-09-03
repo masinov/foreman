@@ -64,6 +64,14 @@ memory changes rather than versioned product releases.
   requires an existing git repository path, optionally inside
   `FOREMAN_DASHBOARD_REPO_ROOTS`; the events page size is capped at 500;
   the frontend sends the token and prompts for it on 401.
+- **slice 6, cleanup** (`chore/remove-bootstrap-supervisors`): removed the
+  bootstrap supervisor scripts (`scripts/reviewed_claude.py`,
+  `scripts/reviewed_codex.py`), their tests, `foreman/supervisor_state.py`,
+  and the legacy `finalize_supervisor_merge` path; dropped the unused
+  `anthropic` dependency; the autonomous signal contract appears in
+  `.foreman/context.md` only for autonomous projects. **Sprint 53 closed**
+  with 605 backend and 18 frontend tests passing; archived under
+  `docs/sprints/archive/`.
 
 ### Milestone
 

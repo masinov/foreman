@@ -204,13 +204,20 @@ def render_sprint_context(
                 "",
                 "### Carried Feedback",
                 carried_output or "(none)",
-                "",
-                "### Autonomous Signal Contract",
-                "When in autonomous mode, the developer must emit signal.task_started",
-                "before proceeding past the first developer step. Required fields:",
-                "title (not placeholder), branch, criteria.",
             ]
         )
+        if str(project.settings.get("task_selection_mode", "directed")) == "autonomous":
+            # Only autonomous projects carry the self-selection contract; a
+            # directed task has its title, branch, and criteria already.
+            lines.extend(
+                [
+                    "",
+                    "### Autonomous Signal Contract",
+                    "When in autonomous mode, the developer must emit signal.task_started",
+                    "before proceeding past the first developer step. Required fields:",
+                    "title (not placeholder), branch, criteria.",
+                ]
+            )
 
         if active_lease is not None:
             lines.extend(

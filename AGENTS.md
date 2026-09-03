@@ -276,10 +276,9 @@ Before marking work complete, run the relevant validation for the slice.
 Current baseline validation for repo-scaffold work:
 
 - `./venv/bin/python scripts/validate_repo_memory.py`
-- `./venv/bin/python -m py_compile scripts/reviewed_codex.py`
-- `./venv/bin/python -m py_compile scripts/reviewed_claude.py`
 - `./venv/bin/python -m py_compile scripts/repo_validation.py`
 - `./venv/bin/python -m py_compile scripts/validate_repo_memory.py`
+- `./venv/bin/python -m unittest discover -s tests`
 
 As implementation lands, add and run:
 
@@ -292,19 +291,16 @@ Work is not done if it only compiles.
 Work is also not done if it lands a user-facing surface through an
 architecture that is already known to be unacceptable for the product.
 
-## Wrapper Expectations
+## Autonomous Entry Point
 
-The repo currently exposes two supervisor entry points:
+`foreman run` (and, once it lands, `foreman serve`) is the only autonomous
+entry point. The bootstrap supervisor scripts that once drove this repository
+were removed in sprint 53; Foreman develops Foreman through its own engine.
+Keep `docs/STATUS.md`, `docs/sprints/current.md`, and `docs/sprints/backlog.md`
+concrete enough that a fresh agent can start without human re-explanation.
 
-- `scripts/reviewed_codex.py`
-- `scripts/reviewed_claude.py`
-
-They read this file plus sprint and status docs to decide what the next slice
-is. Keep those docs concrete enough that a fresh agent can start without human
-re-explanation.
-
-If a supervisor prompt requires a structured completion marker, follow that
-prompt exactly.
+If a role prompt requires a structured completion marker, follow that prompt
+exactly.
 
 ## Required Task Output
 

@@ -32,8 +32,6 @@ REQUIRED_FILES = (
     Path("foreman/__main__.py"),
     Path("foreman/cli.py"),
     Path("tests/test_cli.py"),
-    Path("scripts/reviewed_codex.py"),
-    Path("scripts/reviewed_claude.py"),
     Path("scripts/repo_validation.py"),
     Path("scripts/validate_repo_memory.py"),
 )

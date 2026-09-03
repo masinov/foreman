@@ -2,24 +2,24 @@
 
 ## Current sprint
 
-- Active implementation sprint: `sprint-53-phase0-unattended-safety`
-  (`docs/sprints/current.md`), opened 2026-09-04 from Phase 0 of
-  `docs/reviews/production-readiness-review.md`.
-- Slices 1–5 are done (`fix/store-concurrency-safety`,
-  `fix/runner-process-lifecycle`, `fix/output-contract-and-signals`,
-  `fix/workflow-test-before-review`, `fix/dashboard-minimum-safety`); slice
-  6 (cleanup) is queued in the sprint doc.
-- Latest completed sprint: `sprint-52-review-phases-6-7-supervision-transport`
-  (archived under `docs/sprints/archive/`).
-- Last merged branch: `fix/workflow-test-before-review` (`10333ef`).
-- Current implementation branch: `fix/dashboard-minimum-safety`
+- Active implementation sprint: **none.** Sprint 53
+  (`sprint-53-phase0-unattended-safety`, Phase 0 of
+  `docs/reviews/production-readiness-review.md`) opened and closed on
+  2026-09-04; all six slices are on `main` and the sprint is archived at
+  `docs/sprints/archive/sprint-53-phase0-unattended-safety.md`.
+- Latest completed sprint: `sprint-53-phase0-unattended-safety`.
+- Last merged branch: `chore/remove-bootstrap-supervisors`.
+- Current implementation branch: none. Next: sprint 54 from Phase 1 in
+  `docs/sprints/backlog.md` (see `docs/sprints/current.md` for the suggested
+  slice order).
 
 ## Active branches
 
-- `fix/dashboard-minimum-safety` — sprint 53 slice 5: shared-token auth on
-  `/api`, no wildcard CORS, non-loopback binds refused without a token,
-  manager chat loopback-only by default, repo-path validation, bounded
-  events page, frontend token prompt
+- `chore/remove-bootstrap-supervisors` — sprint 53 slice 6, merged to
+  `main` at sprint close: bootstrap supervisor scripts and the legacy
+  supervisor-merge path removed, unused dependency dropped, sprint archived
+- `fix/dashboard-minimum-safety` — merged to `main` at `8074eda`; sprint 53
+  slice 5
 - `fix/workflow-test-before-review` — merged to `main` at `10333ef`; sprint
   53 slice 4
 - `fix/output-contract-and-signals` — merged to `main` at `2d9829a`; sprint
@@ -44,14 +44,31 @@
 
 ## Current focus
 
-- Sprint 53 executes Phase 0 of the production readiness review: make an
-  unattended run safe on one machine. Slices 1–5 landed; slice 6 (cleanup)
-  closes the sprint.
+- Phase 0 of the production readiness review is complete: an unattended run
+  is safe on one machine. The next sprint opens Phase 1 (resident worker,
+  intake endpoint, policy matrix, planner step, worktree isolation,
+  pull-request integration, identity and notifications).
 - Phase 1 (resident worker, intake endpoint, policy matrix, planner step,
   worktree isolation, pull-request integration) is queued in
   `docs/sprints/backlog.md`.
 
-## Latest update — sprint 53 slice 5: dashboard minimum safety
+## Latest update — sprint 53 slice 6: cleanup and sprint close
+
+- Branch `chore/remove-bootstrap-supervisors`. Removed
+  `scripts/reviewed_claude.py`, `scripts/reviewed_codex.py`, their tests,
+  `foreman/supervisor_state.py`, and the orchestrator's legacy
+  `finalize_supervisor_merge` path; `_builtin:mark_done` plus
+  `_builtin:merge` is the only completion path. Dropped the unused
+  `anthropic` dependency. The autonomous signal contract is rendered into
+  `.foreman/context.md` only for autonomous projects. `AGENTS.md` now names
+  `foreman run` as the only autonomous entry point and adds the unit suite
+  to the baseline validation.
+- Sprint 53 closed and archived; checkpoint at
+  `docs/checkpoints/2026-09-04-sprint-53-phase0-unattended-safety.md`.
+- Validation: 605 backend tests passing (56 removed with the bootstrap
+  code), 18 frontend tests.
+
+## Previous update — sprint 53 slice 5: dashboard minimum safety
 
 - Branch `fix/dashboard-minimum-safety`. The dashboard no longer sends
   wildcard CORS headers; an explicit `--allowed-origin` list enables CORS.
@@ -789,9 +806,6 @@
 
 ## Open risks
 
-- `reviewed_codex.py` and `reviewed_claude.py` are bootstrap supervisors, not
-  the Foreman product itself; their behavior should not accidentally become the
-  long-term architecture.
 - Repo-local discovery currently depends on an existing `.foreman.db` in the
   current repo lineage or on `foreman init` creating one; cross-repo and
   out-of-repo inspection still requires explicit `--db`.

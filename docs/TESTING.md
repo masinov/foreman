@@ -13,8 +13,6 @@ The repo is still pre-release, so the current mandatory checks include both
 repo-memory validation and code-level regression coverage:
 
 - `./venv/bin/python scripts/validate_repo_memory.py`
-- `./venv/bin/python -m py_compile scripts/reviewed_codex.py`
-- `./venv/bin/python -m py_compile scripts/reviewed_claude.py`
 - `./venv/bin/python -m py_compile scripts/repo_validation.py`
 - `./venv/bin/python -m py_compile scripts/validate_repo_memory.py`
 - `./venv/bin/pip install -e . --no-build-isolation`
@@ -87,7 +85,6 @@ The current suite covers:
   sprint-event stream payloads, and approve or deny integration behavior
 - `frontend/src/App.test.jsx` for React dashboard navigation, message
   submission, and stream-driven activity updates
-- `tests/test_reviewed_codex.py` for reviewed Codex continuation behavior
 
 ## Expected testing layers
 

@@ -192,3 +192,12 @@ post-hoc audit and regression analysis.
 - `tests/test_orchestrator.py` — `CompletionEvidenceTests` (14 regression cases)
 - `docs/sprints/current.md` — sprint-46 definition
 - `docs/adr/ADR-0001-runner-session-backend-contract.md`
+
+## Amendment (2026-09-04, sprint 53)
+
+`finalize_supervisor_merge()` and the `foreman/supervisor_state.py` adapter
+were removed together with the bootstrap supervisor scripts. Completion
+evidence is now built only by `_builtin:merge` and `_builtin:mark_done`
+through the orchestrator's `build_completion_evidence`, which the orchestrator
+hands to the built-in executor so the merge guard evaluates evidence with the
+same role definitions that ran the workflow.

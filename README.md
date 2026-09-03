@@ -288,46 +288,22 @@ That command starts the backend on `http://127.0.0.1:8080` and the frontend on
 If you only want the frontend dev server, `npm --prefix frontend run dev` now
 proxies `/api` requests to `http://127.0.0.1:8080` by default.
 
-## Autonomous entry points
+## Autonomous entry point
 
-Run all Python commands through the repo virtual environment:
-
-```bash
-./venv/bin/python scripts/reviewed_codex.py
-./venv/bin/python scripts/reviewed_claude.py
-```
-
-What they do:
-
-- `reviewed_codex.py` supervises a Codex development run against the current
-  sprint docs and requests reviewer approval before accepting a completed
-  slice.
-- `reviewed_claude.py` does the same for Claude Code and is designed to keep
-  moving through approved work until the backlog is exhausted.
-
-Both wrappers expect these files to be current:
-
-- `AGENTS.md`
-- `docs/STATUS.md`
-- `docs/sprints/current.md`
-- `docs/sprints/backlog.md`
-- `docs/specs/engine-design-v3.md`
-- `docs/mockups/foreman-mockup-v6.html`
+`foreman run <project>` is the engine's entry point; the dashboard's Run
+button spawns the same command. The bootstrap supervisor scripts that once
+drove this repository were removed in sprint 53. Run all Python commands
+through the repo virtual environment (`./venv/bin/foreman`).
 
 ## Next implementation slice
 
-The review roadmap (`docs/specs/review.md`, Phases 0–7) is fully implemented and
-merged to `main`; sprints 49–52 are archived under `docs/sprints/archive/`. No
-implementation sprint is currently active.
-
-Remaining documented follow-ups in `docs/sprints/backlog.md`:
-
-- **SSE transport hardening (Tier 3):** the data_version gate landed in Phase 7,
-  but the final design replaces fixed-interval polling with an in-process
-  pub/sub bus so the stream wakes on writes. Lowest urgency.
-- a tool-enabled agentic re-review when the frontier reviewer answers
-  `STEER: need repository context` (today routes back to develop),
-- expanding E2E coverage for newer dashboard surfaces and the meta-agent panel.
+Phase 0 of the production readiness review
+(`docs/reviews/production-readiness-review.md`) shipped as sprint 53: an
+unattended run is safe on one machine. No implementation sprint is currently
+active. Sprint 54 opens Phase 1 from `docs/sprints/backlog.md`: a resident
+`foreman serve` worker, an intake endpoint, a policy matrix, a planner step,
+worktree isolation, pull-request integration, and identity with
+notifications. `docs/sprints/current.md` lists the suggested slice order.
 
 ## Validation
 
@@ -335,8 +311,6 @@ Current repo-memory validation:
 
 ```bash
 ./venv/bin/python scripts/validate_repo_memory.py
-./venv/bin/python -m py_compile scripts/reviewed_codex.py
-./venv/bin/python -m py_compile scripts/reviewed_claude.py
 ./venv/bin/python -m py_compile scripts/repo_validation.py
 ./venv/bin/python -m py_compile scripts/validate_repo_memory.py
 ```
