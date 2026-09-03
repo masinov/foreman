@@ -191,11 +191,6 @@ export function ProjectOverview({ projects, onSelectProject, onNewProject }) {
             Pick a project to see its active sprint, task progress, and engine activity.
           </div>
         </div>
-        {onNewProject ? (
-          <button className="btn-action" type="button" onClick={onNewProject}>
-            + New project
-          </button>
-        ) : null}
       </div>
       <div className="dashboard-grid">
         {projects.map((project) => {
@@ -246,6 +241,11 @@ export function ProjectOverview({ projects, onSelectProject, onNewProject }) {
             </button>
           );
         })}
+        {onNewProject ? (
+          <button className="project-add-card" type="button" onClick={onNewProject}>
+            + New project
+          </button>
+        ) : null}
       </div>
     </section>
   );
@@ -318,9 +318,15 @@ function DecisionGateBanner({ gate, sprints, onResolve }) {
   );
 }
 
+const AGENT_MIN_WIDTH = 360;
+const AGENT_MAX_WIDTH = 820;
+const AGENT_DEFAULT_WIDTH = 540;
+
 export function SprintList({ project, sprints, pendingGates, onSelectSprint, onOpenNewSprint, onTransitionSprint, onDeleteSprint, onReorderSprints, onStartAgent, onStopAgent, onResolveGate, onSprintsChanged, services, isActionPending }) {
-  const [agentCollapsed, setAgentCollapsed] = useState(true);
-  const [agentMounted, setAgentMounted] = useState(false);
+  const [agentCollapsed, setAgentCollapsed] = useState(!services);
+  const [agentMounted, setAgentMounted] = useState(Boolean(services));
+  const [agentWidth, setAgentWidth] = useState(AGENT_DEFAULT_WIDTH);
+  const [agentResizing, setAgentResizing] = useState(false);
   const [archiveExpanded, setArchiveExpanded] = useState(false);
   const [expandedSprintId, setExpandedSprintId] = useState(null);
   const [expandedTasks, setExpandedTasks] = useState([]);
@@ -383,6 +389,25 @@ export function SprintList({ project, sprints, pendingGates, onSelectSprint, onO
   function openAgent() {
     setAgentCollapsed(false);
     setAgentMounted(true);
+  }
+
+  function startAgentResize(event) {
+    event.preventDefault();
+    setAgentResizing(true);
+    const onMove = (moveEvent) => {
+      const next = Math.min(
+        AGENT_MAX_WIDTH,
+        Math.max(AGENT_MIN_WIDTH, window.innerWidth - moveEvent.clientX),
+      );
+      setAgentWidth(next);
+    };
+    const onUp = () => {
+      setAgentResizing(false);
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
   }
 
   const activeSprint = useMemo(() =>
@@ -610,7 +635,10 @@ export function SprintList({ project, sprints, pendingGates, onSelectSprint, onO
 
   return (
     <section className="project-view view visible">
-      <div className={`project-view-inner ${agentBodyClass}`}>
+      <div
+        className={`project-view-inner ${agentBodyClass}${agentResizing ? " is-resizing" : ""}`}
+        style={services && !agentCollapsed ? { gridTemplateColumns: `1fr ${agentWidth}px` } : undefined}
+      >
         <div className="project-left">
           <div className="project-top">
             <div className="project-info">
@@ -764,6 +792,16 @@ export function SprintList({ project, sprints, pendingGates, onSelectSprint, onO
 
         {services ? (
           <aside className="agent-panel">
+            <div
+              className="agent-resize-handle"
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize manager panel"
+              title="Drag to resize"
+              onMouseDown={startAgentResize}
+            >
+              <span className="agent-resize-grip" aria-hidden="true" />
+            </div>
             {agentMounted ? (
               <MetaAgentPanel
                 projectId={project.id}

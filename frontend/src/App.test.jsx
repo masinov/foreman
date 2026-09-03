@@ -186,6 +186,7 @@ function createMockServices() {
       return () => {};
     }),
     listGates: vi.fn().mockResolvedValue({ gates: [] }),
+    metaHistory: vi.fn().mockResolvedValue({ turns: [], has_more: false }),
     listRoles: vi.fn().mockResolvedValue({
       roles: [
         {

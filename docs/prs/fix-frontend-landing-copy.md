@@ -25,6 +25,27 @@ labeling polish on the primary landing screen, with no behavior change.
   labels + title-case fallback + undefined defaults).
 - `foreman/dashboard_frontend_dist/`: rebuilt committed bundle.
 
+## Follow-up: project-view layout polish
+
+A second commit on the same branch tightens the project view layout. Display
+and interaction only; no API or state changes.
+
+- `ProjectOverview`: "+ New project" moved from the header into a dashed
+  add-tile at the end of the project grid (`.project-add-card`), matching the
+  "+ New sprint" / "+ New task" language.
+- `SprintList`: the manager panel now opens by default when services are
+  available and gained a drag handle (`.agent-resize-handle`) that resizes it
+  between 360 and 820 px (default 540). The grid column width is driven by
+  React state while dragging.
+- Project content is constrained to a centered 1080 px measure
+  (`--project-measure`) instead of stretching full-bleed.
+- Queue task rows: status now hugs the title with a middot separator instead
+  of stranding at the right edge on wide cards.
+- Activity composer: larger type, accent-colored send button, disabled state.
+- `App.test.jsx`: mock services gained `metaHistory` because the manager panel
+  now mounts on load.
+- `foreman/dashboard_frontend_dist/`: rebuilt committed bundle.
+
 ## Migrations
 
 None.
@@ -40,6 +61,10 @@ backend values still render readably rather than throwing.
 - `npx vitest run` — 13 tests passing (8 in `format.test.js`, 5 in
   `App.test.jsx`).
 - `npm run build` — clean production build.
+- Follow-up commit: `npm --prefix frontend test` — 13 passing;
+  `npm --prefix frontend run build` reproduces the committed asset hashes;
+  `./venv/bin/python -m unittest discover -s tests` — 585 passing;
+  `scripts/validate_repo_memory.py` clean.
 
 ## Acceptance criteria satisfied
 

@@ -63,6 +63,15 @@ memory changes rather than versioned product releases.
   new `formatSelectionMode` / `formatWorkflowLabel` helpers
   (e.g. "Directed · Tiered workflow").
 
+### Frontend layout polish
+
+- project overview: "+ New project" is now a dashed add-tile at the end of the
+  project grid instead of a header button.
+- project view: the manager panel opens by default and can be resized with a
+  drag handle (360–820 px); project content sits in a centered 1080 px measure;
+  queue task-row status hugs the title with a middot separator; the activity
+  composer uses the accent send button.
+
 ### Frontend UX (Tier 2 cont.)
 
 - unified the three task-creation surfaces (New Task modal, New Sprint modal
