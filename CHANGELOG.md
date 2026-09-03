@@ -45,6 +45,15 @@ memory changes rather than versioned product releases.
   signals are parsed once, only outside code fences and quotes, accept
   pretty-printed JSON, are deduplicated per step, and are recorded as
   `signal.rejected` when a role may not emit them.
+- **slice 4, workflow order and merge gate**
+  (`fix/workflow-test-before-review`): every shipped workflow now tests
+  before it reviews and ends in a `merge_approval` human gate; gate steps
+  declare a `policy`, resolved from the new `merge_approval` (default
+  `auto`) and `plan_approval` (default `human`) settings or a per-task
+  `executor_overrides.gates` entry; an `auto` gate is approved by the engine
+  with a `workflow.gate_auto_approved` event and a `policy:<name>` decision
+  record; the reviewer prompt's developer summary now comes from the latest
+  agent run instead of the test built-in.
 
 ### Milestone
 

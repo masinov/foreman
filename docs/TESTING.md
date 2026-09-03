@@ -45,6 +45,11 @@ The current suite covers:
   signal parsing, Claude result-signal deduplication, role-declared outcomes,
   review kinds and signal allowlists, the final-message marker rule, and a
   custom TOML reviewer plus tiered review flowing through the merge guard
+- `tests/test_workflow_gates.py` for the shipped workflow shapes (test before
+  review, a policy-governed `merge_approval` gate), gate policy settings and
+  per-task overrides, auto-approval with a decision record, a human gate that
+  pauses and resumes to merge, and test failures returning to develop before
+  any review
 - `tests/test_roles.py` and `tests/test_workflows.py` for shipped declarative
   configuration loading and validation
 - `tests/test_runner_env.py` for role `[agent.env]` value resolution and

@@ -102,7 +102,9 @@ Incremental delivery is expected. Throwaway implementation structure is not.
 Use the default `development` workflow for standard bootstrap project setup.
 
 Use `development_secure` when a project should require a dedicated security
-review after code review and before tests and merge.
+review after code review. Every shipped workflow runs the test built-in
+before any review and ends in a `merge_approval` gate; set the
+`merge_approval` setting to `human` when a person must authorize merges.
 
 Example:
 

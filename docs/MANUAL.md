@@ -368,10 +368,14 @@ A workflow is a state machine over steps. Shipped workflows:
 
 | Workflow | Entry | Shape |
 |---|---|---|
-| `development` | `develop` | develop → review → test → merge → done |
-| `development_secure` | `develop` | adds a `security_review` step before test/merge |
-| `development_tiered` | `develop` | develop → **triage** → (escalate) **frontier review** → test → merge → done |
-| `development_with_architect` | `plan` | architect plans tasks, then the development flow |
+| `development` | `develop` | develop → test → review → merge_approval → merge → done |
+| `development_secure` | `develop` | develop → test → code_review → security_review → merge_approval → merge → done |
+| `development_tiered` | `develop` | develop → test → **triage** → (escalate) **frontier review** → merge_approval → merge → done |
+| `development_with_architect` | `plan` | plan → human_approval → develop → test → review → merge_approval → merge → done |
+
+Tests run before any review so reviewers judge with real test results in the
+engine evidence, and a failing suite goes straight back to develop. Every
+workflow ends in a `merge_approval` gate governed by policy (section 14).
 
 ### Workflow TOML anatomy
 
@@ -389,15 +393,25 @@ role = "code_reviewer"
 
 # ... _builtin:run_tests, _builtin:merge, _builtin:mark_done ...
 
+[[steps]]
+id = "merge_approval"
+role = "_builtin:human_gate"
+policy = "merge_approval"       # resolved from the project setting or a task override
+
 [[transitions]]
 from = "develop"
 trigger = "completion:done"
+to = "test"
+
+[[transitions]]
+from = "test"
+trigger = "completion:success"
 to = "review"
 
 [[transitions]]
 from = "review"
 trigger = "completion:approve"
-to = "test"
+to = "merge_approval"
 carry_output = false
 
 [[transitions]]
@@ -663,8 +677,21 @@ move.
 
 ## 14. Human gates, approvals & merge waivers
 
-A workflow may contain `_builtin:human_gate` steps. Reaching one **pauses** the
-task (`workflow.paused`) and records a Gate. Resume with:
+A workflow may contain `_builtin:human_gate` steps. A gate step may declare a
+`policy` (`merge_approval` or `plan_approval`); the engine resolves it, in
+order, from the task's `executor_overrides.gates` entry, the project setting
+of the same name, and the default (`merge_approval=auto`,
+`plan_approval=human`):
+
+- **`auto`** — the engine approves the gate itself, completes the run with
+  outcome `approve`, emits `workflow.gate_auto_approved`, and writes a
+  `human_gate_decisions` row with `decided_by="policy:<name>"`.
+- **`human`** — the task **pauses** (`workflow.paused`) until a person acts.
+
+Gate steps without a policy always pause. For production projects set
+`merge_approval=human` (or override it per task with
+`foreman task override <id> --gate merge_approval=human`) so a person
+authorizes every merge. Resume a paused gate with:
 
 ```bash
 foreman approve <task-id> --note "ship it"
@@ -734,6 +761,8 @@ offending value, rather than running on silent defaults.
 | `active_run_recovery_timeout_minutes` | 0 (derived) | stale-run ownership window for crash recovery |
 | `context_dir` | `""` | override for `.foreman/` projection dir |
 | `completion_guard_enabled` | `true` | enforce the merge proof gate |
+| `merge_approval` | `auto` | `auto` or `human`: whether the `merge_approval` gate needs a person |
+| `plan_approval` | `human` | `auto` or `human`: whether the architect's plan gate needs a person |
 | `default_model` | `""` | fallback model when a role pins none |
 | `meta_agent_model` | `""` | `--model` for the manager chat session |
 | `judge_base_url` / `judge_model` | unset | opt-in criteria judge endpoint |

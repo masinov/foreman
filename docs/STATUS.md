@@ -5,20 +5,22 @@
 - Active implementation sprint: `sprint-53-phase0-unattended-safety`
   (`docs/sprints/current.md`), opened 2026-09-04 from Phase 0 of
   `docs/reviews/production-readiness-review.md`.
-- Slices 1 (`fix/store-concurrency-safety`), 2
-  (`fix/runner-process-lifecycle`), and 3 (`fix/output-contract-and-signals`)
-  are done; slices 4–6 (workflow order and merge gate, dashboard minimum
-  safety, cleanup) are queued in the sprint doc.
+- Slices 1–4 are done (`fix/store-concurrency-safety`,
+  `fix/runner-process-lifecycle`, `fix/output-contract-and-signals`,
+  `fix/workflow-test-before-review`); slices 5–6 (dashboard minimum safety,
+  cleanup) are queued in the sprint doc.
 - Latest completed sprint: `sprint-52-review-phases-6-7-supervision-transport`
   (archived under `docs/sprints/archive/`).
-- Last merged branch: `fix/runner-process-lifecycle` (`79d499a`).
-- Current implementation branch: `fix/output-contract-and-signals`
+- Last merged branch: `fix/output-contract-and-signals` (`2d9829a`).
+- Current implementation branch: `fix/workflow-test-before-review`
 
 ## Active branches
 
-- `fix/output-contract-and-signals` — sprint 53 slice 3: final-message
-  contract, decision grammar with ambiguity errors, role-declared outcomes,
-  review kinds and signal allowlists, fence-aware deduplicated signals
+- `fix/workflow-test-before-review` — sprint 53 slice 4: test before
+  review in every workflow, policy-driven `merge_approval` gate,
+  `merge_approval` / `plan_approval` settings, per-task gate overrides
+- `fix/output-contract-and-signals` — merged to `main` at `2d9829a`; sprint
+  53 slice 3
 - `fix/runner-process-lifecycle` — merged to `main` at `79d499a`; sprint 53
   slice 2
 - `fix/store-concurrency-safety` — merged to `main` at `9d23fe0`; sprint 53
@@ -40,13 +42,31 @@
 ## Current focus
 
 - Sprint 53 executes Phase 0 of the production readiness review: make an
-  unattended run safe on one machine. Slices 1–3 landed; slice 4 (workflow
-  order and a configurable merge gate) is next.
+  unattended run safe on one machine. Slices 1–4 landed; slice 5 (dashboard
+  minimum safety) is next.
 - Phase 1 (resident worker, intake endpoint, policy matrix, planner step,
   worktree isolation, pull-request integration) is queued in
   `docs/sprints/backlog.md`.
 
-## Latest update — sprint 53 slice 3: output contract and signals
+## Latest update — sprint 53 slice 4: workflow order and merge gate
+
+- Branch `fix/workflow-test-before-review`. All four shipped workflows now
+  run `develop → test → reviews → merge_approval → merge → done`, so
+  reviewers see real test results in the evidence and a red suite never
+  reaches a reviewer.
+- Human-gate steps can carry a `policy` (`merge_approval` or
+  `plan_approval`). The matching project setting, or a per-task
+  `executor_overrides.gates` entry, resolves to `auto` (the engine approves
+  with a `workflow.gate_auto_approved` event and a `policy:<name>` decision
+  record) or `human` (the task pauses for `foreman approve`). Defaults:
+  `merge_approval=auto`, `plan_approval=human`.
+- The reviewer's `{previous_output}` now comes from the latest agent run
+  rather than the latest run, which would have been the test built-in.
+- Validation: 648 backend tests passing (+10 in
+  `tests/test_workflow_gates.py`; sequence expectations across the suite
+  updated to the new order).
+
+## Previous update — sprint 53 slice 3: output contract and signals
 
 - Branch `fix/output-contract-and-signals`. The role contract is applied to
   the agent's final message only: a marker echoed in an early plan no longer
@@ -783,6 +803,12 @@
 
 ## Documented conflicts
 
+- The spec's shipped workflows (`docs/specs/engine-design-v3.md` §5) run code
+  review before the test built-in. Since sprint 53 slice 4 every shipped
+  workflow tests first and gates the merge behind a policy-governed
+  `merge_approval` human gate, because reviewers should judge with real test
+  results and a merge authorization must be a policy decision. The spec text
+  has not been revised yet.
 - The shipped workflow TOML treats `_builtin:mark_done` as a terminal step with
   no outbound transition, while the orchestrator pseudocode in the spec blocks
   any missing transition. The current implementation treats a step that sets

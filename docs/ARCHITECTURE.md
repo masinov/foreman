@@ -219,6 +219,10 @@ The current CLI watch baseline now includes:
 - backend preflight failures now fail once before `agent.started`, while
   post-start transport and process failures remain retryable infrastructure
   errors.
+- every shipped workflow tests before it reviews and ends in a
+  `merge_approval` human gate; gate steps carry a `policy` resolved from a
+  per-task override, then the project setting, then a default, and an `auto`
+  policy produces a run row, an event, and a `policy:<name>` decision record.
 - the role contract (completion marker or verdict) is read from the agent's
   final message only; decision roles declare `outcomes`, `review_kind`, and
   allowed `signals` in TOML, and the orchestrator, workflow validator, and
