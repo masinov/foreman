@@ -22,6 +22,17 @@ memory changes rather than versioned product releases.
   are validated at run start, at the dashboard settings endpoint, and at
   `foreman config --set`, with event, run, and prompt retention now explicit
   opt-in settings.
+- **slice 2, runner process lifecycle** (`fix/runner-process-lifecycle`): new
+  `foreman/runner/process.py` with `ManagedProcess` (pumped stdout and
+  stderr, silent-tick wake-ups, own session, process-group terminate and
+  kill) and shutdown handlers that stop every registered child and raise
+  `EngineShutdown`; both runners rebuilt on it so time and cost gates fire
+  while an agent is silent, the Codex handshake is wall-clock bounded, and
+  output decodes as UTF-8 with replacement; the orchestrator heartbeats the
+  lease on ticks, raises `LeaseLostError` on a refused renewal, and marks the
+  run `killed` on shutdown or lease loss while leaving the task resumable;
+  `foreman run` exits 130 on SIGTERM or Ctrl+C; `_builtin:run_tests` honors a
+  new `test_timeout_seconds` setting and kills its process group on timeout.
 
 ### Milestone
 

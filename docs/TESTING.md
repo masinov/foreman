@@ -35,6 +35,11 @@ The current suite covers:
   dependent-aware deletes and pruning, atomic migrations, the v13 to v14
   upgrade on a legacy database, and settings validation at the orchestrator,
   dashboard, and CLI boundaries
+- `tests/test_runner_lifecycle.py` for the managed-process layer with real
+  subprocesses (silent ticks, stderr floods, process-group kills, the SIGTERM
+  handler), silent-agent time gates in both runners, the Codex startup
+  timeout, the test built-in timeout, and orchestrator tick, shutdown, and
+  lease-loss handling
 - `tests/test_roles.py` and `tests/test_workflows.py` for shipped declarative
   configuration loading and validation
 - `tests/test_runner_env.py` for role `[agent.env]` value resolution and

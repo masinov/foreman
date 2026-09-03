@@ -219,6 +219,11 @@ The current CLI watch baseline now includes:
 - backend preflight failures now fail once before `agent.started`, while
   post-start transport and process failures remain retryable infrastructure
   errors.
+- every agent and test process runs through `foreman/runner/process.py`:
+  pumped streams, wall-clock ticks while the child is silent, its own
+  session, process-group termination, and a registry drained on SIGTERM,
+  SIGINT, and exit; `EngineShutdown` and `LeaseLostError` settle the active
+  run as `killed` and leave the task at its persisted resume point.
 - file-backed stores run in WAL mode with a 30 s busy timeout and retrying
   hot writes so the engine, dashboard, and CLI can share one database file;
   migrations apply atomically per version inside `BEGIN IMMEDIATE`.

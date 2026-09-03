@@ -5,19 +5,22 @@
 - Active implementation sprint: `sprint-53-phase0-unattended-safety`
   (`docs/sprints/current.md`), opened 2026-09-04 from Phase 0 of
   `docs/reviews/production-readiness-review.md`.
-- Slice 1 (`fix/store-concurrency-safety`) is done; slices 2–6 (runner
-  process lifecycle, output contract and signals, workflow order and merge
-  gate, dashboard minimum safety, cleanup) are queued in the sprint doc.
+- Slices 1 (`fix/store-concurrency-safety`) and 2
+  (`fix/runner-process-lifecycle`) are done; slices 3–6 (output contract and
+  signals, workflow order and merge gate, dashboard minimum safety, cleanup)
+  are queued in the sprint doc.
 - Latest completed sprint: `sprint-52-review-phases-6-7-supervision-transport`
   (archived under `docs/sprints/archive/`).
-- Last merged branch: `fix/frontend-landing-copy` (`dfba0a6`).
-- Current implementation branch: `fix/store-concurrency-safety`
+- Last merged branch: `fix/store-concurrency-safety` (`9d23fe0`).
+- Current implementation branch: `fix/runner-process-lifecycle`
 
 ## Active branches
 
-- `fix/store-concurrency-safety` — sprint 53 slice 1: migration 14, WAL and
-  busy handling, atomic migrations, sequence-based task keys,
-  dependent-aware deletes, validated settings at every write boundary
+- `fix/runner-process-lifecycle` — sprint 53 slice 2: managed child
+  processes with wall-clock ticks, process-group termination, stderr
+  draining, shutdown handlers, lease-loss handling, test-command timeout
+- `fix/store-concurrency-safety` — merged to `main` at `9d23fe0`; sprint 53
+  slice 1
 - `docs/minimax-smoke-closeout` — updates repo memory after merging the
   MiniMax role-env smoke to `main`
 - `feat/worker-fleet-minimax-smoke` — merged to `main` at `07649e6`; retained
@@ -35,14 +38,33 @@
 ## Current focus
 
 - Sprint 53 executes Phase 0 of the production readiness review: make an
-  unattended run safe on one machine. Slice 2 (runner process lifecycle) is
-  next and is the blocking item for any unattended use, including running
-  Foreman against this repository.
+  unattended run safe on one machine. With slice 2 landed, a silent or
+  crashed agent can no longer hang the engine or outlive it; slice 3 (output
+  contract and signals) is next.
 - Phase 1 (resident worker, intake endpoint, policy matrix, planner step,
   worktree isolation, pull-request integration) is queued in
   `docs/sprints/backlog.md`.
 
-## Latest update — sprint 53 slice 1: store safety
+## Latest update — sprint 53 slice 2: runner process lifecycle
+
+- Branch `fix/runner-process-lifecycle`. New `foreman/runner/process.py`:
+  `ManagedProcess` pumps stdout and stderr on threads, yields ticks while
+  the child is silent, runs children in their own session, and terminates or
+  kills the whole process group; a registry plus `install_shutdown_handlers`
+  drain every child on SIGTERM, SIGINT, and exit and raise `EngineShutdown`.
+- Both runners are rebuilt on it: time and cost gates fire on silent ticks,
+  the Codex handshake is wall-clock bounded, output decodes as UTF-8 with
+  replacement, and an abandoned run generator kills the agent's group.
+- The orchestrator heartbeats the lease on `agent.tick` without persisting
+  it, raises `LeaseLostError` when a renewal is refused, and settles the run
+  row as `killed` on shutdown or lease loss while leaving the task
+  resumable. `foreman run` installs the handlers and exits 130 when stopped.
+- `_builtin:run_tests` honors `test_timeout_seconds` (default 1800) and kills
+  its process group on timeout.
+- Validation: 620 backend tests passing (+15 in
+  `tests/test_runner_lifecycle.py`, using real subprocesses).
+
+## Previous update — sprint 53 slice 1: store safety
 
 - Branch `fix/store-concurrency-safety`. Migration 14 rebuilds
   `human_gate_decisions` and `decision_gates` with `ON DELETE` rules, adds

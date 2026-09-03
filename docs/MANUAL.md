@@ -686,6 +686,7 @@ offending value, rather than running on silent defaults.
 | `max_autonomous_tasks` | 5 | cap on autonomously selected tasks |
 | `max_step_visits` | 5 | loop-limit per workflow step |
 | `test_command` | `""` | command run by `_builtin:run_tests` |
+| `test_timeout_seconds` | 1800 | wall-clock cap for `_builtin:run_tests`; the process group is killed on expiry; 0 disables |
 | `time_limit_per_run_minutes` | 0 (off) | per-run wall-clock cap |
 | `time_limit_per_task_ms` | 0 (off) | per-task cumulative time cap |
 | `cost_limit_per_task_usd` | 0 (off) | per-task cost ceiling |
@@ -854,7 +855,25 @@ through an architecture already known to be unacceptable (see `AGENTS.md`).
 
 ---
 
-## 22. Troubleshooting
+## 22. Stopping and interrupting a run
+
+`foreman run` installs SIGTERM and SIGINT handlers. Stopping the engine
+(Ctrl+C, `kill <pid>`, or the dashboard's Stop) terminates every child
+process group Foreman started (the agent and anything it spawned, or the
+test command), records the active run as `killed` with an `agent.killed`
+event (`gate_type="shutdown"`), releases the task lease, restores the
+checkout to the default branch, and exits with status 130. The task stays
+`in_progress` at its persisted workflow step, so the next `foreman run`
+resumes it.
+
+While an agent is silent, the runner wakes every 15 seconds to enforce the
+time and cost gates and to heartbeat the task lease. If another engine has
+taken the lease meanwhile, the run is recorded as `killed`
+(`gate_type="lease_lost"`) and this engine exits without touching the task.
+
+---
+
+## 23. Troubleshooting
 
 | Symptom | Likely cause / fix |
 |---|---|
