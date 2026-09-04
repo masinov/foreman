@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+from datetime import datetime, timezone
+import getpass
 import json
 import os
 from pathlib import Path
@@ -22,7 +24,7 @@ from .dashboard_runtime import (
 )
 from .engine_lock import EngineBusyError, EngineLock
 from .logs import configure_json_logging
-from .models import Event, GATE_POLICY_NAMES, Project, Sprint, TASK_COMPLEXITIES, TASK_TYPES, Task, utc_now_text
+from .models import Event, EngineCommand, GATE_POLICY_NAMES, Project, Sprint, TASK_COMPLEXITIES, TASK_TYPES, Task, utc_now_text
 from .orchestrator import ForemanOrchestrator, OrchestratorError
 from .roles import RoleLoadError, default_roles_dir, load_roles
 from .runner.process import EngineShutdown, install_shutdown_handlers
@@ -2226,6 +2228,170 @@ def handle_dashboard(args: argparse.Namespace) -> int:
     return 0
 
 
+def default_command_requester() -> str:
+    """Name to record on a command when the caller did not pass ``--by``.
+
+    Commands are an audit trail — "who stopped this task" is the first
+    question anyone asks — so the requester is never left blank. The OS user
+    name is the best answer available from a terminal; a container without a
+    resolvable user falls back to a literal rather than failing the command.
+    """
+
+    try:
+        return getpass.getuser()
+    except Exception:  # noqa: BLE001 - no passwd entry, no USER, no LOGNAME
+        return "unknown"
+
+
+def _format_command_row(command: EngineCommand) -> str:
+    parts = [
+        f"- [{command.status}] {command.command}",
+        f"id={command.id}",
+        f"by={command.requested_by}",
+        f"at={command.requested_at}",
+    ]
+    if command.task_id:
+        parts.insert(2, f"task={command.task_id}")
+    line = " | ".join(parts)
+    if command.result_detail:
+        line = f"{line}\n    {command.result_detail}"
+    return line
+
+
+def handle_engine_status(args: argparse.Namespace) -> int:
+    """Handle ``foreman engine status``."""
+
+    db_path = _resolve_db_path_or_print(args.db)
+    if db_path is None:
+        return 1
+
+    with ForemanStore(db_path) as store:
+        store.initialize()
+        project = _resolve_project_or_print(store, args.project_id)
+        if project is None:
+            return 1
+        lock = store.get_engine_lock(project.id)
+        commands = store.list_engine_commands(project.id, limit=args.limit)
+        running = store.list_tasks(project_id=project.id, statuses=("in_progress",))
+        # A `pause` that has been applied but not yet resumed is the engine's
+        # current state, so the most recent applied pause/resume is what makes
+        # "paused" visible to an operator who did not queue it themselves.
+        paused = _engine_is_paused(store, project.id)
+        db_path = store.db_path
+
+    lines = [
+        "Engine status",
+        f"Database: {db_path}",
+        f"Project: {project.id} | {project.name}",
+    ]
+    if lock is None:
+        lines.append("Resident engine: none (no engine holds this project)")
+    else:
+        now = datetime.now(timezone.utc)
+        age = lock.heartbeat_age_seconds(now)
+        age_text = "unknown" if age is None else f"{age:.0f}s ago"
+        state = "paused" if paused else "running"
+        if lock.is_expired(now):
+            state = "stale lease (no heartbeat since it expired)"
+        lines.extend(
+            [
+                f"Resident engine: {lock.holder_id}",
+                f"State: {state}",
+                f"Heartbeat: {age_text} (at {lock.heartbeat_at})",
+                f"Acquired: {lock.acquired_at} | Lease expires: {lock.expires_at}",
+            ]
+        )
+    if running:
+        lines.append(
+            "Current task: "
+            + ", ".join(f"{task.id} | {task.title}" for task in running)
+        )
+    else:
+        lines.append("Current task: none")
+
+    lines.append(f"Recent commands ({len(commands)}):")
+    if not commands:
+        lines.append("- none")
+    else:
+        lines.extend(_format_command_row(command) for command in commands)
+    _print_lines(*lines)
+    return 0
+
+
+def _engine_is_paused(store: ForemanStore, project_id: str) -> bool:
+    """True when the last applied pause/resume for a project was a pause."""
+
+    for command in store.list_engine_commands(project_id, limit=200):
+        if command.status != "completed":
+            continue
+        if command.command in {"pause", "shutdown"}:
+            return command.command == "pause"
+        if command.command == "resume":
+            return False
+    return False
+
+
+def handle_engine_command(args: argparse.Namespace) -> int:
+    """Handle every ``foreman engine`` verb that enqueues a command."""
+
+    db_path = _resolve_db_path_or_print(args.db)
+    if db_path is None:
+        return 1
+
+    task_id = getattr(args, "task_id", None)
+    requested_by = args.by or default_command_requester()
+    with ForemanStore(db_path) as store:
+        store.initialize()
+        project = _resolve_project_or_print(store, args.project_id)
+        if project is None:
+            return 1
+        if task_id is not None:
+            task = _resolve_task_or_print(store, task_id)
+            if task is None:
+                return 1
+            if task.project_id != project.id:
+                print(
+                    f"Task {task_id} belongs to project {task.project_id}, "
+                    f"not {project.id}.",
+                    file=sys.stderr,
+                )
+                return 1
+        resident = store.get_engine_lock(project.id)
+        command = store.enqueue_engine_command(
+            project_id=project.id,
+            command=args.engine_command_name,
+            requested_by=requested_by,
+            task_id=task_id,
+        )
+        db_path = store.db_path
+
+    lines = [
+        f"Queued engine command: {command.command}",
+        f"Database: {db_path}",
+        f"Project: {project.id} | {project.name}",
+        f"Command id: {command.id}",
+        f"Requested by: {command.requested_by}",
+    ]
+    if command.task_id:
+        lines.append(f"Task: {command.task_id}")
+    if resident is None:
+        # Not an error: `resume` and `run_task` are honoured by the next engine
+        # to start. The others will be rejected as stale, and saying so now is
+        # kinder than letting the operator discover it in the command log.
+        lines.append(
+            "No engine is resident on this project. "
+            + (
+                "The next `foreman serve` will apply it."
+                if command.command in {"resume", "run_task"}
+                else "It will be rejected when an engine next starts."
+            )
+        )
+    else:
+        lines.append(f"Resident engine: {resident.holder_id}")
+    _print_lines(*lines)
+    return 0
+
+
 def _set_handler(
     parser: argparse.ArgumentParser, handler: Handler, command_path: str
 ) -> argparse.ArgumentParser:
@@ -2511,6 +2677,86 @@ def build_parser() -> argparse.ArgumentParser:
         help_text=f"Path to the SQLite store containing the project. {DB_OPTION_NOTE}",
     )
     _set_handler(serve_parser, handle_serve, "serve")
+
+    engine_parser = subparsers.add_parser(
+        "engine",
+        help="Inspect and steer the resident engine for one project.",
+    )
+    engine_commands_parser = engine_parser.add_subparsers(
+        dest="engine_command",
+        metavar="engine_command",
+        required=True,
+    )
+
+    engine_status = engine_commands_parser.add_parser(
+        "status",
+        help="Show the resident engine and its recent commands.",
+    )
+    engine_status.add_argument("project_id", help="Project identifier.")
+    engine_status.add_argument(
+        "--limit",
+        type=int,
+        default=10,
+        help="How many recent commands to show (default: 10).",
+    )
+    _add_db_option(
+        engine_status,
+        help_text=f"Path to the SQLite store containing the project. {DB_OPTION_NOTE}",
+    )
+    _set_handler(engine_status, handle_engine_status, "engine status")
+
+    def _add_engine_command(
+        name: str, *, command_name: str, help_text: str, needs_task: bool = False
+    ) -> None:
+        sub = engine_commands_parser.add_parser(name, help=help_text)
+        sub.add_argument("project_id", help="Project identifier.")
+        if needs_task:
+            sub.add_argument("task_id", help="Task identifier.")
+        sub.add_argument(
+            "--by",
+            default=None,
+            help=(
+                "Who is asking, recorded on the command. "
+                "Defaults to the OS user name."
+            ),
+        )
+        _add_db_option(
+            sub,
+            help_text=f"Path to the SQLite store containing the project. {DB_OPTION_NOTE}",
+        )
+        sub.set_defaults(engine_command_name=command_name)
+        _set_handler(sub, handle_engine_command, f"engine {name}")
+
+    _add_engine_command(
+        "pause",
+        command_name="pause",
+        help_text=(
+            "Stop the engine picking up new work and stop the running agent "
+            "step, leaving its task resumable."
+        ),
+    )
+    _add_engine_command(
+        "resume",
+        command_name="resume",
+        help_text="Let a paused engine start picking up work again.",
+    )
+    _add_engine_command(
+        "shutdown",
+        command_name="shutdown",
+        help_text="Stop the running step, release the engine lock, and exit.",
+    )
+    _add_engine_command(
+        "run-task",
+        command_name="run_task",
+        help_text="Run one task next, regardless of sprint order.",
+        needs_task=True,
+    )
+    _add_engine_command(
+        "stop-task",
+        command_name="stop_task",
+        help_text="Stop the task the engine is running and block it.",
+        needs_task=True,
+    )
 
     status_parser = subparsers.add_parser(
         "status",
