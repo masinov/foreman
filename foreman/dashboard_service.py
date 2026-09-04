@@ -20,7 +20,6 @@ from typing import Any, Callable
 
 from .engine_control import (
     EngineStateView,
-    ServeSpawn,
     ServeSpawner,
     WorkflowGateSteps,
     blocked_kind,
@@ -244,9 +243,17 @@ class DashboardService:
         """Return the project summary collection used by the dashboard landing screen."""
 
         result = []
+        # Resolving a workflow reads every role and workflow TOML, so the
+        # landing page resolves each distinct workflow once rather than once
+        # per project.
+        gates_by_workflow: dict[str, WorkflowGateSteps] = {}
         for project in self.store.list_projects():
             active_sprint = self.store.get_active_sprint(project.id)
             engine = describe_engine(self.store, project.id, now=self._now())
+            if project.workflow_id not in gates_by_workflow:
+                gates_by_workflow[project.workflow_id] = resolve_gate_steps(
+                    project.workflow_id
+                )
             result.append(
                 {
                     "id": project.id,
@@ -255,7 +262,9 @@ class DashboardService:
                     "status": self.get_project_status(project.id),
                     "agent_running": engine.resident,
                     "engine": _serialize_engine_state(engine),
-                    **self._blocked_kind_counts(project),
+                    **self._blocked_kind_counts(
+                        project, gates_by_workflow[project.workflow_id]
+                    ),
                     "active_sprint": (
                         {
                             "id": active_sprint.id,
@@ -1329,12 +1338,14 @@ class DashboardService:
 
         return resolve_gate_steps(project.workflow_id if project else None)
 
-    def _blocked_kind_counts(self, project: Project) -> dict[str, int]:
+    def _blocked_kind_counts(
+        self, project: Project, gates: WorkflowGateSteps | None = None
+    ) -> dict[str, int]:
         """Dead-letter counts for a project summary, keyed for the API payload."""
 
         counts = blocked_kind_counts(
             self.store.list_tasks(project_id=project.id, status="blocked"),
-            self._gate_steps(project),
+            gates if gates is not None else self._gate_steps(project),
         )
         return {
             "blocked_gate": counts["gate"],

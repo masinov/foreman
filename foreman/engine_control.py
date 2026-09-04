@@ -51,6 +51,8 @@ __all__ = [
     "describe_engine",
     "engine_is_paused",
     "resolve_gate_steps",
+    "running_task",
+    "serve_command",
     "serve_log_path",
     "spawn_serve",
 ]
@@ -71,9 +73,6 @@ BLOCKED_KINDS: tuple[str, ...] = ("gate", "engine")
 
 #: Filename of the detached ``foreman serve`` log inside the context directory.
 SERVE_LOG_NAME = "serve.log"
-
-#: How many commands the engine views carry by default.
-DEFAULT_COMMAND_LIMIT = 10
 
 #: How far back :func:`engine_is_paused` looks for the last applied
 #: pause/resume. A project that has taken more commands than this since it was
