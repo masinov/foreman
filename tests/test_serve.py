@@ -82,10 +82,14 @@ class _StubOrchestrator:
         self._results = list(results)
         self.holder_id = holder_id
         self.calls: list[bool] = []
+        self.targets: list[str | None] = []
         self.blocked: list[tuple[str, str]] = []
 
-    def run_project(self, project_id: str, *, maintenance: bool = True):
+    def run_project(
+        self, project_id: str, *, task_id: str | None = None, maintenance: bool = True
+    ):
         self.calls.append(maintenance)
+        self.targets.append(task_id)
         if not self._results:
             raise EngineShutdown("SIGTERM")
         outcome = self._results.pop(0)
@@ -670,7 +674,7 @@ class ServeProjectTests(unittest.TestCase):
 
     def test_unhandled_error_releases_the_lock(self) -> None:
         class _Exploding(_StubOrchestrator):
-            def run_project(self, project_id, *, maintenance=True):
+            def run_project(self, project_id, *, task_id=None, maintenance=True):
                 raise ValueError("unexpected")
 
         with self.assertRaises(ValueError):
