@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from datetime import datetime, timezone
 import json
+import re
 from pathlib import Path
 import shlex
 import shutil
@@ -17,6 +19,7 @@ from .base import (
     AgentRunner,
     InfrastructureError,
     PreflightError,
+    QuotaExhaustedError,
 )
 from .process import DEFAULT_TICK_SECONDS, ManagedProcess, popen_kwargs
 from .signals import extract_signal_events
@@ -33,6 +36,13 @@ TOOL_RESULT_PREVIEW_CHARS = 500
 # They drive the heartbeat and the gates but are never persisted.
 _PROGRESS_SYSTEM_SUBTYPES = frozenset({"thinking_tokens"})
 _NOT_JSON = object()
+#: Error texts the CLI returns when the account's usage window is spent.
+_QUOTA_ERROR_PATTERN = re.compile(
+    r"session limit|usage limit|rate limit|out of (?:extra )?usage|quota",
+    re.IGNORECASE,
+)
+#: Rate-limit statuses under which the backend still serves requests.
+_RATE_LIMIT_OK_STATUSES = frozenset({"", "allowed", "allowed_warning"})
 
 
 
@@ -114,6 +124,7 @@ class ClaudeCodeRunner(AgentRunner):
             last_cost_usd = 0.0
             saw_terminal_event = False
             saw_assistant_text = False
+            quota_notice: dict[str, Any] | None = None
 
             yield AgentEvent(
                 "agent.started",
@@ -183,6 +194,24 @@ class ClaudeCodeRunner(AgentRunner):
                         last_cost_usd = _coerce_float(
                             event.payload.get("cumulative_usd"),
                             default=last_cost_usd,
+                        )
+                    if event.event_type == "agent.rate_limit":
+                        quota_notice = dict(event.payload)
+                    if event.event_type == "agent.error" and _is_quota_error(
+                        event.payload, quota_notice
+                    ):
+                        # The account's usage window is spent. This is not a
+                        # task failure: raise it as a quota condition carrying
+                        # the reset time and what was already charged.
+                        raise QuotaExhaustedError(
+                            _optional_string(event.payload.get("error"))
+                            or "Claude Code refused the request: usage quota exhausted.",
+                            retry_after=_retry_after_from_notice(quota_notice),
+                            payload={
+                                key: event.payload[key]
+                                for key in ("session_id", "cost_usd", "duration_ms", "token_count")
+                                if key in event.payload
+                            },
                         )
                     if event.event_type in {"agent.completed", "agent.error"}:
                         saw_terminal_event = True
@@ -455,6 +484,30 @@ def _progress_events(decoded: Any) -> tuple[AgentEvent, ...] | None:
                 ),
             )
     return None
+
+
+def _is_quota_error(payload: dict[str, Any], notice: dict[str, Any] | None) -> bool:
+    """Return True when an error result means the usage quota is spent."""
+
+    if notice is not None and str(notice.get("status", "")) not in _RATE_LIMIT_OK_STATUSES:
+        return True
+    error_text = _optional_string(payload.get("error")) or ""
+    return bool(_QUOTA_ERROR_PATTERN.search(error_text))
+
+
+def _retry_after_from_notice(notice: dict[str, Any] | None) -> str | None:
+    """Return the quota reset time from a rate-limit notice as ISO 8601 UTC."""
+
+    if notice is None:
+        return None
+    epoch = _coerce_int(notice.get("resets_at"))
+    if epoch is None or epoch <= 0:
+        return None
+    return (
+        datetime.fromtimestamp(epoch, timezone.utc)
+        .isoformat(timespec="seconds")
+        .replace("+00:00", "Z")
+    )
 
 
 def _raw_output_payload(line: str) -> dict[str, Any]:

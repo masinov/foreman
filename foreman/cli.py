@@ -27,6 +27,10 @@ from .orchestrator import ForemanOrchestrator, OrchestratorError
 from .roles import RoleLoadError, default_roles_dir, load_roles
 from .runner.process import EngineShutdown, install_shutdown_handlers
 from .serve import DEFAULT_POLL_SECONDS, serve_project
+
+#: Exit code of ``foreman run`` when the pass stopped because the agent backend's
+#: usage quota ran out (BSD ``EX_TEMPFAIL``): nothing is broken, try again later.
+EXIT_QUOTA_EXHAUSTED = 75
 from .scaffold import (
     DEFAULT_DB_FILENAME,
     DEFAULT_DEFAULT_BRANCH,
@@ -2051,7 +2055,17 @@ def handle_run(args: argparse.Namespace) -> int:
             else "Blocked tasks: none"
         ),
         f"Stop reason: {result.stop_reason}",
+        *(
+            [
+                f"Retry after: {result.retry_after or 'unknown'}",
+                "The paused task keeps its resume point; run again once the backend quota resets.",
+            ]
+            if result.stop_reason == "quota_exhausted"
+            else []
+        ),
     )
+    if result.stop_reason == "quota_exhausted":
+        return EXIT_QUOTA_EXHAUSTED
     return 0
 
 

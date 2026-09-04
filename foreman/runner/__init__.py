@@ -6,6 +6,7 @@ from .base import (
     AgentRunner,
     InfrastructureError,
     PreflightError,
+    QuotaExhaustedError,
     run_with_retry,
 )
 from .claude_code import ClaudeCodeRunner
@@ -23,5 +24,6 @@ __all__ = [
     "terminate_all",
     "InfrastructureError",
     "PreflightError",
+    "QuotaExhaustedError",
     "run_with_retry",
 ]

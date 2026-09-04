@@ -115,6 +115,28 @@ def _executed(*task_ids: str, project_id: str = "project-1") -> ProjectRunResult
     )
 
 
+def _quota_exhausted(*task_ids: str, retry_after: str | None = "2026-09-04T13:20:00Z") -> ProjectRunResult:
+    return ProjectRunResult(
+        project_id="project-1",
+        executed_task_ids=tuple(task_ids),
+        blocked_task_ids=(),
+        stop_reason="quota_exhausted",
+        retry_after=retry_after,
+        detail="You've hit your session limit",
+    )
+
+
+class _RecordingHandler(logging.Handler):
+    """Collect (event, level) pairs emitted through a logger."""
+
+    def __init__(self) -> None:
+        super().__init__(level=logging.DEBUG)
+        self.records: list[tuple[str, int]] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.records.append((record.getMessage(), record.levelno))
+
+
 class _FakeClock:
     """Monotonic clock advanced only by the sleeps the engine performs."""
 
@@ -403,6 +425,54 @@ class ResidentEngineLoopTests(unittest.TestCase):
         engine.run()
 
         self.assertAlmostEqual(self.clock.total_slept, 4.0, places=6)
+
+    def test_quota_exhaustion_waits_for_the_reset_then_resumes_without_maintenance(self) -> None:
+        from datetime import datetime, timezone
+
+        orchestrator = _StubOrchestrator([_quota_exhausted("task-1"), _executed("task-1")])
+        engine = self._engine(
+            orchestrator,
+            tick_seconds=1.0,
+            utc_now=lambda: datetime(2026, 9, 4, 12, 33, 47, tzinfo=timezone.utc),
+        )
+
+        result = engine.run()
+
+        # 13:20:00 - 12:33:47 = 2773 s, plus the grace period.
+        self.assertGreaterEqual(self.clock.total_slept, 2778.0)
+        self.assertLess(self.clock.total_slept, 2778.0 + 10.0)
+        self.assertEqual(orchestrator.calls, [True, False, True])
+        self.assertEqual(result.executed_task_ids, ("task-1", "task-1"))
+        self.assertEqual(result.blocked_task_ids, ())
+
+    def test_quota_exhaustion_with_once_exits_zero_and_keeps_the_task(self) -> None:
+        orchestrator = _StubOrchestrator([_quota_exhausted("task-1")])
+
+        result = self._engine(orchestrator).run(once=True)
+
+        self.assertEqual(result.exit_code, 0)
+        self.assertEqual(result.stop_reason, "once")
+        self.assertEqual(orchestrator.blocked, [])
+        self.assertEqual(self.clock.total_slept, 0.0)
+
+    def test_idle_is_narrated_once_then_demoted_to_debug(self) -> None:
+        handler = _RecordingHandler()
+        logger = logging.getLogger("test.serve.idle")
+        logger.setLevel(logging.DEBUG)
+        logger.propagate = False
+        logger.addHandler(handler)
+        self.addCleanup(logger.removeHandler, handler)
+
+        orchestrator = _StubOrchestrator([_idle(), _idle(), _idle(), _executed("task-1"), _idle()])
+        self._engine(orchestrator, logger=logger, tick_seconds=1.0).run()
+
+        idle_levels = [level for event, level in handler.records if event == "serve.idle"]
+        pass_levels = [level for event, level in handler.records if event == "serve.pass_completed"]
+        self.assertEqual(idle_levels, [logging.INFO, logging.DEBUG, logging.DEBUG, logging.INFO])
+        self.assertEqual(
+            pass_levels,
+            [logging.INFO, logging.DEBUG, logging.DEBUG, logging.INFO, logging.INFO],
+        )
 
     def test_task_failure_is_isolated_with_a_doubling_backoff(self) -> None:
         from foreman.orchestrator import TaskExecutionError
@@ -1124,6 +1194,25 @@ class EventLogLevelTests(unittest.TestCase):
         ]
         self.assertEqual([entry["event"] for entry in logged], ["agent.raw_output"])
         self.assertEqual(logged[0]["level"], "DEBUG")
+
+
+class QuotaWaitTests(unittest.TestCase):
+    def test_wait_is_derived_from_the_reset_time_with_grace_and_bounds(self) -> None:
+        from datetime import datetime, timezone
+
+        from foreman.serve import (
+            DEFAULT_QUOTA_WAIT_SECONDS,
+            MAX_QUOTA_WAIT_SECONDS,
+            MIN_QUOTA_WAIT_SECONDS,
+            quota_wait_seconds,
+        )
+
+        now = datetime(2026, 9, 4, 12, 33, 47, tzinfo=timezone.utc)
+        self.assertEqual(quota_wait_seconds("2026-09-04T13:20:00Z", now=now), 2773.0 + 5.0)
+        self.assertEqual(quota_wait_seconds("2026-09-04T12:00:00Z", now=now), MIN_QUOTA_WAIT_SECONDS)
+        self.assertEqual(quota_wait_seconds("2026-09-06T12:00:00Z", now=now), MAX_QUOTA_WAIT_SECONDS)
+        self.assertEqual(quota_wait_seconds(None, now=now), DEFAULT_QUOTA_WAIT_SECONDS)
+        self.assertEqual(quota_wait_seconds("not a time", now=now), DEFAULT_QUOTA_WAIT_SECONDS)
 
 
 if __name__ == "__main__":  # pragma: no cover
