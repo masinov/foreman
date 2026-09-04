@@ -31,6 +31,7 @@ from .git import (
     worktree_branch,
 )
 from .leases import generate_lease_token
+from .logs import compact_payload, get_logger, log_event
 from .judge import judge_criteria, truncate_diff
 from .models import CompletionEvidence, Event, HumanGateDecision, Lease, Project, Run, Sprint, TASK_COMPLEXITIES, Task, utc_now_text
 from .outcomes import APPROVE, BLOCKED, DENY, DONE, ERROR, ESCALATE, normalize_agent_outcome, normalize_reviewer_decision, STEER
@@ -42,6 +43,8 @@ from .roles import RoleDefinition, default_roles_dir, load_roles
 from .settings import ProjectSettings, SettingsError
 from .store import ForemanStore
 from .workflows import WorkflowDefinition, WorkflowStep, default_workflows_dir, load_workflows
+
+_LOGGER = get_logger("orchestrator")
 
 _BRANCH_PREFIXES = {
     "feature": "feat",
@@ -64,6 +67,21 @@ class LeaseLostError(OrchestratorError):
     agent was silent. The active agent is stopped and this engine exits
     without touching the task, which the new holder now owns.
     """
+
+
+class TaskExecutionError(OrchestratorError):
+    """Raised when running one specific task failed.
+
+    Carries the task identifier so a resident engine can isolate the failure:
+    block that one task, raise an attention turn for it, and keep serving the
+    rest of the project instead of exiting. A one-shot ``foreman run`` treats
+    it like any other ``OrchestratorError``.
+    """
+
+    def __init__(self, task_id: str, cause: BaseException) -> None:
+        super().__init__(f"Task {task_id!r} failed: {cause}")
+        self.task_id = task_id
+        self.cause = cause
 
 
 @dataclass(slots=True)
@@ -258,16 +276,24 @@ class ForemanOrchestrator:
         project_id: str,
         *,
         task_id: str | None = None,
+        maintenance: bool = True,
     ) -> ProjectRunResult:
-        """Run one project's active workflow until no runnable task remains."""
+        """Run one project's active workflow until no runnable task remains.
+
+        ``maintenance`` controls the once-per-startup housekeeping (retention
+        pruning and crash recovery). A resident engine passes ``False`` on an
+        idle wake: nothing has executed since the last pass, so re-pruning and
+        re-scanning for orphans on every wake would be pure load.
+        """
 
         project = self.store.get_project(project_id)
         if project is None:
             raise OrchestratorError(f"Unknown project {project_id!r}.")
         settings = resolve_project_settings(project)
         workflow = self._load_workflow_for_project(project)
-        self.prune_old_history(project, settings=settings)
-        self.recover_orphaned_tasks(project.id)
+        if maintenance:
+            self.prune_old_history(project, settings=settings)
+            self.recover_orphaned_tasks(project.id)
 
         executed_task_ids: list[str] = []
         blocked_task_ids: list[str] = []
@@ -283,7 +309,7 @@ class ForemanOrchestrator:
                 raise OrchestratorError(
                     f"Task {task_id!r} is already leased by another orchestrator."
                 )
-            completed = self.run_task(project, workflow, task)
+            completed = self._run_task_isolated(project, workflow, task)
             executed_task_ids.append(completed.id)
             if completed.status == "blocked":
                 blocked_task_ids.append(completed.id)
@@ -299,7 +325,7 @@ class ForemanOrchestrator:
         while True:
             task = self.select_next_task(project)
             if task is not None:
-                completed = self.run_task(project, workflow, task)
+                completed = self._run_task_isolated(project, workflow, task)
                 executed_task_ids.append(completed.id)
                 if completed.status == "blocked":
                     blocked_task_ids.append(completed.id)
@@ -333,6 +359,65 @@ class ForemanOrchestrator:
             blocked_task_ids=tuple(blocked_task_ids),
             stop_reason=stop_reason,
         )
+
+    def _run_task_isolated(
+        self,
+        project: Project,
+        workflow: WorkflowDefinition,
+        task: Task,
+    ) -> Task:
+        """Run one task, tagging any failure with the task it belongs to.
+
+        Shutdown and lease loss are engine-level events and pass through
+        untouched. Everything else — ``OrchestratorError``, ``GitError``, an
+        unexpected exception — is re-raised as :class:`TaskExecutionError` so
+        the caller knows which task to block instead of guessing.
+        """
+
+        try:
+            return self.run_task(project, workflow, task)
+        except (EngineShutdown, KeyboardInterrupt, LeaseLostError, TaskExecutionError):
+            raise
+        except Exception as exc:
+            raise TaskExecutionError(task.id, exc) from exc
+
+    def block_task_for_error(
+        self,
+        task_id: str,
+        reason: str,
+        *,
+        attention_trigger: str = "task_blocked",
+    ) -> Task | None:
+        """Block one task after an engine-level failure and raise attention.
+
+        Used by the resident engine to isolate a failed task: the task is
+        parked as ``blocked`` with the failure text, a system run records what
+        happened, and ``engine.attention_needed`` reaches the supervision
+        digest through the same path a workflow block takes. Returns the task,
+        or None when it no longer exists.
+        """
+
+        task = self.store.get_task(task_id)
+        if task is None:
+            return None
+
+        project = self.store.get_project(task.project_id)
+        if project is not None:
+            self._release_task_lease(task, project)
+
+        workflow_step = task.workflow_current_step or "orchestrator"
+        if task.status not in {"done", "cancelled"}:
+            task.status = "blocked"
+            task.blocked_reason = reason
+            self.store.save_task(task)
+        self._create_system_run(
+            task,
+            workflow_step=workflow_step,
+            outcome="blocked",
+            detail=reason,
+            attention_trigger=attention_trigger,
+        )
+        return task
 
     def _activate_first_planned_sprint(self, project_id: str) -> Sprint | None:
         """Activate the first planned sprint when project-scoped execution starts idle."""
@@ -3239,6 +3324,21 @@ class ForemanOrchestrator:
             payload=payload,
         )
         self.store.save_event(event)
+        # Mirror every persisted event to the process log so `foreman serve`,
+        # which has no terminal, can be understood from its log alone. The
+        # logger is inert until the CLI configures a handler.
+        log_event(
+            _LOGGER,
+            event.event_type,
+            project_id=event.project_id,
+            task_id=event.task_id,
+            run_id=event.run_id,
+            step=run.workflow_step,
+            role_id=event.role_id,
+            # Nested rather than flattened: event payloads carry their own
+            # ``task_id``/``run_id`` keys whose meaning differs from the row's.
+            payload=compact_payload(payload),
+        )
         return event
 
 
