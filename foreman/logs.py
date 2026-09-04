@@ -26,6 +26,11 @@ from typing import Any, IO, Mapping
 
 DEFAULT_LOGGER_NAME = "foreman"
 
+# Library convention: without a handler, ``logging.lastResort`` would print
+# bare WARNING+ messages to stderr from any program importing Foreman. The
+# NullHandler keeps the engine silent until the CLI configures JSON logging.
+logging.getLogger(DEFAULT_LOGGER_NAME).addHandler(logging.NullHandler())
+
 #: Fields that lead every line, in this order, when they are present.
 LEADING_FIELDS: tuple[str, ...] = ("project_id", "task_id", "run_id", "step")
 

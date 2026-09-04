@@ -290,20 +290,40 @@ proxies `/api` requests to `http://127.0.0.1:8080` by default.
 
 ## Autonomous entry point
 
-`foreman run <project>` is the engine's entry point; the dashboard's Run
-button spawns the same command. The bootstrap supervisor scripts that once
-drove this repository were removed in sprint 53. Run all Python commands
-through the repo virtual environment (`./venv/bin/foreman`).
+Foreman has two engine entry points, and they are the only ones:
+
+```bash
+foreman run <project> [--task TASK_ID] [--json-logs]   # one pass, then exit
+foreman serve <project> [--poll-seconds N] [--once]    # resident worker
+```
+
+`foreman run` advances the active sprint until nothing is runnable and exits;
+the dashboard's Run button spawns the same command. `foreman serve` keeps the
+engine resident: when a pass has nothing to do it waits until another process
+writes to the database or the poll interval elapses, then runs another pass, so
+work queued later is picked up without a person pressing Run. It logs JSON
+lines on stderr rather than printing, isolates a failing task by blocking it
+with an attention event instead of dying, and exits 0 on SIGTERM.
+
+Both take a per-project **engine lock** (a lease with `resource_type="engine"`),
+so only one engine can touch a project at a time; a second one exits non-zero
+naming the holder. See
+[ADR-0011](docs/adr/ADR-0011-resident-engine-and-project-lock.md) and
+[§6.1 of the manual](docs/MANUAL.md#61-foreman-serve-the-resident-engine).
+
+The bootstrap supervisor scripts that once drove this repository were removed
+in sprint 53. Run all Python commands through the repo virtual environment
+(`./venv/bin/foreman`).
 
 ## Next implementation slice
 
 Phase 0 of the production readiness review
 (`docs/reviews/production-readiness-review.md`) shipped as sprint 53: an
-unattended run is safe on one machine. No implementation sprint is currently
-active. Sprint 54 opens Phase 1 from `docs/sprints/backlog.md`: a resident
-`foreman serve` worker, an intake endpoint, a policy matrix, a planner step,
-worktree isolation, pull-request integration, and identity with
-notifications. `docs/sprints/current.md` lists the suggested slice order.
+unattended run is safe on one machine. Sprint 54 is Phase 1. Slice 1, the
+resident `foreman serve` worker and the project engine lock, has landed; next
+is the engine command table the dashboard and CLI write to, then the intake
+endpoint, the policy matrix, a per-task planner step, and worktree isolation.
+`docs/sprints/current.md` lists the slice order.
 
 ## Validation
 

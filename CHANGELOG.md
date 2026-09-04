@@ -7,6 +7,31 @@ memory changes rather than versioned product releases.
 
 ## [Unreleased]
 
+### Sprint 54 — Phase 1 resident engine and intake
+
+- opened sprint 54 from Phase 1 of the production readiness review
+  (`docs/reviews/production-readiness-review.md`).
+- **slice 1, resident engine**
+  (`feat/task-add-foreman-serve-resident-engine-worker-with-a-project-engine-lock`):
+  new `foreman serve <project-id> [--poll-seconds N] [--once]` keeps the engine
+  resident — each pass runs `run_project` once, and an idle pass waits on
+  `PRAGMA data_version` or the poll interval instead of exiting, so work queued
+  by another process is picked up without a person pressing Run. New
+  `foreman/engine_lock.py` enforces one engine per project through a lease with
+  `resource_type="engine"` (no migration: the `leases` table already supports
+  arbitrary resource types), renewed from a daemon timer thread on its own
+  store connection; `foreman run` takes the same lock, so neither can start
+  while the other is resident. A task whose execution raises is blocked with
+  the error as its `blocked_reason` plus an `engine.attention_needed` event and
+  the service continues after a backoff (5 s, doubling, capped at 5 minutes,
+  reset after a clean pass); SIGTERM settles the active run as `killed`, leaves
+  the task resumable, releases the lock, and exits 0. New `foreman/logs.py`
+  emits JSON lines on stderr — `serve` never prints, and the orchestrator
+  mirrors every persisted event to the same logger. Retention pruning and crash
+  recovery are gated behind `run_project(maintenance=...)` so idle wakes stay
+  cheap. Recorded as ADR-0011; `foreman run --json-logs` opts into the same
+  log format.
+
 ### Sprint 53 — Phase 0 unattended safety
 
 - opened sprint 53 from Phase 0 of the production readiness review

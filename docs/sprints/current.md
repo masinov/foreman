@@ -23,12 +23,23 @@ decides where a human is required.
 
 | # | Slice | Status | Branch / task | Deliverable |
 |---|-------|--------|---------------|-------------|
-| 1 | `foreman serve` resident worker: project engine lock with a timer heartbeat, idle wake on `data_version`, SIGTERM stop, per-task failure isolation with backoff, structured JSON logs | todo | dogfood task `FM-…` (engine-run) | `foreman/serve.py`, `foreman/logs.py`, `foreman serve`, ADR-0011, `tests/test_serve.py` |
+| 1 | `foreman serve` resident worker: project engine lock with a timer heartbeat, idle wake on `data_version`, SIGTERM stop, per-task failure isolation with backoff, structured JSON logs | done | `feat/task-add-foreman-serve-resident-engine-worker-with-a-project-engine-lock` | `foreman/serve.py`, `foreman/engine_lock.py`, `foreman/logs.py`, `foreman serve`, ADR-0011, `tests/test_serve.py` |
 | 2 | Engine command table and resident status: dashboard Run/Stop and the CLI write commands the resident engine consumes; API reports the resident engine; dead-letter reporting for tasks blocked by the engine | todo | dogfood task (engine-run) | migration, `engine_commands`, dashboard wiring, tests |
 | 3 | Intake endpoint: project-level, API-token authenticated, idempotent on an external reference, source metadata, policy-chosen initial status; sprint optional over a continuous queue | todo | | `POST /api/projects/{id}/intake`, tokens, tests |
 | 4 | Policy matrix v1: `triage` and `notification` policies join `merge_approval` and `plan_approval`; task-type rules; per-task overrides | todo | | settings, models, orchestrator, tests |
 | 5 | Planner step per task producing criteria and a protected acceptance test; architect role repurposed to once-per-task | todo | | role, workflow, tests |
 | 6 | Worktree per task under a Foreman-owned directory | todo | | `foreman/git.py`, orchestrator, tests |
+
+### Slice 1 notes
+
+Landed as described, with two decisions worth carrying forward:
+
+- The engine lock is a lease row (`resource_type="engine"`), not a lock file,
+  so no migration was needed and a crashed engine frees its project by expiry
+  (120 s) rather than leaving state a human must clean up. ADR-0011.
+- The dashboard's Run button still spawns a `foreman run` subprocess, which now
+  competes for that lock instead of cooperating with the resident worker. This
+  is the concrete reason slice 2 (the engine command table) comes next.
 
 ### Decisions taken at open
 
