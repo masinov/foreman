@@ -18,7 +18,15 @@ import {
   Topbar,
 } from "./components";
 import { setDashboardToken } from "./api";
-import { costUnknownNote, deriveEngineState, formatCompactCount, formatCount, formatSprintStatus } from "./format";
+import {
+  costUnknownNote,
+  deriveEngineState,
+  engineState,
+  formatCompactCount,
+  formatCount,
+  formatEngineSummary,
+  formatSprintStatus,
+} from "./format";
 import { buildDashboardPath, buildProjectPath, buildSprintPath, parseRoute } from "./routing";
 
 const INITIAL_EVENTS_LIMIT = 50;
@@ -113,6 +121,7 @@ export default function App({ services, browser }) {
   const [titleDraft, setTitleDraft] = useState("");
   const [dismissedAttentionIds, setDismissedAttentionIds] = useState(() => new Set());
   const [rolesOpen, setRolesOpen] = useState(false);
+  const [engineStatus, setEngineStatus] = useState(null);
 
   function handleError(error) {
     if (error && error.status === 401) {
@@ -175,20 +184,27 @@ export default function App({ services, browser }) {
     if (!projectId) {
       setCurrentProject(null);
       setCurrentSprints([]);
+      setEngineStatus(null);
       return null;
     }
-    const [projectPayload, sprintPayload, gatesPayload] = await Promise.all([
+    // The engine view is a separate read on purpose: it is the only part of
+    // this screen that answers "is an engine resident right now", and a
+    // backend without the route must not blank the whole project page.
+    const [projectPayload, sprintPayload, gatesPayload, enginePayload] = await Promise.all([
       services.getProject(projectId),
       services.listProjectSprints(projectId),
       services.listGates(projectId, { status: "pending" }).catch(() => ({ gates: [] })),
+      services.agentStatus ? services.agentStatus(projectId).catch(() => null) : null,
     ]);
     setCurrentProject(projectPayload);
     setCurrentSprints(sprintPayload.sprints);
     setPendingGates(gatesPayload.gates || []);
+    setEngineStatus(enginePayload ?? projectPayload.engine ?? null);
     return {
       project: projectPayload,
       sprints: sprintPayload.sprints,
       gates: gatesPayload.gates || [],
+      engine: enginePayload,
     };
   }
 
@@ -536,6 +552,8 @@ export default function App({ services, browser }) {
     }
   }
 
+  // Pause is a queued command, not a kill: the call returns as soon as the
+  // engine has been told, and the engine settles its own running step.
   async function handleStopAgent() {
     if (!route.projectId) return;
     setIsActionPending(true);
@@ -722,6 +740,8 @@ export default function App({ services, browser }) {
     : null;
 
   const topbarProjectTotals = currentProject?.totals || projects.find((p) => p.id === route.projectId)?.totals || null;
+  const currentEngineStatus = engineStatus ?? currentProject?.engine ?? null;
+  const currentEngineState = engineState(currentEngineStatus);
 
   if (authRequired) {
     return <TokenPrompt onSubmit={submitDashboardToken} />;
@@ -734,7 +754,11 @@ export default function App({ services, browser }) {
         currentProject={topbarProject}
         currentSprint={currentSprint}
         projectTotals={topbarProjectTotals}
-        projectStatus={deriveEngineState(currentProject || projects.find((project) => project.id === route.projectId))}
+        projectStatus={deriveEngineState(
+          currentEngineStatus
+            ? { ...(currentProject || {}), engine: currentEngineStatus }
+            : currentProject || projects.find((project) => project.id === route.projectId),
+        )}
         onOpenDashboard={() => navigateTo(buildDashboardPath())}
         onSelectProject={(projectId) => navigateTo(buildProjectPath(projectId))}
         onSelectSprint={(sprintId) => navigateTo(buildSprintPath(route.projectId, sprintId))}
@@ -758,6 +782,7 @@ export default function App({ services, browser }) {
             project={currentProject}
             sprints={currentSprints}
             pendingGates={pendingGates}
+            engineStatus={currentEngineStatus}
             onSelectSprint={async (sprintId) => { await refreshSprintScope(sprintId); navigateTo(buildSprintPath(route.projectId, sprintId)); }}
             onOpenNewSprint={() => setNewSprintOpen(true)}
             onTransitionSprint={handleTransitionSprint}
@@ -897,30 +922,40 @@ export default function App({ services, browser }) {
                   ) : null}
                   {currentSprint.status === "active" ? (
                     <>
-                      {currentProject?.agent_running ? (
+                      {currentEngineState === "resident" ? (
                         <button
                           className="btn-stop"
                           type="button"
                           disabled={isActionPending}
-                          title="Stop the running agent"
-                          aria-label="Stop agent"
+                          title="Pause the engine"
+                          aria-label="Pause engine"
                           onClick={handleStopAgent}
                         >
                           <svg viewBox="0 0 16 16" width="12" height="12"><rect x="3" y="3" width="10" height="10" rx="1"/></svg>
-                          Stop
+                          Pause
                         </button>
                       ) : (
                         <button
                           className="btn-action"
                           type="button"
                           disabled={isActionPending}
-                          title="Run the agent on this sprint"
+                          title={
+                            currentEngineState === "paused"
+                              ? "Resume the engine"
+                              : "Run the agent on this sprint"
+                          }
                           aria-label="Run agent"
                           onClick={handleStartAgent}
                         >
                           ▶ Run
                         </button>
                       )}
+                      <span
+                        className={`engine-state engine-${currentEngineState}`}
+                        title="Engine residency and heartbeat"
+                      >
+                        {formatEngineSummary(currentEngineStatus)}
+                      </span>
                       <button
                         className="btn-secondary"
                         type="button"

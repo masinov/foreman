@@ -237,6 +237,10 @@ foreman task unblock <task-id>
 foreman task cancel <task-id>
 ```
 
+`task unblock` refuses a task parked at a human gate (use `foreman approve` or
+`foreman deny` for those) and clears the engine's dead letters — see
+[Dead-letter kinds](#dead-letter-kinds).
+
 `--depends-on` ids are validated to exist in the same project. `task override`
 step ids are validated against the project's workflow. Example:
 
@@ -312,9 +316,8 @@ anyone pressing Run.
 
 **One engine per project.** Before it touches a task, `serve` takes a lease with
 `resource_type="engine"` on the project id, and holds it for the whole session.
-`foreman run` takes the same lock. A second `serve` — or a `run`, including the
-one the dashboard's Run button spawns — exits non-zero with a message naming the
-holder:
+`foreman run` takes the same lock. A second `serve` — or a `run` — exits
+non-zero with a message naming the holder:
 
 ```
 Another Foreman engine is already running project 'foreman' (lock holder
@@ -925,9 +928,48 @@ npm --prefix frontend run dev         # frontend only; proxies /api → :8080
 
 The backend (`foreman/dashboard_backend.py`) is a thin FastAPI transport over
 the `DashboardService` (`foreman/dashboard_service.py`); the service is the only
-thing that touches the store. A fresh service is constructed per request, but
-the running-agent subprocess registry is **module-level and lock-guarded** so
-Run/Stop survives request boundaries.
+thing that touches the store. A fresh service is constructed per request and
+holds no process handles: everything Run and Pause do survives request
+boundaries because it lives in SQLite, not in the web process.
+
+### Run, Pause, and the engine header
+
+The header reports the engine, not a subprocess: **resident** (an engine holds
+the project's engine lock and is heartbeating it), **paused**, or **not
+running**, with the age of the last heartbeat.
+
+| Control | What it does |
+|---|---|
+| **Run** | Enqueues `resume`. A task-scoped start also enqueues `run_task`. If no engine is resident, a detached `foreman serve` is spawned first (see below) and picks the commands up on its first pass. |
+| **Pause** | Enqueues `pause` and returns immediately. The engine terminates its running agent step and settles that run as `killed` with the task **resumable**; no task status changes. |
+| **Stop** on a task card | Enqueues `stop_task`. The engine blocks the task if it is the one running, and rejects the command with a reason if it is not. |
+
+The dashboard never kills an engine. If a `foreman serve` must go away
+entirely, that is `shutdown` (`foreman engine shutdown <project>`), which
+releases the lock and exits 0.
+
+The fallback spawn is for the single-machine case: with nothing resident there
+is no engine to send `resume` to, so the service starts
+`foreman serve <project> --db <path>` detached, with stdout and stderr appended
+to `.foreman/serve.log` in the project's context directory. The requester is
+recorded on the queued command either way, so the command log answers "who
+started this".
+
+### Dead-letter kinds
+
+`blocked` covers two different situations, and the dashboard, `foreman task
+show`, `foreman board`, and `foreman status` all name which one:
+
+| Kind | Means | Cleared by |
+|---|---|---|
+| `gate` | The task is parked at a `_builtin:human_gate` step, waiting for a decision. | `foreman approve` / `foreman deny`, or Approve/Deny on the card |
+| `engine` | The engine's dead letter: loop limit, unhandled outcome, cost or time gate, branch violation, failure isolation, or a `stop_task`. | `foreman task unblock`, after fixing whatever stopped it |
+
+The kind is derived, not stored: the task's persisted `workflow_current_step`
+is looked up in the project's workflow, and a step run by
+`_builtin:human_gate` is a gate. A persisted step alone is not enough, because
+the engine also persists a resume point when it blocks a task after a failure.
+Project summaries carry `blocked_gate` and `blocked_engine` counts.
 
 ### Access and exposure
 
@@ -967,7 +1009,7 @@ login and actor attribution arrive in Phase 1.
 | Method & path | Purpose |
 |---|---|
 | `GET /api/projects` · `POST /api/projects` | list / create projects |
-| `GET /api/projects/{id}` | project payload (incl. `agent_running`, totals) |
+| `GET /api/projects/{id}` | project payload (incl. `engine`, `blocked_gate`/`blocked_engine`, totals) |
 | `GET/PATCH /api/projects/{id}/settings` | read / update settings |
 | `GET/POST /api/projects/{id}/sprints` | list / create sprints |
 | `GET /api/sprints/{id}` · `PATCH` · `DELETE` | sprint detail / edit / delete |
@@ -977,7 +1019,9 @@ login and actor attribution arrive in Phase 1.
 | `GET /api/tasks/{id}` · `PATCH` · `DELETE` | task detail / edit / delete |
 | `POST /api/tasks/{id}/stop\|cancel\|approve\|deny` | task actions |
 | `POST /api/tasks/{id}/messages` | post a human message to a task |
-| `POST /api/projects/{id}/agent/start\|stop` | start / stop a `foreman run` |
+| `GET /api/projects/{id}/agent/status` | engine residency, pause state, heartbeat age, current task, recent commands |
+| `POST /api/projects/{id}/agent/start\|stop` | queue `resume` (spawning `foreman serve` if none is resident) / queue `pause` |
+| `GET /api/projects/{id}/engine/commands` | recent engine commands (`limit`, `status`) |
 | `POST /api/projects/{id}/meta/message` | one manager chat turn (NDJSON stream) |
 | `GET /api/projects/{id}/meta/history` | paginated chat history (`limit`/`before`/`has_more`) |
 | `DELETE /api/projects/{id}/meta/session` | clear the manager session |
@@ -1243,8 +1287,9 @@ See [ADR-0011](adr/ADR-0011-resident-engine-and-project-lock.md).
 | Manager chat "forgot" recent state | It shouldn't — the state header is regenerated each turn from the DB. If stale, confirm the dashboard is hitting the right `.foreman.db`. |
 | `meta/supervise` returns 409 | The `engine.attention_needed` event was already consumed by a prior supervision turn (idempotency guard). |
 | Cost shows `$0.00` but tokens are counted | Expected for third-party Anthropic-compatible endpoints; see `zero_cost_token_runs` in totals. |
-| Dashboard Run/Stop toggle out of sync | `agent_running` is derived from the module-level process registry; a stale entry clears when the subprocess exits. |
-| `Another Foreman engine is already running project ...` | A resident `foreman serve` (or another `run`, including one the dashboard spawned) holds the project engine lock. Stop it, or wait out its 120 s lease if the holder was killed. |
+| Dashboard header says "not running" while work is happening | Residency is the engine lease. A `foreman run` that crashed leaves the lease until it expires (120 s); an engine started outside the dashboard shows as resident as soon as it takes the lock. |
+| Dashboard Pause seems to do nothing | `pause` is queued, not signalled. Check `foreman engine status <project>`: a `pending` command means no engine is resident to apply it, and it will be rejected as stale when one starts. |
+| `Another Foreman engine is already running project ...` | A resident `foreman serve` (or another `run`) holds the project engine lock. Stop it with `foreman engine shutdown <project>`, or wait out its 120 s lease if the holder was killed. |
 | `serve` never picks up a queued task | Check the task is `todo` in the **active** sprint and its dependencies are satisfied. `serve.idle` with `stop_reason` tells you which. |
 | SSE/watch feels laggy | Both gate on `PRAGMA data_version` at 0.25 s; they only re-query after another connection commits. A same-process writer won't bump it, but those loops never write. |
 

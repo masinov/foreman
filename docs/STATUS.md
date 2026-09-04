@@ -9,6 +9,22 @@
   (`foreman run foreman`) wherever the engine can carry them; findings are
   recorded in `docs/reviews/sprint-54-live-run-notes.md`.
 - Latest completed sprint: `sprint-53-phase0-unattended-safety`.
+- Last merged branch: `fix/runner-quota-exhaustion` (sprint 54 live-run
+  fix F2), after slice 1 (`a462659`, merged by the engine) and
+  `docs/sprint-54-live-run-1`.
+- Current implementation branch: none by hand. Next: sprint 54 slice 3
+  (intake endpoint and API tokens) as a dogfood task picked up by
+  `foreman serve foreman`.
+
+## Active branches
+
+- `feat/task-rewire-the-dashboard-onto-the-resident-engine-and-report-dead-letter-tasks`
+  — sprint 54 slice 2b: the dashboard steers the engine through
+  `engine_commands` and holds no process handles; new
+  `foreman/engine_control.py`; derived `blocked_kind` (gate vs engine) across
+  the API, `foreman task show`, `foreman board`, and `foreman status`;
+  ADR-0002 amended
+
 - Last merged branch: `fix/task-branch-refresh` (sprint 54 live-run fix
   F3), after F2, slice 1 (`a462659`, merged by the engine), and the docs
   branches.
@@ -143,10 +159,10 @@
   `killed`, releases the lock, and exits 0 (`foreman run` keeps 130).
 - Recorded as ADR-0011. Suite after merging `main`: 656 tests, OK
   (1 skipped: `tests/test_e2e.py` needs playwright).
-- **Known gap, closed by the next slice:** the dashboard's Run button still
-  spawns a `foreman run` subprocess, which now competes for the engine lock
-  rather than cooperating with a resident worker. Slice 2 replaces it with the
-  engine command table.
+- **Known gap at the time, now closed:** the dashboard's Run button spawned a
+  `foreman run` subprocess that competed for the engine lock rather than
+  cooperating with a resident worker. Slice 2a added the engine command table
+  and slice 2b moved the dashboard onto it.
 
 ## Previous update — sprint 54 live run 1: runner progress lines
 
@@ -290,7 +306,7 @@
 - Validation: backend suite 582 passing (+5); frontend 4 passing (added a
   supervision-banner test, fixed two pre-existing failures); dist rebuilt.
 
-## Latest update — supervision-trigger completion + operator manual
+## Previous update — supervision-trigger completion + operator manual
 
 - Branch `feat/supervision-triggers-and-docs`. Closes the one gap found by the
   independent backend audit (`docs/reviews/review-md-backend-audit.md`): the

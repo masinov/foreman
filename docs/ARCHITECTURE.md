@@ -181,6 +181,39 @@ is also the audit trail: who asked, when, and what the engine did about it.
   than in the orchestrator.
 - `foreman/cli.py` — `foreman engine status|pause|resume|shutdown|run-task|
   stop-task`, which read the lock view and enqueue commands.
+- `foreman/engine_control.py` — the read-side derivations every surface needs
+  over the lock view and the command log, plus the local `foreman serve`
+  bootstrap. It exists so the CLI and the dashboard cannot answer "is an
+  engine resident", "is it paused", or "why is this task blocked" differently
+  from the same database:
+  - `describe_engine()` assembles residency, heartbeat age, lease expiry, the
+    paused state (derived from the last applied `pause`/`resume`, because the
+    flag itself lives in the serve process's memory), the task with a running
+    run, and the recent command log;
+  - `resolve_gate_steps()` and `blocked_kind()` classify a blocked task as a
+    `gate` (parked at a `_builtin:human_gate` step) or an `engine` dead letter
+    (loop limit, unhandled outcome, cost or time gate, branch violation,
+    failure isolation, `stop_task`), deriving the answer from the workflow
+    definition rather than a new column;
+  - `spawn_serve()` starts a detached `foreman serve` writing to
+    `.foreman/serve.log`, injected as `ServeSpawner` so callers can substitute
+    it.
+
+### The dashboard holds no process handles
+
+The dashboard used to spawn `foreman run` and keep the handle in a
+module-level dict, so Stop meant killing a process and blocking every
+in-progress task — a dead letter the engine never declared. It now steers the
+engine the same way every other surface does (ADR-0002 amendment):
+
+- `GET /api/projects/{id}/agent/status` returns the engine view above,
+- Run enqueues `resume` (plus `run_task` for a task-scoped start), Pause
+  enqueues `pause`, and a task Stop enqueues `stop_task`,
+- `GET /api/projects/{id}/engine/commands` exposes the command log,
+- when no engine is resident there is nobody to send `resume` to, so the
+  service spawns a detached `foreman serve` through its injected spawner —
+  the single-machine bootstrap, and the only place the dashboard starts a
+  process at all.
 
 ### Inspection and dashboard surfaces
 
@@ -410,10 +443,16 @@ The following items were implemented as hardening before the 1.0 release:
 
 ## Next architectural slice
 
-The command table has landed, but the dashboard has not moved onto it yet: it
-still spawns a `foreman run` subprocess and tracks the process handle in a
-module-level `_RUNNING_PROCS` dict in `foreman/dashboard_service.py`, which is
-lost when the dashboard restarts and now competes for the engine lock rather
-than cooperating with the resident worker. The next slice rewires Run and Stop
-onto `engine_commands`, adds the engine status view to the API, and reports
-tasks the engine has dead-lettered into `blocked`.
+The engine is resident, steerable through `engine_commands`, and every surface
+that controls it now goes through that table. What it still cannot do is
+accept work from anything other than a person at a keyboard: task creation
+lives on `dashboard_service.create_task`, needs a sprint, and has no
+authentication, no idempotency, and no record of where the request came from.
+
+The next slice (sprint 54 slice 3) adds the intake endpoint:
+`POST /api/projects/{id}/intake`, authenticated with per-project API tokens,
+idempotent on an external reference so a retrying caller cannot create the
+same task twice, carrying source metadata, and choosing the initial status by
+policy — with the sprint optional, over a continuous queue. Slice 4 then adds
+the policy matrix (`triage` and `notification` joining `merge_approval` and
+`plan_approval`) that decides where a human is actually required.

@@ -3,8 +3,12 @@ import { describe, it, expect } from "vitest";
 import {
   costUnknownNote,
   deriveEngineState,
+  engineState,
   eventMatchesFilter,
+  formatBlockedKind,
+  formatEngineSummary,
   formatEventSummary,
+  formatHeartbeatAge,
   formatSelectionMode,
   formatWorkflowLabel,
   getEventCategory,
@@ -83,5 +87,45 @@ describe("formatEventSummary", () => {
     expect(
       formatEventSummary({ event_type: "workflow.model_selected", payload: { model: "claude-opus-4-8", source: "ladder", step: "review" } }),
     ).toBe("Model: claude-opus-4-8 (ladder) @ review");
+  });
+});
+
+describe("resident engine state", () => {
+  it("reads residency and pause state from the agent status payload", () => {
+    expect(engineState({ resident: true, paused: false })).toBe("resident");
+    expect(engineState({ resident: true, paused: true })).toBe("paused");
+    expect(engineState({ resident: false, paused: false })).toBe("stopped");
+    expect(engineState(null)).toBe("stopped");
+  });
+
+  it("summarises the engine with its heartbeat age", () => {
+    expect(formatEngineSummary({ resident: true, paused: false, heartbeat_age_seconds: 4 })).toBe(
+      "Engine: resident · heartbeat 4s ago",
+    );
+    expect(formatEngineSummary({ resident: true, paused: true, heartbeat_age_seconds: 125 })).toBe(
+      "Engine: paused · heartbeat 2m ago",
+    );
+    expect(formatEngineSummary({ resident: false })).toBe("Engine: not running");
+  });
+
+  it("rounds the heartbeat age to what a header can show", () => {
+    expect(formatHeartbeatAge(0)).toBe("0s ago");
+    expect(formatHeartbeatAge(59.6)).toBe("60s ago");
+    expect(formatHeartbeatAge(3600)).toBe("1h ago");
+    expect(formatHeartbeatAge(null)).toBeNull();
+  });
+
+  it("treats a paused engine as not running for the project card", () => {
+    expect(deriveEngineState({ engine: { resident: true, paused: false } })).toBe("running");
+    expect(deriveEngineState({ engine: { resident: true, paused: true } })).toBe("blocked");
+    expect(deriveEngineState({ engine: { resident: false }, task_counts: { blocked: 0 } })).toBe("idle");
+  });
+});
+
+describe("formatBlockedKind", () => {
+  it("names the two ways a task ends up blocked", () => {
+    expect(formatBlockedKind("gate")).toBe("human gate");
+    expect(formatBlockedKind("engine")).toBe("engine");
+    expect(formatBlockedKind(null)).toBe("");
   });
 });

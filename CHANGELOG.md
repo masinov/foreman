@@ -64,6 +64,35 @@ memory changes rather than versioned product releases.
   `shutdown` is answered in seconds rather than after a six-hour quota wait,
   and a paused engine narrates `serve.paused` once at INFO and then at DEBUG
   the way an idle one does.
+- **slice 3, the dashboard on the resident engine + dead-letter reporting**
+  (`feat/task-rewire-the-dashboard-onto-the-resident-engine-and-report-dead-letter-tasks`):
+  the dashboard no longer manages processes. `_RUNNING_PROCS` and its
+  process-handle helpers are gone from `foreman/dashboard_service.py`; Run
+  enqueues `resume` (plus `run_task` for a task-scoped start), Pause enqueues
+  `pause` and changes no task status, and a task Stop enqueues `stop_task` for
+  the engine to act on. New `GET /api/projects/{id}/agent/status` reports
+  `resident`, `holder_id`, `heartbeat_age_seconds`, `paused`, `current_task`,
+  and the last ten commands; new `GET /api/projects/{id}/engine/commands`
+  lists the log. With no engine resident there is nobody to send `resume` to,
+  so the service spawns a detached `foreman serve <project> --db <path>`
+  (stdout and stderr appended to `.foreman/serve.log`) through an injectable
+  `ServeSpawner` — the single-machine bootstrap, and the only process the
+  dashboard starts. New `foreman/engine_control.py` holds the read-side
+  derivations the CLI and the dashboard share, so the two surfaces cannot
+  answer "is an engine resident", "is it paused", or "why is this task
+  blocked" differently from the same database. Dead-letter reporting: a
+  derived `blocked_kind` of `gate` (parked at a `_builtin:human_gate` step) or
+  `engine` (loop limit, unhandled outcome, cost or time gate, branch
+  violation, failure isolation, `stop_task`) on task payloads, `foreman task
+  show`, and `foreman board`, with `blocked_gate`/`blocked_engine` counts on
+  project summaries and `foreman status` — derived from the workflow
+  definition, no schema change and no new task status. `foreman task unblock`
+  now refuses only the `gate` kind, so an engine dead letter with a persisted
+  resume step can be cleared instead of being mistaken for a gate. The
+  frontend header shows "Engine: resident / paused / not running" with the
+  heartbeat age, its stop control says Pause, and blocked cards carry the
+  kind. ADR-0002 amended: the dashboard controls the engine only through the
+  command table.
 - `fix/task-branch-refresh`: every develop visit first merges the default
   branch into the task branch when it is behind and the merge is clean
   (`engine.branch_sync`, mode `refresh`, with `commits_behind`); a refresh

@@ -108,8 +108,21 @@ function createMockServices() {
           branch_name: "feat/react-dashboard-foundation",
           assigned_role: "security_reviewer",
           blocked_reason: "Awaiting human approval",
+          blocked_kind: "gate",
           acceptance_criteria: "Gate is resolved with a human decision.",
           totals: { run_count: 1, total_token_count: 18000, total_cost_usd: 0.5 },
+        },
+        {
+          id: "task-4",
+          title: "Rebuild the index",
+          status: "blocked",
+          task_type: "chore",
+          branch_name: "feat/rebuild-index",
+          assigned_role: "developer",
+          blocked_reason: "Step 'develop' exceeded its visit limit",
+          blocked_kind: "engine",
+          acceptance_criteria: "Index rebuild lands.",
+          totals: { run_count: 3, total_token_count: 9000, total_cost_usd: 0.2 },
         },
       ],
     }),
@@ -186,6 +199,22 @@ function createMockServices() {
       return () => {};
     }),
     listGates: vi.fn().mockResolvedValue({ gates: [] }),
+    agentStatus: vi.fn().mockResolvedValue({
+      project_id: "proj-1",
+      resident: true,
+      paused: false,
+      state: "resident",
+      holder_id: "engine-1",
+      heartbeat_age_seconds: 4,
+      current_task: { id: "task-2", title: "Build the frontend" },
+      commands: [],
+    }),
+    stopAgent: vi.fn().mockResolvedValue({
+      command: { id: "cmd-1", command: "pause", status: "pending" },
+    }),
+    startAgent: vi.fn().mockResolvedValue({
+      command: { id: "cmd-2", command: "resume", status: "pending" },
+    }),
     metaHistory: vi.fn().mockResolvedValue({ turns: [], has_more: false }),
     listRoles: vi.fn().mockResolvedValue({
       roles: [
@@ -230,6 +259,9 @@ describe("React dashboard foundation", () => {
     expect(await screen.findByText("React foundation")).toBeInTheDocument();
     expect(services.getProject).toHaveBeenCalledWith("proj-1");
     expect(services.listProjectSprints).toHaveBeenCalledWith("proj-1");
+    // The project header reports the engine, and its stop control pauses it.
+    expect(await screen.findByText("Engine: resident · heartbeat 4s ago")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Pause engine" })).toBeInTheDocument();
   });
 
   it("sends human guidance through the selected task context", async () => {
@@ -311,6 +343,56 @@ describe("React dashboard foundation", () => {
       expect(services.superviseMeta).toHaveBeenCalledWith("proj-1", "event-attn");
     });
     expect(await screen.findByText("Recommend unblocking and retrying.")).toBeInTheDocument();
+  });
+
+  it("shows the resident engine in the sprint header and pauses it", async () => {
+    const { services } = createMockServices();
+    window.history.replaceState({}, "", "/dashboard/projects/proj-1/sprints/sprint-1");
+
+    render(<App services={services} browser={window} />);
+
+    expect(await screen.findByText("Engine: resident · heartbeat 4s ago")).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "Pause engine" }));
+
+    await waitFor(() => {
+      expect(services.stopAgent).toHaveBeenCalledWith("proj-1");
+    });
+    expect(services.agentStatus).toHaveBeenCalledWith("proj-1");
+  });
+
+  it("offers Run when no engine is resident", async () => {
+    const { services } = createMockServices();
+    services.agentStatus.mockResolvedValue({
+      project_id: "proj-1",
+      resident: false,
+      paused: false,
+      state: "stopped",
+      holder_id: null,
+      heartbeat_age_seconds: null,
+      current_task: null,
+      commands: [],
+    });
+    window.history.replaceState({}, "", "/dashboard/projects/proj-1/sprints/sprint-1");
+
+    render(<App services={services} browser={window} />);
+
+    expect(await screen.findByText("Engine: not running")).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "Run agent" }));
+
+    await waitFor(() => {
+      expect(services.startAgent).toHaveBeenCalledWith("proj-1");
+    });
+  });
+
+  it("badges blocked tasks with the kind of block on the board", async () => {
+    const { services } = createMockServices();
+    window.history.replaceState({}, "", "/dashboard/projects/proj-1/sprints/sprint-1");
+
+    render(<App services={services} browser={window} />);
+
+    expect(await screen.findByText("Rebuild the index")).toBeInTheDocument();
+    expect(screen.getByText("human gate")).toBeInTheDocument();
+    expect(screen.getByText("engine")).toBeInTheDocument();
   });
 
   it("opens the roles modal from the topbar and lists roles", async () => {

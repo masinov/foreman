@@ -3,11 +3,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   costUnknownNote,
   deriveEngineState,
+  engineState,
   eventMatchesFilter,
+  formatBlockedKind,
   formatCompactCount,
   formatCount,
   formatDate,
   formatDuration,
+  formatEngineSummary,
   formatEventSummary,
   formatEventTime,
   formatProjectStatus,
@@ -322,7 +325,7 @@ const AGENT_MIN_WIDTH = 360;
 const AGENT_MAX_WIDTH = 820;
 const AGENT_DEFAULT_WIDTH = 540;
 
-export function SprintList({ project, sprints, pendingGates, onSelectSprint, onOpenNewSprint, onTransitionSprint, onDeleteSprint, onReorderSprints, onStartAgent, onStopAgent, onResolveGate, onSprintsChanged, services, isActionPending }) {
+export function SprintList({ project, sprints, pendingGates, engineStatus, onSelectSprint, onOpenNewSprint, onTransitionSprint, onDeleteSprint, onReorderSprints, onStartAgent, onStopAgent, onResolveGate, onSprintsChanged, services, isActionPending }) {
   const [agentCollapsed, setAgentCollapsed] = useState(!services);
   const [agentMounted, setAgentMounted] = useState(Boolean(services));
   const [agentWidth, setAgentWidth] = useState(AGENT_DEFAULT_WIDTH);
@@ -603,24 +606,28 @@ export function SprintList({ project, sprints, pendingGates, onSelectSprint, onO
     );
   }
 
-  const agentRunning = project.agent_running ?? (project.status === "running");
-  const runStopButton = agentRunning ? (
+  // "Running" is residency, not a process this page owns: an engine holds the
+  // project lock and heartbeats it, and Pause is a command it obeys.
+  const engineStatusPayload = engineStatus ?? project.engine ?? null;
+  const engineMode = engineState(engineStatusPayload);
+  const engineRunning = engineMode === "resident";
+  const runStopButton = engineRunning ? (
     <button
       className="btn-stop"
       type="button"
-      title="Stop agent"
-      aria-label="Stop agent"
+      title="Pause the engine"
+      aria-label="Pause engine"
       disabled={isActionPending}
       onClick={onStopAgent}
     >
       <svg viewBox="0 0 16 16" width="12" height="12"><rect x="3" y="3" width="10" height="10" rx="1"/></svg>
-      Stop
+      Pause
     </button>
   ) : (
     <button
       className="btn-action"
       type="button"
-      title="Run agent"
+      title={engineMode === "paused" ? "Resume the engine" : "Run agent"}
       aria-label="Run agent"
       disabled={isActionPending}
       onClick={onStartAgent}
@@ -654,12 +661,23 @@ export function SprintList({ project, sprints, pendingGates, onSelectSprint, onO
                   Repo <span className="v">{project.repo_path}</span>
                 </span>
               </div>
-              {project.task_counts?.blocked > 0 ? (
+              <div className="project-meta">
+                <span className={`engine-state engine-${engineMode}`}>
+                  {formatEngineSummary(engineStatusPayload)}
+                </span>
+              </div>
+              {(project.blocked_gate || 0) + (project.blocked_engine || 0) > 0 ? (
                 <div className="project-badges">
-                  <span className="badge badge-warn">
-                    {project.task_counts.blocked} blocked
-                    {project.task_counts.blocked !== 1 ? " tasks" : " task"}
-                  </span>
+                  {project.blocked_gate > 0 ? (
+                    <span className="badge badge-warn">
+                      {project.blocked_gate} at a human gate
+                    </span>
+                  ) : null}
+                  {project.blocked_engine > 0 ? (
+                    <span className="badge badge-danger">
+                      {project.blocked_engine} blocked by the engine
+                    </span>
+                  ) : null}
                 </div>
               ) : null}
             </div>
@@ -688,7 +706,7 @@ export function SprintList({ project, sprints, pendingGates, onSelectSprint, onO
               <div className="pq-panel-label">
                 Active
                 {activeSprint ? (
-                  <span className={`pq-running-dot ${agentRunning ? "is-running" : ""}`} />
+                  <span className={`pq-running-dot ${engineRunning ? "is-running" : ""}`} />
                 ) : null}
               </div>
               {activeSprint ? (
@@ -850,6 +868,11 @@ export function TaskCard({ task, selected, onSelect, onApprove, onDeny, onStop }
       ) : null}
       {task.branch_name ? <div className="card-branch">{task.branch_name}</div> : null}
       {task.assigned_role ? <div className="card-role">Role: {task.assigned_role}</div> : null}
+      {task.blocked_kind ? (
+        <div className={`card-blocked-kind kind-${task.blocked_kind}`}>
+          {formatBlockedKind(task.blocked_kind)}
+        </div>
+      ) : null}
       {task.blocked_reason ? <div className="card-blocked-reason">{task.blocked_reason}</div> : null}
       {task.status === "in_progress" && onStop ? (
         <div className="card-actions" onClick={(event) => event.stopPropagation()}>

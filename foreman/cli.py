@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 from datetime import datetime, timezone
-import getpass
 import json
 import os
 from pathlib import Path
@@ -21,6 +20,13 @@ from .dashboard_runtime import (
     DEFAULT_FRONTEND_DEV_URL,
     STREAM_POLL_INTERVAL_SECONDS,
     run_dashboard_server,
+)
+from .engine_control import (
+    blocked_kind,
+    blocked_kind_counts,
+    default_command_requester,
+    describe_engine,
+    resolve_gate_steps,
 )
 from .engine_lock import EngineBusyError, EngineLock
 from .logs import configure_json_logging
@@ -176,6 +182,14 @@ def _resolve_db_path_or_print(
     except CliResolutionError as exc:
         print(str(exc), file=sys.stderr)
         return None
+
+
+#: What each dead-letter kind means to the person reading it, and which command
+#: clears it.
+_BLOCKED_KIND_HINTS = {
+    "gate": "waiting for `foreman approve` or `foreman deny`",
+    "engine": "blocked by the engine; clear with `foreman task unblock`",
+}
 
 
 def _format_task_counts(counts: dict[str, int]) -> str:
@@ -557,6 +571,8 @@ def handle_board(args: argparse.Namespace) -> int:
             return 0
 
         tasks = store.list_tasks(sprint_id=active_sprint.id)
+        gates = resolve_gate_steps(project.workflow_id)
+        blocked_counts = blocked_kind_counts(tasks, gates)
         counts = store.task_counts(sprint_id=active_sprint.id)
         totals = store.run_totals(project_id=project.id, sprint_id=active_sprint.id)
         task_totals = {
@@ -571,7 +587,8 @@ def handle_board(args: argparse.Namespace) -> int:
             (
                 f"Progress: done={counts['done']}/{task_count} | "
                 f"in_progress={counts['in_progress']} | "
-                f"blocked={counts['blocked']} | "
+                f"blocked={counts['blocked']} "
+                f"(gate={blocked_counts['gate']} engine={blocked_counts['engine']}) | "
                 f"todo={counts['todo']} | "
                 f"cancelled={counts['cancelled']}"
             ),
@@ -605,6 +622,9 @@ def handle_board(args: argparse.Namespace) -> int:
                 details.append(f"step={task.workflow_current_step}")
             if task.step_visit_counts:
                 details.append(f"visits={_format_step_visits(task.step_visit_counts)}")
+            kind = blocked_kind(task, gates)
+            if kind is not None:
+                details.append(f"blocked_kind={kind}")
             if task.blocked_reason:
                 details.append(f"reason={task.blocked_reason}")
             lines.append(_render_board_task_line(task.id, task.title, task.task_type, details))
@@ -776,6 +796,9 @@ def handle_task_show(args: argparse.Namespace) -> int:
     latest_run = runs[-1] if runs else None
     active_run = next((run for run in reversed(runs) if run.status == "running"), None)
     latest_event = events[-1] if events else None
+    kind = blocked_kind(
+        task, resolve_gate_steps(project.workflow_id if project is not None else None)
+    )
 
     lines = [
         "Task",
@@ -804,6 +827,8 @@ def handle_task_show(args: argparse.Namespace) -> int:
         lines.append(
             f"Executor overrides: {json.dumps(task.executor_overrides, sort_keys=True)}"
         )
+    if kind is not None:
+        lines.append(f"Blocked kind: {kind} ({_BLOCKED_KIND_HINTS[kind]})")
     if task.blocked_reason:
         lines.append(f"Blocked reason: {task.blocked_reason}")
 
@@ -1199,6 +1224,17 @@ def handle_status(args: argparse.Namespace) -> int:
         project_count = store.count_projects()
         active_sprint_count = store.count_active_sprints()
         task_counts = store.task_counts()
+        # Blocked splits by workflow, so the kinds are counted per project and
+        # summed: "12 blocked" is not actionable, "10 waiting on me, 2 dead
+        # letters" is.
+        blocked_counts = {"gate": 0, "engine": 0}
+        for project in store.list_projects():
+            gates = resolve_gate_steps(project.workflow_id)
+            project_counts = blocked_kind_counts(
+                store.list_tasks(project_id=project.id, status="blocked"), gates
+            )
+            for kind, value in project_counts.items():
+                blocked_counts[kind] += value
 
     lines = ["Status", f"Database: {store.db_path}"]
     if active_sprint_count == 0:
@@ -1208,6 +1244,10 @@ def handle_status(args: argparse.Namespace) -> int:
             f"Projects: {project_count}",
             f"Active sprints: {active_sprint_count}",
             _format_task_counts(task_counts),
+            (
+                f"Blocked: gate={blocked_counts['gate']} "
+                f"engine={blocked_counts['engine']}"
+            ),
         ]
     )
     _print_lines(*lines)
@@ -1911,41 +1951,6 @@ def handle_task_block(args: argparse.Namespace) -> int:
     return 0
 
 
-def _task_is_paused_at_human_gate(store: ForemanStore, task: Task) -> bool:
-    """True when a blocked task is waiting for `foreman approve` / `deny`.
-
-    A persisted ``workflow_current_step`` alone is not enough: the engine also
-    persists the resume point when it pauses a task for a backend quota or
-    blocks it after an engine-level failure, and those tasks are exactly the
-    ones ``foreman task unblock`` exists for. The step's role in the project's
-    workflow decides; when the workflow cannot be loaded or the step is
-    unknown, the gate builtin's own blocked reason is the tie-breaker.
-    """
-
-    if task.workflow_current_step is None:
-        return False
-    project = store.get_project(task.project_id)
-    workflow = None
-    if project is not None:
-        try:
-            roles = load_roles(default_roles_dir())
-            workflows = load_workflows(
-                default_workflows_dir(),
-                available_role_ids=set(roles),
-                role_outcomes={
-                    role_id: role.completion.outcomes for role_id, role in roles.items()
-                },
-            )
-            workflow = workflows.get(project.workflow_id)
-        except Exception:  # noqa: BLE001 - a broken workflow file must not hide the task
-            workflow = None
-    if workflow is not None:
-        step = workflow.get_step(task.workflow_current_step)
-        if step is not None:
-            return step.role == "_builtin:human_gate"
-    return (task.blocked_reason or "") == "Awaiting human approval"
-
-
 def handle_task_unblock(args: argparse.Namespace) -> int:
     """Handle ``foreman task unblock``."""
 
@@ -1961,7 +1966,9 @@ def handle_task_unblock(args: argparse.Namespace) -> int:
         if task.status != "blocked":
             print(f"Task {task.id} is not blocked.", file=sys.stderr)
             return 1
-        if _task_is_paused_at_human_gate(store, task):
+        project = store.get_project(task.project_id)
+        gates = resolve_gate_steps(project.workflow_id if project is not None else None)
+        if blocked_kind(task, gates) == "gate":
             print(
                 f"Task {task.id} is paused at a workflow gate; use `foreman approve` or `foreman deny` instead.",
                 file=sys.stderr,
@@ -2277,21 +2284,6 @@ def handle_dashboard(args: argparse.Namespace) -> int:
     return 0
 
 
-def default_command_requester() -> str:
-    """Name to record on a command when the caller did not pass ``--by``.
-
-    Commands are an audit trail — "who stopped this task" is the first
-    question anyone asks — so the requester is never left blank. The OS user
-    name is the best answer available from a terminal; a container without a
-    resolvable user falls back to a literal rather than failing the command.
-    """
-
-    try:
-        return getpass.getuser()
-    except Exception:  # noqa: BLE001 - no passwd entry, no USER, no LOGNAME
-        return "unknown"
-
-
 def _format_command_row(command: EngineCommand) -> str:
     parts = [
         f"- [{command.status}] {command.command}",
@@ -2319,13 +2311,14 @@ def handle_engine_status(args: argparse.Namespace) -> int:
         project = _resolve_project_or_print(store, args.project_id)
         if project is None:
             return 1
-        lock = store.get_engine_lock(project.id)
-        commands = store.list_engine_commands(project.id, limit=args.limit)
-        running = store.list_tasks(project_id=project.id, statuses=("in_progress",))
         # A `pause` that has been applied but not yet resumed is the engine's
         # current state, so the most recent applied pause/resume is what makes
         # "paused" visible to an operator who did not queue it themselves.
-        paused = _engine_is_paused(store, project.id)
+        engine = describe_engine(store, project.id, command_limit=args.limit)
+        lock = engine.lock
+        commands = engine.commands
+        running = store.list_tasks(project_id=project.id, statuses=("in_progress",))
+        paused = engine.paused
         db_path = store.db_path
 
     lines = [
@@ -2365,19 +2358,6 @@ def handle_engine_status(args: argparse.Namespace) -> int:
         lines.extend(_format_command_row(command) for command in commands)
     _print_lines(*lines)
     return 0
-
-
-def _engine_is_paused(store: ForemanStore, project_id: str) -> bool:
-    """True when the last applied pause/resume for a project was a pause."""
-
-    for command in store.list_engine_commands(project_id, limit=200):
-        if command.status != "completed":
-            continue
-        if command.command in {"pause", "shutdown"}:
-            return command.command == "pause"
-        if command.command == "resume":
-            return False
-    return False
 
 
 def handle_engine_command(args: argparse.Namespace) -> int:

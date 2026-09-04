@@ -25,6 +25,7 @@ from .dashboard_runtime import (
 )
 from .dashboard_service import (
     ACTIVITY_EVENT_LIMIT,
+    ENGINE_COMMAND_LIMIT,
     STREAM_BATCH_LIMIT,
     STREAM_HEARTBEAT_SECONDS,
     STREAM_POLL_INTERVAL_SECONDS,
@@ -584,15 +585,36 @@ def create_dashboard_app(
         resolved_by = str(data.get("resolved_by", "human"))
         return with_api(lambda api: api.resolve_gate(gate_id, resolution=resolution, resolved_by=resolved_by))
 
+    @app.get("/api/projects/{project_id}/agent/status")
+    async def agent_status(project_id: str) -> dict[str, Any]:
+        return with_api(lambda api: api.agent_status(project_id))
+
     @app.post("/api/projects/{project_id}/agent/stop")
-    async def stop_agent(project_id: str) -> dict[str, Any]:
-        return with_api(lambda api: api.stop_agent(project_id))
+    async def stop_agent(project_id: str, request: Request) -> dict[str, Any]:
+        data = await _read_json_body(request)
+        requested_by = data.get("requested_by") or None
+        return with_api(lambda api: api.stop_agent(project_id, requested_by=requested_by))
 
     @app.post("/api/projects/{project_id}/agent/start")
     async def start_agent(project_id: str, request: Request) -> dict[str, Any]:
         data = await _read_json_body(request)
         task_id = data.get("task_id") or None
-        return with_api(lambda api: api.start_agent(project_id, task_id=task_id))
+        requested_by = data.get("requested_by") or None
+        return with_api(
+            lambda api: api.start_agent(
+                project_id, task_id=task_id, requested_by=requested_by
+            )
+        )
+
+    @app.get("/api/projects/{project_id}/engine/commands")
+    async def list_engine_commands(
+        project_id: str,
+        limit: int = ENGINE_COMMAND_LIMIT,
+        status: str | None = None,
+    ) -> dict[str, Any]:
+        return with_api(
+            lambda api: api.list_engine_commands(project_id, limit=limit, status=status)
+        )
 
     @app.get("/api/tasks/{task_id}")
     async def get_task(task_id: str) -> dict[str, Any]:
@@ -608,8 +630,10 @@ def create_dashboard_app(
         return with_api(lambda api: api.update_task_fields(task_id, updates=data))
 
     @app.post("/api/tasks/{task_id}/stop")
-    async def stop_task(task_id: str) -> dict[str, Any]:
-        return with_api(lambda api: api.stop_task(task_id))
+    async def stop_task(task_id: str, request: Request) -> dict[str, Any]:
+        data = await _read_json_body(request)
+        requested_by = data.get("requested_by") or None
+        return with_api(lambda api: api.stop_task(task_id, requested_by=requested_by))
 
     @app.post("/api/tasks/{task_id}/cancel")
     async def cancel_task(task_id: str) -> dict[str, Any]:

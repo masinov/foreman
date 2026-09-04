@@ -206,9 +206,10 @@ introduced. `blocked` already means exactly what a stopped task needs it to
 mean — not runnable until a human or the manager says otherwise — and every
 surface that already reports blocked tasks reports stopped ones for free. A
 stop records no `engine.attention_needed`: a person who pressed Stop does not
-need to be told they stopped something. The dead-letter reporting slice is what
-makes a forgotten `blocked` task visible, and it does not care why the task was
-blocked.
+need to be told they stopped something. Dead-letter reporting is what makes a
+forgotten `blocked` task visible; it landed in the following slice as a derived
+`blocked_kind` (`gate` vs `engine`) and does not care which engine-side reason
+produced the block.
 
 ### Commands addressed to an engine that is gone
 
@@ -221,10 +222,10 @@ which is the kind of failure nobody thinks to look for.
 
 ### Consequences of the amendment
 
-- The dashboard's Run/Stop buttons and `_RUNNING_PROCS` are now the only thing
-  that talks to an engine outside this channel, and are scheduled for
-  replacement in the next slice. Until then a dashboard Run still competes for
-  the engine lock and is refused while a `serve` is up.
+- The dashboard moved onto this channel in the following slice (ADR-0002
+  amendment): Run enqueues `resume`, Pause enqueues `pause`, a task Stop
+  enqueues `stop_task`, and the process registry is gone. Nothing now talks to
+  an engine outside this channel.
 - Rejections are ordinary outcomes, not errors. A caller must read the command
   row back to learn what happened; printing the command id from the CLI is what
   makes that possible.
@@ -234,10 +235,11 @@ which is the kind of failure nobody thinks to look for.
 
 ## Consequences
 
-- A `foreman run` — including the one the dashboard's Run button spawns — now
-  fails with a clear message while a resident engine is up. That is the
-  intended behaviour; the command table added in the amendment above is what
-  the dashboard writes to instead of spawning a competing process.
+- A `foreman run` now fails with a clear message while a resident engine is up.
+  That is the intended behaviour; the command table added in the amendment
+  above is what the dashboard writes to instead of spawning a competing
+  process, and the only process it may start is a `foreman serve` when the
+  project has no engine at all.
 - After an engine is SIGKILLed, its project is unavailable for up to 120
   seconds. Recovering faster would need liveness beyond lease expiry (a pid or
   a host check), which is deferred until it is actually needed.

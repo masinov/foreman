@@ -717,38 +717,88 @@ class ForemanCLISmokeTests(unittest.TestCase):
         assert waiver is not None
         self.assertEqual(waiver.reason, "Human reviewed the exceptional case.")
 
-    def test_task_unblock_accepts_a_task_paused_at_a_non_gate_step(self) -> None:
-        store, db_path = self.create_store()
+    def _seed_blocked_pair(self, store):
+        """One task blocked at a human gate, one blocked by the engine."""
+
         project = Project(
             id="project-1",
             name="Foreman Demo",
             repo_path="/tmp/foreman-demo",
-            workflow_id="development",
+            workflow_id="development_with_architect",  # has a human_approval gate
         )
-        sprint = Sprint(id="sprint-1", project_id=project.id, title="S", status="active")
-        task = Task(
-            id="task-1",
+        sprint = Sprint(
+            id="sprint-1",
+            project_id=project.id,
+            title="Dead letters",
+            status="active",
+        )
+        gated = Task(
+            id="task-gate",
             sprint_id=sprint.id,
             project_id=project.id,
-            title="Interrupted develop",
+            title="Paused review",
             status="blocked",
-            blocked_reason="git checkout feat/task-1 failed: you need to resolve your current index first",
+            blocked_reason="Awaiting human approval",
+            workflow_current_step="human_approval",
+        )
+        dead_letter = Task(
+            id="task-engine",
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="Loop limit",
+            status="blocked",
+            blocked_reason="Step 'develop' exceeded its visit limit",
             workflow_current_step="develop",
-            workflow_carried_output="Merge conflict against 'main'.",
         )
         store.save_project(project)
         store.save_sprint(sprint)
-        store.save_task(task)
+        store.save_task(gated)
+        store.save_task(dead_letter)
+        return project, sprint, gated, dead_letter
 
-        result = self.run_cli("task", "unblock", task.id, "--db", str(db_path))
+    def test_task_show_names_the_blocked_kind(self) -> None:
+        store, db_path = self.create_store()
+        _, _, gated, dead_letter = self._seed_blocked_pair(store)
+
+        gate_result = self.run_cli("task", "show", gated.id, "--db", str(db_path))
+        engine_result = self.run_cli("task", "show", dead_letter.id, "--db", str(db_path))
+
+        self.assertEqual(gate_result.returncode, 0, gate_result.stderr)
+        self.assertIn("Blocked kind: gate", gate_result.stdout)
+        self.assertIn("foreman approve", gate_result.stdout)
+        self.assertEqual(engine_result.returncode, 0, engine_result.stderr)
+        self.assertIn("Blocked kind: engine", engine_result.stdout)
+        self.assertIn("foreman task unblock", engine_result.stdout)
+
+    def test_board_reports_blocked_kinds(self) -> None:
+        store, db_path = self.create_store()
+        project, _, _, _ = self._seed_blocked_pair(store)
+
+        result = self.run_cli("board", project.id, "--db", str(db_path))
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        with ForemanStore(db_path) as reopened:
-            reopened.initialize()
-            updated = reopened.get_task(task.id)
-        assert updated is not None
-        self.assertEqual(updated.status, "todo")
-        self.assertIsNone(updated.blocked_reason)
+        self.assertIn("blocked=2 (gate=1 engine=1)", result.stdout)
+        self.assertIn("task-gate | feature | Paused review | step=human_approval | blocked_kind=gate", result.stdout)
+        self.assertIn("blocked_kind=engine", result.stdout)
+
+    def test_status_reports_blocked_kind_totals(self) -> None:
+        store, db_path = self.create_store()
+        self._seed_blocked_pair(store)
+
+        result = self.run_cli("status", "--db", str(db_path))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Blocked: gate=1 engine=1", result.stdout)
+
+    def test_task_unblock_clears_an_engine_dead_letter(self) -> None:
+        """A task the engine blocked at a persisted step is what unblock is for."""
+        store, db_path = self.create_store()
+        _, _, _, dead_letter = self._seed_blocked_pair(store)
+
+        result = self.run_cli("task", "unblock", dead_letter.id, "--db", str(db_path))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(store.get_task(dead_letter.id).status, "todo")
 
     def test_task_unblock_rejects_human_gate_tasks(self) -> None:
         store, db_path = self.create_store()
@@ -1596,6 +1646,7 @@ class ForemanCLISmokeTests(unittest.TestCase):
         self.assertIn("Projects: 1", result.stdout)
         self.assertIn("Active sprints: 1", result.stdout)
         self.assertIn("Tasks: todo=1 in_progress=0 blocked=0 done=1 cancelled=0", result.stdout)
+        self.assertIn("Blocked: gate=0 engine=0", result.stdout)
 
     def test_board_command_shows_active_sprint_tasks_grouped_by_status(self) -> None:
         store, db_path = self.create_store()
@@ -1607,7 +1658,11 @@ class ForemanCLISmokeTests(unittest.TestCase):
         self.assertIn("Board", result.stdout)
         self.assertIn(f"Database: {db_path}", result.stdout)
         self.assertIn("Sprint: sprint-1 | Monitoring Sprint", result.stdout)
-        self.assertIn("Progress: done=1/4 | in_progress=1 | blocked=1 | todo=1 | cancelled=0", result.stdout)
+        self.assertIn(
+            "Progress: done=1/4 | in_progress=1 | blocked=1 (gate=1 engine=0) | "
+            "todo=1 | cancelled=0",
+            result.stdout,
+        )
         self.assertIn("Activity: runs=3 | tokens=1150 | cost_usd=$2.00", result.stdout)
         self.assertIn("Todo (1)", result.stdout)
         self.assertIn("- task-todo | feature | Queue board column", result.stdout)
@@ -1617,7 +1672,7 @@ class ForemanCLISmokeTests(unittest.TestCase):
             result.stdout,
         )
         self.assertIn("Blocked (1)", result.stdout)
-        self.assertIn("reason=Awaiting human approval", result.stdout)
+        self.assertIn("blocked_kind=gate | reason=Awaiting human approval", result.stdout)
         self.assertIn("Done (1)", result.stdout)
         self.assertIn("task-done | refactor | Land store summaries", result.stdout)
 
