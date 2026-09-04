@@ -2103,3 +2103,288 @@ class DbCommandTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EngineCommandCliTests(unittest.TestCase):
+    """`foreman engine`: read the resident engine, queue commands for it."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        if not FOREMAN.is_file():
+            raise unittest.SkipTest(f"console entrypoint missing at {FOREMAN}")
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.db_path = Path(self._tmp.name) / "foreman.db"
+        self.store = ForemanStore(self.db_path)
+        self.addCleanup(self.store.close)
+        self.store.initialize()
+        self.store.save_project(
+            Project(
+                id="project-1",
+                name="Foreman Demo",
+                repo_path=self._tmp.name,
+                workflow_id="development",
+            )
+        )
+        self.store.save_sprint(
+            Sprint(id="sprint-1", project_id="project-1", title="S", status="active")
+        )
+        self.store.save_task(
+            Task(
+                id="task-1",
+                sprint_id="sprint-1",
+                project_id="project-1",
+                title="Implement the thing",
+                status="todo",
+            )
+        )
+
+    def run_cli(self, *args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [str(FOREMAN), *args], capture_output=True, text=True, check=False
+        )
+
+    def _only_command(self):
+        commands = self.store.list_engine_commands("project-1")
+        self.assertEqual(len(commands), 1)
+        return commands[0]
+
+    def test_pause_resume_and_shutdown_queue_a_command_and_print_its_id(self) -> None:
+        for verb in ("pause", "resume", "shutdown"):
+            with self.subTest(verb=verb):
+                result = self.run_cli(
+                    "engine", verb, "project-1", "--db", str(self.db_path), "--by", "alice"
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+
+                queued = [
+                    command
+                    for command in self.store.list_engine_commands("project-1")
+                    if command.command == verb
+                ]
+                self.assertEqual(len(queued), 1)
+                self.assertEqual(queued[0].requested_by, "alice")
+                self.assertEqual(queued[0].status, "pending")
+                self.assertIsNone(queued[0].task_id)
+                self.assertIn(queued[0].id, result.stdout)
+                self.assertIn("Command id:", result.stdout)
+
+    def test_run_task_and_stop_task_carry_the_task_id(self) -> None:
+        for verb, name in (("run-task", "run_task"), ("stop-task", "stop_task")):
+            with self.subTest(verb=verb):
+                result = self.run_cli(
+                    "engine", verb, "project-1", "task-1", "--db", str(self.db_path)
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+
+                queued = [
+                    command
+                    for command in self.store.list_engine_commands("project-1")
+                    if command.command == name
+                ]
+                self.assertEqual(len(queued), 1)
+                self.assertEqual(queued[0].task_id, "task-1")
+                self.assertIn(queued[0].id, result.stdout)
+
+    def test_the_requester_defaults_to_the_os_user_name(self) -> None:
+        from foreman.cli import default_command_requester
+
+        result = self.run_cli("engine", "pause", "project-1", "--db", str(self.db_path))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        command = self._only_command()
+        self.assertEqual(command.requested_by, default_command_requester())
+        self.assertTrue(command.requested_by, "a command must always name a requester")
+
+    def test_an_unknown_project_is_refused_without_queueing(self) -> None:
+        result = self.run_cli("engine", "pause", "nope", "--db", str(self.db_path))
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Unknown project", result.stderr)
+        self.assertEqual(self.store.list_engine_commands("nope"), [])
+
+    def test_an_unknown_task_is_refused_without_queueing(self) -> None:
+        result = self.run_cli(
+            "engine", "run-task", "project-1", "ghost", "--db", str(self.db_path)
+        )
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Unknown task", result.stderr)
+        self.assertEqual(self.store.list_engine_commands("project-1"), [])
+
+    def test_a_task_from_another_project_is_refused(self) -> None:
+        self.store.save_project(
+            Project(
+                id="project-2",
+                name="Other",
+                repo_path=self._tmp.name,
+                workflow_id="development",
+            )
+        )
+        self.store.save_sprint(
+            Sprint(id="sprint-2", project_id="project-2", title="S", status="active")
+        )
+        self.store.save_task(
+            Task(
+                id="task-2",
+                sprint_id="sprint-2",
+                project_id="project-2",
+                title="Theirs",
+                status="todo",
+            )
+        )
+
+        result = self.run_cli(
+            "engine", "stop-task", "project-1", "task-2", "--db", str(self.db_path)
+        )
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("project-2", result.stderr)
+        self.assertEqual(self.store.list_engine_commands("project-1"), [])
+
+    def test_queueing_without_a_resident_engine_says_what_will_happen(self) -> None:
+        pause = self.run_cli("engine", "pause", "project-1", "--db", str(self.db_path))
+        self.assertIn("No engine is resident", pause.stdout)
+        self.assertIn("rejected", pause.stdout)
+
+        resume = self.run_cli("engine", "resume", "project-1", "--db", str(self.db_path))
+        self.assertIn("next `foreman serve` will apply it", resume.stdout)
+
+    def test_status_without_a_resident_engine(self) -> None:
+        result = self.run_cli("engine", "status", "project-1", "--db", str(self.db_path))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Resident engine: none", result.stdout)
+        self.assertIn("Current task: none", result.stdout)
+        self.assertIn("Recent commands (0)", result.stdout)
+
+    def test_status_reports_the_holder_heartbeat_and_current_task(self) -> None:
+        self.store.acquire_lease(
+            project_id="project-1",
+            resource_type="engine",
+            resource_id="project-1",
+            holder_id="holder-resident",
+            lease_token="secret-token",
+            duration_seconds=120,
+        )
+        task = self.store.get_task("task-1")
+        assert task is not None
+        task.status = "in_progress"
+        task.workflow_current_step = "develop"
+        self.store.save_task(task)
+
+        result = self.run_cli("engine", "status", "project-1", "--db", str(self.db_path))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Resident engine: holder-resident", result.stdout)
+        self.assertIn("State: running", result.stdout)
+        self.assertIn("Heartbeat:", result.stdout)
+        self.assertIn("task-1", result.stdout)
+        self.assertNotIn(
+            "secret-token", result.stdout, "status must never print the lease token"
+        )
+
+    def test_status_reports_a_paused_engine(self) -> None:
+        self.store.acquire_lease(
+            project_id="project-1",
+            resource_type="engine",
+            resource_id="project-1",
+            holder_id="holder-resident",
+            lease_token="token",
+        )
+        command = self.store.enqueue_engine_command(
+            project_id="project-1", command="pause", requested_by="alice"
+        )
+        self.store.mark_engine_command(command.id, "completed", detail="Engine paused.")
+
+        result = self.run_cli("engine", "status", "project-1", "--db", str(self.db_path))
+
+        self.assertIn("State: paused", result.stdout)
+
+    def test_a_resumed_engine_is_reported_as_running_again(self) -> None:
+        self.store.acquire_lease(
+            project_id="project-1",
+            resource_type="engine",
+            resource_id="project-1",
+            holder_id="holder-resident",
+            lease_token="token",
+        )
+        for name in ("pause", "resume"):
+            command = self.store.enqueue_engine_command(
+                project_id="project-1", command=name, requested_by="alice"
+            )
+            self.store.mark_engine_command(command.id, "completed", detail=name)
+
+        result = self.run_cli("engine", "status", "project-1", "--db", str(self.db_path))
+
+        self.assertIn("State: running", result.stdout)
+
+    def test_status_lists_recent_commands_newest_first_with_their_outcome(self) -> None:
+        first = self.store.enqueue_engine_command(
+            project_id="project-1", command="pause", requested_by="alice"
+        )
+        self.store.mark_engine_command(
+            first.id, "rejected", detail="no engine was resident"
+        )
+        second = self.store.enqueue_engine_command(
+            project_id="project-1",
+            command="run_task",
+            requested_by="bob",
+            task_id="task-1",
+        )
+
+        result = self.run_cli("engine", "status", "project-1", "--db", str(self.db_path))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Recent commands (2)", result.stdout)
+        self.assertLess(
+            result.stdout.index(second.id),
+            result.stdout.index(first.id),
+            "the newest command must be listed first",
+        )
+        self.assertIn("[rejected] pause", result.stdout)
+        self.assertIn("no engine was resident", result.stdout)
+        self.assertIn("[pending] run_task", result.stdout)
+        self.assertIn("by=bob", result.stdout)
+
+    def test_status_honours_the_limit(self) -> None:
+        for _ in range(4):
+            self.store.enqueue_engine_command(
+                project_id="project-1", command="pause", requested_by="alice"
+            )
+
+        result = self.run_cli(
+            "engine", "status", "project-1", "--limit", "2", "--db", str(self.db_path)
+        )
+
+        self.assertIn("Recent commands (2)", result.stdout)
+
+    def test_engine_help_lists_every_verb(self) -> None:
+        result = self.run_cli("engine", "--help")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for verb in ("status", "pause", "resume", "shutdown", "run-task", "stop-task"):
+            self.assertIn(verb, result.stdout)
+
+    def test_a_queued_command_is_applied_by_a_serve_pass(self) -> None:
+        """End to end: the CLI queues, `foreman serve` picks it up."""
+
+        queued = self.run_cli(
+            "engine", "run-task", "project-1", "task-1", "--db", str(self.db_path)
+        )
+        self.assertEqual(queued.returncode, 0, queued.stderr)
+
+        served = subprocess.run(
+            [str(FOREMAN), "serve", "project-1", "--once", "--db", str(self.db_path)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(served.returncode, 0, served.stderr)
+
+        command = self._only_command()
+        self.assertEqual(command.status, "completed")
+        self.assertTrue(command.acknowledged_at)
+        self.assertIn("task-1", command.result_detail or "")
