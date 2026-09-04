@@ -1,18 +1,37 @@
-"""Dashboard service layer for Foreman."""
+"""Dashboard service layer for Foreman.
+
+The service reads and writes SQLite (ADR-0002) and holds no process handles.
+Steering the engine is the ``engine_commands`` table's job: Run enqueues a
+``resume``, Pause enqueues a ``pause``, and a task Stop enqueues a
+``stop_task``. The one exception is the single-machine bootstrap — when no
+engine is resident there is nothing to send a command to, so the service
+spawns a detached ``foreman serve`` through an injectable spawner and then
+talks to it like any other resident engine.
+"""
 
 from __future__ import annotations
 
 import os
 import re
-import subprocess
-import sys
-import threading
 import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from .models import AUTONOMY_LEVELS, DecisionGate, Event, Project, Run, Sprint, SprintStatus, Task
+from .engine_control import (
+    EngineStateView,
+    ServeSpawn,
+    ServeSpawner,
+    WorkflowGateSteps,
+    blocked_kind,
+    blocked_kind_counts,
+    describe_engine,
+    resolve_gate_steps,
+    serve_command,
+    serve_log_path,
+    spawn_serve,
+)
+from .models import AUTONOMY_LEVELS, DecisionGate, EngineCommand, Event, Project, Run, Sprint, SprintStatus, Task
 from .orchestrator import ForemanOrchestrator, OrchestratorError
 from .scaffold import generate_project_id
 from .settings import ProjectSettings, SettingsError
@@ -33,8 +52,13 @@ STREAM_HEARTBEAT_SECONDS = 10.0
 # we can poll more responsively without hammering the full sprint-events query.
 STREAM_POLL_INTERVAL_SECONDS = 0.25
 
-_RUNNING_PROCS: dict[str, subprocess.Popen[bytes]] = {}
-_RUNNING_PROCS_LOCK = threading.Lock()
+#: Recorded as the requester on commands the dashboard queues when the caller
+#: did not name themselves. A shared token is not identity yet (MANUAL §17), so
+#: the surface is the best attribution available.
+DASHBOARD_REQUESTER = "dashboard"
+
+#: How many engine commands the status payload carries.
+ENGINE_COMMAND_LIMIT = 10
 
 
 class DashboardServiceError(Exception):
@@ -128,6 +152,49 @@ def _serialize_completion_evidence(evidence: "Any") -> dict[str, Any] | None:
     }
 
 
+def _serialize_engine_command(command: EngineCommand) -> dict[str, Any]:
+    """Serialize one engine command row for the API."""
+
+    return {
+        "id": command.id,
+        "command": command.command,
+        "status": command.status,
+        "task_id": command.task_id,
+        "requested_by": command.requested_by,
+        "requested_at": command.requested_at,
+        "acknowledged_at": command.acknowledged_at,
+        "completed_at": command.completed_at,
+        "result_detail": command.result_detail,
+    }
+
+
+def _serialize_engine_state(engine: EngineStateView) -> dict[str, Any]:
+    """Serialize the engine view shared by the status route and project payloads."""
+
+    task = engine.current_task
+    return {
+        "resident": engine.resident,
+        "paused": engine.paused,
+        "state": engine.state,
+        "holder_id": engine.holder_id,
+        "heartbeat_age_seconds": engine.heartbeat_age_seconds,
+        "heartbeat_at": engine.lock.heartbeat_at if engine.lock else None,
+        "lease_expires_at": engine.lock.expires_at if engine.lock else None,
+        "lease_expired": engine.lease_expired,
+        "current_task": (
+            {
+                "id": task.id,
+                "task_key": task.task_key,
+                "title": task.title,
+                "status": task.status,
+                "workflow_current_step": task.workflow_current_step,
+            }
+            if task is not None
+            else None
+        ),
+    }
+
+
 def _validate_repo_path(repo_path: str) -> None:
     """Refuse project paths that are not existing git repositories.
 
@@ -164,9 +231,14 @@ class DashboardService:
         store: ForemanStore,
         *,
         now_factory: Callable[[], datetime] | None = None,
+        serve_spawner: ServeSpawner | None = None,
     ) -> None:
         self.store = store
         self._now = now_factory or (lambda: datetime.now(timezone.utc))
+        # Injected so a test — and, later, a deployment that starts engines
+        # somewhere other than this host — can replace the fork without
+        # replacing the decision about when to fork.
+        self._spawn_serve: ServeSpawner = serve_spawner or spawn_serve
 
     def list_projects(self) -> dict[str, Any]:
         """Return the project summary collection used by the dashboard landing screen."""
@@ -174,13 +246,16 @@ class DashboardService:
         result = []
         for project in self.store.list_projects():
             active_sprint = self.store.get_active_sprint(project.id)
+            engine = describe_engine(self.store, project.id, now=self._now())
             result.append(
                 {
                     "id": project.id,
                     "name": project.name,
                     "workflow_id": project.workflow_id,
                     "status": self.get_project_status(project.id),
-                    "agent_running": self._agent_running(project.id),
+                    "agent_running": engine.resident,
+                    "engine": _serialize_engine_state(engine),
+                    **self._blocked_kind_counts(project),
                     "active_sprint": (
                         {
                             "id": active_sprint.id,
@@ -201,6 +276,7 @@ class DashboardService:
         project = self.store.get_project(project_id)
         if project is None:
             raise DashboardNotFoundError(f"Project not found: {project_id}")
+        engine = describe_engine(self.store, project_id, now=self._now())
         return {
             "id": project.id,
             "name": project.name,
@@ -210,7 +286,10 @@ class DashboardService:
             "spec_path": project.spec_path,
             "methodology": project.methodology,
             "autonomy_level": project.autonomy_level,
-            "agent_running": self._agent_running(project_id),
+            "agent_running": engine.resident,
+            "engine": _serialize_engine_state(engine),
+            "task_counts": self.store.task_counts(project_id=project.id),
+            **self._blocked_kind_counts(project),
             "totals": self.store.run_totals(project_id=project_id),
         }
 
@@ -326,25 +405,34 @@ class DashboardService:
         project_id: str,
         *,
         task_id: str | None = None,
+        requested_by: str | None = None,
     ) -> dict[str, Any]:
-        """Spawn a ``foreman run`` subprocess for the given project.
+        """Ask the project's engine to start working.
+
+        When an engine is resident the whole of "start" is a ``resume``
+        command: the engine may be paused, or merely idle, and either way it
+        is the engine that decides what to run next. When none is resident
+        there is nobody to send that command to, so a detached ``foreman
+        serve`` is spawned first — the single-machine fallback — and the
+        command is queued for it to pick up on its first pass.
+
+        A ``task_id`` becomes a ``run_task`` command rather than a CLI flag,
+        so the request survives whether or not an engine is up yet.
 
         If no sprint is currently active and a planned sprint exists, the first
-        planned sprint (by queue order) is activated before the subprocess starts.
+        planned sprint (by queue order) is activated before the engine starts.
         """
 
         project = self.store.get_project(project_id)
         if project is None:
             raise DashboardNotFoundError(f"Project not found: {project_id}")
 
-        with _RUNNING_PROCS_LOCK:
-            existing = _RUNNING_PROCS.get(project_id)
-            if existing is not None and existing.poll() is None:
+        if task_id is not None:
+            task = self._require_task(task_id)
+            if task.project_id != project_id:
                 raise DashboardValidationError(
-                    f"Agent is already running for project {project_id}."
+                    f"Task {task_id} belongs to project {task.project_id}, not {project_id}."
                 )
-            if existing is not None:
-                _RUNNING_PROCS.pop(project_id, None)
 
         if task_id is None and self.store.get_active_sprint(project_id) is None:
             next_sprint = self.store.get_next_planned_sprint(project_id)
@@ -352,33 +440,102 @@ class DashboardService:
                 raise DashboardValidationError(
                     "No active or planned sprint. Add a sprint to the queue before running."
                 )
-            now = datetime.now(timezone.utc).isoformat()
+            now = self._now().isoformat()
             next_sprint.status = "active"
             next_sprint.started_at = now
             self.store.save_sprint(next_sprint)
 
-        foreman_bin = str(Path(sys.executable).parent / "foreman")
-        cmd = [foreman_bin, "run", project_id, "--db", self.store.db_path]
+        who = self._requester(requested_by)
+        commands: list[EngineCommand] = []
         if task_id is not None:
-            cmd.extend(["--task", task_id])
-
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            commands.append(
+                self.store.enqueue_engine_command(
+                    project_id=project_id,
+                    command="run_task",
+                    requested_by=who,
+                    task_id=task_id,
+                )
+            )
+        resume = self.store.enqueue_engine_command(
+            project_id=project_id,
+            command="resume",
+            requested_by=who,
         )
-        with _RUNNING_PROCS_LOCK:
-            _RUNNING_PROCS[project_id] = proc
+        commands.append(resume)
 
-        def _cleanup() -> None:
-            proc.wait()
-            with _RUNNING_PROCS_LOCK:
-                if _RUNNING_PROCS.get(project_id) is proc:
-                    _RUNNING_PROCS.pop(project_id, None)
+        # Read residency after queueing: a `resume` queued for an engine that
+        # is starting right now is honoured by it, so the only case that needs
+        # a spawn is "still nothing holding the lock".
+        resident = self.store.get_engine_lock(project_id) is not None
+        payload: dict[str, Any] = {
+            "project_id": project_id,
+            "started": True,
+            "resident": resident,
+            "spawned": False,
+            "requested_by": who,
+            "command": _serialize_engine_command(resume),
+            "commands": [_serialize_engine_command(command) for command in commands],
+        }
+        if not resident:
+            payload.update(self._spawn_local_engine(project))
+        return payload
 
-        threading.Thread(target=_cleanup, daemon=True).start()
+    def _spawn_local_engine(self, project: Project) -> dict[str, Any]:
+        """Start a detached ``foreman serve`` for a project with no engine."""
 
-        return {"started": True, "project_id": project_id}
+        log_path = serve_log_path(project)
+        command = serve_command(project.id, self.store.db_path)
+        try:
+            spawn = self._spawn_serve(command, log_path)
+        except OSError as exc:
+            raise DashboardActionError(
+                f"Could not start a resident engine for {project.id}: {exc}"
+            ) from exc
+        return {
+            "spawned": True,
+            "pid": spawn.pid,
+            "log_path": spawn.log_path,
+            "serve_command": list(spawn.command),
+        }
+
+    def agent_status(self, project_id: str) -> dict[str, Any]:
+        """Report the engine's residency, pause state, work, and recent orders."""
+
+        project = self.store.get_project(project_id)
+        if project is None:
+            raise DashboardNotFoundError(f"Project not found: {project_id}")
+        engine = describe_engine(
+            self.store,
+            project_id,
+            command_limit=ENGINE_COMMAND_LIMIT,
+            now=self._now(),
+        )
+        payload = _serialize_engine_state(engine)
+        payload["project_id"] = project_id
+        payload["commands"] = [
+            _serialize_engine_command(command) for command in engine.commands
+        ]
+        return payload
+
+    def list_engine_commands(
+        self,
+        project_id: str,
+        *,
+        limit: int = ENGINE_COMMAND_LIMIT,
+        status: str | None = None,
+    ) -> dict[str, Any]:
+        """List the project's recent engine commands, newest first."""
+
+        if self.store.get_project(project_id) is None:
+            raise DashboardNotFoundError(f"Project not found: {project_id}")
+        limit = max(1, min(int(limit), 200))
+        commands = self.store.list_engine_commands(
+            project_id, status=status, limit=limit
+        )
+        return {
+            "project_id": project_id,
+            "commands": [_serialize_engine_command(command) for command in commands],
+        }
 
     def list_project_sprints(self, project_id: str) -> dict[str, Any]:
         """Return sprint summaries for one project."""
@@ -517,9 +674,7 @@ class DashboardService:
         }
         sprint = self.store.get_sprint(sprint_id)
         project = self.store.get_project(sprint.project_id) if sprint else None
-        gate_step_ids = (
-            self._human_gate_step_ids(project.workflow_id) if project else set()
-        )
+        gates = self._gate_steps(project)
         result = []
         for task in self.store.list_tasks(sprint_id=sprint_id):
             metrics = task_totals.get(task.id, {})
@@ -536,7 +691,8 @@ class DashboardService:
                     "blocked_reason": task.blocked_reason,
                     "acceptance_criteria": task.acceptance_criteria,
                     "workflow_current_step": task.workflow_current_step,
-                    "awaiting_human_gate": self._at_human_gate(task, gate_step_ids),
+                    "awaiting_human_gate": self._at_human_gate(task, gates),
+                    "blocked_kind": blocked_kind(task, gates),
                     "complexity": task.complexity,
                     "executor_overrides": task.executor_overrides,
                     "totals": {
@@ -612,6 +768,7 @@ class DashboardService:
             raise DashboardNotFoundError(f"Task not found: {task_id}")
 
         project = self.store.get_project(task.project_id)
+        gates = self._gate_steps(project)
 
         runs_data = []
         for run in self.store.list_runs(task_id=task_id):
@@ -654,10 +811,8 @@ class DashboardService:
             "depends_on_task_ids": task.depends_on_task_ids or [],
             "complexity": task.complexity,
             "executor_overrides": task.executor_overrides or {},
-            "awaiting_human_gate": self._at_human_gate(
-                task,
-                self._human_gate_step_ids(project.workflow_id) if project else set(),
-            ),
+            "awaiting_human_gate": self._at_human_gate(task, gates),
+            "blocked_kind": blocked_kind(task, gates),
             "completion_evidence": _serialize_completion_evidence(task.completion_evidence),
             "totals": self.store.run_totals(task_id=task_id),
             "runs": runs_data,
@@ -914,76 +1069,62 @@ class DashboardService:
             "status": sprint.status,
         }
 
-    def stop_agent(self, project_id: str) -> dict[str, Any]:
-        """Block all in-progress tasks in the active sprint to signal a stop request."""
+    def stop_agent(self, project_id: str, *, requested_by: str | None = None) -> dict[str, Any]:
+        """Ask the project's engine to pause, and return once the order is queued.
 
-        project = self.store.get_project(project_id)
-        if project is None:
+        Pausing is about the engine, not about the work: the engine terminates
+        the running agent step and leaves its task resumable at the persisted
+        step. Nothing here touches task status — a dashboard that blocked every
+        in-progress task on Pause was inventing a dead letter the engine never
+        declared.
+        """
+
+        if self.store.get_project(project_id) is None:
             raise DashboardNotFoundError(f"Project not found: {project_id}")
 
-        agent_stopped = self._terminate_registered_agent(project_id)
-        active_sprint = self.store.get_active_sprint(project_id)
-        if active_sprint is None:
-            return {"stopped": 0, "project_id": project_id, "agent_stopped": agent_stopped}
-
-        now = self._now()
-        tasks = self.store.list_tasks(sprint_id=active_sprint.id)
-        stopped = 0
-        for task in tasks:
-            if task.status != "in_progress":
-                continue
-            task.status = "blocked"
-            task.blocked_reason = "Stop requested from dashboard."
-            self.store.save_task(task)
-
-            run_id = self._ensure_event_run(task, step="stop", outcome="stopped", now=now)
-            event = Event(
-                id=f"evt-{now.strftime('%Y%m%d%H%M%S%f')}-stop-{task.id[:8]}",
-                run_id=run_id,
-                task_id=task.id,
-                project_id=project_id,
-                event_type="human.stop_requested",
-                timestamp=now.isoformat(),
-                role_id="human",
-                payload={"reason": "Stop requested from dashboard."},
-            )
-            self.store.save_event(event)
-            stopped += 1
-
+        who = self._requester(requested_by)
+        command = self.store.enqueue_engine_command(
+            project_id=project_id,
+            command="pause",
+            requested_by=who,
+        )
         return {
-            "stopped": stopped,
             "project_id": project_id,
-            "sprint_id": active_sprint.id,
-            "agent_stopped": agent_stopped,
+            "resident": self.store.get_engine_lock(project_id) is not None,
+            "requested_by": who,
+            "command": _serialize_engine_command(command),
         }
 
-    def stop_task(self, task_id: str) -> dict[str, Any]:
-        """Block one in-progress task to signal a stop request."""
+    def stop_task(self, task_id: str, *, requested_by: str | None = None) -> dict[str, Any]:
+        """Ask the engine to stop one running task.
+
+        The engine owns the transition: it terminates the agent step it is
+        running and blocks the task with a reason naming the requester. A task
+        the engine is not running is rejected on the command row rather than
+        being blocked here behind the engine's back.
+        """
 
         task = self._require_task(task_id)
         if task.status != "in_progress":
             raise DashboardValidationError(
                 f"Cannot stop a task with status '{task.status}'; only in_progress tasks can be stopped."
             )
-        task.status = "blocked"
-        task.blocked_reason = "Stop requested from dashboard."
-        self.store.save_task(task)
 
-        now = self._now()
-        now_text = now.isoformat()
-        run_id = self._ensure_event_run(task, step="stop", outcome="stopped", now=now)
-        event = Event(
-            id=f"evt-{now.strftime('%Y%m%d%H%M%S%f')}-stop-{task.id[:8]}",
-            run_id=run_id,
-            task_id=task.id,
+        who = self._requester(requested_by)
+        command = self.store.enqueue_engine_command(
             project_id=task.project_id,
-            event_type="human.stop_requested",
-            timestamp=now_text,
-            role_id="human",
-            payload={"reason": "Stop requested from dashboard."},
+            command="stop_task",
+            requested_by=who,
+            task_id=task.id,
         )
-        self.store.save_event(event)
-        return {"status": "blocked", "task_id": task_id}
+        return {
+            "task_id": task.id,
+            "project_id": task.project_id,
+            "status": task.status,
+            "resident": self.store.get_engine_lock(task.project_id) is not None,
+            "requested_by": who,
+            "command": _serialize_engine_command(command),
+        }
 
     def delete_sprint(self, sprint_id: str) -> dict[str, Any]:
         """Delete a sprint and all its tasks, runs, and events."""
@@ -1092,36 +1233,11 @@ class DashboardService:
             return None
         return {step.id for step in workflow.steps}
 
-    def _human_gate_step_ids(self, workflow_id: str) -> set[str]:
-        """Return the ids of ``_builtin:human_gate`` steps for a workflow.
-
-        Used to distinguish a task paused at a human gate (which the human
-        Approve/Deny, resolving the gate) from a task blocked for another reason
-        (cost/time/loop/evidence), which Approve/Deny cannot resolve.
-        """
-        from .roles import RoleLoadError, load_roles
-        from .workflows import WorkflowLoadError, load_workflows
-
-        try:
-            roles = load_roles()
-            workflows = load_workflows(
-                available_role_ids=set(roles),
-                role_outcomes={rid: role.completion.outcomes for rid, role in roles.items()},
-            )
-        except (RoleLoadError, WorkflowLoadError):
-            return set()
-        workflow = workflows.get(workflow_id)
-        if workflow is None:
-            return set()
-        return {step.id for step in workflow.steps if step.role == "_builtin:human_gate"}
-
     @staticmethod
-    def _at_human_gate(task: Task, gate_step_ids: set[str]) -> bool:
-        return (
-            task.status == "blocked"
-            and bool(task.workflow_current_step)
-            and task.workflow_current_step in gate_step_ids
-        )
+    def _at_human_gate(task: Task, gates: WorkflowGateSteps) -> bool:
+        """True when a blocked task is waiting for Approve/Deny rather than a fix."""
+
+        return blocked_kind(task, gates) == "gate"
 
     def list_roles(self) -> dict[str, Any]:
         """Return all available role definitions."""
@@ -1202,36 +1318,28 @@ class DashboardService:
             raise DashboardNotFoundError(f"Task not found: {task_id}")
         return task
 
-    def _agent_running(self, project_id: str) -> bool:
-        with _RUNNING_PROCS_LOCK:
-            proc = _RUNNING_PROCS.get(project_id)
-            if proc is None:
-                return False
-            if proc.poll() is None:
-                return True
-            _RUNNING_PROCS.pop(project_id, None)
-            return False
+    def _requester(self, requested_by: str | None) -> str:
+        """Name recorded on a queued command; never blank."""
 
-    def _terminate_registered_agent(self, project_id: str) -> bool:
-        with _RUNNING_PROCS_LOCK:
-            proc = _RUNNING_PROCS.get(project_id)
-            if proc is None:
-                return False
-            if proc.poll() is not None:
-                _RUNNING_PROCS.pop(project_id, None)
-                return False
+        value = (requested_by or "").strip()
+        return value or DASHBOARD_REQUESTER
 
-        proc.terminate()
-        try:
-            proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait()
+    def _gate_steps(self, project: Project | None) -> WorkflowGateSteps:
+        """Resolve the human-gate steps of a project's workflow."""
 
-        with _RUNNING_PROCS_LOCK:
-            if _RUNNING_PROCS.get(project_id) is proc:
-                _RUNNING_PROCS.pop(project_id, None)
-        return True
+        return resolve_gate_steps(project.workflow_id if project else None)
+
+    def _blocked_kind_counts(self, project: Project) -> dict[str, int]:
+        """Dead-letter counts for a project summary, keyed for the API payload."""
+
+        counts = blocked_kind_counts(
+            self.store.list_tasks(project_id=project.id, status="blocked"),
+            self._gate_steps(project),
+        )
+        return {
+            "blocked_gate": counts["gate"],
+            "blocked_engine": counts["engine"],
+        }
 
     def _ensure_event_run(
         self,
