@@ -64,6 +64,14 @@ memory changes rather than versioned product releases.
   `shutdown` is answered in seconds rather than after a six-hour quota wait,
   and a paused engine narrates `serve.paused` once at INFO and then at DEBUG
   the way an idle one does.
+- `fix/task-branch-refresh`: every develop visit first merges the default
+  branch into the task branch when it is behind and the merge is clean
+  (`engine.branch_sync`, mode `refresh`, with `commits_behind`); a refresh
+  that conflicts is handed to the developer as guidance (mode
+  `refresh_conflict`); an unconcluded merge left by an interrupted pass is
+  never aborted (mode `merge_in_progress`); `foreman approve` and `foreman
+  deny` exit 75 with an honest message when the resumed workflow pauses on a
+  backend quota. New `commits_behind` and `merge_in_progress` git helpers.
 - `fix/runner-quota-exhaustion`: a backend usage quota running out mid-step
   (Claude Code's "session limit" result after a rejected `rate_limit_event`)
   is a `QuotaExhaustedError` carrying the reset time; `run_with_retry`

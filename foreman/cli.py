@@ -25,7 +25,7 @@ from .dashboard_runtime import (
 from .engine_lock import EngineBusyError, EngineLock
 from .logs import configure_json_logging
 from .models import Event, EngineCommand, GATE_POLICY_NAMES, Project, Sprint, TASK_COMPLEXITIES, TASK_TYPES, Task, utc_now_text
-from .orchestrator import ForemanOrchestrator, OrchestratorError
+from .orchestrator import ForemanOrchestrator, OrchestratorError, QuotaPauseError
 from .roles import RoleLoadError, default_roles_dir, load_roles
 from .runner.process import EngineShutdown, install_shutdown_handlers
 from .serve import DEFAULT_POLL_SECONDS, serve_project
@@ -1911,6 +1911,41 @@ def handle_task_block(args: argparse.Namespace) -> int:
     return 0
 
 
+def _task_is_paused_at_human_gate(store: ForemanStore, task: Task) -> bool:
+    """True when a blocked task is waiting for `foreman approve` / `deny`.
+
+    A persisted ``workflow_current_step`` alone is not enough: the engine also
+    persists the resume point when it pauses a task for a backend quota or
+    blocks it after an engine-level failure, and those tasks are exactly the
+    ones ``foreman task unblock`` exists for. The step's role in the project's
+    workflow decides; when the workflow cannot be loaded or the step is
+    unknown, the gate builtin's own blocked reason is the tie-breaker.
+    """
+
+    if task.workflow_current_step is None:
+        return False
+    project = store.get_project(task.project_id)
+    workflow = None
+    if project is not None:
+        try:
+            roles = load_roles(default_roles_dir())
+            workflows = load_workflows(
+                default_workflows_dir(),
+                available_role_ids=set(roles),
+                role_outcomes={
+                    role_id: role.completion.outcomes for role_id, role in roles.items()
+                },
+            )
+            workflow = workflows.get(project.workflow_id)
+        except Exception:  # noqa: BLE001 - a broken workflow file must not hide the task
+            workflow = None
+    if workflow is not None:
+        step = workflow.get_step(task.workflow_current_step)
+        if step is not None:
+            return step.role == "_builtin:human_gate"
+    return (task.blocked_reason or "") == "Awaiting human approval"
+
+
 def handle_task_unblock(args: argparse.Namespace) -> int:
     """Handle ``foreman task unblock``."""
 
@@ -1926,7 +1961,7 @@ def handle_task_unblock(args: argparse.Namespace) -> int:
         if task.status != "blocked":
             print(f"Task {task.id} is not blocked.", file=sys.stderr)
             return 1
-        if task.workflow_current_step is not None:
+        if _task_is_paused_at_human_gate(store, task):
             print(
                 f"Task {task.id} is paused at a workflow gate; use `foreman approve` or `foreman deny` instead.",
                 file=sys.stderr,
@@ -3086,6 +3121,19 @@ def _handle_human_gate_decision(args: argparse.Namespace, *, outcome: str) -> in
                 outcome=outcome,
                 note=args.note,
             )
+        except QuotaPauseError as exc:
+            # The decision was recorded and the workflow resumed; it is the
+            # follow-on agent step that hit the backend quota. That is a pause,
+            # not a failed decision, so say so and use the temporary-failure
+            # exit code `foreman run` uses for the same condition.
+            print(
+                f"Recorded {outcome} for task {args.task_id}; the workflow resumed and "
+                f"then paused because the agent backend's quota ran out "
+                f"(retry after {exc.retry_after or 'unknown'}). The task keeps its "
+                "resume point; the next engine pass continues it.",
+                file=sys.stderr,
+            )
+            return EXIT_QUOTA_EXHAUSTED
         except OrchestratorError as exc:
             print(f"Failed to {outcome} task: {exc}", file=sys.stderr)
             return 1

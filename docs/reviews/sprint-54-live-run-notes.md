@@ -128,3 +128,42 @@ exit 75 with the reset time, and `foreman serve` to wait for the reset (bounded
 between one minute and six hours) before the next pass. Idle passes are now
 narrated once at INFO and repeated at DEBUG. Task 2 was unblocked and the
 resident run resumed after the merge.
+
+## Run 3 — slice 2a again, resident run with the quota fix
+
+`foreman serve foreman` started 17:35:40 UTC on the merged fix, found nothing runnable
+(task 2 still blocked), and idled with one INFO line. `foreman task unblock` from
+another process committed at 17:35:41; the engine woke on `data_version` within a
+second, selected task 2, and resumed the developer's earlier session (`--resume`),
+so the reading it had done before the quota hit was not repeated.
+
+**Slice 2a result.** Develop 25.1 min on the resumed session ($13.11), tests, review approve (5.3 min, $0.76), gate. Eight conventional commits: migration 15 with CHECK constraints, `EngineCommand` and a token-free `EngineLockView`, five store methods, a `command_poll` seam called before every step and on every silent tick, `pause`/`resume`/`run_task`/`stop_task`/`shutdown` semantics with stale-command rejection at startup, `foreman engine` CLI, ADR-0011 amendment, 45 tests (725 total in the agent's run). The agent found and fixed two of its own bugs through its tests (an exception-ordering shadowing and a `run_task` request being overwritten). With the idle-logging fix the resident log held 182 lines after thirty idle minutes instead of 1,400 per hour.
+
+| # | Sev | Observation | Consequence |
+|---|-----|-------------|-------------|
+| 29 | major | A task branch is created on the task's first develop visit and never refreshed: task 2's branch dates from the quota-failed attempt at 12:32, so by the time it reached the gate `main` had taken the quota fix, which touches the same files. The merge step will conflict and cost a full develop → test → review cycle. | Sync the task branch with the default branch at the start of every develop visit when the merge is clean (`sync_branch_with_base` already exists; today it runs only after a merge conflict). Queued as a sprint fix. |
+| 30 | minor | `foreman approve` and `foreman deny` still run the rest of the workflow inline in the CLI process while a resident engine may be up; the engine was stopped by hand before approving to avoid a lease race. | Slice 2b should turn a gate decision into a command the resident engine applies (`resume_gate`), with the CLI returning immediately when an engine is resident. |
+
+**Merge round and the second quota hit.** Approving task 2 ran the merge inline: it
+conflicted on `foreman/orchestrator.py`, `foreman/serve.py`, `foreman/cli.py`,
+`CHANGELOG.md`, and more, because the branch predates the quota fix on `main`. The
+conflict-resolution pass ran 10.8 minutes on the resumed session ($5.36), reported
+"All three pass now. Let me run the full suite and finish the merge", and was then cut
+off by the five-hour window again (resets 18:40 UTC). The new quota handling did its
+job: the task stayed `in_progress` at `develop` with `failure_type=quota` and an
+`engine.quota_exhausted` event, no loop budget spent, nothing blocked.
+
+| # | Sev | Observation | Consequence |
+|---|-----|-------------|-------------|
+| 31 | major | The pass was interrupted with a merge in progress: `MERGE_HEAD` present, two files still conflicted, the rest resolved and staged. The next develop visit's conflict-recovery path would run `git merge main` again, fail with "not concluded", and `git merge --abort`, throwing the developer's resolution away. | Fixed with F3: a develop visit that finds an unconcluded merge leaves it alone and tells the developer to finish it (`engine.branch_sync` with mode `merge_in_progress`). |
+| 32 | minor | `foreman approve` printed "Failed to approve task: … paused until the backend quota resets" and exited 1, although the decision was recorded and the merge attempted; only the follow-on develop pass paused. | Fixed with F3: approve and deny report the pause honestly and exit 75. |
+| 33 | major (structural) | With the working tree mid-merge on the task branch, `./venv/bin/foreman` in that checkout cannot even import (conflict markers in `orchestrator.py`): the engine's code and the code it edits are the same files. The resident engine had to be started from a separate clone pointed at the dogfood database. | The strongest argument yet for slice 6 (worktree per task): the engine must run from an installed package or a stable checkout, never from the tree the agent edits. |
+| 34 | minor | The orchestrator asserts after every step that the default branch did not move, and blocks the task if it did. With one local engine that is a safety net; with pull requests and a remote `main` it is a single-machine assumption. | Revisit when integration moves to pull requests (sprint 55). |
+
+**Resolution.** Branch `fix/task-branch-refresh` (F3): every develop visit first merges
+the default branch into the task branch when it is behind and the merge is clean
+(`engine.branch_sync`, mode `refresh`), hands a conflicting refresh to the developer as
+guidance (mode `refresh_conflict`), never aborts a merge the developer was concluding
+(mode `merge_in_progress`), and `foreman approve`/`deny` exit 75 with an honest message
+when the follow-on step pauses on quota. The two merge-conflict tests were rewritten
+around the real scenario: `main` moving while the task waits at a human gate.
