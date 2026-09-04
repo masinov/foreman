@@ -32,6 +32,33 @@ memory changes rather than versioned product releases.
   firehose at DEBUG. Retention pruning and crash recovery are gated behind
   `run_project(maintenance=...)` so idle wakes stay cheap. Recorded as
   ADR-0011; `foreman run --json-logs` opts into the same log format.
+- **slice 2, the engine command table and the `foreman engine` CLI**
+  (`feat/task-add-the-engine-command-table-and-foreman-engine-cli`): migration
+  15 adds `engine_commands` (`pause`, `resume`, `run_task`, `stop_task`,
+  `shutdown`; `pending` → `acknowledged` → `completed`/`rejected`) with an
+  index on `(project_id, status, requested_at)` and `ON DELETE CASCADE` from
+  both `projects` and `tasks`. `ForemanStore` gains `enqueue_engine_command`,
+  `list_engine_commands`, `next_pending_engine_command`,
+  `mark_engine_command`, and `get_engine_lock`, the last returning a
+  token-free `EngineLockView` (holder, acquired, heartbeat, expiry) so
+  operator surfaces can see who holds a project without the secret that would
+  let them release it. The resident engine drains pending commands before
+  every pass and supplies the orchestrator with a new `command_poll`
+  callback, called before every workflow step and on every `agent.tick`, so a
+  `pause` reaches an agent that has been quiet for twenty minutes: the agent
+  process group is terminated and the run settled as `killed` through the
+  existing `_abandon_run` path (`gate_type="command"`). `pause` leaves the
+  task resumable and the engine resident, idle, and still heartbeating its
+  lock; `stop_task` marks the task `blocked` with `blocked_reason`
+  "Stopped by \<requester\>"; `shutdown` releases the lock and exits 0. Every
+  command records `engine.command_applied` or `engine.command_rejected`, and a
+  starting engine rejects pending `pause`/`stop_task`/`shutdown` with
+  `result_detail="no engine was resident"` while honouring pending `resume`
+  and `run_task`. New `foreman engine
+  status|pause|resume|shutdown|run-task|stop-task`, with `--by` defaulting to
+  the OS user name and the command id printed. ADR-0011 amended to record the
+  command table as the only control channel to a resident engine. The
+  dashboard is untouched and moves onto the table in the next slice.
 - `fix/runner-progress-lines`: the Claude Code runner turns progress-only
   stream lines (`system`/`thinking_tokens`, allowed `rate_limit_event`) into
   non-persisted `agent.tick` heartbeats instead of one `agent.tool_use` plus

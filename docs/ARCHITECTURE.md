@@ -146,6 +146,42 @@ ADR-0011 is the active contract for engine residency and concurrency.
   its task id, and `block_task_for_error()` parks a task through the existing
   system-run and `engine.attention_needed` path.
 
+### The engine command table
+
+`engine_commands` (migration 15) is the **only** control channel to a resident
+engine. Anything that wants to steer one — the CLI, the dashboard, the intake
+API — inserts a row; the engine holding the project lock consumes it. The row
+is also the audit trail: who asked, when, and what the engine did about it.
+
+- `foreman/models.py` — the `EngineCommand` dataclass, the command and status
+  vocabularies, and `EngineLockView`, a token-free read of the engine lease.
+  The view deliberately omits `lease_token`: operator surfaces need to know who
+  holds a project, not the secret that would let them release it.
+- `foreman/store.py` — `enqueue_engine_command`, `list_engine_commands`,
+  `next_pending_engine_command`, `mark_engine_command`, and `get_engine_lock`.
+  The insert commits on its own connection, which is what makes an idle
+  engine's `PRAGMA data_version` wait notice a command without polling a table.
+- `foreman/errors.py` — `EngineCommandInterrupt`, a `BaseException` so the
+  orchestrator's defensive `except Exception` fallbacks cannot turn an
+  operator's `pause` into a failed agent outcome. It lives in `errors.py`
+  because the orchestrator must catch it and `foreman/serve.py` imports the
+  orchestrator.
+- `foreman/orchestrator.py` — the `command_poll` seam, called before every
+  workflow step (immediately after the resume point is persisted, so an
+  interrupt always leaves a correct resume point) and on every `agent.tick`
+  while a runner streams. `_execute_agent_step_guarded` settles an interrupted
+  run as `killed` with `gate_type="command"`, reusing the shutdown path.
+  `stop_task()` and `release_task()` are the two task-state seams a command
+  needs; `record_engine_event()` anchors `engine.command_applied` /
+  `engine.command_rejected` on a system run.
+- `foreman/serve.py` — the command state machine: startup rejection of
+  commands addressed to an engine that is no longer resident, a drain before
+  every pass, the paused state, and settlement of an interrupt once the stack
+  has unwound. Policy lives here, next to the loop state it changes, rather
+  than in the orchestrator.
+- `foreman/cli.py` — `foreman engine status|pause|resume|shutdown|run-task|
+  stop-task`, which read the lock view and enqueue commands.
+
 ### Inspection and dashboard surfaces
 
 Foreman now exposes two first-class observation surfaces:
@@ -374,8 +410,10 @@ The following items were implemented as hardening before the 1.0 release:
 
 ## Next architectural slice
 
-The resident engine (ADR-0011) makes the dashboard's "spawn a `foreman run`
-subprocess" pattern the odd one out: it now competes for the engine lock rather
-than cooperating with the resident worker. The next slice replaces it with an
-engine command table the dashboard and CLI write to and the resident engine
-consumes, plus reporting for tasks the engine has dead-lettered into `blocked`.
+The command table has landed, but the dashboard has not moved onto it yet: it
+still spawns a `foreman run` subprocess and tracks the process handle in a
+module-level `_RUNNING_PROCS` dict in `foreman/dashboard_service.py`, which is
+lost when the dashboard restarts and now competes for the engine lock rather
+than cooperating with the resident worker. The next slice rewires Run and Stop
+onto `engine_commands`, adds the engine status view to the API, and reports
+tasks the engine has dead-lettered into `blocked`.

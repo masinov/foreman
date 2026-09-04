@@ -311,6 +311,28 @@ naming the holder. See
 [ADR-0011](docs/adr/ADR-0011-resident-engine-and-project-lock.md) and
 [§6.1 of the manual](docs/MANUAL.md#61-foreman-serve-the-resident-engine).
 
+## Steering a resident engine
+
+A resident engine has no terminal, and a signal cannot say "run *that* task".
+It is steered through the `engine_commands` table instead — the only control
+channel to a running engine, and a durable audit trail of who asked for what:
+
+```bash
+foreman engine status <project>                 # holder, heartbeat, state, recent commands
+foreman engine pause|resume|shutdown <project>  # [--by WHO], default the OS user name
+foreman engine run-task <project> <task-id>     # run this task next
+foreman engine stop-task <project> <task-id>    # stop it and block it
+```
+
+Each verb queues a row and prints its command id. The engine acknowledges a
+command when it picks it up and completes or rejects it with a reason, checking
+before every workflow step and on every agent tick — so a `pause` reaches an
+agent that has been quiet for twenty minutes. `pause` leaves the task
+resumable; `stop_task` blocks it, naming the requester. A `pause`, `stop_task`,
+or `shutdown` left pending for an engine that is no longer resident is rejected
+at the next startup rather than applied to an engine nobody addressed. See
+[§23 of the manual](docs/MANUAL.md#23-talking-to-the-resident-engine).
+
 The bootstrap supervisor scripts that once drove this repository were removed
 in sprint 53. Run all Python commands through the repo virtual environment
 (`./venv/bin/foreman`).
@@ -320,9 +342,11 @@ in sprint 53. Run all Python commands through the repo virtual environment
 Phase 0 of the production readiness review
 (`docs/reviews/production-readiness-review.md`) shipped as sprint 53: an
 unattended run is safe on one machine. Sprint 54 is Phase 1. Slice 1, the
-resident `foreman serve` worker and the project engine lock, has landed; next
-is the engine command table the dashboard and CLI write to, then the intake
-endpoint, the policy matrix, a per-task planner step, and worktree isolation.
+resident `foreman serve` worker and the project engine lock, and slice 2, the
+`engine_commands` table and the `foreman engine` CLI, have landed; next is
+rewiring the dashboard onto the command table and reporting dead-lettered
+tasks, then the intake endpoint, the policy matrix, a per-task planner step,
+and worktree isolation.
 `docs/sprints/current.md` lists the slice order.
 
 ## Validation

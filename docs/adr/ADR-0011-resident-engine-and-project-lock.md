@@ -2,6 +2,7 @@
 
 - Status: accepted
 - Date: 2026-09-04
+- Amended: 2026-09-04 — *The command table is the only control channel*
 
 ## Context
 
@@ -141,12 +142,102 @@ event type is more likely to be a new stream than a new decision, and the four
 narrative families are prefix-matched so a genuinely new decision event reaches
 INFO with no code change.
 
+## Amendment (2026-09-04): the command table is the only control channel
+
+The original decision left a resident engine reachable only by signal. That is
+not enough, and the gap is not cosmetic:
+
+- a signal cannot carry an argument, so it can never say "run *that* task";
+- a signal cannot be queued for an engine that is not up yet;
+- a signal leaves no record of who sent it or what came of it;
+- a signal cannot be sent at all by a dashboard on another host, or by an
+  intake API sharing only the database.
+
+### Decision
+
+`engine_commands` (migration 15) is the **only** control channel to a resident
+engine. Every actor that wants to steer one — the CLI, the dashboard, the
+intake API — inserts a row and reads the outcome back from the same row.
+Nothing may reach into a resident engine any other way: no process handles kept
+in a module-level dict, no `kill` against a pid the caller happened to
+remember, no second `foreman run` racing the resident worker for the lock.
+
+The vocabulary is `pause`, `resume`, `run_task`, `stop_task`, `shutdown`, and
+the lifecycle is `pending` → `acknowledged` → `completed` | `rejected`, always
+with a `result_detail`. The row *is* the audit trail; `requested_by` is never
+blank.
+
+**Why a table rather than a socket or a pipe.** The database is already the
+thing every actor shares — that is the product's premise — and it is already
+how an idle engine learns that anything happened (`PRAGMA data_version`). A
+socket would need a second transport, a second auth story, a second liveness
+problem, and would not survive the engine being down; a command queued for an
+engine that starts in ten minutes is a feature, not an edge case. The table
+also gives durability and history for free, which a socket cannot.
+
+**Why the engine polls rather than being interrupted.** A command must be able
+to stop an agent step that has been running for an hour, and the only place the
+engine reliably regains control during such a step is the runner's event
+stream. So the orchestrator takes a `command_poll` callback and calls it before
+every workflow step and on every `agent.tick` — the same heartbeat that already
+keeps the task lease alive. The poll site sits immediately *after* the resume
+point is persisted, so an interrupt always leaves the task resumable at the
+step it was about to run rather than the one it just finished.
+
+An interrupting command raises `EngineCommandInterrupt`, a `BaseException` for
+the same reason `EngineShutdown` is one: the orchestrator's defensive
+`except Exception` fallbacks turn an exception into a failed agent outcome, and
+an operator's `pause` is not an agent failure. It settles through the existing
+`_abandon_run` path, so a commanded stop and a signalled stop leave identical
+state behind — run `killed`, task resumable — and there is one settlement path
+to reason about rather than two.
+
+### A paused engine, and a stopped task
+
+`pause` is about the engine, not the work: it stops new work being picked up
+and stops the running step, but changes **no task status**, keeps the lock, and
+keeps heartbeating it. A paused engine still answers `resume` and `shutdown`,
+because an engine that could be paused into unreachability would be a worse
+operator surface than no pause at all.
+
+`stop_task` is about the work: the task becomes `blocked` with
+`blocked_reason = "Stopped by <requested_by>"`. No new task status was
+introduced. `blocked` already means exactly what a stopped task needs it to
+mean — not runnable until a human or the manager says otherwise — and every
+surface that already reports blocked tasks reports stopped ones for free. A
+stop records no `engine.attention_needed`: a person who pressed Stop does not
+need to be told they stopped something. The dead-letter reporting slice is what
+makes a forgotten `blocked` task visible, and it does not care why the task was
+blocked.
+
+### Commands addressed to an engine that is gone
+
+A command that describes *work* outlives the process; a command that describes
+a *process* does not. So a starting engine honours a pending `resume` or
+`run_task` and rejects every pending `pause`, `stop_task`, and `shutdown` with
+`result_detail = "no engine was resident"`. The alternative — applying them —
+would let a `pause` queued against yesterday's engine silently pause today's,
+which is the kind of failure nobody thinks to look for.
+
+### Consequences of the amendment
+
+- The dashboard's Run/Stop buttons and `_RUNNING_PROCS` are now the only thing
+  that talks to an engine outside this channel, and are scheduled for
+  replacement in the next slice. Until then a dashboard Run still competes for
+  the engine lock and is refused while a `serve` is up.
+- Rejections are ordinary outcomes, not errors. A caller must read the command
+  row back to learn what happened; printing the command id from the CLI is what
+  makes that possible.
+- The poll adds one indexed single-row read per workflow step and per agent
+  tick. Ticks are seconds apart at worst, so the cost is negligible against an
+  agent step, and an idle engine still reads nothing but `data_version`.
+
 ## Consequences
 
 - A `foreman run` — including the one the dashboard's Run button spawns — now
   fails with a clear message while a resident engine is up. That is the
-  intended behaviour, and the next slice gives the dashboard a command table to
-  write to instead of spawning a competing process.
+  intended behaviour; the command table added in the amendment above is what
+  the dashboard writes to instead of spawning a competing process.
 - After an engine is SIGKILLed, its project is unavailable for up to 120
   seconds. Recovering faster would need liveness beyond lease expiry (a pid or
   a host check), which is deferred until it is actually needed.
