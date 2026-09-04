@@ -18,6 +18,8 @@ from .errors import ForemanError
 from .git import (
     GitError,
     assert_default_branch_unchanged,
+    commits_behind,
+    merge_in_progress,
     assert_not_on_default_branch,
     branch_exists,
     changed_files,
@@ -2644,12 +2646,43 @@ class ForemanOrchestrator:
         the usual develop -> review cycle after the resolution.
         """
 
-        if (
-            step != "develop"
-            or not task.branch_name
-            or not _is_merge_conflict_feedback(carried_output)
-        ):
+        if step != "develop" or not task.branch_name:
             return carried_output, None
+
+        if merge_in_progress(project.repo_path):
+            # The previous develop pass was cut off (quota, shutdown) while
+            # concluding a merge. Aborting it here would throw away the
+            # developer's conflict resolution; leave the tree as it is and say
+            # so, because the resumed session knows where it stopped.
+            guidance = _append_feedback_note(
+                carried_output,
+                (
+                    f"A merge into branch {task.branch_name!r} is still in progress in the "
+                    "working tree (MERGE_HEAD exists) from the previous pass. Finish "
+                    "resolving it and commit the merge before continuing the task."
+                ),
+            )
+            return (
+                guidance,
+                (
+                    "engine.branch_sync",
+                    {
+                        "step": step,
+                        "branch": task.branch_name,
+                        "target": project.default_branch,
+                        "mode": "merge_in_progress",
+                        "detail": "Unconcluded merge left by the previous pass; not aborted.",
+                    },
+                ),
+            )
+
+        if not _is_merge_conflict_feedback(carried_output):
+            return self._refresh_task_branch(
+                project=project,
+                task=task,
+                step=step,
+                carried_output=carried_output,
+            )
 
         sync_result = sync_branch_with_base(
             project.repo_path,
@@ -2705,6 +2738,68 @@ class ForemanOrchestrator:
                 },
             ),
         )
+
+    def _refresh_task_branch(
+        self,
+        *,
+        project: Project,
+        task: Task,
+        step: str,
+        carried_output: str | None,
+    ) -> tuple[str | None, tuple[str, dict[str, Any]] | None]:
+        """Bring a task branch up to date with the default branch before a develop pass.
+
+        A task can wait a long time between visits (a human gate, a quota
+        reset, a review round) while the default branch moves. Merging the
+        base in now, while the merge is clean, means the developer works on
+        current code and the final merge cannot conflict on changes it never
+        saw. A refresh that conflicts is handed to the developer as guidance,
+        exactly like a merge conflict found at the end.
+        """
+
+        branch = task.branch_name or ""
+        if not branch_exists(project.repo_path, branch):
+            return carried_output, None
+        behind = commits_behind(project.repo_path, branch, project.default_branch)
+        if behind <= 0:
+            return carried_output, None
+        if not is_worktree_clean(project.repo_path):
+            return carried_output, None
+
+        sync_result = sync_branch_with_base(project.repo_path, branch, project.default_branch)
+        payload = {
+            "step": step,
+            "branch": branch,
+            "target": project.default_branch,
+            "mode": "refresh",
+            "commits_behind": behind,
+            "detail": sync_result.detail,
+        }
+        if sync_result.success:
+            guidance = _append_feedback_note(
+                carried_output,
+                (
+                    f"Foreman refreshed branch {branch!r} with the latest "
+                    f"{project.default_branch!r} ({behind} new commit(s)) before this "
+                    "develop pass. Review the merged base-branch changes where they touch "
+                    "your work; no other action is needed."
+                ),
+            )
+            return guidance, ("engine.branch_sync", payload)
+
+        payload["mode"] = "refresh_conflict"
+        guidance = _append_feedback_note(
+            carried_output,
+            (
+                f"Branch {branch!r} is {behind} commit(s) behind {project.default_branch!r} "
+                "and merging the base branch into it conflicts. Reconcile the branch with "
+                f"the latest {project.default_branch!r} first (resolve the conflict, commit "
+                "the merge), then continue the task. The result goes through test and "
+                "review as usual.\n\n"
+                f"Merge attempt detail:\n{sync_result.detail}"
+            ),
+        )
+        return guidance, ("engine.branch_sync_conflict", payload)
 
     def _write_runtime_context(
         self,

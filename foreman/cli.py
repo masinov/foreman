@@ -23,7 +23,7 @@ from .dashboard_runtime import (
 from .engine_lock import EngineBusyError, EngineLock
 from .logs import configure_json_logging
 from .models import Event, GATE_POLICY_NAMES, Project, Sprint, TASK_COMPLEXITIES, TASK_TYPES, Task, utc_now_text
-from .orchestrator import ForemanOrchestrator, OrchestratorError
+from .orchestrator import ForemanOrchestrator, OrchestratorError, QuotaPauseError
 from .roles import RoleLoadError, default_roles_dir, load_roles
 from .runner.process import EngineShutdown, install_shutdown_handlers
 from .serve import DEFAULT_POLL_SECONDS, serve_project
@@ -2840,6 +2840,19 @@ def _handle_human_gate_decision(args: argparse.Namespace, *, outcome: str) -> in
                 outcome=outcome,
                 note=args.note,
             )
+        except QuotaPauseError as exc:
+            # The decision was recorded and the workflow resumed; it is the
+            # follow-on agent step that hit the backend quota. That is a pause,
+            # not a failed decision, so say so and use the temporary-failure
+            # exit code `foreman run` uses for the same condition.
+            print(
+                f"Recorded {outcome} for task {args.task_id}; the workflow resumed and "
+                f"then paused because the agent backend's quota ran out "
+                f"(retry after {exc.retry_after or 'unknown'}). The task keeps its "
+                "resume point; the next engine pass continues it.",
+                file=sys.stderr,
+            )
+            return EXIT_QUOTA_EXHAUSTED
         except OrchestratorError as exc:
             print(f"Failed to {outcome} task: {exc}", file=sys.stderr)
             return 1

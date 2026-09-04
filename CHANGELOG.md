@@ -32,6 +32,14 @@ memory changes rather than versioned product releases.
   firehose at DEBUG. Retention pruning and crash recovery are gated behind
   `run_project(maintenance=...)` so idle wakes stay cheap. Recorded as
   ADR-0011; `foreman run --json-logs` opts into the same log format.
+- `fix/task-branch-refresh`: every develop visit first merges the default
+  branch into the task branch when it is behind and the merge is clean
+  (`engine.branch_sync`, mode `refresh`, with `commits_behind`); a refresh
+  that conflicts is handed to the developer as guidance (mode
+  `refresh_conflict`); an unconcluded merge left by an interrupted pass is
+  never aborted (mode `merge_in_progress`); `foreman approve` and `foreman
+  deny` exit 75 with an honest message when the resumed workflow pauses on a
+  backend quota. New `commits_behind` and `merge_in_progress` git helpers.
 - `fix/runner-quota-exhaustion`: a backend usage quota running out mid-step
   (Claude Code's "session limit" result after a rejected `rate_limit_event`)
   is a `QuotaExhaustedError` carrying the reset time; `run_with_retry`

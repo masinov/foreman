@@ -526,6 +526,20 @@ event and a `loop_limit` supervision trigger. The `completion:conflict`
 transition explicitly **resets** the visit budget (emitting
 `workflow.step_visit_reset`) so conflict recovery doesn't starve the loop.
 
+### Branch refresh before a develop pass
+
+A task can wait a long time between develop visits (a human gate, a quota
+reset, a review round) while the default branch moves. Before every
+`develop` step the engine merges the default branch into the task branch when
+the branch is behind and the merge is clean, recording `engine.branch_sync`
+with `mode="refresh"` and `commits_behind`, and tells the developer in the
+carried feedback. A refresh that conflicts is aborted (the tree stays clean)
+and handed to the developer as guidance (`engine.branch_sync_conflict`,
+`mode="refresh_conflict"`). An unconcluded merge left in the working tree by
+an interrupted pass is never aborted: the developer is told to finish it
+(`mode="merge_in_progress"`). Merge-time conflicts still route through the
+`completion:conflict` transition described above.
+
 ---
 
 ## 9. The multi-model fleet
