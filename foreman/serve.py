@@ -146,9 +146,11 @@ class ResidentEngine:
         self._paused = False
         #: Set by a `shutdown`. Ends the loop cleanly with exit code 0.
         self._stopping = False
-        #: Set by a `run_task`. Consumed by the next pass, which runs that task
-        #: instead of asking the sprint what comes next.
-        self._run_next_task_id: str | None = None
+        #: Filled by `run_task`, drained one per pass. A list rather than a
+        #: single slot because two `run_task` commands are two requests: the
+        #: second must not silently discard the first, which was already told
+        #: it would run.
+        self._requested_task_ids: list[str] = []
 
     # ── loop ─────────────────────────────────────────────────────────────
 
@@ -464,9 +466,14 @@ class ResidentEngine:
                 "point, can be run on request.",
             )
             return
-        self._run_next_task_id = task_id
+        self._requested_task_ids.append(task_id)
+        position = len(self._requested_task_ids)
         self._finish_command(
-            command, "completed", f"Task {task_id!r} will run next."
+            command,
+            "completed",
+            f"Task {task_id!r} will run next."
+            if position == 1
+            else f"Task {task_id!r} is queued to run ({position} requests ahead of the sprint).",
         )
 
     def _stop_task_rejection(
@@ -582,10 +589,11 @@ class ResidentEngine:
             )
 
     def _take_requested_task(self) -> str | None:
-        """Consume a queued `run_task` target, if one is waiting."""
+        """Consume the next queued `run_task` target, if one is waiting."""
 
-        task_id, self._run_next_task_id = self._run_next_task_id, None
-        return task_id
+        if not self._requested_task_ids:
+            return None
+        return self._requested_task_ids.pop(0)
 
     # ── failure isolation ────────────────────────────────────────────────
 

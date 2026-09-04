@@ -84,7 +84,7 @@ still pass unchanged.
 
 ## Tests
 
-`./venv/bin/python -m unittest discover -s tests` → **724 tests, OK** (1 skip:
+`./venv/bin/python -m unittest discover -s tests` → **725 tests, OK** (1 skip:
 `test_e2e` needs pytest, pre-existing).
 
 - `tests/test_engine_commands.py` (new, 25 tests): migration 15 columns,
@@ -106,6 +106,8 @@ still pass unchanged.
   queue-then-`serve --once` round trip.
 - `tests/test_store_safety.py`: unpinned from "14 is the latest migration" so
   the next migration does not break a test about the v14 rebuild.
+- Two queued `run_task` commands both run, oldest first: the second request
+  does not discard the first, which was already told it would run.
 - No test launches a real `claude` or `codex` binary.
 
 `./venv/bin/python scripts/validate_repo_memory.py` → passes.

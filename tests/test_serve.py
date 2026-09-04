@@ -1931,3 +1931,45 @@ class EngineCommandDuringAgentStepTests(unittest.TestCase):
             command = store.get_engine_command(runner.command_id)
             assert command is not None
             self.assertEqual(command.status, "completed")
+
+
+class EngineRunTaskQueueTests(unittest.TestCase):
+    """Two `run_task` requests are two requests, not one overwriting the other."""
+
+    def setUp(self) -> None:
+        self._temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._temp.cleanup)
+        self.db_path = Path(self._temp.name) / "foreman.db"
+        self.store = ForemanStore(self.db_path)
+        self.addCleanup(self.store.close)
+        self.store.initialize()
+        self.project = _seed_project(self.store, self._temp.name, tasks=2)
+        self.clock = _FakeClock()
+
+    def test_two_queued_run_tasks_both_run_in_order(self) -> None:
+        for task_id in ("task-2", "task-1"):
+            self.store.enqueue_engine_command(
+                project_id=self.project.id,
+                command="run_task",
+                requested_by="alice",
+                task_id=task_id,
+            )
+
+        orchestrator = _StubOrchestrator(
+            [_executed("task-2"), _executed("task-1"), _idle()]
+        )
+        ResidentEngine(
+            store=self.store,
+            project_id=self.project.id,
+            orchestrator=orchestrator,  # type: ignore[arg-type]
+            sleep=self.clock.sleep,
+            monotonic=self.clock.monotonic,
+        ).run()
+
+        self.assertEqual(
+            orchestrator.targets[:3],
+            ["task-2", "task-1", None],
+            "both requested tasks must run, oldest first, before normal selection",
+        )
+        for command in self.store.list_engine_commands(self.project.id):
+            self.assertEqual(command.status, "completed")
