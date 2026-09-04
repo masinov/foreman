@@ -310,8 +310,8 @@ foreman run <project> [--task TASK_ID] [--json-logs]   # one pass, then exit
 foreman serve <project> [--poll-seconds N] [--once]    # resident worker
 ```
 
-`foreman run` advances the active sprint until nothing is runnable and exits;
-the dashboard's Run button spawns the same command. `foreman serve` keeps the
+`foreman run` advances the active sprint until nothing is runnable and exits.
+`foreman serve` keeps the
 engine resident: when a pass has nothing to do it waits until another process
 writes to the database or the poll interval elapses, then runs another pass, so
 work queued later is picked up without a person pressing Run. It logs JSON

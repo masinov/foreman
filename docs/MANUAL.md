@@ -316,9 +316,8 @@ anyone pressing Run.
 
 **One engine per project.** Before it touches a task, `serve` takes a lease with
 `resource_type="engine"` on the project id, and holds it for the whole session.
-`foreman run` takes the same lock. A second `serve` — or a `run`, including the
-one the dashboard's Run button spawns — exits non-zero with a message naming the
-holder:
+`foreman run` takes the same lock. A second `serve` — or a `run` — exits
+non-zero with a message naming the holder:
 
 ```
 Another Foreman engine is already running project 'foreman' (lock holder
@@ -1276,7 +1275,7 @@ See [ADR-0011](adr/ADR-0011-resident-engine-and-project-lock.md).
 | Cost shows `$0.00` but tokens are counted | Expected for third-party Anthropic-compatible endpoints; see `zero_cost_token_runs` in totals. |
 | Dashboard header says "not running" while work is happening | Residency is the engine lease. A `foreman run` that crashed leaves the lease until it expires (120 s); an engine started outside the dashboard shows as resident as soon as it takes the lock. |
 | Dashboard Pause seems to do nothing | `pause` is queued, not signalled. Check `foreman engine status <project>`: a `pending` command means no engine is resident to apply it, and it will be rejected as stale when one starts. |
-| `Another Foreman engine is already running project ...` | A resident `foreman serve` (or another `run`, including one the dashboard spawned) holds the project engine lock. Stop it, or wait out its 120 s lease if the holder was killed. |
+| `Another Foreman engine is already running project ...` | A resident `foreman serve` (or another `run`) holds the project engine lock. Stop it with `foreman engine shutdown <project>`, or wait out its 120 s lease if the holder was killed. |
 | `serve` never picks up a queued task | Check the task is `todo` in the **active** sprint and its dependencies are satisfied. `serve.idle` with `stop_reason` tells you which. |
 | SSE/watch feels laggy | Both gate on `PRAGMA data_version` at 0.25 s; they only re-query after another connection commits. A same-process writer won't bump it, but those loops never write. |
 

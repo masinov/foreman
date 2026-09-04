@@ -43,9 +43,9 @@ decisions worth carrying forward:
 - The engine lock is a lease row (`resource_type="engine"`), not a lock file,
   so no migration was needed and a crashed engine frees its project by expiry
   (120 s) rather than leaving state a human must clean up. ADR-0011.
-- The dashboard's Run button still spawns a `foreman run` subprocess, which now
-  competes for that lock instead of cooperating with the resident worker. This
-  is the concrete reason slice 2 (the engine command table) comes next.
+- The dashboard's Run button still spawned a `foreman run` subprocess, which
+  competed for that lock instead of cooperating with the resident worker. This
+  was the concrete reason slice 2 came next; slice 2b closed it.
 
 ### Slice 2b notes
 

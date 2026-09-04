@@ -443,10 +443,16 @@ The following items were implemented as hardening before the 1.0 release:
 
 ## Next architectural slice
 
-The command table has landed, but the dashboard has not moved onto it yet: it
-still spawns a `foreman run` subprocess and tracks the process handle in a
-module-level `_RUNNING_PROCS` dict in `foreman/dashboard_service.py`, which is
-lost when the dashboard restarts and now competes for the engine lock rather
-than cooperating with the resident worker. The next slice rewires Run and Stop
-onto `engine_commands`, adds the engine status view to the API, and reports
-tasks the engine has dead-lettered into `blocked`.
+The engine is resident, steerable through `engine_commands`, and every surface
+that controls it now goes through that table. What it still cannot do is
+accept work from anything other than a person at a keyboard: task creation
+lives on `dashboard_service.create_task`, needs a sprint, and has no
+authentication, no idempotency, and no record of where the request came from.
+
+The next slice (sprint 54 slice 3) adds the intake endpoint:
+`POST /api/projects/{id}/intake`, authenticated with per-project API tokens,
+idempotent on an external reference so a retrying caller cannot create the
+same task twice, carrying source metadata, and choosing the initial status by
+policy — with the sprint optional, over a continuous queue. Slice 4 then adds
+the policy matrix (`triage` and `notification` joining `merge_approval` and
+`plan_approval`) that decides where a human is actually required.

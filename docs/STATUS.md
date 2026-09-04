@@ -130,10 +130,10 @@
   `killed`, releases the lock, and exits 0 (`foreman run` keeps 130).
 - Recorded as ADR-0011. Suite after merging `main`: 656 tests, OK
   (1 skipped: `tests/test_e2e.py` needs playwright).
-- **Known gap, closed by the next slice:** the dashboard's Run button still
-  spawns a `foreman run` subprocess, which now competes for the engine lock
-  rather than cooperating with a resident worker. Slice 2 replaces it with the
-  engine command table.
+- **Known gap at the time, now closed:** the dashboard's Run button spawned a
+  `foreman run` subprocess that competed for the engine lock rather than
+  cooperating with a resident worker. Slice 2a added the engine command table
+  and slice 2b moved the dashboard onto it.
 
 ## Previous update — sprint 54 live run 1: runner progress lines
 
