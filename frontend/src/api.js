@@ -158,9 +158,10 @@ export function createDashboardServices({
         body: { title, goal, initial_tasks: initialTasks || undefined },
       });
     },
-    stopTask(taskId) {
+    stopTask(taskId, { requestedBy } = {}) {
       return request(`/api/tasks/${encodeURIComponent(taskId)}/stop`, {
         method: "POST",
+        body: { requested_by: requestedBy || undefined },
       });
     },
     cancelTask(taskId) {
@@ -199,10 +200,25 @@ export function createDashboardServices({
         body: updates,
       });
     },
-    stopAgent(projectId) {
+    // Pause: the engine stays resident and keeps its lock; it just stops
+    // picking up work. Nothing here changes a task's status.
+    stopAgent(projectId, { requestedBy } = {}) {
       return request(`/api/projects/${encodeURIComponent(projectId)}/agent/stop`, {
         method: "POST",
+        body: { requested_by: requestedBy || undefined },
       });
+    },
+    agentStatus(projectId) {
+      return request(`/api/projects/${encodeURIComponent(projectId)}/agent/status`);
+    },
+    listEngineCommands(projectId, { limit, status } = {}) {
+      const params = new URLSearchParams();
+      if (typeof limit === "number") params.set("limit", String(limit));
+      if (status) params.set("status", status);
+      const suffix = params.size > 0 ? `?${params.toString()}` : "";
+      return request(
+        `/api/projects/${encodeURIComponent(projectId)}/engine/commands${suffix}`,
+      );
     },
     async *metaMessage(projectId, message) {
       const response = await streamNdjson(
@@ -281,10 +297,10 @@ export function createDashboardServices({
         body: { resolution, resolved_by: resolvedBy },
       });
     },
-    startAgent(projectId, { taskId } = {}) {
+    startAgent(projectId, { taskId, requestedBy } = {}) {
       return request(`/api/projects/${encodeURIComponent(projectId)}/agent/start`, {
         method: "POST",
-        body: { task_id: taskId || undefined },
+        body: { task_id: taskId || undefined, requested_by: requestedBy || undefined },
       });
     },
     createProject({ name, repoPath, workflowId }) {

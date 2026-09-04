@@ -76,12 +76,15 @@ export function formatDate(value) {
 }
 
 // Single source of truth for the displayed engine state, so "Running" always
-// means a live agent process (`agent_running`) rather than an inferred
-// task-status. Falls back to the legacy `status` field when `agent_running`
-// isn't present in the payload.
+// means an engine resident on the project (holding its engine lock) rather
+// than an inferred task-status. Falls back to the legacy `status` field when
+// neither `engine` nor `agent_running` is present in the payload.
 export function deriveEngineState(project) {
   if (!project) {
     return "idle";
+  }
+  if (project.engine?.resident) {
+    return project.engine.paused ? "blocked" : "running";
   }
   if (project.agent_running) {
     return "running";
@@ -282,4 +285,66 @@ export function formatEventSummary(event) {
     }
   }
   return details.join(" | ") || event.event_type;
+}
+
+// ── The resident engine ──────────────────────────────────────────────────────
+
+// The engine is a service, not a subprocess the dashboard owns: it is either
+// resident on the project (holding its lock and heartbeating), resident but
+// paused, or not running at all. `status` is the payload from
+// `GET /api/projects/{id}/agent/status`.
+export function engineState(status) {
+  if (!status || !status.resident) {
+    return "stopped";
+  }
+  return status.paused ? "paused" : "resident";
+}
+
+export function formatEngineState(state) {
+  switch (state) {
+    case "resident":
+      return "resident";
+    case "paused":
+      return "paused";
+    default:
+      return "not running";
+  }
+}
+
+// Heartbeat age, rounded to what a person reading a header cares about.
+export function formatHeartbeatAge(seconds) {
+  if (seconds === null || seconds === undefined || Number.isNaN(seconds)) {
+    return null;
+  }
+  if (seconds < 60) {
+    return `${Math.max(0, Math.round(seconds))}s ago`;
+  }
+  if (seconds < 3600) {
+    return `${Math.floor(seconds / 60)}m ago`;
+  }
+  return `${Math.floor(seconds / 3600)}h ago`;
+}
+
+// One line for the project header: what the engine is, and how fresh that is.
+export function formatEngineSummary(status) {
+  const state = engineState(status);
+  const label = `Engine: ${formatEngineState(state)}`;
+  if (state === "stopped") {
+    return label;
+  }
+  const age = formatHeartbeatAge(status?.heartbeat_age_seconds);
+  return age ? `${label} · heartbeat ${age}` : label;
+}
+
+// Why a task is blocked. `gate` waits for a human decision; `engine` is the
+// engine's dead-letter state and needs a fix or an unblock.
+export function formatBlockedKind(kind) {
+  switch (kind) {
+    case "gate":
+      return "human gate";
+    case "engine":
+      return "engine";
+    default:
+      return "";
+  }
 }

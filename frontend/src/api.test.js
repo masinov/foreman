@@ -66,3 +66,35 @@ describe("dashboard access token", () => {
     expect(getDashboardToken(storage)).toBe("");
   });
 });
+
+describe("engine control calls", () => {
+  it("reads the engine status from the agent status route", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse(200, { resident: true }));
+    const services = createDashboardServices({ fetchImpl, tokenProvider: () => "" });
+
+    await services.agentStatus("proj-1");
+
+    expect(fetchImpl.mock.calls[0][0]).toBe("/api/projects/proj-1/agent/status");
+  });
+
+  it("posts a pause request and forwards the requester", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse(200, { command: { id: "cmd-1" } }));
+    const services = createDashboardServices({ fetchImpl, tokenProvider: () => "" });
+
+    await services.stopAgent("proj-1", { requestedBy: "ana" });
+
+    const [path, options] = fetchImpl.mock.calls[0];
+    expect(path).toBe("/api/projects/proj-1/agent/stop");
+    expect(options.method).toBe("POST");
+    expect(JSON.parse(options.body)).toEqual({ requested_by: "ana" });
+  });
+
+  it("lists recent engine commands", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse(200, { commands: [] }));
+    const services = createDashboardServices({ fetchImpl, tokenProvider: () => "" });
+
+    await services.listEngineCommands("proj-1", { limit: 5 });
+
+    expect(fetchImpl.mock.calls[0][0]).toBe("/api/projects/proj-1/engine/commands?limit=5");
+  });
+});

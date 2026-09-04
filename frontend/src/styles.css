@@ -649,6 +649,28 @@ button {
   border: 1px solid rgba(204, 153, 0, 0.3);
 }
 
+.badge-danger {
+  background: var(--red-dim);
+  color: var(--red);
+  border: 1px solid rgba(204, 85, 85, 0.3);
+}
+
+/* The engine line: residency and heartbeat freshness, next to Run/Pause. */
+.engine-state {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.engine-state.engine-resident {
+  color: var(--green);
+}
+
+.engine-state.engine-paused {
+  color: var(--amber);
+}
+
 .detail-kicker {
   display: flex;
   gap: 8px;
@@ -1812,6 +1834,27 @@ button {
 
 .card-blocked {
   border-left: 2px solid var(--amber);
+}
+
+.card-blocked-kind {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-top: 6px;
+  padding: 2px 6px;
+  border-radius: 2px;
+}
+
+.card-blocked-kind.kind-gate {
+  background: var(--amber-dim);
+  color: var(--amber);
+}
+
+.card-blocked-kind.kind-engine {
+  background: var(--red-dim);
+  color: var(--red);
 }
 
 .card-blocked-reason {
