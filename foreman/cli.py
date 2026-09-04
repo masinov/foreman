@@ -20,10 +20,13 @@ from .dashboard_runtime import (
     STREAM_POLL_INTERVAL_SECONDS,
     run_dashboard_server,
 )
+from .engine_lock import EngineBusyError, EngineLock
+from .logs import configure_json_logging
 from .models import Event, GATE_POLICY_NAMES, Project, Sprint, TASK_COMPLEXITIES, TASK_TYPES, Task, utc_now_text
 from .orchestrator import ForemanOrchestrator, OrchestratorError
 from .roles import RoleLoadError, default_roles_dir, load_roles
 from .runner.process import EngineShutdown, install_shutdown_handlers
+from .serve import DEFAULT_POLL_SECONDS, serve_project
 from .scaffold import (
     DEFAULT_DB_FILENAME,
     DEFAULT_DEFAULT_BRANCH,
@@ -1985,6 +1988,9 @@ def handle_run(args: argparse.Namespace) -> int:
     if db_path is None:
         return 1
 
+    if getattr(args, "json_logs", False):
+        configure_json_logging()
+
     with ForemanStore(db_path) as store:
         store.initialize()
         project = _resolve_project_or_print(store, args.project_id)
@@ -1992,10 +1998,29 @@ def handle_run(args: argparse.Namespace) -> int:
             return 1
 
         orchestrator = ForemanOrchestrator(store)
+        # One engine per project: a one-shot run and a resident `foreman serve`
+        # would otherwise pick different tasks in the same checkout.
+        lock = EngineLock(
+            store=store,
+            project_id=project.id,
+            holder_id=orchestrator.holder_id,
+        )
+        try:
+            lock.acquire()
+        except EngineBusyError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+
         install_shutdown_handlers()
         try:
             result = orchestrator.run_project(project.id, task_id=args.task)
         except (EngineShutdown, KeyboardInterrupt) as exc:
+            if lock.lost:
+                print(
+                    f"Run stopped: {lock.lost_reason}",
+                    file=sys.stderr,
+                )
+                return 1
             reason = str(exc) or "interrupted"
             print(
                 f"Run stopped: {reason} Agent processes were terminated; the active "
@@ -2006,6 +2031,8 @@ def handle_run(args: argparse.Namespace) -> int:
         except OrchestratorError as exc:
             print(f"Failed to run project: {exc}", file=sys.stderr)
             return 1
+        finally:
+            lock.release()
         db_path = store.db_path
 
     _print_lines(
@@ -2026,6 +2053,46 @@ def handle_run(args: argparse.Namespace) -> int:
         f"Stop reason: {result.stop_reason}",
     )
     return 0
+
+
+def handle_serve(args: argparse.Namespace) -> int:
+    """Handle ``foreman serve``.
+
+    Thin by design: everything about the loop, the lock, and the waiting lives
+    in ``foreman.serve``. This function resolves arguments, turns on JSON
+    logging (the resident engine has no terminal to print to), and maps the
+    result to an exit code.
+    """
+
+    db_path = _resolve_db_path_or_print(args.db)
+    if db_path is None:
+        return 1
+
+    if args.poll_seconds <= 0:
+        print("--poll-seconds must be greater than zero.", file=sys.stderr)
+        return 1
+
+    configure_json_logging()
+
+    with ForemanStore(db_path) as store:
+        store.initialize()
+        project = _resolve_project_or_print(store, args.project_id)
+        if project is None:
+            return 1
+
+        install_shutdown_handlers()
+        try:
+            result = serve_project(
+                store=store,
+                project_id=project.id,
+                poll_seconds=args.poll_seconds,
+                once=args.once,
+            )
+        except EngineBusyError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+
+    return result.exit_code
 
 
 def handle_config(args: argparse.Namespace) -> int:
@@ -2412,7 +2479,38 @@ def build_parser() -> argparse.ArgumentParser:
         run_parser,
         help_text=f"Path to the SQLite store containing the project workflow state. {DB_OPTION_NOTE}",
     )
+    run_parser.add_argument(
+        "--json-logs",
+        action="store_true",
+        help="Emit structured JSON-lines logs on stderr instead of staying quiet.",
+    )
     _set_handler(run_parser, handle_run, "run")
+
+    serve_parser = subparsers.add_parser(
+        "serve",
+        help="Run Foreman as a resident engine for one project.",
+    )
+    serve_parser.add_argument("project_id", help="Project identifier.")
+    serve_parser.add_argument(
+        "--poll-seconds",
+        type=float,
+        default=DEFAULT_POLL_SECONDS,
+        help=(
+            "Seconds an idle engine waits before running another pass. It also "
+            "wakes immediately when another process writes to the database. "
+            f"Default: {DEFAULT_POLL_SECONDS}."
+        ),
+    )
+    serve_parser.add_argument(
+        "--once",
+        action="store_true",
+        help="Run exactly one pass and exit (cron-style deployment, and tests).",
+    )
+    _add_db_option(
+        serve_parser,
+        help_text=f"Path to the SQLite store containing the project. {DB_OPTION_NOTE}",
+    )
+    _set_handler(serve_parser, handle_serve, "serve")
 
     status_parser = subparsers.add_parser(
         "status",

@@ -37,7 +37,8 @@ This manual is the detailed reference. For product intent and architecture see
 19. [Event taxonomy](#19-event-taxonomy)
 20. [Database & migrations](#20-database--migrations)
 21. [Validation](#21-validation)
-22. [Troubleshooting](#22-troubleshooting)
+22. [Stopping and interrupting a run](#22-stopping-and-interrupting-a-run)
+23. [Troubleshooting](#23-troubleshooting)
 
 ---
 
@@ -126,6 +127,10 @@ the retry budget.
 `foreman run <project-id>` advances the active sprint task-by-task through the
 project's workflow until it finishes, blocks, or hits a human gate. Use
 `foreman run <project-id> --task <task-id>` to drive a single task.
+
+`foreman serve <project-id>` is the same engine kept resident: instead of
+exiting when the queue empties it waits and picks up work added later, from any
+process. See [§6.1](#61-foreman-serve-the-resident-engine).
 
 Most commands accept `--db PATH`; by default they discover the repo-local
 `.foreman.db`.
@@ -241,7 +246,8 @@ foreman task override task-123 --step develop=MiniMax-M2 --step review=claude-op
 ### Execution
 
 ```bash
-foreman run <project-id> [--task TASK_ID] [--db DB]
+foreman run <project-id> [--task TASK_ID] [--json-logs] [--db DB]
+foreman serve <project-id> [--poll-seconds N] [--once] [--db DB]
 ```
 
 ### Human gates & waivers
@@ -274,6 +280,80 @@ foreman db version                    # current schema version
 foreman db migrate                    # apply pending migrations
 foreman dashboard                     # start the web dashboard
 ```
+
+### 6.1 `foreman serve`: the resident engine
+
+```bash
+foreman serve <project-id> [--poll-seconds N] [--once] [--db DB]
+```
+
+`foreman run` exits the moment no runnable task is left. `foreman serve` keeps
+the same engine resident: it runs a pass, and when the pass has nothing to do it
+sleeps until either another process writes to the database or `--poll-seconds`
+(default 5) elapses, then runs another pass. Work queued by the CLI, by the
+dashboard, or by another machine sharing the database is picked up without
+anyone pressing Run.
+
+**One engine per project.** Before it touches a task, `serve` takes a lease with
+`resource_type="engine"` on the project id, and holds it for the whole session.
+`foreman run` takes the same lock. A second `serve` — or a `run`, including the
+one the dashboard's Run button spawns — exits non-zero with a message naming the
+holder:
+
+```
+Another Foreman engine is already running project 'foreman' (lock holder
+5e29e543-…, lease expires 2026-09-04T11:54:36Z). Stop it, or wait for its lease
+to expire, before starting another.
+```
+
+The lock is renewed every 20 seconds from a timer thread on its own database
+connection, so a silent agent never costs the engine its project. It is released
+on every exit path: a normal stop, `--once`, SIGTERM/SIGINT, and an unhandled
+error. After a `kill -9` the project is free again once the 120-second lease
+expires. See [ADR-0011](adr/ADR-0011-resident-engine-and-project-lock.md).
+
+**A failed task does not stop the service.** If running a task raises, that task
+is marked `blocked` with the error as its `blocked_reason`, an
+`engine.attention_needed` event is raised for the supervision digest, and the
+engine continues after a backoff — 5 s, doubling per consecutive failure, capped
+at 5 minutes, reset after a clean pass. Errors that are not task-scoped (an
+unknown project, an invalid `task_selection_mode`) still end the service.
+
+**Structured logs, no printing.** `serve` writes nothing to stdout. Every
+lifecycle event goes to stderr as one JSON object per line, and so does every
+event the engine persists, so the process log alone tells the story of a run:
+
+```json
+{"ts":"2026-09-04T11:52:36.931Z","level":"INFO","event":"serve.lock_acquired","project_id":"foreman","holder_id":"5e29e543-…","lease_id":"lease-087fc41d0f20"}
+{"ts":"2026-09-04T11:52:36.932Z","level":"INFO","event":"serve.pass_completed","project_id":"foreman","blocked_task_ids":[],"executed_task_ids":["task-12"],"stop_reason":"idle"}
+{"ts":"2026-09-04T11:52:36.932Z","level":"INFO","event":"serve.idle","project_id":"foreman","stop_reason":"idle"}
+```
+
+Lifecycle events: `serve.started`, `serve.lock_acquired`, `serve.lock_busy`,
+`serve.pass_completed`, `serve.idle`, `serve.task_failed`,
+`serve.task_lease_lost`, `serve.lock_lost`, `serve.stopping`, `serve.stopped`,
+`serve.lock_released`. A refused start logs `serve.lock_busy` (with the holder
+and the lease expiry) at ERROR before it exits, so a supervisor reading only
+the log can tell a refusal from a crash. `foreman run` can opt into the same
+format with `--json-logs`.
+
+Mirrored engine events are levelled by family: `engine.*`, `workflow.*`,
+`gate.*`, `signal.*`, and the agent step lifecycle (`agent.started`,
+`agent.session`, `agent.message`, `agent.command`, `agent.file_change`,
+`agent.completed`, `agent.error`, `agent.infra_error`, `agent.killed`,
+`agent.rate_limit`) are **INFO**; the per-token, per-tool-call firehose
+(`agent.raw_output`, `agent.prompt`, `agent.tool_use`, `agent.tool_result`,
+`agent.cost_update`, `agent.tick`) is **DEBUG**, so a resident engine's own
+lifecycle is not buried in agent chatter. Every event is still persisted in
+full either way; the mapping lives in `foreman.logs.event_log_level`.
+
+`--once` runs exactly one pass and exits, for cron-style deployment and for
+tests. Retention pruning and crash recovery run at startup and after any pass
+that executed work — never on an idle wake, so an idle engine does nothing
+between wakes but re-read `PRAGMA data_version`.
+
+Exit codes: `0` on a clean stop (including SIGTERM), `1` when the lock is
+refused, when it is lost to another engine, or on a project-level error.
 
 ---
 
@@ -960,14 +1040,21 @@ through an architecture already known to be unacceptable (see `AGENTS.md`).
 
 ## 22. Stopping and interrupting a run
 
-`foreman run` installs SIGTERM and SIGINT handlers. Stopping the engine
-(Ctrl+C, `kill <pid>`, or the dashboard's Stop) terminates every child
-process group Foreman started (the agent and anything it spawned, or the
-test command), records the active run as `killed` with an `agent.killed`
-event (`gate_type="shutdown"`), releases the task lease, restores the
-checkout to the default branch, and exits with status 130. The task stays
-`in_progress` at its persisted workflow step, so the next `foreman run`
-resumes it.
+`foreman run` and `foreman serve` both install SIGTERM and SIGINT handlers.
+Stopping the engine (Ctrl+C, `kill <pid>`, or the dashboard's Stop) terminates
+every child process group Foreman started (the agent and anything it spawned, or
+the test command), records the active run as `killed` with an `agent.killed`
+event (`gate_type="shutdown"`), releases the task lease, restores the checkout
+to the default branch, and leaves the task `in_progress` at its persisted
+workflow step so the next run resumes it.
+
+The two commands differ only in exit code. `foreman run` exits **130**: the
+one-shot run it was asked to complete did not complete. `foreman serve` exits
+**0** and logs `serve.stopping` then `serve.stopped`: stopping a resident
+service is a requested state change, not a failure, and a supervisor
+(systemd, a container runtime) must not treat it as a crash loop. `serve` also
+releases the project engine lock on its way out, so a replacement engine can
+start immediately.
 
 While an agent is silent, the runner wakes every 15 seconds to enforce the
 time and cost gates and to heartbeat the task lease. If another engine has
@@ -987,6 +1074,8 @@ taken the lease meanwhile, the run is recorded as `killed`
 | `meta/supervise` returns 409 | The `engine.attention_needed` event was already consumed by a prior supervision turn (idempotency guard). |
 | Cost shows `$0.00` but tokens are counted | Expected for third-party Anthropic-compatible endpoints; see `zero_cost_token_runs` in totals. |
 | Dashboard Run/Stop toggle out of sync | `agent_running` is derived from the module-level process registry; a stale entry clears when the subprocess exits. |
+| `Another Foreman engine is already running project ...` | A resident `foreman serve` (or another `run`, including one the dashboard spawned) holds the project engine lock. Stop it, or wait out its 120 s lease if the holder was killed. |
+| `serve` never picks up a queued task | Check the task is `todo` in the **active** sprint and its dependencies are satisfied. `serve.idle` with `stop_reason` tells you which. |
 | SSE/watch feels laggy | Both gate on `PRAGMA data_version` at 0.25 s; they only re-query after another connection commits. A same-process writer won't bump it, but those loops never write. |
 
 ---

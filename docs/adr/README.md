@@ -21,3 +21,6 @@ Filename format:
 | ADR-0006 | Sprint Autonomy Levels And Agent Decision Gates | accepted |
 | ADR-0007 | Sprint Planner Chat Session | accepted |
 | ADR-0008 | Completion Truth Contract | accepted |
+| ADR-0009 | Multi-Model Endpoints Via Role Env | accepted |
+| ADR-0010 | Tiered Review And LLM-Judged Evidence | accepted |
+| ADR-0011 | The Resident Engine And The Project Engine Lock | accepted |

@@ -10,11 +10,16 @@
   recorded in `docs/reviews/sprint-54-live-run-notes.md`.
 - Latest completed sprint: `sprint-53-phase0-unattended-safety`.
 - Last merged branch: `fix/runner-progress-lines`.
-- Current implementation branch: the engine's task branch for slice 1
-  (`foreman serve`), created by the engine from the dogfood task.
+- Current implementation branch:
+  `feat/task-add-foreman-serve-resident-engine-worker-with-a-project-engine-lock`
+  — sprint 54 slice 1 (`foreman serve` and the project engine lock), complete
+  and awaiting review/merge.
 
 ## Active branches
 
+- `feat/task-add-foreman-serve-resident-engine-worker-with-a-project-engine-lock`
+  — sprint 54 slice 1: `foreman serve`, `foreman/engine_lock.py`,
+  `foreman/logs.py`, ADR-0011; awaiting review/merge
 - `fix/runner-progress-lines` — sprint 54 live-run fix: progress-only
   stream lines are heartbeats, tool results are capped previews; merged to
   `main`
@@ -57,7 +62,36 @@
 - Phase 0 of the production readiness review is complete: an unattended run
   is safe on one machine.
 
-## Latest update — sprint 54 live run 1: runner progress lines
+## Latest update — sprint 54 slice 1: resident engine and project lock
+
+- Branch
+  `feat/task-add-foreman-serve-resident-engine-worker-with-a-project-engine-lock`.
+  `foreman serve <project-id> [--poll-seconds N] [--once]` keeps the engine
+  resident: one `run_project` pass per iteration, and an idle pass waits on
+  `PRAGMA data_version` or the poll interval instead of exiting.
+- New `foreman/engine_lock.py` enforces one engine per project through a lease
+  with `resource_type="engine"` — no migration needed, the `leases` table
+  already supports arbitrary resource types. Renewal runs on a daemon timer
+  thread with its own store connection, deliberately independent of agent
+  output. `foreman run` takes the same lock.
+- New `foreman/logs.py` emits JSON lines on stderr; `serve` never prints, and
+  the orchestrator mirrors every persisted event to the same logger at the
+  level `event_log_level()` assigns its family — the narrative at INFO, the
+  agent output firehose at DEBUG, so a resident engine's log stays readable.
+  The families `fix/runner-progress-lines` introduced land correctly without a
+  change: `agent.tick` and `agent.tool_result` at DEBUG, `agent.session` at
+  INFO.
+- A failing task is blocked with an `engine.attention_needed` turn and the
+  service continues after a doubling backoff; SIGTERM settles the run as
+  `killed`, releases the lock, and exits 0 (`foreman run` keeps 130).
+- Recorded as ADR-0011. Suite after merging `main`: 656 tests, OK
+  (1 skipped: `tests/test_e2e.py` needs playwright).
+- **Known gap, closed by the next slice:** the dashboard's Run button still
+  spawns a `foreman run` subprocess, which now competes for the engine lock
+  rather than cooperating with a resident worker. Slice 2 replaces it with the
+  engine command table.
+
+## Previous update — sprint 54 live run 1: runner progress lines
 
 - Found while the engine ran sprint 54 slice 1 on itself: the current Claude
   Code CLI streams `system`/`thinking_tokens` counters about twice a second

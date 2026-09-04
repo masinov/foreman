@@ -11,6 +11,27 @@ memory changes rather than versioned product releases.
 
 - opened sprint 54 from Phase 1 of the production readiness review with the
   live-run protocol (slices executed through `foreman run foreman`)
+- **slice 1, resident engine**
+  (`feat/task-add-foreman-serve-resident-engine-worker-with-a-project-engine-lock`):
+  new `foreman serve <project-id> [--poll-seconds N] [--once]` keeps the engine
+  resident — each pass runs `run_project` once, and an idle pass waits on
+  `PRAGMA data_version` or the poll interval instead of exiting, so work queued
+  by another process is picked up without a person pressing Run. New
+  `foreman/engine_lock.py` enforces one engine per project through a lease with
+  `resource_type="engine"` (no migration: the `leases` table already supports
+  arbitrary resource types), renewed from a daemon timer thread on its own
+  store connection; `foreman run` takes the same lock, so neither can start
+  while the other is resident. A task whose execution raises is blocked with
+  the error as its `blocked_reason` plus an `engine.attention_needed` event and
+  the service continues after a backoff (5 s, doubling, capped at 5 minutes,
+  reset after a clean pass); SIGTERM settles the active run as `killed`, leaves
+  the task resumable, releases the lock, and exits 0. New `foreman/logs.py`
+  emits JSON lines on stderr — `serve` never prints, and the orchestrator
+  mirrors every persisted event to the same logger, levelled by family
+  (`foreman.logs.event_log_level`): the narrative at INFO, the agent output
+  firehose at DEBUG. Retention pruning and crash recovery are gated behind
+  `run_project(maintenance=...)` so idle wakes stay cheap. Recorded as
+  ADR-0011; `foreman run --json-logs` opts into the same log format.
 - `fix/runner-progress-lines`: the Claude Code runner turns progress-only
   stream lines (`system`/`thinking_tokens`, allowed `rate_limit_event`) into
   non-persisted `agent.tick` heartbeats instead of one `agent.tool_use` plus

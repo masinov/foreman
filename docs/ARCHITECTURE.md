@@ -120,6 +120,32 @@ The current runtime supports:
   as MiniMax M3 through the existing Claude Code harness,
 - persisted `session_id`, `token_count`, `cost_usd`, and `duration_ms`.
 
+### Resident engine and the project engine lock
+
+ADR-0011 is the active contract for engine residency and concurrency.
+
+- `foreman/engine_lock.py` — `EngineLock`, a lease-backed context manager
+  (`resource_type="engine"`, `resource_id=<project id>`) that enforces one
+  engine per project. Both `foreman run` and `foreman serve` hold it for the
+  duration of their work; a second engine is refused with the holder named.
+  Renewal runs on a daemon timer thread with its **own** `ForemanStore`
+  connection, deliberately independent of agent output.
+- `foreman/serve.py` — `ResidentEngine`, the loop: one `run_project` pass per
+  iteration, an idle wait on `PRAGMA data_version` or the poll interval,
+  per-task failure isolation with a doubling backoff, and a clean SIGTERM stop.
+  `serve_project()` composes the lock and the loop; the CLI handler stays thin
+  (arguments, exit codes, messages) and the loop is unit-testable without a
+  subprocess.
+- `foreman/logs.py` — JSON-lines process logging on stderr. The resident engine
+  has no terminal, so this is its operator surface; the orchestrator mirrors
+  every persisted event to the same logger, at the level
+  `event_log_level()` assigns its family (narrative at INFO, agent output
+  firehose at DEBUG).
+- Orchestrator support: `run_project(maintenance=...)` keeps retention pruning
+  and crash recovery off idle wakes, `TaskExecutionError` tags a failure with
+  its task id, and `block_task_for_error()` parks a task through the existing
+  system-run and `engine.attention_needed` path.
+
 ### Inspection and dashboard surfaces
 
 Foreman now exposes two first-class observation surfaces:
@@ -343,10 +369,13 @@ The following items were implemented as hardening before the 1.0 release:
 
 **Bootstrap scripts (Item 19)**
 - `scripts/reviewed_claude.py` and `scripts/reviewed_codex.py` were deprecated here and removed in sprint 53
-- `foreman run` is the only autonomous entry point
+- `foreman run` and `foreman serve` are the only autonomous entry points, and
+  both hold the per-project engine lock (ADR-0011)
 
 ## Next architectural slice
 
-No outstanding architectural gaps in the current baseline.  The next slice
-should be driven by spec coverage gaps (e.g. remaining orchestrator modes) or
-operator-facing tooling needs identified from real usage.
+The resident engine (ADR-0011) makes the dashboard's "spawn a `foreman run`
+subprocess" pattern the odd one out: it now competes for the engine lock rather
+than cooperating with the resident worker. The next slice replaces it with an
+engine command table the dashboard and CLI write to and the resident engine
+consumes, plus reporting for tasks the engine has dead-lettered into `blocked`.
