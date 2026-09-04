@@ -24,8 +24,8 @@ decides where a human is required.
 | # | Slice | Status | Branch / task | Deliverable |
 |---|-------|--------|---------------|-------------|
 | 1 | `foreman serve` resident worker: project engine lock with a timer heartbeat, idle wake on `data_version`, SIGTERM stop, per-task failure isolation with backoff, structured JSON logs | done (engine-run, merged `a462659`) | `feat/task-add-foreman-serve-resident-engine-worker-with-a-project-engine-lock` / dogfood task `task-add-foreman-serve-…` | `foreman/serve.py`, `foreman/engine_lock.py`, `foreman/logs.py`, `foreman serve`, ADR-0011, `tests/test_serve.py` |
-| 2a | Engine command table and `foreman engine` CLI: `pause`, `resume`, `run_task`, `stop_task`, `shutdown` consumed by the resident engine; migration 15 | todo | dogfood task `task-add-the-engine-command-table-and-foreman-engine-cli` (engine-run, depends on 1) | migration, `engine_commands`, `foreman engine`, tests |
-| 2b | Dashboard onto the resident engine: status from the engine lock, Run/Stop through commands, no process handles; `blocked_kind` (gate vs engine) reporting | todo | dogfood task `task-rewire-the-dashboard-onto-the-resident-engine-and-report-dead-letter-tasks` (engine-run, depends on 2a) | service, API, frontend, tests |
+| 2a | Engine command table and `foreman engine` CLI: `pause`, `resume`, `run_task`, `stop_task`, `shutdown` consumed by the resident engine; migration 15 | done (merged `fd28d94`) | dogfood task `task-add-the-engine-command-table-and-foreman-engine-cli` (engine-run, depends on 1) | migration, `engine_commands`, `foreman engine`, tests |
+| 2b | Dashboard onto the resident engine: status from the engine lock, Run/Stop through commands, no process handles; `blocked_kind` (gate vs engine) reporting | done | `feat/task-rewire-the-dashboard-onto-the-resident-engine-and-report-dead-letter-tasks` (engine-run, depends on 2a) | `foreman/engine_control.py`, service, API, frontend, ADR-0002 amendment, tests |
 | F1 | Live-run fix: backend progress lines no longer persisted as tool uses; tool results capped | done (`2dacef3`) | `fix/runner-progress-lines` | runner, tests |
 | F2 | Live-run fix: backend quota exhaustion pauses the task until the reset instead of blocking it; `foreman serve` waits; idle passes logged once | done | `fix/runner-quota-exhaustion` | runner, orchestrator, serve, CLI, tests |
 | 3 | Intake endpoint: project-level, API-token authenticated, idempotent on an external reference, source metadata, policy-chosen initial status; sprint optional over a continuous queue | todo | | `POST /api/projects/{id}/intake`, tokens, tests |
@@ -46,6 +46,27 @@ decisions worth carrying forward:
 - The dashboard's Run button still spawns a `foreman run` subprocess, which now
   competes for that lock instead of cooperating with the resident worker. This
   is the concrete reason slice 2 (the engine command table) comes next.
+
+### Slice 2b notes
+
+The dashboard's process registry is gone: Run enqueues `resume` (plus
+`run_task` for a task-scoped start), Pause enqueues `pause`, and a task Stop
+enqueues `stop_task`. The concern raised in the slice 1 notes — the Run button
+competing for the engine lock instead of cooperating with the resident worker
+— is closed: the only process the dashboard starts is a detached
+`foreman serve` when nothing holds the lock, and it keeps no handle on it.
+
+Two things worth carrying forward:
+
+- The paused flag lives in the serve process's memory, so no other process can
+  read it. `engine_control.engine_is_paused()` derives it from the last
+  *applied* `pause`/`resume`/`shutdown` in the command log instead. That is
+  correct for every state the engine reaches through a command, and wrong only
+  for an engine paused by something that left no command row — which nothing
+  currently does.
+- `blocked_kind` is derived from the workflow definition, not stored, so no
+  migration and no new status. The tie-break when a workflow will not load is
+  the human-gate builtin's own `blocked_reason`.
 
 ### Decisions taken at open
 

@@ -261,6 +261,19 @@ The product dashboard now ships through the accepted architecture:
   `foreman/dashboard_frontend_dist/`,
 - mockup alignment remains mandatory for hierarchy and interaction behavior.
 
+The dashboard steers the engine, it does not run it. Per the ADR-0002
+amendment, Run, Pause, and a task Stop write `engine_commands` rows that
+whichever `foreman serve` holds the project lock consumes; the header reports
+that engine's residency, pause state, and heartbeat age. The dashboard holds
+no process handles — the one process it may start is a detached
+`foreman serve` when nothing is resident on a project yet, because there is
+otherwise nobody to send a command to.
+
+Blocked tasks say which kind of blocked they are: `gate` (waiting for a human
+decision) or `engine` (the engine's dead letter — a loop limit, a cost or time
+gate, a branch violation, a failure, a `stop_task`). Project summaries and
+`foreman status` count both.
+
 ## Local dashboard development
 
 Use the shipped runtime when you want the packaged product surface:

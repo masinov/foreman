@@ -12,11 +12,18 @@
 - Last merged branch: `fix/runner-quota-exhaustion` (sprint 54 live-run
   fix F2), after slice 1 (`a462659`, merged by the engine) and
   `docs/sprint-54-live-run-1`.
-- Current implementation branch: none by hand. Next: sprint 54 slice 2a
-  (engine command table) as a dogfood task picked up by `foreman serve
-  foreman`.
+- Current implementation branch: none by hand. Next: sprint 54 slice 3
+  (intake endpoint and API tokens) as a dogfood task picked up by
+  `foreman serve foreman`.
 
 ## Active branches
+
+- `feat/task-rewire-the-dashboard-onto-the-resident-engine-and-report-dead-letter-tasks`
+  — sprint 54 slice 2b: the dashboard steers the engine through
+  `engine_commands` and holds no process handles; new
+  `foreman/engine_control.py`; derived `blocked_kind` (gate vs engine) across
+  the API, `foreman task show`, `foreman board`, and `foreman status`;
+  ADR-0002 amended
 
 - `fix/runner-quota-exhaustion` — sprint 54 live-run fix F2: backend quota
   exhaustion pauses the task until the reset; merged to `main`
