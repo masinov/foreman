@@ -3012,11 +3012,35 @@ class ForemanOrchestrator:
             "agent.killed",
             {"reason": reason, "gate_type": gate_type},
         )
-        self._complete_run(run, status="killed", outcome=ERROR, detail=reason)
+        # The backend announced its session id at start; keep it on the run
+        # so the resumed step continues that conversation instead of
+        # re-reading the repository from scratch.
+        self._complete_run(
+            run,
+            status="killed",
+            outcome=ERROR,
+            detail=reason,
+            session_id=self._session_id_from_events(run) or run.session_id,
+        )
         if release_lease:
             self._release_task_lease(task, project)
         else:
             self._task_lease_tokens.pop(task.id, None)
+
+    def _session_id_from_events(self, run: Run) -> str | None:
+        """Return the backend session id announced during ``run``, if any.
+
+        Runners emit ``agent.session`` as soon as the backend reports its
+        session (Claude Code's ``init`` line); completion payloads repeat it,
+        but a run that is killed or interrupted never reaches completion.
+        """
+
+        for event in reversed(self.store.list_events(run_id=run.id)):
+            if event.event_type == "agent.session":
+                session_id = _optional_string(event.payload.get("session_id"))
+                if session_id:
+                    return session_id
+        return None
 
     def _execute_agent_step(
         self,
@@ -3242,6 +3266,12 @@ class ForemanOrchestrator:
                     transcript="\n\n".join(message_fragments),
                 )
                 final_status = "completed"
+                continue
+
+            if event.event_type == "agent.session":
+                final_session_id = (
+                    _optional_string(event.payload.get("session_id")) or final_session_id
+                )
                 continue
 
             if event.event_type == "agent.killed":

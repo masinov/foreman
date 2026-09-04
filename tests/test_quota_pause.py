@@ -183,5 +183,64 @@ class QuotaPauseTests(unittest.TestCase):
             self.assertEqual(len(runner.prompts), 3)
 
 
+    def test_killed_run_keeps_its_session_and_the_resumed_step_continues_it(self) -> None:
+        from foreman.runner.process import EngineShutdown
+
+        repo, db_path = self._workspace()
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, task = self._seed(store, repo)
+
+            class _Runner:
+                def __init__(self) -> None:
+                    self.session_ids: list[str | None] = []
+                    self.calls = 0
+
+                def run(self, config: AgentRunConfig):
+                    self.calls += 1
+                    self.session_ids.append(config.session_id)
+                    yield AgentEvent("agent.started", payload={"command": "fake"})
+                    if self.calls == 1:
+                        yield AgentEvent(
+                            "agent.session",
+                            payload={"session_id": "sess-live", "model": "m", "tool_count": 3},
+                        )
+                        raise EngineShutdown("SIGTERM")
+                    yield AgentEvent(
+                        "agent.message",
+                        payload={"text": "Implemented.\nTASK_COMPLETE", "phase": "result"},
+                    )
+                    yield AgentEvent(
+                        "agent.completed",
+                        payload={"session_id": "sess-live", "cost_usd": 0.0, "duration_ms": 1, "token_count": 1},
+                    )
+
+            runner = _Runner()
+            orchestrator = ForemanOrchestrator(store, agent_runners={"claude_code": runner})
+
+            with self.assertRaises(EngineShutdown):
+                orchestrator.run_project(project.id)
+
+            killed = [run for run in store.list_runs(task_id="t1") if run.role_id == "developer"]
+            self.assertEqual(len(killed), 1)
+            self.assertEqual(killed[0].status, "killed")
+            self.assertEqual(
+                killed[0].session_id,
+                "sess-live",
+                "the session announced at start must survive the kill",
+            )
+            self.assertEqual(
+                store.get_latest_session_id(
+                    task_id="t1", role_id="developer", agent_backend="claude_code"
+                ),
+                "sess-live",
+            )
+
+            # The next pass resumes that session rather than starting fresh
+            # (later entries belong to the reviewer step, which shares the fake).
+            orchestrator.run_project(project.id)
+            self.assertEqual(runner.session_ids[:2], [None, "sess-live"])
+
+
 if __name__ == "__main__":
     unittest.main()

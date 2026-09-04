@@ -93,6 +93,11 @@ memory changes rather than versioned product releases.
   heartbeat age, its stop control says Pause, and blocked cards carry the
   kind. ADR-0002 amended: the dashboard controls the engine only through the
   command table.
+- `fix/keep-session-on-kill`: a run that is killed or interrupted (shutdown,
+  lease loss, an engine `pause`/`stop_task`) keeps the backend session id
+  announced by `agent.session`, and the native step records that id as soon
+  as it is announced, so the resumed visit continues the conversation instead
+  of re-reading the repository.
 - `fix/cancelled-dependency-blocks`: only a `done` dependency satisfies a
   task's `depends_on`; a task whose dependency was cancelled is blocked with
   "Dependency cancelled: …" and an `engine.attention_needed` turn

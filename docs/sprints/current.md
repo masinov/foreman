@@ -30,6 +30,7 @@ decides where a human is required.
 | F2 | Live-run fix: backend quota exhaustion pauses the task until the reset instead of blocking it; `foreman serve` waits; idle passes logged once | done | `fix/runner-quota-exhaustion` | runner, orchestrator, serve, CLI, tests |
 | F3 | Live-run fix: task branch refreshed from the default branch at every develop visit; an unconcluded merge is never aborted; approve/deny report a quota pause honestly | done | `fix/task-branch-refresh` | git, orchestrator, CLI, tests |
 | F4 | Live-run fix: a cancelled dependency blocks the dependent task for re-planning instead of releasing it; cancel refuses a task with a live run | done | `fix/cancelled-dependency-blocks` | orchestrator, CLI, dashboard, tests |
+| F5 | Live-run fix: a killed or interrupted run keeps the backend session announced at start, so a pause or shutdown resumes the conversation | done | `fix/keep-session-on-kill` | orchestrator, tests |
 | 3 | Intake endpoint: project-level, API-token authenticated, idempotent on an external reference, source metadata, policy-chosen initial status; sprint optional over a continuous queue | todo | | `POST /api/projects/{id}/intake`, tokens, tests |
 | 4 | Policy matrix v1: `triage` and `notification` policies join `merge_approval` and `plan_approval`; task-type rules; per-task overrides | todo | | settings, models, orchestrator, tests |
 | 5 | Planner step per task producing criteria and a protected acceptance test; architect role repurposed to once-per-task | todo | | role, workflow, tests |

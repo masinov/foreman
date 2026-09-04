@@ -18,6 +18,7 @@
 
 ## Active branches
 
+- `fix/keep-session-on-kill` — sprint 54 live-run fix F5; merged to `main`
 - `fix/cancelled-dependency-blocks` — sprint 54 live-run fix F4; merged to
   `main`
 - `feat/task-rewire-the-dashboard-onto-the-resident-engine-and-report-dead-letter-tasks`
@@ -90,7 +91,18 @@
 - Phase 0 of the production readiness review is complete: an unattended run
   is safe on one machine.
 
-## Latest update — sprint 54 live run 5: slice 2b landed, two more findings
+## Latest update — sprint 54 live run 6: pause and resume exercised
+
+- With the worktree slice running under the resident engine, `foreman engine
+  pause` stopped the agent step six seconds after being queued (process
+  group terminated, run `killed`, task resumable) and `foreman engine resume`
+  had the developer running again five seconds later. The resumed developer
+  started a new session because a killed run never stored its session id;
+  branch `fix/keep-session-on-kill` (F5) records the id from `agent.session`
+  and keeps it on abandoned runs.
+- Observations 38–39 in `docs/reviews/sprint-54-live-run-notes.md`.
+
+## Previous update — sprint 54 live run 5: slice 2b landed, two more findings
 
 - Slice 2b (dashboard onto the resident engine) was carried by the engine
   with one STEER round and merged at `3ff6936` after the maintainer brought

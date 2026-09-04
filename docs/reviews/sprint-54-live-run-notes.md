@@ -196,3 +196,26 @@ dependency satisfies; a task whose dependency was cancelled is blocked with
 `dependency_cancelled`, once; `foreman task cancel` and the dashboard cancel refuse a
 task with a running run while an engine is resident and point at
 `foreman engine stop-task`.
+
+## Run 6 — slice 6 (worktree per task), with a live pause/resume
+
+`foreman serve foreman` (main at `cea9e80`, with F4) picked the worktree task at
+21:52:53. `foreman engine status foreman` reported the resident holder, a 15-second-old
+heartbeat, the lease expiry, and the current task from the database alone.
+
+**Live pause/resume through the command table.** `foreman engine pause` was
+acknowledged on the next silent tick and completed 6 seconds after it was queued: the
+agent process group was gone, the run settled as `killed` with "Engine command 'pause'
+stopped the running step", the task stayed `in_progress` at `develop`, and `engine
+status` showed `paused`. `foreman engine resume` had the developer running again 5
+seconds later.
+
+| # | Sev | Observation | Consequence |
+|---|-----|-------------|-------------|
+| 38 | major | The resumed developer started a **new** Claude session: a killed run never stores the session id (only `agent.completed`/`agent.error` payloads set it), so `get_latest_session_id` found nothing and the agent re-read the codebase from scratch. The quota pause did not have this problem because the error payload carried the id. | Every pause, shutdown, or lease loss costs a full re-read. Record the session id from the backend's `agent.session` event as soon as it is seen, and persist it on the run row when a run is abandoned. Fixed in F5. |
+| 39 | minor | Pause-to-effect latency is bounded by the silent-agent tick (15 s) or the next step boundary; here 6 s. | Acceptable; document it. |
+
+**Resolution.** Branch `fix/keep-session-on-kill` (F5): the orchestrator remembers the
+session id from the backend's `agent.session` event as soon as it is announced and
+persists it on the run row when a run is abandoned (shutdown, lease loss, engine
+command), so the next visit resumes the conversation.
