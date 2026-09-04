@@ -9,12 +9,15 @@
   (`foreman run foreman`) wherever the engine can carry them; findings are
   recorded in `docs/reviews/sprint-54-live-run-notes.md`.
 - Latest completed sprint: `sprint-53-phase0-unattended-safety`.
-- Last merged branch: `docs/sprint-54-open`.
+- Last merged branch: `fix/runner-progress-lines`.
 - Current implementation branch: the engine's task branch for slice 1
   (`foreman serve`), created by the engine from the dogfood task.
 
 ## Active branches
 
+- `fix/runner-progress-lines` — sprint 54 live-run fix: progress-only
+  stream lines are heartbeats, tool results are capped previews; merged to
+  `main`
 - `docs/sprint-54-open` — opens sprint 54 (Phase 1) and the live-run
   protocol; merged to `main`
 - `chore/remove-bootstrap-supervisors` — sprint 53 slice 6, merged to
@@ -54,7 +57,22 @@
 - Phase 0 of the production readiness review is complete: an unattended run
   is safe on one machine.
 
-## Latest update — sprint 53 slice 6: cleanup and sprint close
+## Latest update — sprint 54 live run 1: runner progress lines
+
+- Found while the engine ran sprint 54 slice 1 on itself: the current Claude
+  Code CLI streams `system`/`thinking_tokens` counters about twice a second
+  while the model reasons, and the runner persisted each as an
+  `agent.tool_use` (tool `claude.stream_event`) plus an `agent.raw_output`
+  row; tool results (`user` lines) were persisted twice with their full
+  text (up to 26 KB each). Four minutes of one developer step wrote about
+  400 rows and 550 KB.
+- Branch `fix/runner-progress-lines`: progress lines become non-persisted
+  `agent.tick` heartbeats, tool results become a capped `agent.tool_result`
+  preview, the init line becomes `agent.session`, raw lines are capped at
+  8,000 characters, and unknown message types are no longer reported as
+  tool uses. See `docs/reviews/sprint-54-live-run-notes.md`.
+
+## Previous update — sprint 53 slice 6: cleanup and sprint close
 
 - Branch `chore/remove-bootstrap-supervisors`. Removed
   `scripts/reviewed_claude.py`, `scripts/reviewed_codex.py`, their tests,

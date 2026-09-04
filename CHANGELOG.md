@@ -7,6 +7,18 @@ memory changes rather than versioned product releases.
 
 ## [Unreleased]
 
+### Sprint 54 — Phase 1 resident engine and intake
+
+- opened sprint 54 from Phase 1 of the production readiness review with the
+  live-run protocol (slices executed through `foreman run foreman`)
+- `fix/runner-progress-lines`: the Claude Code runner turns progress-only
+  stream lines (`system`/`thinking_tokens`, allowed `rate_limit_event`) into
+  non-persisted `agent.tick` heartbeats instead of one `agent.tool_use` plus
+  one `agent.raw_output` row each; tool results are persisted as a capped
+  `agent.tool_result` preview instead of a full-payload tool use; the session
+  init line becomes a small `agent.session`; raw lines are capped at 8,000
+  characters; unknown message types are kept as raw output only
+
 ### Sprint 53 — Phase 0 unattended safety
 
 - opened sprint 53 from Phase 0 of the production readiness review

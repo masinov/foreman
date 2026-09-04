@@ -23,6 +23,18 @@ from .signals import extract_signal_events
 
 _FILE_TOOLS = {"Read", "Write", "Edit", "NotebookEdit"}
 
+# Raw stream lines are persisted for the transcript, capped so one tool result
+# (a file read, a long test log) cannot write tens of kilobytes per line.
+RAW_LINE_MAX_CHARS = 8000
+# Tool results are persisted as a preview; the full text stays in the raw line
+# (up to the cap) and, for file edits, in git.
+TOOL_RESULT_PREVIEW_CHARS = 500
+# ``system`` subtypes that only report progress while the model is working.
+# They drive the heartbeat and the gates but are never persisted.
+_PROGRESS_SYSTEM_SUBTYPES = frozenset({"thinking_tokens"})
+_NOT_JSON = object()
+
+
 
 class ClaudeCodeRunner(AgentRunner):
     """Execute Claude Code in stream-json mode and normalize its events."""
@@ -132,15 +144,33 @@ class ClaudeCodeRunner(AgentRunner):
                 if not line:
                     continue
 
-                yield AgentEvent(
-                    "agent.raw_output",
-                    payload={"stream": "stdout", "line": line},
-                )
+                decoded = _decode_stream_line(line)
+                progress_events = _progress_events(decoded)
+                if progress_events is not None:
+                    # Progress lines (thinking-token counters, allowed
+                    # rate-limit notices) arrive about twice a second while
+                    # the model thinks. They keep the lease heartbeat and the
+                    # gates alive but are never persisted.
+                    for event in progress_events:
+                        yield event
+                    gate_event = self._check_gates(
+                        managed,
+                        config,
+                        start_time=start_time,
+                        last_cost_usd=last_cost_usd,
+                    )
+                    if gate_event is not None:
+                        yield gate_event
+                        return
+                    continue
+
+                yield AgentEvent("agent.raw_output", payload=_raw_output_payload(line))
 
                 parsed_events = self._parse_stream_line(
                     line,
                     working_dir=config.working_dir,
                     emit_result_signals=not saw_assistant_text,
+                    decoded=decoded,
                 )
                 if any(
                     event.event_type == "agent.message"
@@ -199,6 +229,7 @@ class ClaudeCodeRunner(AgentRunner):
         *,
         working_dir: Path,
         emit_result_signals: bool = True,
+        decoded: Any = None,
     ) -> tuple[AgentEvent, ...]:
         timestamp_events: list[AgentEvent] = []
 
@@ -206,9 +237,8 @@ class ClaudeCodeRunner(AgentRunner):
             _, signal_events = extract_signal_events(line)
             return signal_events
 
-        try:
-            event = json.loads(line)
-        except json.JSONDecodeError:
+        event = _decode_stream_line(line) if decoded is None else decoded
+        if event is _NOT_JSON:
             return (
                 AgentEvent(
                     "agent.message",
@@ -271,15 +301,19 @@ class ClaudeCodeRunner(AgentRunner):
                 timestamp_events.append(AgentEvent("agent.completed", payload=payload))
             return tuple(timestamp_events)
 
+        if event_type == "system":
+            return _system_events(event)
+        if event_type == "user":
+            return _tool_result_events(event)
+        if event_type == "rate_limit_event":
+            return _rate_limit_events(event)
+
         cost_event = _build_cost_update_event(event)
         if cost_event is not None:
             return (cost_event,)
-        return (
-            AgentEvent(
-                "agent.tool_use",
-                payload={"tool": "claude.stream_event", "input": event},
-            ),
-        )
+        # Anything else is kept only as the raw line; inventing a tool use for
+        # an unknown message type misrepresents what the agent did.
+        return ()
 
     def _parse_assistant_block(
         self,
@@ -372,6 +406,139 @@ class ClaudeCodeRunner(AgentRunner):
                 },
             )
         return None
+
+
+def _decode_stream_line(line: str) -> Any:
+    """Return the decoded JSON value for one stream line, or ``_NOT_JSON``."""
+
+    try:
+        return json.loads(line)
+    except json.JSONDecodeError:
+        return _NOT_JSON
+
+
+def _progress_events(decoded: Any) -> tuple[AgentEvent, ...] | None:
+    """Return tick events for a progress-only line, or ``None`` for content.
+
+    The Claude Code CLI streams ``system``/``thinking_tokens`` counters while
+    the model reasons and ``rate_limit_event`` notices as it checks quota.
+    Neither carries transcript content; they only prove the child is alive.
+    """
+
+    if not isinstance(decoded, dict):
+        return None
+    event_type = str(decoded.get("type", ""))
+    if event_type == "system":
+        subtype = str(decoded.get("subtype", ""))
+        if subtype in _PROGRESS_SYSTEM_SUBTYPES:
+            return (
+                AgentEvent(
+                    "agent.tick",
+                    payload={
+                        "source": subtype,
+                        "estimated_tokens": _coerce_int(
+                            decoded.get("estimated_tokens"), default=0
+                        )
+                        or 0,
+                    },
+                ),
+            )
+        return None
+    if event_type == "rate_limit_event":
+        info = decoded.get("rate_limit_info")
+        status = str(info.get("status", "")) if isinstance(info, dict) else ""
+        if status in {"", "allowed"}:
+            return (
+                AgentEvent(
+                    "agent.tick",
+                    payload={"source": "rate_limit", "status": status or "unknown"},
+                ),
+            )
+    return None
+
+
+def _raw_output_payload(line: str) -> dict[str, Any]:
+    payload: dict[str, Any] = {"stream": "stdout", "line": line[:RAW_LINE_MAX_CHARS]}
+    if len(line) > RAW_LINE_MAX_CHARS:
+        payload["truncated"] = True
+        payload["length"] = len(line)
+    return payload
+
+
+def _system_events(event: dict[str, Any]) -> tuple[AgentEvent, ...]:
+    if str(event.get("subtype", "")) != "init":
+        return ()
+    tools = event.get("tools")
+    payload = {
+        "session_id": _optional_string(event.get("session_id")),
+        "model": _optional_string(event.get("model")),
+        "cwd": _optional_string(event.get("cwd")),
+        "permission_mode": _optional_string(event.get("permissionMode")),
+        "version": _optional_string(event.get("claude_code_version")),
+        "tool_count": len(tools) if isinstance(tools, list) else 0,
+    }
+    return (
+        AgentEvent(
+            "agent.session",
+            payload={key: value for key, value in payload.items() if value is not None},
+        ),
+    )
+
+
+def _tool_result_events(event: dict[str, Any]) -> tuple[AgentEvent, ...]:
+    message = event.get("message", event)
+    content = message.get("content", ()) if isinstance(message, dict) else ()
+    if not isinstance(content, list):
+        return ()
+    events: list[AgentEvent] = []
+    for block in content:
+        if not isinstance(block, dict) or block.get("type") != "tool_result":
+            continue
+        text = _tool_result_text(block.get("content"))
+        preview = text[:TOOL_RESULT_PREVIEW_CHARS]
+        events.append(
+            AgentEvent(
+                "agent.tool_result",
+                payload={
+                    "tool_use_id": _optional_string(block.get("tool_use_id")) or "",
+                    "is_error": bool(block.get("is_error")),
+                    "length": len(text),
+                    "preview": preview,
+                    "truncated": len(text) > len(preview),
+                },
+            )
+        )
+    return tuple(events)
+
+
+def _tool_result_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = [
+            str(block.get("text", ""))
+            for block in content
+            if isinstance(block, dict) and block.get("type") == "text"
+        ]
+        return "\n".join(parts)
+    return ""
+
+
+def _rate_limit_events(event: dict[str, Any]) -> tuple[AgentEvent, ...]:
+    info = event.get("rate_limit_info")
+    if not isinstance(info, dict):
+        return ()
+    payload = {
+        "status": str(info.get("status", "unknown")),
+        "rate_limit_type": _optional_string(info.get("rateLimitType")),
+        "resets_at": _coerce_int(info.get("resetsAt")),
+    }
+    return (
+        AgentEvent(
+            "agent.rate_limit",
+            payload={key: value for key, value in payload.items() if value is not None},
+        ),
+    )
 
 
 def _build_cost_update_event(event: dict[str, Any]) -> AgentEvent | None:

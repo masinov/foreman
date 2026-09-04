@@ -879,9 +879,16 @@ events for `blocked` and `in_progress` tasks regardless of age.
 
 Events are the append-only truth of what happened. Families:
 
-- **`agent.*`** — `prompt`, `message`, `cost_update`, `completed`, `error`,
-  `infra_error` (a retried attempt), `killed`. Each `infra_error` increments the
-  run's `retry_count`.
+- **`agent.*`** — `prompt`, `session` (the backend's session id, model,
+  permission mode, and tool count), `message`, `command`, `file_change`,
+  `tool_use`, `tool_result` (a capped preview with `is_error` and the full
+  length), `raw_output` (every content line of the backend stream, capped at
+  8,000 characters with `truncated` and `length` when cut), `cost_update`,
+  `rate_limit` (only when the backend reports a status other than allowed),
+  `completed`, `error`, `infra_error` (a retried attempt), `killed`. Each
+  `infra_error` increments the run's `retry_count`. Progress-only lines from
+  the backend (thinking-token counters, allowed rate-limit notices) become
+  `agent.tick` heartbeats and are never persisted.
 - **`workflow.*`** — `step_started`, `step_completed`, `transition`,
   `model_selected`, `paused`, `resumed`, `loop_limit`, `step_visit_reset`,
   `no_transition`, `autonomous_contract_missing`.
