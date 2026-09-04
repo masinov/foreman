@@ -346,14 +346,16 @@ event the engine persists, so the process log alone tells the story of a run:
 ```
 
 Lifecycle events: `serve.started`, `serve.lock_acquired`, `serve.lock_busy`,
-`serve.pass_completed`, `serve.idle`, `serve.paused`, `serve.task_failed`,
-`serve.task_lease_lost`, `serve.lock_lost`, `serve.stopping`, `serve.stopped`,
-`serve.lock_released`, and the command lifecycle
-(`serve.command_acknowledged`, `serve.command_completed`,
-`serve.command_rejected`, `serve.command_interrupting`). A refused start logs `serve.lock_busy` (with the holder
-and the lease expiry) at ERROR before it exits, so a supervisor reading only
-the log can tell a refusal from a crash. `foreman run` can opt into the same
-format with `--json-logs`.
+`serve.pass_completed`, `serve.idle`, `serve.paused`, `serve.quota_exhausted`,
+`serve.task_failed`, `serve.task_lease_lost`, `serve.lock_lost`,
+`serve.stopping`, `serve.stopped`, `serve.lock_released`, and the command
+lifecycle (`serve.command_acknowledged`, `serve.command_completed`,
+`serve.command_rejected`, `serve.command_interrupting`). A refused start logs
+`serve.lock_busy` (with the holder and the lease expiry) at ERROR before it
+exits, so a supervisor reading only the log can tell a refusal from a crash.
+`serve.idle` and `serve.paused` are narrated once at INFO and then repeated at
+DEBUG, so a service that is idle or paused all day does not fill its own log.
+`foreman run` can opt into the same format with `--json-logs`.
 
 Mirrored engine events are levelled by family: `engine.*`, `workflow.*`,
 `gate.*`, `signal.*`, and the agent step lifecycle (`agent.started`,
@@ -1170,6 +1172,13 @@ different connection, so a queued command wakes the engine within one tick
 checks for commands before every workflow step and on every `agent.tick` while
 a runner streams, so a `pause` reaches an agent that has been working quietly
 for twenty minutes.
+
+An engine that is *deliberately* waiting — backing off after a failed task, or
+sitting out a backend quota reset that can be six hours away — also cuts that
+wait short when a command arrives. An engine that ignored `shutdown` until the
+quota reset would not be controllable, so the wait re-reads `data_version` each
+tick and only looks in `engine_commands` when another connection has actually
+committed.
 
 ### Worked example
 

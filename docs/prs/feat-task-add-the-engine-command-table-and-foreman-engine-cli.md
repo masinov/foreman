@@ -23,6 +23,10 @@
 In scope: schema, store, orchestrator seam, resident-engine consumption, CLI,
 tests, docs.
 
+Also in scope after merging `main`: reconciling this branch with main's quota
+pause (`fix/runner-quota-exhaustion`). See *Reconciliation with main* below —
+the two features interact, and the merge was not purely textual.
+
 Out of scope (next task): rewiring the dashboard's Run/Stop buttons onto the
 command table and adding the engine status view to the API. The dashboard is
 untouched here and `_RUNNING_PROCS` is deliberately left in place; its tests
@@ -63,6 +67,34 @@ still pass unchanged.
   within the bundled SQLite 3.31 limits and applies cleanly to a live database.
   Tested against a database created at version 14.
 
+## Reconciliation with main
+
+`main` landed the backend quota pause while this branch was in review. The
+textual conflicts were small (an exception tuple, a block of module constants,
+two adjacent CHANGELOG entries), but the two features interact in a way no
+textual merge could see, and two real fixes came out of it:
+
+1. **Long waits were deaf to commands.** Main's quota pause parks the engine in
+   `_wait()` for up to six hours, and the failure backoff parks it for up to
+   five minutes. `_drain_commands()` only runs at the top of a pass, so a
+   `shutdown` queued during either wait would have gone unanswered for that
+   whole time — which defeats the point of a control channel. `_wait()` now
+   ends early when a command is waiting. It re-reads `PRAGMA data_version`
+   each tick (a pragma, not a table read) and only looks in `engine_commands`
+   when another connection has actually committed, so the common case costs
+   nothing extra and an unrelated commit does not cut the wait short.
+2. **A paused engine would have flooded its own log.** Main introduced the rule
+   that a repeated idle pass drops from INFO to DEBUG. A pause can last all
+   day, so `serve.paused` follows the same rule: narrated once at INFO on
+   entry, DEBUG thereafter.
+
+`QuotaPauseError` is a third `OrchestratorError` subclass, so handler ordering
+in the serve loop was re-checked: `TaskExecutionError` and `LeaseLostError` are
+caught on their own terms first, and `QuotaPauseError` never reaches the loop
+at all because `run_project` turns it into a `quota_exhausted` result. The
+comment on the catch-all says so, so the next person does not have to re-derive
+it.
+
 ## Risks
 
 - **Interrupting a workflow mid-flight.** Mitigated by polling only *after* the
@@ -84,8 +116,9 @@ still pass unchanged.
 
 ## Tests
 
-`./venv/bin/python -m unittest discover -s tests` → **725 tests, OK** (1 skip:
-`test_e2e` needs pytest, pre-existing).
+`./venv/bin/python -m unittest discover -s tests` → **738 tests, OK** (1 skip:
+`test_e2e` needs pytest, pre-existing). That includes main's 10 quota tests,
+which pass unchanged against the merged loop.
 
 - `tests/test_engine_commands.py` (new, 25 tests): migration 15 columns,
   nullability, index columns, both `ON DELETE CASCADE` rules, both CHECK
@@ -108,6 +141,10 @@ still pass unchanged.
   the next migration does not break a test about the v14 rebuild.
 - Two queued `run_task` commands both run, oldest first: the second request
   does not discard the first, which was already told it would run.
+- Post-merge, `EngineCommandsDuringLongWaitsTests`: a `shutdown` ends a
+  six-hour quota wait in seconds; a `pause` ends a failure backoff early; and
+  an unrelated commit from another connection does *not* cut a backoff short,
+  so the early return keys on a command rather than on any write.
 - No test launches a real `claude` or `codex` binary.
 
 `./venv/bin/python scripts/validate_repo_memory.py` → passes.
