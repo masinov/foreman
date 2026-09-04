@@ -31,10 +31,18 @@ from .errors import ForemanError
 from .leases import generate_lease_token
 from .logs import get_logger, log_event
 from .models import Lease
-from .store import ForemanStore
+from .store import ENGINE_RESOURCE_TYPE, ForemanStore
 
-#: Lease resource type for the per-project engine lock.
-ENGINE_RESOURCE_TYPE = "engine"
+__all__ = [
+    "DEFAULT_HEARTBEAT_SECONDS",
+    "DEFAULT_LEASE_DURATION_SECONDS",
+    "ENGINE_RESOURCE_TYPE",
+    "EngineBusyError",
+    "EngineLock",
+    "EngineLockError",
+    "EngineLockLostError",
+    "stop_engine_on_lock_loss",
+]
 
 #: Engine lease duration. Shorter than the per-task lease default: a SIGKILLed
 #: engine blocks the project for at most this long, and the timer heartbeat
