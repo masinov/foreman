@@ -27,7 +27,9 @@ memory changes rather than versioned product releases.
   reset after a clean pass); SIGTERM settles the active run as `killed`, leaves
   the task resumable, releases the lock, and exits 0. New `foreman/logs.py`
   emits JSON lines on stderr — `serve` never prints, and the orchestrator
-  mirrors every persisted event to the same logger. Retention pruning and crash
+  mirrors every persisted event to the same logger, levelled by family
+  (`foreman.logs.event_log_level`): the narrative at INFO, the agent output
+  firehose at DEBUG. Retention pruning and crash
   recovery are gated behind `run_project(maintenance=...)` so idle wakes stay
   cheap. Recorded as ADR-0011; `foreman run --json-logs` opts into the same
   log format.

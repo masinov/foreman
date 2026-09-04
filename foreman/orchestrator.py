@@ -31,7 +31,7 @@ from .git import (
     worktree_branch,
 )
 from .leases import generate_lease_token
-from .logs import compact_payload, get_logger, log_event
+from .logs import compact_payload, event_log_level, get_logger, log_event
 from .judge import judge_criteria, truncate_diff
 from .models import CompletionEvidence, Event, HumanGateDecision, Lease, Project, Run, Sprint, TASK_COMPLEXITIES, Task, utc_now_text
 from .outcomes import APPROVE, BLOCKED, DENY, DONE, ERROR, ESCALATE, normalize_agent_outcome, normalize_reviewer_decision, STEER
@@ -3326,10 +3326,13 @@ class ForemanOrchestrator:
         self.store.save_event(event)
         # Mirror every persisted event to the process log so `foreman serve`,
         # which has no terminal, can be understood from its log alone. The
-        # logger is inert until the CLI configures a handler.
+        # level comes from the event family: the narrative at INFO, the agent
+        # output firehose at DEBUG, so a resident engine's own lifecycle stays
+        # readable. The logger is inert until the CLI configures a handler.
         log_event(
             _LOGGER,
             event.event_type,
+            level=event_log_level(event.event_type),
             project_id=event.project_id,
             task_id=event.task_id,
             run_id=event.run_id,

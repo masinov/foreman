@@ -17,8 +17,13 @@ from foreman.engine_lock import (
     EngineLock,
     EngineLockLostError,
 )
-from foreman.logs import JsonLinesFormatter, configure_json_logging, log_event
-from foreman.models import Project, Sprint, Task
+from foreman.logs import (
+    JsonLinesFormatter,
+    configure_json_logging,
+    event_log_level,
+    log_event,
+)
+from foreman.models import Project, Run, Sprint, Task
 from foreman.orchestrator import (
     ForemanOrchestrator,
     OrchestratorError,
@@ -679,6 +684,15 @@ class ServeProjectTests(unittest.TestCase):
         held.acquire()
         self.addCleanup(held.release)
 
+        stream = io.StringIO()
+        logger = logging.getLogger("foreman.serve.busytest")
+        handler = logging.StreamHandler(stream)
+        handler.setFormatter(JsonLinesFormatter())
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
+        logger.propagate = False
+        self.addCleanup(logger.removeHandler, handler)
+
         with self.assertRaises(EngineBusyError) as caught:
             serve_project(
                 store=self.store,
@@ -686,9 +700,21 @@ class ServeProjectTests(unittest.TestCase):
                 orchestrator=_StubOrchestrator([_idle()]),  # type: ignore[arg-type]
                 once=True,
                 lock=self._lock("holder-second"),
+                logger=logger,
             )
 
         self.assertIn("holder-resident", str(caught.exception))
+
+        # A supervisor reading only the process log must be able to tell a
+        # refused start from a crash.
+        logged = [
+            json.loads(line) for line in stream.getvalue().splitlines() if line
+        ]
+        self.assertEqual([entry["event"] for entry in logged], ["serve.lock_busy"])
+        self.assertEqual(logged[0]["level"], "ERROR")
+        self.assertEqual(logged[0]["project_id"], self.project.id)
+        self.assertEqual(logged[0]["holder_id"], "holder-resident")
+        self.assertTrue(logged[0]["expires_at"])
 
     def test_run_project_is_refused_while_a_resident_engine_holds_the_lock(self) -> None:
         held = self._lock("holder-resident")
@@ -941,6 +967,131 @@ class JsonLogFormatterTests(unittest.TestCase):
         self.assertEqual(events[0]["project_id"], project.id)
         self.assertEqual(events[0]["task_id"], "task-1")
         self.assertEqual(events[0]["payload"]["trigger"], "task_blocked")
+
+
+class EventLogLevelTests(unittest.TestCase):
+    """The narrative is mirrored at INFO; the agent firehose at DEBUG."""
+
+    def test_narrative_families_are_info(self) -> None:
+        for event_type in (
+            "engine.attention_needed",
+            "engine.merge",
+            "workflow.step_started",
+            "workflow.model_selected",
+            "gate.cost_exceeded",
+            "signal.task_created",
+        ):
+            with self.subTest(event_type=event_type):
+                self.assertEqual(event_log_level(event_type), logging.INFO)
+
+    def test_agent_lifecycle_events_are_info(self) -> None:
+        for event_type in (
+            "agent.started",
+            "agent.session",
+            "agent.message",
+            "agent.command",
+            "agent.file_change",
+            "agent.completed",
+            "agent.error",
+            "agent.infra_error",
+            "agent.killed",
+            "agent.rate_limit",
+        ):
+            with self.subTest(event_type=event_type):
+                self.assertEqual(event_log_level(event_type), logging.INFO)
+
+    def test_high_volume_agent_events_are_debug(self) -> None:
+        for event_type in (
+            "agent.raw_output",
+            "agent.prompt",
+            "agent.tool_use",
+            "agent.tool_result",
+            "agent.cost_update",
+            "agent.tick",
+        ):
+            with self.subTest(event_type=event_type):
+                self.assertEqual(event_log_level(event_type), logging.DEBUG)
+
+    def test_unknown_event_types_default_to_debug(self) -> None:
+        self.assertEqual(event_log_level("something.unheard_of"), logging.DEBUG)
+
+    def test_raw_output_is_not_mirrored_at_info_but_a_workflow_event_is(self) -> None:
+        """A resident engine's log must not drown in agent output."""
+
+        stream = io.StringIO()
+        configure_json_logging(
+            stream=stream, level=logging.INFO, logger_name="foreman.orchestrator"
+        )
+        logger = logging.getLogger("foreman.orchestrator")
+        self.addCleanup(lambda: [logger.removeHandler(h) for h in list(logger.handlers)])
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with ForemanStore(Path(temp_dir) / "foreman.db") as store:
+                store.initialize()
+                project = _seed_project(store, temp_dir, tasks=1)
+                orchestrator = ForemanOrchestrator(store)
+                run = Run(
+                    id="run-1",
+                    task_id="task-1",
+                    project_id=project.id,
+                    role_id="developer",
+                    workflow_step="develop",
+                    agent_backend="claude_code",
+                    status="running",
+                )
+                store.save_run(run)
+
+                orchestrator._emit_event(
+                    run, "agent.raw_output", {"text": "chatter " * 50}
+                )
+                orchestrator._emit_event(
+                    run, "workflow.step_started", {"step": "develop"}
+                )
+
+                # Both are still persisted in full; only the mirroring differs.
+                persisted = {
+                    event.event_type for event in store.list_events(run_id=run.id)
+                }
+                self.assertEqual(
+                    persisted, {"agent.raw_output", "workflow.step_started"}
+                )
+
+        logged = [
+            json.loads(line) for line in stream.getvalue().splitlines() if line
+        ]
+        self.assertEqual([entry["event"] for entry in logged], ["workflow.step_started"])
+        self.assertEqual(logged[0]["level"], "INFO")
+
+    def test_raw_output_is_mirrored_when_the_handler_drops_to_debug(self) -> None:
+        stream = io.StringIO()
+        configure_json_logging(
+            stream=stream, level=logging.DEBUG, logger_name="foreman.orchestrator"
+        )
+        logger = logging.getLogger("foreman.orchestrator")
+        self.addCleanup(lambda: [logger.removeHandler(h) for h in list(logger.handlers)])
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with ForemanStore(Path(temp_dir) / "foreman.db") as store:
+                store.initialize()
+                project = _seed_project(store, temp_dir, tasks=1)
+                orchestrator = ForemanOrchestrator(store)
+                run = Run(
+                    id="run-1",
+                    task_id="task-1",
+                    project_id=project.id,
+                    role_id="developer",
+                    workflow_step="develop",
+                    agent_backend="claude_code",
+                    status="running",
+                )
+                store.save_run(run)
+                orchestrator._emit_event(run, "agent.raw_output", {"text": "chatter"})
+
+        logged = [
+            json.loads(line) for line in stream.getvalue().splitlines() if line
+        ]
+        self.assertEqual([entry["event"] for entry in logged], ["agent.raw_output"])
+        self.assertEqual(logged[0]["level"], "DEBUG")
 
 
 if __name__ == "__main__":  # pragma: no cover

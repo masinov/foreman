@@ -361,7 +361,22 @@ def serve_project(
         holder_id=orchestrator.holder_id,
     )
 
-    engine_lock.acquire()
+    try:
+        engine_lock.acquire()
+    except EngineBusyError as exc:
+        # A supervisor reading only the process log must be able to tell a
+        # refused start from a crash, so the refusal is logged before it is
+        # raised for the CLI to print.
+        log_event(
+            engine_logger,
+            "serve.lock_busy",
+            level=logging.ERROR,
+            project_id=project_id,
+            holder_id=exc.holder_id,
+            expires_at=exc.expires_at,
+            reason=str(exc),
+        )
+        raise
     log_event(
         engine_logger,
         "serve.lock_acquired",

@@ -38,6 +38,70 @@ LEADING_FIELDS: tuple[str, ...] = ("project_id", "task_id", "run_id", "step")
 #: can be arbitrarily long; a process log line must stay bounded.
 MAX_FIELD_CHARS = 500
 
+#: Event families that narrate what the engine decided. Anything under these
+#: prefixes is mirrored to the process log at INFO, so a new engine, workflow,
+#: gate, or signal event is visible without touching this module.
+NARRATIVE_EVENT_PREFIXES: tuple[str, ...] = (
+    "engine.",
+    "workflow.",
+    "gate.",
+    "signal.",
+)
+
+#: The `agent.*` events that mark a step's lifecycle rather than its contents.
+#: `agent.*` is enumerated rather than prefix-matched because the same family
+#: carries both the narrative below and the firehose above it.
+AGENT_LIFECYCLE_EVENT_TYPES = frozenset(
+    {
+        "agent.started",
+        "agent.session",
+        "agent.message",
+        "agent.command",
+        "agent.file_change",
+        "agent.completed",
+        "agent.error",
+        "agent.infra_error",
+        "agent.killed",
+        "agent.rate_limit",
+    }
+)
+
+#: Event types that arrive several times per second while an agent is working.
+#: They are persisted in full, but mirroring them to the process log at INFO
+#: would bury a resident engine's own lifecycle in agent chatter, so they are
+#: logged at DEBUG. Raise the handler level to see them.
+HIGH_VOLUME_EVENT_TYPES = frozenset(
+    {
+        "agent.raw_output",
+        "agent.prompt",
+        "agent.tool_use",
+        "agent.tool_result",
+        "agent.cost_update",
+        "agent.tick",
+    }
+)
+
+
+def event_log_level(event_type: str) -> int:
+    """Return the process-log level for one persisted event type.
+
+    INFO for the narrative — the engine's decisions and each agent step's
+    lifecycle — and DEBUG for everything else, including the per-token,
+    per-tool-call firehose. An unrecognized event type defaults to DEBUG on
+    purpose: an unknown event is more likely to be a new high-volume stream
+    than a new decision, and the narrative families above are prefix-matched,
+    so a genuinely new decision event lands at INFO without a code change.
+    """
+
+    if event_type in HIGH_VOLUME_EVENT_TYPES:
+        return logging.DEBUG
+    if event_type in AGENT_LIFECYCLE_EVENT_TYPES:
+        return logging.INFO
+    if event_type.startswith(NARRATIVE_EVENT_PREFIXES):
+        return logging.INFO
+    return logging.DEBUG
+
+
 #: ``LogRecord`` attributes that are never part of the emitted payload.
 _RESERVED_RECORD_FIELDS = frozenset(
     {

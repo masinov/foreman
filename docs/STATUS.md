@@ -72,7 +72,9 @@
   thread with its own store connection, deliberately independent of agent
   output. `foreman run` takes the same lock.
 - New `foreman/logs.py` emits JSON lines on stderr; `serve` never prints, and
-  the orchestrator mirrors every persisted event to the same logger.
+  the orchestrator mirrors every persisted event to the same logger at the
+  level `event_log_level()` assigns its family — the narrative at INFO, the
+  agent output firehose at DEBUG, so a resident engine's log stays readable.
 - A failing task is blocked with an `engine.attention_needed` turn and the
   service continues after a doubling backoff; SIGTERM settles the run as
   `killed`, releases the lock, and exits 0 (`foreman run` keeps 130).

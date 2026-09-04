@@ -329,10 +329,23 @@ event the engine persists, so the process log alone tells the story of a run:
 {"ts":"2026-09-04T11:52:36.932Z","level":"INFO","event":"serve.idle","project_id":"foreman","stop_reason":"idle"}
 ```
 
-Lifecycle events: `serve.started`, `serve.lock_acquired`, `serve.pass_completed`,
-`serve.idle`, `serve.task_failed`, `serve.task_lease_lost`, `serve.lock_lost`,
-`serve.stopping`, `serve.stopped`, `serve.lock_released`. `foreman run` can opt
-into the same format with `--json-logs`.
+Lifecycle events: `serve.started`, `serve.lock_acquired`, `serve.lock_busy`,
+`serve.pass_completed`, `serve.idle`, `serve.task_failed`,
+`serve.task_lease_lost`, `serve.lock_lost`, `serve.stopping`, `serve.stopped`,
+`serve.lock_released`. A refused start logs `serve.lock_busy` (with the holder
+and the lease expiry) at ERROR before it exits, so a supervisor reading only
+the log can tell a refusal from a crash. `foreman run` can opt into the same
+format with `--json-logs`.
+
+Mirrored engine events are levelled by family: `engine.*`, `workflow.*`,
+`gate.*`, `signal.*`, and the agent step lifecycle (`agent.started`,
+`agent.session`, `agent.message`, `agent.command`, `agent.file_change`,
+`agent.completed`, `agent.error`, `agent.infra_error`, `agent.killed`,
+`agent.rate_limit`) are **INFO**; the per-token, per-tool-call firehose
+(`agent.raw_output`, `agent.prompt`, `agent.tool_use`, `agent.tool_result`,
+`agent.cost_update`, `agent.tick`) is **DEBUG**, so a resident engine's own
+lifecycle is not buried in agent chatter. Every event is still persisted in
+full either way; the mapping lives in `foreman.logs.event_log_level`.
 
 `--once` runs exactly one pass and exits, for cron-style deployment and for
 tests. Retention pruning and crash recovery run at startup and after any pass

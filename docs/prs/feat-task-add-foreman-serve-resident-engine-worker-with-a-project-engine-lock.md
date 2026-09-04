@@ -17,6 +17,11 @@
 - Adds JSON-lines process logging (`foreman/logs.py`). `serve` never prints;
   its lifecycle and every event the orchestrator persists go to stderr as one
   JSON object per line, so the process log alone tells the story of a run.
+  Mirroring is levelled by family via `event_log_level()`: the narrative
+  (`engine.*`, `workflow.*`, `gate.*`, `signal.*`, agent step lifecycle) at
+  INFO, the agent output firehose (`agent.raw_output`, `agent.prompt`,
+  `agent.tool_use`, `agent.tool_result`, `agent.cost_update`, `agent.tick`) at
+  DEBUG. Persistence is unchanged.
 - Failure isolation: a task whose execution raises is blocked with the error as
   its `blocked_reason` plus an `engine.attention_needed` turn, and the service
   continues after a doubling backoff. A stop (SIGTERM/SIGINT) settles the
@@ -42,7 +47,7 @@ New:
 - `foreman/engine_lock.py` — `EngineLock`, `EngineBusyError`,
   `EngineLockLostError`, `stop_engine_on_lock_loss`.
 - `foreman/logs.py` — `JsonLinesFormatter`, `configure_json_logging`,
-  `log_event`, `compact_payload`.
+  `log_event`, `compact_payload`, `event_log_level`.
 - `tests/test_serve.py` — 34 tests.
 - `docs/adr/ADR-0011-resident-engine-and-project-lock.md`.
 
@@ -50,7 +55,8 @@ Changed:
 
 - `foreman/orchestrator.py` — `run_project(maintenance=...)`;
   `TaskExecutionError` (carries the task id); `_run_task_isolated()`;
-  public `block_task_for_error()`; `_emit_event()` mirrors to the process log.
+  public `block_task_for_error()`; `_emit_event()` mirrors to the process log
+  at the level `event_log_level()` assigns.
 - `foreman/cli.py` — `serve` subcommand and a thin `handle_serve`; `run` takes
   the engine lock and gains `--json-logs`.
 - `tests/test_cli.py` — serve wiring, lock refusal, lock release, and a
@@ -88,11 +94,14 @@ Changed:
 ## Tests
 
 ```
-./venv/bin/python -m unittest discover -s tests    # 645 tests, OK
+./venv/bin/python -m unittest discover -s tests    # 652 tests, OK (1 skipped)
 ./venv/bin/python scripts/validate_repo_memory.py  # OK
 ```
 
-`tests/test_serve.py` (34 tests) covers: lock refusal naming the holder,
+The skip is `tests/test_e2e.py`, which needs playwright and pytest; it is
+skipped in this environment before and after this branch.
+
+`tests/test_serve.py` (40 tests) covers: lock refusal naming the holder,
 reacquisition after release, takeover after expiry, heartbeat renewal on its
 own connection, a refused renewal marking the lock lost, a lost lock not
 stealing its successor on release, release on an unhandled error, `--once`,
@@ -100,8 +109,12 @@ maintenance gating (startup and after work, never on idle wakes), an idle
 engine polling nothing but `data_version`, the immediate wake when another
 connection commits, failure isolation with a doubling and resetting backoff,
 the backoff cap, a shutdown mid agent step that settles the run as `killed` and
-releases the lock, and the JSON formatter (field order, omitted unknown fields,
-truncation, unserializable values, idempotent configuration, event mirroring).
+releases the lock, the JSON formatter (field order, omitted unknown fields,
+truncation, unserializable values, idempotent configuration, event mirroring),
+the event-family level mapping, that an `agent.raw_output` event is not emitted
+at INFO while a `workflow.step_started` event is (and that both are still
+persisted), that dropping the handler to DEBUG surfaces the raw output, and
+that a refused start logs `serve.lock_busy` with the holder and lease expiry.
 
 `tests/test_cli.py` adds five: `run` refused under a resident engine, `run`
 releasing the lock so a second run succeeds, `serve --once` logging JSON lines
@@ -149,6 +162,19 @@ $ echo $?
 - Full suite and `scripts/validate_repo_memory.py` pass.
 - `docs/MANUAL.md`, `README.md`, `docs/ARCHITECTURE.md`, `CHANGELOG.md`,
   ADR-0011, and this note are updated.
+
+## Review corrections applied
+
+- **Log volume.** `_emit_event` mirrored every persisted event at INFO,
+  including the several-lines-per-second agent output stream. The level now
+  comes from `foreman.logs.event_log_level()`, a family-to-level mapping kept
+  in `logs.py` so it is testable without an orchestrator: narrative at INFO,
+  firehose at DEBUG, unrecognized types at DEBUG. `agent.tick` was added to the
+  DEBUG set alongside the five families named in review — it is the same kind
+  of per-second stream, and it is not in the INFO lifecycle list.
+- **Busy lock invisible in the log.** `serve_project` now logs
+  `serve.lock_busy` at ERROR, with `holder_id` and `expires_at`, before
+  re-raising `EngineBusyError` for the CLI to print.
 
 ## Follow-ups
 

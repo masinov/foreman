@@ -118,12 +118,28 @@ service: they will not fix themselves, and retrying forever would hide them.
 `foreman/logs.py` emits one JSON object per line on stderr with `ts`, `level`,
 `event`, and the identity fields (`project_id`, `task_id`, `run_id`, `step`)
 whenever they are known. `foreman serve` logs its lifecycle
-(`serve.started`, `serve.lock_acquired`, `serve.pass_completed`, `serve.idle`,
-`serve.task_failed`, `serve.lock_lost`, `serve.stopping`, `serve.stopped`) and
-never prints. The orchestrator mirrors every persisted event to the same
-logger, so the process log alone tells the story of a run without a database
-query. Logging stays inert until the CLI configures it, so importing Foreman as
-a library emits nothing.
+(`serve.started`, `serve.lock_acquired`, `serve.lock_busy`,
+`serve.pass_completed`, `serve.idle`, `serve.task_failed`, `serve.lock_lost`,
+`serve.stopping`, `serve.stopped`) and never prints — including the refusal
+path, so a supervisor reading only the log can tell a busy lock from a crash.
+The orchestrator mirrors every persisted event to the same logger, so the
+process log alone tells the story of a run without a database query. Logging
+stays inert until the CLI configures it, so importing Foreman as a library
+emits nothing.
+
+Mirroring is levelled by event family, and the mapping lives in
+`foreman.logs.event_log_level` rather than at the call site so it is testable
+on its own. The narrative — `engine.*`, `workflow.*`, `gate.*`, `signal.*`, and
+the agent *step* lifecycle — is INFO. The agent *output* firehose
+(`agent.raw_output`, `agent.prompt`, `agent.tool_use`, `agent.tool_result`,
+`agent.cost_update`, `agent.tick`) is DEBUG: it arrives several times per
+second, and a resident engine whose own lifecycle is buried in agent chatter
+has no usable operator surface. Persistence is unaffected — every event is
+still written to the database in full, so the log level is a reading choice,
+not a retention one. Unrecognized event types default to DEBUG, because a new
+event type is more likely to be a new stream than a new decision, and the four
+narrative families are prefix-matched so a genuinely new decision event reaches
+INFO with no code change.
 
 ## Consequences
 

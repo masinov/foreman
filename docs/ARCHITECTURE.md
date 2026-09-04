@@ -138,7 +138,9 @@ ADR-0011 is the active contract for engine residency and concurrency.
   subprocess.
 - `foreman/logs.py` — JSON-lines process logging on stderr. The resident engine
   has no terminal, so this is its operator surface; the orchestrator mirrors
-  every persisted event to the same logger.
+  every persisted event to the same logger, at the level
+  `event_log_level()` assigns its family (narrative at INFO, agent output
+  firehose at DEBUG).
 - Orchestrator support: `run_project(maintenance=...)` keeps retention pruning
   and crash recovery off idle wakes, `TaskExecutionError` tags a failure with
   its task id, and `block_task_for_error()` parks a task through the existing
