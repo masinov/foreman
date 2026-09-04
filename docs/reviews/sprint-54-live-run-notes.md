@@ -101,3 +101,30 @@ Started 2026-09-04T11:41Z, model `claude-opus-5` (project default), branch
 |---|-----|-------------|-------------|
 | 23 | major (structural) | Both the engine's agent and people append "Latest update" sections at the top of `docs/STATUS.md` and `CHANGELOG.md`, so any two branches that overlap in time conflict there by construction, and each conflict costs a developer pass plus another test and review cycle. | Repo-memory markdown is a conflict magnet. The spec's direction (SQLite as truth, markdown as projection written by the engine at merge time) removes the cause; until then, per-branch notes (`docs/prs/<branch>.md`) should carry the update and the shared files should be regenerated, not hand-edited, by agents. |
 | 24 | minor | The conflict-resolution pass is a full `develop → test → review → merge_approval` cycle even when only two markdown files conflict. | A "rebase-only" resolution step (built-in sync, then straight to merge when the diff against the previously reviewed head is docs-only) would save a review per conflict. |
+
+## Run 2 — slice 2a, engine command table (task `task-add-the-engine-command-table-and-foreman-engine-cli`), first resident run
+
+Started 12:32:51 UTC with `foreman serve foreman` (the code merged by run 1).
+The engine lock was acquired and heartbeated on its own connection (lease
+renewed every 20 s, 120 s duration), the pass picked task 2 within a second
+because its dependency on task 1 was satisfied, and the JSON log narrated the
+step at INFO with the agent firehose at DEBUG.
+
+| # | Sev | Observation | Consequence |
+|---|-----|-------------|-------------|
+| 25 | minor | The per-task lease of task 1 (holder: the first `foreman run`) is still `active` in `leases` after the task is done and its process is long gone; its expiry passed at 12:12 but rows expire lazily. | Lease inspection lies until someone calls `expire_leases`; release task leases at `mark_done` and when a run process exits at a gate, or expire on read. |
+| 26 | blocker | 56 seconds into the develop step the Claude subscription's five-hour window ran out. The CLI streamed `rate_limit_event` with `status: rejected` and `resetsAt`, then a `result` with `is_error` and the text "You've hit your session limit · resets 3:20pm". The runner surfaced it as a plain `agent.error`, the step outcome became `error`, the workflow had no transition for it, and the task was **blocked** with the quota message as its `blocked_reason`, `failure_type` left null. The resident engine then idled with nothing runnable. | Quota exhaustion is an infrastructure condition with a known reset time, not a task defect. Unattended operation needs: classify it, keep the task resumable at its step, record `failure_type=quota`, and have the resident engine wait until the reset before the next pass. Fixed in sprint 54 (`fix/runner-quota-exhaustion`). |
+| 27 | major | With one blocked task and nothing runnable, `foreman serve` ran a full pass every poll interval (5 s) and logged `serve.pass_completed` plus `serve.idle` at INFO each time: about 1,400 log lines per idle hour, and `run_project` (settings, workflow load, task selection) executed every 5 s. | The poll interval is a fallback for missed wake-ups, not a schedule. Log the idle transition once and repeat passes at DEBUG; on a poll wake without a `data_version` change skip the pass entirely. Fixed alongside 26. |
+| 28 | minor | Lease inspection: after the engine stopped, its engine lease is `released` correctly (SIGTERM path verified live: `serve.stopping`, `serve.stopped`, exit 0, lock released). | Positive result; recorded for completeness. |
+
+**Resolution.** The serve process was stopped with SIGTERM (clean: `serve.stopping`,
+`serve.stopped`, exit 0, lock released) after 3,517 idle passes. Branch
+`fix/runner-quota-exhaustion` teaches the runner to raise `QuotaExhaustedError`
+(from a rejected `rate_limit_event` or the limit text) with the reset time,
+`run_with_retry` to surface it once without retries, the orchestrator to pause
+the task at its step with `failure_type=quota` and `engine.quota_exhausted`
+(no loop budget spent, lease released, checkout restored), `foreman run` to
+exit 75 with the reset time, and `foreman serve` to wait for the reset (bounded
+between one minute and six hours) before the next pass. Idle passes are now
+narrated once at INFO and repeated at DEBUG. Task 2 was unblocked and the
+resident run resumed after the merge.

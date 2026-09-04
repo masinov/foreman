@@ -58,7 +58,23 @@ memory changes rather than versioned product releases.
   status|pause|resume|shutdown|run-task|stop-task`, with `--by` defaulting to
   the OS user name and the command id printed. ADR-0011 amended to record the
   command table as the only control channel to a resident engine. The
-  dashboard is untouched and moves onto the table in the next slice.
+  dashboard is untouched and moves onto the table in the next slice. Merging
+  main's quota pause in also made the engine's long waits (a failure backoff,
+  a quota reset) command-aware: they end early when a command arrives, so a
+  `shutdown` is answered in seconds rather than after a six-hour quota wait,
+  and a paused engine narrates `serve.paused` once at INFO and then at DEBUG
+  the way an idle one does.
+- `fix/runner-quota-exhaustion`: a backend usage quota running out mid-step
+  (Claude Code's "session limit" result after a rejected `rate_limit_event`)
+  is a `QuotaExhaustedError` carrying the reset time; `run_with_retry`
+  surfaces it once without retries; the orchestrator pauses the task at its
+  current step (`in_progress`, resume point persisted, lease released, no
+  loop budget spent) with `Run.failure_type=quota` and an
+  `engine.quota_exhausted` event instead of blocking it; `foreman run` exits
+  75 with the reset time; `foreman serve` waits for the reset (bounded to
+  one minute to six hours) and resumes. `Run.failure_type` is now set for
+  quota, preflight, infrastructure, and agent failures. Idle passes are
+  narrated once at INFO and repeated at DEBUG.
 - `fix/runner-progress-lines`: the Claude Code runner turns progress-only
   stream lines (`system`/`thinking_tokens`, allowed `rate_limit_event`) into
   non-persisted `agent.tick` heartbeats instead of one `agent.tool_use` plus

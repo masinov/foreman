@@ -195,6 +195,54 @@ class RunWithRetryTests(unittest.TestCase):
         self.assertEqual(events[-1].event_type, "agent.completed")
         self.assertEqual(len(sleep_calls), 2)  # 2 retries
 
+    def test_does_not_retry_quota_exhaustion_and_carries_the_reset(self) -> None:
+        from foreman.runner import QuotaExhaustedError
+
+        class _QuotaRunner:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def run(self, config):
+                self.calls += 1
+                yield AgentEvent("agent.started", payload={})
+                raise QuotaExhaustedError(
+                    "You've hit your session limit",
+                    retry_after="2026-09-04T13:20:00Z",
+                    payload={"session_id": "s-q", "cost_usd": 1.5},
+                )
+
+        runner = _QuotaRunner()
+        sleeps: list[float] = []
+        events = list(
+            run_with_retry(
+                runner,
+                AgentRunConfig(
+                    backend="claude_code",
+                    model=None,
+                    prompt="Implement.",
+                    working_dir=Path("."),
+                    session_id=None,
+                    permission_mode="default",
+                ),
+                max_retries=3,
+                sleep=sleeps.append,
+            )
+        )
+
+        self.assertEqual(runner.calls, 1)
+        self.assertEqual(sleeps, [])
+        self.assertEqual([event.event_type for event in events], ["agent.started", "agent.error"])
+        self.assertEqual(
+            events[1].payload,
+            {
+                "session_id": "s-q",
+                "cost_usd": 1.5,
+                "error": "You've hit your session limit",
+                "quota_exhausted": True,
+                "retry_after": "2026-09-04T13:20:00Z",
+            },
+        )
+
     def test_does_not_retry_preflight_error(self) -> None:
         """Preflight failures should fail fast without infrastructure retries."""
         runner = MagicMock()

@@ -46,6 +46,28 @@ class PreflightError(InfrastructureError):
     """Raised when the agent backend is unavailable before a run can start."""
 
 
+class QuotaExhaustedError(InfrastructureError):
+    """Raised when the backend refuses work because a usage quota ran out.
+
+    Unlike a transport failure this does not clear in seconds: the account's
+    window resets at a known time. ``retry_after`` is that time as an ISO 8601
+    UTC timestamp when the backend reported it, else ``None``. ``payload``
+    carries what the backend already charged (cost, tokens, session id) so the
+    run record stays accurate.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        retry_after: str | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
+        self.payload = dict(payload or {})
+
+
 class AgentRunner(Protocol):
     """Protocol shared by native agent backends."""
 
@@ -65,6 +87,20 @@ def run_with_retry(
     for attempt in range(max_retries + 1):
         try:
             yield from runner.run(config)
+            return
+        except QuotaExhaustedError as exc:
+            # A quota does not come back in seconds; retrying would spend the
+            # infrastructure budget against the same wall. Surface it once,
+            # with the reset time, so the orchestrator can pause the task.
+            yield AgentEvent(
+                "agent.error",
+                payload={
+                    **exc.payload,
+                    "error": str(exc),
+                    "quota_exhausted": True,
+                    "retry_after": exc.retry_after,
+                },
+            )
             return
         except PreflightError as exc:
             yield AgentEvent(

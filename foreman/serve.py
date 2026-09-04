@@ -33,6 +33,7 @@ without a subprocess. The CLI handler only parses arguments and maps
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import logging
 import time
 from dataclasses import dataclass, field
@@ -63,6 +64,14 @@ DATA_VERSION_TICK_SECONDS = 0.5
 #: Backoff after a task failure, doubling per consecutive failure.
 INITIAL_BACKOFF_SECONDS = 5.0
 MAX_BACKOFF_SECONDS = 300.0
+
+#: How long to wait after a backend quota ran out when the backend did not say
+#: when it resets, and the bounds applied when it did. The upper bound keeps a
+#: stale or malformed reset time from parking the engine for a day.
+DEFAULT_QUOTA_WAIT_SECONDS = 900.0
+MIN_QUOTA_WAIT_SECONDS = 60.0
+MAX_QUOTA_WAIT_SECONDS = 6 * 3600.0
+QUOTA_WAIT_GRACE_SECONDS = 5.0
 
 #: Recorded on commands a starting engine refuses because they were addressed
 #: to a resident engine that is no longer there.
@@ -129,6 +138,7 @@ class ResidentEngine:
         sleep: Callable[[float], None] | None = None,
         monotonic: Callable[[], float] | None = None,
         tick_seconds: float = DATA_VERSION_TICK_SECONDS,
+        utc_now: Callable[[], datetime] | None = None,
     ) -> None:
         self.store = store
         self.project_id = project_id
@@ -138,6 +148,7 @@ class ResidentEngine:
         self.logger = logger if logger is not None else _LOGGER
         self._sleep = sleep or time.sleep
         self._monotonic = monotonic or time.monotonic
+        self._utc_now = utc_now or (lambda: datetime.now(timezone.utc))
         self._tick_seconds = max(0.01, float(tick_seconds))
         self._backoff = _Backoff()
         #: Set by a `pause`, cleared by a `resume`. A paused engine picks no
@@ -169,6 +180,8 @@ class ResidentEngine:
         exit_code = 0
         detail: str | None = None
         last_pass_reason: str | None = None
+        idle_streak = 0
+        paused_streak = 0
 
         self._log(
             "serve.started",
@@ -204,9 +217,16 @@ class ResidentEngine:
                     if once:
                         stop_reason, detail = "once", "Engine is paused."
                         break
-                    self._log("serve.paused")
+                    paused_streak += 1
+                    # Entering the paused state is worth narrating; staying
+                    # paused is not, and a pause can last all day.
+                    self._log(
+                        "serve.paused",
+                        level=logging.INFO if paused_streak == 1 else logging.DEBUG,
+                    )
                     self._wait_for_change(self.poll_seconds)
                     continue
+                paused_streak = 0
 
                 passes += 1
                 target_task_id = self._take_requested_task()
@@ -255,11 +275,13 @@ class ResidentEngine:
                     continue
                 except OrchestratorError as exc:
                     # Ordered last of the OrchestratorError family: the two
-                    # subclasses above are handled on their own terms. A
-                    # *targeted* run that cannot even start is about that one
-                    # task (it was leased away, or it moved) rather than about
-                    # the project, so isolating it keeps a bad `run_task` from
-                    # ending the service. Anything else still ends it.
+                    # subclasses above are handled on their own terms, and
+                    # QuotaPauseError never reaches here because run_project
+                    # turns it into a `quota_exhausted` result. A *targeted*
+                    # run that cannot even start is about that one task (it was
+                    # leased away, or it moved) rather than about the project,
+                    # so isolating it keeps a bad `run_task` from ending the
+                    # service. Anything else still ends it.
                     if target_task_id is None:
                         raise
                     delay = self._isolate_task_failure(
@@ -277,16 +299,46 @@ class ResidentEngine:
                 blocked.extend(result.blocked_task_ids)
                 last_pass_reason = result.stop_reason
                 self._backoff.reset()
-                self._log_pass(result)
+                did_work = bool(result.executed_task_ids)
+                idle_streak = 0 if did_work else idle_streak + 1
+                # The transition into idleness is worth narrating once; a
+                # second consecutive empty pass is routine and stays at DEBUG
+                # so an idle service does not fill its own log.
+                self._log_pass(
+                    result,
+                    level=logging.INFO if idle_streak <= 1 else logging.DEBUG,
+                )
+
+                if result.stop_reason == "quota_exhausted":
+                    # The backend's usage window is spent. The task kept its
+                    # resume point; nothing will succeed before the reset, so
+                    # wait for it instead of blocking the task or spinning.
+                    delay = quota_wait_seconds(result.retry_after, now=self._utc_now())
+                    self._log(
+                        "serve.quota_exhausted",
+                        level=logging.WARNING,
+                        retry_after=result.retry_after,
+                        wait_seconds=delay,
+                        detail=result.detail,
+                    )
+                    maintenance_due = False
+                    if once:
+                        stop_reason, detail = "once", result.detail
+                        break
+                    self._wait(delay)
+                    continue
 
                 if once:
                     stop_reason = "once"
                     break
 
-                did_work = bool(result.executed_task_ids)
                 maintenance_due = did_work
                 if not did_work:
-                    self._log("serve.idle", stop_reason=result.stop_reason)
+                    self._log(
+                        "serve.idle",
+                        level=logging.INFO if idle_streak == 1 else logging.DEBUG,
+                        stop_reason=result.stop_reason,
+                    )
                     self._wait_for_change(self.poll_seconds)
 
         except (EngineShutdown, KeyboardInterrupt) as exc:
@@ -625,14 +677,37 @@ class ResidentEngine:
     # ── waiting ──────────────────────────────────────────────────────────
 
     def _wait(self, seconds: float) -> None:
-        """Sleep for ``seconds`` in ticks, returning early if the lock is lost."""
+        """Sleep for ``seconds`` in ticks, returning early if the lock is lost
+        or a command is waiting.
+
+        These waits are the long ones: a failure backoff reaches five minutes,
+        and a quota wait reaches six hours. An engine that ignored `shutdown`
+        for six hours would not be controllable, so a queued command cuts the
+        wait short and the loop drains it on the next pass.
+
+        ``data_version`` is checked first because it is a pragma rather than a
+        table read, so the common case — nothing committed since the last tick
+        — costs nothing beyond it. Only an actual commit by another connection
+        is worth a lookup in ``engine_commands``.
+        """
 
         deadline = self._monotonic() + seconds
+        baseline = self.store.data_version()
         while True:
             remaining = deadline - self._monotonic()
             if remaining <= 0 or self._lock_is_lost():
                 return
             self._sleep(min(self._tick_seconds, remaining))
+            version = self.store.data_version()
+            if version != baseline:
+                baseline = version
+                if self._has_pending_command():
+                    return
+
+    def _has_pending_command(self) -> bool:
+        """True when a command is waiting for this engine to pick it up."""
+
+        return self.store.next_pending_engine_command(self.project_id) is not None
 
     def _wait_for_change(self, timeout: float) -> bool:
         """Block until another process commits, or ``timeout`` elapses.
@@ -666,9 +741,10 @@ class ResidentEngine:
             return "Engine lock was lost."
         return self.lock.lost_reason or "Engine lock was lost."
 
-    def _log_pass(self, result: ProjectRunResult) -> None:
+    def _log_pass(self, result: ProjectRunResult, *, level: int = logging.INFO) -> None:
         self._log(
             "serve.pass_completed",
+            level=level,
             stop_reason=result.stop_reason,
             executed_task_ids=list(result.executed_task_ids),
             blocked_task_ids=list(result.blocked_task_ids),
@@ -682,6 +758,28 @@ class ResidentEngine:
             project_id=self.project_id,
             **fields,
         )
+
+
+def quota_wait_seconds(retry_after: str | None, *, now: datetime) -> float:
+    """Return how long to wait for a backend quota reset reported as ISO 8601.
+
+    A missing or unparseable time falls back to ``DEFAULT_QUOTA_WAIT_SECONDS``;
+    a reported time is honoured with a small grace period and clamped to
+    ``[MIN_QUOTA_WAIT_SECONDS, MAX_QUOTA_WAIT_SECONDS]``.
+    """
+
+    if not retry_after:
+        return DEFAULT_QUOTA_WAIT_SECONDS
+    try:
+        reset = datetime.fromisoformat(retry_after.replace("Z", "+00:00"))
+    except ValueError:
+        return DEFAULT_QUOTA_WAIT_SECONDS
+    if reset.tzinfo is None:
+        reset = reset.replace(tzinfo=timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    seconds = (reset - now).total_seconds() + QUOTA_WAIT_GRACE_SECONDS
+    return min(max(seconds, MIN_QUOTA_WAIT_SECONDS), MAX_QUOTA_WAIT_SECONDS)
 
 
 def serve_project(
@@ -757,6 +855,8 @@ def serve_project(
 
 __all__ = [
     "DEFAULT_POLL_SECONDS",
+    "DEFAULT_QUOTA_WAIT_SECONDS",
+    "quota_wait_seconds",
     "EngineBusyError",
     "ResidentEngine",
     "ServeResult",

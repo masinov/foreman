@@ -12,6 +12,7 @@ from foreman.runner import (
     ClaudeCodeRunner,
     InfrastructureError,
     PreflightError,
+    QuotaExhaustedError,
     run_with_retry,
 )
 from foreman.runner.base import AgentEvent
@@ -430,6 +431,77 @@ class ClaudeCodeRunnerTests(unittest.TestCase):
             events[2].payload,
             {"status": "rejected", "rate_limit_type": "five_hour", "resets_at": 1788528000},
         )
+
+    def _collect_until_error(self, lines: list[str]) -> tuple[list[AgentEvent], BaseException]:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        config = self.create_config(Path(temp_dir.name))
+        process = _FakeProcess(lines=[line + "\n" for line in lines])
+        runner = ClaudeCodeRunner(
+            popen_factory=_PopenRecorder(process),
+            clock=lambda: 0.0,
+            which=lambda _: "/usr/bin/claude",
+        )
+        events: list[AgentEvent] = []
+        try:
+            for event in runner.run(config):
+                events.append(event)
+        except Exception as exc:  # noqa: BLE001 - the test inspects it
+            return events, exc
+        self.fail("runner did not raise")
+
+    def test_quota_exhaustion_after_a_rejected_rate_limit_notice_is_raised_with_the_reset(self) -> None:
+        rejected = {
+            "type": "rate_limit_event",
+            "rate_limit_info": {
+                "status": "rejected",
+                "rateLimitType": "five_hour",
+                "resetsAt": 1788528000,
+            },
+        }
+        result = {
+            "type": "result",
+            "is_error": True,
+            "session_id": "sess-q",
+            "total_cost_usd": 1.46,
+            "duration_ms": 56049,
+            "usage": {"total_tokens": 3707},
+            "result": "You've hit your session limit \u00b7 resets 3:20pm (Europe/Madrid)",
+        }
+
+        events, exc = self._collect_until_error([json.dumps(rejected), json.dumps(result)])
+
+        self.assertIsInstance(exc, QuotaExhaustedError)
+        self.assertEqual(exc.retry_after, "2026-09-04T13:20:00Z")
+        self.assertIn("session limit", str(exc))
+        self.assertEqual(
+            exc.payload,
+            {"session_id": "sess-q", "cost_usd": 1.46, "duration_ms": 56049, "token_count": 3707},
+        )
+        self.assertIn("agent.rate_limit", [event.event_type for event in events])
+        self.assertNotIn("agent.error", [event.event_type for event in events])
+
+    def test_quota_exhaustion_is_recognized_from_the_error_text_alone(self) -> None:
+        result = {
+            "type": "result",
+            "is_error": True,
+            "session_id": "sess-q2",
+            "result": "You've hit your usage limit.",
+        }
+
+        events, exc = self._collect_until_error([json.dumps(result)])
+
+        self.assertIsInstance(exc, QuotaExhaustedError)
+        self.assertIsNone(exc.retry_after)
+        self.assertEqual(exc.payload["session_id"], "sess-q2")
+
+    def test_ordinary_error_results_stay_agent_errors(self) -> None:
+        events = self._run_lines(
+            [json.dumps({"type": "result", "is_error": True, "session_id": "s", "result": "Tool crashed."})]
+        )
+
+        self.assertEqual(events[-1].event_type, "agent.error")
+        self.assertNotIn("quota_exhausted", events[-1].payload)
 
     def test_run_raises_preflight_error_when_executable_is_missing(self) -> None:
         temp_dir = tempfile.TemporaryDirectory()

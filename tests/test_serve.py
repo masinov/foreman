@@ -32,6 +32,7 @@ from foreman.orchestrator import (
     ForemanOrchestrator,
     OrchestratorError,
     ProjectRunResult,
+    TaskExecutionError,
 )
 from foreman.runner.base import AgentEvent, AgentRunConfig
 from foreman.runner.process import EngineShutdown
@@ -131,6 +132,28 @@ def _executed(*task_ids: str, project_id: str = "project-1") -> ProjectRunResult
         blocked_task_ids=(),
         stop_reason="idle",
     )
+
+
+def _quota_exhausted(*task_ids: str, retry_after: str | None = "2026-09-04T13:20:00Z") -> ProjectRunResult:
+    return ProjectRunResult(
+        project_id="project-1",
+        executed_task_ids=tuple(task_ids),
+        blocked_task_ids=(),
+        stop_reason="quota_exhausted",
+        retry_after=retry_after,
+        detail="You've hit your session limit",
+    )
+
+
+class _RecordingHandler(logging.Handler):
+    """Collect (event, level) pairs emitted through a logger."""
+
+    def __init__(self) -> None:
+        super().__init__(level=logging.DEBUG)
+        self.records: list[tuple[str, int]] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.records.append((record.getMessage(), record.levelno))
 
 
 class _FakeClock:
@@ -421,6 +444,54 @@ class ResidentEngineLoopTests(unittest.TestCase):
         engine.run()
 
         self.assertAlmostEqual(self.clock.total_slept, 4.0, places=6)
+
+    def test_quota_exhaustion_waits_for_the_reset_then_resumes_without_maintenance(self) -> None:
+        from datetime import datetime, timezone
+
+        orchestrator = _StubOrchestrator([_quota_exhausted("task-1"), _executed("task-1")])
+        engine = self._engine(
+            orchestrator,
+            tick_seconds=1.0,
+            utc_now=lambda: datetime(2026, 9, 4, 12, 33, 47, tzinfo=timezone.utc),
+        )
+
+        result = engine.run()
+
+        # 13:20:00 - 12:33:47 = 2773 s, plus the grace period.
+        self.assertGreaterEqual(self.clock.total_slept, 2778.0)
+        self.assertLess(self.clock.total_slept, 2778.0 + 10.0)
+        self.assertEqual(orchestrator.calls, [True, False, True])
+        self.assertEqual(result.executed_task_ids, ("task-1", "task-1"))
+        self.assertEqual(result.blocked_task_ids, ())
+
+    def test_quota_exhaustion_with_once_exits_zero_and_keeps_the_task(self) -> None:
+        orchestrator = _StubOrchestrator([_quota_exhausted("task-1")])
+
+        result = self._engine(orchestrator).run(once=True)
+
+        self.assertEqual(result.exit_code, 0)
+        self.assertEqual(result.stop_reason, "once")
+        self.assertEqual(orchestrator.blocked, [])
+        self.assertEqual(self.clock.total_slept, 0.0)
+
+    def test_idle_is_narrated_once_then_demoted_to_debug(self) -> None:
+        handler = _RecordingHandler()
+        logger = logging.getLogger("test.serve.idle")
+        logger.setLevel(logging.DEBUG)
+        logger.propagate = False
+        logger.addHandler(handler)
+        self.addCleanup(logger.removeHandler, handler)
+
+        orchestrator = _StubOrchestrator([_idle(), _idle(), _idle(), _executed("task-1"), _idle()])
+        self._engine(orchestrator, logger=logger, tick_seconds=1.0).run()
+
+        idle_levels = [level for event, level in handler.records if event == "serve.idle"]
+        pass_levels = [level for event, level in handler.records if event == "serve.pass_completed"]
+        self.assertEqual(idle_levels, [logging.INFO, logging.DEBUG, logging.DEBUG, logging.INFO])
+        self.assertEqual(
+            pass_levels,
+            [logging.INFO, logging.DEBUG, logging.DEBUG, logging.INFO, logging.INFO],
+        )
 
     def test_task_failure_is_isolated_with_a_doubling_backoff(self) -> None:
         from foreman.orchestrator import TaskExecutionError
@@ -1146,6 +1217,25 @@ class EventLogLevelTests(unittest.TestCase):
         ]
         self.assertEqual([entry["event"] for entry in logged], ["agent.raw_output"])
         self.assertEqual(logged[0]["level"], "DEBUG")
+
+
+class QuotaWaitTests(unittest.TestCase):
+    def test_wait_is_derived_from_the_reset_time_with_grace_and_bounds(self) -> None:
+        from datetime import datetime, timezone
+
+        from foreman.serve import (
+            DEFAULT_QUOTA_WAIT_SECONDS,
+            MAX_QUOTA_WAIT_SECONDS,
+            MIN_QUOTA_WAIT_SECONDS,
+            quota_wait_seconds,
+        )
+
+        now = datetime(2026, 9, 4, 12, 33, 47, tzinfo=timezone.utc)
+        self.assertEqual(quota_wait_seconds("2026-09-04T13:20:00Z", now=now), 2773.0 + 5.0)
+        self.assertEqual(quota_wait_seconds("2026-09-04T12:00:00Z", now=now), MIN_QUOTA_WAIT_SECONDS)
+        self.assertEqual(quota_wait_seconds("2026-09-06T12:00:00Z", now=now), MAX_QUOTA_WAIT_SECONDS)
+        self.assertEqual(quota_wait_seconds(None, now=now), DEFAULT_QUOTA_WAIT_SECONDS)
+        self.assertEqual(quota_wait_seconds("not a time", now=now), DEFAULT_QUOTA_WAIT_SECONDS)
 
 
 if __name__ == "__main__":  # pragma: no cover
@@ -1973,3 +2063,136 @@ class EngineRunTaskQueueTests(unittest.TestCase):
         )
         for command in self.store.list_engine_commands(self.project.id):
             self.assertEqual(command.status, "completed")
+
+
+class EngineCommandsDuringLongWaitsTests(unittest.TestCase):
+    """A long wait must not make the engine deaf to commands.
+
+    A failure backoff reaches five minutes and a quota wait reaches six hours.
+    Both are exactly when an operator is most likely to want the engine paused
+    or shut down, so a queued command has to cut the wait short.
+    """
+
+    def setUp(self) -> None:
+        self._temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._temp.cleanup)
+        self.db_path = Path(self._temp.name) / "foreman.db"
+        self.store = ForemanStore(self.db_path)
+        self.addCleanup(self.store.close)
+        self.store.initialize()
+        self.project = _seed_project(self.store, self._temp.name, tasks=1)
+        self.clock = _FakeClock()
+        self.writer = ForemanStore(self.db_path)
+        self.addCleanup(self.writer.close)
+
+    def _engine(self, orchestrator, **kwargs: object) -> ResidentEngine:
+        kwargs.setdefault("poll_seconds", 5.0)
+        return ResidentEngine(
+            store=self.store,
+            project_id=self.project.id,
+            orchestrator=orchestrator,  # type: ignore[arg-type]
+            sleep=self.clock.sleep,
+            monotonic=self.clock.monotonic,
+            **kwargs,  # type: ignore[arg-type]
+        )
+
+    def _enqueue_at(self, engine: ResidentEngine, schedule: dict[int, str]) -> dict:
+        """Queue commands from another connection at given sleep ticks."""
+
+        state: dict = {"ticks": 0, "queued": {}}
+        original_sleep = engine._sleep
+
+        def sleeper(seconds: float) -> None:
+            original_sleep(seconds)
+            state["ticks"] += 1
+            name = schedule.get(state["ticks"])
+            if name is not None:
+                state["queued"][name] = self.writer.enqueue_engine_command(
+                    project_id=self.project.id,
+                    command=name,
+                    requested_by="ops",
+                )
+
+        engine._sleep = sleeper
+        return state
+
+    def test_a_shutdown_cuts_a_six_hour_quota_wait_short(self) -> None:
+        from datetime import datetime, timezone
+
+        orchestrator = _StubOrchestrator([_quota_exhausted("task-1"), _idle()])
+        engine = self._engine(
+            orchestrator,
+            tick_seconds=1.0,
+            utc_now=lambda: datetime(2026, 9, 4, 6, 0, 0, tzinfo=timezone.utc),
+        )
+        # The reset is far enough out that the wait clamps to the six-hour cap.
+        state = self._enqueue_at(engine, {3: "shutdown"})
+
+        result = engine.run()
+
+        self.assertLess(
+            self.clock.total_slept,
+            60.0,
+            "the shutdown must end the quota wait, not ride it out",
+        )
+        self.assertEqual(result.stop_reason, "stopped")
+        self.assertEqual(result.exit_code, 0)
+        settled = self.store.get_engine_command(state["queued"]["shutdown"].id)
+        assert settled is not None
+        self.assertEqual(settled.status, "completed")
+
+    def test_a_pause_cuts_a_failure_backoff_short(self) -> None:
+        orchestrator = _StubOrchestrator(
+            [TaskExecutionError("task-1", RuntimeError("boom")), _idle(), _idle()]
+        )
+        engine = self._engine(orchestrator, tick_seconds=1.0)
+        # The pause lands mid-backoff; the shutdown later ends the paused loop,
+        # which would otherwise wait for a `resume` that never comes.
+        state = self._enqueue_at(engine, {2: "pause", 6: "shutdown"})
+
+        engine.run()
+
+        # Riding the 5 s backoff out would sleep 5 s before the pause was even
+        # seen, then 5 s more per paused wait. Landing under that proves the
+        # wait ended early.
+        self.assertLess(self.clock.total_slept, 10.0)
+        settled = self.store.get_engine_command(state["queued"]["pause"].id)
+        assert settled is not None
+        self.assertEqual(settled.status, "completed")
+        self.assertEqual(
+            orchestrator.calls, [True], "a paused engine must run no further pass"
+        )
+
+    def test_a_wait_with_no_command_still_runs_its_full_course(self) -> None:
+        """The early return must trigger on a command, not on any commit."""
+
+        orchestrator = _StubOrchestrator(
+            [TaskExecutionError("task-1", RuntimeError("boom")), _idle()]
+        )
+        engine = self._engine(orchestrator, tick_seconds=1.0)
+        original_sleep = engine._sleep
+        state = {"ticks": 0}
+
+        def sleep_then_commit_something_else(seconds: float) -> None:
+            original_sleep(seconds)
+            state["ticks"] += 1
+            if state["ticks"] == 2:
+                # Another connection commits, but it is not a command.
+                self.writer.save_task(
+                    Task(
+                        id="task-late",
+                        sprint_id="sprint-1",
+                        project_id=self.project.id,
+                        title="Unrelated work",
+                        status="todo",
+                    )
+                )
+
+        engine._sleep = sleep_then_commit_something_else
+        engine.run()
+
+        self.assertGreaterEqual(
+            self.clock.total_slept,
+            5.0,
+            "an unrelated commit must not cut the backoff short",
+        )

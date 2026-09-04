@@ -829,6 +829,28 @@ task blocks and a gate event fires:
 > show "tokens (cost unknown for N runs)". USD precision for those endpoints is
 > out of scope — do not rely on dollar gates for zero-cost endpoints.
 
+### Backend quota exhaustion
+
+A usage quota running out mid-step (Claude Code's "You've hit your session
+limit · resets …" result after a `rate_limit_event` with a status other than
+allowed) is an infrastructure condition, not a task failure. The runner raises
+`QuotaExhaustedError` with the reset time the backend reported; the retry
+loop surfaces it once without spending infrastructure retries; and the
+orchestrator **pauses** the task instead of blocking it:
+
+- the task stays `in_progress` with its resume point persisted
+  (`workflow_current_step` and the carried output), exactly as a human gate
+  persists it, and its step visit is refunded;
+- the run is recorded as `failed` with `failure_type="quota"` and an
+  `engine.quota_exhausted` event carrying `retry_after`;
+- the task lease is released and the checkout restored, so the next pass
+  (this engine or another) resumes the task at the same step.
+
+`foreman run` prints the reset time and exits **75** (`EX_TEMPFAIL`).
+`foreman serve` logs `serve.quota_exhausted` and waits for the reset (the
+reported time plus a few seconds, clamped to one minute to six hours, or
+fifteen minutes when the backend did not say) before running the next pass.
+
 ---
 
 ## 16. Project settings reference
@@ -992,6 +1014,8 @@ Events are the append-only truth of what happened. Families:
   `no_transition`, `autonomous_contract_missing`.
 - **`engine.*`** — `role_policy`, `completion_evidence`, `completion_guard`,
   `task_created`, `merge`/`merge_blocked`/`merge_conflict`, `branch_violation`,
+  `quota_exhausted` (the backend's usage window ran out; the task is paused
+  at its step with `retry_after`),
   `sprint_started`/`sprint_ready`/`sprint_completed`, `attention_needed`,
   `crash_recovery`, `event_pruned`/`run_pruned`, `test_run`/`test_output`,
   `command_applied`/`command_rejected` (one per engine command, carrying
@@ -1081,6 +1105,11 @@ While an agent is silent, the runner wakes every 15 seconds to enforce the
 time and cost gates and to heartbeat the task lease. If another engine has
 taken the lease meanwhile, the run is recorded as `killed`
 (`gate_type="lease_lost"`) and this engine exits without touching the task.
+
+A third exit code, **75**, means `foreman run` stopped because the agent
+backend's usage quota ran out; the task is paused at its step, not blocked
+(see §15, "Backend quota exhaustion"). `foreman serve` does not exit in that
+case: it waits for the reset and resumes.
 
 ---
 

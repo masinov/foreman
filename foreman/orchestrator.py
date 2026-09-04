@@ -69,6 +69,22 @@ class LeaseLostError(OrchestratorError):
     """
 
 
+class QuotaPauseError(OrchestratorError):
+    """Raised when a task must pause because the agent backend's quota ran out.
+
+    The task keeps its resume point (``workflow_current_step`` and the carried
+    output) and its ``in_progress`` status, so the next pass resumes it at the
+    same step; nothing about the task itself failed. ``retry_after`` is the
+    backend's reset time when it reported one.
+    """
+
+    def __init__(self, task_id: str, *, retry_after: str | None, detail: str) -> None:
+        super().__init__(f"Task {task_id!r} paused until the backend quota resets: {detail}")
+        self.task_id = task_id
+        self.retry_after = retry_after
+        self.detail = detail
+
+
 class TaskExecutionError(OrchestratorError):
     """Raised when running one specific task failed.
 
@@ -108,6 +124,10 @@ class AgentExecutionResult:
     events: tuple[AgentEventRecord, ...] = ()
     events_streamed: bool = False
     retry_count: int = 0
+    #: ``quota`` | ``preflight`` | ``infrastructure`` | ``agent`` when the run failed.
+    failure_type: str | None = None
+    #: ISO 8601 UTC time after which a quota failure may be retried.
+    retry_after: str | None = None
 
 
 @dataclass(slots=True)
@@ -118,6 +138,9 @@ class ProjectRunResult:
     executed_task_ids: tuple[str, ...]
     blocked_task_ids: tuple[str, ...]
     stop_reason: str
+    #: Set with ``stop_reason="quota_exhausted"``: when the backend said it will serve again.
+    retry_after: str | None = None
+    detail: str | None = None
 
 
 @dataclass(slots=True)
@@ -330,7 +353,10 @@ class ForemanOrchestrator:
                 raise OrchestratorError(
                     f"Task {task_id!r} is already leased by another orchestrator."
                 )
-            completed = self._run_task_isolated(project, workflow, task)
+            try:
+                completed = self._run_task_isolated(project, workflow, task)
+            except QuotaPauseError as exc:
+                return self._quota_run_result(project, exc, executed_task_ids, blocked_task_ids)
             executed_task_ids.append(completed.id)
             if completed.status == "blocked":
                 blocked_task_ids.append(completed.id)
@@ -346,7 +372,12 @@ class ForemanOrchestrator:
         while True:
             task = self.select_next_task(project)
             if task is not None:
-                completed = self._run_task_isolated(project, workflow, task)
+                try:
+                    completed = self._run_task_isolated(project, workflow, task)
+                except QuotaPauseError as exc:
+                    return self._quota_run_result(
+                        project, exc, executed_task_ids, blocked_task_ids
+                    )
                 executed_task_ids.append(completed.id)
                 if completed.status == "blocked":
                     blocked_task_ids.append(completed.id)
@@ -402,11 +433,70 @@ class ForemanOrchestrator:
             EngineShutdown,
             KeyboardInterrupt,
             LeaseLostError,
+            QuotaPauseError,
             TaskExecutionError,
         ):
             raise
         except Exception as exc:
             raise TaskExecutionError(task.id, exc) from exc
+
+    def _quota_run_result(
+        self,
+        project: Project,
+        exc: QuotaPauseError,
+        executed_task_ids: list[str],
+        blocked_task_ids: list[str],
+    ) -> ProjectRunResult:
+        """Summarize a pass that stopped because the backend quota ran out."""
+
+        executed_task_ids.append(exc.task_id)
+        return ProjectRunResult(
+            project_id=project.id,
+            executed_task_ids=tuple(executed_task_ids),
+            blocked_task_ids=tuple(blocked_task_ids),
+            stop_reason="quota_exhausted",
+            retry_after=exc.retry_after,
+            detail=exc.detail,
+        )
+
+    def _pause_for_quota(
+        self,
+        project: Project,
+        task: Task,
+        run: Run,
+        *,
+        step: str,
+        carried_output: str | None,
+        result: AgentExecutionResult,
+    ) -> None:
+        """Park one task at its current step until the backend quota resets.
+
+        The visit that hit the quota did no work, so it is not charged against
+        the step-visit budget; the task keeps ``in_progress`` with its resume
+        point persisted the way a human gate persists it, and its lease is
+        released so the next pass (this engine or another) can resume it.
+        """
+
+        counts = dict(task.step_visit_counts)
+        if counts.get(step, 0) > 0:
+            counts[step] -= 1
+        task.step_visit_counts = counts
+        task.status = "in_progress"
+        task.blocked_reason = None
+        task.workflow_current_step = step
+        task.workflow_carried_output = carried_output
+        self.store.save_task(task)
+        self._emit_event(
+            run,
+            "engine.quota_exhausted",
+            {
+                "step": step,
+                "role_id": run.role_id,
+                "retry_after": result.retry_after,
+                "error": result.detail,
+            },
+        )
+        self._release_task_lease(task, project)
 
     def block_task_for_error(
         self,
@@ -1808,8 +1898,13 @@ class ForemanOrchestrator:
                     token_count=result.token_count,
                     duration_ms=result.duration_ms,
                     retry_count=result.retry_count,
+                    failure_type=result.failure_type,
                 )
-                retry_reason = self._output_contract_retry_reason(role, result)
+                retry_reason = (
+                    None
+                    if result.failure_type == "quota"
+                    else self._output_contract_retry_reason(role, result)
+                )
                 if retry_reason is not None:
                     self._emit_event(
                         run,
@@ -1887,9 +1982,24 @@ class ForemanOrchestrator:
                         token_count=retry_result.token_count,
                         duration_ms=retry_result.duration_ms,
                         retry_count=retry_result.retry_count,
+                        failure_type=retry_result.failure_type,
                     )
                     run = retry_run
                     result = retry_result
+                if result.failure_type == "quota":
+                    self._pause_for_quota(
+                        project,
+                        current_task,
+                        run,
+                        step=current_step,
+                        carried_output=carried_output,
+                        result=result,
+                    )
+                    raise QuotaPauseError(
+                        current_task.id,
+                        retry_after=result.retry_after,
+                        detail=result.detail,
+                    )
                 if role.agent.session_persistence and result.session_id:
                     session_ids[session_key] = result.session_id
                 if role.completion.output.extract_decision:
@@ -2878,6 +2988,7 @@ class ForemanOrchestrator:
                         },
                     ),
                 ),
+                failure_type="preflight",
             )
         config = AgentRunConfig(
             backend=role.agent.backend,
@@ -2909,6 +3020,8 @@ class ForemanOrchestrator:
         cost_usd = 0.0
         token_count = 0
         duration_ms: int | None = None
+        failure_type: str | None = None
+        retry_after: str | None = None
 
         retry_kwargs: dict[str, Any] = {"max_retries": max_retries}
         if self.runner_sleep is not None:
@@ -3035,6 +3148,8 @@ class ForemanOrchestrator:
                     default=duration_ms,
                 )
                 final_status = "failed"
+                failure_type = _failure_type_for_error(event.payload)
+                retry_after = _optional_string(event.payload.get("retry_after"))
                 detail = (
                     _optional_string(event.payload.get("error"))
                     or "\n\n".join(message_fragments)
@@ -3065,6 +3180,8 @@ class ForemanOrchestrator:
             events=tuple(events),
             events_streamed=event_recorder is not None,
             retry_count=infra_retry_count,
+            failure_type=failure_type,
+            retry_after=retry_after,
         )
 
     def _extract_completion_output(
@@ -3410,10 +3527,13 @@ class ForemanOrchestrator:
         token_count: int | None = None,
         duration_ms: int | None = None,
         retry_count: int | None = None,
+        failure_type: str | None = None,
     ) -> None:
         run.status = status
         run.outcome = outcome
         run.outcome_detail = detail
+        if failure_type is not None:
+            run.failure_type = failure_type
         run.model = model
         run.session_id = session_id
         if cost_usd is not None:
@@ -3465,6 +3585,18 @@ class ForemanOrchestrator:
             payload=compact_payload(payload),
         )
         return event
+
+
+def _failure_type_for_error(payload: Mapping[str, Any]) -> str:
+    """Classify an ``agent.error`` payload for ``Run.failure_type``."""
+
+    if payload.get("quota_exhausted"):
+        return "quota"
+    if payload.get("preflight_failed"):
+        return "preflight"
+    if payload.get("retries_exhausted"):
+        return "infrastructure"
+    return "agent"
 
 
 def generate_branch_name(task: Task) -> str:
