@@ -1070,6 +1070,19 @@ class ForemanOrchestrator:
         for task in sprint_tasks:
             if task.status != "todo":
                 continue
+            cancelled = self._cancelled_dependencies(task, tasks_by_id)
+            if cancelled:
+                # The prerequisite will never be delivered. Running the task
+                # anyway would build on work that does not exist; park it for
+                # a person to re-plan instead.
+                self.block_task_for_error(
+                    task.id,
+                    "Dependency cancelled: "
+                    + ", ".join(cancelled)
+                    + ". Re-plan the task, then `foreman task unblock` it or cancel it.",
+                    attention_trigger="dependency_cancelled",
+                )
+                continue
             if not self._dependencies_satisfied(task, tasks_by_id):
                 continue
             # Lease the task before returning it. If denied, another
@@ -2595,9 +2608,24 @@ class ForemanOrchestrator:
             dependency = tasks_by_id.get(dependency_id) or self.store.get_task(dependency_id)
             if dependency is None:
                 return False
-            if dependency.status not in {"done", "cancelled"}:
+            # Only a delivered dependency satisfies. A cancelled one is a
+            # planning decision the dependent task must be re-planned around;
+            # ``_cancelled_dependencies`` turns it into a block with attention.
+            if dependency.status != "done":
                 return False
         return True
+
+    def _cancelled_dependencies(
+        self,
+        task: Task,
+        tasks_by_id: Mapping[str, Task],
+    ) -> list[str]:
+        cancelled: list[str] = []
+        for dependency_id in task.depends_on_task_ids:
+            dependency = tasks_by_id.get(dependency_id) or self.store.get_task(dependency_id)
+            if dependency is not None and dependency.status == "cancelled":
+                cancelled.append(dependency.id)
+        return cancelled
 
     def _build_prompt(
         self,

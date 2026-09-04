@@ -3998,6 +3998,83 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 },
             )
 
+    def test_select_next_task_blocks_a_task_whose_dependency_was_cancelled(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        repo_path.mkdir(exist_ok=True)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project = Project(
+                id="project-1",
+                name="Foreman Demo",
+                repo_path=str(repo_path),
+                workflow_id="development",
+                default_branch="main",
+                settings={"task_selection_mode": "directed"},
+            )
+            sprint = Sprint(id="sprint-1", project_id=project.id, title="S", status="active")
+            cancelled = Task(
+                id="task-dep",
+                sprint_id=sprint.id,
+                project_id=project.id,
+                title="Prerequisite that was dropped",
+                status="cancelled",
+                priority=0,
+            )
+            dependent = Task(
+                id="task-1",
+                sprint_id=sprint.id,
+                project_id=project.id,
+                title="Builds on the prerequisite",
+                status="todo",
+                priority=1,
+                depends_on_task_ids=["task-dep"],
+            )
+            ready = Task(
+                id="task-2",
+                sprint_id=sprint.id,
+                project_id=project.id,
+                title="Independent work",
+                status="todo",
+                priority=2,
+            )
+            for row in (project,):
+                store.save_project(row)
+            store.save_sprint(sprint)
+            for task in (cancelled, dependent, ready):
+                store.save_task(task)
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=self.roles,
+                workflows=self.workflows,
+                agent_executor=ScriptedAgentExecutor({}),
+            )
+
+            selected = orchestrator.select_next_task(project)
+
+            self.assertIsNotNone(selected)
+            assert selected is not None
+            self.assertEqual(selected.id, "task-2", "a cancelled prerequisite never releases the dependent")
+            parked = store.get_task("task-1")
+            assert parked is not None
+            self.assertEqual(parked.status, "blocked")
+            self.assertIn("Dependency cancelled: task-dep", parked.blocked_reason or "")
+            attention = [
+                event.payload
+                for event in store.list_events(task_id="task-1")
+                if event.event_type == "engine.attention_needed"
+            ]
+            self.assertEqual(len(attention), 1)
+            self.assertEqual(attention[0].get("trigger"), "dependency_cancelled")
+
+            # Blocking is idempotent: a second selection pass leaves one block.
+            orchestrator._release_task_lease(selected, project)
+            orchestrator.select_next_task(project)
+            self.assertEqual(
+                len([e for e in store.list_events(task_id="task-1") if e.event_type == "engine.attention_needed"]),
+                1,
+            )
+
     def test_select_next_task_skips_unsatisfied_dependencies(self) -> None:
         repo_path, db_path = self.create_workspace()
         repo_path.mkdir(exist_ok=True)

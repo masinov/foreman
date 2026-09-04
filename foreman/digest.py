@@ -13,6 +13,7 @@ from typing import Any
 
 # Human-readable description per trigger id.
 _TRIGGER_LABELS: dict[str, str] = {
+    "dependency_cancelled": "A task this one depends on was cancelled; it needs re-planning before it can run.",
     "task_blocked": "A task was blocked and needs a decision.",
     "evidence_failed": "Completion evidence failed the proof gate.",
     "loop_limit": "A task hit the workflow step-visit loop limit.",

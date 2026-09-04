@@ -2009,6 +2009,18 @@ def handle_task_cancel(args: argparse.Namespace) -> int:
         if task.status == "done":
             print(f"Task {task.id} is already done and cannot be cancelled.", file=sys.stderr)
             return 1
+        running = store.list_runs(task_id=task.id, status="running")
+        if running and store.get_engine_lock(task.project_id) is not None:
+            # A resident engine is executing this task right now. Cancelling
+            # the row underneath it would be overwritten by the engine's next
+            # save; the engine has to stop the work first.
+            print(
+                f"Task {task.id} has a running agent step ({running[0].id}). Stop it "
+                f"first with `foreman engine stop-task {task.project_id} {task.id}`, "
+                "then cancel.",
+                file=sys.stderr,
+            )
+            return 1
 
         if task.status != "cancelled":
             task.status = "cancelled"

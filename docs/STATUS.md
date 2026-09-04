@@ -18,6 +18,8 @@
 
 ## Active branches
 
+- `fix/cancelled-dependency-blocks` — sprint 54 live-run fix F4; merged to
+  `main`
 - `feat/task-rewire-the-dashboard-onto-the-resident-engine-and-report-dead-letter-tasks`
   — sprint 54 slice 2b: the dashboard steers the engine through
   `engine_commands` and holds no process handles; new
@@ -88,7 +90,23 @@
 - Phase 0 of the production readiness review is complete: an unattended run
   is safe on one machine.
 
-## Latest update — sprint 54 live runs 3 and 4: branch drift and a second quota hit
+## Latest update — sprint 54 live run 5: slice 2b landed, two more findings
+
+- Slice 2b (dashboard onto the resident engine) was carried by the engine
+  with one STEER round and merged at `3ff6936` after the maintainer brought
+  the branch up to date with `main` by hand. Three sprint slices are now on
+  `main` through the engine's own pipeline.
+- Two findings from the run: a second resident engine survived a
+  mis-targeted stop and started the next task while the operator was
+  merging on `main` in the shared checkout (recovered; worktree-per-task
+  moves ahead of intake and policy in the queue); and a cancelled
+  dependency counted as satisfied, so cancelling one queued task released
+  another to the engine. Branch `fix/cancelled-dependency-blocks` (F4)
+  blocks the dependent task for re-planning and makes cancel refuse a task
+  with a live run.
+- Observations 35–37 in `docs/reviews/sprint-54-live-run-notes.md`.
+
+## Previous update — sprint 54 live runs 3 and 4: branch drift and a second quota hit
 
 - The resident engine resumed slice 2a within a second of `foreman task
   unblock` and landed it in 25 minutes; the branch, created before the quota

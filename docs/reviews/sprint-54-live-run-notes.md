@@ -167,3 +167,32 @@ guidance (mode `refresh_conflict`), never aborts a merge the developer was concl
 (mode `merge_in_progress`), and `foreman approve`/`deny` exit 75 with an honest message
 when the follow-on step pauses on quota. The two merge-conflict tests were rewritten
 around the real scenario: `main` moving while the task waits at a human gate.
+
+## Run 5 — slice 2b (dashboard onto the resident engine), resident run from the repository
+
+Task 2 concluded its merge on the resumed session in 4 minutes ($6.53) once the
+`merge_in_progress` guard and the no-op checkout let the pass reach the tree as it was
+left; test, review, gate, approve, and the engine's merge followed (`fd28d94`). The
+resident engine then picked task 3 within seconds of the merge commit.
+
+| # | Sev | Observation | Consequence |
+|---|-----|-------------|-------------|
+| 35 | major (operator + product) | A second resident engine survived a mis-targeted stop (`pgrep -f` matched the shell wrapper, not the engine), so while I merged the F3 branch on `main` in the shared checkout, that engine had already started task 3's develop step in the same checkout. The tree was switched under a running agent, and `main` moved during its step, which the post-step invariant would have blocked. Recovered by hand: checkout returned to the task branch before the agent wrote anything, local `main` parked at the commit the step captured until the gate. | Two product gaps behind one mistake: the engine lease names a UUID, not a process (`foreman engine status` cannot say which pid to stop), and the engine still works in the operator's checkout. Record the pid and host on the lease; slice 6 (worktree per task) removes the shared tree. |
+| 36 | minor | `foreman serve` refused to start with a clear `serve.lock_busy` line naming the holder and the expiry, exactly as designed; the operator surface did its job, the operator did not read it first. | Positive; recorded for completeness. |
+| 37 | major | `_dependencies_satisfied` counts a **cancelled** dependency as satisfied. Cancelling the queued intake task made the queued policy task runnable, and the still-resident engine started a developer on it (in a checkout that was mid-merge) before the cancel of the policy task itself was applied; the cancel then lost to the engine's `in_progress` write. Stopped by SIGTERM after about a minute. | A cancelled prerequisite is a decision, not a delivery: the dependent task should be blocked with "dependency cancelled" for a person to re-plan, never auto-started. Fix queued as F4. Also: `task cancel` must refuse (or stop) a task with a running run instead of being overwritten. |
+
+**Slice 2b result.** Develop 23.6 min ($15.54), test, review **steer** (a stale
+"next slice" paragraph in `docs/ARCHITECTURE.md`), corrective develop 2.4 min ($2.45)
+on the resumed session, test, review approve, gate. The first live STEER round: the
+reviewer's single corrective line was enough for the developer to fix and re-verify.
+Because the branch predates F3 on `main`, the maintainer merged `main` into the branch
+by hand before approving (the agent had fixed the `task unblock` bug independently,
+through its shared `blocked_kind` derivation, so that side was kept); the engine's
+merge then landed clean at `3ff6936`.
+
+**Resolution.** Branch `fix/cancelled-dependency-blocks` (F4): only a `done`
+dependency satisfies; a task whose dependency was cancelled is blocked with
+"Dependency cancelled: …" and an `engine.attention_needed` trigger
+`dependency_cancelled`, once; `foreman task cancel` and the dashboard cancel refuse a
+task with a running run while an engine is resident and point at
+`foreman engine stop-task`.

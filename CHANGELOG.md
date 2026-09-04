@@ -93,6 +93,12 @@ memory changes rather than versioned product releases.
   heartbeat age, its stop control says Pause, and blocked cards carry the
   kind. ADR-0002 amended: the dashboard controls the engine only through the
   command table.
+- `fix/cancelled-dependency-blocks`: only a `done` dependency satisfies a
+  task's `depends_on`; a task whose dependency was cancelled is blocked with
+  "Dependency cancelled: …" and an `engine.attention_needed` turn
+  (`dependency_cancelled`) so a person re-plans it, instead of being started
+  as if the prerequisite had shipped; `foreman task cancel` and the dashboard
+  cancel refuse a task with a running run while an engine is resident.
 - `fix/task-branch-refresh`: every develop visit first merges the default
   branch into the task branch when it is behind and the merge is clean
   (`engine.branch_sync`, mode `refresh`, with `commits_behind`); a refresh

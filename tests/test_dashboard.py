@@ -1567,6 +1567,45 @@ class DashboardSprintTaskBacklogTests(unittest.TestCase):
         self.assertIsNotNone(updated.completed_at)
         check_store.close()
 
+    def test_cancel_task_refuses_a_task_a_resident_engine_is_running(self):
+        """A live agent step protects the task from a cancel underneath the engine."""
+        from foreman.models import Run
+
+        project_id, _, task = self._seed_active()
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        task.status = "in_progress"
+        task.workflow_current_step = "develop"
+        store.save_task(task)
+        store.save_run(
+            Run(
+                id="run-live",
+                task_id=task.id,
+                project_id=task.project_id,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude_code",
+                status="running",
+            )
+        )
+        store.acquire_lease(
+            project_id=task.project_id,
+            resource_type="engine",
+            resource_id=task.project_id,
+            holder_id="engine-1",
+            lease_token="tok",
+        )
+        store.close()
+
+        response = self._request("POST", f"/api/tasks/{task.id}/cancel")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("running agent step", response.json()["error"])
+
+        check_store = ForemanStore(self.db_path)
+        check_store.initialize()
+        self.assertEqual(check_store.get_task(task.id).status, "in_progress")
+        check_store.close()
+
     def test_cancel_task_rejects_done_task(self):
         """POST /api/tasks/{id}/cancel returns 400 when task is already done."""
         store = ForemanStore(self.db_path)

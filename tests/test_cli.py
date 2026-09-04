@@ -800,6 +800,68 @@ class ForemanCLISmokeTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(store.get_task(dead_letter.id).status, "todo")
 
+    def test_task_cancel_refuses_a_task_a_resident_engine_is_running(self) -> None:
+        from foreman.models import Run
+
+        store, db_path = self.create_store()
+        project = Project(
+            id="project-1",
+            name="Foreman Demo",
+            repo_path="/tmp/foreman-demo",
+            workflow_id="development",
+        )
+        sprint = Sprint(id="sprint-1", project_id=project.id, title="S", status="active")
+        task = Task(
+            id="task-1",
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="Being worked on",
+            status="in_progress",
+            workflow_current_step="develop",
+        )
+        store.save_project(project)
+        store.save_sprint(sprint)
+        store.save_task(task)
+        store.save_run(
+            Run(
+                id="run-live",
+                task_id=task.id,
+                project_id=project.id,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude_code",
+                status="running",
+            )
+        )
+        store.acquire_lease(
+            project_id=project.id,
+            resource_type="engine",
+            resource_id=project.id,
+            holder_id="engine-1",
+            lease_token="tok",
+        )
+
+        refused = self.run_cli("task", "cancel", task.id, "--db", str(db_path))
+
+        self.assertEqual(refused.returncode, 1)
+        self.assertIn("foreman engine stop-task project-1 task-1", refused.stderr)
+        with ForemanStore(db_path) as reopened:
+            reopened.initialize()
+            still = reopened.get_task(task.id)
+            reopened.release_lease(
+                project_id=project.id,
+                resource_type="engine",
+                resource_id=project.id,
+                holder_id="engine-1",
+                lease_token="tok",
+            )
+        assert still is not None
+        self.assertEqual(still.status, "in_progress")
+
+        # With no engine resident the stale running run does not protect the task.
+        allowed = self.run_cli("task", "cancel", task.id, "--db", str(db_path))
+        self.assertEqual(allowed.returncode, 0, allowed.stderr)
+
     def test_task_unblock_rejects_human_gate_tasks(self) -> None:
         store, db_path = self.create_store()
         project = Project(

@@ -241,7 +241,12 @@ foreman task cancel <task-id>
 `foreman deny` for those) and clears the engine's dead letters — see
 [Dead-letter kinds](#dead-letter-kinds).
 
-`--depends-on` ids are validated to exist in the same project. `task override`
+`--depends-on` ids are validated to exist in the same project. Only a `done`
+dependency releases the task; if a dependency is **cancelled**, the engine blocks
+the dependent task ("Dependency cancelled: …", attention trigger
+`dependency_cancelled`) for a person to re-plan, unblock, or cancel it. A task
+with a running agent step cannot be cancelled while an engine is resident:
+stop it first with `foreman engine stop-task`. `task override`
 step ids are validated against the project's workflow. Example:
 
 ```bash

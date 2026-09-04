@@ -1153,6 +1153,12 @@ class DashboardService:
             raise DashboardValidationError(
                 f"Cannot cancel a task with status '{task.status}'."
             )
+        running = self.store.list_runs(task_id=task.id, status="running")
+        if running and self.store.get_engine_lock(task.project_id) is not None:
+            raise DashboardValidationError(
+                f"Task {task.id} has a running agent step ({running[0].id}); stop the "
+                "task first, then cancel it."
+            )
         task.status = "cancelled"
         task.blocked_reason = None
         task.workflow_current_step = None
