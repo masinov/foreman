@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import subprocess
 import tempfile
+import threading
 import time
 import unittest
 
@@ -836,6 +838,309 @@ class ForemanCLISmokeTests(unittest.TestCase):
         self.assertEqual(refreshed.status, "completed")
         self.assertIsNotNone(refreshed.started_at)
         self.assertIsNotNone(refreshed.completed_at)
+
+    def test_run_command_is_refused_while_a_resident_engine_holds_the_lock(self) -> None:
+        store, db_path = self.create_store()
+        project = Project(
+            id="project-1",
+            name="Foreman Demo",
+            repo_path="/tmp/foreman-demo",
+            workflow_id="development",
+        )
+        sprint = Sprint(
+            id="sprint-1",
+            project_id=project.id,
+            title="CLI hardening",
+            status="active",
+        )
+        store.save_project(project)
+        store.save_sprint(sprint)
+        store.acquire_lease(
+            project_id=project.id,
+            resource_type="engine",
+            resource_id=project.id,
+            holder_id="holder-resident",
+            lease_token="token-resident",
+        )
+
+        result = self.run_cli("run", project.id, "--db", str(db_path))
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("holder-resident", result.stderr)
+        self.assertIn("already running project", result.stderr)
+
+    def test_run_command_releases_the_engine_lock_on_exit(self) -> None:
+        store, db_path = self.create_store()
+        project = Project(
+            id="project-1",
+            name="Foreman Demo",
+            repo_path="/tmp/foreman-demo",
+            workflow_id="development",
+        )
+        sprint = Sprint(
+            id="sprint-1",
+            project_id=project.id,
+            title="CLI hardening",
+            status="active",
+        )
+        store.save_project(project)
+        store.save_sprint(sprint)
+
+        first = self.run_cli("run", project.id, "--db", str(db_path))
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertIsNone(
+            store.get_active_lease(
+                project_id=project.id,
+                resource_type="engine",
+                resource_id=project.id,
+            )
+        )
+
+        # The lock is free again, so a second run succeeds.
+        second = self.run_cli("run", project.id, "--db", str(db_path))
+        self.assertEqual(second.returncode, 0, second.stderr)
+
+    def test_serve_once_runs_one_pass_and_logs_json_lines(self) -> None:
+        store, db_path = self.create_store()
+        project = Project(
+            id="project-1",
+            name="Foreman Demo",
+            repo_path="/tmp/foreman-demo",
+            workflow_id="development",
+        )
+        sprint = Sprint(
+            id="sprint-1",
+            project_id=project.id,
+            title="CLI hardening",
+            status="active",
+        )
+        store.save_project(project)
+        store.save_sprint(sprint)
+
+        result = self.run_cli("serve", project.id, "--once", "--db", str(db_path))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "", "the serve loop must not print")
+
+        entries = [
+            json.loads(line) for line in result.stderr.splitlines() if line.strip()
+        ]
+        events = [entry["event"] for entry in entries]
+        self.assertIn("serve.started", events)
+        self.assertIn("serve.lock_acquired", events)
+        self.assertIn("serve.pass_completed", events)
+        self.assertIn("serve.stopped", events)
+        for entry in entries:
+            self.assertEqual(entry["project_id"], project.id)
+            self.assertIn("ts", entry)
+            self.assertIn("level", entry)
+
+        self.assertIsNone(
+            store.get_active_lease(
+                project_id=project.id,
+                resource_type="engine",
+                resource_id=project.id,
+            ),
+            "--once must release the engine lock",
+        )
+
+    def test_serve_is_refused_while_another_engine_holds_the_lock(self) -> None:
+        store, db_path = self.create_store()
+        project = Project(
+            id="project-1",
+            name="Foreman Demo",
+            repo_path="/tmp/foreman-demo",
+            workflow_id="development",
+        )
+        store.save_project(project)
+        store.acquire_lease(
+            project_id=project.id,
+            resource_type="engine",
+            resource_id=project.id,
+            holder_id="holder-resident",
+            lease_token="token-resident",
+        )
+
+        result = self.run_cli("serve", project.id, "--once", "--db", str(db_path))
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("holder-resident", result.stderr)
+
+    def test_serve_rejects_a_non_positive_poll_interval(self) -> None:
+        store, db_path = self.create_store()
+        store.save_project(
+            Project(
+                id="project-1",
+                name="Foreman Demo",
+                repo_path="/tmp/foreman-demo",
+                workflow_id="development",
+            )
+        )
+
+        result = self.run_cli(
+            "serve", "project-1", "--once", "--poll-seconds", "0", "--db", str(db_path)
+        )
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("--poll-seconds", result.stderr)
+
+    def test_serve_picks_up_a_task_queued_by_another_process(self) -> None:
+        """A resident engine wakes on another process's commit and runs the task.
+
+        The project's repo path does not exist, so the task's first step fails
+        with a git error. That is the point: it proves the resident engine
+        selected and attempted a task that arrived after it went idle, and that
+        the failure is isolated (task blocked, service still alive) rather than
+        fatal — without ever launching an agent.
+        """
+
+        store, db_path = self.create_store()
+        missing_repo = str(db_path.parent / "missing-repo")
+        project = Project(
+            id="project-1",
+            name="Foreman Demo",
+            repo_path=missing_repo,
+            workflow_id="development",
+        )
+        sprint = Sprint(
+            id="sprint-1",
+            project_id=project.id,
+            title="CLI hardening",
+            status="active",
+        )
+        store.save_project(project)
+        store.save_sprint(sprint)
+        store.save_task(
+            Task(
+                id="task-seeded",
+                sprint_id=sprint.id,
+                project_id=project.id,
+                title="Present before the engine started",
+                status="todo",
+                order_index=0,
+            )
+        )
+
+        def wait_for_blocked(task_id: str, timeout: float) -> bool:
+            deadline = time.monotonic() + timeout
+            while time.monotonic() < deadline:
+                task = store.get_task(task_id)
+                if task is not None and task.status == "blocked":
+                    return True
+                time.sleep(0.25)
+            return False
+
+        process = subprocess.Popen(  # noqa: S603 - the repo's own console script
+            [
+                str(FOREMAN), "serve", project.id,
+                # Long enough that a timed poll cannot explain the pickup: only
+                # the data_version wake can.
+                "--poll-seconds", "120",
+                "--db", str(db_path),
+            ],
+            cwd=REPO_ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        lines: list[str] = []
+
+        def collect_stderr() -> None:
+            # readline (not iteration) so a line is visible to wait_for_event as
+            # soon as the engine writes it, and so this thread is the only
+            # reader of the pipe: communicate() would race with it.
+            assert process.stderr is not None
+            while True:
+                line = process.stderr.readline()
+                if not line:
+                    return
+                lines.append(line)
+
+        reader = threading.Thread(target=collect_stderr, daemon=True)
+        reader.start()
+
+        def wait_for_event(event: str, timeout: float) -> bool:
+            deadline = time.monotonic() + timeout
+            while time.monotonic() < deadline:
+                if any(f'"event":"{event}"' in line for line in list(lines)):
+                    return True
+                time.sleep(0.1)
+            return False
+
+        try:
+            self.assertTrue(
+                wait_for_blocked("task-seeded", 30.0),
+                "the resident engine never ran the task present at startup",
+            )
+            # Wait for the engine to be genuinely idle and parked on the 120s
+            # poll, so the pickup below can only be a data_version wake.
+            self.assertTrue(
+                wait_for_event("serve.idle", 30.0),
+                "the resident engine never went idle",
+            )
+
+            store.save_task(
+                Task(
+                    id="task-late",
+                    sprint_id=sprint.id,
+                    project_id=project.id,
+                    title="Queued after the engine went resident",
+                    status="todo",
+                    order_index=1,
+                )
+            )
+            picked_up = wait_for_blocked("task-late", 30.0)
+
+            process.terminate()
+            process.wait(timeout=30)
+            reader.join(timeout=10)
+            assert process.stdout is not None
+            stdout = process.stdout.read()
+        finally:
+            if process.poll() is None:  # pragma: no cover - defensive cleanup
+                process.kill()
+                process.wait(timeout=10)
+            for pipe in (process.stdout, process.stderr):
+                if pipe is not None:
+                    pipe.close()
+
+        stderr = "".join(lines)
+        self.assertTrue(picked_up, f"the queued task was never picked up: {stderr}")
+        self.assertEqual(process.returncode, 0, stderr)
+        self.assertEqual(stdout, "", "the serve loop must not print")
+
+        entries = [json.loads(line) for line in stderr.splitlines() if line.strip()]
+        events = [entry["event"] for entry in entries]
+        self.assertIn("serve.idle", events)
+        self.assertIn("serve.stopping", events)
+        self.assertIn("serve.stopped", events)
+
+        failed = [entry for entry in entries if entry["event"] == "serve.task_failed"]
+        self.assertEqual(
+            {entry["task_id"] for entry in failed}, {"task-seeded", "task-late"}
+        )
+        # A clean idle pass sat between the two failures, so the backoff reset
+        # to its initial value instead of doubling.
+        self.assertEqual([entry["backoff_seconds"] for entry in failed], [5.0, 5.0])
+
+        blocked = store.get_task("task-late")
+        assert blocked is not None
+        self.assertTrue(blocked.blocked_reason)
+        attention = [
+            event
+            for event in store.list_events(task_id="task-late")
+            if event.event_type == "engine.attention_needed"
+        ]
+        self.assertEqual(len(attention), 1)
+
+        self.assertIsNone(
+            store.get_active_lease(
+                project_id=project.id,
+                resource_type="engine",
+                resource_id=project.id,
+            ),
+            "SIGTERM must release the engine lock",
+        )
 
     def test_config_command_can_show_and_update_project_settings(self) -> None:
         store, db_path = self.create_store()
