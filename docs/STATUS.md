@@ -25,6 +25,20 @@
   the API, `foreman task show`, `foreman board`, and `foreman status`;
   ADR-0002 amended
 
+- Last merged branch: `fix/task-branch-refresh` (sprint 54 live-run fix
+  F3), after F2, slice 1 (`a462659`, merged by the engine), and the docs
+  branches.
+- Current implementation branch: none by hand. Next: sprint 54 slice 2a
+  (engine command table) as a dogfood task picked up by `foreman serve
+  foreman`.
+
+## Active branches
+
+- `fix/task-branch-refresh` — sprint 54 live-run fix F3: branch refresh at
+  develop, merge-in-progress guard, honest quota exit on approve/deny;
+  merged to `main`
+- `feat/task-add-the-engine-command-table-and-foreman-engine-cli` — sprint
+  54 slice 2a, engine-run; at the merge gate after conflict resolution
 - `fix/runner-quota-exhaustion` — sprint 54 live-run fix F2: backend quota
   exhaustion pauses the task until the reset; merged to `main`
 - `docs/sprint-54-live-run-1` — live-run notes for run 1, sprint doc and
@@ -74,7 +88,22 @@
 - Phase 0 of the production readiness review is complete: an unattended run
   is safe on one machine.
 
-## Latest update — sprint 54 live run 2: quota exhaustion
+## Latest update — sprint 54 live runs 3 and 4: branch drift and a second quota hit
+
+- The resident engine resumed slice 2a within a second of `foreman task
+  unblock` and landed it in 25 minutes; the branch, created before the quota
+  fix reached `main`, conflicted at merge time, and the resolution pass was
+  cut off by the next five-hour window with a merge half concluded. The
+  quota handling from F2 kept the task resumable; the working tree was left
+  mid-merge, which also made the checkout unimportable for the engine.
+- Branch `fix/task-branch-refresh` (F3): develop visits refresh the task
+  branch from the default branch when the merge is clean, hand a conflicting
+  refresh to the developer, never abort an unconcluded merge, and
+  `foreman approve`/`deny` report a quota pause with exit 75. The
+  merge-conflict tests now model `main` moving during a gate pause.
+- Observations 25–34 in `docs/reviews/sprint-54-live-run-notes.md`.
+
+## Previous update — sprint 54 live run 2: quota exhaustion
 
 - The first resident run (`foreman serve foreman`) picked up slice 2a within
   a second, but 56 seconds in the Claude subscription's five-hour window ran
@@ -277,7 +306,7 @@
 - Validation: backend suite 582 passing (+5); frontend 4 passing (added a
   supervision-banner test, fixed two pre-existing failures); dist rebuilt.
 
-## Latest update — supervision-trigger completion + operator manual
+## Previous update — supervision-trigger completion + operator manual
 
 - Branch `feat/supervision-triggers-and-docs`. Closes the one gap found by the
   independent backend audit (`docs/reviews/review-md-backend-audit.md`): the

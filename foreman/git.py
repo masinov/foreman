@@ -81,7 +81,17 @@ def checkout_branch(
     create: bool = False,
     base_branch: str | None = None,
 ) -> None:
-    """Check out one branch, optionally creating it from a base branch."""
+    """Check out one branch, optionally creating it from a base branch.
+
+    Checking out the branch that is already checked out is a no-op. That is
+    not just an optimisation: ``git checkout <current-branch>`` fails while
+    the index holds unresolved conflicts ("you need to resolve your current
+    index first"), and a develop pass resuming after an interrupted merge
+    must be able to reach that tree exactly as it was left.
+    """
+
+    if worktree_branch(repo_path) == branch_name:
+        return
 
     if create:
         if branch_exists(repo_path, branch_name):
@@ -145,6 +155,35 @@ def merge_branch(
         detail=detail,
         conflict=_looks_like_merge_conflict(detail),
     )
+
+
+def merge_in_progress(repo_path: str | Path) -> bool:
+    """Return whether the worktree has an unconcluded merge (``MERGE_HEAD`` exists)."""
+
+    result = run_git(repo_path, "rev-parse", "-q", "--verify", "MERGE_HEAD", check=False)
+    return result.returncode == 0
+
+
+def commits_behind(repo_path: str | Path, branch_name: str, base_branch: str) -> int:
+    """Return how many commits ``base_branch`` has that ``branch_name`` lacks.
+
+    Zero means the branch already contains the base branch's history, so a
+    merge from the base would be a no-op.
+    """
+
+    result = run_git(
+        repo_path,
+        "rev-list",
+        "--count",
+        f"{branch_name}..{base_branch}",
+        check=False,
+    )
+    if result.returncode != 0:
+        return 0
+    try:
+        return int(result.stdout.strip() or "0")
+    except ValueError:
+        return 0
 
 
 def sync_branch_with_base(
