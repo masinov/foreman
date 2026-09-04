@@ -14,7 +14,7 @@ from uuid import uuid4
 
 from .builtins import BuiltinEventRecord, BuiltinExecutor
 from .context import ProjectContextProjection, build_project_context, relative_project_path
-from .errors import ForemanError
+from .errors import EngineCommandInterrupt, ForemanError
 from .git import (
     GitError,
     assert_default_branch_unchanged,
@@ -200,6 +200,7 @@ class ForemanOrchestrator:
         utc_now: Callable[[], datetime] | None = None,
         holder_id: str | None = None,
         native_step_heartbeat_seconds: float | None = None,
+        command_poll: Callable[[str], None] | None = None,
     ) -> None:
         loaded_roles = dict(roles) if roles is not None else load_roles(default_roles_dir())
         loaded_workflows = (
@@ -240,6 +241,26 @@ class ForemanOrchestrator:
         self._task_lease_tokens: dict[str, str] = {}
         self._task_started_received: set[str] = set()
         self._developer_step_executed: set[str] = set()
+        #: Called with the running task id before every workflow step and on
+        #: every silent-agent tick. The resident engine supplies it so an
+        #: operator's `pause` or `stop_task` reaches an agent that may run for
+        #: an hour. It returns normally to continue and raises
+        #: ``EngineCommandInterrupt`` to stop the step. A one-shot ``foreman
+        #: run`` leaves it None and behaves exactly as before.
+        self.command_poll = command_poll
+
+    def _poll_commands(self, task_id: str) -> None:
+        """Give the resident engine a chance to interrupt this task.
+
+        Raises ``EngineCommandInterrupt`` when the engine wants the step
+        stopped. Any *other* exception from the callback is deliberately not
+        caught: a command poll that cannot read the database is a broken
+        control channel, and hiding it would leave an operator's `pause`
+        silently ignored.
+        """
+
+        if self.command_poll is not None:
+            self.command_poll(task_id)
 
     def _acquire_task_lease(self, task: Task, project: Project) -> str | None:
         """Acquire a lease on a task. Returns the lease token or None if denied."""
@@ -408,6 +429,7 @@ class ForemanOrchestrator:
         try:
             return self.run_task(project, workflow, task)
         except (
+            EngineCommandInterrupt,
             EngineShutdown,
             KeyboardInterrupt,
             LeaseLostError,
@@ -513,6 +535,79 @@ class ForemanOrchestrator:
             attention_trigger=attention_trigger,
         )
         return task
+
+    def release_task(self, task_id: str) -> None:
+        """Drop this engine's lease on one task without changing its status.
+
+        Used when a command stops work on a task that must stay exactly as it
+        is — a paused engine leaves the task ``in_progress`` and resumable, but
+        it must not keep holding the lease while it sits idle, or nothing else
+        could ever pick the task up.
+        """
+
+        task = self.store.get_task(task_id)
+        if task is None:
+            return
+        project = self.store.get_project(task.project_id)
+        if project is not None:
+            self._release_task_lease(task, project)
+
+    def stop_task(self, task_id: str, *, reason: str) -> Task | None:
+        """Park one task as ``blocked`` at an operator's request.
+
+        Distinct from :meth:`block_task_for_error`: a requested stop is not an
+        anomaly, so it records no system run of its own and raises no attention
+        turn — the caller records why it stopped the task. ``blocked`` is
+        reused rather than inventing a status because a stopped task needs
+        exactly what ``blocked`` already means: not runnable until a human or
+        the manager says otherwise. Returns the task, or None if it is gone.
+        """
+
+        task = self.store.get_task(task_id)
+        if task is None:
+            return None
+        project = self.store.get_project(task.project_id)
+        if project is not None:
+            self._release_task_lease(task, project)
+        if task.status in {"done", "cancelled"}:
+            return task
+        task.status = "blocked"
+        task.blocked_reason = reason
+        self.store.save_task(task)
+        return task
+
+    def record_engine_event(
+        self,
+        *,
+        project_id: str,
+        event_type: str,
+        payload: dict[str, Any],
+        task_id: str | None = None,
+        detail: str = "",
+        outcome: str = "success",
+        workflow_step: str = "orchestrator",
+    ) -> Event | None:
+        """Record one engine-level event on a system run.
+
+        Anchors on ``task_id`` when the event is about a task and on the
+        project's system task otherwise, because an event row needs a run and a
+        run needs a task. Returns None when the project has no task at all to
+        anchor to — a real situation on an empty project, and not worth failing
+        a command over.
+        """
+
+        task = self.store.get_task(task_id) if task_id else None
+        if task is None:
+            task = self._select_project_system_task(project_id)
+        if task is None:
+            return None
+        run = self._create_system_run(
+            task,
+            workflow_step=task.workflow_current_step or workflow_step,
+            outcome=outcome,
+            detail=detail,
+        )
+        return self._emit_event(run, event_type, payload)
 
     def _activate_first_planned_sprint(self, project_id: str) -> Sprint | None:
         """Activate the first planned sprint when project-scoped execution starts idle."""
@@ -1595,6 +1690,11 @@ class ForemanOrchestrator:
             current_task.workflow_current_step = current_step
             current_task.workflow_carried_output = carried_output
             self.store.save_task(current_task)
+
+            # Poll *after* the resume point is persisted: an interrupt here
+            # must leave the task resumable at the step it was about to run,
+            # not at the one it already finished.
+            self._poll_commands(current_task.id)
 
             if step_def.role == "_builtin:human_gate":
                 run = self._create_running_run(
@@ -2749,6 +2849,20 @@ class ForemanOrchestrator:
                 release_lease=False,
             )
             raise
+        except EngineCommandInterrupt as exc:
+            # An operator asked for this. The run is settled exactly as a
+            # shutdown settles it — killed, task resumable at its persisted
+            # step — and the resident engine decides afterwards whether the
+            # task stays resumable (`pause`) or is parked (`stop_task`).
+            self._abandon_run(
+                run,
+                task,
+                project,
+                reason=str(exc),
+                gate_type="command",
+                release_lease=True,
+            )
+            raise
         except (EngineShutdown, KeyboardInterrupt) as exc:
             self._abandon_run(
                 run,
@@ -2936,8 +3050,11 @@ class ForemanOrchestrator:
                 self._renew_task_lease(task, project)
                 last_heartbeat = now
             if event.event_type == "agent.tick":
-                # Silent-child ticks exist only to drive the heartbeat above;
-                # they are never persisted.
+                # Silent-child ticks exist only to drive the heartbeat above
+                # and the command poll below; they are never persisted. This is
+                # the only place a `pause` can reach an agent that has been
+                # working quietly for twenty minutes.
+                self._poll_commands(task.id)
                 continue
             if event.event_type.startswith("signal."):
                 # A backend may surface the same signal from more than one

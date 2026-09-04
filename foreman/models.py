@@ -375,3 +375,101 @@ class Lease:
     heartbeat_at: str = field(default_factory=utc_now_text)
     expires_at: str = field(default_factory=utc_now_text)
     released_at: str | None = None
+
+
+EngineCommandName = Literal["pause", "resume", "run_task", "stop_task", "shutdown"]
+EngineCommandStatus = Literal["pending", "acknowledged", "completed", "rejected"]
+
+ENGINE_COMMANDS: tuple[EngineCommandName, ...] = (
+    "pause",
+    "resume",
+    "run_task",
+    "stop_task",
+    "shutdown",
+)
+ENGINE_COMMAND_STATUSES: tuple[EngineCommandStatus, ...] = (
+    "pending",
+    "acknowledged",
+    "completed",
+    "rejected",
+)
+
+#: Commands that only mean something to an engine that is actually resident.
+#: A `pause` or a `stop_task` queued while nothing was running describes an
+#: intent about a process that no longer exists, so a starting engine rejects
+#: them rather than applying them to itself. `resume` and `run_task` describe
+#: work, and work outlives the process, so a starting engine honours them.
+ENGINE_COMMANDS_NEEDING_A_RESIDENT_ENGINE: tuple[EngineCommandName, ...] = (
+    "pause",
+    "stop_task",
+    "shutdown",
+)
+
+
+@dataclass(slots=True)
+class EngineCommand:
+    """One durable control instruction addressed to a project's engine.
+
+    Rows are written by anything that wants to steer the engine — the CLI, the
+    dashboard, an API caller — and consumed by whichever `foreman serve`
+    process holds the project engine lock. The lifecycle is
+    ``pending`` -> ``acknowledged`` (the engine has picked it up) ->
+    ``completed`` or ``rejected`` (with ``result_detail`` saying why).
+    """
+
+    id: str
+    project_id: str
+    command: EngineCommandName
+    requested_by: str
+    task_id: str | None = None
+    status: EngineCommandStatus = "pending"
+    requested_at: str = field(default_factory=utc_now_text)
+    acknowledged_at: str | None = None
+    completed_at: str | None = None
+    result_detail: str | None = None
+
+
+@dataclass(slots=True, frozen=True)
+class EngineLockView:
+    """A read-only, token-free view of the engine lease on one project.
+
+    The lease token is deliberately absent: this view exists so operators and
+    the dashboard can see *who* holds a project and *how fresh* that hold is,
+    and neither needs the secret that would let them release it.
+    """
+
+    project_id: str
+    holder_id: str
+    acquired_at: str
+    heartbeat_at: str
+    expires_at: str
+
+    def is_expired(self, now: datetime | None = None) -> bool:
+        """True when the lease has outlived its expiry and no engine renewed it."""
+
+        expiry = _parse_timestamp(self.expires_at)
+        if expiry is None:
+            return False
+        return (now or datetime.now(timezone.utc)) > expiry
+
+    def heartbeat_age_seconds(self, now: datetime | None = None) -> float | None:
+        """Seconds since the holder last renewed, or None if unparseable."""
+
+        beat = _parse_timestamp(self.heartbeat_at)
+        if beat is None:
+            return None
+        return max(0.0, ((now or datetime.now(timezone.utc)) - beat).total_seconds())
+
+
+def _parse_timestamp(value: str | None) -> datetime | None:
+    """Parse a persisted UTC timestamp, tolerating a missing or odd value."""
+
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)

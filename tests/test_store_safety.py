@@ -485,7 +485,13 @@ class MigrationSafetyTests(unittest.TestCase):
 
             with ForemanStore(db_path) as store:
                 applied = store.initialize()
-                self.assertEqual(applied, [14])
+                # Every migration after the legacy version, whatever the
+                # latest one happens to be — this test is about the v14
+                # rebuild surviving real data, not about the version count.
+                self.assertEqual(
+                    applied, [version for version, _, _ in MIGRATIONS if version > 13]
+                )
+                self.assertIn(14, applied)
 
                 decision_fks = {
                     row["from"]: row["on_delete"]

@@ -380,4 +380,36 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         ON tasks(project_id, task_key) WHERE task_key <> '';
         """,
     ),
+    (
+        15,
+        "add engine_commands: the durable control channel to a resident engine",
+        """
+        -- Signals are the only way to talk to a `foreman serve` process, and a
+        -- signal cannot say "run this task" or survive the engine being down.
+        -- This table is that channel: a caller inserts a row, the resident
+        -- engine picks it up on its next poll, and the row records what the
+        -- engine did with it.
+        CREATE TABLE IF NOT EXISTS engine_commands (
+            id              TEXT PRIMARY KEY,
+            project_id      TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            command         TEXT NOT NULL
+                            CHECK (command IN ('pause', 'resume', 'run_task',
+                                               'stop_task', 'shutdown')),
+            task_id         TEXT REFERENCES tasks(id) ON DELETE CASCADE,
+            requested_by    TEXT NOT NULL,
+            requested_at    TEXT NOT NULL,
+            status          TEXT NOT NULL DEFAULT 'pending'
+                            CHECK (status IN ('pending', 'acknowledged',
+                                              'completed', 'rejected')),
+            acknowledged_at TEXT,
+            completed_at    TEXT,
+            result_detail   TEXT
+        );
+
+        -- The engine's hot query is "oldest pending command for this project";
+        -- the CLI and dashboard read the same three columns to show history.
+        CREATE INDEX IF NOT EXISTS idx_engine_commands_project_status
+        ON engine_commands(project_id, status, requested_at);
+        """,
+    ),
 ]

@@ -18,6 +18,14 @@ Three properties make it safe to leave running unattended:
 * **A stop is not a failure.** SIGTERM and SIGINT settle the active run as
   ``killed`` with the task resumable, release the lock, and exit 0.
 
+Signals are a blunt control channel: they cannot say "run *that* task", they
+cannot be queued for an engine that is not up yet, and they leave no record of
+who asked. So the engine also consumes the ``engine_commands`` table — the
+durable channel the CLI, the dashboard, and the intake API all write to. The
+loop drains pending commands at the top of every pass, and supplies the
+orchestrator with a ``command_poll`` callback so a ``pause`` or a ``stop_task``
+reaches an agent step that may already be twenty minutes into its work.
+
 The loop is a plain object with injectable clocks, so all of that is testable
 without a subprocess. The CLI handler only parses arguments and maps
 :class:`ServeResult` to an exit code.
@@ -32,7 +40,9 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from .engine_lock import EngineBusyError, EngineLock
+from .errors import EngineCommandInterrupt
 from .logs import get_logger, log_event
+from .models import ENGINE_COMMANDS_NEEDING_A_RESIDENT_ENGINE, EngineCommand
 from .orchestrator import (
     ForemanOrchestrator,
     LeaseLostError,
@@ -62,6 +72,14 @@ DEFAULT_QUOTA_WAIT_SECONDS = 900.0
 MIN_QUOTA_WAIT_SECONDS = 60.0
 MAX_QUOTA_WAIT_SECONDS = 6 * 3600.0
 QUOTA_WAIT_GRACE_SECONDS = 5.0
+
+#: Recorded on commands a starting engine refuses because they were addressed
+#: to a resident engine that is no longer there.
+STALE_COMMAND_DETAIL = "no engine was resident"
+
+#: How long a terminated agent process group is given to die before the engine
+#: stops waiting for it.
+COMMAND_TERMINATE_GRACE_SECONDS = 2.0
 
 _LOGGER = get_logger("serve")
 
@@ -133,6 +151,17 @@ class ResidentEngine:
         self._utc_now = utc_now or (lambda: datetime.now(timezone.utc))
         self._tick_seconds = max(0.01, float(tick_seconds))
         self._backoff = _Backoff()
+        #: Set by a `pause`, cleared by a `resume`. A paused engine picks no
+        #: new work but stays resident, keeps heartbeating its lock, and keeps
+        #: reading commands — so it can still be resumed or shut down.
+        self._paused = False
+        #: Set by a `shutdown`. Ends the loop cleanly with exit code 0.
+        self._stopping = False
+        #: Filled by `run_task`, drained one per pass. A list rather than a
+        #: single slot because two `run_task` commands are two requests: the
+        #: second must not silently discard the first, which was already told
+        #: it would run.
+        self._requested_task_ids: list[str] = []
 
     # ── loop ─────────────────────────────────────────────────────────────
 
@@ -152,6 +181,7 @@ class ResidentEngine:
         detail: str | None = None
         last_pass_reason: str | None = None
         idle_streak = 0
+        paused_streak = 0
 
         self._log(
             "serve.started",
@@ -159,6 +189,10 @@ class ResidentEngine:
             once=once,
             holder_id=self.orchestrator.holder_id,
         )
+        # This engine is the one that just became resident, so it owns the
+        # decision about commands addressed to the engine that was not.
+        self.orchestrator.command_poll = self._poll_commands
+        self._reject_stale_commands()
 
         try:
             while True:
@@ -168,11 +202,47 @@ class ResidentEngine:
                     self._log("serve.lock_lost", level=logging.ERROR, reason=detail)
                     break
 
+                self._drain_commands()
+
+                if self._stopping:
+                    stop_reason, exit_code = "stopped", 0
+                    detail = "Engine was shut down by command."
+                    self._log("serve.stopping", reason=detail)
+                    break
+
+                if self._paused:
+                    # Idle by instruction rather than for lack of work. The
+                    # wait is the same one an idle engine uses, so a `resume`
+                    # committed from another process wakes it immediately.
+                    if once:
+                        stop_reason, detail = "once", "Engine is paused."
+                        break
+                    paused_streak += 1
+                    # Entering the paused state is worth narrating; staying
+                    # paused is not, and a pause can last all day.
+                    self._log(
+                        "serve.paused",
+                        level=logging.INFO if paused_streak == 1 else logging.DEBUG,
+                    )
+                    self._wait_for_change(self.poll_seconds)
+                    continue
+                paused_streak = 0
+
                 passes += 1
+                target_task_id = self._take_requested_task()
                 try:
                     result = self.orchestrator.run_project(
-                        self.project_id, maintenance=maintenance_due
+                        self.project_id,
+                        task_id=target_task_id,
+                        maintenance=maintenance_due,
                     )
+                except EngineCommandInterrupt as exc:
+                    self._settle_interrupt(exc)
+                    maintenance_due = True
+                    if once:
+                        stop_reason, detail = "once", str(exc)
+                        break
+                    continue
                 except TaskExecutionError as exc:
                     delay = self._isolate_task_failure(exc)
                     blocked.append(exc.task_id)
@@ -197,6 +267,27 @@ class ResidentEngine:
                         reason=str(exc),
                         backoff_seconds=delay,
                     )
+                    maintenance_due = True
+                    if once:
+                        stop_reason, detail = "once", str(exc)
+                        break
+                    self._wait(delay)
+                    continue
+                except OrchestratorError as exc:
+                    # Ordered last of the OrchestratorError family: the two
+                    # subclasses above are handled on their own terms, and
+                    # QuotaPauseError never reaches here because run_project
+                    # turns it into a `quota_exhausted` result. A *targeted*
+                    # run that cannot even start is about that one task (it was
+                    # leased away, or it moved) rather than about the project,
+                    # so isolating it keeps a bad `run_task` from ending the
+                    # service. Anything else still ends it.
+                    if target_task_id is None:
+                        raise
+                    delay = self._isolate_task_failure(
+                        TaskExecutionError(target_task_id, exc)
+                    )
+                    blocked.append(target_task_id)
                     maintenance_due = True
                     if once:
                         stop_reason, detail = "once", str(exc)
@@ -288,6 +379,274 @@ class ResidentEngine:
             detail=detail,
         )
 
+    # ── commands ─────────────────────────────────────────────────────────
+
+    def _reject_stale_commands(self) -> None:
+        """Refuse pending commands that were addressed to an absent engine.
+
+        A `pause`, a `stop_task`, or a `shutdown` describes an intent about a
+        process that is no longer running: applying them to *this* engine would
+        pause a service nobody asked to pause, or block a task nobody is
+        working on. A `resume` and a `run_task` describe work rather than a
+        process, and work outlives the engine, so both are left pending for the
+        first pass to pick up.
+        """
+
+        for command in self.store.list_engine_commands(
+            self.project_id, status="pending", limit=1000
+        ):
+            if command.command not in ENGINE_COMMANDS_NEEDING_A_RESIDENT_ENGINE:
+                continue
+            self._finish_command(command, "rejected", STALE_COMMAND_DETAIL)
+
+    def _drain_commands(self) -> None:
+        """Apply every pending command, oldest first, before the next pass."""
+
+        while True:
+            command = self.store.next_pending_engine_command(self.project_id)
+            if command is None:
+                return
+            self._acknowledge(command)
+            self._apply_idle_command(command)
+
+    def _poll_commands(self, running_task_id: str) -> None:
+        """Command hook the orchestrator calls before a step and on every tick.
+
+        Returns normally to let the step continue. Raises
+        :class:`~foreman.errors.EngineCommandInterrupt` when the command needs
+        the running step stopped; the orchestrator settles the run as
+        ``killed`` on the way out and :meth:`_settle_interrupt` finishes the
+        command once the stack has unwound.
+        """
+
+        while True:
+            command = self.store.next_pending_engine_command(self.project_id)
+            if command is None:
+                return
+            self._acknowledge(command)
+
+            if command.command in {"pause", "shutdown"} or (
+                command.command == "stop_task"
+                and command.task_id == running_task_id
+            ):
+                # Kill the agent's whole process group first: the run must be
+                # settled against a child that is already gone, not one still
+                # writing to the repository.
+                terminate_all(grace_seconds=COMMAND_TERMINATE_GRACE_SECONDS)
+                self._log(
+                    "serve.command_interrupting",
+                    command_id=command.id,
+                    command=command.command,
+                    task_id=running_task_id,
+                    requested_by=command.requested_by,
+                )
+                raise EngineCommandInterrupt(command, task_id=running_task_id)
+
+            self._apply_idle_command(command, running_task_id=running_task_id)
+
+    def _apply_idle_command(
+        self,
+        command: EngineCommand,
+        *,
+        running_task_id: str | None = None,
+    ) -> None:
+        """Apply one command that does not need the running step stopped."""
+
+        name = command.command
+        if name == "pause":
+            self._paused = True
+            self._finish_command(command, "completed", "Engine paused; no task was running.")
+        elif name == "shutdown":
+            self._paused = True
+            self._stopping = True
+            self._finish_command(
+                command, "completed", "Engine shutting down; no task was running."
+            )
+        elif name == "resume":
+            was_paused = self._paused
+            self._paused = False
+            self._finish_command(
+                command,
+                "completed",
+                "Engine resumed." if was_paused else "Engine was already running.",
+            )
+        elif name == "run_task":
+            self._apply_run_task(command)
+        elif name == "stop_task":
+            self._finish_command(
+                command,
+                "rejected",
+                self._stop_task_rejection(command, running_task_id),
+            )
+        else:  # pragma: no cover - the schema CHECK constraint prevents this
+            self._finish_command(
+                command, "rejected", f"Unknown engine command {name!r}."
+            )
+
+    def _apply_run_task(self, command: EngineCommand) -> None:
+        """Queue a `run_task` for the next pass, or reject it with a reason."""
+
+        task_id = command.task_id
+        if not task_id:
+            self._finish_command(
+                command, "rejected", "run_task needs a task id."
+            )
+            return
+        task = self.store.get_task(task_id)
+        if task is None:
+            self._finish_command(
+                command, "rejected", f"Unknown task {task_id!r}."
+            )
+            return
+        if task.project_id != self.project_id:
+            self._finish_command(
+                command,
+                "rejected",
+                f"Task {task_id!r} belongs to project {task.project_id!r}, "
+                f"not {self.project_id!r}.",
+            )
+            return
+        runnable = task.status == "todo" or (
+            task.status == "in_progress" and bool(task.workflow_current_step)
+        )
+        if not runnable:
+            self._finish_command(
+                command,
+                "rejected",
+                f"Task {task_id!r} is {task.status!r} and not runnable. Only a "
+                "todo task, or an in_progress task with a persisted resume "
+                "point, can be run on request.",
+            )
+            return
+        self._requested_task_ids.append(task_id)
+        position = len(self._requested_task_ids)
+        self._finish_command(
+            command,
+            "completed",
+            f"Task {task_id!r} will run next."
+            if position == 1
+            else f"Task {task_id!r} is queued to run ({position} requests ahead of the sprint).",
+        )
+
+    def _stop_task_rejection(
+        self, command: EngineCommand, running_task_id: str | None
+    ) -> str:
+        """Explain why a `stop_task` could not be applied."""
+
+        if not command.task_id:
+            return "stop_task needs a task id."
+        if running_task_id is None:
+            return (
+                f"Task {command.task_id!r} is not running: the engine is idle. "
+                "Use `foreman task block` to park a task that is not running."
+            )
+        return (
+            f"Task {command.task_id!r} is not the task this engine is running "
+            f"({running_task_id!r})."
+        )
+
+    def _settle_interrupt(self, interrupt: EngineCommandInterrupt) -> None:
+        """Finish the command whose interrupt just unwound the stack.
+
+        By now the orchestrator has settled the agent run as ``killed`` and the
+        task is resumable at its persisted step. What remains is the difference
+        between the two stops: a `pause` leaves the task exactly as it is, a
+        `stop_task` parks it as ``blocked`` naming who stopped it.
+        """
+
+        command = interrupt.command
+        assert isinstance(command, EngineCommand)  # only this module raises it
+        task_id = interrupt.task_id
+
+        if command.command == "stop_task":
+            reason = f"Stopped by {command.requested_by}"
+            self.orchestrator.stop_task(command.task_id or task_id, reason=reason)
+            detail = (
+                f"Stopped task {command.task_id!r}: the agent process group was "
+                f"terminated, its run settled as killed, and the task is blocked "
+                f"({reason})."
+            )
+        else:
+            # `pause` and `shutdown` both leave the task resumable. The lease
+            # goes back so the task is not pinned to an engine that has stopped
+            # working on it; the guarded step usually released it already, and
+            # releasing twice is a no-op.
+            if task_id:
+                self.orchestrator.release_task(task_id)
+            self._paused = True
+            if command.command == "shutdown":
+                self._stopping = True
+            detail = (
+                f"{'Shut down' if command.command == 'shutdown' else 'Paused'} "
+                f"during task {task_id!r}: the agent process group was terminated, "
+                "its run settled as killed, and the task is resumable."
+            )
+        self._finish_command(command, "completed", detail, task_id=task_id)
+
+    def _acknowledge(self, command: EngineCommand) -> None:
+        """Record that this engine has picked a command up."""
+
+        self.store.mark_engine_command(command.id, "acknowledged")
+        self._log(
+            "serve.command_acknowledged",
+            command_id=command.id,
+            command=command.command,
+            task_id=command.task_id,
+            requested_by=command.requested_by,
+        )
+
+    def _finish_command(
+        self,
+        command: EngineCommand,
+        status: str,
+        detail: str,
+        *,
+        task_id: str | None = None,
+    ) -> None:
+        """Close a command out and leave a durable trace of what happened."""
+
+        self.store.mark_engine_command(command.id, status, detail=detail)
+        event_type = (
+            "engine.command_applied" if status == "completed" else "engine.command_rejected"
+        )
+        self._log(
+            f"serve.command_{status}",
+            level=logging.INFO if status == "completed" else logging.WARNING,
+            command_id=command.id,
+            command=command.command,
+            task_id=command.task_id or task_id,
+            requested_by=command.requested_by,
+            detail=detail,
+        )
+        try:
+            self.orchestrator.record_engine_event(
+                project_id=self.project_id,
+                event_type=event_type,
+                task_id=command.task_id or task_id,
+                detail=detail,
+                payload={
+                    "command_id": command.id,
+                    "command": command.command,
+                    "requested_by": command.requested_by,
+                    "task_id": command.task_id,
+                    "detail": detail,
+                },
+            )
+        except Exception as exc:  # noqa: BLE001 - a lost trace must not stop the engine
+            self._log(
+                "serve.command_event_failed",
+                level=logging.ERROR,
+                command_id=command.id,
+                reason=str(exc),
+            )
+
+    def _take_requested_task(self) -> str | None:
+        """Consume the next queued `run_task` target, if one is waiting."""
+
+        if not self._requested_task_ids:
+            return None
+        return self._requested_task_ids.pop(0)
+
     # ── failure isolation ────────────────────────────────────────────────
 
     def _isolate_task_failure(self, exc: TaskExecutionError) -> float:
@@ -318,14 +677,37 @@ class ResidentEngine:
     # ── waiting ──────────────────────────────────────────────────────────
 
     def _wait(self, seconds: float) -> None:
-        """Sleep for ``seconds`` in ticks, returning early if the lock is lost."""
+        """Sleep for ``seconds`` in ticks, returning early if the lock is lost
+        or a command is waiting.
+
+        These waits are the long ones: a failure backoff reaches five minutes,
+        and a quota wait reaches six hours. An engine that ignored `shutdown`
+        for six hours would not be controllable, so a queued command cuts the
+        wait short and the loop drains it on the next pass.
+
+        ``data_version`` is checked first because it is a pragma rather than a
+        table read, so the common case — nothing committed since the last tick
+        — costs nothing beyond it. Only an actual commit by another connection
+        is worth a lookup in ``engine_commands``.
+        """
 
         deadline = self._monotonic() + seconds
+        baseline = self.store.data_version()
         while True:
             remaining = deadline - self._monotonic()
             if remaining <= 0 or self._lock_is_lost():
                 return
             self._sleep(min(self._tick_seconds, remaining))
+            version = self.store.data_version()
+            if version != baseline:
+                baseline = version
+                if self._has_pending_command():
+                    return
+
+    def _has_pending_command(self) -> bool:
+        """True when a command is waiting for this engine to pick it up."""
+
+        return self.store.next_pending_engine_command(self.project_id) is not None
 
     def _wait_for_change(self, timeout: float) -> bool:
         """Block until another process commits, or ``timeout`` elapses.

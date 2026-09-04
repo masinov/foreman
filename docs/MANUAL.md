@@ -38,7 +38,8 @@ This manual is the detailed reference. For product intent and architecture see
 20. [Database & migrations](#20-database--migrations)
 21. [Validation](#21-validation)
 22. [Stopping and interrupting a run](#22-stopping-and-interrupting-a-run)
-23. [Troubleshooting](#23-troubleshooting)
+23. [Talking to the resident engine](#23-talking-to-the-resident-engine)
+24. [Troubleshooting](#24-troubleshooting)
 
 ---
 
@@ -250,6 +251,21 @@ foreman run <project-id> [--task TASK_ID] [--json-logs] [--db DB]
 foreman serve <project-id> [--poll-seconds N] [--once] [--db DB]
 ```
 
+### Steering a resident engine
+
+```bash
+foreman engine status <project-id> [--limit N]      # who holds it, and recent commands
+foreman engine pause <project-id> [--by WHO]        # stop taking new work
+foreman engine resume <project-id> [--by WHO]       # start again
+foreman engine shutdown <project-id> [--by WHO]     # stop and release the lock
+foreman engine run-task <project-id> <task-id>      # run this task next
+foreman engine stop-task <project-id> <task-id>     # stop it and block it
+```
+
+Each verb queues a row in `engine_commands` and prints the command id; `--by`
+defaults to the OS user name. See
+[§23 Talking to the resident engine](#23-talking-to-the-resident-engine).
+
 ### Human gates & waivers
 
 ```bash
@@ -330,12 +346,16 @@ event the engine persists, so the process log alone tells the story of a run:
 ```
 
 Lifecycle events: `serve.started`, `serve.lock_acquired`, `serve.lock_busy`,
-`serve.pass_completed`, `serve.idle`, `serve.task_failed`,
-`serve.task_lease_lost`, `serve.lock_lost`, `serve.stopping`, `serve.stopped`,
-`serve.lock_released`. A refused start logs `serve.lock_busy` (with the holder
-and the lease expiry) at ERROR before it exits, so a supervisor reading only
-the log can tell a refusal from a crash. `foreman run` can opt into the same
-format with `--json-logs`.
+`serve.pass_completed`, `serve.idle`, `serve.paused`, `serve.quota_exhausted`,
+`serve.task_failed`, `serve.task_lease_lost`, `serve.lock_lost`,
+`serve.stopping`, `serve.stopped`, `serve.lock_released`, and the command
+lifecycle (`serve.command_acknowledged`, `serve.command_completed`,
+`serve.command_rejected`, `serve.command_interrupting`). A refused start logs
+`serve.lock_busy` (with the holder and the lease expiry) at ERROR before it
+exits, so a supervisor reading only the log can tell a refusal from a crash.
+`serve.idle` and `serve.paused` are narrated once at INFO and then repeated at
+DEBUG, so a service that is idle or paused all day does not fill its own log.
+`foreman run` can opt into the same format with `--json-logs`.
 
 Mirrored engine events are levelled by family: `engine.*`, `workflow.*`,
 `gate.*`, `signal.*`, and the agent step lifecycle (`agent.started`,
@@ -999,7 +1019,9 @@ Events are the append-only truth of what happened. Families:
   `quota_exhausted` (the backend's usage window ran out; the task is paused
   at its step with `retry_after`),
   `sprint_started`/`sprint_ready`/`sprint_completed`, `attention_needed`,
-  `crash_recovery`, `event_pruned`/`run_pruned`, `test_run`/`test_output`.
+  `crash_recovery`, `event_pruned`/`run_pruned`, `test_run`/`test_output`,
+  `command_applied`/`command_rejected` (one per engine command, carrying
+  `command_id`, `command`, `requested_by`, `task_id`, and `detail`).
 - **`gate.*`** — `cost_exceeded`, `time_exceeded`.
 - **`signal.*`** — agent-emitted signals the engine consumes: `task_started`,
   `task_created`, `blocker`.
@@ -1038,6 +1060,7 @@ Recent migrations:
 | 12 | `tasks.executor_overrides_json`, `tasks.complexity` |
 | 13 | `projects.task_key_prefix`, `tasks.task_key` (Jira-style keys) |
 | 14 | gate tables rebuilt with `ON DELETE` rules, `events(task_id, timestamp)` index, `projects.task_key_seq` + unique task keys |
+| 15 | `engine_commands` + `(project_id, status, requested_at)` index (the control channel to a resident engine) |
 
 ---
 
@@ -1092,7 +1115,111 @@ case: it waits for the reset and resumes.
 
 ---
 
-## 23. Troubleshooting
+## 23. Talking to the resident engine
+
+A `foreman serve` process has no terminal. Signals are the only thing an
+operating system offers, and a signal cannot say "run *that* task", cannot be
+queued for an engine that is not up yet, and leaves no record of who sent it.
+
+So a resident engine is steered through a table. `engine_commands` is the
+**only** control channel: the CLI, the dashboard, and the intake API all write
+rows to it, and whichever engine holds the project lock consumes them. The row
+is the audit trail — it records who asked, when, and what the engine did about
+it.
+
+### The commands
+
+| Command | Effect |
+|---|---|
+| `pause` | Stop picking up new work. A running agent step is terminated and its run settled as `killed`, with the task left **resumable** at its persisted step. The engine stays resident and keeps heartbeating its lock. |
+| `resume` | Leave the paused state and run a pass. |
+| `run_task <task-id>` | Run that task next, regardless of sprint order. |
+| `stop_task <task-id>` | If that task is the one running, terminate its agent step and mark the task `blocked` with `blocked_reason` "Stopped by \<requester\>". |
+| `shutdown` | Finish as `pause` does, release the engine lock, exit 0. |
+
+A paused engine changes no task status — pausing is about the engine, not about
+the work. A stopped task becomes `blocked`; there is no separate "stopped"
+status, because `blocked` already means exactly what a stopped task needs it to
+mean: not runnable until a human or the manager says otherwise.
+
+### Lifecycle
+
+Every command moves `pending` → `acknowledged` (the engine has picked it up) →
+`completed` or `rejected`, always with a `result_detail` explaining the
+outcome, and always leaving an `engine.command_applied` or
+`engine.command_rejected` event behind — on a system run for the task involved,
+or on a project-level run when no task is involved.
+
+Rejections are ordinary, not errors. A `run_task` naming a task that is
+`blocked`, `done`, or owned by another project is rejected with the reason. A
+`stop_task` naming a task the engine is not running is rejected rather than
+guessed at.
+
+### When no engine is resident
+
+A command that describes *work* outlives the process, so a pending `resume` or
+`run_task` is honoured by the next engine to start. A command that describes a
+*process* does not: a starting engine rejects every pending `pause`,
+`stop_task`, and `shutdown` with `result_detail = "no engine was resident"`,
+rather than pausing a service nobody asked to pause. `foreman engine` tells you
+which of the two will happen when it queues the command.
+
+### How fast a command lands
+
+An idle engine wakes on `PRAGMA data_version`, and the insert commits from a
+different connection, so a queued command wakes the engine within one tick
+(0.5 s) rather than waiting out the poll interval. An engine that is mid-task
+checks for commands before every workflow step and on every `agent.tick` while
+a runner streams, so a `pause` reaches an agent that has been working quietly
+for twenty minutes.
+
+An engine that is *deliberately* waiting — backing off after a failed task, or
+sitting out a backend quota reset that can be six hours away — also cuts that
+wait short when a command arrives. An engine that ignored `shutdown` until the
+quota reset would not be controllable, so the wait re-reads `data_version` each
+tick and only looks in `engine_commands` when another connection has actually
+committed.
+
+### Worked example
+
+```console
+$ foreman engine status foreman
+Engine status
+Database: /src/foreman/.foreman.db
+Project: foreman | Foreman
+Resident engine: 5e29e543-0e1c-4a6f-9a9e-1c2f1b6d40aa
+State: running
+Heartbeat: 6s ago (at 2026-09-04T12:31:02.114Z)
+Acquired: 2026-09-04T12:14:31.882Z | Lease expires: 2026-09-04T12:33:02.114Z
+Current task: task-49 | Add the engine command table
+Recent commands (0):
+- none
+
+$ foreman engine stop-task foreman task-49 --by carla
+Queued engine command: stop_task
+Database: /src/foreman/.foreman.db
+Project: foreman | Foreman
+Command id: cmd-9f1c2a7b41e0
+Requested by: carla
+Task: task-49
+Resident engine: 5e29e543-0e1c-4a6f-9a9e-1c2f1b6d40aa
+
+$ foreman engine status foreman
+...
+Recent commands (1):
+- [completed] stop_task | id=cmd-9f1c2a7b41e0 | task=task-49 | by=carla | at=2026-09-04T12:31:08.402Z
+    Stopped task 'task-49': the agent process group was terminated, its run
+    settled as killed, and the task is blocked (Stopped by carla).
+```
+
+The task is now `blocked` with `blocked_reason = "Stopped by carla"`, its run is
+`killed`, and the engine is still resident and ready for the next task.
+
+See [ADR-0011](adr/ADR-0011-resident-engine-and-project-lock.md).
+
+---
+
+## 24. Troubleshooting
 
 | Symptom | Likely cause / fix |
 |---|---|

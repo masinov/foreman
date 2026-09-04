@@ -32,6 +32,7 @@ from foreman.orchestrator import (
     ForemanOrchestrator,
     OrchestratorError,
     ProjectRunResult,
+    TaskExecutionError,
 )
 from foreman.runner.base import AgentEvent, AgentRunConfig
 from foreman.runner.process import EngineShutdown
@@ -82,10 +83,18 @@ class _StubOrchestrator:
         self._results = list(results)
         self.holder_id = holder_id
         self.calls: list[bool] = []
+        self.targets: list[str | None] = []
         self.blocked: list[tuple[str, str]] = []
+        self.stopped: list[tuple[str, str]] = []
+        self.released: list[str] = []
+        self.engine_events: list[tuple[str, dict]] = []
+        self.command_poll = None
 
-    def run_project(self, project_id: str, *, maintenance: bool = True):
+    def run_project(
+        self, project_id: str, *, task_id: str | None = None, maintenance: bool = True
+    ):
         self.calls.append(maintenance)
+        self.targets.append(task_id)
         if not self._results:
             raise EngineShutdown("SIGTERM")
         outcome = self._results.pop(0)
@@ -95,6 +104,16 @@ class _StubOrchestrator:
 
     def block_task_for_error(self, task_id: str, reason: str, **_: object) -> None:
         self.blocked.append((task_id, reason))
+
+    def stop_task(self, task_id: str, *, reason: str) -> None:
+        self.stopped.append((task_id, reason))
+
+    def release_task(self, task_id: str) -> None:
+        self.released.append(task_id)
+
+    def record_engine_event(self, *, project_id, event_type, payload, **_: object):
+        self.engine_events.append((event_type, payload))
+        return None
 
 
 def _idle(project_id: str = "project-1") -> ProjectRunResult:
@@ -740,7 +759,7 @@ class ServeProjectTests(unittest.TestCase):
 
     def test_unhandled_error_releases_the_lock(self) -> None:
         class _Exploding(_StubOrchestrator):
-            def run_project(self, project_id, *, maintenance=True):
+            def run_project(self, project_id, *, task_id=None, maintenance=True):
                 raise ValueError("unexpected")
 
         with self.assertRaises(ValueError):
@@ -809,30 +828,34 @@ class ServeProjectTests(unittest.TestCase):
         self.assertIn("holder-resident", str(caught.exception))
 
 
+def _git(repo: Path, *args: str) -> None:
+    subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True)
+
+
+def _git_workspace(test: unittest.TestCase) -> tuple[Path, Path]:
+    """A committed git repo and a database path beside it, cleaned up with the test."""
+
+    temp_dir = tempfile.TemporaryDirectory()
+    test.addCleanup(temp_dir.cleanup)
+    root = Path(temp_dir.name)
+    repo = root / "repo"
+    repo.mkdir()
+    _git(repo, "init")
+    _git(repo, "checkout", "-b", "main")
+    _git(repo, "config", "user.email", "foreman-tests@example.com")
+    _git(repo, "config", "user.name", "Foreman Tests")
+    (repo / "README.md").write_text("# repo\n", encoding="utf-8")
+    (repo / ".gitignore").write_text(".foreman/\n", encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "init")
+    return repo, root / "foreman.db"
+
+
 class ServeShutdownTests(unittest.TestCase):
     """SIGTERM during an agent step: settle, release, exit 0."""
 
     def _workspace(self) -> tuple[Path, Path]:
-        temp_dir = tempfile.TemporaryDirectory()
-        self.addCleanup(temp_dir.cleanup)
-        root = Path(temp_dir.name)
-        repo = root / "repo"
-        repo.mkdir()
-        self._git(repo, "init")
-        self._git(repo, "checkout", "-b", "main")
-        self._git(repo, "config", "user.email", "foreman-tests@example.com")
-        self._git(repo, "config", "user.name", "Foreman Tests")
-        (repo / "README.md").write_text("# repo\n", encoding="utf-8")
-        (repo / ".gitignore").write_text(".foreman/\n", encoding="utf-8")
-        self._git(repo, "add", ".")
-        self._git(repo, "commit", "-m", "init")
-        return repo, root / "foreman.db"
-
-    @staticmethod
-    def _git(repo: Path, *args: str) -> None:
-        subprocess.run(
-            ["git", *args], cwd=repo, check=True, capture_output=True, text=True
-        )
+        return _git_workspace(self)
 
     def test_shutdown_mid_step_settles_the_run_and_releases_the_lock(self) -> None:
         repo, db_path = self._workspace()
@@ -1217,3 +1240,959 @@ class QuotaWaitTests(unittest.TestCase):
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
+
+
+class EngineCommandStartupTests(unittest.TestCase):
+    """What a starting engine does with commands left behind by a dead one."""
+
+    def setUp(self) -> None:
+        self._temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._temp.cleanup)
+        self.db_path = Path(self._temp.name) / "foreman.db"
+        self.store = ForemanStore(self.db_path)
+        self.addCleanup(self.store.close)
+        self.store.initialize()
+        self.project = _seed_project(self.store, self._temp.name, tasks=1)
+        self.clock = _FakeClock()
+
+    def _engine(self, orchestrator, **kwargs: object) -> ResidentEngine:
+        kwargs.setdefault("poll_seconds", 5.0)
+        return ResidentEngine(
+            store=self.store,
+            project_id=self.project.id,
+            orchestrator=orchestrator,  # type: ignore[arg-type]
+            sleep=self.clock.sleep,
+            monotonic=self.clock.monotonic,
+            **kwargs,  # type: ignore[arg-type]
+        )
+
+    def _enqueue(self, command: str, **kwargs: object):
+        return self.store.enqueue_engine_command(
+            project_id=self.project.id,
+            command=command,
+            requested_by=kwargs.pop("requested_by", "alice"),
+            **kwargs,  # type: ignore[arg-type]
+        )
+
+    def test_stale_pause_stop_task_and_shutdown_are_rejected_at_startup(self) -> None:
+        pause = self._enqueue("pause")
+        stop = self._enqueue("stop_task", task_id="task-1")
+        shutdown = self._enqueue("shutdown")
+
+        self._engine(_StubOrchestrator([_idle()])).run(once=True)
+
+        for command in (pause, stop, shutdown):
+            settled = self.store.get_engine_command(command.id)
+            assert settled is not None
+            self.assertEqual(settled.status, "rejected", command.command)
+            self.assertEqual(settled.result_detail, "no engine was resident")
+            self.assertTrue(settled.completed_at)
+
+    def test_a_rejected_stale_command_does_not_pause_the_starting_engine(self) -> None:
+        self._enqueue("pause")
+        orchestrator = _StubOrchestrator([_idle()])
+
+        result = self._engine(orchestrator).run(once=True)
+
+        self.assertEqual(result.passes, 1, "the engine must still run its pass")
+        self.assertEqual(len(orchestrator.calls), 1)
+
+    def test_a_pending_resume_survives_startup_and_is_applied(self) -> None:
+        resume = self._enqueue("resume")
+
+        self._engine(_StubOrchestrator([_idle()])).run(once=True)
+
+        settled = self.store.get_engine_command(resume.id)
+        assert settled is not None
+        self.assertEqual(settled.status, "completed")
+
+    def test_a_pending_run_task_survives_startup_and_targets_the_first_pass(self) -> None:
+        command = self._enqueue("run_task", task_id="task-1")
+        orchestrator = _StubOrchestrator([_executed("task-1")])
+
+        self._engine(orchestrator).run(once=True)
+
+        settled = self.store.get_engine_command(command.id)
+        assert settled is not None
+        self.assertEqual(settled.status, "completed")
+        self.assertEqual(orchestrator.targets, ["task-1"])
+
+    def test_rejection_is_recorded_as_an_engine_event(self) -> None:
+        self._enqueue("pause")
+        orchestrator = _StubOrchestrator([_idle()])
+
+        self._engine(orchestrator).run(once=True)
+
+        kinds = [event_type for event_type, _ in orchestrator.engine_events]
+        self.assertIn("engine.command_rejected", kinds)
+
+
+class EngineCommandLoopTests(unittest.TestCase):
+    """Command semantics against an idle engine, with a scripted orchestrator."""
+
+    def setUp(self) -> None:
+        self._temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._temp.cleanup)
+        self.db_path = Path(self._temp.name) / "foreman.db"
+        self.store = ForemanStore(self.db_path)
+        self.addCleanup(self.store.close)
+        self.store.initialize()
+        self.project = _seed_project(self.store, self._temp.name, tasks=2)
+        self.clock = _FakeClock()
+
+    def _engine(self, orchestrator, **kwargs: object) -> ResidentEngine:
+        kwargs.setdefault("poll_seconds", 5.0)
+        return ResidentEngine(
+            store=self.store,
+            project_id=self.project.id,
+            orchestrator=orchestrator,  # type: ignore[arg-type]
+            sleep=self.clock.sleep,
+            monotonic=self.clock.monotonic,
+            **kwargs,  # type: ignore[arg-type]
+        )
+
+    def _enqueue(self, command: str, *, store=None, **kwargs: object):
+        return (store or self.store).enqueue_engine_command(
+            project_id=self.project.id,
+            command=command,
+            requested_by=kwargs.pop("requested_by", "alice"),
+            **kwargs,  # type: ignore[arg-type]
+        )
+
+    def _settled(self, command):
+        settled = self.store.get_engine_command(command.id)
+        assert settled is not None
+        return settled
+
+    def _schedule(self, engine, schedule: dict) -> dict:
+        """Queue commands from another connection at given idle ticks.
+
+        `pause`, `stop_task`, and `shutdown` only mean something to an engine
+        that is already resident — queued beforehand they are rejected as
+        stale — so these tests hand them to the engine mid-loop, exactly as a
+        dashboard or a second terminal would.
+        """
+
+        writer = ForemanStore(self.db_path)
+        self.addCleanup(writer.close)
+        state: dict = {"ticks": 0, "queued": []}
+        original_sleep = engine._sleep
+
+        def sleeper(seconds: float) -> None:
+            original_sleep(seconds)
+            state["ticks"] += 1
+            entry = schedule.get(state["ticks"])
+            if entry is not None:
+                name, kwargs = entry
+                state["queued"].append(self._enqueue(name, store=writer, **kwargs))
+
+        engine._sleep = sleeper
+        return state
+
+    def test_pause_stops_the_engine_picking_up_new_work(self) -> None:
+        """A paused engine runs no further passes but stays in its loop."""
+
+        orchestrator = _StubOrchestrator([_idle(), _idle(), _idle(), _idle()])
+        engine = self._engine(orchestrator, poll_seconds=60.0, tick_seconds=0.5)
+        # Pause at the first idle tick; shut down later so the loop can end.
+        state = self._schedule(
+            engine,
+            {1: ("pause", {}), 5: ("shutdown", {"requested_by": "bob"})},
+        )
+
+        result = engine.run()
+
+        pause, shutdown = state["queued"]
+        self.assertEqual(self._settled(pause).status, "completed")
+        self.assertEqual(self._settled(shutdown).status, "completed")
+        self.assertEqual(
+            result.passes,
+            1,
+            "only the pass before the pause may run",
+        )
+        self.assertEqual(len(orchestrator.calls), 1)
+        self.assertEqual(result.exit_code, 0)
+
+    def test_a_paused_engine_still_answers_shutdown(self) -> None:
+        orchestrator = _StubOrchestrator([_idle(), _idle(), _idle(), _idle()])
+        engine = self._engine(orchestrator, poll_seconds=60.0, tick_seconds=0.5)
+        state = self._schedule(
+            engine,
+            {1: ("pause", {}), 3: ("shutdown", {"requested_by": "bob"})},
+        )
+
+        result = engine.run()
+
+        _pause, shutdown = state["queued"]
+        self.assertEqual(result.stop_reason, "stopped")
+        self.assertEqual(result.exit_code, 0)
+        self.assertEqual(self._settled(shutdown).status, "completed")
+
+    def test_a_paused_engine_keeps_heartbeating_its_lock(self) -> None:
+        """Pausing is not releasing: the project stays owned by this engine."""
+
+        lock = EngineLock(
+            store=self.store,
+            project_id=self.project.id,
+            holder_id="holder-paused",
+            heartbeat_seconds=0,
+            on_lost=lambda _lock: None,
+        )
+        lock.acquire()
+        self.addCleanup(lock.release)
+
+        orchestrator = _StubOrchestrator([_idle(), _idle(), _idle(), _idle()])
+        engine = self._engine(orchestrator, poll_seconds=60.0, tick_seconds=0.5)
+        engine.lock = lock
+        self._schedule(
+            engine,
+            {1: ("pause", {}), 3: ("shutdown", {"requested_by": "bob"})},
+        )
+
+        engine.run()
+
+        self.assertIsNotNone(
+            self.store.get_engine_lock(self.project.id),
+            "a paused engine must keep holding the project",
+        )
+
+    def test_resume_lets_the_engine_run_a_pass_again(self) -> None:
+        orchestrator = _StubOrchestrator([_idle(), _idle(), _idle(), _idle()])
+        engine = self._engine(orchestrator, poll_seconds=60.0, tick_seconds=0.5)
+        state = self._schedule(
+            engine,
+            {
+                1: ("pause", {}),
+                3: ("resume", {"requested_by": "bob"}),
+                5: ("shutdown", {"requested_by": "bob"}),
+            },
+        )
+
+        result = engine.run()
+
+        _pause, resume, _shutdown = state["queued"]
+        self.assertEqual(self._settled(resume).status, "completed")
+        self.assertGreaterEqual(
+            result.passes, 2, "the engine must run again after the resume"
+        )
+
+    def test_resume_on_a_running_engine_is_completed_as_a_no_op(self) -> None:
+        resume = self._enqueue("resume")
+
+        self._engine(_StubOrchestrator([_idle()])).run(once=True)
+
+        settled = self._settled(resume)
+        self.assertEqual(settled.status, "completed")
+        self.assertIn("already running", settled.result_detail or "")
+
+    def test_shutdown_while_idle_exits_zero_and_stops_the_loop(self) -> None:
+        orchestrator = _StubOrchestrator([_idle(), _idle(), _idle()])
+        engine = self._engine(orchestrator, poll_seconds=60.0, tick_seconds=0.5)
+        state = self._schedule(engine, {1: ("shutdown", {})})
+
+        result = engine.run()
+
+        (shutdown,) = state["queued"]
+        self.assertEqual(result.exit_code, 0)
+        self.assertEqual(result.stop_reason, "stopped")
+        self.assertEqual(
+            result.passes, 1, "the shutdown must end the loop, not start a pass"
+        )
+        settled = self._settled(shutdown)
+        self.assertEqual(settled.status, "completed")
+        self.assertIn("shutting down", settled.result_detail or "")
+
+    def test_run_task_targets_the_next_pass_regardless_of_sprint_order(self) -> None:
+        command = self._enqueue("run_task", task_id="task-2")
+        orchestrator = _StubOrchestrator([_executed("task-2"), _idle()])
+
+        self._engine(orchestrator).run(once=True)
+
+        self.assertEqual(orchestrator.targets, ["task-2"])
+        settled = self._settled(command)
+        self.assertEqual(settled.status, "completed")
+        self.assertIn("task-2", settled.result_detail or "")
+
+    def test_a_targeted_task_is_only_run_once(self) -> None:
+        self._enqueue("run_task", task_id="task-2")
+        orchestrator = _StubOrchestrator([_executed("task-2"), _idle()])
+
+        self._engine(orchestrator).run()
+
+        self.assertEqual(
+            orchestrator.targets[:2],
+            ["task-2", None],
+            "the second pass must fall back to normal sprint selection",
+        )
+
+    def test_run_task_is_rejected_for_a_task_in_another_project(self) -> None:
+        self.store.save_project(
+            Project(
+                id="project-2",
+                name="Other",
+                repo_path=self._temp.name,
+                workflow_id="development",
+            )
+        )
+        self.store.save_sprint(
+            Sprint(id="sprint-2", project_id="project-2", title="S", status="active")
+        )
+        self.store.save_task(
+            Task(
+                id="foreign-task",
+                sprint_id="sprint-2",
+                project_id="project-2",
+                title="Not ours",
+                status="todo",
+            )
+        )
+        command = self._enqueue("run_task", task_id="foreign-task")
+        orchestrator = _StubOrchestrator([_idle()])
+
+        self._engine(orchestrator).run(once=True)
+
+        settled = self._settled(command)
+        self.assertEqual(settled.status, "rejected")
+        self.assertIn("project-2", settled.result_detail or "")
+        self.assertEqual(orchestrator.targets, [None])
+
+    def test_run_task_is_rejected_for_a_blocked_task(self) -> None:
+        task = self.store.get_task("task-1")
+        assert task is not None
+        task.status = "blocked"
+        task.blocked_reason = "needs a human"
+        self.store.save_task(task)
+        command = self._enqueue("run_task", task_id="task-1")
+
+        self._engine(_StubOrchestrator([_idle()])).run(once=True)
+
+        settled = self._settled(command)
+        self.assertEqual(settled.status, "rejected")
+        self.assertIn("blocked", settled.result_detail or "")
+
+    def test_run_task_is_rejected_for_an_unknown_task(self) -> None:
+        command = self.store.enqueue_engine_command(
+            project_id=self.project.id,
+            command="run_task",
+            requested_by="alice",
+            task_id=None,
+        )
+
+        self._engine(_StubOrchestrator([_idle()])).run(once=True)
+
+        self.assertEqual(self._settled(command).status, "rejected")
+
+    def test_run_task_accepts_a_resumable_in_progress_task(self) -> None:
+        task = self.store.get_task("task-1")
+        assert task is not None
+        task.status = "in_progress"
+        task.workflow_current_step = "develop"
+        self.store.save_task(task)
+        command = self._enqueue("run_task", task_id="task-1")
+
+        orchestrator = _StubOrchestrator([_executed("task-1")])
+        self._engine(orchestrator).run(once=True)
+
+        self.assertEqual(self._settled(command).status, "completed")
+        self.assertEqual(orchestrator.targets, ["task-1"])
+
+    def test_run_task_is_rejected_for_an_in_progress_task_with_no_resume_point(self) -> None:
+        task = self.store.get_task("task-1")
+        assert task is not None
+        task.status = "in_progress"
+        task.workflow_current_step = None
+        self.store.save_task(task)
+        command = self._enqueue("run_task", task_id="task-1")
+
+        self._engine(_StubOrchestrator([_idle()])).run(once=True)
+
+        self.assertEqual(self._settled(command).status, "rejected")
+
+    def test_stop_task_is_rejected_when_the_engine_is_idle(self) -> None:
+        orchestrator = _StubOrchestrator([_idle(), _idle(), _idle()])
+        engine = self._engine(orchestrator, poll_seconds=60.0, tick_seconds=0.5)
+        state = self._schedule(
+            engine,
+            {
+                1: ("stop_task", {"task_id": "task-1"}),
+                3: ("shutdown", {"requested_by": "bob"}),
+            },
+        )
+
+        engine.run()
+
+        command = state["queued"][0]
+        settled = self._settled(command)
+        self.assertEqual(settled.status, "rejected")
+        self.assertIn("idle", settled.result_detail or "")
+        task = self.store.get_task("task-1")
+        assert task is not None
+        self.assertEqual(task.status, "todo", "a rejected stop must not touch the task")
+
+    def test_every_command_is_acknowledged_before_it_is_applied(self) -> None:
+        command = self._enqueue("resume")
+
+        self._engine(_StubOrchestrator([_idle()])).run(once=True)
+
+        settled = self._settled(command)
+        self.assertTrue(
+            settled.acknowledged_at,
+            "the engine must record that it picked the command up",
+        )
+        self.assertTrue(settled.completed_at)
+
+    def test_an_applied_command_is_recorded_as_an_engine_event(self) -> None:
+        self._enqueue("resume")
+        orchestrator = _StubOrchestrator([_idle()])
+
+        self._engine(orchestrator).run(once=True)
+
+        applied = [
+            payload
+            for event_type, payload in orchestrator.engine_events
+            if event_type == "engine.command_applied"
+        ]
+        self.assertEqual(len(applied), 1)
+        self.assertEqual(applied[0]["command"], "resume")
+        self.assertEqual(applied[0]["requested_by"], "alice")
+
+    def test_commands_are_applied_oldest_first(self) -> None:
+        self._enqueue("pause")
+        self._enqueue("resume")
+        orchestrator = _StubOrchestrator([_idle()])
+
+        result = self._engine(orchestrator).run(once=True)
+
+        # pause then resume leaves the engine running, so the pass happens.
+        self.assertEqual(result.passes, 1)
+        self.assertEqual(len(orchestrator.calls), 1)
+
+    def test_enqueuing_from_another_connection_wakes_an_idle_engine(self) -> None:
+        """The insert commits elsewhere, so the data_version wait sees it."""
+
+        writer = ForemanStore(self.db_path)
+        self.addCleanup(writer.close)
+        orchestrator = _StubOrchestrator([_idle(), _idle()])
+        engine = self._engine(orchestrator, poll_seconds=60.0, tick_seconds=0.5)
+
+        state = {"ticks": 0, "command": None}
+        original_sleep = self.clock.sleep
+
+        def sleep_then_enqueue(seconds: float) -> None:
+            original_sleep(seconds)
+            state["ticks"] += 1
+            if state["ticks"] == 2:
+                state["command"] = self._enqueue(
+                    "shutdown", store=writer, requested_by="dashboard"
+                )
+
+        engine._sleep = sleep_then_enqueue
+        result = engine.run()
+
+        # Woken at 1.0s — two 0.5s ticks — not at the 60s poll deadline.
+        self.assertAlmostEqual(self.clock.total_slept, 1.0, places=6)
+        self.assertEqual(result.stop_reason, "stopped")
+        settled = self.store.get_engine_command(state["command"].id)
+        assert settled is not None
+        self.assertEqual(settled.status, "completed")
+
+
+class _StepNeverInterrupted(BaseException):
+    """Raised when the command poll failed to stop a blocked agent step.
+
+    A ``BaseException`` so the orchestrator's ``except Exception`` fallbacks
+    cannot turn a broken command poll into a quietly failed agent step: the
+    test must fail loudly instead.
+    """
+
+
+class _CommandingRunner:
+    """Fake agent runner that blocks on ticks until a command stops it.
+
+    The agent step never finishes on its own: it emits ``agent.tick`` events,
+    which is what a real backend does while an agent works quietly. On a
+    scheduled tick it queues a command *from another connection*, the way a
+    dashboard or a second terminal would, and the engine's ``command_poll``
+    picks it up on the next tick. No `claude` or `codex` binary is launched.
+    """
+
+    #: Enough ticks to prove the poll fired, few enough to fail fast if it did not.
+    MAX_TICKS = 30
+
+    def __init__(
+        self,
+        db_path: Path,
+        *,
+        project_id: str,
+        schedule: dict[int, tuple[str, str | None, str]],
+    ) -> None:
+        self.db_path = db_path
+        self.project_id = project_id
+        self.schedule = schedule
+        #: Commands queued so far, in order, across every step of every task.
+        self.queued: list = []
+        self.ticks = 0
+
+    @classmethod
+    def for_command(
+        cls,
+        db_path: Path,
+        *,
+        project_id: str,
+        command: str,
+        requested_by: str,
+        task_id: str | None = None,
+    ) -> "_CommandingRunner":
+        """A runner that queues exactly one command on its first tick."""
+
+        return cls(
+            db_path,
+            project_id=project_id,
+            schedule={0: (command, task_id, requested_by)},
+        )
+
+    @property
+    def command_id(self) -> str | None:
+        return self.queued[0].id if self.queued else None
+
+    def run(self, config: AgentRunConfig):
+        yield AgentEvent("agent.started", payload={"command": "fake"})
+        for index in range(self.MAX_TICKS):
+            entry = self.schedule.pop(index, None)
+            if entry is not None:
+                name, task_id, requested_by = entry
+                with ForemanStore(self.db_path) as writer:
+                    self.queued.append(
+                        writer.enqueue_engine_command(
+                            project_id=self.project_id,
+                            command=name,
+                            requested_by=requested_by,
+                            task_id=task_id,
+                        )
+                    )
+            self.ticks += 1
+            yield AgentEvent("agent.tick", payload={"elapsed_seconds": index})
+        raise _StepNeverInterrupted(
+            f"the command poll never stopped the agent step ({self.MAX_TICKS} ticks)"
+        )
+
+
+class EngineCommandDuringAgentStepTests(unittest.TestCase):
+    """pause, stop_task, and shutdown against a running agent step."""
+
+    def _serve(self, runner: _CommandingRunner, db_path: Path, store: ForemanStore, **kwargs):
+        orchestrator = ForemanOrchestrator(
+            store,
+            agent_runners={"claude_code": runner},
+            native_step_heartbeat_seconds=0.0001,
+        )
+        lock = EngineLock(
+            store=store,
+            project_id="project-1",
+            holder_id=orchestrator.holder_id,
+            heartbeat_seconds=0,
+            on_lost=lambda _lock: None,
+        )
+        return serve_project(
+            store=store,
+            project_id="project-1",
+            orchestrator=orchestrator,
+            lock=lock,
+            **kwargs,
+        )
+
+    def _seed(self, store: ForemanStore, repo: Path) -> None:
+        store.initialize()
+        project = Project(
+            id="project-1",
+            name="Resident",
+            repo_path=str(repo),
+            workflow_id="development",
+            default_branch="main",
+            settings={
+                "task_selection_mode": "directed",
+                "test_command": "true",
+                "default_model": "m",
+            },
+        )
+        store.save_project(project)
+        store.save_sprint(
+            Sprint(id="sprint-1", project_id=project.id, title="S", status="active")
+        )
+        store.save_task(
+            Task(
+                id="task-1",
+                sprint_id="sprint-1",
+                project_id=project.id,
+                title="Implement",
+                status="todo",
+                acceptance_criteria="Implemented.",
+            )
+        )
+
+    @staticmethod
+    def _agent_runs(store: ForemanStore) -> list[Run]:
+        return [
+            run
+            for run in store.list_runs(task_id="task-1")
+            if run.role_id != "_builtin:orchestrator"
+        ]
+
+    def test_pause_kills_the_agent_step_and_leaves_the_task_resumable(self) -> None:
+        repo, db_path = _git_workspace(self)
+        with ForemanStore(db_path) as store:
+            self._seed(store, repo)
+            runner = _CommandingRunner.for_command(
+                db_path, project_id="project-1", command="pause", requested_by="alice"
+            )
+
+            with unittest.mock.patch(
+                "foreman.serve.terminate_all", return_value=1
+            ) as terminated:
+                result = self._serve(runner, db_path, store, once=True)
+
+            terminated.assert_called()
+            self.assertEqual(result.exit_code, 0)
+
+            runs = self._agent_runs(store)
+            self.assertEqual(len(runs), 1)
+            self.assertEqual(runs[0].status, "killed")
+            killed = [
+                event
+                for event in store.list_events(run_id=runs[0].id)
+                if event.event_type == "agent.killed"
+            ]
+            self.assertEqual(killed[0].payload["gate_type"], "command")
+
+            # A paused engine changes no task status.
+            task = store.get_task("task-1")
+            assert task is not None
+            self.assertEqual(task.status, "in_progress")
+            self.assertEqual(task.workflow_current_step, "develop")
+            self.assertIsNone(task.blocked_reason)
+
+            assert runner.command_id is not None
+            command = store.get_engine_command(runner.command_id)
+            assert command is not None
+            self.assertEqual(command.status, "completed")
+            self.assertTrue(command.acknowledged_at)
+            self.assertIn("resumable", command.result_detail or "")
+
+            applied = [
+                event
+                for event in store.list_events(task_id="task-1")
+                if event.event_type == "engine.command_applied"
+            ]
+            self.assertEqual(len(applied), 1)
+            self.assertEqual(applied[0].payload["command"], "pause")
+
+    def test_pause_releases_the_task_lease_so_the_task_is_not_pinned(self) -> None:
+        repo, db_path = _git_workspace(self)
+        with ForemanStore(db_path) as store:
+            self._seed(store, repo)
+            runner = _CommandingRunner.for_command(
+                db_path, project_id="project-1", command="pause", requested_by="alice"
+            )
+            with unittest.mock.patch("foreman.serve.terminate_all", return_value=1):
+                self._serve(runner, db_path, store, once=True)
+
+            self.assertIsNone(
+                store.get_active_lease(
+                    project_id="project-1", resource_type="task", resource_id="task-1"
+                )
+            )
+
+    def test_stop_task_kills_the_step_and_blocks_the_task_naming_the_requester(self) -> None:
+        repo, db_path = _git_workspace(self)
+        with ForemanStore(db_path) as store:
+            self._seed(store, repo)
+            runner = _CommandingRunner.for_command(
+                db_path,
+                project_id="project-1",
+                command="stop_task",
+                requested_by="dana",
+                task_id="task-1",
+            )
+
+            with unittest.mock.patch(
+                "foreman.serve.terminate_all", return_value=1
+            ) as terminated:
+                result = self._serve(runner, db_path, store, once=True)
+
+            terminated.assert_called()
+            self.assertEqual(result.exit_code, 0)
+
+            runs = self._agent_runs(store)
+            self.assertEqual(runs[0].status, "killed")
+
+            task = store.get_task("task-1")
+            assert task is not None
+            self.assertEqual(task.status, "blocked")
+            self.assertEqual(task.blocked_reason, "Stopped by dana")
+
+            assert runner.command_id is not None
+            command = store.get_engine_command(runner.command_id)
+            assert command is not None
+            self.assertEqual(command.status, "completed")
+            self.assertIn("dana", command.result_detail or "")
+
+            applied = [
+                event
+                for event in store.list_events(task_id="task-1")
+                if event.event_type == "engine.command_applied"
+            ]
+            self.assertEqual(applied[0].payload["command"], "stop_task")
+
+    def test_stop_task_for_a_different_task_is_rejected_and_the_step_continues(self) -> None:
+        repo, db_path = _git_workspace(self)
+        with ForemanStore(db_path) as store:
+            self._seed(store, repo)
+            store.save_task(
+                Task(
+                    id="task-2",
+                    sprint_id="sprint-1",
+                    project_id="project-1",
+                    title="Other",
+                    status="todo",
+                    order_index=1,
+                )
+            )
+            # Ask to stop a task the engine is *not* running; then pause, so
+            # the step ends on the engine's terms rather than by running out of
+            # ticks. The gap between the two proves the step kept going.
+            runner = _CommandingRunner(
+                db_path,
+                project_id="project-1",
+                schedule={
+                    0: ("stop_task", "task-2", "dana"),
+                    5: ("pause", None, "dana"),
+                },
+            )
+            with unittest.mock.patch("foreman.serve.terminate_all", return_value=1):
+                self._serve(runner, db_path, store, once=True)
+
+            stop, _pause = runner.queued
+            command = store.get_engine_command(stop.id)
+            assert command is not None
+            self.assertEqual(command.status, "rejected")
+            self.assertIn("task-1", command.result_detail or "")
+
+            untouched = store.get_task("task-2")
+            assert untouched is not None
+            self.assertEqual(untouched.status, "todo")
+            self.assertGreater(
+                runner.ticks, 5, "a rejected stop must not end the agent step"
+            )
+
+            rejected = [
+                event
+                for event in store.list_events(project_id="project-1")
+                if event.event_type == "engine.command_rejected"
+            ]
+            self.assertTrue(rejected, "a rejection must leave an event behind")
+
+    def test_shutdown_kills_the_step_releases_the_lock_and_exits_zero(self) -> None:
+        repo, db_path = _git_workspace(self)
+        with ForemanStore(db_path) as store:
+            self._seed(store, repo)
+            runner = _CommandingRunner.for_command(
+                db_path, project_id="project-1", command="shutdown", requested_by="ops"
+            )
+
+            with unittest.mock.patch("foreman.serve.terminate_all", return_value=1):
+                result = self._serve(runner, db_path, store)
+
+            self.assertEqual(result.exit_code, 0)
+            self.assertEqual(result.stop_reason, "stopped")
+
+            runs = self._agent_runs(store)
+            self.assertEqual(runs[0].status, "killed")
+
+            task = store.get_task("task-1")
+            assert task is not None
+            self.assertEqual(task.status, "in_progress")
+            self.assertEqual(task.workflow_current_step, "develop")
+
+            self.assertIsNone(
+                store.get_engine_lock("project-1"),
+                "shutdown must release the engine lock",
+            )
+            assert runner.command_id is not None
+            command = store.get_engine_command(runner.command_id)
+            assert command is not None
+            self.assertEqual(command.status, "completed")
+
+
+class EngineRunTaskQueueTests(unittest.TestCase):
+    """Two `run_task` requests are two requests, not one overwriting the other."""
+
+    def setUp(self) -> None:
+        self._temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._temp.cleanup)
+        self.db_path = Path(self._temp.name) / "foreman.db"
+        self.store = ForemanStore(self.db_path)
+        self.addCleanup(self.store.close)
+        self.store.initialize()
+        self.project = _seed_project(self.store, self._temp.name, tasks=2)
+        self.clock = _FakeClock()
+
+    def test_two_queued_run_tasks_both_run_in_order(self) -> None:
+        for task_id in ("task-2", "task-1"):
+            self.store.enqueue_engine_command(
+                project_id=self.project.id,
+                command="run_task",
+                requested_by="alice",
+                task_id=task_id,
+            )
+
+        orchestrator = _StubOrchestrator(
+            [_executed("task-2"), _executed("task-1"), _idle()]
+        )
+        ResidentEngine(
+            store=self.store,
+            project_id=self.project.id,
+            orchestrator=orchestrator,  # type: ignore[arg-type]
+            sleep=self.clock.sleep,
+            monotonic=self.clock.monotonic,
+        ).run()
+
+        self.assertEqual(
+            orchestrator.targets[:3],
+            ["task-2", "task-1", None],
+            "both requested tasks must run, oldest first, before normal selection",
+        )
+        for command in self.store.list_engine_commands(self.project.id):
+            self.assertEqual(command.status, "completed")
+
+
+class EngineCommandsDuringLongWaitsTests(unittest.TestCase):
+    """A long wait must not make the engine deaf to commands.
+
+    A failure backoff reaches five minutes and a quota wait reaches six hours.
+    Both are exactly when an operator is most likely to want the engine paused
+    or shut down, so a queued command has to cut the wait short.
+    """
+
+    def setUp(self) -> None:
+        self._temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._temp.cleanup)
+        self.db_path = Path(self._temp.name) / "foreman.db"
+        self.store = ForemanStore(self.db_path)
+        self.addCleanup(self.store.close)
+        self.store.initialize()
+        self.project = _seed_project(self.store, self._temp.name, tasks=1)
+        self.clock = _FakeClock()
+        self.writer = ForemanStore(self.db_path)
+        self.addCleanup(self.writer.close)
+
+    def _engine(self, orchestrator, **kwargs: object) -> ResidentEngine:
+        kwargs.setdefault("poll_seconds", 5.0)
+        return ResidentEngine(
+            store=self.store,
+            project_id=self.project.id,
+            orchestrator=orchestrator,  # type: ignore[arg-type]
+            sleep=self.clock.sleep,
+            monotonic=self.clock.monotonic,
+            **kwargs,  # type: ignore[arg-type]
+        )
+
+    def _enqueue_at(self, engine: ResidentEngine, schedule: dict[int, str]) -> dict:
+        """Queue commands from another connection at given sleep ticks."""
+
+        state: dict = {"ticks": 0, "queued": {}}
+        original_sleep = engine._sleep
+
+        def sleeper(seconds: float) -> None:
+            original_sleep(seconds)
+            state["ticks"] += 1
+            name = schedule.get(state["ticks"])
+            if name is not None:
+                state["queued"][name] = self.writer.enqueue_engine_command(
+                    project_id=self.project.id,
+                    command=name,
+                    requested_by="ops",
+                )
+
+        engine._sleep = sleeper
+        return state
+
+    def test_a_shutdown_cuts_a_six_hour_quota_wait_short(self) -> None:
+        from datetime import datetime, timezone
+
+        orchestrator = _StubOrchestrator([_quota_exhausted("task-1"), _idle()])
+        engine = self._engine(
+            orchestrator,
+            tick_seconds=1.0,
+            utc_now=lambda: datetime(2026, 9, 4, 6, 0, 0, tzinfo=timezone.utc),
+        )
+        # The reset is far enough out that the wait clamps to the six-hour cap.
+        state = self._enqueue_at(engine, {3: "shutdown"})
+
+        result = engine.run()
+
+        self.assertLess(
+            self.clock.total_slept,
+            60.0,
+            "the shutdown must end the quota wait, not ride it out",
+        )
+        self.assertEqual(result.stop_reason, "stopped")
+        self.assertEqual(result.exit_code, 0)
+        settled = self.store.get_engine_command(state["queued"]["shutdown"].id)
+        assert settled is not None
+        self.assertEqual(settled.status, "completed")
+
+    def test_a_pause_cuts_a_failure_backoff_short(self) -> None:
+        orchestrator = _StubOrchestrator(
+            [TaskExecutionError("task-1", RuntimeError("boom")), _idle(), _idle()]
+        )
+        engine = self._engine(orchestrator, tick_seconds=1.0)
+        # The pause lands mid-backoff; the shutdown later ends the paused loop,
+        # which would otherwise wait for a `resume` that never comes.
+        state = self._enqueue_at(engine, {2: "pause", 6: "shutdown"})
+
+        engine.run()
+
+        # Riding the 5 s backoff out would sleep 5 s before the pause was even
+        # seen, then 5 s more per paused wait. Landing under that proves the
+        # wait ended early.
+        self.assertLess(self.clock.total_slept, 10.0)
+        settled = self.store.get_engine_command(state["queued"]["pause"].id)
+        assert settled is not None
+        self.assertEqual(settled.status, "completed")
+        self.assertEqual(
+            orchestrator.calls, [True], "a paused engine must run no further pass"
+        )
+
+    def test_a_wait_with_no_command_still_runs_its_full_course(self) -> None:
+        """The early return must trigger on a command, not on any commit."""
+
+        orchestrator = _StubOrchestrator(
+            [TaskExecutionError("task-1", RuntimeError("boom")), _idle()]
+        )
+        engine = self._engine(orchestrator, tick_seconds=1.0)
+        original_sleep = engine._sleep
+        state = {"ticks": 0}
+
+        def sleep_then_commit_something_else(seconds: float) -> None:
+            original_sleep(seconds)
+            state["ticks"] += 1
+            if state["ticks"] == 2:
+                # Another connection commits, but it is not a command.
+                self.writer.save_task(
+                    Task(
+                        id="task-late",
+                        sprint_id="sprint-1",
+                        project_id=self.project.id,
+                        title="Unrelated work",
+                        status="todo",
+                    )
+                )
+
+        engine._sleep = sleep_then_commit_something_else
+        engine.run()
+
+        self.assertGreaterEqual(
+            self.clock.total_slept,
+            5.0,
+            "an unrelated commit must not cut the backoff short",
+        )
