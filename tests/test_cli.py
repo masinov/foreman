@@ -717,6 +717,39 @@ class ForemanCLISmokeTests(unittest.TestCase):
         assert waiver is not None
         self.assertEqual(waiver.reason, "Human reviewed the exceptional case.")
 
+    def test_task_unblock_accepts_a_task_paused_at_a_non_gate_step(self) -> None:
+        store, db_path = self.create_store()
+        project = Project(
+            id="project-1",
+            name="Foreman Demo",
+            repo_path="/tmp/foreman-demo",
+            workflow_id="development",
+        )
+        sprint = Sprint(id="sprint-1", project_id=project.id, title="S", status="active")
+        task = Task(
+            id="task-1",
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="Interrupted develop",
+            status="blocked",
+            blocked_reason="git checkout feat/task-1 failed: you need to resolve your current index first",
+            workflow_current_step="develop",
+            workflow_carried_output="Merge conflict against 'main'.",
+        )
+        store.save_project(project)
+        store.save_sprint(sprint)
+        store.save_task(task)
+
+        result = self.run_cli("task", "unblock", task.id, "--db", str(db_path))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        with ForemanStore(db_path) as reopened:
+            reopened.initialize()
+            updated = reopened.get_task(task.id)
+        assert updated is not None
+        self.assertEqual(updated.status, "todo")
+        self.assertIsNone(updated.blocked_reason)
+
     def test_task_unblock_rejects_human_gate_tasks(self) -> None:
         store, db_path = self.create_store()
         project = Project(
