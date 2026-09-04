@@ -23,8 +23,10 @@ decides where a human is required.
 
 | # | Slice | Status | Branch / task | Deliverable |
 |---|-------|--------|---------------|-------------|
-| 1 | `foreman serve` resident worker: project engine lock with a timer heartbeat, idle wake on `data_version`, SIGTERM stop, per-task failure isolation with backoff, structured JSON logs | done | `feat/task-add-foreman-serve-resident-engine-worker-with-a-project-engine-lock` | `foreman/serve.py`, `foreman/engine_lock.py`, `foreman/logs.py`, `foreman serve`, ADR-0011, `tests/test_serve.py` |
-| 2 | Engine command table and resident status: dashboard Run/Stop and the CLI write commands the resident engine consumes; API reports the resident engine; dead-letter reporting for tasks blocked by the engine | todo | dogfood task (engine-run) | migration, `engine_commands`, dashboard wiring, tests |
+| 1 | `foreman serve` resident worker: project engine lock with a timer heartbeat, idle wake on `data_version`, SIGTERM stop, per-task failure isolation with backoff, structured JSON logs | done (engine-run, merged `a462659`) | `feat/task-add-foreman-serve-resident-engine-worker-with-a-project-engine-lock` / dogfood task `task-add-foreman-serve-…` | `foreman/serve.py`, `foreman/engine_lock.py`, `foreman/logs.py`, `foreman serve`, ADR-0011, `tests/test_serve.py` |
+| 2a | Engine command table and `foreman engine` CLI: `pause`, `resume`, `run_task`, `stop_task`, `shutdown` consumed by the resident engine; migration 15 | todo | dogfood task `task-add-the-engine-command-table-and-foreman-engine-cli` (engine-run, depends on 1) | migration, `engine_commands`, `foreman engine`, tests |
+| 2b | Dashboard onto the resident engine: status from the engine lock, Run/Stop through commands, no process handles; `blocked_kind` (gate vs engine) reporting | todo | dogfood task `task-rewire-the-dashboard-onto-the-resident-engine-and-report-dead-letter-tasks` (engine-run, depends on 2a) | service, API, frontend, tests |
+| F1 | Live-run fix: backend progress lines no longer persisted as tool uses; tool results capped | done (`2dacef3`) | `fix/runner-progress-lines` | runner, tests |
 | 3 | Intake endpoint: project-level, API-token authenticated, idempotent on an external reference, source metadata, policy-chosen initial status; sprint optional over a continuous queue | todo | | `POST /api/projects/{id}/intake`, tokens, tests |
 | 4 | Policy matrix v1: `triage` and `notification` policies join `merge_approval` and `plan_approval`; task-type rules; per-task overrides | todo | | settings, models, orchestrator, tests |
 | 5 | Planner step per task producing criteria and a protected acceptance test; architect role repurposed to once-per-task | todo | | role, workflow, tests |
@@ -32,7 +34,10 @@ decides where a human is required.
 
 ### Slice 1 notes
 
-Landed as described, with two decisions worth carrying forward:
+Landed by the engine in three gate rounds (one deny with corrections, one
+merge conflict against a moved `main`), 49 minutes and $21.96 end to end;
+the full account is in `docs/reviews/sprint-54-live-run-notes.md`. Two
+decisions worth carrying forward:
 
 - The engine lock is a lease row (`resource_type="engine"`), not a lock file,
   so no migration was needed and a crashed engine frees its project by expiry

@@ -9,17 +9,21 @@
   (`foreman run foreman`) wherever the engine can carry them; findings are
   recorded in `docs/reviews/sprint-54-live-run-notes.md`.
 - Latest completed sprint: `sprint-53-phase0-unattended-safety`.
-- Last merged branch: `fix/runner-progress-lines`.
-- Current implementation branch:
+- Last merged branch:
   `feat/task-add-foreman-serve-resident-engine-worker-with-a-project-engine-lock`
-  — sprint 54 slice 1 (`foreman serve` and the project engine lock), complete
-  and awaiting review/merge.
+  (sprint 54 slice 1, merged to `main` at `a462659` by the engine's own
+  merge step), then `docs/sprint-54-live-run-1`.
+- Current implementation branch: none by hand. Next: sprint 54 slice 2a
+  (engine command table) as a dogfood task picked up by `foreman serve
+  foreman`.
 
 ## Active branches
 
+- `docs/sprint-54-live-run-1` — live-run notes for run 1, sprint doc and
+  status updates, `.gitignore` covers a `venv` symlink; merged to `main`
 - `feat/task-add-foreman-serve-resident-engine-worker-with-a-project-engine-lock`
   — sprint 54 slice 1: `foreman serve`, `foreman/engine_lock.py`,
-  `foreman/logs.py`, ADR-0011; awaiting review/merge
+  `foreman/logs.py`, ADR-0011; merged to `main` at `a462659` by the engine
 - `fix/runner-progress-lines` — sprint 54 live-run fix: progress-only
   stream lines are heartbeats, tool results are capped previews; merged to
   `main`
@@ -62,7 +66,24 @@
 - Phase 0 of the production readiness review is complete: an unattended run
   is safe on one machine.
 
-## Latest update — sprint 54 slice 1: resident engine and project lock
+## Latest update — sprint 54 live run 1 closed
+
+- Slice 1 was carried end to end by the engine on the dogfood project:
+  develop (Opus 5, 24.5 min), built-in tests, code review (Sonnet 4.6),
+  a human `deny` with two corrections, a corrective pass on the resumed
+  session, a merge conflict against a moved `main` resolved by a third pass,
+  and the engine's own `--no-ff` merge at `a462659`. 49 minutes, $21.96.
+- Twenty-four observations are recorded in
+  `docs/reviews/sprint-54-live-run-notes.md`. The structural ones: the
+  heuristic evidence rates correct work "weak" and reviewers are told to
+  weigh it; shared markdown memory files conflict by construction between
+  overlapping branches; the engine merges straight into the operator's
+  checkout (an ignored `venv` was destroyed by a symlink commit during the
+  run and rebuilt); `tests/test_cli.py` reinstalls the package into the
+  shared venv from whatever checkout runs it.
+- `.gitignore` now ignores a bare `venv` entry as well as the directory.
+
+## Previous update — sprint 54 slice 1: resident engine and project lock
 
 - Branch
   `feat/task-add-foreman-serve-resident-engine-worker-with-a-project-engine-lock`.
