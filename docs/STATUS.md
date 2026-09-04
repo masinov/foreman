@@ -9,16 +9,17 @@
   (`foreman run foreman`) wherever the engine can carry them; findings are
   recorded in `docs/reviews/sprint-54-live-run-notes.md`.
 - Latest completed sprint: `sprint-53-phase0-unattended-safety`.
-- Last merged branch:
-  `feat/task-add-foreman-serve-resident-engine-worker-with-a-project-engine-lock`
-  (sprint 54 slice 1, merged to `main` at `a462659` by the engine's own
-  merge step), then `docs/sprint-54-live-run-1`.
+- Last merged branch: `fix/runner-quota-exhaustion` (sprint 54 live-run
+  fix F2), after slice 1 (`a462659`, merged by the engine) and
+  `docs/sprint-54-live-run-1`.
 - Current implementation branch: none by hand. Next: sprint 54 slice 2a
   (engine command table) as a dogfood task picked up by `foreman serve
   foreman`.
 
 ## Active branches
 
+- `fix/runner-quota-exhaustion` — sprint 54 live-run fix F2: backend quota
+  exhaustion pauses the task until the reset; merged to `main`
 - `docs/sprint-54-live-run-1` — live-run notes for run 1, sprint doc and
   status updates, `.gitignore` covers a `venv` symlink; merged to `main`
 - `feat/task-add-foreman-serve-resident-engine-worker-with-a-project-engine-lock`
@@ -66,7 +67,22 @@
 - Phase 0 of the production readiness review is complete: an unattended run
   is safe on one machine.
 
-## Latest update — sprint 54 live run 1 closed
+## Latest update — sprint 54 live run 2: quota exhaustion
+
+- The first resident run (`foreman serve foreman`) picked up slice 2a within
+  a second, but 56 seconds in the Claude subscription's five-hour window ran
+  out. The runner surfaced the "session limit" result as a plain agent error,
+  the workflow had no transition for it, and the task was blocked with the
+  quota text as its reason; the engine then idled, logging two INFO lines
+  every five seconds. SIGTERM stopped it cleanly (verified live).
+- Branch `fix/runner-quota-exhaustion`: quota exhaustion is now an
+  infrastructure condition with a reset time. The task keeps its resume point
+  and `in_progress` status, the run records `failure_type=quota` and
+  `engine.quota_exhausted`, `foreman run` exits 75, and `foreman serve` waits
+  for the reset before the next pass. Idle passes log once at INFO.
+- `docs/reviews/sprint-54-live-run-notes.md` carries observations 25–28.
+
+## Previous update — sprint 54 live run 1 closed
 
 - Slice 1 was carried end to end by the engine on the dogfood project:
   develop (Opus 5, 24.5 min), built-in tests, code review (Sonnet 4.6),

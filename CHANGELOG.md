@@ -32,6 +32,17 @@ memory changes rather than versioned product releases.
   firehose at DEBUG. Retention pruning and crash recovery are gated behind
   `run_project(maintenance=...)` so idle wakes stay cheap. Recorded as
   ADR-0011; `foreman run --json-logs` opts into the same log format.
+- `fix/runner-quota-exhaustion`: a backend usage quota running out mid-step
+  (Claude Code's "session limit" result after a rejected `rate_limit_event`)
+  is a `QuotaExhaustedError` carrying the reset time; `run_with_retry`
+  surfaces it once without retries; the orchestrator pauses the task at its
+  current step (`in_progress`, resume point persisted, lease released, no
+  loop budget spent) with `Run.failure_type=quota` and an
+  `engine.quota_exhausted` event instead of blocking it; `foreman run` exits
+  75 with the reset time; `foreman serve` waits for the reset (bounded to
+  one minute to six hours) and resumes. `Run.failure_type` is now set for
+  quota, preflight, infrastructure, and agent failures. Idle passes are
+  narrated once at INFO and repeated at DEBUG.
 - `fix/runner-progress-lines`: the Claude Code runner turns progress-only
   stream lines (`system`/`thinking_tokens`, allowed `rate_limit_event`) into
   non-persisted `agent.tick` heartbeats instead of one `agent.tool_use` plus
