@@ -283,6 +283,154 @@ class ClaudeCodeRunnerTests(unittest.TestCase):
         self.assertEqual(events[10].payload["duration_ms"], 1234)
         self.assertEqual(events[10].payload["token_count"], 321)
 
+    def _run_lines(self, lines: list[str]) -> list[AgentEvent]:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        config = self.create_config(Path(temp_dir.name))
+        process = _FakeProcess(lines=[line + "\n" for line in lines])
+        runner = ClaudeCodeRunner(
+            popen_factory=_PopenRecorder(process),
+            clock=lambda: 0.0,
+            which=lambda _: "/usr/bin/claude",
+        )
+        return list(runner.run(config))
+
+    def test_run_turns_progress_lines_into_ticks_without_raw_output(self) -> None:
+        thinking = {
+            "type": "system",
+            "subtype": "thinking_tokens",
+            "estimated_tokens": 150,
+            "estimated_tokens_delta": 50,
+            "session_id": "sess-1",
+        }
+        allowed = {
+            "type": "rate_limit_event",
+            "rate_limit_info": {"status": "allowed", "rateLimitType": "five_hour"},
+        }
+        result = {"type": "result", "is_error": False, "session_id": "sess-1", "result": "done"}
+
+        events = self._run_lines([json.dumps(thinking), json.dumps(allowed), json.dumps(result)])
+
+        self.assertEqual(
+            [event.event_type for event in events],
+            [
+                "agent.started",
+                "agent.tick",
+                "agent.tick",
+                "agent.raw_output",
+                "agent.message",
+                "agent.completed",
+            ],
+        )
+        self.assertEqual(events[1].payload, {"source": "thinking_tokens", "estimated_tokens": 150})
+        self.assertEqual(events[2].payload, {"source": "rate_limit", "status": "allowed"})
+        self.assertNotIn(
+            "agent.tool_use",
+            [event.event_type for event in events],
+            "progress lines must not be reported as tool uses",
+        )
+
+    def test_run_maps_init_and_tool_result_lines_and_caps_raw_output(self) -> None:
+        init = {
+            "type": "system",
+            "subtype": "init",
+            "cwd": "/repo",
+            "session_id": "sess-2",
+            "tools": ["Bash", "Read", "Write"],
+            "model": "claude-opus-5",
+            "permissionMode": "bypassPermissions",
+            "slash_commands": ["init", "compact"],
+        }
+        long_text = "x" * 20000
+        tool_result = {
+            "type": "user",
+            "message": {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "toolu_1",
+                        "content": long_text,
+                    },
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "toolu_2",
+                        "is_error": True,
+                        "content": [{"type": "text", "text": "No such file"}],
+                    },
+                ],
+            },
+        }
+        unknown = {"type": "something_new", "detail": {"nested": True}}
+        result = {"type": "result", "is_error": False, "session_id": "sess-2", "result": "done"}
+
+        events = self._run_lines(
+            [json.dumps(init), json.dumps(tool_result), json.dumps(unknown), json.dumps(result)]
+        )
+
+        self.assertEqual(
+            [event.event_type for event in events],
+            [
+                "agent.started",
+                "agent.raw_output",
+                "agent.session",
+                "agent.raw_output",
+                "agent.tool_result",
+                "agent.tool_result",
+                "agent.raw_output",
+                "agent.raw_output",
+                "agent.message",
+                "agent.completed",
+            ],
+        )
+        self.assertEqual(
+            events[2].payload,
+            {
+                "session_id": "sess-2",
+                "model": "claude-opus-5",
+                "cwd": "/repo",
+                "permission_mode": "bypassPermissions",
+                "tool_count": 3,
+            },
+        )
+        capped = events[3].payload
+        self.assertTrue(capped["truncated"])
+        self.assertEqual(capped["length"], len(json.dumps(tool_result)))
+        self.assertLessEqual(len(capped["line"]), 8000)
+        first, second = events[4].payload, events[5].payload
+        self.assertEqual(first["tool_use_id"], "toolu_1")
+        self.assertFalse(first["is_error"])
+        self.assertEqual(first["length"], 20000)
+        self.assertEqual(len(first["preview"]), 500)
+        self.assertTrue(first["truncated"])
+        self.assertEqual(second["tool_use_id"], "toolu_2")
+        self.assertTrue(second["is_error"])
+        self.assertEqual(second["preview"], "No such file")
+        self.assertFalse(second["truncated"])
+        self.assertNotIn("truncated", events[6].payload)
+
+    def test_run_persists_rate_limit_notices_that_are_not_allowed(self) -> None:
+        limited = {
+            "type": "rate_limit_event",
+            "rate_limit_info": {
+                "status": "rejected",
+                "rateLimitType": "five_hour",
+                "resetsAt": 1788528000,
+            },
+        }
+        result = {"type": "result", "is_error": False, "session_id": "sess-3", "result": "done"}
+
+        events = self._run_lines([json.dumps(limited), json.dumps(result)])
+
+        self.assertEqual(
+            [event.event_type for event in events][:3],
+            ["agent.started", "agent.raw_output", "agent.rate_limit"],
+        )
+        self.assertEqual(
+            events[2].payload,
+            {"status": "rejected", "rate_limit_type": "five_hour", "resets_at": 1788528000},
+        )
+
     def test_run_raises_preflight_error_when_executable_is_missing(self) -> None:
         temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(temp_dir.cleanup)

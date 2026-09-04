@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import json
 import logging
+import re
 import subprocess
 import threading
 import unittest
@@ -17,7 +18,10 @@ from foreman.engine_lock import (
     EngineLock,
     EngineLockLostError,
 )
+import foreman
 from foreman.logs import (
+    AGENT_LIFECYCLE_EVENT_TYPES,
+    HIGH_VOLUME_EVENT_TYPES,
     JsonLinesFormatter,
     configure_json_logging,
     event_log_level,
@@ -1014,6 +1018,34 @@ class EventLogLevelTests(unittest.TestCase):
 
     def test_unknown_event_types_default_to_debug(self) -> None:
         self.assertEqual(event_log_level("something.unheard_of"), logging.DEBUG)
+
+    def test_every_emitted_agent_event_is_classified_explicitly(self) -> None:
+        """`agent.*` is enumerated, so a new one must be placed deliberately.
+
+        The other four families are prefix-matched and need no maintenance. This
+        one does: a runner change that adds an `agent.*` event would otherwise
+        fall through to the DEBUG default and quietly vanish from the resident
+        engine's log. `fix/runner-progress-lines` added three
+        (`agent.session`, `agent.tick`, `agent.tool_result`) — this test is what
+        makes the next three deliberate too.
+        """
+
+        package = Path(foreman.__file__).parent
+        emitted: set[str] = set()
+        for source in package.rglob("*.py"):
+            emitted.update(
+                re.findall(r'"(agent\.[a-z_]+)"', source.read_text(encoding="utf-8"))
+            )
+
+        self.assertTrue(emitted, "found no agent event literals to check")
+        classified = AGENT_LIFECYCLE_EVENT_TYPES | HIGH_VOLUME_EVENT_TYPES
+        self.assertEqual(
+            emitted - classified,
+            set(),
+            "unclassified agent event types: add each to AGENT_LIFECYCLE_EVENT_TYPES "
+            "(the step narrative) or HIGH_VOLUME_EVENT_TYPES (the output firehose) "
+            "in foreman/logs.py",
+        )
 
     def test_raw_output_is_not_mirrored_at_info_but_a_workflow_event_is(self) -> None:
         """A resident engine's log must not drown in agent output."""

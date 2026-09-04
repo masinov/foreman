@@ -9,7 +9,7 @@
   (`foreman run foreman`) wherever the engine can carry them; findings are
   recorded in `docs/reviews/sprint-54-live-run-notes.md`.
 - Latest completed sprint: `sprint-53-phase0-unattended-safety`.
-- Last merged branch: `docs/sprint-54-open`.
+- Last merged branch: `fix/runner-progress-lines`.
 - Current implementation branch:
   `feat/task-add-foreman-serve-resident-engine-worker-with-a-project-engine-lock`
   — sprint 54 slice 1 (`foreman serve` and the project engine lock), complete
@@ -20,6 +20,9 @@
 - `feat/task-add-foreman-serve-resident-engine-worker-with-a-project-engine-lock`
   — sprint 54 slice 1: `foreman serve`, `foreman/engine_lock.py`,
   `foreman/logs.py`, ADR-0011; awaiting review/merge
+- `fix/runner-progress-lines` — sprint 54 live-run fix: progress-only
+  stream lines are heartbeats, tool results are capped previews; merged to
+  `main`
 - `docs/sprint-54-open` — opens sprint 54 (Phase 1) and the live-run
   protocol; merged to `main`
 - `chore/remove-bootstrap-supervisors` — sprint 53 slice 6, merged to
@@ -75,16 +78,35 @@
   the orchestrator mirrors every persisted event to the same logger at the
   level `event_log_level()` assigns its family — the narrative at INFO, the
   agent output firehose at DEBUG, so a resident engine's log stays readable.
+  The families `fix/runner-progress-lines` introduced land correctly without a
+  change: `agent.tick` and `agent.tool_result` at DEBUG, `agent.session` at
+  INFO.
 - A failing task is blocked with an `engine.attention_needed` turn and the
   service continues after a doubling backoff; SIGTERM settles the run as
   `killed`, releases the lock, and exits 0 (`foreman run` keeps 130).
-- Recorded as ADR-0011. Suite: 645 tests, OK.
+- Recorded as ADR-0011. Suite after merging `main`: 656 tests, OK
+  (1 skipped: `tests/test_e2e.py` needs playwright).
 - **Known gap, closed by the next slice:** the dashboard's Run button still
   spawns a `foreman run` subprocess, which now competes for the engine lock
   rather than cooperating with a resident worker. Slice 2 replaces it with the
   engine command table.
 
-## Latest update — sprint 53 slice 6: cleanup and sprint close
+## Previous update — sprint 54 live run 1: runner progress lines
+
+- Found while the engine ran sprint 54 slice 1 on itself: the current Claude
+  Code CLI streams `system`/`thinking_tokens` counters about twice a second
+  while the model reasons, and the runner persisted each as an
+  `agent.tool_use` (tool `claude.stream_event`) plus an `agent.raw_output`
+  row; tool results (`user` lines) were persisted twice with their full
+  text (up to 26 KB each). Four minutes of one developer step wrote about
+  400 rows and 550 KB.
+- Branch `fix/runner-progress-lines`: progress lines become non-persisted
+  `agent.tick` heartbeats, tool results become a capped `agent.tool_result`
+  preview, the init line becomes `agent.session`, raw lines are capped at
+  8,000 characters, and unknown message types are no longer reported as
+  tool uses. See `docs/reviews/sprint-54-live-run-notes.md`.
+
+## Previous update — sprint 53 slice 6: cleanup and sprint close
 
 - Branch `chore/remove-bootstrap-supervisors`. Removed
   `scripts/reviewed_claude.py`, `scripts/reviewed_codex.py`, their tests,

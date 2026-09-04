@@ -48,7 +48,7 @@ New:
   `EngineLockLostError`, `stop_engine_on_lock_loss`.
 - `foreman/logs.py` — `JsonLinesFormatter`, `configure_json_logging`,
   `log_event`, `compact_payload`, `event_log_level`.
-- `tests/test_serve.py` — 34 tests.
+- `tests/test_serve.py` — 41 tests.
 - `docs/adr/ADR-0011-resident-engine-and-project-lock.md`.
 
 Changed:
@@ -94,14 +94,14 @@ Changed:
 ## Tests
 
 ```
-./venv/bin/python -m unittest discover -s tests    # 652 tests, OK (1 skipped)
+./venv/bin/python -m unittest discover -s tests    # 656 tests, OK (1 skipped)
 ./venv/bin/python scripts/validate_repo_memory.py  # OK
 ```
 
 The skip is `tests/test_e2e.py`, which needs playwright and pytest; it is
 skipped in this environment before and after this branch.
 
-`tests/test_serve.py` (40 tests) covers: lock refusal naming the holder,
+`tests/test_serve.py` (41 tests) covers: lock refusal naming the holder,
 reacquisition after release, takeover after expiry, heartbeat renewal on its
 own connection, a refused renewal marking the lock lost, a lost lock not
 stealing its successor on release, release on an unhandled error, `--once`,
@@ -114,7 +114,9 @@ truncation, unserializable values, idempotent configuration, event mirroring),
 the event-family level mapping, that an `agent.raw_output` event is not emitted
 at INFO while a `workflow.step_started` event is (and that both are still
 persisted), that dropping the handler to DEBUG surfaces the raw output, and
-that a refused start logs `serve.lock_busy` with the holder and lease expiry.
+that a refused start logs `serve.lock_busy` with the holder and lease expiry,
+and that every `agent.*` event type the package emits is explicitly classified
+rather than falling through to the DEBUG default.
 
 `tests/test_cli.py` adds five: `run` refused under a resident engine, `run`
 releasing the lock so a second run succeeds, `serve --once` logging JSON lines
@@ -162,6 +164,30 @@ $ echo $?
 - Full suite and `scripts/validate_repo_memory.py` pass.
 - `docs/MANUAL.md`, `README.md`, `docs/ARCHITECTURE.md`, `CHANGELOG.md`,
   ADR-0011, and this note are updated.
+
+## Merge reconciliation with `main`
+
+Merged `main` (`2dacef3 fix: stop persisting backend progress lines as tool
+uses`) into the branch. Two doc conflicts, both from both sides prepending to
+the same list; no code conflicted.
+
+- `CHANGELOG.md` — kept main's sprint-54 opening line (it names the live-run
+  protocol) and both bullets: slice 1, then `fix/runner-progress-lines`.
+- `docs/STATUS.md` — last merged branch is now `fix/runner-progress-lines`;
+  both branches are listed under Active branches; slice 1 is the latest update
+  and main's live-run note became the previous one (main had already demoted
+  the sprint 53 heading to `## Previous update`).
+
+The merge turned out to matter for the log-level mapping rather than just the
+docs: main's runner rework started persisting three event types that did not
+exist when the mapping was written — `agent.session`, `agent.tick`, and
+`agent.tool_result`. All three land correctly with no change (`session` INFO;
+`tick` and `tool_result` DEBUG), which is the outcome the mapping was designed
+for, but it happened by luck of naming rather than by construction. Added
+`test_every_emitted_agent_event_is_classified_explicitly`, which scans the
+package for `agent.*` event literals and fails if any is not in either set —
+verified to fail when one is removed. The four other families are
+prefix-matched and need no such guard.
 
 ## Review corrections applied
 
