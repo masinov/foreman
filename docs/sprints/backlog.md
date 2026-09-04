@@ -6,23 +6,26 @@ The readiness review is the forward roadmap. Phase 0 shipped as sprint 53
 (archived at `docs/sprints/archive/sprint-53-phase0-unattended-safety.md`).
 Phases 1 and 2 are queued here in order; sprint 54 opens Phase 1.
 
-### Phase 1 — unattended pilot (next sprints)
+### Phase 1 — unattended pilot (sprint 54 onward)
 
 - `foreman serve` resident worker: project lock, SIGTERM handling, structured
   logging, a command table the dashboard writes to, dead-letter state for
-  tasks that exhaust their retry budget.
+  tasks that exhaust their retry budget. **Sprint 54, slices 1–2.**
 - Intake endpoint: project-level, API-token authenticated, idempotent on an
   external reference, source metadata, policy-chosen initial status
   (`triage` or `todo`); sprints optional over a continuous queue.
+  **Sprint 54, slice 3.**
 - Policy matrix v1: project defaults, task-type rules, per-task overrides for
   triage, plan approval, merge authorization, and notification.
+  **Sprint 54, slice 4.**
 - Planner step per task producing criteria and a protected acceptance test;
   the architect role repurposed from once-per-sprint to once-per-task.
+  **Sprint 54, slice 5.**
 - Worktree per task under a Foreman-owned directory; remove
-  operator-checkout assumptions.
-- Pull-request integration: push, open PR with evidence, watch checks and
-  approvals, auto-merge or wait per policy, mark done on merge; waivers as
-  labels.
+  operator-checkout assumptions. **Sprint 54, slice 6.**
+- Pull-request integration (GitHub via `gh`, decided at sprint 54 open):
+  push, open PR with evidence, watch checks and approvals, auto-merge or
+  wait per policy, mark done on merge; waivers as labels. **Sprint 55.**
 - Facts-based verification: drop the numeric score and verdict ladder, LLM
   judge on by default, acceptance tests in a protected path.
 - Login and actor identity; Slack or email on attention events and waiting

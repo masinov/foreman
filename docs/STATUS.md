@@ -2,19 +2,21 @@
 
 ## Current sprint
 
-- Active implementation sprint: **none.** Sprint 53
-  (`sprint-53-phase0-unattended-safety`, Phase 0 of
-  `docs/reviews/production-readiness-review.md`) opened and closed on
-  2026-09-04; all six slices are on `main` and the sprint is archived at
-  `docs/sprints/archive/sprint-53-phase0-unattended-safety.md`.
+- Active implementation sprint: **sprint 54 — Phase 1: resident engine and
+  intake** (`docs/sprints/current.md`), opened 2026-09-04 from Phase 1 of
+  `docs/reviews/production-readiness-review.md`.
+- Method: slices are planned by hand and executed through Foreman itself
+  (`foreman run foreman`) wherever the engine can carry them; findings are
+  recorded in `docs/reviews/sprint-54-live-run-notes.md`.
 - Latest completed sprint: `sprint-53-phase0-unattended-safety`.
-- Last merged branch: `chore/remove-bootstrap-supervisors`.
-- Current implementation branch: none. Next: sprint 54 from Phase 1 in
-  `docs/sprints/backlog.md` (see `docs/sprints/current.md` for the suggested
-  slice order).
+- Last merged branch: `docs/sprint-54-open`.
+- Current implementation branch: the engine's task branch for slice 1
+  (`foreman serve`), created by the engine from the dogfood task.
 
 ## Active branches
 
+- `docs/sprint-54-open` — opens sprint 54 (Phase 1) and the live-run
+  protocol; merged to `main`
 - `chore/remove-bootstrap-supervisors` — sprint 53 slice 6, merged to
   `main` at sprint close: bootstrap supervisor scripts and the legacy
   supervisor-merge path removed, unused dependency dropped, sprint archived
@@ -44,13 +46,13 @@
 
 ## Current focus
 
+- Sprint 54 (Phase 1): `foreman serve` resident worker, engine command
+  table, intake endpoint, policy matrix v1, planner step, worktree per task.
+  Pull-request integration (GitHub, via `gh`) is queued for sprint 55;
+  login and notifications wait on the identity-provider and channel
+  decisions.
 - Phase 0 of the production readiness review is complete: an unattended run
-  is safe on one machine. The next sprint opens Phase 1 (resident worker,
-  intake endpoint, policy matrix, planner step, worktree isolation,
-  pull-request integration, identity and notifications).
-- Phase 1 (resident worker, intake endpoint, policy matrix, planner step,
-  worktree isolation, pull-request integration) is queued in
-  `docs/sprints/backlog.md`.
+  is safe on one machine.
 
 ## Latest update — sprint 53 slice 6: cleanup and sprint close
 
