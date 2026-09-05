@@ -84,7 +84,11 @@ class BuiltinExecutor:
             )
         if role_id == "_builtin:merge":
             return self._merge(
-                project=project, task=task, store=store, evidence_builder=evidence_builder
+                project=project,
+                task=task,
+                store=store,
+                evidence_builder=evidence_builder,
+                working_dir=task_dir,
             )
         if role_id == "_builtin:mark_done":
             return self._mark_done(
@@ -240,6 +244,7 @@ class BuiltinExecutor:
         task: Task,
         store: ForemanStore | None,
         evidence_builder: Callable[[Task, Project], CompletionEvidence | None] | None = None,
+        working_dir: Path | None = None,
     ) -> BuiltinResult:
         if not task.branch_name:
             detail = "Task branch is not set."
@@ -252,6 +257,25 @@ class BuiltinExecutor:
                         payload={"branch": "", "error": detail},
                     ),
                 ),
+            )
+
+        # Work the developer left uncommitted in the task's own tree is not on
+        # the branch, so merging would silently drop it. Refuse instead.
+        task_dir = Path(working_dir) if working_dir is not None else _task_dir(project, task)
+        if task_dir.is_dir() and not is_worktree_clean(task_dir):
+            return self._block_task(
+                task,
+                detail=(
+                    f"Task worktree {task_dir} has uncommitted changes. Commit or discard "
+                    "them before merging."
+                ),
+                event_type="engine.merge_blocked",
+                payload={
+                    "branch": task.branch_name,
+                    "target": project.default_branch,
+                    "reason": "dirty_worktree",
+                    "worktree": str(task_dir),
+                },
             )
 
         try:

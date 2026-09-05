@@ -333,6 +333,17 @@ class ForemanOrchestratorTests(unittest.TestCase):
         db_path = root / "foreman.db"
         return repo_path, db_path
 
+    def work_dir(self, task: Task, repo_path: Path) -> Path:
+        """Return the tree the engine handed this task's agent.
+
+        Every agent step runs in the task's own git worktree, so a fake agent
+        that edits files has to edit *that* tree — a file written into the
+        operator's checkout would never reach the task branch. Falls back to
+        the repository for the few fixtures that run before a worktree exists.
+        """
+
+        return Path(task.worktree_path) if task.worktree_path else repo_path
+
     def git(self, repo_path: Path, *args: str) -> subprocess.CompletedProcess[str]:
         result = subprocess.run(
             ["git", *args],
@@ -488,9 +499,9 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 self.assertIsNone(carried_output)
                 self.assertIn("Task: Implement orchestrator loop", prompt)
                 self.assertIn("Branch: feat/task-1", prompt)
-                self.write_text(repo_path / "feature.txt", "implemented\n")
-                self.write_text(repo_path / "ready.txt", "ready\n")
-                self.commit_all(repo_path, "feat: implement workflow slice")
+                self.write_text(self.work_dir(task, repo_path) / "feature.txt", "implemented\n")
+                self.write_text(self.work_dir(task, repo_path) / "ready.txt", "ready\n")
+                self.commit_all(self.work_dir(task, repo_path), "feat: implement workflow slice")
                 return AgentExecutionResult(
                     outcome="done",
                     detail=(
@@ -554,12 +565,17 @@ class ForemanOrchestratorTests(unittest.TestCase):
             self.assertIn("workflow.transition", event_types)
             self.assertNotIn("workflow.no_transition", event_types)
 
-        self.assertTrue((repo_path / "feature.txt").is_file())
-        self.assertTrue((repo_path / "ready.txt").is_file())
+        # The work landed on the default branch, and the operator's checkout
+        # was never touched to get it there: it is still on `main`, and its
+        # working tree still holds only what it held before the run.
+        merged = self.git(repo_path, "ls-tree", "-r", "--name-only", "main").stdout
+        self.assertIn("feature.txt", merged)
+        self.assertIn("ready.txt", merged)
         self.assertEqual(
             self.git(repo_path, "branch", "--show-current").stdout.strip(),
             "main",
         )
+        self.assertFalse((repo_path / "feature.txt").is_file())
 
     def test_secure_workflow_runs_through_security_review_and_finishes_task(self) -> None:
         repo_path, db_path = self.create_workspace()
@@ -577,12 +593,11 @@ class ForemanOrchestratorTests(unittest.TestCase):
             store.save_project(project)
 
             def developer_handler(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
-                del task
                 self.assertIsNone(carried_output)
                 self.assertIn("Task: Ship secure workflow slice", prompt)
-                self.write_text(repo_path / "feature.txt", "secure implementation\n")
-                self.write_text(repo_path / "ready.txt", "ready\n")
-                self.commit_all(repo_path, "feat: implement secure workflow slice")
+                self.write_text(self.work_dir(task, repo_path) / "feature.txt", "secure implementation\n")
+                self.write_text(self.work_dir(task, repo_path) / "ready.txt", "ready\n")
+                self.commit_all(self.work_dir(task, repo_path), "feat: implement secure workflow slice")
                 return AgentExecutionResult(
                     outcome="done",
                     detail="Implemented the secure workflow slice.",
@@ -695,11 +710,10 @@ class ForemanOrchestratorTests(unittest.TestCase):
             executor = ScriptedAgentExecutor({})
 
             def developer_one(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
-                del task
                 self.assertIsNone(carried_output)
-                self.write_text(repo_path / "feature.txt", "token = 'hardcoded'\n")
-                self.write_text(repo_path / "ready.txt", "ready\n")
-                self.commit_all(repo_path, "feat: initial secure workflow implementation")
+                self.write_text(self.work_dir(task, repo_path) / "feature.txt", "token = 'hardcoded'\n")
+                self.write_text(self.work_dir(task, repo_path) / "ready.txt", "ready\n")
+                self.commit_all(self.work_dir(task, repo_path), "feat: initial secure workflow implementation")
                 return AgentExecutionResult(
                     outcome="done",
                     detail="Initial implementation complete.",
@@ -724,14 +738,13 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 )
 
             def developer_two(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
-                del task
                 self.assertEqual(
                     carried_output,
                     "Remove the hardcoded token in feature.txt.",
                 )
                 self.assertIn("Remove the hardcoded token in feature.txt.", prompt)
-                self.write_text(repo_path / "feature.txt", "token = os.environ['TOKEN']\n")
-                self.commit_all(repo_path, "fix: remove hardcoded token")
+                self.write_text(self.work_dir(task, repo_path) / "feature.txt", "token = os.environ['TOKEN']\n")
+                self.commit_all(self.work_dir(task, repo_path), "fix: remove hardcoded token")
                 return AgentExecutionResult(
                     outcome="done",
                     detail="Removed the hardcoded token.",
@@ -847,20 +860,19 @@ class ForemanOrchestratorTests(unittest.TestCase):
             def developer_one(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
                 self.assertIsNone(carried_output)
                 self.assertIn("Branch: feat/task-1", prompt)
-                self.write_text(repo_path / "feature.txt", "initial implementation\n")
-                self.commit_all(repo_path, "feat: initial implementation")
+                self.write_text(self.work_dir(task, repo_path) / "feature.txt", "initial implementation\n")
+                self.commit_all(self.work_dir(task, repo_path), "feat: initial implementation")
                 return AgentExecutionResult(
                     outcome="done",
                     detail="Initial implementation complete.",
                 )
 
             def developer_two(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
-                del task
                 # Tests run before review: the failure comes straight back.
                 self.assertEqual(carried_output, "Command exited with 1.")
                 self.assertIn("Command exited with 1.", prompt)
-                self.write_text(repo_path / "ready.txt", "ready now\n")
-                self.commit_all(repo_path, "fix: add ready marker")
+                self.write_text(self.work_dir(task, repo_path) / "ready.txt", "ready now\n")
+                self.commit_all(self.work_dir(task, repo_path), "fix: add ready marker")
                 return AgentExecutionResult(
                     outcome="done",
                     detail="Added the ready marker after test failure.",
@@ -877,11 +889,10 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 )
 
             def developer_three(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
-                del task
                 self.assertEqual(carried_output, "Please document the ready marker.")
                 self.assertIn("Please document the ready marker.", prompt)
-                self.write_text(repo_path / "feature.txt", "updated after review\n")
-                self.commit_all(repo_path, "feat: address review guidance")
+                self.write_text(self.work_dir(task, repo_path) / "feature.txt", "updated after review\n")
+                self.commit_all(self.work_dir(task, repo_path), "feat: address review guidance")
                 return AgentExecutionResult(
                     outcome="done",
                     detail="Updated after review feedback.",
@@ -1008,18 +1019,18 @@ class ForemanOrchestratorTests(unittest.TestCase):
             executor = ScriptedAgentExecutor({})
 
             def developer_one(*, task, prompt, carried_output):
-                self.write_text(repo_path / "feature.txt", "v1\n")
-                self.commit_all(repo_path, "feat: v1")
+                self.write_text(self.work_dir(task, repo_path) / "feature.txt", "v1\n")
+                self.commit_all(self.work_dir(task, repo_path), "feat: v1")
                 return AgentExecutionResult(outcome="done", detail="v1 done.")
 
             def developer_two(*, task, prompt, carried_output):
-                self.write_text(repo_path / "feature.txt", "v2\n")
-                self.commit_all(repo_path, "feat: v2")
+                self.write_text(self.work_dir(task, repo_path) / "feature.txt", "v2\n")
+                self.commit_all(self.work_dir(task, repo_path), "feat: v2")
                 return AgentExecutionResult(outcome="done", detail="v2 done.")
 
             def developer_three(*, task, prompt, carried_output):
-                self.write_text(repo_path / "ready.txt", "ready\n")
-                self.commit_all(repo_path, "fix: ready marker")
+                self.write_text(self.work_dir(task, repo_path) / "ready.txt", "ready\n")
+                self.commit_all(self.work_dir(task, repo_path), "fix: ready marker")
                 return AgentExecutionResult(outcome="done", detail="v3 done.")
 
             def reviewer_approve(*, task, prompt, carried_output):
@@ -1084,9 +1095,9 @@ class ForemanOrchestratorTests(unittest.TestCase):
             executor = ScriptedAgentExecutor({})
 
             def developer_one(*, task, prompt, carried_output):
-                self.write_text(repo_path / "feature.txt", "impl\n")
-                self.write_text(repo_path / "ready.txt", "ready\n")
-                self.commit_all(repo_path, "feat: implement and ready")
+                self.write_text(self.work_dir(task, repo_path) / "feature.txt", "impl\n")
+                self.write_text(self.work_dir(task, repo_path) / "ready.txt", "ready\n")
+                self.commit_all(self.work_dir(task, repo_path), "feat: implement and ready")
                 return AgentExecutionResult(outcome="done", detail="Implemented.")
 
             def triage_escalate(*, task, prompt, carried_output):
@@ -1148,9 +1159,9 @@ class ForemanOrchestratorTests(unittest.TestCase):
             executor = ScriptedAgentExecutor({})
 
             def developer_one(*, task, prompt, carried_output):
-                self.write_text(repo_path / "feature.txt", "impl\n")
-                self.write_text(repo_path / "ready.txt", "ready\n")
-                self.commit_all(repo_path, "feat: implement and ready")
+                self.write_text(self.work_dir(task, repo_path) / "feature.txt", "impl\n")
+                self.write_text(self.work_dir(task, repo_path) / "ready.txt", "ready\n")
+                self.commit_all(self.work_dir(task, repo_path), "feat: implement and ready")
                 return AgentExecutionResult(outcome="done", detail="Implemented.")
 
             def triage_approve(*, task, prompt, carried_output):
@@ -1252,23 +1263,22 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 )
 
             def developer_two(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
-                del task
                 assert carried_output is not None
                 self.assertIn("Merge conflict against 'main'.", carried_output)
                 self.assertIn("go back through code review", carried_output)
                 merge_result = subprocess.run(
                     ["git", "merge", "main"],
-                    cwd=repo_path,
+                    cwd=self.work_dir(task, repo_path),
                     capture_output=True,
                     text=True,
                     check=False,
                 )
                 self.assertNotEqual(merge_result.returncode, 0)
                 self.write_text(
-                    repo_path / "docs" / "sprints" / "current.md",
+                    self.work_dir(task, repo_path) / "docs" / "sprints" / "current.md",
                     "resolved main + branch update\n",
                 )
-                self.commit_all(repo_path, "docs: resolve sprint merge conflict")
+                self.commit_all(self.work_dir(task, repo_path), "docs: resolve sprint merge conflict")
                 return AgentExecutionResult(
                     outcome="done",
                     detail="Resolved the merge conflict against main.",
@@ -1408,23 +1418,22 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 )
 
             def developer_two(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
-                del task
                 assert carried_output is not None
                 self.assertIn("Merge conflict against 'main'.", carried_output)
                 self.assertIn("go back through code review", carried_output)
                 merge_result = subprocess.run(
                     ["git", "merge", "main"],
-                    cwd=repo_path,
+                    cwd=self.work_dir(task, repo_path),
                     capture_output=True,
                     text=True,
                     check=False,
                 )
                 self.assertNotEqual(merge_result.returncode, 0)
                 self.write_text(
-                    repo_path / "docs" / "sprints" / "current.md",
+                    self.work_dir(task, repo_path) / "docs" / "sprints" / "current.md",
                     "resolved main + branch update\n",
                 )
-                self.commit_all(repo_path, "docs: resolve sprint merge conflict")
+                self.commit_all(self.work_dir(task, repo_path), "docs: resolve sprint merge conflict")
                 return AgentExecutionResult(
                     outcome="done",
                     detail="Resolved the merge conflict against main.",
@@ -1734,29 +1743,27 @@ class ForemanOrchestratorTests(unittest.TestCase):
             executor = ScriptedAgentExecutor({})
 
             def architect_handler(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
-                del task
                 self.assertIsNone(carried_output)
                 self.assertIn("Title: Approve the architect plan", prompt)
-                self.write_text(repo_path / "plan.md", "Initial plan\n")
-                self.commit_all(repo_path, "docs: capture initial plan")
+                self.write_text(self.work_dir(task, repo_path) / "plan.md", "Initial plan\n")
+                self.commit_all(self.work_dir(task, repo_path), "docs: capture initial plan")
                 return AgentExecutionResult(
                     outcome="done",
                     detail="Architect plan ready for approval.",
                 )
 
             def developer_handler(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
-                del task
                 self.assertIsNone(carried_output)
                 self.assertIn("## Task: Approve the architect plan", prompt)
-                self.write_text(repo_path / "plan.md", "approved plan\n")
+                self.write_text(self.work_dir(task, repo_path) / "plan.md", "approved plan\n")
                 # Commit concrete files on the branch; file names contain keywords
                 # from the task acceptance criteria "Task reaches done after review,
                 # test, and merge." so the completion guard can score them.
-                (repo_path / "plan_review.py").write_text("def review(): pass\n")
-                (repo_path / "plan_test.py").write_text("def test(): pass\n")
-                (repo_path / "plan_merge.py").write_text("def merge(): pass\n")
-                (repo_path / "ready.txt").write_text("ok\n")
-                self.commit_all(repo_path, "feat: implement approved plan")
+                (self.work_dir(task, repo_path) / "plan_review.py").write_text("def review(): pass\n")
+                (self.work_dir(task, repo_path) / "plan_test.py").write_text("def test(): pass\n")
+                (self.work_dir(task, repo_path) / "plan_merge.py").write_text("def merge(): pass\n")
+                (self.work_dir(task, repo_path) / "ready.txt").write_text("ok\n")
+                self.commit_all(self.work_dir(task, repo_path), "feat: implement approved plan")
                 return AgentExecutionResult(
                     outcome="done",
                     detail="Implemented the approved plan.",
@@ -1851,21 +1858,19 @@ class ForemanOrchestratorTests(unittest.TestCase):
             executor = ScriptedAgentExecutor({})
 
             def architect_one(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
-                del task
                 self.assertIsNone(carried_output)
-                self.write_text(repo_path / "plan.md", "Initial plan\n")
-                self.commit_all(repo_path, "docs: draft initial plan")
+                self.write_text(self.work_dir(task, repo_path) / "plan.md", "Initial plan\n")
+                self.commit_all(self.work_dir(task, repo_path), "docs: draft initial plan")
                 return AgentExecutionResult(
                     outcome="done",
                     detail="Initial plan ready.",
                 )
 
             def architect_two(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
-                del task
                 self.assertEqual(carried_output, "rethink the approach")
                 self.assertIn("rethink the approach", prompt)
-                self.write_text(repo_path / "plan.md", "Revised plan\n")
-                self.commit_all(repo_path, "docs: revise plan after denial")
+                self.write_text(self.work_dir(task, repo_path) / "plan.md", "Revised plan\n")
+                self.commit_all(self.work_dir(task, repo_path), "docs: revise plan after denial")
                 return AgentExecutionResult(
                     outcome="done",
                     detail="Revised plan ready.",
@@ -1966,12 +1971,11 @@ class ForemanOrchestratorTests(unittest.TestCase):
             self.assertIsNone(resume_result.task.blocked_reason)
 
             def developer_handler(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
-                del task
                 self.assertIsNone(carried_output)
-                self.write_text(repo_path / "feature.txt", "implemented after defer\n")
-                self.write_text(repo_path / "ready.txt", "ready\n")
-                self.write_text(repo_path / "deferred_task.py", "def done(): pass\n")
-                self.commit_all(repo_path, "feat: finish deferred task")
+                self.write_text(self.work_dir(task, repo_path) / "feature.txt", "implemented after defer\n")
+                self.write_text(self.work_dir(task, repo_path) / "ready.txt", "ready\n")
+                self.write_text(self.work_dir(task, repo_path) / "deferred_task.py", "def done(): pass\n")
+                self.commit_all(self.work_dir(task, repo_path), "feat: finish deferred task")
                 return AgentExecutionResult(
                     outcome="done",
                     detail="Finished after deferred resume.",
@@ -2036,9 +2040,9 @@ class ForemanOrchestratorTests(unittest.TestCase):
             ) -> AgentExecutionResult:
                 self.assertIn("### Output Correction", prompt)
                 self.assertIn("end with `TASK_COMPLETE`", prompt)
-                self.write_text(repo_path / "feature.txt", "implemented\n")
-                self.write_text(repo_path / "ready.txt", "ready\n")
-                self.commit_all(repo_path, "feat: implement workflow slice")
+                self.write_text(self.work_dir(task, repo_path) / "feature.txt", "implemented\n")
+                self.write_text(self.work_dir(task, repo_path) / "ready.txt", "ready\n")
+                self.commit_all(self.work_dir(task, repo_path), "feat: implement workflow slice")
                 return AgentExecutionResult(
                     outcome="done",
                     detail="Implemented the workflow slice.",
@@ -2091,9 +2095,9 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 prompt: str,
                 carried_output: str | None,
             ) -> AgentExecutionResult:
-                self.write_text(repo_path / "feature.txt", "implemented\n")
-                self.write_text(repo_path / "ready.txt", "ready\n")
-                self.commit_all(repo_path, "feat: implement workflow slice")
+                self.write_text(self.work_dir(task, repo_path) / "feature.txt", "implemented\n")
+                self.write_text(self.work_dir(task, repo_path) / "ready.txt", "ready\n")
+                self.commit_all(self.work_dir(task, repo_path), "feat: implement workflow slice")
                 return AgentExecutionResult(
                     outcome="done",
                     detail="Implemented the workflow slice.",
@@ -2167,7 +2171,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
             store.save_project(project)
             runner = ScriptedNativeRunner(
                 {
-                    1: lambda config: self._native_developer_success(repo_path, config),
+                    1: lambda config: self._native_developer_success(config),
                     2: lambda config: self._native_reviewer_approve(config),
                 }
             )
@@ -2219,7 +2223,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
             runner = ScriptedNativeRunner(
                 {
                     1: InfrastructureError("transient backend failure"),
-                    2: lambda config: self._native_developer_success(repo_path, config),
+                    2: lambda config: self._native_developer_success(config),
                     3: lambda config: self._native_reviewer_approve(config),
                 }
             )
@@ -2275,7 +2279,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
             }
             runner = ScriptedNativeRunner(
                 {
-                    1: lambda config: self._native_developer_success(repo_path, config),
+                    1: lambda config: self._native_developer_success(config),
                     2: lambda config: self._native_reviewer_approve(config),
                 }
             )
@@ -2350,9 +2354,9 @@ class ForemanOrchestratorTests(unittest.TestCase):
             store.save_project(project)
             runner = ScriptedNativeRunner(
                 {
-                    1: lambda config: self._native_developer_initial_pass(repo_path, config),
+                    1: lambda config: self._native_developer_initial_pass(config),
                     2: lambda config: self._native_reviewer_deny(config),
-                    3: lambda config: self._native_developer_followup(repo_path, config),
+                    3: lambda config: self._native_developer_followup(config),
                     4: lambda config: self._native_reviewer_approve(config),
                 }
             )
@@ -2416,7 +2420,6 @@ class ForemanOrchestratorTests(unittest.TestCase):
             runner = ScriptedNativeRunner(
                 {
                     1: lambda config: self._native_developer_resumed(
-                        repo_path,
                         config,
                         expected_session_id="persisted-dev-session",
                     ),
@@ -2627,7 +2630,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 assert persisted_task is not None
                 self.assertEqual(persisted_task.workflow_current_step, "develop")
                 self.assertIsNone(config.session_id)
-                yield from self._native_developer_success(repo_path, config)
+                yield from self._native_developer_success(config)
 
             runner = ScriptedNativeRunner(
                 {
@@ -2674,7 +2677,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
 
             runner = ScriptedNativeRunner(
                 {
-                    1: lambda config: self._native_developer_success(repo_path, config),
+                    1: lambda config: self._native_developer_success(config),
                     2: crashing_reviewer,
                 }
             )
@@ -2722,7 +2725,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
             store.save_project(project)
             runner = ScriptedNativeRunner(
                 {
-                    1: lambda config: self._native_developer_success(repo_path, config),
+                    1: lambda config: self._native_developer_success(config),
                     2: lambda config: self._native_reviewer_approve(config),
                 }
             )
@@ -3412,11 +3415,10 @@ class ForemanOrchestratorTests(unittest.TestCase):
             store.save_event(old_done_event)
 
             def developer_handler(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
-                del task
                 self.assertIsNone(carried_output)
-                self.write_text(repo_path / "feature.txt", "retention-safe implementation\n")
-                self.write_text(repo_path / "ready.txt", "ready\n")
-                self.commit_all(repo_path, "feat: finish pruning slice")
+                self.write_text(self.work_dir(task, repo_path) / "feature.txt", "retention-safe implementation\n")
+                self.write_text(self.work_dir(task, repo_path) / "ready.txt", "ready\n")
+                self.commit_all(self.work_dir(task, repo_path), "feat: finish pruning slice")
                 return AgentExecutionResult(
                     outcome="done",
                     detail="Finished the pruning slice.",
@@ -3486,7 +3488,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
             )
             runner = ScriptedNativeRunner(
                 {
-                    1: lambda config: self._native_developer_success(repo_path, config),
+                    1: lambda config: self._native_developer_success(config),
                     2: lambda config: self._native_reviewer_approve(config),
                 }
             )
@@ -3543,9 +3545,9 @@ class ForemanOrchestratorTests(unittest.TestCase):
             )
             runner = ScriptedNativeRunner(
                 {
-                    1: lambda config: self._native_developer_initial_pass(repo_path, config),
+                    1: lambda config: self._native_developer_initial_pass(config),
                     2: lambda config: self._native_reviewer_deny(config),
-                    3: lambda config: self._native_developer_followup(repo_path, config),
+                    3: lambda config: self._native_developer_followup(config),
                     4: lambda config: self._native_reviewer_approve(config),
                 }
             )
@@ -3606,7 +3608,6 @@ class ForemanOrchestratorTests(unittest.TestCase):
             runner = ScriptedNativeRunner(
                 {
                     1: lambda config: self._native_developer_resumed(
-                        repo_path,
                         config,
                         expected_session_id="persisted-thread-123",
                     ),
@@ -3672,7 +3673,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
             )
             runner = ScriptedNativeRunner(
                 {
-                    1: lambda config: self._native_developer_success(repo_path, config),
+                    1: lambda config: self._native_developer_success(config),
                     2: lambda config: self._native_reviewer_approve(config),
                 }
             )
@@ -3700,13 +3701,15 @@ class ForemanOrchestratorTests(unittest.TestCase):
 
     def _native_developer_success(
         self,
-        repo_path: Path,
         config: AgentRunConfig,
     ) -> tuple[AgentEvent, ...]:
+        # The engine hands the runner the task's own worktree; committing
+        # anywhere else would not land on the task branch.
+        work_dir = Path(config.working_dir)
         self.assertIn("## Task: Implement orchestrator loop", config.prompt)
-        self.write_text(repo_path / "feature.txt", "implemented\n")
-        self.write_text(repo_path / "ready.txt", "ready\n")
-        self.commit_all(repo_path, "feat: implement workflow slice with native runner")
+        self.write_text(work_dir / "feature.txt", "implemented\n")
+        self.write_text(work_dir / "ready.txt", "ready\n")
+        self.commit_all(work_dir, "feat: implement workflow slice with native runner")
         return (
             AgentEvent(
                 "agent.message",
@@ -3725,13 +3728,13 @@ class ForemanOrchestratorTests(unittest.TestCase):
 
     def _native_developer_initial_pass(
         self,
-        repo_path: Path,
         config: AgentRunConfig,
     ) -> tuple[AgentEvent, ...]:
+        work_dir = Path(config.working_dir)
         self.assertIsNone(config.session_id)
-        self.write_text(repo_path / "feature.txt", "initial implementation\n")
-        self.write_text(repo_path / "ready.txt", "ready\n")
-        self.commit_all(repo_path, "feat: initial native runner implementation")
+        self.write_text(work_dir / "feature.txt", "initial implementation\n")
+        self.write_text(work_dir / "ready.txt", "ready\n")
+        self.commit_all(work_dir, "feat: initial native runner implementation")
         return (
             AgentEvent(
                 "agent.message",
@@ -3750,13 +3753,13 @@ class ForemanOrchestratorTests(unittest.TestCase):
 
     def _native_developer_followup(
         self,
-        repo_path: Path,
         config: AgentRunConfig,
     ) -> tuple[AgentEvent, ...]:
+        work_dir = Path(config.working_dir)
         self.assertEqual(config.session_id, "dev-session")
-        self.write_text(repo_path / "feature.txt", "updated after review\n")
-        self.write_text(repo_path / "ready.txt", "ready\n")
-        self.commit_all(repo_path, "fix: address review feedback with native runner")
+        self.write_text(work_dir / "feature.txt", "updated after review\n")
+        self.write_text(work_dir / "ready.txt", "ready\n")
+        self.commit_all(work_dir, "fix: address review feedback with native runner")
         return (
             AgentEvent(
                 "agent.message",
@@ -3775,15 +3778,15 @@ class ForemanOrchestratorTests(unittest.TestCase):
 
     def _native_developer_resumed(
         self,
-        repo_path: Path,
         config: AgentRunConfig,
         *,
         expected_session_id: str,
     ) -> tuple[AgentEvent, ...]:
+        work_dir = Path(config.working_dir)
         self.assertEqual(config.session_id, expected_session_id)
-        self.write_text(repo_path / "feature.txt", "resumed implementation\n")
-        self.write_text(repo_path / "ready.txt", "ready\n")
-        self.commit_all(repo_path, "fix: resume native runner session")
+        self.write_text(work_dir / "feature.txt", "resumed implementation\n")
+        self.write_text(work_dir / "ready.txt", "ready\n")
+        self.commit_all(work_dir, "fix: resume native runner session")
         return (
             AgentEvent(
                 "agent.message",
@@ -3839,11 +3842,10 @@ class ForemanOrchestratorTests(unittest.TestCase):
             )
 
             def developer_handler(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
-                del task
                 self.assertIsNone(carried_output)
-                self.write_text(repo_path / "feature.txt", "implemented\n")
-                self.write_text(repo_path / "ready.txt", "ready\n")
-                self.commit_all(repo_path, "feat: implement fallback scenario")
+                self.write_text(self.work_dir(task, repo_path) / "feature.txt", "implemented\n")
+                self.write_text(self.work_dir(task, repo_path) / "ready.txt", "ready\n")
+                self.commit_all(self.work_dir(task, repo_path), "feat: implement fallback scenario")
                 return AgentExecutionResult(
                     outcome="done",
                     detail="Implemented the fallback scenario.",
@@ -4147,8 +4149,8 @@ class ForemanOrchestratorTests(unittest.TestCase):
 
             def developer_handler(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
                 del carried_output
-                context_path = repo_path / ".foreman" / "context.md"
-                status_path = repo_path / ".foreman" / "status.md"
+                context_path = self.work_dir(task, repo_path) / ".foreman" / "context.md"
+                status_path = self.work_dir(task, repo_path) / ".foreman" / "status.md"
                 self.assertTrue(context_path.is_file())
                 self.assertTrue(status_path.is_file())
                 self.assertIn("Sprint: Orchestrator", context_path.read_text(encoding="utf-8"))
@@ -4159,9 +4161,9 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 self.assertIn("## Current Sprint Detail", status_path.read_text(encoding="utf-8"))
                 self.assertIn("Title: Orchestrator", status_path.read_text(encoding="utf-8"))
                 self.assertIn("# Sprint Context", prompt)
-                self.write_text(repo_path / "feature.txt", "implemented\n")
-                self.write_text(repo_path / "ready.txt", "ready\n")
-                self.commit_all(repo_path, "feat: implement workflow slice")
+                self.write_text(self.work_dir(task, repo_path) / "feature.txt", "implemented\n")
+                self.write_text(self.work_dir(task, repo_path) / "ready.txt", "ready\n")
+                self.commit_all(self.work_dir(task, repo_path), "feat: implement workflow slice")
                 return AgentExecutionResult(
                     outcome="done",
                     detail="Implemented the workflow slice.",
@@ -4252,11 +4254,10 @@ class ForemanOrchestratorTests(unittest.TestCase):
             )
 
             def developer_handler(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
-                del task
                 del carried_output
                 self.assertIn("# Sprint Context", prompt)
-                self.write_text(repo_path / "feature.txt", "implemented\n")
-                self.commit_all(repo_path, "feat: implement context-write workflow")
+                self.write_text(self.work_dir(task, repo_path) / "feature.txt", "implemented\n")
+                self.commit_all(self.work_dir(task, repo_path), "feat: implement context-write workflow")
                 return AgentExecutionResult(
                     outcome="done",
                     detail="Implemented the workflow slice.",
@@ -4296,11 +4297,22 @@ class ForemanOrchestratorTests(unittest.TestCase):
             sync_context_payloads = [
                 event.payload for event in context_events if event.run_id == sync_context_run.id
             ]
+            # The projection is written into the project's context directory
+            # and mirrored into the task worktree's own, so the agent finds it
+            # where it works.
             self.assertEqual(
                 sync_context_payloads,
                 [
                     {"path": ".foreman/context.md", "schema_version": "1.0"},
                     {"path": ".foreman/status.md", "schema_version": "1.0"},
+                    {
+                        "path": ".foreman/worktrees/FD-1/.foreman/context.md",
+                        "schema_version": "1.0",
+                    },
+                    {
+                        "path": ".foreman/worktrees/FD-1/.foreman/status.md",
+                        "schema_version": "1.0",
+                    },
                 ],
             )
 
@@ -7002,10 +7014,12 @@ class CompletionGuardTests(unittest.TestCase):
             acceptance_criteria="Add auth module",
         )
 
-        self.git(repo_path, "checkout", "-b", task.branch_name)
-        self.write_text(repo_path / "auth.py", "def issue_token(user_id): return f'token-{user_id}'\n")
-
         from foreman.builtins import BuiltinExecutor
+        from foreman.worktrees import WorktreeManager
+
+        worktree = WorktreeManager(project).ensure(task)
+        task.worktree_path = str(worktree)
+        self.write_text(worktree / "auth.py", "def issue_token(user_id): return f'token-{user_id}'\n")
 
         task.status = "in_progress"
         executor = BuiltinExecutor()
@@ -7021,7 +7035,8 @@ class CompletionGuardTests(unittest.TestCase):
         self.assertEqual(result.outcome, "blocked")
         self.assertIn("uncommitted changes", result.detail)
         self.assertEqual(task.status, "blocked")
-        self.assertEqual(self.git(repo_path, "branch", "--show-current").stdout.strip(), task.branch_name)
+        # The refusal did not move the operator's checkout off its own branch.
+        self.assertEqual(self.git(repo_path, "branch", "--show-current").stdout.strip(), "main")
 
     def test_merge_blocks_branch_without_committed_delta(self) -> None:
         """_builtin:merge refuses success when the task branch has no commits ahead of main."""
