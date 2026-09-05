@@ -35,6 +35,7 @@ from .orchestrator import ForemanOrchestrator, OrchestratorError
 from .scaffold import generate_project_id
 from .settings import ProjectSettings, SettingsError
 from .store import ForemanStore
+from .worktrees import WorktreeError, WorktreeManager
 
 _VALID_SPRINT_TRANSITIONS: dict[str, tuple[SprintStatus, ...]] = {
     "planned": ("active", "cancelled"),
@@ -811,6 +812,7 @@ class DashboardService:
             "description": task.description,
             "priority": task.priority,
             "branch_name": task.branch_name,
+            "worktree_path": task.worktree_path,
             "assigned_role": task.assigned_role,
             "created_by": task.created_by,
             "blocked_reason": task.blocked_reason,
@@ -1164,8 +1166,42 @@ class DashboardService:
         task.workflow_current_step = None
         task.workflow_carried_output = None
         task.completed_at = self._now().isoformat()
+        removed = self._discard_task_worktree(task)
         self.store.save_task(task)
-        return {"status": "cancelled", "task_id": task_id}
+        return {
+            "status": "cancelled",
+            "task_id": task_id,
+            "removed_worktree": removed,
+        }
+
+    def delete_task(self, task_id: str) -> dict[str, Any]:
+        """Delete one task, its history, and the worktree it was working in."""
+
+        task = self._require_task(task_id)
+        project_id = task.project_id
+        self._discard_task_worktree(task)
+        self.store.delete_task(task_id)
+        return {"ok": "deleted", "task_id": task_id, "project_id": project_id}
+
+    def _discard_task_worktree(self, task: Task) -> str | None:
+        """Remove a finished task's worktree; return the path that went away.
+
+        Best effort by design: the task row is the record that matters, and
+        `foreman worktree prune` exists to sweep up anything left behind.
+        """
+
+        recorded = task.worktree_path
+        if not recorded:
+            return None
+        project = self.store.get_project(task.project_id)
+        if project is None:
+            return None
+        try:
+            WorktreeManager(project).remove_path(Path(recorded))
+        except (WorktreeError, OSError):
+            return None
+        task.worktree_path = None
+        return recorded
 
     def approve_task(self, task_id: str) -> dict[str, Any]:
         """Resume one human gate with an approval outcome."""

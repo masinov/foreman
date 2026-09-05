@@ -3815,6 +3815,14 @@ select.form-input {
   font-weight: 500;
 }
 
+/* Worktree paths are long and only meaningful character by character. */
+.detail-path {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  word-break: break-all;
+  text-align: right;
+}
+
 /* ═══ Dashboard overview header ═════════════════════ */
 .dashboard-overview-header {
   display: flex;
