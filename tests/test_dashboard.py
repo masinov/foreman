@@ -1540,6 +1540,102 @@ class DashboardSprintTaskBacklogTests(unittest.TestCase):
         store.close()
         return project, sprint, task
 
+    def _seed_with_worktree(self):
+        """A real git repo, a task, and the worktree the engine gave it."""
+
+        import subprocess
+
+        from foreman.worktrees import WorktreeManager
+
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        repo = Path(temp_dir.name) / "repo"
+        repo.mkdir()
+        for args in (
+            ("init",),
+            ("checkout", "-b", "main"),
+            ("config", "user.email", "dash-tests@example.com"),
+            ("config", "user.name", "Dash Tests"),
+        ):
+            subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)
+        (repo / "README.md").write_text("# repo\n", encoding="utf-8")
+        (repo / ".gitignore").write_text(".foreman/\n", encoding="utf-8")
+        subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "init"], cwd=repo, check=True, capture_output=True
+        )
+
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        project = Project(
+            id=self._next_id("proj-wt"),
+            name="Worktree Project",
+            repo_path=str(repo),
+            workflow_id="development",
+            default_branch="main",
+        )
+        store.save_project(project)
+        sprint = Sprint(
+            id=self._next_id("sprint-wt"),
+            project_id=project.id,
+            title="Worktree Sprint",
+            status="active",
+        )
+        store.save_sprint(sprint)
+        task = Task(
+            id=self._next_id("task-wt"),
+            sprint_id=sprint.id,
+            project_id=project.id,
+            title="Task with a worktree",
+            status="in_progress",
+            branch_name="feat/dash-worktree",
+        )
+        store.save_task(task)
+        path = WorktreeManager(project).ensure(task)
+        task.worktree_path = str(path)
+        store.save_task(task)
+        store.close()
+        return task, path
+
+    # ── Worktrees ────────────────────────────────────────────────────────────
+
+    def test_task_detail_reports_the_worktree_the_task_runs_in(self):
+        """GET /api/tasks/{id} exposes the path the drawer renders."""
+        task, path = self._seed_with_worktree()
+
+        response = self._request("GET", f"/api/tasks/{task.id}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["worktree_path"], str(path))
+
+    def test_cancel_task_removes_the_worktree(self):
+        """A cancelled task will never be worked on again; its tree goes."""
+        task, path = self._seed_with_worktree()
+
+        response = self._request("POST", f"/api/tasks/{task.id}/cancel")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["removed_worktree"], str(path))
+        self.assertFalse(path.exists())
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        self.addCleanup(store.close)
+        self.assertIsNone(store.get_task(task.id).worktree_path)
+
+    def test_delete_task_removes_the_worktree(self):
+        """DELETE /api/tasks/{id} takes the task's checkout with it."""
+        task, path = self._seed_with_worktree()
+
+        response = self._request("DELETE", f"/api/tasks/{task.id}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["ok"], "deleted")
+        self.assertFalse(path.exists())
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        self.addCleanup(store.close)
+        self.assertIsNone(store.get_task(task.id))
+
     # ── Cancel task ──────────────────────────────────────────────────────────
 
     def test_cancel_task_sets_cancelled_status(self):

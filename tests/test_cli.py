@@ -874,6 +874,140 @@ class ForemanCLISmokeTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(store.get_task(dead_letter.id).status, "todo")
 
+    # ------------------------------------------------------------------
+    # worktree
+    # ------------------------------------------------------------------
+
+    def _worktree_workspace(self) -> tuple[Path, Path, ForemanStore]:
+        """A git repo, a store, and a project whose tasks can hold worktrees."""
+
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        root = Path(temp_dir.name)
+        repo = root / "repo"
+        repo.mkdir()
+        for args in (
+            ("init",),
+            ("checkout", "-b", "main"),
+            ("config", "user.email", "cli-tests@example.com"),
+            ("config", "user.name", "CLI Tests"),
+        ):
+            subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)
+        (repo / "README.md").write_text("# repo\n", encoding="utf-8")
+        (repo / ".gitignore").write_text(".foreman/\n", encoding="utf-8")
+        subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "init"], cwd=repo, check=True, capture_output=True
+        )
+
+        db_path = root / "foreman.db"
+        store = ForemanStore(db_path)
+        self.addCleanup(store.close)
+        store.initialize()
+        store.save_project(
+            Project(
+                id="project-1",
+                name="Foreman Demo",
+                repo_path=str(repo),
+                workflow_id="development",
+                default_branch="main",
+            )
+        )
+        store.save_sprint(
+            Sprint(id="sprint-1", project_id="project-1", title="S", status="active")
+        )
+        return repo, db_path, store
+
+    def _seed_worktree_task(
+        self,
+        store: ForemanStore,
+        *,
+        task_id: str,
+        status: str,
+    ) -> tuple[Task, Path]:
+        from foreman.worktrees import WorktreeManager
+
+        task = Task(
+            id=task_id,
+            sprint_id="sprint-1",
+            project_id="project-1",
+            title=f"Task {task_id}",
+            status=status,
+            branch_name=f"feat/{task_id}",
+        )
+        store.save_task(task)
+        project = store.get_project("project-1")
+        path = WorktreeManager(project).ensure(task)
+        task.worktree_path = str(path)
+        store.save_task(task)
+        return task, path
+
+    def test_worktree_list_shows_each_tree_with_its_task_and_branch(self) -> None:
+        repo, db_path, store = self._worktree_workspace()
+        live, live_path = self._seed_worktree_task(
+            store, task_id="live", status="in_progress"
+        )
+
+        result = self.run_cli("worktree", "list", "project-1", "--db", str(db_path))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(str(repo / ".foreman" / "worktrees"), result.stdout)
+        self.assertIn("branch=feat/live", result.stdout)
+        self.assertIn(f"task={live.task_key or live.id}", result.stdout)
+        self.assertIn("status=in_progress", result.stdout)
+        self.assertIn(str(live_path), result.stdout)
+
+    def test_worktree_list_reports_an_empty_root(self) -> None:
+        _, db_path, _ = self._worktree_workspace()
+
+        result = self.run_cli("worktree", "list", "project-1", "--db", str(db_path))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("- none", result.stdout)
+
+    def test_worktree_prune_removes_finished_tasks_and_forgets_their_paths(self) -> None:
+        _, db_path, store = self._worktree_workspace()
+        live, live_path = self._seed_worktree_task(
+            store, task_id="live", status="in_progress"
+        )
+        done, done_path = self._seed_worktree_task(store, task_id="finished", status="done")
+
+        result = self.run_cli("worktree", "prune", "project-1", "--db", str(db_path))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Removed: 1", result.stdout)
+        self.assertFalse(done_path.exists())
+        self.assertTrue(live_path.is_dir())
+        self.assertIsNone(store.get_task(done.id).worktree_path)
+        self.assertEqual(store.get_task(live.id).worktree_path, str(live_path))
+
+    def test_worktree_commands_reject_an_unknown_project(self) -> None:
+        _, db_path, _ = self._worktree_workspace()
+
+        result = self.run_cli("worktree", "list", "nope", "--db", str(db_path))
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Unknown project", result.stderr)
+
+    def test_task_cancel_removes_the_worktree_and_task_show_stops_advertising_it(self) -> None:
+        _, db_path, store = self._worktree_workspace()
+        task, path = self._seed_worktree_task(
+            store, task_id="doomed", status="in_progress"
+        )
+
+        shown = self.run_cli("task", "show", task.id, "--db", str(db_path))
+        self.assertEqual(shown.returncode, 0, shown.stderr)
+        self.assertIn(f"Worktree: {path}", shown.stdout)
+
+        cancelled = self.run_cli("task", "cancel", task.id, "--db", str(db_path))
+
+        self.assertEqual(cancelled.returncode, 0, cancelled.stderr)
+        self.assertIn(f"Removed worktree: {path}", cancelled.stdout)
+        self.assertFalse(path.exists())
+        self.assertIsNone(store.get_task(task.id).worktree_path)
+        after = self.run_cli("task", "show", task.id, "--db", str(db_path))
+        self.assertNotIn("Worktree:", after.stdout)
+
     def test_task_cancel_refuses_a_task_a_resident_engine_is_running(self) -> None:
         from foreman.models import Run
 
