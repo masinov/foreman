@@ -93,6 +93,44 @@ memory changes rather than versioned product releases.
   heartbeat age, its stop control says Pause, and blocked cards carry the
   kind. ADR-0002 amended: the dashboard controls the engine only through the
   command table.
+- **slice 4, one git worktree per task**
+  (`feat/task-give-every-task-its-own-git-worktree`): the engine no longer
+  changes what is checked out in the operator's repository. New
+  `foreman/worktrees.py` owns a `WorktreeManager` per project: task worktrees
+  live under `<repo>/.foreman/worktrees/<task-key-or-id>/` (relocatable with
+  the new `worktree_root` setting), are created on a task's first develop
+  visit from the existing task branch or a new one cut from the default
+  branch, reused on every later visit, and removed by `_builtin:mark_done`, by
+  `foreman task cancel`, by the dashboard's cancel and delete, and by
+  `foreman worktree prune`. Migration 16 adds the nullable
+  `tasks.worktree_path` so the CLI, the dashboard, and a restarted engine
+  agree on where a paused task's work lives. Native role steps run with
+  `working_dir` = the task's tree; `_builtin:run_tests` runs the test command
+  there (the `engine.test_started`/`engine.test_run` events carry
+  `working_dir`); the context projection is mirrored into the worktree's own
+  `.foreman/` so the agent finds `context.md` where it works; the branch
+  invariants check the worktree's branch; and the refresh-before-develop and
+  conflict-recovery merges happen there. `run_task` and `resume_human_gate` no
+  longer check a branch out in `project.repo_path` or restore one afterwards.
+  `_builtin:merge` runs its `--no-ff` merge in a shared
+  `<worktree_root>/_integration` tree pinned to the default branch — the
+  operator's checkout only sees the ref move — and now also refuses a dirty
+  task worktree, since uncommitted work there is not on the branch and would
+  be silently dropped. The "default branch did not move during a step"
+  invariant stays. Worktrees survive human gates, quota pauses, review rounds,
+  and engine restarts. New `foreman worktree list|prune <project>`; `foreman
+  task show` and `foreman history` print the path and the dashboard task
+  drawer renders it. `run_project` preflights once before leasing any task, so
+  a repository whose worktree root is not ignored, or a git older than
+  `git worktree`, fails with one clear message instead of mid-step. New
+  `worktree_link_paths` setting symlinks ignored local tooling (`venv`,
+  `node_modules`) from the operator's checkout into every new worktree, since
+  a worktree is a clean checkout and the project's `test_command` needs it.
+  `tests/test_cli.py` no longer reinstalls the package when the virtualenv
+  points at a different checkout, and runs every CLI subprocess as
+  `python -m foreman` with `PYTHONPATH` pinned to the checkout under test, so
+  a suite run inside a worktree cannot repoint the operator's virtualenv.
+  ADR-0012.
 - `fix/cancelled-dependency-blocks`: only a `done` dependency satisfies a
   task's `depends_on`; a task whose dependency was cancelled is blocked with
   "Dependency cancelled: …" and an `engine.attention_needed` turn
