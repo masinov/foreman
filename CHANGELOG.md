@@ -132,6 +132,35 @@ memory changes rather than versioned product releases.
   `python -m foreman` with `PYTHONPATH` pinned to the checkout under test, so
   a suite run inside a worktree cannot repoint the operator's virtualenv.
   ADR-0012.
+- **slice 4b, bounded worktree disk use and a per-worktree environment**
+  (`chore/task-c68378a4e541`): the two follow-ups ADR-0012 left open. New
+  `max_live_worktrees` (default 4, `0` disables) caps how many task worktrees
+  exist at once; `worktrees.enforce_worktree_limit` runs from the engine
+  immediately *before* it creates a tree, so the cap bounds peak disk use
+  rather than its steady state. It never touches the integration tree or the
+  tree of the task about to run, reclaims done/cancelled/unclaimed trees
+  first and then the least recently used (measured by each tree's own git
+  index mtime), and **never reclaims a tree with uncommitted changes** — that
+  work is not on the branch, so removing it would destroy exactly the paused
+  state worktrees exist to preserve. A reclaimed task keeps its branch and
+  workflow position, has `worktree_path` cleared, and gets a fresh tree on its
+  next visit; a project whose candidates are all dirty stays above its cap and
+  records `engine.worktree_limit_exceeded` (with `engine.worktrees_reclaimed`
+  and `engine.worktree_reclaim_failed` for the other outcomes). New
+  `worktree_setup_command` (and `worktree_setup_timeout_seconds`, default
+  1800) runs once inside each newly created tree with
+  `FOREMAN_WORKTREE_PATH`/`FOREMAN_REPO_PATH`/`FOREMAN_WORKTREE_BRANCH`/`FOREMAN_DEFAULT_BRANCH`
+  exported, so a tree builds its *own* environment instead of borrowing the
+  operator's through `worktree_link_paths`; a marker in the tree's git admin
+  directory (never in the tree, which would dirty it and block the merge)
+  makes it run once and reprovision when the command changes. This repository
+  now sets it to build a per-tree venv and editable install, and
+  `worktree_link_paths` is empty — a task's `./venv/bin/python -m unittest
+  discover -s tests` runs on that tree's own interpreter. The dashboard
+  project screen gains the live tree count against the cap, the worktree root,
+  and a Prune worktrees control, backed by new
+  `GET /api/projects/{id}/worktrees` and
+  `POST /api/projects/{id}/worktrees/prune`. ADR-0012 amended.
 - `fix/cancelled-dependency-blocks`: only a `done` dependency satisfies a
   task's `depends_on`; a task whose dependency was cancelled is blocked with
   "Dependency cancelled: …" and an `engine.attention_needed` turn

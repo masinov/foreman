@@ -916,7 +916,10 @@ offending value, rather than running on silent defaults.
 | `active_run_recovery_timeout_minutes` | 0 (derived) | stale-run ownership window for crash recovery |
 | `context_dir` | `""` | override for `.foreman/` projection dir |
 | `worktree_root` | `""` | where per-task worktrees live; empty means `<repo>/.foreman/worktrees` (see §24) |
-| `worktree_link_paths` | `[]` | repo-relative paths symlinked from the operator's checkout into every new worktree (`["venv"]`, `["node_modules"]`) |
+| `worktree_link_paths` | `[]` | repo-relative paths symlinked from the operator's checkout into every new worktree; shares your environment rather than isolating it (see §24) |
+| `max_live_worktrees` | `4` | ceiling on live task worktrees; the engine reclaims clean, idle trees oldest-first to stay under it. `0` disables the cap (§24) |
+| `worktree_setup_command` | `""` | shell command run once in each new worktree to build that tree's own environment (§24) |
+| `worktree_setup_timeout_seconds` | `1800` | wall-clock cap for `worktree_setup_command`; `0` disables the timeout |
 | `completion_guard_enabled` | `true` | enforce the merge proof gate |
 | `merge_approval` | `auto` | `auto` or `human`: whether the `merge_approval` gate needs a person |
 | `plan_approval` | `human` | `auto` or `human`: whether the architect's plan gate needs a person |
@@ -1040,6 +1043,8 @@ login and actor attribution arrive in Phase 1.
 | `GET /api/projects/{id}/agent/status` | engine residency, pause state, heartbeat age, current task, recent commands |
 | `POST /api/projects/{id}/agent/start\|stop` | queue `resume` (spawning `foreman serve` if none is resident) / queue `pause` |
 | `GET /api/projects/{id}/engine/commands` | recent engine commands (`limit`, `status`) |
+| `GET /api/projects/{id}/worktrees` | the trees Foreman owns, the root, and `max_live_worktrees` |
+| `POST /api/projects/{id}/worktrees/prune` | remove done, cancelled, and unclaimed trees (§24) |
 | `POST /api/projects/{id}/meta/message` | one manager chat turn (NDJSON stream) |
 | `GET /api/projects/{id}/meta/history` | paginated chat history (`limit`/`before`/`has_more`) |
 | `DELETE /api/projects/{id}/meta/session` | clear the manager session |
@@ -1358,20 +1363,117 @@ foreman worktree list <project-id>
 foreman worktree prune <project-id>   # done/cancelled tasks + dangling entries
 ```
 
-### Local tooling inside a worktree
+### Giving each worktree its own environment
 
 A worktree is a clean checkout: it has none of your ignored local build state.
-If your `test_command` needs a virtualenv or `node_modules`, name those paths
-in `worktree_link_paths` and Foreman symlinks them from your checkout into
-every new worktree:
+If your `test_command` needs a virtualenv or `node_modules`, the fresh tree
+does not have one, and `_builtin:run_tests` fails with a "no such file or
+directory" for your interpreter — a confusing first symptom of a missing
+setting.
+
+**`worktree_setup_command` is how you fix that.** It is a shell command run
+once inside each newly created tree, before any step runs there, with the tree
+as its working directory:
 
 ```bash
-foreman config <project-id> --set 'worktree_link_paths=["venv"]'
+foreman config <project-id> --set \
+  'worktree_setup_command="$FOREMAN_REPO_PATH/venv/bin/python" -m venv venv && ./venv/bin/pip install --quiet setuptools wheel && ./venv/bin/pip install --quiet -e .'
 ```
 
-Without this, `_builtin:run_tests` fails in a fresh tree with a
-"no such file or directory" for your interpreter — a confusing first symptom
-of a missing setting.
+These variables are exported for it:
+
+| Variable | Meaning |
+|---|---|
+| `FOREMAN_WORKTREE_PATH` | the tree being provisioned |
+| `FOREMAN_REPO_PATH` | your checkout — use it for the base interpreter or toolchain |
+| `FOREMAN_WORKTREE_BRANCH` | the branch checked out in the tree |
+| `FOREMAN_DEFAULT_BRANCH` | the project's default branch |
+
+It runs **once per tree**, not once per step, tracked by a marker inside the
+tree's git admin directory (so it never dirties the tree). Change the setting
+and every tree reprovisions on its next visit. `worktree_setup_timeout_seconds`
+caps it (default 1800; `0` disables the timeout).
+
+If the command fails, the task does not run in that tree: an environment that
+was never built produces test failures that describe the environment rather
+than the task. The tree is left on disk for you to inspect, and the next visit
+retries.
+
+> **Anything the command creates must be gitignored.** A tree with untracked
+> files is dirty, and a dirty task tree blocks `_builtin:merge`. `venv/`,
+> `node_modules/`, and `*.egg-info/` are already in most `.gitignore` files;
+> check yours before pointing this at something exotic.
+
+#### The alternative: `worktree_link_paths`
+
+`worktree_link_paths` names repository-relative paths that Foreman *symlinks*
+from your checkout into every new worktree:
+
+```bash
+foreman config <project-id> --set 'worktree_link_paths=["node_modules"]'
+```
+
+It costs nothing, but the tree then **shares** your environment rather than
+having its own: a task that upgrades a dependency to make its tests pass
+changes your interpreter and every other task's. Use it for tooling that is
+expensive to build and genuinely read-only; prefer `worktree_setup_command`
+for anything a task might modify. This repository uses the setup command above
+and leaves `worktree_link_paths` empty.
+
+### Bounding disk use
+
+One live task means one full checkout, plus whatever `worktree_setup_command`
+builds inside it. Several tasks paused at gates used to mean several of each,
+with nothing but a manual prune to give the space back.
+
+**`max_live_worktrees` (default 4) caps how many task worktrees exist at
+once.** Set `0` to disable the cap.
+
+```bash
+foreman config <project-id> --set max_live_worktrees=8
+```
+
+The engine enforces it just *before* it creates a tree, so the cap bounds peak
+disk use. It reclaims, in order:
+
+1. never the integration tree, and never the tree of the task about to run,
+2. trees of done, cancelled, and deleted tasks first,
+3. then the least recently used of the rest.
+
+**A tree with uncommitted changes is never reclaimed.** That work is not on the
+branch, so removing the tree would destroy it. Everything else is safe to take:
+the task keeps its branch and its place in the workflow, and its next visit
+recreates the checkout — and reprovisions its environment — from the same
+branch. The only cost of being reclaimed is one checkout and one setup run.
+
+So the cap is a ceiling the engine reaches for, not one it can always hold. If
+every candidate tree is dirty, the project sits above its cap and the engine
+records `engine.worktree_limit_exceeded` naming the trees it refused to take.
+Losing an agent's unfinished work to a disk limit would be worse than exceeding
+the limit and saying so.
+
+| Event | Meaning |
+|---|---|
+| `engine.worktrees_reclaimed` | trees removed to make room, and the new count |
+| `engine.worktree_limit_exceeded` | the cap could not be met; the dirty trees that blocked it |
+| `engine.worktree_reclaim_failed` | reclaiming errored; the task still got its tree |
+
+To reclaim on demand rather than waiting for the cap, use
+`foreman worktree prune <project-id>` or the dashboard control below. Both drop
+only done, cancelled, and unclaimed trees, so neither can take a tree a live
+task is using.
+
+### From the dashboard
+
+The project screen shows the live tree count against the cap, the worktree
+root, and a **Prune worktrees** button:
+
+```
+Worktrees  2 / 4   /repo/.foreman/worktrees   [ Prune worktrees ]
+```
+
+It runs the same policy as `foreman worktree prune`. The count excludes the
+shared integration tree, which is never pruned.
 
 ### Refusals
 
@@ -1400,9 +1502,13 @@ See [ADR-0012](adr/ADR-0012-worktree-per-task.md).
 | `serve` never picks up a queued task | Check the task is `todo` in the **active** sprint and its dependencies are satisfied. `serve.idle` with `stop_reason` tells you which. |
 | SSE/watch feels laggy | Both gate on `PRAGMA data_version` at 0.25 s; they only re-query after another connection commits. A same-process writer won't bump it, but those loops never write. |
 | Run refuses to start: "git does not ignore …" | The worktree root would be committed. Add `.foreman/` to `.gitignore`, or point `worktree_root` somewhere ignored (§24). |
-| `_builtin:run_tests` fails with "no such file or directory" | The test command needs ignored local state the fresh worktree does not have. Add it to `worktree_link_paths` (§24). |
+| `_builtin:run_tests` fails with "no such file or directory" | The test command needs ignored local state the fresh worktree does not have. Set `worktree_setup_command` to build it (§24). |
+| `worktree_setup_command failed with exit code …` | The tree's environment could not be built, so no step ran in it. The tree is still on disk — reproduce the command there by hand. Fixing the setting reprovisions every tree on its next visit. |
+| A task's tests pass in your checkout but fail in its worktree | The tree has its own environment now. Something your checkout has is missing from `worktree_setup_command` — or the tree is correct and your checkout is stale. |
+| `engine.worktree_limit_exceeded` in the event stream | Every reclaim candidate had uncommitted work, so the cap yielded rather than destroying it. Finish or cancel those tasks, or raise `max_live_worktrees` (§24). |
+| A paused task's worktree disappeared | It was reclaimed under `max_live_worktrees`. Nothing was lost — the tree was clean, so its branch has everything, and the next visit recreates it (§24). |
 | Your checkout suddenly shows a large uncommitted diff | You are sitting on the default branch and a task merged into it, so the ref moved under you. `git checkout main` (or `git reset --hard main`) to catch up; your files were never modified. |
-| `.foreman/worktrees/` keeps growing | Trees of tasks that never reached `mark_done`. `foreman worktree prune <project>` removes anything done, cancelled, or unclaimed. |
+| `.foreman/worktrees/` keeps growing | Trees of tasks that never reached `mark_done`. Lower `max_live_worktrees`, or run `foreman worktree prune <project>` (or the dashboard's Prune worktrees button) to remove anything done, cancelled, or unclaimed. |
 
 ---
 
