@@ -169,6 +169,10 @@ directory with the tree, so a reclaimed tree is reprovisioned when it comes
 back. The marker records a hash of the command, so changing the setting
 reprovisions every tree on its next visit, and clearing it drops the marker.
 
+The integration tree is **not** provisioned: only `_builtin:merge` works
+there, and it runs git and nothing else, so building an environment it would
+never use would cost a full one per project.
+
 A failing setup command fails `ensure`: the tree has no usable environment, so
 running a step in it would produce a test failure that describes the
 environment rather than the task. No marker is written, so the next visit

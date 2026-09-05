@@ -540,6 +540,19 @@ class WorktreeSetupCommandTests(unittest.TestCase):
 
         self.assertIn("timed out", str(caught.exception))
 
+    def test_the_integration_tree_is_not_provisioned(self) -> None:
+        """Only `_builtin:merge` works there, and it runs git and nothing else."""
+
+        project = self.project(
+            worktree_setup_command="printf 'x' > provisioned.txt"
+        )
+        manager = WorktreeManager(project)
+
+        integration = manager.ensure_integration()
+
+        self.assertTrue(integration.is_dir())
+        self.assertFalse((integration / "provisioned.txt").exists())
+
     def test_no_setup_command_leaves_the_tree_alone(self) -> None:
         manager = WorktreeManager(self.project())
 

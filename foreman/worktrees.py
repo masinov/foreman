@@ -207,18 +207,26 @@ class WorktreeManager:
         return self._ensure_at(path, branch)
 
     def ensure_integration(self) -> Path:
-        """Return the worktree checked out at the default branch for merges."""
+        """Return the worktree checked out at the default branch for merges.
 
-        return self._ensure_at(self.integration_path, self.project.default_branch)
+        Not provisioned with ``worktree_setup_command``: only ``_builtin:merge``
+        works here, and it runs git and nothing else. Building an environment
+        this tree would never use would cost a full one per project.
+        """
 
-    def _ensure_at(self, path: Path, branch: str) -> Path:
+        return self._ensure_at(
+            self.integration_path, self.project.default_branch, setup=False
+        )
+
+    def _ensure_at(self, path: Path, branch: str, *, setup: bool = True) -> Path:
         if self._is_live_worktree(path):
             if worktree_branch(path) != branch:
                 self._checkout(path, branch)
             # A tree created before the setting existed, or one whose setup was
             # interrupted, is provisioned on this visit rather than silently
             # running steps in an environment that was never built.
-            self._run_setup_command(path)
+            if setup:
+                self._run_setup_command(path)
             return path
 
         # A registered worktree whose directory an operator deleted, or a
@@ -252,7 +260,8 @@ class WorktreeManager:
         except GitError as exc:
             raise WorktreeError(f"Could not create worktree at {path}: {exc}") from exc
         self._link_shared_paths(path)
-        self._run_setup_command(path)
+        if setup:
+            self._run_setup_command(path)
         return path
 
     def remove(self, task: Task) -> bool:

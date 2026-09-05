@@ -1394,6 +1394,9 @@ tree's git admin directory (so it never dirties the tree). Change the setting
 and every tree reprovisions on its next visit. `worktree_setup_timeout_seconds`
 caps it (default 1800; `0` disables the timeout).
 
+The shared `_integration` tree is not provisioned — only the merge runs there,
+and it needs git rather than your toolchain.
+
 If the command fails, the task does not run in that tree: an environment that
 was never built produces test failures that describe the environment rather
 than the task. The tree is left on disk for you to inspect, and the next visit
