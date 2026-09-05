@@ -25,13 +25,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import hashlib
 import os
 import re
 import shutil
+import subprocess
 from typing import TYPE_CHECKING
 
 from .errors import ForemanError
-from .git import GitError, branch_exists, run_git, worktree_branch
+from .git import GitError, branch_exists, is_worktree_clean, run_git, worktree_branch
 from .models import Project, Task
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -44,6 +46,23 @@ DEFAULT_WORKTREE_ROOT = ".foreman/worktrees"
 #: Directory name, inside the worktree root, of the shared worktree that the
 #: merge built-in uses to land task branches on the default branch.
 INTEGRATION_WORKTREE_NAME = "_integration"
+
+#: Default ceiling on live task worktrees when the project does not set
+#: ``max_live_worktrees``. 0 means unlimited.
+DEFAULT_MAX_LIVE_WORKTREES = 4
+
+#: Default wall-clock cap for ``worktree_setup_command``.
+DEFAULT_SETUP_TIMEOUT_SECONDS = 1800
+
+#: Marker file, written inside a worktree's git admin directory, recording the
+#: setup command that last provisioned it. It lives in the admin directory
+#: rather than the tree so it never shows up as an untracked file (which would
+#: make the tree dirty and block the merge built-in), and so
+#: ``git worktree remove`` takes it away with the tree.
+SETUP_MARKER_NAME = "foreman-worktree-setup"
+
+#: How much of a failed setup command's output to carry into the error.
+_SETUP_OUTPUT_TAIL_CHARS = 2000
 
 _SLUG_SAFE = re.compile(r"[^A-Za-z0-9._-]+")
 
@@ -196,6 +215,10 @@ class WorktreeManager:
         if self._is_live_worktree(path):
             if worktree_branch(path) != branch:
                 self._checkout(path, branch)
+            # A tree created before the setting existed, or one whose setup was
+            # interrupted, is provisioned on this visit rather than silently
+            # running steps in an environment that was never built.
+            self._run_setup_command(path)
             return path
 
         # A registered worktree whose directory an operator deleted, or a
@@ -229,6 +252,7 @@ class WorktreeManager:
         except GitError as exc:
             raise WorktreeError(f"Could not create worktree at {path}: {exc}") from exc
         self._link_shared_paths(path)
+        self._run_setup_command(path)
         return path
 
     def remove(self, task: Task) -> bool:
@@ -367,6 +391,162 @@ class WorktreeManager:
                     f"Could not link {name!r} into worktree {path}: {exc}"
                 ) from exc
 
+    # ── Per-worktree environment ────────────────────────────────────────────
+
+    def _run_setup_command(self, path: Path) -> bool:
+        """Build this worktree's own environment, once per tree.
+
+        ``worktree_link_paths`` shares the operator's tooling with a worktree;
+        this builds the tree its *own*. The command runs with the worktree as
+        its working directory, so a project can create a virtualenv, install
+        dependencies, or seed a fixture database that belongs to this tree
+        alone, and a test run inside it stops depending on whatever state the
+        operator's checkout happens to be in.
+
+        Returns whether the command ran. It is skipped when the tree's marker
+        already records the same command, which makes reuse across gates,
+        quota pauses, and engine restarts free. Changing the setting
+        re-provisions every tree on its next visit.
+        """
+
+        command = _setup_command(self.project)
+        marker = self._setup_marker_path(path)
+        if not command:
+            # Clearing the setting must not leave a stale marker behind that
+            # would suppress a later command with the same fingerprint.
+            if marker is not None and marker.exists():
+                marker.unlink(missing_ok=True)
+            return False
+        fingerprint = _fingerprint(command)
+        if marker is not None and _read_marker(marker) == fingerprint:
+            return False
+
+        env = dict(os.environ)
+        env.update(
+            {
+                "FOREMAN_WORKTREE_PATH": str(path),
+                "FOREMAN_REPO_PATH": str(self.repo_path),
+                "FOREMAN_WORKTREE_BRANCH": worktree_branch(path) or "",
+                "FOREMAN_DEFAULT_BRANCH": self.project.default_branch,
+            }
+        )
+        timeout = _setup_timeout(self.project)
+        try:
+            result = subprocess.run(
+                ["bash", "-lc", command],
+                cwd=path,
+                env=env,
+                capture_output=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=timeout if timeout > 0 else None,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise WorktreeError(
+                f"worktree_setup_command timed out after {timeout}s in {path}. "
+                f"Raise worktree_setup_timeout_seconds or simplify the command. "
+                f"Command: {command}"
+            ) from exc
+        except OSError as exc:  # pragma: no cover - platform dependent
+            raise WorktreeError(
+                f"Could not run worktree_setup_command in {path}: {exc}"
+            ) from exc
+
+        if result.returncode != 0:
+            tail = _output_tail(result.stdout, result.stderr)
+            # The marker stays unwritten, so the next visit retries setup. The
+            # tree is left in place for the operator to inspect.
+            raise WorktreeError(
+                f"worktree_setup_command failed with exit code {result.returncode} in "
+                f"{path}. The worktree has no usable environment, so no step ran in "
+                f"it. Command: {command}\n{tail}"
+            )
+        if marker is not None:
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.write_text(fingerprint, encoding="utf-8")
+        return True
+
+    def admin_dir(self, path: Path) -> Path | None:
+        """Return a worktree's git admin directory, or None if it has none.
+
+        For a worktree this is ``<repo>/.git/worktrees/<name>``: private to the
+        tree, outside it, and removed by ``git worktree remove``.
+        """
+
+        result = run_git(path, "rev-parse", "--absolute-git-dir", check=False)
+        if result.returncode != 0:
+            return None
+        admin_dir = result.stdout.strip()
+        return Path(admin_dir) if admin_dir else None
+
+    def _setup_marker_path(self, path: Path) -> Path | None:
+        """Return the setup marker inside this worktree's git admin directory."""
+
+        admin_dir = self.admin_dir(path)
+        return None if admin_dir is None else admin_dir / SETUP_MARKER_NAME
+
+    def last_used_at(self, path: Path) -> float:
+        """Return when this worktree was last worked in, as a POSIX timestamp.
+
+        Git rewrites the tree's private index on every checkout, commit, and
+        status, so the index mtime tracks engine activity in that tree far more
+        closely than anything Foreman persists. Falls back to the directory
+        itself, then to 0 so an unreadable tree sorts as the oldest and is
+        reclaimed first.
+        """
+
+        admin_dir = self.admin_dir(path)
+        for candidate in ((admin_dir / "index") if admin_dir else None, path):
+            if candidate is None:
+                continue
+            try:
+                return candidate.stat().st_mtime
+            except OSError:
+                continue
+        return 0.0
+
+
+def _setup_command(project: Project) -> str:
+    """Return the project's ``worktree_setup_command``, if any."""
+
+    return str(project.settings.get("worktree_setup_command", "") or "").strip()
+
+
+def _setup_timeout(project: Project) -> int:
+    """Return the wall-clock cap for ``worktree_setup_command`` in seconds."""
+
+    raw = project.settings.get(
+        "worktree_setup_timeout_seconds", DEFAULT_SETUP_TIMEOUT_SECONDS
+    )
+    try:
+        timeout = int(raw)
+    except (TypeError, ValueError):
+        return DEFAULT_SETUP_TIMEOUT_SECONDS
+    return max(timeout, 0)
+
+
+def _fingerprint(command: str) -> str:
+    """Return the marker contents identifying one setup command."""
+
+    return hashlib.sha256(command.encode("utf-8")).hexdigest()
+
+
+def _read_marker(marker: Path) -> str | None:
+    try:
+        return marker.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+
+
+def _output_tail(stdout: str | None, stderr: str | None) -> str:
+    """Return the tail of a failed setup command's output, for the error."""
+
+    combined = "\n".join(part for part in (stdout or "", stderr or "") if part.strip())
+    combined = combined.strip()
+    if len(combined) > _SETUP_OUTPUT_TAIL_CHARS:
+        return "…" + combined[-_SETUP_OUTPUT_TAIL_CHARS:]
+    return combined
+
 
 def _link_paths(project: Project) -> tuple[str, ...]:
     """Return the validated ``worktree_link_paths`` setting."""
@@ -394,6 +574,151 @@ def _resolve(path: Path) -> Path:
         return path.resolve()
     except OSError:  # pragma: no cover - defensive
         return path
+
+
+@dataclass(frozen=True, slots=True)
+class ReclaimOutcome:
+    """What enforcing ``max_live_worktrees`` did on one ``ensure`` call."""
+
+    limit: int
+    live_before: int
+    live_after: int
+    reclaimed: tuple[WorktreeEntry, ...] = ()
+    #: Trees that were over the limit but held uncommitted work, so removing
+    #: them would have destroyed it. They are the reason a project can sit
+    #: above its cap.
+    retained_dirty: tuple[WorktreeEntry, ...] = ()
+
+    @property
+    def over_limit(self) -> bool:
+        """Whether the cap could not be met without destroying unmerged work."""
+
+        return self.limit > 0 and self.live_after > self.limit
+
+
+def max_live_worktrees(project: Project) -> int:
+    """Return the project's ceiling on live task worktrees. 0 means unlimited."""
+
+    raw = project.settings.get("max_live_worktrees", DEFAULT_MAX_LIVE_WORKTREES)
+    try:
+        limit = int(raw)
+    except (TypeError, ValueError):
+        return DEFAULT_MAX_LIVE_WORKTREES
+    return max(limit, 0)
+
+
+def enforce_worktree_limit(
+    store: ForemanStore,
+    project: Project,
+    *,
+    keep_slug: str,
+    manager: WorktreeManager | None = None,
+) -> ReclaimOutcome:
+    """Reclaim worktrees so ``keep_slug`` can exist without breaching the cap.
+
+    Without this, a project accumulates one full checkout per task that ever
+    started and paused, and nothing ever gives the disk back until an operator
+    runs ``foreman worktree prune``. The policy:
+
+    - the integration tree and ``keep_slug`` (the task about to run) are never
+      reclaimed,
+    - trees of done, cancelled, or vanished tasks go first — nothing wants
+      them,
+    - then the least recently used of the rest,
+    - **a tree with uncommitted changes is never reclaimed.** That work is not
+      on the branch, so removing the tree would destroy it. A project whose
+      trees are all dirty therefore stays above its cap, and the caller reports
+      that rather than silently discarding an agent's unfinished work.
+
+    Reclaiming is safe for everything else because a clean tree holds nothing
+    the branch does not: the next visit recreates it from the same branch.
+    """
+
+    manager = manager or WorktreeManager(project)
+    limit = max_live_worktrees(project)
+    entries = [entry for entry in manager.list() if not entry.is_integration]
+    live_before = sum(1 for entry in entries if entry.exists)
+    if limit <= 0:
+        return ReclaimOutcome(
+            limit=limit, live_before=live_before, live_after=live_before
+        )
+
+    # The task about to run counts against the cap whether or not its tree is
+    # on disk yet: the point is to make room *for* it.
+    live_after = live_before + (
+        0 if any(e.slug == keep_slug and e.exists for e in entries) else 1
+    )
+
+    disposable = _disposable_slugs(store, project, entries)
+    candidates = sorted(
+        (entry for entry in entries if entry.slug != keep_slug),
+        key=lambda entry: (
+            entry.slug not in disposable,
+            manager.last_used_at(entry.path),
+        ),
+    )
+
+    reclaimed: list[WorktreeEntry] = []
+    retained: list[WorktreeEntry] = []
+    for entry in candidates:
+        if live_after <= limit:
+            break
+        if entry.exists and entry.slug not in disposable and not is_worktree_clean(
+            entry.path
+        ):
+            retained.append(entry)
+            continue
+        manager.remove_path(entry.path)
+        reclaimed.append(entry)
+        if entry.exists:
+            live_after -= 1
+
+    _forget_reclaimed_paths(store, project, reclaimed)
+    return ReclaimOutcome(
+        limit=limit,
+        live_before=live_before,
+        live_after=live_after,
+        reclaimed=tuple(reclaimed),
+        retained_dirty=tuple(retained),
+    )
+
+
+def _disposable_slugs(
+    store: ForemanStore,
+    project: Project,
+    entries: list[WorktreeEntry],
+) -> set[str]:
+    """Return the slugs of trees no live task claims any more."""
+
+    claimed: set[str] = set()
+    for task in store.list_tasks(project_id=project.id):
+        if task.status in {"done", "cancelled"}:
+            continue
+        try:
+            claimed.add(task_slug(task))
+        except WorktreeError:  # pragma: no cover - defensive
+            continue
+    return {entry.slug for entry in entries if entry.slug not in claimed}
+
+
+def _forget_reclaimed_paths(
+    store: ForemanStore,
+    project: Project,
+    reclaimed: list[WorktreeEntry],
+) -> None:
+    """Clear ``worktree_path`` on tasks whose tree was just reclaimed.
+
+    A task keeps its branch and its place in the workflow; only the checkout
+    went away, and the next visit makes a new one from the same branch.
+    """
+
+    if not reclaimed:
+        return
+    removed_paths = {str(entry.path) for entry in reclaimed}
+    for task in store.list_tasks(project_id=project.id):
+        if task.worktree_path and task.worktree_path in removed_paths:
+            task.worktree_path = None
+            store.save_task(task)
 
 
 def prune_project_worktrees(

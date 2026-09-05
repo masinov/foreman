@@ -628,6 +628,26 @@ button {
   color: var(--text-secondary);
 }
 
+/* The worktree row carries a control, so it needs vertical centring and a
+   smaller gap than the plain metadata rows above it. */
+.worktree-meta {
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+/* The root is long and only meaningful character by character; it gives way
+   to the count and the control when the header is narrow. */
+.worktree-root {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 40ch;
+}
+
 .project-badges {
   display: flex;
   gap: 8px;
@@ -1905,6 +1925,12 @@ button {
 .btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* Sits inline in a metadata row, so it must not out-weigh the text near it. */
+.btn-small {
+  font-size: 10px;
+  padding: 2px 8px;
 }
 
 .btn-approve {

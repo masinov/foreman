@@ -45,8 +45,18 @@ class ProjectSettings:
     # Repository-relative paths symlinked from the operator's checkout into
     # every new worktree. A worktree is a clean checkout, so ignored local
     # tooling a test command needs (``venv``, ``node_modules``) is not there
-    # unless it is named here.
+    # unless it is named here. Prefer ``worktree_setup_command``: a link
+    # shares the operator's environment rather than isolating from it.
     worktree_link_paths: tuple[str, ...] = ()
+    # Ceiling on how many task worktrees may exist at once. The engine
+    # reclaims clean, idle trees oldest-first to stay under it; 0 disables
+    # the cap. See ADR-0012.
+    max_live_worktrees: int = 4
+    # Shell command run once inside each newly created worktree, before any
+    # step runs there, to build that tree's own environment.
+    worktree_setup_command: str = ""
+    # Wall-clock cap for ``worktree_setup_command``; 0 disables the timeout.
+    worktree_setup_timeout_seconds: int = 1800
     completion_guard_enabled: bool = True
     # Gate policies: "auto" lets the engine approve the gate on its own and
     # records a policy decision; "human" pauses the task for a person.
@@ -101,6 +111,13 @@ class ProjectSettings:
             worktree_root=str(raw.get("worktree_root") or ""),
             worktree_link_paths=_validate_worktree_link_paths(
                 raw.get("worktree_link_paths")
+            ),
+            max_live_worktrees=_validate_non_negative_int(
+                raw.get("max_live_worktrees"), default=4
+            ),
+            worktree_setup_command=str(raw.get("worktree_setup_command") or ""),
+            worktree_setup_timeout_seconds=_validate_non_negative_int(
+                raw.get("worktree_setup_timeout_seconds"), default=1800
             ),
             completion_guard_enabled=bool(raw.get("completion_guard_enabled", True)),
             merge_approval=_validate_gate_policy(raw.get("merge_approval"), default="auto"),

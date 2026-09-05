@@ -155,3 +155,34 @@ class ProjectSettingsFromRawTests(unittest.TestCase):
     def test_negative_max_visits(self) -> None:
         with self.assertRaises(SettingsError):
             ProjectSettings.from_raw({"max_step_visits": -1})
+
+
+class WorktreeBudgetSettingsTests(unittest.TestCase):
+    """The disk-use cap and the per-worktree environment command."""
+
+    def test_defaults_bound_disk_use_and_leave_setup_opt_in(self) -> None:
+        settings = ProjectSettings.from_raw({})
+
+        self.assertEqual(settings.max_live_worktrees, 4)
+        self.assertEqual(settings.worktree_setup_command, "")
+        self.assertEqual(settings.worktree_setup_timeout_seconds, 1800)
+
+    def test_zero_opts_out_of_the_cap(self) -> None:
+        self.assertEqual(
+            ProjectSettings.from_raw({"max_live_worktrees": 0}).max_live_worktrees, 0
+        )
+
+    def test_rejects_a_negative_cap(self) -> None:
+        with self.assertRaises(SettingsError):
+            ProjectSettings.from_raw({"max_live_worktrees": -1})
+
+    def test_rejects_a_negative_setup_timeout(self) -> None:
+        with self.assertRaises(SettingsError):
+            ProjectSettings.from_raw({"worktree_setup_timeout_seconds": -5})
+
+    def test_accepts_a_setup_command(self) -> None:
+        settings = ProjectSettings.from_raw(
+            {"worktree_setup_command": "python -m venv venv"}
+        )
+
+        self.assertEqual(settings.worktree_setup_command, "python -m venv venv")
