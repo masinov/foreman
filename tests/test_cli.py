@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -16,15 +18,83 @@ from foreman.store import ForemanStore
 REPO_ROOT = Path(__file__).resolve().parents[1]
 VENV_BIN = REPO_ROOT / "venv" / "bin"
 PIP = VENV_BIN / "pip"
-PYTHON = VENV_BIN / "python"
 FOREMAN = VENV_BIN / "foreman"
+#: The interpreter running this suite. Deliberately not a hard-coded
+#: ``venv/bin/python``: a task worktree has no virtualenv of its own, and the
+#: suite must still be runnable there.
+PYTHON = Path(sys.executable)
+
+
+def cli_env(extra: dict[str, str] | None = None) -> dict[str, str]:
+    """Return the environment for a CLI subprocess.
+
+    ``PYTHONPATH`` pins the import to the checkout this file lives in, so the
+    subprocess exercises *this* code whatever the virtualenv's editable
+    install happens to point at.
+    """
+
+    env = dict(os.environ)
+    existing = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = (
+        f"{REPO_ROOT}{os.pathsep}{existing}" if existing else str(REPO_ROOT)
+    )
+    if extra:
+        env.update(extra)
+    return env
+
+
+def cli_argv(*args: str) -> list[str]:
+    """Return the argv that runs this checkout's CLI in a subprocess."""
+
+    return [str(PYTHON), "-m", "foreman", *args]
+
+
+def installed_foreman_root() -> Path | None:
+    """Return the ``foreman`` package this interpreter imports on its own.
+
+    Answers "which checkout is the virtualenv wired to?" without letting this
+    checkout answer for itself: ``PYTHONPATH`` is stripped and the probe runs
+    outside the repository.
+    """
+
+    env = {key: value for key, value in os.environ.items() if key != "PYTHONPATH"}
+    probe = subprocess.run(
+        [
+            str(PYTHON),
+            "-c",
+            "import foreman, pathlib; print(pathlib.Path(foreman.__file__).resolve().parent)",
+        ],
+        cwd=tempfile.gettempdir(),
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if probe.returncode != 0 or not probe.stdout.strip():
+        return None
+    return Path(probe.stdout.strip())
 
 
 class ForemanCLISmokeTests(unittest.TestCase):
     """Verify that the initial CLI shell is wired and runnable."""
 
+    #: Set when the console-entrypoint reinstall was deliberately skipped.
+    reinstall_skipped_for: str | None = None
+
     @classmethod
     def setUpClass(cls) -> None:
+        installed = installed_foreman_root()
+        if installed is not None and installed != REPO_ROOT / "foreman":
+            # The virtualenv's editable install points at a different
+            # checkout, which is what a suite run inside a task worktree looks
+            # like: the worktree borrows the operator's `venv/`. Reinstalling
+            # would repoint that virtualenv at the worktree and quietly break
+            # the operator's own `foreman` command, so this setup does not do
+            # it. Every CLI subprocess runs `python -m foreman` with
+            # PYTHONPATH pinned to this checkout, so the code under test is
+            # still this one — only the console script on PATH is stale.
+            cls.reinstall_skipped_for = str(installed)
+            return
         install_result = subprocess.run(
             [
                 str(PIP),
@@ -50,8 +120,9 @@ class ForemanCLISmokeTests(unittest.TestCase):
 
     def run_cli(self, *args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            [str(FOREMAN), *args],
+            cli_argv(*args),
             cwd=REPO_ROOT,
+            env=cli_env(),
             capture_output=True,
             text=True,
             check=False,
@@ -59,8 +130,9 @@ class ForemanCLISmokeTests(unittest.TestCase):
 
     def run_cli_in(self, cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            [str(FOREMAN), *args],
+            cli_argv(*args),
             cwd=cwd,
+            env=cli_env(),
             capture_output=True,
             text=True,
             check=False,
@@ -68,8 +140,9 @@ class ForemanCLISmokeTests(unittest.TestCase):
 
     def spawn_cli(self, *args: str) -> subprocess.Popen[str]:
         return subprocess.Popen(
-            [str(FOREMAN), *args],
+            cli_argv(*args),
             cwd=REPO_ROOT,
+            env=cli_env(),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -79,6 +152,7 @@ class ForemanCLISmokeTests(unittest.TestCase):
         return subprocess.run(
             [str(PYTHON), *args],
             cwd=REPO_ROOT,
+            env=cli_env(),
             capture_output=True,
             text=True,
             check=False,
@@ -1175,15 +1249,16 @@ class ForemanCLISmokeTests(unittest.TestCase):
                 time.sleep(0.25)
             return False
 
-        process = subprocess.Popen(  # noqa: S603 - the repo's own console script
-            [
-                str(FOREMAN), "serve", project.id,
+        process = subprocess.Popen(  # noqa: S603 - the repo's own CLI
+            cli_argv(
+                "serve", project.id,
                 # Long enough that a timed poll cannot explain the pickup: only
                 # the data_version wake can.
                 "--poll-seconds", "120",
                 "--db", str(db_path),
-            ],
+            ),
             cwd=REPO_ROOT,
+            env=cli_env(),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -2184,7 +2259,8 @@ class DbCommandTests(unittest.TestCase):
 
     def run_cli(self, *args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            [str(FOREMAN), *args],
+            cli_argv(*args),
+            env=cli_env(),
             capture_output=True,
             text=True,
             check=False,
@@ -2258,10 +2334,6 @@ if __name__ == "__main__":
 class EngineCommandCliTests(unittest.TestCase):
     """`foreman engine`: read the resident engine, queue commands for it."""
 
-    @classmethod
-    def setUpClass(cls) -> None:
-        if not FOREMAN.is_file():
-            raise unittest.SkipTest(f"console entrypoint missing at {FOREMAN}")
 
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
@@ -2293,7 +2365,7 @@ class EngineCommandCliTests(unittest.TestCase):
 
     def run_cli(self, *args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            [str(FOREMAN), *args], capture_output=True, text=True, check=False
+            cli_argv(*args), env=cli_env(), capture_output=True, text=True, check=False
         )
 
     def _only_command(self):
@@ -2527,7 +2599,8 @@ class EngineCommandCliTests(unittest.TestCase):
         self.assertEqual(queued.returncode, 0, queued.stderr)
 
         served = subprocess.run(
-            [str(FOREMAN), "serve", "project-1", "--once", "--db", str(self.db_path)],
+            cli_argv("serve", "project-1", "--once", "--db", str(self.db_path)),
+            env=cli_env(),
             capture_output=True,
             text=True,
             check=False,
