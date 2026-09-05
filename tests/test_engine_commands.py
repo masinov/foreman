@@ -85,7 +85,7 @@ class Migration15Tests(unittest.TestCase):
         applied = store.migrate()
 
         self.assertIn(15, applied)
-        self.assertEqual(store.schema_version(), 15)
+        self.assertGreaterEqual(store.schema_version(), 15)
         self.assertIsNotNone(
             conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='engine_commands'"

@@ -9,10 +9,11 @@ import subprocess
 import time
 from typing import TYPE_CHECKING, Any, Callable
 
-from .context import relative_project_path, write_project_context
+from .context import context_directory, relative_project_path, write_project_context
 from .git import GitMergeResult, is_worktree_clean, merge_branch, merge_preflight, run_git
 from .models import CompletionEvidence, Project, Task, utc_now_text
 from .runner.process import ManagedProcess
+from .worktrees import WorktreeError, WorktreeManager
 
 DEFAULT_TEST_TIMEOUT_SECONDS = 1800
 
@@ -52,22 +53,34 @@ class BuiltinExecutor:
         store: ForemanStore | None = None,
         event_recorder: Callable[[BuiltinEventRecord], None] | None = None,
         evidence_builder: Callable[[Task, Project], CompletionEvidence | None] | None = None,
+        working_dir: Path | None = None,
     ) -> BuiltinResult:
         """Dispatch one built-in role by identifier.
 
         ``evidence_builder`` lets the orchestrator supply its own completion
         evidence builder, so the merge guard sees the same role definitions
         (and their declared review kinds) that executed the workflow.
+
+        ``working_dir`` is the task's git worktree. Built-ins that touch a
+        working tree — running the test command, checking for uncommitted work
+        — use it so they see what the agent actually produced, and never the
+        operator's checkout.
         """
 
+        task_dir = Path(working_dir) if working_dir is not None else _task_dir(project, task)
         if role_id == "_builtin:run_tests":
-            return self._run_tests(project=project, event_recorder=event_recorder)
+            return self._run_tests(
+                project=project,
+                working_dir=task_dir,
+                event_recorder=event_recorder,
+            )
         if role_id == "_builtin:context_write":
             return self._context_write(
                 store=store,
                 project=project,
                 task=task,
                 carried_output=carried_output,
+                working_dir=task_dir,
             )
         if role_id == "_builtin:merge":
             return self._merge(
@@ -75,7 +88,11 @@ class BuiltinExecutor:
             )
         if role_id == "_builtin:mark_done":
             return self._mark_done(
-                task=task, project=project, store=store, evidence_builder=evidence_builder
+                task=task,
+                project=project,
+                store=store,
+                evidence_builder=evidence_builder,
+                working_dir=task_dir,
             )
         if role_id == "_builtin:human_gate":
             return self._human_gate(task=task, step_id=step_id, carried_output=carried_output)
@@ -85,6 +102,7 @@ class BuiltinExecutor:
         self,
         *,
         project: Project,
+        working_dir: Path,
         event_recorder: Callable[[BuiltinEventRecord], None] | None = None,
     ) -> BuiltinResult:
         command = str(project.settings.get("test_command", "")).strip()
@@ -114,10 +132,17 @@ class BuiltinExecutor:
         timeout_seconds = _int_setting(
             project, "test_timeout_seconds", default=DEFAULT_TEST_TIMEOUT_SECONDS
         )
-        emit("engine.test_started", {"command": command, "timeout_seconds": timeout_seconds})
+        emit(
+            "engine.test_started",
+            {
+                "command": command,
+                "timeout_seconds": timeout_seconds,
+                "working_dir": str(working_dir),
+            },
+        )
         proc = subprocess.Popen(
             ["bash", "-lc", command],
-            cwd=Path(project.repo_path),
+            cwd=working_dir,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             encoding="utf-8",
@@ -193,6 +218,7 @@ class BuiltinExecutor:
             "engine.test_run",
             {
                 "command": command,
+                "working_dir": str(working_dir),
                 "exit_code": exit_code,
                 "passed": exit_code == 0,
                 "timed_out": timed_out,
@@ -228,9 +254,24 @@ class BuiltinExecutor:
                 ),
             )
 
-        # Run full merge preflight
+        try:
+            integration_path = WorktreeManager(project).ensure_integration()
+        except WorktreeError as exc:
+            return BuiltinResult(
+                outcome="failure",
+                detail=str(exc),
+                events=(
+                    BuiltinEventRecord(
+                        event_type="engine.merge_failed",
+                        payload={"branch": task.branch_name, "error": str(exc)},
+                    ),
+                ),
+            )
+
+        # Run full merge preflight in the integration worktree: the tree the
+        # merge will actually happen in is the one that has to be clean.
         preflight = merge_preflight(
-            project.repo_path,
+            integration_path,
             source_branch=task.branch_name,
             target_branch=project.default_branch,
         )
@@ -284,8 +325,10 @@ class BuiltinExecutor:
                     ),
                 )
 
+        # The merge lands in Foreman's own integration worktree; the
+        # operator's checkout only ever sees the default-branch ref move.
         result: GitMergeResult = merge_branch(
-            project.repo_path,
+            integration_path,
             source_branch=task.branch_name,
             target_branch=project.default_branch,
         )
@@ -299,6 +342,7 @@ class BuiltinExecutor:
                         payload={
                             "branch": task.branch_name,
                             "target": project.default_branch,
+                            "worktree": str(integration_path),
                         },
                     ),
                 ),
@@ -348,8 +392,10 @@ class BuiltinExecutor:
         project: Project,
         store: ForemanStore,
         evidence_builder: Callable[[Task, Project], CompletionEvidence | None] | None = None,
+        working_dir: Path | None = None,
     ) -> BuiltinResult:
-        if task.branch_name and not is_worktree_clean(project.repo_path):
+        task_dir = Path(working_dir) if working_dir is not None else _task_dir(project, task)
+        if task.branch_name and task_dir.is_dir() and not is_worktree_clean(task_dir):
             return self._block_task(
                 task,
                 detail=(
@@ -425,7 +471,44 @@ class BuiltinExecutor:
         task.workflow_current_step = None
         task.workflow_carried_output = None
         task.completed_at = task.completed_at or utc_now_text()
-        return BuiltinResult(outcome="success", detail="Task marked done.")
+        removal_events = self._remove_task_worktree(project, task)
+        return BuiltinResult(
+            outcome="success",
+            detail="Task marked done.",
+            events=removal_events,
+        )
+
+    def _remove_task_worktree(
+        self,
+        project: Project,
+        task: Task,
+    ) -> tuple[BuiltinEventRecord, ...]:
+        """Delete the finished task's worktree and forget its path.
+
+        A done task has nothing left to edit, and leaving its tree behind
+        would accumulate one full checkout per completed task.
+        """
+
+        recorded = task.worktree_path
+        if not recorded:
+            task.worktree_path = None
+            return ()
+        try:
+            WorktreeManager(project).remove_path(Path(recorded))
+        except (WorktreeError, OSError) as exc:
+            return (
+                BuiltinEventRecord(
+                    event_type="engine.worktree_remove_failed",
+                    payload={"path": recorded, "error": str(exc)},
+                ),
+            )
+        task.worktree_path = None
+        return (
+            BuiltinEventRecord(
+                event_type="engine.worktree_removed",
+                payload={"path": recorded, "reason": "task_done"},
+            ),
+        )
 
     def _human_gate(
         self,
@@ -450,6 +533,7 @@ class BuiltinExecutor:
         project: Project,
         task: Task,
         carried_output: str | None,
+        working_dir: Path | None = None,
     ) -> BuiltinResult:
         if store is None:
             raise ValueError("Context projection requires a store.")
@@ -459,6 +543,7 @@ class BuiltinExecutor:
             project,
             current_task=task,
             carried_output=carried_output,
+            mirror_dirs=_context_mirror_dirs(project, working_dir),
         )
         return BuiltinResult(
             outcome="success",
@@ -679,6 +764,26 @@ class BuiltinExecutor:
         if name.startswith("test_") or name.endswith("_test.py"):
             return True
         return False
+
+
+def _task_dir(project: Project, task: Task) -> Path:
+    """Return the working tree a task's built-ins should act on."""
+
+    recorded = getattr(task, "worktree_path", None)
+    if recorded and Path(recorded).is_dir():
+        return Path(recorded)
+    return Path(project.repo_path)
+
+
+def _context_mirror_dirs(project: Project, working_dir: Path | None) -> tuple[Path, ...]:
+    """Return the worktree context directory to mirror the projection into."""
+
+    if working_dir is None:
+        return ()
+    resolved = Path(working_dir)
+    if resolved == Path(project.repo_path):
+        return ()
+    return (context_directory(project, root=resolved),)
 
 
 def _int_setting(project: Project, key: str, *, default: int) -> int:
