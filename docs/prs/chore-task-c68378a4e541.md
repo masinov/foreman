@@ -62,6 +62,10 @@ A failing setup command fails `ensure` rather than running a step in an
 environment that was never built. No marker is written, so the next visit
 retries, and the tree is left on disk to inspect.
 
+The shared `_integration` tree is exempt: only `_builtin:merge` works there and
+it runs git and nothing else, so provisioning it would build a full environment
+per project that nothing uses.
+
 ## Scope
 
 In scope: the two settings and their validation, the reclaim policy and its
@@ -100,8 +104,8 @@ on); changing when trees are created or removed by the workflow.
 
 **Tests**
 
-- `tests/test_worktrees.py` — `WorktreeSetupCommandTests` (9),
-  `WorktreeLimitTests` (9).
+- `tests/test_worktrees.py` — `WorktreeSetupCommandTests` (11),
+  `WorktreeLimitTests` (8).
 - `tests/test_dashboard.py` — four endpoint tests.
 - `tests/test_settings.py` — `WorktreeBudgetSettingsTests` (5).
 - `frontend/src/components.test.jsx` — new file, six `WorktreePanel` tests.
@@ -141,7 +145,7 @@ carries everything else.
 
 ## Tests
 
-- `./venv/bin/python -m unittest discover -s tests` — **830 passed**, 1 skipped.
+- `./venv/bin/python -m unittest discover -s tests` — **831 passed**, 1 skipped.
 - `npx vitest run` (frontend) — **35 passed** across 4 files.
 - `npx vite build` — dist rebuilt.
 - `./venv/bin/python scripts/validate_repo_memory.py` — passed.
