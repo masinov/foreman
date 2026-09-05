@@ -261,8 +261,8 @@ class BuiltinExecutor:
 
         # Work the developer left uncommitted in the task's own tree is not on
         # the branch, so merging would silently drop it. Refuse instead.
-        task_dir = Path(working_dir) if working_dir is not None else _task_dir(project, task)
-        if task_dir.is_dir() and not is_worktree_clean(task_dir):
+        task_dir = _task_worktree(project, task, working_dir)
+        if task_dir is not None and not is_worktree_clean(task_dir):
             return self._block_task(
                 task,
                 detail=(
@@ -418,8 +418,8 @@ class BuiltinExecutor:
         evidence_builder: Callable[[Task, Project], CompletionEvidence | None] | None = None,
         working_dir: Path | None = None,
     ) -> BuiltinResult:
-        task_dir = Path(working_dir) if working_dir is not None else _task_dir(project, task)
-        if task.branch_name and task_dir.is_dir() and not is_worktree_clean(task_dir):
+        task_dir = _task_worktree(project, task, working_dir)
+        if task.branch_name and task_dir is not None and not is_worktree_clean(task_dir):
             return self._block_task(
                 task,
                 detail=(
@@ -793,10 +793,31 @@ class BuiltinExecutor:
 def _task_dir(project: Project, task: Task) -> Path:
     """Return the working tree a task's built-ins should act on."""
 
-    recorded = getattr(task, "worktree_path", None)
-    if recorded and Path(recorded).is_dir():
-        return Path(recorded)
-    return Path(project.repo_path)
+    worktree = _task_worktree(project, task, None)
+    return worktree if worktree is not None else Path(project.repo_path)
+
+
+def _task_worktree(
+    project: Project,
+    task: Task,
+    working_dir: Path | None,
+) -> Path | None:
+    """Return the task's *own* worktree, or None when it has none.
+
+    Callers that judge a tree — "is there uncommitted work here?" — must use
+    this rather than :func:`_task_dir`. Falling back to ``project.repo_path``
+    there would let an operator's unrelated edits in their own checkout block
+    a task, and the operator's checkout is explicitly not the engine's to
+    judge (ADR-0012).
+    """
+
+    candidate = working_dir if working_dir is not None else getattr(task, "worktree_path", None)
+    if not candidate:
+        return None
+    path = Path(candidate)
+    if path == Path(project.repo_path) or not path.is_dir():
+        return None
+    return path
 
 
 def _context_mirror_dirs(project: Project, working_dir: Path | None) -> tuple[Path, ...]:

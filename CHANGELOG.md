@@ -116,7 +116,8 @@ memory changes rather than versioned product releases.
   `<worktree_root>/_integration` tree pinned to the default branch — the
   operator's checkout only sees the ref move — and now also refuses a dirty
   task worktree, since uncommitted work there is not on the branch and would
-  be silently dropped. The "default branch did not move during a step"
+  be silently dropped; both dirty-tree guards judge the task's own tree and
+  never the operator's checkout. The "default branch did not move during a step"
   invariant stays. Worktrees survive human gates, quota pauses, review rounds,
   and engine restarts. New `foreman worktree list|prune <project>`; `foreman
   task show` and `foreman history` print the path and the dashboard task

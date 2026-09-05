@@ -7636,10 +7636,12 @@ class MarkDoneCompletionGuardTests(unittest.TestCase):
             acceptance_criteria="Add auth module",
         )
 
-        self.git(repo_path, "checkout", "-b", task.branch_name)
-        self.write_text(repo_path / "auth.py", "def issue_token(user_id): return f'token-{user_id}'\n")
-
         from foreman.builtins import BuiltinExecutor
+        from foreman.worktrees import WorktreeManager
+
+        worktree = WorktreeManager(project).ensure(task)
+        task.worktree_path = str(worktree)
+        self.write_text(worktree / "auth.py", "def issue_token(user_id): return f'token-{user_id}'\n")
 
         task.status = "in_progress"
         executor = BuiltinExecutor()
@@ -7655,6 +7657,8 @@ class MarkDoneCompletionGuardTests(unittest.TestCase):
         self.assertEqual(result.outcome, "blocked")
         self.assertIn("uncommitted changes", result.detail)
         self.assertEqual(task.status, "blocked")
+        # The worktree survives a refusal: the work in it is what needs saving.
+        self.assertTrue(worktree.is_dir())
 
     def test_mark_done_blocks_absorbed_branch_without_successful_merge_run(self) -> None:
         """_builtin:mark_done refuses already-absorbed branches without a recorded merge success."""

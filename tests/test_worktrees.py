@@ -767,6 +767,35 @@ class EngineWorktreeIsolationTests(unittest.TestCase):
             )
             self.assertEqual(store.get_task(task.id).status, "done")
 
+    def test_uncommitted_work_in_the_operator_checkout_never_blocks_a_task(self) -> None:
+        """The engine judges the task's tree, not the operator's."""
+        repo, db_path = self.workspace()
+        with ForemanStore(db_path) as store:
+            project, task = self.seed(store, repo)
+            # A person is mid-edit in their own checkout while the task runs.
+            (repo / "operator-scratch.txt").write_text("half a thought\n", encoding="utf-8")
+
+            orchestrator = ForemanOrchestrator(
+                store,
+                agent_runners={
+                    "claude_code": _ScriptedRunner(
+                        [_developer_commits, _reviewer_approves]
+                    )
+                },
+            )
+            result = orchestrator.run_project(project.id)
+
+            self.assertEqual(
+                result.stop_reason, "idle", store.get_task(task.id).blocked_reason
+            )
+            self.assertEqual(store.get_task(task.id).status, "done")
+
+        # Their edit is still there, untracked and untouched.
+        self.assertEqual(
+            (repo / "operator-scratch.txt").read_text(encoding="utf-8"),
+            "half a thought\n",
+        )
+
     def test_a_run_fails_at_the_start_when_the_worktree_root_is_not_ignored(self) -> None:
         repo, db_path = self.workspace(ignore_foreman=False)
         with ForemanStore(db_path) as store:
