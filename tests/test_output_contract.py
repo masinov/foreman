@@ -477,9 +477,10 @@ class OrchestratorContractTests(unittest.TestCase):
             )
 
             def developer_commits(config: AgentRunConfig):
-                (repo / "feature.txt").write_text("done\n", encoding="utf-8")
-                subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
-                subprocess.run(["git", "commit", "-m", "feat: feature"], cwd=repo, check=True, capture_output=True)
+                work_dir = Path(config.working_dir)
+                (work_dir / "feature.txt").write_text("done\n", encoding="utf-8")
+                subprocess.run(["git", "add", "."], cwd=work_dir, check=True, capture_output=True)
+                subprocess.run(["git", "commit", "-m", "feat: feature"], cwd=work_dir, check=True, capture_output=True)
                 yield AgentEvent("agent.started", payload={"command": "fake"})
                 yield AgentEvent("agent.message", payload={"text": "Implemented the feature.\nTASK_COMPLETE", "phase": "result"})
                 yield AgentEvent("agent.completed", payload={"session_id": "s"})
@@ -514,10 +515,11 @@ class OrchestratorContractTests(unittest.TestCase):
         repo, db_path = self._workspace()
 
         def developer_commits(config: AgentRunConfig):
-            (repo / "feature.py").write_text("def feature():\n    return 'implemented'\n", encoding="utf-8")
-            (repo / "tests_feature.py").write_text("from feature import feature\n", encoding="utf-8")
-            subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
-            subprocess.run(["git", "commit", "-m", "feat: implement the feature"], cwd=repo, check=True, capture_output=True)
+            work_dir = Path(config.working_dir)
+            (work_dir / "feature.py").write_text("def feature():\n    return 'implemented'\n", encoding="utf-8")
+            (work_dir / "tests_feature.py").write_text("from feature import feature\n", encoding="utf-8")
+            subprocess.run(["git", "add", "."], cwd=work_dir, check=True, capture_output=True)
+            subprocess.run(["git", "commit", "-m", "feat: implement the feature"], cwd=work_dir, check=True, capture_output=True)
             yield AgentEvent("agent.started", payload={"command": "fake"})
             yield AgentEvent("agent.message", payload={"text": "Implemented the feature with tests.\nTASK_COMPLETE", "phase": "result"})
             yield AgentEvent("agent.completed", payload={"session_id": "s"})

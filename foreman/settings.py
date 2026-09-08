@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 
@@ -38,6 +39,14 @@ class ProjectSettings:
     max_infra_retries: int = 3
     active_run_recovery_timeout_minutes: int = 0
     context_dir: str = ""
+    # Where the per-task git worktrees live. Empty means the default,
+    # ``<repo>/.foreman/worktrees``; an absolute path puts them elsewhere.
+    worktree_root: str = ""
+    # Repository-relative paths symlinked from the operator's checkout into
+    # every new worktree. A worktree is a clean checkout, so ignored local
+    # tooling a test command needs (``venv``, ``node_modules``) is not there
+    # unless it is named here.
+    worktree_link_paths: tuple[str, ...] = ()
     completion_guard_enabled: bool = True
     # Gate policies: "auto" lets the engine approve the gate on its own and
     # records a policy decision; "human" pauses the task for a person.
@@ -89,6 +98,10 @@ class ProjectSettings:
                 raw.get("active_run_recovery_timeout_minutes"), default=0
             ),
             context_dir=str(raw.get("context_dir") or ""),
+            worktree_root=str(raw.get("worktree_root") or ""),
+            worktree_link_paths=_validate_worktree_link_paths(
+                raw.get("worktree_link_paths")
+            ),
             completion_guard_enabled=bool(raw.get("completion_guard_enabled", True)),
             merge_approval=_validate_gate_policy(raw.get("merge_approval"), default="auto"),
             plan_approval=_validate_gate_policy(raw.get("plan_approval"), default="human"),
@@ -108,6 +121,37 @@ class ProjectSettings:
                 raw.get("review_diff_max_chars"), default=16000
             ),
         )
+
+
+def _validate_worktree_link_paths(value: Any) -> tuple[str, ...]:
+    """Validate the repo-relative paths linked into every task worktree."""
+
+    if value is None:
+        return ()
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, (list, tuple)):
+        raise SettingsError(
+            f"worktree_link_paths must be a list of relative paths, got "
+            f"{type(value).__name__!r}"
+        )
+    names: list[str] = []
+    for entry in value:
+        if not isinstance(entry, str):
+            raise SettingsError(
+                f"worktree_link_paths entries must be strings, got {entry!r}"
+            )
+        name = entry.strip()
+        if not name:
+            continue
+        candidate = Path(name)
+        if candidate.is_absolute() or ".." in candidate.parts:
+            raise SettingsError(
+                f"worktree_link_paths entry {name!r} must be a relative path inside "
+                "the repository."
+            )
+        names.append(name)
+    return tuple(names)
 
 
 GATE_POLICY_VALUES: tuple[str, ...] = ("auto", "human")

@@ -177,6 +177,9 @@ class Task:
     priority: int = 0
     order_index: int = 0
     branch_name: str | None = None
+    #: Foreman-owned checkout this task's agent steps run in, set on the
+    #: task's first develop visit and cleared when the worktree is removed.
+    worktree_path: str | None = None
     assigned_role: str | None = None
     acceptance_criteria: str | None = None
     blocked_reason: str | None = None

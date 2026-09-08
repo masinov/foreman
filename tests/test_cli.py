@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -16,15 +18,83 @@ from foreman.store import ForemanStore
 REPO_ROOT = Path(__file__).resolve().parents[1]
 VENV_BIN = REPO_ROOT / "venv" / "bin"
 PIP = VENV_BIN / "pip"
-PYTHON = VENV_BIN / "python"
 FOREMAN = VENV_BIN / "foreman"
+#: The interpreter running this suite. Deliberately not a hard-coded
+#: ``venv/bin/python``: a task worktree has no virtualenv of its own, and the
+#: suite must still be runnable there.
+PYTHON = Path(sys.executable)
+
+
+def cli_env(extra: dict[str, str] | None = None) -> dict[str, str]:
+    """Return the environment for a CLI subprocess.
+
+    ``PYTHONPATH`` pins the import to the checkout this file lives in, so the
+    subprocess exercises *this* code whatever the virtualenv's editable
+    install happens to point at.
+    """
+
+    env = dict(os.environ)
+    existing = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = (
+        f"{REPO_ROOT}{os.pathsep}{existing}" if existing else str(REPO_ROOT)
+    )
+    if extra:
+        env.update(extra)
+    return env
+
+
+def cli_argv(*args: str) -> list[str]:
+    """Return the argv that runs this checkout's CLI in a subprocess."""
+
+    return [str(PYTHON), "-m", "foreman", *args]
+
+
+def installed_foreman_root() -> Path | None:
+    """Return the ``foreman`` package this interpreter imports on its own.
+
+    Answers "which checkout is the virtualenv wired to?" without letting this
+    checkout answer for itself: ``PYTHONPATH`` is stripped and the probe runs
+    outside the repository.
+    """
+
+    env = {key: value for key, value in os.environ.items() if key != "PYTHONPATH"}
+    probe = subprocess.run(
+        [
+            str(PYTHON),
+            "-c",
+            "import foreman, pathlib; print(pathlib.Path(foreman.__file__).resolve().parent)",
+        ],
+        cwd=tempfile.gettempdir(),
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if probe.returncode != 0 or not probe.stdout.strip():
+        return None
+    return Path(probe.stdout.strip())
 
 
 class ForemanCLISmokeTests(unittest.TestCase):
     """Verify that the initial CLI shell is wired and runnable."""
 
+    #: Set when the console-entrypoint reinstall was deliberately skipped.
+    reinstall_skipped_for: str | None = None
+
     @classmethod
     def setUpClass(cls) -> None:
+        installed = installed_foreman_root()
+        if installed is not None and installed != REPO_ROOT / "foreman":
+            # The virtualenv's editable install points at a different
+            # checkout, which is what a suite run inside a task worktree looks
+            # like: the worktree borrows the operator's `venv/`. Reinstalling
+            # would repoint that virtualenv at the worktree and quietly break
+            # the operator's own `foreman` command, so this setup does not do
+            # it. Every CLI subprocess runs `python -m foreman` with
+            # PYTHONPATH pinned to this checkout, so the code under test is
+            # still this one — only the console script on PATH is stale.
+            cls.reinstall_skipped_for = str(installed)
+            return
         install_result = subprocess.run(
             [
                 str(PIP),
@@ -50,8 +120,9 @@ class ForemanCLISmokeTests(unittest.TestCase):
 
     def run_cli(self, *args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            [str(FOREMAN), *args],
+            cli_argv(*args),
             cwd=REPO_ROOT,
+            env=cli_env(),
             capture_output=True,
             text=True,
             check=False,
@@ -59,8 +130,9 @@ class ForemanCLISmokeTests(unittest.TestCase):
 
     def run_cli_in(self, cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            [str(FOREMAN), *args],
+            cli_argv(*args),
             cwd=cwd,
+            env=cli_env(),
             capture_output=True,
             text=True,
             check=False,
@@ -68,8 +140,9 @@ class ForemanCLISmokeTests(unittest.TestCase):
 
     def spawn_cli(self, *args: str) -> subprocess.Popen[str]:
         return subprocess.Popen(
-            [str(FOREMAN), *args],
+            cli_argv(*args),
             cwd=REPO_ROOT,
+            env=cli_env(),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -79,6 +152,7 @@ class ForemanCLISmokeTests(unittest.TestCase):
         return subprocess.run(
             [str(PYTHON), *args],
             cwd=REPO_ROOT,
+            env=cli_env(),
             capture_output=True,
             text=True,
             check=False,
@@ -800,6 +874,140 @@ class ForemanCLISmokeTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(store.get_task(dead_letter.id).status, "todo")
 
+    # ------------------------------------------------------------------
+    # worktree
+    # ------------------------------------------------------------------
+
+    def _worktree_workspace(self) -> tuple[Path, Path, ForemanStore]:
+        """A git repo, a store, and a project whose tasks can hold worktrees."""
+
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        root = Path(temp_dir.name)
+        repo = root / "repo"
+        repo.mkdir()
+        for args in (
+            ("init",),
+            ("checkout", "-b", "main"),
+            ("config", "user.email", "cli-tests@example.com"),
+            ("config", "user.name", "CLI Tests"),
+        ):
+            subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)
+        (repo / "README.md").write_text("# repo\n", encoding="utf-8")
+        (repo / ".gitignore").write_text(".foreman/\n", encoding="utf-8")
+        subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "init"], cwd=repo, check=True, capture_output=True
+        )
+
+        db_path = root / "foreman.db"
+        store = ForemanStore(db_path)
+        self.addCleanup(store.close)
+        store.initialize()
+        store.save_project(
+            Project(
+                id="project-1",
+                name="Foreman Demo",
+                repo_path=str(repo),
+                workflow_id="development",
+                default_branch="main",
+            )
+        )
+        store.save_sprint(
+            Sprint(id="sprint-1", project_id="project-1", title="S", status="active")
+        )
+        return repo, db_path, store
+
+    def _seed_worktree_task(
+        self,
+        store: ForemanStore,
+        *,
+        task_id: str,
+        status: str,
+    ) -> tuple[Task, Path]:
+        from foreman.worktrees import WorktreeManager
+
+        task = Task(
+            id=task_id,
+            sprint_id="sprint-1",
+            project_id="project-1",
+            title=f"Task {task_id}",
+            status=status,
+            branch_name=f"feat/{task_id}",
+        )
+        store.save_task(task)
+        project = store.get_project("project-1")
+        path = WorktreeManager(project).ensure(task)
+        task.worktree_path = str(path)
+        store.save_task(task)
+        return task, path
+
+    def test_worktree_list_shows_each_tree_with_its_task_and_branch(self) -> None:
+        repo, db_path, store = self._worktree_workspace()
+        live, live_path = self._seed_worktree_task(
+            store, task_id="live", status="in_progress"
+        )
+
+        result = self.run_cli("worktree", "list", "project-1", "--db", str(db_path))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(str(repo / ".foreman" / "worktrees"), result.stdout)
+        self.assertIn("branch=feat/live", result.stdout)
+        self.assertIn(f"task={live.task_key or live.id}", result.stdout)
+        self.assertIn("status=in_progress", result.stdout)
+        self.assertIn(str(live_path), result.stdout)
+
+    def test_worktree_list_reports_an_empty_root(self) -> None:
+        _, db_path, _ = self._worktree_workspace()
+
+        result = self.run_cli("worktree", "list", "project-1", "--db", str(db_path))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("- none", result.stdout)
+
+    def test_worktree_prune_removes_finished_tasks_and_forgets_their_paths(self) -> None:
+        _, db_path, store = self._worktree_workspace()
+        live, live_path = self._seed_worktree_task(
+            store, task_id="live", status="in_progress"
+        )
+        done, done_path = self._seed_worktree_task(store, task_id="finished", status="done")
+
+        result = self.run_cli("worktree", "prune", "project-1", "--db", str(db_path))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Removed: 1", result.stdout)
+        self.assertFalse(done_path.exists())
+        self.assertTrue(live_path.is_dir())
+        self.assertIsNone(store.get_task(done.id).worktree_path)
+        self.assertEqual(store.get_task(live.id).worktree_path, str(live_path))
+
+    def test_worktree_commands_reject_an_unknown_project(self) -> None:
+        _, db_path, _ = self._worktree_workspace()
+
+        result = self.run_cli("worktree", "list", "nope", "--db", str(db_path))
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Unknown project", result.stderr)
+
+    def test_task_cancel_removes_the_worktree_and_task_show_stops_advertising_it(self) -> None:
+        _, db_path, store = self._worktree_workspace()
+        task, path = self._seed_worktree_task(
+            store, task_id="doomed", status="in_progress"
+        )
+
+        shown = self.run_cli("task", "show", task.id, "--db", str(db_path))
+        self.assertEqual(shown.returncode, 0, shown.stderr)
+        self.assertIn(f"Worktree: {path}", shown.stdout)
+
+        cancelled = self.run_cli("task", "cancel", task.id, "--db", str(db_path))
+
+        self.assertEqual(cancelled.returncode, 0, cancelled.stderr)
+        self.assertIn(f"Removed worktree: {path}", cancelled.stdout)
+        self.assertFalse(path.exists())
+        self.assertIsNone(store.get_task(task.id).worktree_path)
+        after = self.run_cli("task", "show", task.id, "--db", str(db_path))
+        self.assertNotIn("Worktree:", after.stdout)
+
     def test_task_cancel_refuses_a_task_a_resident_engine_is_running(self) -> None:
         from foreman.models import Run
 
@@ -1175,15 +1383,16 @@ class ForemanCLISmokeTests(unittest.TestCase):
                 time.sleep(0.25)
             return False
 
-        process = subprocess.Popen(  # noqa: S603 - the repo's own console script
-            [
-                str(FOREMAN), "serve", project.id,
+        process = subprocess.Popen(  # noqa: S603 - the repo's own CLI
+            cli_argv(
+                "serve", project.id,
                 # Long enough that a timed poll cannot explain the pickup: only
                 # the data_version wake can.
                 "--poll-seconds", "120",
                 "--db", str(db_path),
-            ],
+            ),
             cwd=REPO_ROOT,
+            env=cli_env(),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -2184,7 +2393,8 @@ class DbCommandTests(unittest.TestCase):
 
     def run_cli(self, *args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            [str(FOREMAN), *args],
+            cli_argv(*args),
+            env=cli_env(),
             capture_output=True,
             text=True,
             check=False,
@@ -2258,10 +2468,6 @@ if __name__ == "__main__":
 class EngineCommandCliTests(unittest.TestCase):
     """`foreman engine`: read the resident engine, queue commands for it."""
 
-    @classmethod
-    def setUpClass(cls) -> None:
-        if not FOREMAN.is_file():
-            raise unittest.SkipTest(f"console entrypoint missing at {FOREMAN}")
 
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
@@ -2293,7 +2499,7 @@ class EngineCommandCliTests(unittest.TestCase):
 
     def run_cli(self, *args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            [str(FOREMAN), *args], capture_output=True, text=True, check=False
+            cli_argv(*args), env=cli_env(), capture_output=True, text=True, check=False
         )
 
     def _only_command(self):
@@ -2527,7 +2733,8 @@ class EngineCommandCliTests(unittest.TestCase):
         self.assertEqual(queued.returncode, 0, queued.stderr)
 
         served = subprocess.run(
-            [str(FOREMAN), "serve", "project-1", "--once", "--db", str(self.db_path)],
+            cli_argv("serve", "project-1", "--once", "--db", str(self.db_path)),
+            env=cli_env(),
             capture_output=True,
             text=True,
             check=False,

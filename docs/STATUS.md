@@ -9,15 +9,27 @@
   (`foreman run foreman`) wherever the engine can carry them; findings are
   recorded in `docs/reviews/sprint-54-live-run-notes.md`.
 - Latest completed sprint: `sprint-53-phase0-unattended-safety`.
-- Last merged branch: `fix/runner-quota-exhaustion` (sprint 54 live-run
-  fix F2), after slice 1 (`a462659`, merged by the engine) and
-  `docs/sprint-54-live-run-1`.
-- Current implementation branch: none by hand. Next: sprint 54 slice 3
-  (intake endpoint and API tokens) as a dogfood task picked up by
-  `foreman serve foreman`.
+- Last merged branch: `fix/cancelled-dependency-blocks` (sprint 54 live-run
+  fix F4), after slice 2b and slice 1 (`a462659`, merged by the engine).
+- Current implementation branch:
+  `feat/task-give-every-task-its-own-git-worktree` — sprint 54 slice 6, one
+  git worktree per task; the engine no longer changes what is checked out in
+  the operator's repository. Next: sprint 54 slice 3 (intake endpoint and API
+  tokens) as a dogfood task picked up by `foreman serve foreman`.
+- **Operator action required before the next engine-driven run:** set
+  `worktree_link_paths=["venv"]` on the `foreman` project
+  (`foreman config foreman --set 'worktree_link_paths=["venv"]'`). A task
+  worktree is a clean checkout, so `_builtin:run_tests` cannot find
+  `./venv/bin/python` until the operator's virtualenv is linked in. See
+  `docs/MANUAL.md` §24.
 
 ## Active branches
 
+- `feat/task-give-every-task-its-own-git-worktree` — sprint 54 slice 6: new
+  `foreman/worktrees.py`, migration 16 (`tasks.worktree_path`), every agent
+  step / test run / branch refresh / conflict-recovery merge in the task's own
+  worktree, `_builtin:merge` through a shared `_integration` worktree,
+  `foreman worktree list|prune`, ADR-0012
 - `fix/cancelled-dependency-blocks` — sprint 54 live-run fix F4; merged to
   `main`
 - `feat/task-rewire-the-dashboard-onto-the-resident-engine-and-report-dead-letter-tasks`
@@ -90,7 +102,49 @@
 - Phase 0 of the production readiness review is complete: an unattended run
   is safe on one machine.
 
-## Latest update — sprint 54 live run 5: slice 2b landed, two more findings
+## Latest update — sprint 54 slice 6: one worktree per task
+
+The engine and the operator no longer share a working tree. `foreman run` and
+`foreman serve` never run `checkout`, `merge`, or `reset` in
+`project.repo_path`; each task executes in
+`<repo>/.foreman/worktrees/<task-key-or-id>/`, and `_builtin:merge` lands its
+`--no-ff` merge in `<worktree_root>/_integration`, a shared tree pinned to the
+default branch. The operator's checkout sees refs move and nothing else.
+
+This closes live-run observations 7, 19, 33, and 35 as a class rather than
+individually: all four were consequences of the shared tree, not of the
+particular step that tripped over it.
+
+What landed: `foreman/worktrees.py` (the only module that builds a working-tree
+path), migration 16 (`tasks.worktree_path`, nullable), worktree-scoped native
+steps / `_builtin:run_tests` / branch refresh / conflict recovery, the context
+projection mirrored into the worktree's own `.foreman/`, a run-start preflight
+that refuses an unignored worktree root or a git without `git worktree`,
+`foreman worktree list|prune`, the path in `foreman task show` and the
+dashboard drawer, worktree removal on `mark_done` / cancel / delete, and
+ADR-0012.
+
+Two things a reader should know:
+
+- **`worktree_link_paths` is required for this repository.** A worktree is a
+  clean checkout, so `./venv/bin/python -m unittest discover -s tests` has no
+  interpreter until `venv` is symlinked in. Set
+  `worktree_link_paths=["venv"]` on the `foreman` project before the next
+  engine-driven run.
+- **A suite run inside a worktree no longer repoints the operator's
+  virtualenv.** `tests/test_cli.py` used to `pip install -e .` from whatever
+  checkout ran it. It now runs `python -m foreman` with `PYTHONPATH` pinned to
+  the checkout under test and reinstalls only when the virtualenv already
+  points there. Verified by running the full 802-test suite inside a real
+  worktree of this repository and re-probing the virtualenv afterwards
+  (`docs/TESTING.md`).
+
+Open follow-ups: nothing bounds total worktree disk use; the linked virtualenv
+is shared rather than per-worktree; the dashboard shows the path but offers no
+prune action. All three are recorded in
+`docs/prs/feat-task-give-every-task-its-own-git-worktree.md`.
+
+## Previous update — sprint 54 live run 5: slice 2b landed, two more findings
 
 - Slice 2b (dashboard onto the resident engine) was carried by the engine
   with one STEER round and merged at `3ff6936` after the maintainer brought

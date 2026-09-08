@@ -1092,6 +1092,12 @@ export function TaskDetailDrawer({
             <span className="detail-field-label">Branch</span>
             <span className="detail-field-value">{task.branch_name || "—"}</span>
           </div>
+          {task.worktree_path ? (
+            <div className="detail-field">
+              <span className="detail-field-label">Worktree</span>
+              <span className="detail-field-value detail-path">{task.worktree_path}</span>
+            </div>
+          ) : null}
           <div className="detail-field">
             <span className="detail-field-label">Role</span>
             <span className="detail-field-value">{task.assigned_role || "Unassigned"}</span>
