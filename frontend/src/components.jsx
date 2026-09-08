@@ -738,35 +738,31 @@ export function SprintList({ project, sprints, pendingGates, engineStatus, onSel
               <h1>{project.name}</h1>
               <div className="project-meta">
                 <span>
+                  Repository <span className="v">{project.repo_path}</span>
+                </span>
+                <span>
+                  Branch <span className="v">{project.default_branch || "main"}</span>
+                </span>
+                <span>
                   Workflow <span className="v">{project.workflow_id}</span>
-                </span>
-                <span>
-                  Default branch <span className="v">{project.default_branch || "main"}</span>
-                </span>
-                <span>
-                  Repo <span className="v">{project.repo_path}</span>
-                </span>
-              </div>
-              <div className="project-meta">
-                <span className={`engine-state engine-${engineMode}`}>
-                  {formatEngineSummary(engineStatusPayload)}
                 </span>
               </div>
               <WorktreePanel project={project} services={services} />
-              {(project.blocked_gate || 0) + (project.blocked_engine || 0) > 0 ? (
-                <div className="project-badges">
-                  {project.blocked_gate > 0 ? (
-                    <span className="badge badge-warn">
-                      {project.blocked_gate} at a human gate
-                    </span>
-                  ) : null}
-                  {project.blocked_engine > 0 ? (
-                    <span className="badge badge-danger">
-                      {project.blocked_engine} blocked by the engine
-                    </span>
-                  ) : null}
-                </div>
-              ) : null}
+              <div className="project-status-summary" role="group" aria-label="Project activity">
+                <span className={`engine-state engine-${engineMode}`}>
+                  {formatEngineSummary(engineStatusPayload)}
+                </span>
+                {project.blocked_gate > 0 ? (
+                  <span className="project-status-gate">
+                    {project.blocked_gate} at a human gate
+                  </span>
+                ) : null}
+                {project.blocked_engine > 0 ? (
+                  <span className="project-status-blocked">
+                    {project.blocked_engine} blocked by the engine
+                  </span>
+                ) : null}
+              </div>
             </div>
 
             {pendingGates && pendingGates.length > 0 ? (

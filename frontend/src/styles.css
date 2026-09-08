@@ -614,18 +614,21 @@ button {
   font-family: var(--font-serif);
   font-size: 20px;
   font-weight: 600;
-  margin-bottom: 4px;
+  margin-bottom: 8px;
 }
 
 .project-meta {
   display: flex;
-  gap: 20px;
+  flex-wrap: wrap;
+  gap: 4px 20px;
   font-size: 11px;
+  line-height: 1.6;
   color: var(--text-tertiary);
 }
 
 .project-meta .v {
   color: var(--text-secondary);
+  overflow-wrap: anywhere;
 }
 
 /* The worktree row carries a control, so it needs vertical centring and a
@@ -633,7 +636,7 @@ button {
 .worktree-meta {
   align-items: center;
   gap: 10px;
-  margin-top: 4px;
+  margin-top: 6px;
 }
 
 /* The root is long and only meaningful character by character; it gives way
@@ -648,10 +651,26 @@ button {
   max-width: 40ch;
 }
 
-.project-badges {
+.project-status-summary {
   display: flex;
-  gap: 8px;
-  margin-top: 6px;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 20px;
+  margin-top: 10px;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.project-status-summary .engine-state {
+  white-space: normal;
+}
+
+.project-status-gate {
+  color: var(--amber);
+}
+
+.project-status-blocked {
+  color: var(--red);
 }
 
 .badge {

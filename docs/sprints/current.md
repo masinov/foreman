@@ -37,6 +37,19 @@ decides where a human is required.
 | 6 | Worktree per task under a Foreman-owned directory | done | `feat/task-give-every-task-its-own-git-worktree` (engine-run) | `foreman/worktrees.py`, migration 16, orchestrator, built-ins, `foreman worktree`, ADR-0012, `tests/test_worktrees.py` |
 | 6b | Bounded worktree disk use (`max_live_worktrees`) and a per-worktree environment (`worktree_setup_command`); dashboard prune control | done | `chore/task-c68378a4e541` (engine-run, follow-up from ADR-0012) | `enforce_worktree_limit`, setup command + marker, `GET/POST /api/projects/{id}/worktrees[/prune]`, `WorktreePanel`, ADR-0012 amendment, tests |
 
+### Operator UI fix — Project header
+
+- Status: done (unmerged); branch `fix/dashboard-project-header`, following the
+  Manager fix at `1690a2a`.
+- User-requested descriptor order: Repository, Branch, Workflow. Worktree
+  details remain with the descriptors; engine residency/heartbeat and blocked
+  counts form a single plain-text status row below them.
+- Deliverables: header markup and consistent spacing, rebuilt frontend and
+  live browser validation with Manager folded and open.
+- Validation passed: 39 frontend tests, production build, repository memory
+  checks and live browser assertions for descriptor order, status placement
+  and plain-text styling. Screenshots inspected at 1440 × 1000.
+
 ### Operator UI fix — Manager panel
 
 - Status: done; branch `fix/dashboard-manager-panel` (unmerged).

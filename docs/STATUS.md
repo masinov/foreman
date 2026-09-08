@@ -1,5 +1,18 @@
 # STATUS
 
+## Project header correction — 2026-09-08
+
+Sprint 54 operator follow-up on `fix/dashboard-project-header`, based on the
+completed Manager fix (`1690a2a`). The user requested Repository, Branch, then
+Workflow, with engine residency/heartbeat and blocked counts together below
+the project descriptors. Existing code interleaves activity with worktree
+metadata and styles blocked counts like buttons. Replace those badges with
+plain status text and normalize header spacing; keep controls distinct.
+Completed in the React frontend and rebuilt assets: 39 frontend tests,
+production build, repository validation and live browser checks passed.
+Screenshots checked at 1440 × 1000 with Manager folded and open. Dashboard
+port 8212 was restarted to refresh its startup-cached HTML. Change unmerged.
+
 ## Dashboard panel correction — 2026-09-08
 
 Sprint 54 operator fix on `fix/dashboard-manager-panel`: the sprint overview
