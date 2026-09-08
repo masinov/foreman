@@ -27,9 +27,7 @@
 
 ## Active branches
 
-<<<<<<< HEAD
 - `fix/keep-session-on-kill` — sprint 54 live-run fix F5; merged to `main`
-=======
 - `chore/task-c68378a4e541` — sprint 54 slice 6b: `max_live_worktrees` with
   `worktrees.enforce_worktree_limit` (reclaims clean idle trees oldest-first,
   never a dirty one), `worktree_setup_command` with a marker in the tree's git
@@ -44,7 +42,6 @@
   step / test run / branch refresh / conflict-recovery merge in the task's own
   worktree, `_builtin:merge` through a shared `_integration` worktree,
   `foreman worktree list|prune`, ADR-0012
->>>>>>> main
 - `fix/cancelled-dependency-blocks` — sprint 54 live-run fix F4; merged to
   `main`
 - `feat/task-rewire-the-dashboard-onto-the-resident-engine-and-report-dead-letter-tasks`
@@ -117,7 +114,6 @@
 - Phase 0 of the production readiness review is complete: an unattended run
   is safe on one machine.
 
-<<<<<<< HEAD
 ## Latest update — sprint 54 live run 6 closed: worktrees landed
 
 - The worktree slice hit the five-hour quota again; the resident engine
@@ -142,8 +138,7 @@
   branch `fix/keep-session-on-kill` (F5) records the id from `agent.session`
   and keeps it on abandoned runs.
 - Observations 38–39 in `docs/reviews/sprint-54-live-run-notes.md`.
-=======
-## Latest update — sprint 54 slice 6: one worktree per task
+## Previous update — sprint 54 slice 6: one worktree per task
 
 The engine and the operator no longer share a working tree. `foreman run` and
 `foreman serve` never run `checkout`, `merge`, or `reset` in
@@ -184,7 +179,6 @@ Open follow-ups: nothing bounds total worktree disk use; the linked virtualenv
 is shared rather than per-worktree; the dashboard shows the path but offers no
 prune action. All three are recorded in
 `docs/prs/feat-task-give-every-task-its-own-git-worktree.md`.
->>>>>>> main
 
 ## Previous update — sprint 54 live run 5: slice 2b landed, two more findings
 
@@ -433,7 +427,7 @@ prune action. All three are recorded in
 - Validation: full suite 577 passing (was 571; +6 regression tests);
   `scripts/validate_repo_memory.py` clean.
 
-## Latest update — review Phases 6 & 7 supervision and transport
+## Previous update — review Phases 6 & 7 supervision and transport
 
 - `feat/supervision-and-transport` (top of the stack) implements review Phases
   6 and 7, completing the review roadmap.
@@ -448,7 +442,7 @@ prune action. All three are recorded in
 - Token-economy settings registered in `ProjectSettings`; README and ADR-0010
   added.
 
-## Latest update — review Phases 4 & 5 token economy
+## Previous update — review Phases 4 & 5 token economy
 
 - `feat/judge-and-tiered-review` (stacked on `feat/executor-overrides-ladder`)
   implements review Phases 4 and 5.
@@ -462,7 +456,7 @@ prune action. All three are recorded in
   curated-diff prompt payload for decision roles, and the `development_tiered`
   workflow (develop → triage → escalate-to-frontier review).
 
-## Latest update — review Phase 3 executor overrides + escalation ladder
+## Previous update — review Phase 3 executor overrides + escalation ladder
 
 - `feat/executor-overrides-ladder` (stacked on `feat/meta-agent-persistence`)
   implements review Phase 3.
@@ -478,7 +472,7 @@ prune action. All three are recorded in
   dashboard `PATCH /api/tasks/{id}` accepts a validated `executor_overrides`
   object and task payloads expose `executor_overrides`/`complexity`.
 
-## Latest update — review Phase 2 manager hardening
+## Previous update — review Phase 2 manager hardening
 
 - `feat/meta-agent-persistence` implements review Phase 2: the meta-agent chat
   panel is now durable and store-backed.
@@ -496,7 +490,7 @@ prune action. All three are recorded in
 - Full local validation passed:
   `./venv/bin/python -m unittest discover -s tests` ran 528 tests.
 
-## Latest update - active-run lease heartbeat recovery merged
+## Previous update - active-run lease heartbeat recovery merged
 
 - MiniMax M3 through Claude Code drafted the core implementation and tests on
   `feat/active-run-lease-heartbeat-recovery`; Codex is supervising review,
@@ -513,7 +507,7 @@ prune action. All three are recorded in
 - Full local validation passed:
   `./venv/bin/python -m unittest discover -s tests -v` ran 518 tests.
 
-## Latest update — MiniMax worker-model smoke merged
+## Previous update — MiniMax worker-model smoke merged
 
 - `feat/worker-fleet-minimax-smoke` was fast-forward merged to `main` and
   pushed to `origin/main` at `07649e6`.
