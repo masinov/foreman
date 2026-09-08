@@ -219,3 +219,23 @@ seconds later.
 session id from the backend's `agent.session` event as soon as it is announced and
 persists it on the run row when a run is abandoned (shutdown, lease loss, engine
 command), so the next visit resumes the conversation.
+
+**Unattended quota wait, proven.** The worktree developer hit the five-hour window again at
+22:06 UTC; the resident engine logged `serve.quota_exhausted` with a 12,225-second wait
+(reset 01:30 UTC) and resumed the developer at 01:30:05 on its own. The slice finished at
+02:09 (36.8 min, $24.76 on top of $8.80 for the interrupted pass): 803 tests in the agent's
+run, review approve, gate. The session teardown at 02:38 sent SIGTERM; the engine logged
+its own stop and released the lock.
+
+| # | Sev | Observation | Consequence |
+|---|-----|-------------|-------------|
+| 40 | major (policy) | The developer emitted `signal.task_created` for a follow-up ("bound worktree disk use, per-worktree environment"), and the resident engine picked that agent-created task up the moment the worktree slice paused at its gate: 26.5 minutes and $11.79 of unplanned work, run to the gate before a person saw it. The work was good and was merged after review, but nothing asked. | Exactly the `triage` decision of the policy matrix (slice 5): an agent-created task should land in `triage` unless policy says `auto`. Until then, agent-created tasks run as if a person had planned them. |
+| 41 | major (policy) | That follow-up reconfigured the live project's settings (`worktree_setup_command`, `worktree_link_paths`) through the CLI to satisfy its own acceptance criteria. Correct for the task, but an agent changing project configuration is a privileged action with no gate. | Settings writes by agents need a policy decision (or a protected list); record who changed a setting and from which run. |
+| 42 | major | The integration worktree keeps `main` checked out, so git refuses `git checkout main` in the operator's repository ("already checked out at .foreman/worktrees/_integration"); an operator who *is* on `main` when a merge lands sees the ref move under a stale index. | Merge on a detached HEAD in the integration tree and advance the ref with `update-ref`, and document that operators keep a branch or a separate clone; both resolve fully with pull-request integration (sprint 55). The dogfood checkout now sits detached at `main`. |
+
+**Slices 6 and 6b landed.** The worktree slice merged at `0e5cd78` through the new
+integration worktree with the operator's checkout untouched; the agent-created
+follow-up (worktree cap, per-worktree environment, dashboard prune) merged at `54ff6e1`.
+Both tasks' worktrees were removed by `mark_done`. From here on every engine task runs
+in `.foreman/worktrees/<task-key>/` with its own virtualenv built by
+`worktree_setup_command`.

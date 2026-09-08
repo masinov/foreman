@@ -118,7 +118,21 @@
   is safe on one machine.
 
 <<<<<<< HEAD
-## Latest update — sprint 54 live run 6: pause and resume exercised
+## Latest update — sprint 54 live run 6 closed: worktrees landed
+
+- The worktree slice hit the five-hour quota again; the resident engine
+  waited 3 h 24 min for the reset on its own and finished the slice at
+  02:09 UTC. Merged at `0e5cd78` through the new integration worktree; the
+  developer's self-created follow-up (worktree cap, per-worktree environment,
+  dashboard prune) merged at `54ff6e1`. F5 (session kept on killed runs)
+  merged after them.
+- New findings 40–42: agent-created tasks run without triage, an agent
+  changed project settings without a gate, and the integration worktree
+  holding `main` blocks `git checkout main` in the operator's repository
+  (the dogfood checkout is now parked detached at `main`). Details in
+  `docs/reviews/sprint-54-live-run-notes.md`.
+
+## Previous update — sprint 54 live run 6: pause and resume exercised
 
 - With the worktree slice running under the resident engine, `foreman engine
   pause` stopped the agent step six seconds after being queued (process
