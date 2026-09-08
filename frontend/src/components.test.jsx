@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
-import { WorktreePanel } from "./components";
+import { TaskDetailDrawer, WorktreePanel } from "./components";
 
 const PROJECT = { id: "proj-1", name: "Foreman" };
 
@@ -112,5 +112,77 @@ describe("WorktreePanel", () => {
     const { container } = render(<WorktreePanel project={PROJECT} services={null} />);
 
     expect(container).toBeEmptyDOMElement();
+  });
+});
+
+function drawerTask(overrides = {}) {
+  return {
+    id: "task-1",
+    task_key: "FOR-9",
+    title: "Disk full on web-3",
+    status: "todo",
+    task_type: "fix",
+    priority: 0,
+    branch_name: null,
+    assigned_role: null,
+    acceptance_criteria: null,
+    workflow_current_step: null,
+    step_visit_counts: {},
+    depends_on_task_ids: [],
+    executor_overrides: {},
+    totals: { total_token_count: 0, total_cost_usd: 0, run_count: 0 },
+    runs: [],
+    ...overrides,
+  };
+}
+
+describe("TaskDetailDrawer source", () => {
+  it("shows the system, the reference, and the reporter of filed work", () => {
+    render(
+      <TaskDetailDrawer
+        task={drawerTask({
+          source: {
+            system: "pagerduty",
+            external_ref: "INC-42",
+            url: null,
+            reporter: "ana",
+          },
+        })}
+        onClose={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("Source")).toBeInTheDocument();
+    expect(screen.getByText("pagerduty")).toBeInTheDocument();
+    expect(screen.getByText("INC-42")).toBeInTheDocument();
+    expect(screen.getByText("ana")).toBeInTheDocument();
+  });
+
+  it("links the reference back to the filing system when a url is present", () => {
+    render(
+      <TaskDetailDrawer
+        task={drawerTask({
+          source: {
+            system: "pagerduty",
+            external_ref: "INC-42",
+            url: "https://pd.example.com/INC-42",
+            reporter: null,
+          },
+        })}
+        onClose={() => {}}
+      />,
+    );
+
+    const link = screen.getByRole("link", { name: "INC-42" });
+    expect(link).toHaveAttribute("href", "https://pd.example.com/INC-42");
+    // Opening a third-party link must not hand it back a window reference.
+    expect(link).toHaveAttribute("rel", expect.stringContaining("noopener"));
+    expect(screen.queryByText("Reporter")).not.toBeInTheDocument();
+  });
+
+  it("renders no Source section for a task a person created", () => {
+    render(<TaskDetailDrawer task={drawerTask({ source: null })} onClose={() => {}} />);
+
+    expect(screen.queryByText("Source")).not.toBeInTheDocument();
   });
 });
