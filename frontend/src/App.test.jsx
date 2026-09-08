@@ -271,6 +271,37 @@ describe("React dashboard foundation", () => {
     expect(screen.getByRole("button", { name: "Pause engine" })).toBeInTheDocument();
   });
 
+  it("keeps Manager folded until opened and preserves its draft across folding", async () => {
+    const { services } = createMockServices();
+    window.history.replaceState({}, "", "/dashboard/projects/proj-1");
+    render(<App services={services} browser={window} />);
+
+    const managerTab = await screen.findByRole("button", { name: "Manager", exact: true });
+    expect(managerTab).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("button", { name: "Agent", exact: true })).not.toBeInTheDocument();
+    expect(screen.queryByRole("complementary", { name: "Manager" })).not.toBeInTheDocument();
+    expect(services.metaHistory).not.toHaveBeenCalled();
+
+    fireEvent.click(managerTab);
+    expect(await screen.findByText("Planning & supervision")).toBeVisible();
+    await waitFor(() => expect(services.metaHistory).toHaveBeenCalledTimes(1));
+    const draft = screen.getByPlaceholderText("Describe a change, ask a question, or give a directive…");
+    fireEvent.change(draft, { target: { value: "Plan the next sprint" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Collapse Manager" }));
+    expect(draft).not.toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Manager", exact: true }));
+    expect(draft).toBeVisible();
+    expect(draft).toHaveValue("Plan the next sprint");
+    expect(services.metaHistory).toHaveBeenCalledTimes(1);
+
+    // Execution activity belongs to the sprint, not the project Manager chat.
+    fireEvent.click(screen.getByText("React foundation"));
+    expect(await screen.findByText("Build the frontend")).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Agent", exact: true })).toBeInTheDocument();
+    expect(screen.queryByRole("complementary", { name: "Manager" })).not.toBeInTheDocument();
+  });
+
   it("sends human guidance through the selected task context", async () => {
     const { services } = createMockServices();
     window.history.replaceState({}, "", "/dashboard/projects/proj-1/sprints/sprint-1");

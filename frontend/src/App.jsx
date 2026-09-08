@@ -779,6 +779,7 @@ export default function App({ services, browser }) {
       {!isBootstrapping && route.view === "project" ? (
         currentProject ? (
           <SprintList
+            key={currentProject.id}
             project={currentProject}
             sprints={currentSprints}
             pendingGates={pendingGates}

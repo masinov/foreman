@@ -1,5 +1,18 @@
 # STATUS
 
+## Dashboard panel correction — 2026-09-08
+
+Sprint 54 operator fix on `fix/dashboard-manager-panel`: the sprint overview
+mounted and opened the Manager automatically and labeled its folded tab
+"Agent". This conflated project planning/supervision with task execution
+activity. The user clarified that these are distinct panels and Manager must
+start folded. The dedicated React frontend now starts Manager folded, labels
+its tab correctly and preserves chat state when folded; execution activity
+remains separate. Validated with 39 frontend tests, a production build and
+live browser checks. The dashboard on port 8212 was restarted explicitly via
+`./venv/bin/python -m foreman` to serve this checkout's rebuilt assets.
+The broader UX refactor remains withdrawn; this fix is unmerged.
+
 ## Current sprint
 
 - Active implementation sprint: **sprint 54 — Phase 1: resident engine and

@@ -321,9 +321,9 @@ function DecisionGateBanner({ gate, sprints, onResolve }) {
   );
 }
 
-const AGENT_MIN_WIDTH = 360;
-const AGENT_MAX_WIDTH = 820;
-const AGENT_DEFAULT_WIDTH = 540;
+const MANAGER_MIN_WIDTH = 360;
+const MANAGER_MAX_WIDTH = 820;
+const MANAGER_DEFAULT_WIDTH = 540;
 
 /**
  * The project screen's view of the checkouts Foreman owns on disk, with the
@@ -412,10 +412,10 @@ export function WorktreePanel({ project, services }) {
 }
 
 export function SprintList({ project, sprints, pendingGates, engineStatus, onSelectSprint, onOpenNewSprint, onTransitionSprint, onDeleteSprint, onReorderSprints, onStartAgent, onStopAgent, onResolveGate, onSprintsChanged, services, isActionPending }) {
-  const [agentCollapsed, setAgentCollapsed] = useState(!services);
-  const [agentMounted, setAgentMounted] = useState(Boolean(services));
-  const [agentWidth, setAgentWidth] = useState(AGENT_DEFAULT_WIDTH);
-  const [agentResizing, setAgentResizing] = useState(false);
+  const [managerCollapsed, setManagerCollapsed] = useState(true);
+  const [managerMounted, setManagerMounted] = useState(false);
+  const [managerWidth, setManagerWidth] = useState(MANAGER_DEFAULT_WIDTH);
+  const [managerResizing, setManagerResizing] = useState(false);
   const [archiveExpanded, setArchiveExpanded] = useState(false);
   const [expandedSprintId, setExpandedSprintId] = useState(null);
   const [expandedTasks, setExpandedTasks] = useState([]);
@@ -475,23 +475,23 @@ export function SprintList({ project, sprints, pendingGates, engineStatus, onSel
     onSprintsChanged?.();
   }
 
-  function openAgent() {
-    setAgentCollapsed(false);
-    setAgentMounted(true);
+  function openManager() {
+    setManagerCollapsed(false);
+    setManagerMounted(true);
   }
 
-  function startAgentResize(event) {
+  function startManagerResize(event) {
     event.preventDefault();
-    setAgentResizing(true);
+    setManagerResizing(true);
     const onMove = (moveEvent) => {
       const next = Math.min(
-        AGENT_MAX_WIDTH,
-        Math.max(AGENT_MIN_WIDTH, window.innerWidth - moveEvent.clientX),
+        MANAGER_MAX_WIDTH,
+        Math.max(MANAGER_MIN_WIDTH, window.innerWidth - moveEvent.clientX),
       );
-      setAgentWidth(next);
+      setManagerWidth(next);
     };
     const onUp = () => {
-      setAgentResizing(false);
+      setManagerResizing(false);
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
@@ -722,15 +722,15 @@ export function SprintList({ project, sprints, pendingGates, engineStatus, onSel
     </button>
   );
 
-  const agentBodyClass = services
-    ? (agentCollapsed ? "agent-hidden" : "with-agent")
+  const managerBodyClass = services
+    ? (managerCollapsed ? "manager-hidden" : "with-manager")
     : "";
 
   return (
     <section className="project-view view visible">
       <div
-        className={`project-view-inner ${agentBodyClass}${agentResizing ? " is-resizing" : ""}`}
-        style={services && !agentCollapsed ? { gridTemplateColumns: `1fr ${agentWidth}px` } : undefined}
+        className={`project-view-inner ${managerBodyClass}${managerResizing ? " is-resizing" : ""}`}
+        style={services && !managerCollapsed ? { gridTemplateColumns: `1fr ${managerWidth}px` } : undefined}
       >
         <div className="project-left">
           <div className="project-top">
@@ -896,31 +896,31 @@ export function SprintList({ project, sprints, pendingGates, engineStatus, onSel
         </div>
 
         {services ? (
-          <aside className="agent-panel">
+          <aside id="project-manager-panel" className="manager-panel" aria-label="Manager" hidden={managerCollapsed}>
             <div
-              className="agent-resize-handle"
+              className="manager-resize-handle"
               role="separator"
               aria-orientation="vertical"
               aria-label="Resize manager panel"
               title="Drag to resize"
-              onMouseDown={startAgentResize}
+              onMouseDown={startManagerResize}
             >
-              <span className="agent-resize-grip" aria-hidden="true" />
+              <span className="manager-resize-grip" aria-hidden="true" />
             </div>
-            {agentMounted ? (
+            {managerMounted ? (
               <MetaAgentPanel
                 projectId={project.id}
                 services={services}
                 onSprintsChanged={onSprintsChanged}
-                onCollapse={() => setAgentCollapsed(true)}
+                onCollapse={() => setManagerCollapsed(true)}
               />
             ) : null}
           </aside>
         ) : null}
 
-        {services && agentCollapsed ? (
-          <button className="agent-tab" type="button" onClick={openAgent}>
-            Agent
+        {services && managerCollapsed ? (
+          <button className="manager-tab" type="button" aria-expanded={false} aria-controls="project-manager-panel" onClick={openManager}>
+            Manager
           </button>
         ) : null}
       </div>
@@ -2489,7 +2489,7 @@ export function MetaAgentPanel({ projectId, services, onSprintsChanged, onCollap
           <button className="meta-action-btn" type="button" onClick={handleClear} title="Clear session">
             Clear
           </button>
-          <button className="meta-action-btn" type="button" onClick={onCollapse} title="Collapse">
+          <button className="meta-action-btn" type="button" onClick={onCollapse} title="Collapse Manager" aria-label="Collapse Manager">
             »
           </button>
         </div>
