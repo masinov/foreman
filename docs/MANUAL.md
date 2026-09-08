@@ -875,9 +875,32 @@ was not asked. `GET /api/projects/{id}/policy` returns the same thing, and
 `?task_id=` adds the resolution for one task; the dashboard's task drawer shows
 it, and the settings panel edits the defaults and the rules.
 
-The `notification` value is recorded today as a `notify` field on the events it
-would announce (`engine.attention_needed`, `workflow.paused`). Delivery
-channels are a later slice.
+The `notification` value is stamped as `notify` on each announceable event and
+drives a durable delivery queue. `attention` sends engine attention requests
+and human gates; `all` adds task completion; `none` queues nothing.
+
+Configure a webhook destination by project:
+
+```bash
+foreman notify add <project> --name ops \
+  --url https://hooks.example.test/foreman \
+  --secret-env FOREMAN_WEBHOOK_SECRET
+foreman notify test <project> ops
+foreman notify list <project>
+foreman notify deliveries <project> [--status pending|delivered|failed]
+foreman notify remove <project> ops
+```
+
+`--header 'Name: value'` adds a static request header and may be repeated.
+`--secret-env` stores only an environment-variable name; when set, each send
+reads the key from that variable and adds an HMAC-SHA256 signature. Every
+process that drains deliveries must have the variable in its environment.
+
+The orchestrator only queues rows. `foreman serve` sends a bounded batch
+between engine passes and `foreman run` drains once before returning, so
+receiver latency cannot hold a task open. Failed attempts use exponential
+backoff and remain visible in `foreman notify deliveries`; after the fifth
+failure the row stays failed and Foreman emits `notification.failed`.
 
 ### Human gates
 

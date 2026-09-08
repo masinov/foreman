@@ -33,6 +33,7 @@ decides where a human is required.
 | F5 | Live-run fix: a killed or interrupted run keeps the backend session announced at start, so a pause or shutdown resumes the conversation | done | `fix/keep-session-on-kill` | orchestrator, tests |
 | 3 | Intake endpoint: project-level, API-token authenticated, idempotent on an external reference, source metadata, initial status `todo`; sprint optional over a continuous queue | done | `feat/task-add-the-intake-endpoint-and-api-tokens-v2` (engine-run) | `foreman/api_tokens.py`, migration 17 (`api_tokens` + task source columns), `POST /api/projects/{id}/intake`, `foreman token`, drawer Source section, ADR-0013, MANUAL §25, `tests/test_intake.py` |
 | 4 | Policy matrix v1: `triage` and `notification` policies join `merge_approval` and `plan_approval`; task-type rules; per-task overrides | done | `feat/task-add-the-policy-matrix-triage-plan-merge-and-notification-decisions-v2` (engine-run) | `foreman/policy.py`, `triage` task status, `policy.resolved` event, `GET /api/projects/{id}/policy`, `POST /api/tasks/{id}/accept`, `foreman task accept`, `task override --triage/--notification`, board triage column, ADR-0014, MANUAL §14, `tests/test_policy.py` |
+| 4b | Notification delivery: policy-selected events fan out to durable webhook deliveries outside task execution | done (manual completion after dashboard stop) | `feat/task-d5da554de317` / FOR-12 | migration 18, destinations and delivery queue, signed webhook transport, retry worker in `serve` and `run`, `foreman notify`, ADR-0015, `tests/test_notifications.py` |
 | 5 | Planner step per task producing criteria and a protected acceptance test; architect role repurposed to once-per-task | todo | | role, workflow, tests |
 | 6 | Worktree per task under a Foreman-owned directory | done | `feat/task-give-every-task-its-own-git-worktree` (engine-run) | `foreman/worktrees.py`, migration 16, orchestrator, built-ins, `foreman worktree`, ADR-0012, `tests/test_worktrees.py` |
 | 6b | Bounded worktree disk use (`max_live_worktrees`) and a per-worktree environment (`worktree_setup_command`); dashboard prune control | done | `chore/task-c68378a4e541` (engine-run, follow-up from ADR-0012) | `enforce_worktree_limit`, setup command + marker, `GET/POST /api/projects/{id}/worktrees[/prune]`, `WorktreePanel`, ADR-0012 amendment, tests |
@@ -99,9 +100,23 @@ Three decisions worth carrying forward:
   mid-run. A hand-edited row must not be able to stop the engine.
 
 `notification` resolves and is stamped on the events it would announce
-(`notify` on `engine.attention_needed` and `workflow.paused`), but **no channel
-delivers anything yet** — that is the next slice, and the payload field is the
-seam it should read.
+(`notify` on `engine.attention_needed` and `workflow.paused`). Slice 4b now
+uses that persisted decision to queue deliveries.
+
+### Slice 4b notes
+
+Notification delivery is split into a fast, transactional queue step and a
+fallible network step. The orchestrator fans an announceable event out to one
+idempotent delivery row per enabled destination. `foreman serve` drains due
+rows between engine passes; `foreman run` drains once before it returns. A
+slow or unavailable webhook therefore delays a delivery rather than the task
+that caused it.
+
+The first transport is a generic JSON webhook. Optional HMAC-SHA256 signing
+reads its key from an environment variable at send time, so secrets never
+enter SQLite. Failures retry with bounded exponential backoff; exhausting the
+attempt budget leaves a durable failed row and emits `notification.failed`.
+ADR-0015 records the payload, retry, idempotency, and secret contracts.
 
 ### Slice 6 notes
 

@@ -11,11 +11,11 @@
 - Latest completed sprint: `sprint-53-phase0-unattended-safety`.
 - Last merged branch: `fix/cancelled-dependency-blocks` (sprint 54 live-run
   fix F4), after slice 2b and slice 1 (`a462659`, merged by the engine).
-- Current implementation branch:
-  `feat/task-add-the-policy-matrix-triage-plan-merge-and-notification-decisions-v2`
-  — sprint 54 slice 4, the policy matrix, run as a dogfood task. Next: sprint
-  54 slice 5 (the planner step per task), and the notification *delivery*
-  channels this slice deliberately left out.
+- Current implementation branch: `feat/task-d5da554de317` — FOR-12 / sprint
+  54 slice 4b, durable webhook notification delivery. Migration 18 adds
+  destinations and delivery attempts; the resident and one-shot engines queue
+  and drain policy-selected notifications without blocking task execution.
+  Next: sprint 54 slice 5 (the planner step per task).
 - **Operator action from slice 6 is done, and superseded.** The `foreman`
   project no longer sets `worktree_link_paths=["venv"]`; it sets
   `worktree_setup_command` to build each worktree its own venv and editable
@@ -25,6 +25,10 @@
   stays clean. See `docs/MANUAL.md` §24.
 
 ## Active branches
+
+- `feat/task-d5da554de317` — FOR-12 / sprint 54 slice 4b: webhook
+  destinations, durable delivery queue, HMAC signing, bounded exponential
+  retries, failure events, `foreman notify`, ADR-0015, and focused tests.
 
 - `feat/task-add-the-policy-matrix-triage-plan-merge-and-notification-decisions-v2`
   — sprint 54 slice 4: new `foreman/policy.py` resolving `triage`,
@@ -38,7 +42,7 @@
   MANUAL §14, `tests/test_policy.py`.
   **The task specified ADR-0013; slice 3 took it**, so this is ADR-0014.
   **No migration was needed** (`status` is text, settings are JSON).
-  `notification` is recorded, not delivered — no channel reads it yet.
+  FOR-12 supplies the delivery channel on `feat/task-d5da554de317`.
 - `feat/task-add-the-intake-endpoint-and-api-tokens-v2` — sprint 54 slice 3:
   new `foreman/api_tokens.py` (mint, SHA-256 hash, scopes), migration 17
   (`api_tokens` + `tasks.source_system`/`source_ref`/`source_url`/`reporter`),

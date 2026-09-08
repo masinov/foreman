@@ -27,3 +27,4 @@ Filename format:
 | ADR-0012 | One Git Worktree Per Task | accepted |
 | ADR-0013 | Intake Endpoint And API Tokens | accepted |
 | ADR-0014 | Autonomy As Policy | accepted |
+| ADR-0015 | Durable Notification Delivery | accepted |
