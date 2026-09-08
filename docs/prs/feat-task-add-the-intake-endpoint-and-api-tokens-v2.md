@@ -2,7 +2,8 @@
 
 ## Summary
 
-- Sprint 54 slice 5. Foreman can now be handed work by a system rather than a
+- Sprint 54 slice 3 (the CHANGELOG numbers by landing order, where it is the
+  fifth). Foreman can now be handed work by a system rather than a
   person: `POST /api/projects/{id}/intake` files one task from a JSON body,
   authenticated by a named per-project API token.
 - Tokens are minted and managed with `foreman token create|list|revoke`. The
@@ -22,7 +23,8 @@
 ### Numbering note
 
 The task specified **migration 16** and **ADR-0012**. Both were already taken
-by the worktree-per-task slice (`chore/task-c68378a4e541` / slice 4) that
+by the worktree-per-task slice (slice 6 and its follow-up
+`chore/task-c68378a4e541`) that
 landed before this branch started. This work is therefore **migration 17** and
 **ADR-0013**; migration 17 is verified to apply to a version-16 database.
 Nothing else about the task's scope changed.
@@ -104,7 +106,7 @@ built up to version 16 and stopped there.
   unchanged in behaviour and covered by the existing dashboard suite plus a new
   test that the shared token still opens the other routes.
 - **The intake queue can grow without bound.** Nothing ages or prunes it; that
-  is triage policy's job in the next slice.
+  is triage policy's job in slice 4.
 - **Idempotency is scoped to a `(system, external_ref)` pair.** A caller that
   sends neither gets a new task per call. This is documented, tested, and
   deliberate — there is nothing else to match on — but a sloppy integration can
