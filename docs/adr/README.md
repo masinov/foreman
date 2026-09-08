@@ -26,3 +26,4 @@ Filename format:
 | ADR-0011 | The Resident Engine And The Project Engine Lock | accepted |
 | ADR-0012 | One Git Worktree Per Task | accepted |
 | ADR-0013 | Intake Endpoint And API Tokens | accepted |
+| ADR-0014 | Autonomy As Policy | accepted |

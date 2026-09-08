@@ -1797,7 +1797,7 @@ class ForemanCLISmokeTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(f"Database: {db_path}", result.stdout)
         self.assertIn("project-1 | Foreman Demo | workflow=development | active_sprint=Sprint 1", result.stdout)
-        self.assertIn("repo=/tmp/foreman-demo | todo=0 in_progress=1 blocked=0 done=0 cancelled=0", result.stdout)
+        self.assertIn("repo=/tmp/foreman-demo | triage=0 todo=0 in_progress=1 blocked=0 done=0 cancelled=0", result.stdout)
 
     def test_projects_command_can_discover_repo_local_db_from_nested_cwd(self) -> None:
         store, db_path, repo_path = self.create_repo_store()
@@ -1919,7 +1919,7 @@ class ForemanCLISmokeTests(unittest.TestCase):
         self.assertIn(f"Database: {db_path}", result.stdout)
         self.assertIn("Projects: 1", result.stdout)
         self.assertIn("Active sprints: 1", result.stdout)
-        self.assertIn("Tasks: todo=1 in_progress=0 blocked=0 done=1 cancelled=0", result.stdout)
+        self.assertIn("Tasks: triage=0 todo=1 in_progress=0 blocked=0 done=1 cancelled=0", result.stdout)
         self.assertIn("Blocked: gate=0 engine=0", result.stdout)
 
     def test_board_command_shows_active_sprint_tasks_grouped_by_status(self) -> None:
@@ -1934,7 +1934,7 @@ class ForemanCLISmokeTests(unittest.TestCase):
         self.assertIn("Sprint: sprint-1 | Monitoring Sprint", result.stdout)
         self.assertIn(
             "Progress: done=1/4 | in_progress=1 | blocked=1 (gate=1 engine=0) | "
-            "todo=1 | cancelled=0",
+            "todo=1 | triage=0 | cancelled=0",
             result.stdout,
         )
         self.assertIn("Activity: runs=3 | tokens=1150 | cost_usd=$2.00", result.stdout)
@@ -2091,7 +2091,7 @@ class ForemanCLISmokeTests(unittest.TestCase):
         self.assertIn("Watch", result.stdout)
         self.assertIn("Scope: project project-1", result.stdout)
         self.assertIn("Stream: active sprint sprint-1 | Monitoring Sprint", result.stdout)
-        self.assertIn("Tasks: todo=1 in_progress=1 blocked=1 done=1 cancelled=0", result.stdout)
+        self.assertIn("Tasks: triage=0 todo=1 in_progress=1 blocked=1 done=1 cancelled=0", result.stdout)
         self.assertIn("Activity: runs=3 | tokens=1150 | cost_usd=$2.00", result.stdout)
         self.assertIn(
             "Delivery: recent 3 persisted events followed by live updates",

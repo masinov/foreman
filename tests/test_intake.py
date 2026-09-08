@@ -32,7 +32,7 @@ from foreman.dashboard_service import (
     DashboardService,
     DashboardValidationError,
 )
-from foreman.models import Project, Sprint
+from foreman.models import Project, Sprint, Task
 from foreman.store import ForemanStore
 
 from tests.test_cli import cli_argv, cli_env
@@ -278,7 +278,8 @@ class IntakeServiceTests(unittest.TestCase):
         self.assertEqual(task.source_url, "https://pd.example.com/INC-42")
         self.assertEqual(task.reporter, "ana")
         self.assertEqual(task.created_by, "api:pagerduty")
-        self.assertEqual(task.status, "todo")
+        # `triage` is the default policy: filed work waits for a person.
+        self.assertEqual(task.status, "triage")
         self.assertEqual(task.task_type, "fix")
 
     def test_the_same_reference_returns_the_same_task_untouched(self) -> None:
@@ -746,6 +747,361 @@ class TokenCliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("Unknown API token", result.stderr)
         self.assertIsNotNone(self.store.find_api_token(secret))
+
+
+class IntakeTriagePolicyTests(unittest.TestCase):
+    """The triage policy decides whether filed work is runnable on arrival."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.db_path = Path(self._tmp.name) / "foreman.db"
+        self.store = ForemanStore(self.db_path)
+        self.addCleanup(self.store.close)
+        self.store.initialize()
+        self.api = DashboardService(self.store)
+
+    def _project(self, settings: dict) -> None:
+        self.store.save_project(
+            Project(
+                id="project-1",
+                name="Foreman Demo",
+                repo_path=self._tmp.name,
+                workflow_id="development",
+                settings=settings,
+            )
+        )
+        self.token, _ = self.store.create_api_token(project_id="project-1", name="pagerduty")
+
+    def file(self, **overrides):
+        payload = {"title": "Disk full on web-3", "task_type": "fix"}
+        payload.update(overrides)
+        return self.api.intake_task("project-1", token=self.token, **payload)
+
+    def test_the_default_policy_parks_filed_work_in_triage(self) -> None:
+        self._project({})
+
+        result = self.file()
+
+        self.assertEqual(result["status"], "triage")
+        self.assertEqual(self.store.get_task(result["id"]).status, "triage")
+
+    def test_an_auto_project_default_queues_filed_work_directly(self) -> None:
+        self._project({"triage": "auto"})
+
+        self.assertEqual(self.file()["status"], "todo")
+
+    def test_a_task_type_rule_beats_the_project_default(self) -> None:
+        self._project({"triage": "auto", "policy_rules": {"fix": {"triage": "human"}}})
+
+        self.assertEqual(self.file()["status"], "triage")
+        self.assertEqual(self.file(title="Ship the docs", task_type="docs")["status"], "todo")
+
+    def test_a_triaged_task_raises_one_attention_turn_carrying_notify(self) -> None:
+        self._project({"notification": "all"})
+
+        result = self.file()
+
+        events = [
+            event
+            for event in self.store.list_events(task_id=result["id"])
+            if event.event_type == "engine.attention_needed"
+        ]
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].payload["trigger"], "triage")
+        self.assertEqual(events[0].payload["task_id"], result["id"])
+        self.assertEqual(events[0].payload["notify"], "all")
+
+    def test_auto_triage_raises_no_attention_turn(self) -> None:
+        self._project({"triage": "auto"})
+
+        result = self.file()
+
+        self.assertEqual(
+            [
+                event
+                for event in self.store.list_events(task_id=result["id"])
+                if event.event_type == "engine.attention_needed"
+            ],
+            [],
+        )
+
+    def test_the_intake_event_records_the_status_and_the_decision(self) -> None:
+        self._project({"policy_rules": {"fix": {"triage": "human"}}})
+
+        result = self.file()
+
+        created = next(
+            event
+            for event in self.store.list_events(task_id=result["id"])
+            if event.event_type == "intake.task_created"
+        )
+        self.assertEqual(created.payload["status"], "triage")
+        self.assertEqual(
+            created.payload["triage"],
+            {"value": "human", "source": "task_type_rule", "task_type": "fix"},
+        )
+
+    def test_accept_moves_a_triaged_task_into_the_queue(self) -> None:
+        self._project({})
+        result = self.file()
+
+        accepted = self.api.accept_task(result["id"])
+
+        self.assertEqual(accepted["status"], "todo")
+        self.assertEqual(self.store.get_task(result["id"]).status, "todo")
+        self.assertTrue(
+            any(
+                event.event_type == "human.task_accepted"
+                for event in self.store.list_events(task_id=result["id"])
+            )
+        )
+
+    def test_accept_refuses_a_task_that_is_not_in_triage(self) -> None:
+        self._project({"triage": "auto"})
+        result = self.file()
+
+        with self.assertRaises(DashboardValidationError):
+            self.api.accept_task(result["id"])
+
+    def test_the_engine_never_selects_a_triaged_task(self) -> None:
+        from foreman.orchestrator import ForemanOrchestrator
+
+        self._project({})
+        self.store.save_sprint(
+            Sprint(id="project-1-intake", project_id="project-1", title="Intake", status="active")
+        )
+        result = self.file(sprint_id="project-1-intake")
+        project = self.store.get_project("project-1")
+
+        orchestrator = ForemanOrchestrator(self.store)
+        self.assertIsNone(orchestrator.select_next_task(project))
+
+        self.api.accept_task(result["id"])
+        selected = orchestrator.select_next_task(project)
+        self.assertIsNotNone(selected)
+        self.assertEqual(selected.id, result["id"])
+
+
+class ProjectPolicyEndpointTests(unittest.TestCase):
+    """`GET /api/projects/{id}/policy`, with and without a task."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.db_path = Path(self._tmp.name) / "foreman.db"
+        self.store = ForemanStore(self.db_path)
+        self.addCleanup(self.store.close)
+        self.store.initialize()
+        self.store.save_project(
+            Project(
+                id="project-1",
+                name="Foreman Demo",
+                repo_path=self._tmp.name,
+                workflow_id="development",
+                settings={
+                    "merge_approval": "human",
+                    "policy_rules": {"docs": {"merge_approval": "auto"}},
+                },
+            )
+        )
+        self.store.save_sprint(
+            Sprint(id="sprint-1", project_id="project-1", title="S", status="active")
+        )
+        self.store.save_task(
+            Task(
+                id="task-1",
+                sprint_id="sprint-1",
+                project_id="project-1",
+                title="Write it down",
+                task_type="docs",
+                executor_overrides={"policy": {"notification": "none"}},
+            )
+        )
+        self.api = DashboardService(self.store)
+
+    def test_the_project_view_reports_defaults_and_rules(self) -> None:
+        payload = self.api.get_project_policy("project-1")
+
+        self.assertEqual(payload["project_id"], "project-1")
+        self.assertEqual(
+            payload["defaults"]["merge_approval"],
+            {"value": "human", "source": "project_default"},
+        )
+        self.assertEqual(payload["rules"], {"docs": {"merge_approval": "auto"}})
+        self.assertNotIn("resolution", payload)
+
+    def test_a_task_id_adds_the_resolution_for_that_task(self) -> None:
+        payload = self.api.get_project_policy("project-1", task_id="task-1")
+
+        self.assertEqual(payload["task_id"], "task-1")
+        self.assertEqual(payload["task_type"], "docs")
+        self.assertEqual(
+            payload["resolution"]["merge_approval"],
+            {"value": "auto", "source": "task_type_rule", "task_type": "docs"},
+        )
+        self.assertEqual(
+            payload["resolution"]["notification"],
+            {"value": "none", "source": "task_override"},
+        )
+
+    def test_the_task_detail_payload_carries_the_resolved_policy(self) -> None:
+        payload = self.api.get_task("task-1")
+
+        self.assertEqual(payload["policy"]["merge_approval"]["value"], "auto")
+        self.assertEqual(payload["policy"]["triage"]["value"], "human")
+
+    def test_a_task_from_another_project_is_refused(self) -> None:
+        self.store.save_project(
+            Project(id="project-2", name="Other", repo_path=self._tmp.name, workflow_id="development")
+        )
+
+        with self.assertRaises(DashboardValidationError):
+            self.api.get_project_policy("project-2", task_id="task-1")
+
+    def test_the_route_serves_both_shapes(self) -> None:
+        app = create_dashboard_app(db_path=self.db_path)
+
+        async def call():
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+                project = await client.get("/api/projects/project-1/policy")
+                task = await client.get("/api/projects/project-1/policy?task_id=task-1")
+                return project, task
+
+        project_response, task_response = asyncio.run(call())
+
+        self.assertEqual(project_response.status_code, 200)
+        self.assertEqual(
+            project_response.json()["defaults"]["triage"]["value"], "human"
+        )
+        self.assertEqual(task_response.status_code, 200)
+        self.assertEqual(
+            task_response.json()["resolution"]["merge_approval"]["value"], "auto"
+        )
+
+    def test_the_settings_endpoint_accepts_the_new_policy_settings(self) -> None:
+        updated = self.api.update_project_settings(
+            "project-1",
+            updates={
+                "settings": {
+                    "triage": "auto",
+                    "notification": "all",
+                    "policy_rules": {"chore": {"merge_approval": "auto"}},
+                }
+            },
+        )
+
+        self.assertEqual(updated["settings"]["triage"], "auto")
+        self.assertEqual(updated["settings"]["notification"], "all")
+        self.assertEqual(
+            updated["settings"]["policy_rules"], {"chore": {"merge_approval": "auto"}}
+        )
+
+    def test_the_settings_endpoint_refuses_a_malformed_rules_object(self) -> None:
+        with self.assertRaises(DashboardValidationError):
+            self.api.update_project_settings(
+                "project-1", updates={"settings": {"policy_rules": {"docs": {"triage": "maybe"}}}}
+            )
+
+
+class TriageCliTests(unittest.TestCase):
+    """`foreman task accept` and the board's triage column."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.db_path = Path(self._tmp.name) / "foreman.db"
+        with ForemanStore(self.db_path) as store:
+            store.initialize()
+            store.save_project(
+                Project(
+                    id="project-1",
+                    name="Foreman Demo",
+                    repo_path=self._tmp.name,
+                    workflow_id="development",
+                )
+            )
+            store.save_sprint(
+                Sprint(id="sprint-1", project_id="project-1", title="S", status="active")
+            )
+            store.save_task(
+                Task(
+                    id="task-1",
+                    sprint_id="sprint-1",
+                    project_id="project-1",
+                    title="Filed work",
+                    status="triage",
+                )
+            )
+
+    def run_cli(self, *args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            cli_argv(*args), capture_output=True, text=True, env=cli_env(), check=False
+        )
+
+    def test_accept_moves_the_task_to_todo(self) -> None:
+        result = self.run_cli("task", "accept", "task-1", "--db", str(self.db_path))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Accepted task", result.stdout)
+        self.assertIn("Status: todo", result.stdout)
+        with ForemanStore(self.db_path) as store:
+            self.assertEqual(store.get_task("task-1").status, "todo")
+
+    def test_accept_refuses_a_task_that_is_not_in_triage(self) -> None:
+        self.run_cli("task", "accept", "task-1", "--db", str(self.db_path))
+
+        result = self.run_cli("task", "accept", "task-1", "--db", str(self.db_path))
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("is not in triage", result.stderr)
+
+    def test_cancel_works_from_triage(self) -> None:
+        result = self.run_cli("task", "cancel", "task-1", "--db", str(self.db_path))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        with ForemanStore(self.db_path) as store:
+            self.assertEqual(store.get_task("task-1").status, "cancelled")
+
+    def test_the_board_shows_a_triage_section_only_when_it_has_work(self) -> None:
+        with_triage = self.run_cli("board", "project-1", "--db", str(self.db_path))
+        self.assertIn("Triage (1)", with_triage.stdout)
+        self.assertIn("- task-1 | feature | Filed work", with_triage.stdout)
+
+        self.run_cli("task", "accept", "task-1", "--db", str(self.db_path))
+        without_triage = self.run_cli("board", "project-1", "--db", str(self.db_path))
+        self.assertNotIn("Triage (", without_triage.stdout)
+
+    def test_config_prints_the_policy_matrix(self) -> None:
+        result = self.run_cli(
+            "config",
+            "project-1",
+            "--set",
+            'policy_rules={"docs": {"merge_approval": "auto"}}',
+            "--db",
+            str(self.db_path),
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Policy matrix:", result.stdout)
+        self.assertIn("- triage=human (default)", result.stdout)
+        self.assertIn("- merge_approval=auto (default)", result.stdout)
+        self.assertIn("Policy rules:", result.stdout)
+        self.assertIn("- docs: merge_approval=auto", result.stdout)
+
+    def test_config_refuses_a_malformed_policy_rules_object(self) -> None:
+        result = self.run_cli(
+            "config",
+            "project-1",
+            "--set",
+            'policy_rules={"docs": {"triage": "maybe"}}',
+            "--db",
+            str(self.db_path),
+        )
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Invalid setting policy_rules", result.stderr)
 
 
 if __name__ == "__main__":

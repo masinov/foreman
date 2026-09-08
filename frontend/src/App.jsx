@@ -36,7 +36,7 @@ function pickDefaultTaskId(tasks) {
   if (tasks.length === 0) {
     return null;
   }
-  const preferred = ["in_progress", "blocked", "todo", "done"];
+  const preferred = ["in_progress", "blocked", "triage", "todo", "done"];
   for (const status of preferred) {
     const task = tasks.find((item) => item.status === status);
     if (task) {
@@ -511,6 +511,19 @@ export default function App({ services, browser }) {
     setErrorMessage("");
     try {
       await services.stopTask(taskId);
+      await refreshAllVisibleState();
+    } catch (error) {
+      handleError(error);
+    } finally {
+      setIsActionPending(false);
+    }
+  }
+
+  async function handleAcceptTask(taskId) {
+    setIsActionPending(true);
+    setErrorMessage("");
+    try {
+      await services.acceptTask(taskId);
       await refreshAllVisibleState();
     } catch (error) {
       handleError(error);
@@ -1001,10 +1014,17 @@ export default function App({ services, browser }) {
               <div className={`sprint-body ${activityCollapsed ? "activity-hidden" : "with-activity"}`}>
                 <div className="board">
                   <div className="board-columns">
-                    {(tasks.some((task) => task.status === "cancelled")
-                      ? [...STATUS_COLUMNS, { key: "cancelled", label: "Cancelled" }]
-                      : STATUS_COLUMNS
-                    ).map((column) => {
+                    {STATUS_COLUMNS.concat(
+                      tasks.some((task) => task.status === "cancelled")
+                        ? [{ key: "cancelled", label: "Cancelled" }]
+                        : []
+                    )
+                      .filter(
+                        (column) =>
+                          column.key !== "triage" ||
+                          tasks.some((task) => task.status === "triage")
+                      )
+                      .map((column) => {
                       const columnTasks = tasks.filter((task) => task.status === column.key);
                       return (
                         <div key={column.key} className="column">
@@ -1025,6 +1045,7 @@ export default function App({ services, browser }) {
                                   onApprove={handleApproveTask}
                                   onDeny={handleDenyTask}
                                   onStop={handleStopTask}
+                                  onAccept={handleAcceptTask}
                                 />
                               ))
                             )}

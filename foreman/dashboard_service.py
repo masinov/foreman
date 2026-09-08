@@ -44,6 +44,7 @@ from .models import (
     Task,
 )
 from .orchestrator import ForemanOrchestrator, OrchestratorError
+from .policy import PolicyMatrix, describe_resolution
 from .scaffold import generate_project_id
 from .settings import ProjectSettings, SettingsError
 from .store import ForemanStore
@@ -881,6 +882,11 @@ class DashboardService:
             "blocked_kind": blocked_kind(task, gates),
             "completion_evidence": _serialize_completion_evidence(task.completion_evidence),
             "source": _serialize_task_source(task),
+            "policy": describe_resolution(
+                PolicyMatrix.for_project(project).resolve_task(task)
+            )
+            if project is not None
+            else {},
             "totals": self.store.run_totals(task_id=task_id),
             "runs": runs_data,
         }
@@ -1202,6 +1208,59 @@ class DashboardService:
         project_id = sprint.project_id
         self.store.delete_sprint(sprint_id)
         return {"ok": "deleted", "sprint_id": sprint_id, "project_id": project_id}
+
+    def accept_task(self, task_id: str) -> dict[str, Any]:
+        """Accept one task out of triage and into the runnable queue."""
+
+        task = self._require_task(task_id)
+        if task.status != "triage":
+            raise DashboardValidationError(
+                f"Cannot accept a task with status '{task.status}'; only tasks in "
+                "triage can be accepted."
+            )
+        task.status = "todo"
+        self.store.save_task(task)
+        now = self._now()
+        run_id = self._ensure_event_run(task, step="triage", outcome="accepted", now=now)
+        self.store.save_event(
+            Event(
+                id=f"evt-triage-{now.strftime('%Y%m%d%H%M%S%f')}-{task.id[:8]}",
+                run_id=run_id,
+                task_id=task.id,
+                project_id=task.project_id,
+                event_type="human.task_accepted",
+                role_id="human",
+                timestamp=now.isoformat(),
+                payload={"task_key": task.task_key, "from_status": "triage"},
+            )
+        )
+        return self.get_task(task.id)
+
+    def get_project_policy(
+        self, project_id: str, *, task_id: str | None = None
+    ) -> dict[str, Any]:
+        """Return the project's policy matrix, optionally resolved for one task.
+
+        Without ``task_id`` this is the project side alone: the defaults, where
+        each came from, and the per-task-type rules. With one, ``resolution``
+        carries the four decisions as they apply to that task, so a reader can
+        see the effect of its overrides and its type's rule.
+        """
+
+        project = self._require_project(project_id)
+        matrix = PolicyMatrix.for_project(project)
+        payload: dict[str, Any] = {"project_id": project.id, **matrix.describe()}
+        if task_id is not None:
+            task = self._require_task(task_id)
+            if task.project_id != project.id:
+                raise DashboardValidationError(
+                    "Task does not belong to this project."
+                )
+            payload["task_id"] = task.id
+            payload["task_type"] = task.task_type
+            payload["overrides"] = task.executor_overrides or {}
+            payload["resolution"] = describe_resolution(matrix.resolve_task(task))
+        return payload
 
     def cancel_task(self, task_id: str) -> dict[str, Any]:
         """Cancel one task that is not already done or cancelled."""
@@ -1684,11 +1743,19 @@ class DashboardService:
 
         existing_tasks = self.store.list_tasks(sprint_id=sprint.id)
         now = self._now()
+        # The triage policy decides whether filed work is runnable on arrival.
+        # `human` parks it in `triage`, where the engine will not pick it up,
+        # until a person accepts it; `auto` sends it straight to the queue.
+        triage_decision = PolicyMatrix.for_project(project).resolve(
+            "triage", task_type=task_type
+        )
+        status = "triage" if triage_decision.value == "human" else "todo"
         task = Task(
             id=task_id,
             sprint_id=sprint.id,
             project_id=project_id,
             title=clean_title,
+            status=status,  # type: ignore[arg-type]
             task_type=task_type,  # type: ignore[arg-type]
             description=(description or "").strip() or None,
             acceptance_criteria=(acceptance_criteria or "").strip() or None,
@@ -1728,6 +1795,8 @@ class DashboardService:
                     "task_type": task.task_type,
                     "sprint_id": sprint.id,
                     "created_by": task.created_by,
+                    "status": task.status,
+                    "triage": triage_decision.as_dict(),
                     # The token's identity, never its secret.
                     "token_id": token.id,
                     "token_name": token.name,
@@ -1736,9 +1805,45 @@ class DashboardService:
             )
         )
 
+        if task.status == "triage":
+            self._emit_task_attention(task, project, trigger="triage", run_id=run_id, now=now)
+
         payload = self.get_task(task.id)
         payload["created"] = True
         return payload
+
+    def _emit_task_attention(
+        self,
+        task: Task,
+        project: Project,
+        *,
+        trigger: str,
+        run_id: str,
+        now: datetime,
+    ) -> None:
+        """Raise one attention turn for a task the engine cannot progress."""
+
+        notify = (
+            PolicyMatrix.for_project(project)
+            .resolve(
+                "notification",
+                task_type=task.task_type,
+                overrides=task.executor_overrides,
+            )
+            .value
+        )
+        self.store.save_event(
+            Event(
+                id=f"evt-attention-{now.strftime('%Y%m%d%H%M%S%f')}-{task.id[:8]}",
+                run_id=run_id,
+                task_id=task.id,
+                project_id=project.id,
+                event_type="engine.attention_needed",
+                role_id="api",
+                timestamp=now.isoformat(),
+                payload={"trigger": trigger, "task_id": task.id, "notify": notify},
+            )
+        )
 
     @staticmethod
     def _normalize_intake_source(source: dict[str, Any] | None) -> dict[str, str | None]:
