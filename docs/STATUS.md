@@ -11,20 +11,31 @@
 - Latest completed sprint: `sprint-53-phase0-unattended-safety`.
 - Last merged branch: `fix/cancelled-dependency-blocks` (sprint 54 live-run
   fix F4), after slice 2b and slice 1 (`a462659`, merged by the engine).
-- Current implementation branch:
-  `feat/task-give-every-task-its-own-git-worktree` — sprint 54 slice 6, one
-  git worktree per task; the engine no longer changes what is checked out in
-  the operator's repository. Next: sprint 54 slice 3 (intake endpoint and API
-  tokens) as a dogfood task picked up by `foreman serve foreman`.
-- **Operator action required before the next engine-driven run:** set
-  `worktree_link_paths=["venv"]` on the `foreman` project
-  (`foreman config foreman --set 'worktree_link_paths=["venv"]'`). A task
-  worktree is a clean checkout, so `_builtin:run_tests` cannot find
-  `./venv/bin/python` until the operator's virtualenv is linked in. See
-  `docs/MANUAL.md` §24.
+- Current implementation branch: `chore/task-c68378a4e541` — sprint 54 slice
+  6b, the two ADR-0012 follow-ups: `max_live_worktrees` bounds worktree disk
+  use, `worktree_setup_command` gives each tree its own environment, and the
+  dashboard project screen can prune. It branches from slice 6, which has not
+  merged to `main` yet (see below). Next: sprint 54 slice 3 (intake endpoint
+  and API tokens) as a dogfood task picked up by `foreman serve foreman`.
+- **Operator action from slice 6 is done, and superseded.** The `foreman`
+  project no longer sets `worktree_link_paths=["venv"]`; it sets
+  `worktree_setup_command` to build each worktree its own venv and editable
+  install, and `worktree_link_paths` is empty. Sharing the operator's
+  virtualenv meant a task's test run was never isolated from it. Verified: a
+  tree provisioned from scratch runs all 830 tests on its own interpreter and
+  stays clean. See `docs/MANUAL.md` §24.
 
 ## Active branches
 
+- `chore/task-c68378a4e541` — sprint 54 slice 6b: `max_live_worktrees` with
+  `worktrees.enforce_worktree_limit` (reclaims clean idle trees oldest-first,
+  never a dirty one), `worktree_setup_command` with a marker in the tree's git
+  admin directory, `GET/POST /api/projects/{id}/worktrees[/prune]` and the
+  project-screen `WorktreePanel`, ADR-0012 amended.
+  **Branched from `feat/task-give-every-task-its-own-git-worktree`, not from
+  `main`** — the follow-up cannot exist without the slice it follows up. That
+  branch is still blocked awaiting human approval, so this one carries both
+  and should be reviewed and merged as a unit, or slice 6 approved first.
 - `feat/task-give-every-task-its-own-git-worktree` — sprint 54 slice 6: new
   `foreman/worktrees.py`, migration 16 (`tasks.worktree_path`), every agent
   step / test run / branch refresh / conflict-recovery merge in the task's own

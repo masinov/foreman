@@ -86,11 +86,14 @@ class ForemanCLISmokeTests(unittest.TestCase):
         installed = installed_foreman_root()
         if installed is not None and installed != REPO_ROOT / "foreman":
             # The virtualenv's editable install points at a different
-            # checkout, which is what a suite run inside a task worktree looks
-            # like: the worktree borrows the operator's `venv/`. Reinstalling
-            # would repoint that virtualenv at the worktree and quietly break
-            # the operator's own `foreman` command, so this setup does not do
-            # it. Every CLI subprocess runs `python -m foreman` with
+            # checkout, which is what a suite run looks like in a worktree
+            # that borrows the operator's `venv/` through
+            # `worktree_link_paths`. Reinstalling would repoint that
+            # virtualenv at the worktree and quietly break the operator's own
+            # `foreman` command, so this setup does not do it. (A worktree
+            # provisioned by `worktree_setup_command` has its own virtualenv
+            # already pointing here, and takes the install path below.)
+            # Every CLI subprocess runs `python -m foreman` with
             # PYTHONPATH pinned to this checkout, so the code under test is
             # still this one — only the console script on PATH is stale.
             cls.reinstall_skipped_for = str(installed)

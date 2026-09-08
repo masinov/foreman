@@ -9,9 +9,11 @@ checkout per finished task.
 from __future__ import annotations
 
 from pathlib import Path
+import os
 import sqlite3
 import subprocess
 import tempfile
+import time
 import unittest
 
 from foreman.migrations import MIGRATIONS
@@ -19,11 +21,14 @@ from foreman.models import Project, Sprint, Task
 from foreman.orchestrator import ForemanOrchestrator, OrchestratorError
 from foreman.runner.base import AgentEvent, AgentRunConfig
 from foreman.store import ForemanStore
+from foreman.git import is_worktree_clean
 from foreman.worktrees import (
     DEFAULT_WORKTREE_ROOT,
     INTEGRATION_WORKTREE_NAME,
+    SETUP_MARKER_NAME,
     WorktreeError,
     WorktreeManager,
+    enforce_worktree_limit,
     prune_project_worktrees,
     task_slug,
     worktree_root,
@@ -373,6 +378,405 @@ class WorktreePruningTests(unittest.TestCase):
         prune_project_worktrees(self.store, self.project)
 
         self.assertNotIn(str(path), git(self.repo, "worktree", "list").stdout)
+
+
+class WorktreeSetupCommandTests(unittest.TestCase):
+    """`worktree_setup_command` gives each tree its own environment, once."""
+
+    def setUp(self) -> None:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        self.repo = Path(temp_dir.name) / "repo"
+        self.repo.mkdir()
+        git(self.repo, "init")
+        git(self.repo, "checkout", "-b", "main")
+        git(self.repo, "config", "user.email", "worktree-tests@example.com")
+        git(self.repo, "config", "user.name", "Worktree Tests")
+        (self.repo / ".gitignore").write_text(".foreman/\n", encoding="utf-8")
+        (self.repo / "README.md").write_text("# repo\n", encoding="utf-8")
+        git(self.repo, "add", ".")
+        git(self.repo, "commit", "-m", "chore: initial commit")
+
+    def project(self, **settings: object) -> Project:
+        return Project(
+            id="p1",
+            name="Worktrees",
+            repo_path=str(self.repo),
+            workflow_id="development",
+            default_branch="main",
+            settings=dict(settings),
+        )
+
+    def task(self, task_id: str = "task-1") -> Task:
+        return Task(
+            id=task_id,
+            sprint_id="s1",
+            project_id="p1",
+            title=task_id,
+            task_key=task_id.upper(),
+            branch_name=f"feat/{task_id}",
+        )
+
+    def test_setup_command_runs_inside_the_new_worktree(self) -> None:
+        project = self.project(
+            worktree_setup_command="printf 'env' > .git-ignored-env.txt"
+        )
+        manager = WorktreeManager(project)
+
+        path = manager.ensure(self.task())
+
+        self.assertEqual(
+            (path / ".git-ignored-env.txt").read_text(encoding="utf-8"), "env"
+        )
+        # The operator's checkout must not be provisioned as a side effect.
+        self.assertFalse((self.repo / ".git-ignored-env.txt").exists())
+
+    def test_setup_command_sees_the_repo_and_worktree_paths(self) -> None:
+        project = self.project(
+            worktree_setup_command=(
+                'printf "%s\n%s\n%s" "$FOREMAN_REPO_PATH" "$FOREMAN_WORKTREE_PATH" '
+                '"$FOREMAN_WORKTREE_BRANCH" > paths.txt'
+            )
+        )
+        manager = WorktreeManager(project)
+
+        path = manager.ensure(self.task())
+
+        self.assertEqual(
+            (path / "paths.txt").read_text(encoding="utf-8").splitlines(),
+            [str(self.repo), str(path), "feat/task-1"],
+        )
+
+    def test_setup_marker_lives_outside_the_tree_so_it_stays_clean(self) -> None:
+        """A marker inside the tree would be untracked and block the merge."""
+
+        project = self.project(worktree_setup_command="true")
+        manager = WorktreeManager(project)
+
+        path = manager.ensure(self.task())
+
+        self.assertTrue(is_worktree_clean(path))
+        marker = manager.admin_dir(path) / SETUP_MARKER_NAME
+        self.assertTrue(marker.is_file())
+
+    def test_setup_command_runs_once_and_is_skipped_on_reuse(self) -> None:
+        project = self.project(
+            worktree_setup_command="printf 'x' >> $FOREMAN_REPO_PATH/setup-log.txt"
+        )
+        manager = WorktreeManager(project)
+        task = self.task()
+
+        manager.ensure(task)
+        manager.ensure(task)
+        manager.ensure(task)
+
+        log = (self.repo / "setup-log.txt").read_text(encoding="utf-8")
+        self.assertEqual(log, "x")
+
+    def test_changing_the_command_reprovisions_the_tree(self) -> None:
+        first = self.project(worktree_setup_command="printf 'one' > marker.txt")
+        task = self.task()
+        path = WorktreeManager(first).ensure(task)
+        self.assertEqual((path / "marker.txt").read_text(encoding="utf-8"), "one")
+
+        second = self.project(worktree_setup_command="printf 'two' > marker.txt")
+        WorktreeManager(second).ensure(task)
+
+        self.assertEqual((path / "marker.txt").read_text(encoding="utf-8"), "two")
+
+    def test_clearing_the_command_drops_the_marker(self) -> None:
+        project = self.project(worktree_setup_command="true")
+        manager = WorktreeManager(project)
+        task = self.task()
+        path = manager.ensure(task)
+        marker = manager.admin_dir(path) / SETUP_MARKER_NAME
+        self.assertTrue(marker.is_file())
+
+        WorktreeManager(self.project()).ensure(task)
+
+        self.assertFalse(marker.exists())
+
+    def test_a_failing_setup_command_fails_the_worktree(self) -> None:
+        project = self.project(
+            worktree_setup_command="echo 'no interpreter here' >&2; exit 3"
+        )
+        manager = WorktreeManager(project)
+
+        with self.assertRaises(WorktreeError) as caught:
+            manager.ensure(self.task())
+
+        message = str(caught.exception)
+        self.assertIn("exit code 3", message)
+        self.assertIn("no interpreter here", message)
+
+    def test_a_failed_setup_is_retried_on_the_next_visit(self) -> None:
+        """No marker is written on failure, so the tree is not left unprovisioned."""
+
+        flag = self.repo / "fail-flag"
+        flag.write_text("fail\n", encoding="utf-8")
+        project = self.project(
+            worktree_setup_command=(
+                f'if [ -f "{flag}" ]; then rm "{flag}"; exit 1; fi; printf ok > done.txt'
+            )
+        )
+        manager = WorktreeManager(project)
+        task = self.task()
+
+        with self.assertRaises(WorktreeError):
+            manager.ensure(task)
+
+        path = manager.ensure(task)
+        self.assertEqual((path / "done.txt").read_text(encoding="utf-8"), "ok")
+
+    def test_setup_command_honours_its_timeout(self) -> None:
+        project = self.project(
+            worktree_setup_command="sleep 30",
+            worktree_setup_timeout_seconds=1,
+        )
+        manager = WorktreeManager(project)
+
+        with self.assertRaises(WorktreeError) as caught:
+            manager.ensure(self.task())
+
+        self.assertIn("timed out", str(caught.exception))
+
+    def test_the_integration_tree_is_not_provisioned(self) -> None:
+        """Only `_builtin:merge` works there, and it runs git and nothing else."""
+
+        project = self.project(
+            worktree_setup_command="printf 'x' > provisioned.txt"
+        )
+        manager = WorktreeManager(project)
+
+        integration = manager.ensure_integration()
+
+        self.assertTrue(integration.is_dir())
+        self.assertFalse((integration / "provisioned.txt").exists())
+
+    def test_no_setup_command_leaves_the_tree_alone(self) -> None:
+        manager = WorktreeManager(self.project())
+
+        path = manager.ensure(self.task())
+
+        self.assertTrue(path.is_dir())
+        self.assertIsNone(
+            _read_optional(manager.admin_dir(path) / SETUP_MARKER_NAME)
+        )
+
+
+def _read_optional(path: Path) -> str | None:
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
+class WorktreeLimitTests(unittest.TestCase):
+    """`max_live_worktrees` bounds disk use without destroying unmerged work."""
+
+    def setUp(self) -> None:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        root = Path(temp_dir.name)
+        self.repo = root / "repo"
+        self.repo.mkdir()
+        git(self.repo, "init")
+        git(self.repo, "checkout", "-b", "main")
+        git(self.repo, "config", "user.email", "worktree-tests@example.com")
+        git(self.repo, "config", "user.name", "Worktree Tests")
+        (self.repo / ".gitignore").write_text(".foreman/\n", encoding="utf-8")
+        (self.repo / "README.md").write_text("# repo\n", encoding="utf-8")
+        git(self.repo, "add", ".")
+        git(self.repo, "commit", "-m", "chore: initial commit")
+
+        self.store = ForemanStore(root / "foreman.db")
+        self.addCleanup(self.store.close)
+        self.store.initialize()
+        self.store.save_project(
+            Project(
+                id="p1",
+                name="Worktrees",
+                repo_path=str(self.repo),
+                workflow_id="development",
+                default_branch="main",
+            )
+        )
+        self.store.save_sprint(
+            Sprint(id="s1", project_id="p1", title="S", status="active")
+        )
+
+    def project(self, limit: int) -> Project:
+        project = self.store.get_project("p1")
+        project.settings = {"max_live_worktrees": limit}
+        self.store.save_project(project)
+        return project
+
+    def seed_task(self, task_id: str, status: str = "in_progress") -> Task:
+        task = Task(
+            id=task_id,
+            sprint_id="s1",
+            project_id="p1",
+            title=task_id,
+            # Explicit so the slug is the readable name in assertions; the
+            # store would otherwise mint one, and the slug follows the key.
+            task_key=task_id,
+            status=status,
+            branch_name=f"feat/{task_id}",
+        )
+        self.store.save_task(task)
+        return task
+
+    def make_tree(self, manager: WorktreeManager, task: Task) -> Path:
+        path = manager.ensure(task)
+        task.worktree_path = str(path)
+        self.store.save_task(task)
+        return path
+
+    def test_the_oldest_clean_tree_is_reclaimed_to_make_room(self) -> None:
+        project = self.project(limit=2)
+        manager = WorktreeManager(project)
+        oldest = self.make_tree(manager, self.seed_task("oldest"))
+        newer = self.make_tree(manager, self.seed_task("newer"))
+        # `last_used_at` reads the tree's git index mtime; age them explicitly
+        # rather than relying on the resolution of two adjacent creations.
+        _age(manager, oldest, seconds=600)
+        _age(manager, newer, seconds=60)
+        arriving = self.seed_task("arriving")
+
+        outcome = enforce_worktree_limit(
+            self.store, project, keep_slug=task_slug(arriving)
+        )
+
+        self.assertEqual([entry.slug for entry in outcome.reclaimed], ["oldest"])
+        self.assertFalse(oldest.exists())
+        self.assertTrue(newer.is_dir())
+        self.assertFalse(outcome.over_limit)
+
+    def test_a_reclaimed_task_forgets_its_path_but_keeps_its_branch(self) -> None:
+        project = self.project(limit=1)
+        manager = WorktreeManager(project)
+        victim = self.seed_task("victim")
+        self.make_tree(manager, victim)
+        arriving = self.seed_task("arriving")
+
+        enforce_worktree_limit(self.store, project, keep_slug=task_slug(arriving))
+
+        reloaded = self.store.get_task(victim.id)
+        self.assertIsNone(reloaded.worktree_path)
+        self.assertEqual(reloaded.branch_name, "feat/victim")
+        self.assertIn("feat/victim", git(self.repo, "branch", "--list").stdout)
+
+    def test_a_dirty_tree_is_never_reclaimed(self) -> None:
+        """Uncommitted work is not on the branch; reclaiming would destroy it."""
+
+        project = self.project(limit=1)
+        manager = WorktreeManager(project)
+        paused = self.seed_task("paused")
+        paused_path = self.make_tree(manager, paused)
+        (paused_path / "half-done.py").write_text("work in progress\n", encoding="utf-8")
+        arriving = self.seed_task("arriving")
+
+        outcome = enforce_worktree_limit(
+            self.store, project, keep_slug=task_slug(arriving)
+        )
+
+        self.assertEqual(outcome.reclaimed, ())
+        self.assertEqual([entry.slug for entry in outcome.retained_dirty], ["paused"])
+        self.assertTrue(outcome.over_limit)
+        self.assertEqual(
+            (paused_path / "half-done.py").read_text(encoding="utf-8"),
+            "work in progress\n",
+        )
+
+    def test_finished_tasks_are_reclaimed_before_live_ones(self) -> None:
+        project = self.project(limit=2)
+        manager = WorktreeManager(project)
+        done = self.seed_task("finished", status="done")
+        done_path = self.make_tree(manager, done)
+        live = self.seed_task("live")
+        live_path = self.make_tree(manager, live)
+        # The live tree is older, but a finished task's tree is worth less.
+        _age(manager, live_path, seconds=600)
+        _age(manager, done_path, seconds=1)
+        arriving = self.seed_task("arriving")
+
+        outcome = enforce_worktree_limit(
+            self.store, project, keep_slug=task_slug(arriving)
+        )
+
+        self.assertEqual([entry.slug for entry in outcome.reclaimed], ["finished"])
+        self.assertFalse(done_path.exists())
+        self.assertTrue(live_path.is_dir())
+
+    def test_the_integration_tree_is_never_reclaimed(self) -> None:
+        project = self.project(limit=1)
+        manager = WorktreeManager(project)
+        integration = manager.ensure_integration()
+        self.make_tree(manager, self.seed_task("older"))
+        arriving = self.seed_task("arriving")
+
+        outcome = enforce_worktree_limit(
+            self.store, project, keep_slug=task_slug(arriving)
+        )
+
+        self.assertNotIn(
+            INTEGRATION_WORKTREE_NAME, [entry.slug for entry in outcome.reclaimed]
+        )
+        self.assertTrue(integration.is_dir())
+
+    def test_the_arriving_task_own_tree_is_never_reclaimed(self) -> None:
+        project = self.project(limit=1)
+        manager = WorktreeManager(project)
+        resuming = self.seed_task("resuming")
+        path = self.make_tree(manager, resuming)
+
+        outcome = enforce_worktree_limit(
+            self.store, project, keep_slug=task_slug(resuming)
+        )
+
+        self.assertEqual(outcome.reclaimed, ())
+        self.assertTrue(path.is_dir())
+
+    def test_a_zero_limit_disables_the_cap(self) -> None:
+        project = self.project(limit=0)
+        manager = WorktreeManager(project)
+        for name in ("a", "b", "c"):
+            self.make_tree(manager, self.seed_task(name))
+        arriving = self.seed_task("arriving")
+
+        outcome = enforce_worktree_limit(
+            self.store, project, keep_slug=task_slug(arriving)
+        )
+
+        self.assertEqual(outcome.reclaimed, ())
+        self.assertFalse(outcome.over_limit)
+        self.assertEqual(outcome.live_before, 3)
+
+    def test_the_engine_enforces_the_cap_when_it_makes_a_worktree(self) -> None:
+        project = self.project(limit=1)
+        manager = WorktreeManager(project)
+        victim = self.seed_task("victim")
+        victim_path = self.make_tree(manager, victim)
+        arriving = self.seed_task("arriving")
+
+        orchestrator = ForemanOrchestrator(self.store)
+        path = orchestrator._ensure_task_worktree(project, arriving)
+
+        self.assertTrue(path.is_dir())
+        self.assertFalse(victim_path.exists())
+        events = [
+            event.event_type
+            for event in self.store.list_events(project_id="p1")
+        ]
+        self.assertIn("engine.worktrees_reclaimed", events)
+
+
+def _age(manager: WorktreeManager, path: Path, *, seconds: int) -> None:
+    """Backdate a worktree's last-used signal by `seconds`."""
+
+    index = manager.admin_dir(path) / "index"
+    stamp = time.time() - seconds
+    os.utime(index, (stamp, stamp))
 
 
 class Migration16Tests(unittest.TestCase):

@@ -235,7 +235,24 @@ engine the same way every other surface does (ADR-0002 amendment):
 - `remove(task)` / `remove_path(path)` — deletion, refusing anything outside
   the worktree root,
 - `list()` and `prune_project_worktrees(store, project)` — the operator
-  surfaces behind `foreman worktree list|prune`.
+  surfaces behind `foreman worktree list|prune` and the dashboard's prune
+  control,
+- `enforce_worktree_limit(store, project, keep_slug=...)` — the
+  `max_live_worktrees` policy.
+
+The split inside the module is deliberate: `WorktreeManager` is filesystem and
+git only, while the policy that needs to know what a *task* is
+(`prune_project_worktrees`, `enforce_worktree_limit`) lives in store-aware
+module functions. Nothing in the manager imports the store.
+
+Two settings shape what a tree contains and how many exist.
+`worktree_setup_command` runs once inside each newly created tree to build its
+own environment, tracked by a marker in the tree's git admin directory so it
+never dirties the tree; without it a tree either borrows the operator's tooling
+through `worktree_link_paths` or has none. `max_live_worktrees` caps the number
+of task trees, enforced by the orchestrator immediately before it creates one —
+clean idle trees are reclaimed oldest-first, and a tree holding uncommitted
+work is never taken, so the cap yields rather than destroying unmerged state.
 
 The orchestrator holds one manager per project and resolves a working directory
 once per step (`_task_working_dir`), which native runner steps, the built-in

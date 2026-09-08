@@ -1636,6 +1636,63 @@ class DashboardSprintTaskBacklogTests(unittest.TestCase):
         self.addCleanup(store.close)
         self.assertIsNone(store.get_task(task.id))
 
+    def test_project_worktrees_endpoint_lists_what_the_engine_holds(self):
+        """GET /api/projects/{id}/worktrees backs the project screen's panel."""
+        task, path = self._seed_with_worktree()
+
+        response = self._request("GET", f"/api/projects/{task.project_id}/worktrees")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["max_live_worktrees"], 4)
+        entry = next(w for w in payload["worktrees"] if w["path"] == str(path))
+        self.assertEqual(entry["task_id"], task.id)
+        self.assertEqual(entry["task_status"], "in_progress")
+        self.assertEqual(entry["branch"], "feat/dash-worktree")
+        self.assertFalse(entry["is_integration"])
+
+    def test_prune_worktrees_endpoint_removes_finished_trees_only(self):
+        """The dashboard control follows the same policy as the CLI prune."""
+        task, path = self._seed_with_worktree()
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        self.addCleanup(store.close)
+        task = store.get_task(task.id)
+        task.status = "done"
+        store.save_task(task)
+
+        response = self._request(
+            "POST", f"/api/projects/{task.project_id}/worktrees/prune"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual([e["path"] for e in payload["removed"]], [str(path)])
+        self.assertFalse(path.exists())
+        # The drawer must stop advertising a directory that is gone.
+        self.assertIsNone(store.get_task(task.id).worktree_path)
+
+    def test_prune_worktrees_keeps_a_live_task_tree(self):
+        """A task still being worked on must not lose its checkout to a click."""
+        task, path = self._seed_with_worktree()
+
+        response = self._request(
+            "POST", f"/api/projects/{task.project_id}/worktrees/prune"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["removed"], [])
+        self.assertTrue(path.is_dir())
+
+    def test_worktree_endpoints_reject_an_unknown_project(self):
+        self.assertEqual(
+            self._request("GET", "/api/projects/nope/worktrees").status_code, 404
+        )
+        self.assertEqual(
+            self._request("POST", "/api/projects/nope/worktrees/prune").status_code,
+            404,
+        )
+
     # ── Cancel task ──────────────────────────────────────────────────────────
 
     def test_cancel_task_sets_cancelled_status(self):

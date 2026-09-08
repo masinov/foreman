@@ -606,6 +606,18 @@ def create_dashboard_app(
             )
         )
 
+    @app.get("/api/projects/{project_id}/worktrees")
+    async def list_worktrees(project_id: str) -> dict[str, Any]:
+        return with_api(lambda api: api.list_worktrees(project_id))
+
+    @app.post("/api/projects/{project_id}/worktrees/prune")
+    async def prune_worktrees(project_id: str, request: Request) -> dict[str, Any]:
+        data = await _read_json_body(request)
+        requested_by = data.get("requested_by") or None
+        return with_api(
+            lambda api: api.prune_worktrees(project_id, requested_by=requested_by)
+        )
+
     @app.get("/api/projects/{project_id}/engine/commands")
     async def list_engine_commands(
         project_id: str,
