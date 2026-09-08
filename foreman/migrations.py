@@ -425,4 +425,52 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         ALTER TABLE tasks ADD COLUMN worktree_path TEXT;
         """,
     ),
+    (
+        17,
+        "add api_tokens and task source columns: work arriving from other systems",
+        """
+        -- Intake tokens are the credential another system presents to hand
+        -- Foreman work (MANUAL Intake API). Only the SHA-256 of the secret is
+        -- stored: the secret itself is shown once at creation and is not
+        -- recoverable from this table, so a stolen database yields no usable
+        -- credential. `scopes_json` is a JSON array; `intake` is the only
+        -- scope today, and the column exists so later scopes do not need a
+        -- table rebuild.
+        CREATE TABLE IF NOT EXISTS api_tokens (
+            id           TEXT PRIMARY KEY,
+            project_id   TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            name         TEXT NOT NULL,
+            token_hash   TEXT NOT NULL,
+            scopes_json  TEXT NOT NULL DEFAULT '["intake"]',
+            created_by   TEXT NOT NULL DEFAULT 'human',
+            created_at   TEXT NOT NULL,
+            last_used_at TEXT,
+            revoked_at   TEXT
+        );
+
+        -- Authentication looks a token up by hash on every intake request, and
+        -- two tokens must never share one hash.
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_api_tokens_hash
+        ON api_tokens(token_hash);
+
+        -- `foreman token list` and the project view read a project's tokens
+        -- newest first.
+        CREATE INDEX IF NOT EXISTS idx_api_tokens_project
+        ON api_tokens(project_id, created_at);
+
+        -- Where a task came from, when it did not come from a person: the
+        -- calling system, its own identifier for the work, a link back to it,
+        -- and who reported it there. All nullable -- tasks created through the
+        -- CLI or the dashboard have no external source.
+        ALTER TABLE tasks ADD COLUMN source_system TEXT;
+        ALTER TABLE tasks ADD COLUMN source_ref TEXT;
+        ALTER TABLE tasks ADD COLUMN source_url TEXT;
+        ALTER TABLE tasks ADD COLUMN reporter TEXT;
+
+        -- Intake is idempotent on (project, system, external ref); this index
+        -- is the lookup that decides create-vs-return on every call.
+        CREATE INDEX IF NOT EXISTS idx_tasks_source
+        ON tasks(project_id, source_system, source_ref);
+        """,
+    ),
 ]
