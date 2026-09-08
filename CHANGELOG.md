@@ -202,6 +202,48 @@ memory changes rather than versioned product releases.
   carrying the source and the token's id and name. Recorded as ADR-0013 and
   documented in MANUAL §25. (The task specified migration 16 and ADR-0012;
   both were taken by slice 4, so this landed as 17 and ADR-0013.)
+- **slice 6, the policy matrix**
+  (`feat/task-add-the-policy-matrix-triage-plan-merge-and-notification-decisions-v2`):
+  autonomy is now a policy, not a mode. New `foreman/policy.py` owns four
+  decisions — `triage` (`auto`/`human`, default `human`), `plan_approval`
+  (default `human`), `merge_approval` (default `auto`), and `notification`
+  (`none`/`attention`/`all`, default `attention`) — each resolved from three
+  layers, most specific first: the task's `executor_overrides` (`policy`, or
+  the older gate-only `gates`), a rule for the task's type from the new
+  `policy_rules` setting (`{"<task_type>": {"<decision>": "<value>"}}`), then
+  the project default setting, else the built-in. Nothing else resolves a
+  policy: `ForemanOrchestrator._gate_policy_decision` delegates to the matrix
+  and `DashboardService.intake_task` asks it for the arriving status.
+  **Resolution reports its source**, and every task's first step writes one
+  `policy.resolved` event carrying all four `(value, source)` pairs
+  (`task_override`, `task_type_rule` plus the type, `project_default`,
+  `built_in_default`), so the audit trail says *why* a person was or was not
+  asked; a new `ForemanStore.has_event` keeps it to one per task across
+  resumes. Settings are **strict on write** (`ProjectSettings` refuses an
+  unknown task type, decision, or value, so `foreman config --set
+  policy_rules=…` fails at the typo) and **lenient on read** (a stored value
+  the matrix does not recognize is dropped for the built-in default rather than
+  stopping a run). New task status **`triage`**: work filed through intake
+  under a `human` triage policy lands there instead of `todo`, where
+  `select_next_task` never sees it, and raises one `engine.attention_needed`
+  turn with trigger `triage`; `foreman task accept <task-id>` and
+  `POST /api/tasks/{id}/accept` move it to `todo`, and `task cancel` works from
+  it. New `GET /api/projects/{id}/policy` returns the defaults, their sources,
+  and the rules, with `?task_id=` adding one task's resolution; the task
+  payload carries its resolved `policy`; `foreman task override` takes
+  `--triage` and `--notification` alongside the unchanged `--gate`; and
+  `foreman config` prints the matrix. The dashboard grows a `triage` board
+  column (shown only when work is waiting there) with an **Accept** action, the
+  resolved policy in the task drawer, and a defaults-plus-rules editor in
+  settings. `notification` is **recorded, not delivered**: the resolved value
+  is stamped as `notify` on `engine.attention_needed` and `workflow.paused` for
+  a later channels slice. **No migration** — `status` is a text column and
+  settings are JSON. Existing projects are unaffected: the two gate settings
+  keep their names, defaults, and `executor_overrides.gates` shape,
+  `workflow.gate_auto_approved` and the gate decision records keep their shape,
+  `triage` only touches intake tasks, and `notification` only adds a payload
+  field. Recorded as ADR-0014 and documented in MANUAL §14. (The task specified
+  ADR-0013, which slice 5 had already taken, so this landed as ADR-0014.)
 - `fix/cancelled-dependency-blocks`: only a `done` dependency satisfies a
   task's `depends_on`; a task whose dependency was cancelled is blocked with
   "Dependency cancelled: …" and an `engine.attention_needed` turn

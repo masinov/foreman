@@ -412,9 +412,17 @@ The current CLI watch baseline now includes:
   must be existing git repositories (optionally under configured roots).
   Per-user identity replaces the shared token in Phase 1.
 - every shipped workflow tests before it reviews and ends in a
-  `merge_approval` human gate; gate steps carry a `policy` resolved from a
-  per-task override, then the project setting, then a default, and an `auto`
-  policy produces a run row, an event, and a `policy:<name>` decision record.
+  `merge_approval` human gate; an `auto` gate policy produces a run row, an
+  event, and a `policy:<name>` decision record.
+- where a person is required is one policy matrix (`foreman/policy.py`,
+  ADR-0014): `triage`, `plan_approval`, `merge_approval`, and `notification`,
+  each resolved as task override, then a rule for the task's type
+  (`policy_rules`), then the project default. Nothing else resolves a policy —
+  the orchestrator's gate decision and intake's arriving status both delegate
+  to it — and every task's first step records a `policy.resolved` event naming
+  the layer that decided each answer. Settings are validated strictly on write
+  and read leniently, so a malformed stored value falls back to a default
+  rather than stopping a run.
 - the role contract (completion marker or verdict) is read from the agent's
   final message only; decision roles declare `outcomes`, `review_kind`, and
   allowed `signals` in TOML, and the orchestrator, workflow validator, and
@@ -542,10 +550,13 @@ other than a person at a keyboard: task creation lives on
 `dashboard_service.create_task`, needs a sprint, and has no authentication, no
 idempotency, and no record of where the request came from.
 
-The next slice (sprint 54 slice 3) adds the intake endpoint:
-`POST /api/projects/{id}/intake`, authenticated with per-project API tokens,
-idempotent on an external reference so a retrying caller cannot create the
-same task twice, carrying source metadata, and choosing the initial status by
-policy — with the sprint optional, over a continuous queue. Slice 4 then adds
-the policy matrix (`triage` and `notification` joining `merge_approval` and
-`plan_approval`) that decides where a human is actually required.
+Both of those doors are now open. `POST /api/projects/{id}/intake`
+(ADR-0013) takes work from another system, authenticated with per-project API
+tokens and idempotent on an external reference, into a continuous queue sprint.
+The policy matrix (ADR-0014) decides what happens to it: `triage` chooses
+whether filed work is runnable on arrival or waits in the `triage` status for a
+person, while `plan_approval`, `merge_approval`, and `notification` cover the
+rest of the "does a person do this?" surface under one precedence rule.
+
+What is still missing is delivery: `notification` resolves to a value and is
+recorded on the events it would announce, but no channel acts on it yet.

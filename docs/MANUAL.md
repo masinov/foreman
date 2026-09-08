@@ -179,9 +179,11 @@ All entities live in SQLite (`foreman/store.py` is the only data-access layer).
   (`planned`/`active`/`completed`), `order_index`, `started_at`/`completed_at`.
 - **Task** — `id`, `sprint_id`, `project_id`, `title`, `description`,
   `task_type` (`feature`/`fix`/`refactor`/…), `status`
-  (`todo`/`in_progress`/`blocked`/`done`/`cancelled`), `acceptance_criteria`,
+  (`triage`/`todo`/`in_progress`/`blocked`/`done`/`cancelled`),
+  `acceptance_criteria`,
   `branch_name`, `depends_on_task_ids`, `complexity` (`small`/`medium`/`large`),
-  `executor_overrides` (per-step model pins), plus workflow runtime fields
+  `executor_overrides` (per-step model pins and per-task policy), plus workflow
+  runtime fields
   (`workflow_current_step`, `workflow_carried_output`, `step_visit_counts`,
   `completion_evidence`).
 - **Run** — one invocation: `role_id`, `workflow_step`, `agent_backend`,
@@ -231,10 +233,13 @@ foreman task add <project-id> --title TITLE --criteria CRITERIA \
     [--depends-on id1,id2] [--complexity {small,medium,large}]
 
 foreman task override <task-id> \
-    [--step STEP=MODEL ...] [--ladder-start N] [--clear]
+    [--step STEP=MODEL ...] [--ladder-start N] \
+    [--gate POLICY=auto|human] [--triage auto|human] \
+    [--notification none|attention|all] [--clear]
 
 foreman task list <project-id>
 foreman task show <task-id>           # task + worktree + recent runs + events
+foreman task accept <task-id>         # triage → todo
 foreman task block <task-id>
 foreman task unblock <task-id>
 foreman task cancel <task-id>         # also removes the task's worktree
@@ -250,10 +255,15 @@ the dependent task ("Dependency cancelled: …", attention trigger
 `dependency_cancelled`) for a person to re-plan, unblock, or cancel it. A task
 with a running agent step cannot be cancelled while an engine is resident:
 stop it first with `foreman engine stop-task`. `task override`
-step ids are validated against the project's workflow. Example:
+step ids are validated against the project's workflow, and its policy flags are
+validated against the policy matrix (section 14). `task accept` moves work out
+of `triage`, the status filed work waits in until a person takes it; `task
+cancel` works from `triage` too. Example:
 
 ```bash
 foreman task override task-123 --step develop=MiniMax-M2 --step review=claude-opus-4-8 --ladder-start 1
+foreman task override task-123 --gate merge_approval=human --notification all
+foreman task override task-123 --triage ""      # drop just that override
 ```
 
 ### Execution
@@ -527,7 +537,7 @@ role = "code_reviewer"
 [[steps]]
 id = "merge_approval"
 role = "_builtin:human_gate"
-policy = "merge_approval"       # resolved from the project setting or a task override
+policy = "merge_approval"       # resolved through the policy matrix (section 14)
 
 [[transitions]]
 from = "develop"
@@ -820,13 +830,59 @@ move.
 
 ---
 
-## 14. Human gates, approvals & merge waivers
+## 14. The policy matrix, human gates & merge waivers
+
+### The policy matrix
+
+Autonomy in Foreman is a policy, not a mode. One matrix
+(`foreman/policy.py`, ADR-0014) answers every question of the form "does a
+person do this?":
+
+| Decision | Values | Default | What it governs |
+| --- | --- | --- | --- |
+| `triage` | `auto`, `human` | `human` | whether work filed through the intake API (§25) is runnable on arrival, or waits in `triage` for a person |
+| `plan_approval` | `auto`, `human` | `human` | the architect workflow's plan gate |
+| `merge_approval` | `auto`, `human` | `auto` | the merge gate every shipped workflow ends in |
+| `notification` | `none`, `attention`, `all` | `attention` | how much a project wants to be told: nothing, attention turns and human gates, or those plus task completions |
+
+Each decision is resolved from three layers, **most specific first**:
+
+1. **the task's override** — `executor_overrides.policy` (any decision), or the
+   older `executor_overrides.gates` (the two gate decisions only),
+2. **a task-type rule** — the `policy_rules` setting, shaped
+   `{"<task_type>": {"<decision>": "<value>"}}`,
+3. **the project default** — the setting named after the decision, else the
+   built-in default from the table above.
+
+```bash
+# A project that merges docs unattended but wants a person on features:
+foreman config <project-id> --set merge_approval=human
+foreman config <project-id> --set policy_rules='{"docs": {"merge_approval": "auto"}}'
+
+# One task that must not merge without a person, whatever the project says:
+foreman task override <task-id> --gate merge_approval=human
+```
+
+`foreman config <project-id>` prints the resolved matrix and its rules.
+`policy_rules` is validated on write: an unknown task type, decision, or value
+is refused there rather than ignored at run time.
+
+Resolution records **where** each value came from — `task_override`,
+`task_type_rule` (plus the type), `project_default`, or `built_in_default`.
+Every task's first step writes one `policy.resolved` event carrying all four
+decisions with their sources, so the audit trail answers why a person was or
+was not asked. `GET /api/projects/{id}/policy` returns the same thing, and
+`?task_id=` adds the resolution for one task; the dashboard's task drawer shows
+it, and the settings panel edits the defaults and the rules.
+
+The `notification` value is recorded today as a `notify` field on the events it
+would announce (`engine.attention_needed`, `workflow.paused`). Delivery
+channels are a later slice.
+
+### Human gates
 
 A workflow may contain `_builtin:human_gate` steps. A gate step may declare a
-`policy` (`merge_approval` or `plan_approval`); the engine resolves it, in
-order, from the task's `executor_overrides.gates` entry, the project setting
-of the same name, and the default (`merge_approval=auto`,
-`plan_approval=human`):
+`policy` (`merge_approval` or `plan_approval`), which the matrix resolves:
 
 - **`auto`** — the engine approves the gate itself, completes the run with
   outcome `approve`, emits `workflow.gate_auto_approved`, and writes a
@@ -933,8 +989,11 @@ offending value, rather than running on silent defaults.
 | `worktree_setup_command` | `""` | shell command run once in each new worktree to build that tree's own environment (§24) |
 | `worktree_setup_timeout_seconds` | `1800` | wall-clock cap for `worktree_setup_command`; `0` disables the timeout |
 | `completion_guard_enabled` | `true` | enforce the merge proof gate |
-| `merge_approval` | `auto` | `auto` or `human`: whether the `merge_approval` gate needs a person |
-| `plan_approval` | `human` | `auto` or `human`: whether the architect's plan gate needs a person |
+| `merge_approval` | `auto` | `auto` or `human`: whether the `merge_approval` gate needs a person (§14) |
+| `plan_approval` | `human` | `auto` or `human`: whether the architect's plan gate needs a person (§14) |
+| `triage` | `human` | `auto` or `human`: whether filed work is runnable on arrival or waits in `triage` (§14) |
+| `notification` | `attention` | `none`, `attention`, or `all`: what the project wants to be told about (§14) |
+| `policy_rules` | `{}` | per-task-type policy overrides, `{"<task_type>": {"<decision>": "<value>"}}` (§14) |
 | `default_model` | `""` | fallback model when a role pins none |
 | `meta_agent_model` | `""` | `--model` for the manager chat session |
 | `judge_base_url` / `judge_model` | unset | opt-in criteria judge endpoint |
@@ -1046,13 +1105,14 @@ which token filed each task.
 | `GET /api/projects` · `POST /api/projects` | list / create projects |
 | `GET /api/projects/{id}` | project payload (incl. `engine`, `blocked_gate`/`blocked_engine`, totals) |
 | `GET/PATCH /api/projects/{id}/settings` | read / update settings |
+| `GET /api/projects/{id}/policy` | the policy matrix: defaults, rules, and (with `?task_id=`) the resolution for one task (§14) |
 | `GET/POST /api/projects/{id}/sprints` | list / create sprints |
 | `GET /api/sprints/{id}` · `PATCH` · `DELETE` | sprint detail / edit / delete |
 | `GET /api/sprints/{id}/tasks` · `POST` | list / create tasks |
 | `GET /api/sprints/{id}/events` | paginated sprint events |
 | `GET /api/sprints/{id}/stream` | **SSE** live activity (data_version-gated) |
 | `GET /api/tasks/{id}` · `PATCH` · `DELETE` | task detail / edit / delete |
-| `POST /api/tasks/{id}/stop\|cancel\|approve\|deny` | task actions |
+| `POST /api/tasks/{id}/stop\|cancel\|approve\|deny\|accept` | task actions; `accept` moves a `triage` task to `todo` (§14) |
 | `POST /api/tasks/{id}/messages` | post a human message to a task |
 | `POST /api/projects/{id}/intake` | **file work from another system** (project API token, not the dashboard token — §25) |
 | `GET /api/projects/{id}/agent/status` | engine residency, pause state, heartbeat age, current task, recent commands |
@@ -1607,7 +1667,24 @@ intake once the active sprint finishes, so queued work never strands. To the
 resident engine an active intake queue is an ordinary sprint: it picks up
 `todo` tasks there exactly as it would anywhere else.
 
-Tasks arrive as `todo`.
+**The `triage` policy decides the arriving status** (§14), resolved for the
+task's type:
+
+- `human` (the default) — the task lands in **`triage`**. The engine never
+  selects a `triage` task, and one `engine.attention_needed` turn with trigger
+  `triage` is raised so a person sees it. Accept it with `foreman task accept
+  <task-id>`, `POST /api/tasks/{id}/accept`, or the board's **Accept** button;
+  cancel it with `foreman task cancel`.
+- `auto` — the task lands in `todo` and the engine may pick it up on its next
+  pass, with no person involved.
+
+```bash
+# Trust CI to file runnable work, but keep a person on everything else:
+foreman config <project-id> --set policy_rules='{"chore": {"triage": "auto"}}'
+```
+
+The `intake.task_created` event records the resulting `status` and the resolved
+`triage` decision with its source.
 
 ### The audit trail
 
@@ -1632,7 +1709,8 @@ A project API token is refused with **403** on every other `/api` route,
 whether or not a dashboard token is configured — a leaked intake token can
 never be replayed as a dashboard session.
 
-See [ADR-0013](adr/ADR-0013-intake-endpoint-and-api-tokens.md).
+See [ADR-0013](adr/ADR-0013-intake-endpoint-and-api-tokens.md) and
+[ADR-0014](adr/ADR-0014-autonomy-as-policy.md).
 
 ---
 
