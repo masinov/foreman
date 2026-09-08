@@ -235,15 +235,30 @@ memory changes rather than versioned product releases.
   `foreman config` prints the matrix. The dashboard grows a `triage` board
   column (shown only when work is waiting there) with an **Accept** action, the
   resolved policy in the task drawer, and a defaults-plus-rules editor in
-  settings. `notification` is **recorded, not delivered**: the resolved value
-  is stamped as `notify` on `engine.attention_needed` and `workflow.paused` for
-  a later channels slice. **No migration** — `status` is a text column and
+  settings. `notification` is stamped as `notify` on
+  `engine.attention_needed` and `workflow.paused`, providing the durable
+  decision consumed by the following delivery slice. **No migration** —
+  `status` is a text column and
   settings are JSON. Existing projects are unaffected: the two gate settings
   keep their names, defaults, and `executor_overrides.gates` shape,
   `workflow.gate_auto_approved` and the gate decision records keep their shape,
   `triage` only touches intake tasks, and `notification` only adds a payload
   field. Recorded as ADR-0014 and documented in MANUAL §14. (The task specified
   ADR-0013, which slice 5 had already taken, so this landed as ADR-0014.)
+- **slice 7, durable notification delivery** (`feat/task-d5da554de317`,
+  FOR-12): migration 18 adds project-scoped webhook destinations and a durable
+  delivery outbox. The orchestrator turns policy-stamped attention, human-gate,
+  and completion events into one idempotent row per enabled destination without
+  performing network work. `foreman serve` drains bounded batches between
+  passes and `foreman run` drains once before returning. Webhook POSTs use a
+  versioned, self-contained JSON payload, optional static headers, and optional
+  HMAC-SHA256 signing whose secret is read from a named environment variable
+  rather than stored. Failures retry with exponential backoff capped at 30
+  minutes; the fifth failed attempt leaves a diagnostic row and emits
+  `notification.failed` without changing the source task. New `foreman notify
+  add|list|remove|test|deliveries` manages and diagnoses the channel. The
+  dispatcher and worker are failure-isolated from task execution. Recorded as
+  ADR-0015 and covered by `tests/test_notifications.py`.
 - `fix/cancelled-dependency-blocks`: only a `done` dependency satisfies a
   task's `depends_on`; a task whose dependency was cancelled is blocked with
   "Dependency cancelled: …" and an `engine.attention_needed` turn

@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, Callable
 from .context import context_directory, relative_project_path, write_project_context
 from .git import GitMergeResult, is_worktree_clean, merge_branch, merge_preflight, run_git
 from .models import CompletionEvidence, Project, Task, utc_now_text
+from .notifications import resolve_notification_policy
 from .runner.process import ManagedProcess
 from .worktrees import WorktreeError, WorktreeManager
 
@@ -499,7 +500,30 @@ class BuiltinExecutor:
         return BuiltinResult(
             outcome="success",
             detail="Task marked done.",
-            events=removal_events,
+            events=(self._task_completed_event(project, task), *removal_events),
+        )
+
+    @staticmethod
+    def _task_completed_event(project: Project, task: Task) -> BuiltinEventRecord:
+        """Announce that a task reached done.
+
+        The single point where a task becomes done, so it is the only honest
+        anchor for "a task finished": a workflow step completing is not the
+        same claim, and the task row's ``completed_at`` is state rather than a
+        moment in the log. ``notify`` records the policy that governed the
+        announcement at the time it was made -- see ``foreman.notifications``.
+        """
+
+        return BuiltinEventRecord(
+            event_type="task.completed",
+            payload={
+                "task_id": task.id,
+                "title": task.title,
+                "task_type": task.task_type,
+                "branch": task.branch_name,
+                "completed_at": task.completed_at,
+                "notify": resolve_notification_policy(project, task),
+            },
         )
 
     def _remove_task_worktree(

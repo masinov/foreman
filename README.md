@@ -129,6 +129,23 @@ authorize every merge, and `policy_rules` to vary that by task type:
 Work filed through the intake API waits in the `triage` status until someone
 runs `foreman task accept <task-id>`, unless the `triage` policy says `auto`.
 
+Enabled webhook destinations receive policy-selected events through a durable
+queue. Delivery runs outside task execution, retries transient failures, and
+records its final outcome:
+
+```bash
+./venv/bin/foreman notify add foreman --name ops \
+  --url https://example.test/foreman --secret-env FOREMAN_WEBHOOK_SECRET
+./venv/bin/foreman notify test foreman ops
+./venv/bin/foreman notify list foreman
+./venv/bin/foreman notify deliveries foreman --status failed
+```
+
+`notification=attention` sends attention requests and human gates;
+`notification=all` also sends task completions. `notification=none` queues
+nothing. `foreman serve` drains deliveries between engine passes and
+`foreman run` drains once before returning (ADR-0015).
+
 Example:
 
 ```bash
@@ -415,8 +432,9 @@ Phase 0 of the production readiness review
 unattended run is safe on one machine. Sprint 54 is Phase 1. Slice 1, the
 resident `foreman serve` worker and the project engine lock, slice 2, the
 `engine_commands` table and the `foreman engine` CLI, slice 2b, the dashboard
-on the command table, and worktree isolation have landed; next are the intake
-endpoint, the policy matrix, and a per-task planner step.
+on the command table, worktree isolation, intake, the policy matrix, and
+durable webhook notification delivery have landed; next is the per-task
+planner step.
 `docs/sprints/current.md` lists the slice order.
 
 ## Validation

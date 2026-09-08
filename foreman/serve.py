@@ -43,6 +43,7 @@ from .engine_lock import EngineBusyError, EngineLock
 from .errors import EngineCommandInterrupt
 from .logs import get_logger, log_event
 from .models import ENGINE_COMMANDS_NEEDING_A_RESIDENT_ENGINE, EngineCommand
+from .notifications import NotificationDeliveryWorker
 from .orchestrator import (
     ForemanOrchestrator,
     LeaseLostError,
@@ -139,6 +140,7 @@ class ResidentEngine:
         monotonic: Callable[[], float] | None = None,
         tick_seconds: float = DATA_VERSION_TICK_SECONDS,
         utc_now: Callable[[], datetime] | None = None,
+        notification_worker: NotificationDeliveryWorker | None = None,
     ) -> None:
         self.store = store
         self.project_id = project_id
@@ -150,6 +152,15 @@ class ResidentEngine:
         self._monotonic = monotonic or time.monotonic
         self._utc_now = utc_now or (lambda: datetime.now(timezone.utc))
         self._tick_seconds = max(0.01, float(tick_seconds))
+        #: Sends what the engine queued for the project's notification
+        #: destinations. It runs between passes rather than inside one, so a
+        #: destination that is slow or down costs the *worker* time and never
+        #: a task's.
+        self._notifications = (
+            notification_worker
+            if notification_worker is not None
+            else NotificationDeliveryWorker(store, utc_now=self._utc_now)
+        )
         self._backoff = _Backoff()
         #: Set by a `pause`, cleared by a `resume`. A paused engine picks no
         #: new work but stays resident, keeps heartbeating its lock, and keeps
@@ -203,6 +214,7 @@ class ResidentEngine:
                     break
 
                 self._drain_commands()
+                self._deliver_notifications()
 
                 if self._stopping:
                     stop_reason, exit_code = "stopped", 0
@@ -378,6 +390,27 @@ class ResidentEngine:
             last_pass_reason=last_pass_reason,
             detail=detail,
         )
+
+    def _deliver_notifications(self) -> None:
+        """Send whatever notifications are due for this project.
+
+        Called once per iteration, which means after every pass and on every
+        idle wake -- so a retry that came due while the engine had nothing to
+        do is still sent. A resident engine is the only thing that runs often
+        enough to work a backoff schedule; a one-shot ``foreman run`` drains
+        once at exit and leaves the rest to the next engine that runs.
+        """
+
+        result = self._notifications.drain(self.project_id)
+        if result.did_work:
+            self._log(
+                "serve.notifications",
+                level=logging.INFO if result.failed else logging.DEBUG,
+                attempted=result.attempted,
+                delivered=result.delivered,
+                retrying=result.retrying,
+                failed=result.failed,
+            )
 
     # ── commands ─────────────────────────────────────────────────────────
 

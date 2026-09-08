@@ -38,6 +38,7 @@ from .leases import generate_lease_token
 from .logs import compact_payload, event_log_level, get_logger, log_event
 from .judge import judge_criteria, truncate_diff
 from .models import CompletionEvidence, Event, HumanGateDecision, Lease, Project, Run, Sprint, TASK_COMPLEXITIES, Task, utc_now_text
+from .notifications import NotificationDispatcher, resolve_notification_policy
 from .policy import GATE_DECISIONS, POLICY_DEFAULTS, PolicyMatrix, describe_resolution
 from .outcomes import APPROVE, BLOCKED, DENY, DONE, ERROR, ESCALATE, normalize_agent_outcome, normalize_reviewer_decision, STEER
 from .runner import AgentRunConfig, ClaudeCodeRunner, CodexRunner, PreflightError, run_with_retry
@@ -212,6 +213,7 @@ class ForemanOrchestrator:
         holder_id: str | None = None,
         native_step_heartbeat_seconds: float | None = None,
         command_poll: Callable[[str], None] | None = None,
+        notifier: NotificationDispatcher | None = None,
     ) -> None:
         loaded_roles = dict(roles) if roles is not None else load_roles(default_roles_dir())
         loaded_workflows = (
@@ -239,6 +241,11 @@ class ForemanOrchestrator:
             }
         )
         self.builtin_executor = builtin_executor or BuiltinExecutor()
+        #: Offered every persisted event; queues the announceable ones as
+        #: deliveries. Injectable so a test can watch what the engine chose to
+        #: announce without a transport, and so a caller that has no business
+        #: notifying anyone can pass one that does nothing.
+        self.notifier = notifier if notifier is not None else NotificationDispatcher(store)
         self.runner_sleep = runner_sleep
         self.utc_now = utc_now or (lambda: datetime.now(timezone.utc))
         self.holder_id = holder_id or str(uuid4())
@@ -1874,7 +1881,7 @@ class ForemanOrchestrator:
                             "reason": "human_gate",
                             "policy": step_def.policy,
                             # What the project asked to be told about; the
-                            # channels that act on it land in a later slice.
+                            # delivery worker acts on this persisted decision.
                             "notify": self._notification_policy(project, current_task),
                         },
                     )
@@ -3801,11 +3808,16 @@ class ForemanOrchestrator:
             {
                 "trigger": trigger,
                 "task_id": task_id,
-                # What the project asked to be told about; the channels that
-                # act on it land in a later slice.
+                # What the project asked to be told about, persisted so a
+                # later policy change cannot rewrite this moment.
                 "notify": self._notification_policy(project, task),
             },
         )
+
+    def _notification_policy(self, project: Project | None, task: Task | None) -> str:
+        """Resolve the notification decision for the events worth announcing."""
+
+        return resolve_notification_policy(project, task)
 
     def _attention_trigger_for_block(self, task: Task) -> str:
         """Pick the supervision trigger for a freshly-blocked task.
@@ -3909,6 +3921,11 @@ class ForemanOrchestrator:
             # ``task_id``/``run_id`` keys whose meaning differs from the row's.
             payload=compact_payload(payload),
         )
+        # Notification is a read of the persisted event, not a second source of
+        # truth: whatever the audit log says happened is what a destination is
+        # told. The dispatcher queues and returns; it never sends here, and it
+        # never raises, so no notification setup can fail a run.
+        self.notifier.consider(event)
         return event
 
 

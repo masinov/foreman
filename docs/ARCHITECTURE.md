@@ -423,6 +423,13 @@ The current CLI watch baseline now includes:
   the layer that decided each answer. Settings are validated strictly on write
   and read leniently, so a malformed stored value falls back to a default
   rather than stopping a run.
+- notification delivery is a durable outbox boundary
+  (`foreman/notifications.py`, ADR-0015): the orchestrator maps
+  policy-stamped events to one idempotent row per enabled destination, while a
+  worker sends due rows outside task execution. Webhook secrets are
+  environment references, retries are bounded and persisted, and an exhausted
+  delivery emits `notification.failed` without changing the originating task
+  outcome.
 - the role contract (completion marker or verdict) is read from the agent's
   final message only; decision roles declare `outcomes`, `review_kind`, and
   allowed `signals` in TOML, and the orchestrator, workflow validator, and
@@ -558,5 +565,7 @@ whether filed work is runnable on arrival or waits in the `triage` status for a
 person, while `plan_approval`, `merge_approval`, and `notification` cover the
 rest of the "does a person do this?" surface under one precedence rule.
 
-What is still missing is delivery: `notification` resolves to a value and is
-recorded on the events it would announce, but no channel acts on it yet.
+Webhook delivery now acts on that decision through the durable notification
+outbox. Additional transports can implement the same boundary without changing
+orchestration or policy resolution. The next planned architectural slice is
+the per-task planner and its protected acceptance test.
