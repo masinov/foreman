@@ -32,7 +32,7 @@ decides where a human is required.
 | F4 | Live-run fix: a cancelled dependency blocks the dependent task for re-planning instead of releasing it; cancel refuses a task with a live run | done | `fix/cancelled-dependency-blocks` | orchestrator, CLI, dashboard, tests |
 | F5 | Live-run fix: a killed or interrupted run keeps the backend session announced at start, so a pause or shutdown resumes the conversation | done | `fix/keep-session-on-kill` | orchestrator, tests |
 | 3 | Intake endpoint: project-level, API-token authenticated, idempotent on an external reference, source metadata, initial status `todo`; sprint optional over a continuous queue | done | `feat/task-add-the-intake-endpoint-and-api-tokens-v2` (engine-run) | `foreman/api_tokens.py`, migration 17 (`api_tokens` + task source columns), `POST /api/projects/{id}/intake`, `foreman token`, drawer Source section, ADR-0013, MANUAL §25, `tests/test_intake.py` |
-| 4 | Policy matrix v1: `triage` and `notification` policies join `merge_approval` and `plan_approval`; task-type rules; per-task overrides | todo | | settings, models, orchestrator, tests |
+| 4 | Policy matrix v1: `triage` and `notification` policies join `merge_approval` and `plan_approval`; task-type rules; per-task overrides | done | `feat/task-add-the-policy-matrix-triage-plan-merge-and-notification-decisions-v2` (engine-run) | `foreman/policy.py`, `triage` task status, `policy.resolved` event, `GET /api/projects/{id}/policy`, `POST /api/tasks/{id}/accept`, `foreman task accept`, `task override --triage/--notification`, board triage column, ADR-0014, MANUAL §14, `tests/test_policy.py` |
 | 5 | Planner step per task producing criteria and a protected acceptance test; architect role repurposed to once-per-task | todo | | role, workflow, tests |
 | 6 | Worktree per task under a Foreman-owned directory | done | `feat/task-give-every-task-its-own-git-worktree` (engine-run) | `foreman/worktrees.py`, migration 16, orchestrator, built-ins, `foreman worktree`, ADR-0012, `tests/test_worktrees.py` |
 | 6b | Bounded worktree disk use (`max_live_worktrees`) and a per-worktree environment (`worktree_setup_command`); dashboard prune control | done | `chore/task-c68378a4e541` (engine-run, follow-up from ADR-0012) | `enforce_worktree_limit`, setup command + marker, `GET/POST /api/projects/{id}/worktrees[/prune]`, `WorktreePanel`, ADR-0012 amendment, tests |
@@ -71,8 +71,37 @@ Two decisions worth carrying into slice 4 (policy matrix):
   and the context projection each to grow an orphan path. Sprints stay the
   unit of grouping; a continuous queue is a sprint that never completes.
 
-Intake tasks land as `todo`. The `triage` status is slice 4's, as is anything
-that ages or bounds the queue: nothing prunes it today.
+Intake tasks landed as `todo` in slice 3; slice 4 made the arriving status a
+policy. Ageing or bounding the queue is still nobody's: nothing prunes it.
+
+### Slice 4 notes
+
+ADR-0013 was taken by slice 3, which landed first, so the policy matrix is
+**ADR-0014**. **No migration was needed** — `tasks.status` is a text column and
+settings are JSON — so the task's "stop and explain if one is required" clause
+did not fire.
+
+Three decisions worth carrying forward:
+
+- **One matrix, three layers, and nothing else may resolve a policy.** The
+  orchestrator's gate decision and intake's arriving status both delegate to
+  `PolicyMatrix`. The alternative — each decision reading settings itself, as
+  the two gate policies did — is what made a fourth decision cost a fourth
+  resolution path. A fifth decision is now an entry in `POLICY_VALUES` plus a
+  default.
+- **Resolution records its source, and the source is persisted.**
+  `policy.resolved` on the first step names the layer that decided each answer,
+  so "why was a person asked?" is answerable after the fact. This is the part
+  that makes the matrix an audit surface rather than a config lookup.
+- **Strict on write, lenient on read.** `ProjectSettings` refuses a bad
+  `policy_rules` at `foreman config`; `PolicyMatrix.from_settings` drops an
+  unrecognized stored value for the built-in default rather than raising
+  mid-run. A hand-edited row must not be able to stop the engine.
+
+`notification` resolves and is stamped on the events it would announce
+(`notify` on `engine.attention_needed` and `workflow.paused`), but **no channel
+delivers anything yet** — that is the next slice, and the payload field is the
+seam it should read.
 
 ### Slice 6 notes
 

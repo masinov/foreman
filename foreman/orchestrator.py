@@ -39,6 +39,7 @@ from .logs import compact_payload, event_log_level, get_logger, log_event
 from .judge import judge_criteria, truncate_diff
 from .models import CompletionEvidence, Event, HumanGateDecision, Lease, Project, Run, Sprint, TASK_COMPLEXITIES, Task, utc_now_text
 from .notifications import NotificationDispatcher, resolve_notification_policy
+from .policy import GATE_DECISIONS, POLICY_DEFAULTS, PolicyMatrix, describe_resolution
 from .outcomes import APPROVE, BLOCKED, DENY, DONE, ERROR, ESCALATE, normalize_agent_outcome, normalize_reviewer_decision, STEER
 from .runner import AgentRunConfig, ClaudeCodeRunner, CodexRunner, PreflightError, run_with_retry
 from .runner.base import AgentRunner as NativeAgentRunner
@@ -1847,6 +1848,7 @@ class ForemanOrchestrator:
                     "workflow.step_started",
                     {"step": current_step, "visit_count": visit_count},
                 )
+                self._emit_policy_resolved(run, project, current_task)
                 gate_policy = self._gate_policy_decision(project, current_task, step_def)
                 if gate_policy == "auto":
                     outcome, detail = self._auto_approve_gate(
@@ -1878,6 +1880,8 @@ class ForemanOrchestrator:
                             "step": current_step,
                             "reason": "human_gate",
                             "policy": step_def.policy,
+                            # What the project asked to be told about; the
+                            # delivery worker acts on this persisted decision.
                             "notify": self._notification_policy(project, current_task),
                         },
                     )
@@ -1895,6 +1899,7 @@ class ForemanOrchestrator:
                     "workflow.step_started",
                     {"step": current_step, "visit_count": visit_count},
                 )
+                self._emit_policy_resolved(run, project, current_task)
                 result = self.builtin_executor.execute(
                     step_def.role,
                     project=project,
@@ -1999,6 +2004,7 @@ class ForemanOrchestrator:
                     "workflow.step_started",
                     {"step": current_step, "visit_count": visit_count},
                 )
+                self._emit_policy_resolved(run, project, current_task)
                 if branch_sync_event is not None:
                     event_type, payload = branch_sync_event
                     self._emit_event(run, event_type, payload)
@@ -2303,8 +2309,6 @@ class ForemanOrchestrator:
 
         return current_task
 
-    _GATE_POLICY_DEFAULTS = {"merge_approval": "auto", "plan_approval": "human"}
-
     def _gate_policy_decision(
         self,
         project: Project,
@@ -2313,21 +2317,56 @@ class ForemanOrchestrator:
     ) -> str:
         """Return ``auto`` or ``human`` for one human-gate step.
 
-        Precedence: the task's ``executor_overrides.gates`` entry, then the
-        project setting named by the step's policy, then the policy default.
-        Gate steps without a policy always require a person.
+        The answer comes from the project's policy matrix, which resolves the
+        step's policy from the task's overrides, the rule for its task type,
+        and the project default, in that order. Gate steps that name no
+        policy are not part of the matrix and always require a person.
         """
 
         policy = step.policy
-        if not policy:
+        if not policy or policy not in GATE_DECISIONS:
             return "human"
-        overrides = getattr(task, "executor_overrides", None) or {}
-        gate_overrides = overrides.get("gates") if isinstance(overrides, dict) else None
-        if isinstance(gate_overrides, dict) and gate_overrides.get(policy) in ("auto", "human"):
-            return str(gate_overrides[policy])
-        default = self._GATE_POLICY_DEFAULTS.get(policy, "human")
-        value = _string_setting(project, policy, default=default)
-        return value if value in ("auto", "human") else default
+        return (
+            PolicyMatrix.for_project(project)
+            .resolve(policy, task_type=task.task_type, overrides=task.executor_overrides)
+            .value
+        )
+
+    def _notification_policy(self, project: Project | None, task: Task | None) -> str:
+        """Resolve the notification decision for the events worth announcing."""
+
+        if project is None:
+            return POLICY_DEFAULTS["notification"]
+        return (
+            PolicyMatrix.for_project(project)
+            .resolve(
+                "notification",
+                task_type=getattr(task, "task_type", None),
+                overrides=getattr(task, "executor_overrides", None),
+            )
+            .value
+        )
+
+    def _emit_policy_resolved(self, run: Run, project: Project, task: Task) -> None:
+        """Record the resolved policy matrix once, on the task's first step.
+
+        The audit trail should answer why a person was (or was not) asked, not
+        only that they were, so every decision is written with the layer that
+        produced it. Written once per task: resuming a paused task does not
+        re-resolve anything a reader has not already seen.
+        """
+
+        if self.store.has_event(task_id=task.id, event_type="policy.resolved"):
+            return
+        resolved = PolicyMatrix.for_project(project).resolve_task(task)
+        self._emit_event(
+            run,
+            "policy.resolved",
+            {
+                "task_type": task.task_type,
+                "decisions": describe_resolution(resolved),
+            },
+        )
 
     def _auto_approve_gate(
         self,
@@ -3761,19 +3800,17 @@ class ForemanOrchestrator:
         self, run: Run, task_id: str | None, trigger: str
     ) -> None:
         """Emit one ``engine.attention_needed`` event for a supervision turn."""
+        project = self.store.get_project(run.project_id)
+        task = self.store.get_task(task_id) if task_id else None
         self._emit_event(
             run,
             "engine.attention_needed",
             {
                 "trigger": trigger,
                 "task_id": task_id,
-                # What the project asked to be told about, resolved now and
-                # recorded here so a later policy change cannot rewrite what
-                # this moment was supposed to announce.
-                "notify": self._notification_policy(
-                    self.store.get_project(run.project_id),
-                    self.store.get_task(task_id) if task_id else None,
-                ),
+                # What the project asked to be told about, persisted so a
+                # later policy change cannot rewrite this moment.
+                "notify": self._notification_policy(project, task),
             },
         )
 

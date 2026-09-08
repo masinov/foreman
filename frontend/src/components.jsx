@@ -6,6 +6,7 @@ import {
   engineState,
   eventMatchesFilter,
   formatBlockedKind,
+  formatPolicyDecision,
   formatCompactCount,
   formatCount,
   formatDate,
@@ -25,6 +26,9 @@ import {
 } from "./format";
 
 export const STATUS_COLUMNS = [
+  // `triage` holds work another system filed that nobody has accepted yet; the
+  // engine never picks it up until an Accept moves it into Todo.
+  { key: "triage", label: "Triage" },
   { key: "todo", label: "Todo" },
   { key: "in_progress", label: "In Progress" },
   { key: "blocked", label: "Blocked" },
@@ -928,7 +932,7 @@ export function SprintList({ project, sprints, pendingGates, engineStatus, onSel
   );
 }
 
-export function TaskCard({ task, selected, onSelect, onApprove, onDeny, onStop }) {
+export function TaskCard({ task, selected, onSelect, onApprove, onDeny, onStop, onAccept }) {
   function handleKeyDown(event) {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
@@ -961,6 +965,13 @@ export function TaskCard({ task, selected, onSelect, onApprove, onDeny, onStop }
         </div>
       ) : null}
       {task.blocked_reason ? <div className="card-blocked-reason">{task.blocked_reason}</div> : null}
+      {task.status === "triage" && onAccept ? (
+        <div className="card-actions" onClick={(event) => event.stopPropagation()}>
+          <button className="btn btn-accept" type="button" onClick={() => onAccept(task.id)}>
+            Accept
+          </button>
+        </div>
+      ) : null}
       {task.status === "in_progress" && onStop ? (
         <div className="card-actions" onClick={(event) => event.stopPropagation()}>
           <button className="btn btn-stop-task" type="button" onClick={() => onStop(task.id)}>
@@ -1055,6 +1066,59 @@ function CompletionEvidenceSection({ evidence }) {
       {evidence.branch_diff_stat ? (
         <div className="evidence-diffstat">{evidence.branch_diff_stat}</div>
       ) : null}
+    </div>
+  );
+}
+
+export const POLICY_DECISIONS = ["triage", "plan_approval", "merge_approval", "notification"];
+
+export const POLICY_VALUES = {
+  triage: ["auto", "human"],
+  plan_approval: ["auto", "human"],
+  merge_approval: ["auto", "human"],
+  notification: ["none", "attention", "all"],
+};
+
+export const POLICY_BUILT_IN_DEFAULTS = {
+  triage: "human",
+  plan_approval: "human",
+  merge_approval: "auto",
+  notification: "attention",
+};
+
+const POLICY_SOURCE_LABELS = {
+  task_override: "task override",
+  task_type_rule: "task type rule",
+  project_default: "project default",
+  built_in_default: "default",
+};
+
+function TaskPolicySection({ policy }) {
+  // Why a person was (or was not) asked: the value and the layer that decided
+  // it, in the same order every surface shows the matrix.
+  const rows = POLICY_DECISIONS.filter((decision) => policy[decision]);
+  if (rows.length === 0) {
+    return null;
+  }
+  return (
+    <div className="detail-section">
+      <div className="detail-section-title">Policy</div>
+      {rows.map((decision) => {
+        const entry = policy[decision];
+        return (
+          <div className="detail-field" key={decision}>
+            <span className="detail-field-label">{formatPolicyDecision(decision)}</span>
+            <span className="detail-field-value">
+              {entry.value}
+              <span className="policy-source">
+                {" "}
+                ({POLICY_SOURCE_LABELS[entry.source] || entry.source}
+                {entry.task_type ? `: ${entry.task_type}` : ""})
+              </span>
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -1290,6 +1354,7 @@ export function TaskDetailDrawer({
           )}
         </div>
         {task.source ? <TaskSourceSection source={task.source} /> : null}
+        {task.policy ? <TaskPolicySection policy={task.policy} /> : null}
         {task.completion_evidence ? (
           <CompletionEvidenceSection evidence={task.completion_evidence} />
         ) : null}
@@ -1439,6 +1504,102 @@ const AUTONOMY_LEVEL_OPTIONS = [
 ];
 
 
+export function PolicyMatrixSection({ settings, onChange }) {
+  // Autonomy is a policy, not a mode: four project defaults, refined per task
+  // type. A per-task override beats both, and lives on the task, not here.
+  const rules = settings.policy_rules && typeof settings.policy_rules === "object"
+    ? settings.policy_rules
+    : {};
+  const ruleTypes = TASK_TYPE_OPTIONS.filter((taskType) => rules[taskType]);
+
+  function setRule(taskType, decision, value) {
+    const nextRule = { ...(rules[taskType] || {}) };
+    if (value) {
+      nextRule[decision] = value;
+    } else {
+      delete nextRule[decision];
+    }
+    const nextRules = { ...rules };
+    if (Object.keys(nextRule).length > 0) {
+      nextRules[taskType] = nextRule;
+    } else {
+      delete nextRules[taskType];
+    }
+    onChange("policy_rules", nextRules);
+  }
+
+  function addRuleRow(taskType) {
+    if (!taskType || rules[taskType]) return;
+    onChange("policy_rules", { ...rules, [taskType]: {} });
+  }
+
+  return (
+    <div className="settings-section">
+      <div className="settings-section-title">Policy Matrix</div>
+      <span className="settings-section-hint">
+        Where a person is required. A task&apos;s own override beats a task-type
+        rule, which beats the project default.
+      </span>
+      {POLICY_DECISIONS.map((decision) => (
+        <div className="form-group" key={decision}>
+          <label className="form-label" htmlFor={`policy-${decision}`}>
+            {formatPolicyDecision(decision)}
+          </label>
+          <select
+            id={`policy-${decision}`}
+            className="form-input"
+            value={settings[decision] ?? POLICY_BUILT_IN_DEFAULTS[decision]}
+            onChange={(event) => onChange(decision, event.target.value)}
+          >
+            {POLICY_VALUES[decision].map((value) => (
+              <option key={value} value={value}>{value}</option>
+            ))}
+          </select>
+        </div>
+      ))}
+      <div className="policy-rules">
+        <div className="form-label">Task type rules</div>
+        {ruleTypes.length === 0 ? (
+          <span className="form-hint">No rules; every task type uses the defaults above.</span>
+        ) : (
+          ruleTypes.map((taskType) => (
+            <div className="policy-rule-row" key={taskType}>
+              <span className="policy-rule-type">{taskType}</span>
+              {POLICY_DECISIONS.map((decision) => (
+                <select
+                  key={decision}
+                  className="form-input policy-rule-select"
+                  aria-label={`${taskType} ${formatPolicyDecision(decision)}`}
+                  value={rules[taskType][decision] || ""}
+                  onChange={(event) => setRule(taskType, decision, event.target.value)}
+                >
+                  <option value="">{formatPolicyDecision(decision)}: default</option>
+                  {POLICY_VALUES[decision].map((value) => (
+                    <option key={value} value={value}>
+                      {formatPolicyDecision(decision)}: {value}
+                    </option>
+                  ))}
+                </select>
+              ))}
+            </div>
+          ))
+        )}
+        <select
+          className="form-input"
+          aria-label="Add a task type rule"
+          value=""
+          onChange={(event) => addRuleRow(event.target.value)}
+        >
+          <option value="">+ Add a task type rule…</option>
+          {TASK_TYPE_OPTIONS.filter((taskType) => !rules[taskType]).map((taskType) => (
+            <option key={taskType} value={taskType}>{taskType}</option>
+          ))}
+        </select>
+      </div>
+    </div>
+  );
+}
+
 export function SettingsPanel({ settings, onUpdate, onClose }) {
   const [draft, setDraft] = useState(null);
 
@@ -1514,6 +1675,7 @@ export function SettingsPanel({ settings, onUpdate, onClose }) {
               onChange={(checked) => handleChange("completion_guard_enabled", checked)}
             />
           </div>
+          <PolicyMatrixSection settings={innerSettings} onChange={handleChange} />
           <div className="settings-section">
             <div className="settings-section-title">Models &amp; Token Economy</div>
             <div className="form-group">

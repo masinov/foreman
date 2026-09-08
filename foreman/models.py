@@ -6,13 +6,15 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Literal
 
+from .policy import GATE_DECISIONS, POLICY_DECISIONS, POLICY_VALUES, is_valid_value
+
 JsonDict = dict[str, Any]
 
 ProjectMethodology = Literal["development"]
 AutonomyLevel = Literal["directed", "supervised", "autonomous"]
 GateStatus = Literal["pending", "accepted", "rejected", "dismissed"]
 SprintStatus = Literal["planned", "active", "completed", "cancelled"]
-TaskStatus = Literal["todo", "in_progress", "blocked", "done", "cancelled"]
+TaskStatus = Literal["triage", "todo", "in_progress", "blocked", "done", "cancelled"]
 TaskType = Literal["feature", "fix", "refactor", "docs", "spike", "chore"]
 RunStatus = Literal["pending", "running", "completed", "failed", "killed", "timeout"]
 
@@ -23,6 +25,9 @@ SPRINT_STATUSES: tuple[SprintStatus, ...] = (
     "cancelled",
 )
 TASK_STATUSES: tuple[TaskStatus, ...] = (
+    # Work another system filed that a person has not yet accepted. The engine
+    # never selects a `triage` task; `foreman task accept` moves it to `todo`.
+    "triage",
     "todo",
     "in_progress",
     "blocked",
@@ -40,7 +45,7 @@ TASK_TYPES: tuple[TaskType, ...] = (
 TASK_COMPLEXITIES: tuple[str, ...] = ("small", "medium", "large")
 
 
-GATE_POLICY_NAMES: frozenset[str] = frozenset({"merge_approval", "plan_approval"})
+GATE_POLICY_NAMES: frozenset[str] = frozenset(GATE_DECISIONS)
 
 
 def validate_executor_overrides(
@@ -53,17 +58,19 @@ def validate_executor_overrides(
     Shape:
 
         {"models": {"<step>": "<model>", ...}, "ladder_start": <int>,
-         "gates": {"merge_approval": "human", ...}}
+         "gates": {"merge_approval": "human", ...},
+         "policy": {"triage": "auto", "notification": "all", ...}}
 
     Unknown top-level keys are rejected. ``models`` keys are workflow step ids;
-    when ``valid_steps`` is provided they are checked against it. ``gates``
-    maps a gate policy name to ``auto`` or ``human`` and overrides the
-    project setting for this task. Raises ``ValueError`` on any violation.
+    when ``valid_steps`` is provided they are checked against it. ``policy``
+    overrides any policy-matrix decision for this task; ``gates`` is the older
+    gate-only form of the same thing and still overrides ``merge_approval``
+    and ``plan_approval``. Raises ``ValueError`` on any violation.
     """
 
     if not isinstance(value, dict):
         raise ValueError("executor_overrides must be an object.")
-    unknown = set(value) - {"models", "ladder_start", "gates"}
+    unknown = set(value) - {"models", "ladder_start", "gates", "policy"}
     if unknown:
         raise ValueError(f"Unknown executor_overrides keys: {sorted(unknown)}.")
 
@@ -85,6 +92,26 @@ def validate_executor_overrides(
             normalized_gates[policy] = decision
         if normalized_gates:
             result["gates"] = normalized_gates
+
+    policy_overrides = value.get("policy")
+    if policy_overrides is not None:
+        if not isinstance(policy_overrides, dict):
+            raise ValueError("executor_overrides.policy must be an object.")
+        normalized_policy: dict[str, str] = {}
+        for decision, decision_value in policy_overrides.items():
+            if not isinstance(decision, str) or decision not in POLICY_VALUES:
+                raise ValueError(
+                    f"Unknown policy decision {decision!r}; expected one of "
+                    f"{sorted(POLICY_DECISIONS)}."
+                )
+            if not is_valid_value(decision, decision_value):
+                raise ValueError(
+                    f"Policy {decision!r} must be one of "
+                    f"{', '.join(POLICY_VALUES[decision])}, got {decision_value!r}."
+                )
+            normalized_policy[decision] = str(decision_value)
+        if normalized_policy:
+            result["policy"] = normalized_policy
     models = value.get("models")
     if models is not None:
         if not isinstance(models, dict):

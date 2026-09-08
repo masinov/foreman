@@ -51,6 +51,7 @@ from typing import Any, Callable, Mapping, Protocol, Sequence, TYPE_CHECKING
 from uuid import uuid4
 
 from .models import Event, NotificationDelivery, NotificationDestination, Project, Task
+from .policy import POLICY_DEFAULTS, POLICY_VALUES, PolicyMatrix
 
 if TYPE_CHECKING:  # pragma: no cover - import cycle broken for type checking
     from .store import ForemanStore
@@ -58,12 +59,12 @@ if TYPE_CHECKING:  # pragma: no cover - import cycle broken for type checking
 _LOGGER = logging.getLogger("foreman.notifications")
 
 #: The values the ``notification`` policy decision may take, quietest first.
-NOTIFICATION_POLICIES: tuple[str, ...] = ("none", "attention", "all")
+NOTIFICATION_POLICIES: tuple[str, ...] = POLICY_VALUES["notification"]
 
 #: Used when nothing resolved a policy. ``attention`` rather than ``none``: a
 #: project that configured a destination at all wants the moments that need a
 #: person, and silence is the failure mode nobody notices.
-DEFAULT_NOTIFICATION_POLICY = "attention"
+DEFAULT_NOTIFICATION_POLICY = POLICY_DEFAULTS["notification"]
 
 #: What a delivery is about.
 ATTENTION = "attention"
@@ -145,24 +146,18 @@ def resolve_notification_policy(
 ) -> str:
     """Resolve the ``notification`` decision for one task.
 
-    Most specific first: the task's ``executor_overrides.policy.notification``,
-    then the project's ``notification`` setting, then the built-in default.
-
-    This is the notification column of the policy matrix. When the matrix
-    lands as its own module, this function becomes a call into it -- the
-    layering, the values, and the default are already the matrix's, so a
-    caller of this function keeps working unchanged.
+    Resolution belongs to the canonical policy matrix, including task
+    overrides, per-task-type rules, project defaults, and the built-in default.
     """
 
-    override = _override_policy(getattr(task, "executor_overrides", None))
-    if override is not None:
-        return override
-    settings = getattr(project, "settings", None)
-    if isinstance(settings, Mapping):
-        value = settings.get("notification")
-        if isinstance(value, str) and value in NOTIFICATION_POLICIES:
-            return value
-    return DEFAULT_NOTIFICATION_POLICY
+    matrix = PolicyMatrix.for_project(project)
+    if task is None:
+        return matrix.resolve("notification").value
+    return matrix.resolve(
+        "notification",
+        task_type=task.task_type,
+        overrides=task.executor_overrides,
+    ).value
 
 
 def notify_decision(
@@ -203,18 +198,6 @@ def kind_for_event(event_type: str, payload: Mapping[str, Any] | None = None) ->
 
 def _clean_policy(value: Any) -> str:
     return value if isinstance(value, str) and value in NOTIFICATION_POLICIES else ""
-
-
-def _override_policy(overrides: Any) -> str | None:
-    """Read ``executor_overrides.policy.notification`` when it is well-formed."""
-
-    if not isinstance(overrides, Mapping):
-        return None
-    policy = overrides.get("policy")
-    if not isinstance(policy, Mapping):
-        return None
-    value = policy.get("notification")
-    return value if isinstance(value, str) and value in NOTIFICATION_POLICIES else None
 
 
 # ── payload ──────────────────────────────────────────────────────────────

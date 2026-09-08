@@ -233,6 +233,87 @@ class MergeGateFlowTests(unittest.TestCase):
             self.assertEqual(result.stop_reason, "blocked")
             self.assertEqual(store.get_task(task.id).workflow_current_step, "merge_approval")
 
+    def test_a_task_type_rule_decides_the_merge_gate(self) -> None:
+        # Nothing about the gate step changes: only the layer that answered it.
+        repo, db_path = self._workspace()
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, task = self._seed(
+                store, repo, settings={"policy_rules": {"feature": {"merge_approval": "human"}}}
+            )
+            orchestrator = ForemanOrchestrator(
+                store, agent_runners={"claude_code": _ScriptedRunner([self._developer(repo), _reviewer_sees_tests_then_approves])}
+            )
+            result = orchestrator.run_project(project.id)
+            self.assertEqual(result.stop_reason, "blocked")
+            self.assertEqual(store.get_task(task.id).workflow_current_step, "merge_approval")
+
+    def test_the_first_step_records_the_resolved_policy_matrix_once(self) -> None:
+        repo, db_path = self._workspace()
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, task = self._seed(
+                store,
+                repo,
+                settings={"policy_rules": {"feature": {"notification": "all"}}},
+                overrides={"gates": {"merge_approval": "human"}},
+            )
+            orchestrator = ForemanOrchestrator(
+                store, agent_runners={"claude_code": _ScriptedRunner([self._developer(repo), _reviewer_sees_tests_then_approves])}
+            )
+            orchestrator.run_project(project.id)
+
+            resolved = [
+                e for e in store.list_events(task_id=task.id) if e.event_type == "policy.resolved"
+            ]
+            self.assertEqual(len(resolved), 1)
+            first_run = store.get_run(resolved[0].run_id)
+            self.assertEqual(first_run.workflow_step, "develop")
+            decisions = resolved[0].payload["decisions"]
+            self.assertEqual(
+                sorted(decisions), ["merge_approval", "notification", "plan_approval", "triage"]
+            )
+            self.assertEqual(
+                decisions["merge_approval"], {"value": "human", "source": "task_override"}
+            )
+            self.assertEqual(
+                decisions["notification"],
+                {"value": "all", "source": "task_type_rule", "task_type": "feature"},
+            )
+            self.assertEqual(
+                decisions["triage"], {"value": "human", "source": "built_in_default"}
+            )
+
+            # Resuming the gate must not re-record what a reader already saw.
+            orchestrator.resume_human_gate(task.id, outcome="approve", note="ok")
+            self.assertEqual(
+                len([e for e in store.list_events(task_id=task.id) if e.event_type == "policy.resolved"]),
+                1,
+            )
+
+    def test_a_paused_gate_carries_the_resolved_notification_policy(self) -> None:
+        repo, db_path = self._workspace()
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, task = self._seed(
+                store,
+                repo,
+                settings={"merge_approval": "human", "notification": "none"},
+            )
+            orchestrator = ForemanOrchestrator(
+                store, agent_runners={"claude_code": _ScriptedRunner([self._developer(repo), _reviewer_sees_tests_then_approves])}
+            )
+            orchestrator.run_project(project.id)
+
+            paused = [
+                e for e in store.list_events(task_id=task.id) if e.event_type == "workflow.paused"
+            ]
+            self.assertEqual(len(paused), 1)
+            self.assertEqual(paused[0].payload["notify"], "none")
+            # The rest of the payload is untouched.
+            self.assertEqual(paused[0].payload["step"], "merge_approval")
+            self.assertEqual(paused[0].payload["policy"], "merge_approval")
+
     def test_failing_tests_return_to_develop_before_any_review(self) -> None:
         repo, db_path = self._workspace()
         with ForemanStore(db_path) as store:
@@ -267,6 +348,46 @@ class GateOverrideCliTests(unittest.TestCase):
 
             self.assertEqual(main(["task", "override", "t1", "--gate", "merge_approval=sometimes", "--db", db_path]), 1)
             self.assertEqual(main(["task", "override", "t1", "--gate", "merge_approval=", "--db", db_path]), 0)
+            with ForemanStore(db_path) as store:
+                self.assertEqual(store.get_task("t1").executor_overrides, {})
+
+    def test_task_override_takes_the_triage_and_notification_policies(self) -> None:
+        from foreman.cli import main
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = str(Path(tmp) / "foreman.db")
+            with ForemanStore(db_path) as store:
+                store.initialize()
+                store.save_project(Project(id="p1", name="Gates", repo_path=tmp, workflow_id="development"))
+                store.save_sprint(Sprint(id="s1", project_id="p1", title="S", status="active"))
+                store.save_task(Task(id="t1", sprint_id="s1", project_id="p1", title="T"))
+
+            self.assertEqual(
+                main(["task", "override", "t1", "--triage", "auto", "--notification", "all", "--db", db_path]),
+                0,
+            )
+            with ForemanStore(db_path) as store:
+                self.assertEqual(
+                    store.get_task("t1").executor_overrides,
+                    {"policy": {"triage": "auto", "notification": "all"}},
+                )
+
+            self.assertEqual(main(["task", "override", "t1", "--triage", "maybe", "--db", db_path]), 1)
+            self.assertEqual(main(["task", "override", "t1", "--notification", "loud", "--db", db_path]), 1)
+
+            # An empty value removes just that override; --gate keeps working
+            # alongside the new flags.
+            self.assertEqual(
+                main(["task", "override", "t1", "--triage", "", "--gate", "plan_approval=auto", "--db", db_path]),
+                0,
+            )
+            with ForemanStore(db_path) as store:
+                self.assertEqual(
+                    store.get_task("t1").executor_overrides,
+                    {"gates": {"plan_approval": "auto"}, "policy": {"notification": "all"}},
+                )
+
+            self.assertEqual(main(["task", "override", "t1", "--clear", "--db", db_path]), 0)
             with ForemanStore(db_path) as store:
                 self.assertEqual(store.get_task("t1").executor_overrides, {})
 

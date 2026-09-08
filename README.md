@@ -113,8 +113,21 @@ Use the default `development` workflow for standard bootstrap project setup.
 
 Use `development_secure` when a project should require a dedicated security
 review after code review. Every shipped workflow runs the test built-in
-before any review and ends in a `merge_approval` gate; set the
-`merge_approval` setting to `human` when a person must authorize merges.
+before any review and ends in a `merge_approval` gate.
+
+Where a person is required is a **policy matrix**, not a mode: `triage`,
+`plan_approval`, `merge_approval`, and `notification` each resolve from a task
+override, then a rule for the task's type, then the project default
+(MANUAL §14, ADR-0014). Set `merge_approval=human` when a person must
+authorize every merge, and `policy_rules` to vary that by task type:
+
+```bash
+./venv/bin/foreman config <project-id> --set merge_approval=human
+./venv/bin/foreman config <project-id> --set policy_rules='{"docs": {"merge_approval": "auto"}}'
+```
+
+Work filed through the intake API waits in the `triage` status until someone
+runs `foreman task accept <task-id>`, unless the `triage` policy says `auto`.
 
 Example:
 

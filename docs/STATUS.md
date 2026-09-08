@@ -12,11 +12,10 @@
 - Last merged branch: `fix/cancelled-dependency-blocks` (sprint 54 live-run
   fix F4), after slice 2b and slice 1 (`a462659`, merged by the engine).
 - Current implementation branch:
-  `feat/task-add-the-intake-endpoint-and-api-tokens-v2` — sprint 54 slice 3,
-  the intake endpoint and API tokens, run as a dogfood task. Next: sprint 54
-  slice 4 (the policy matrix: triage, plan, merge, and notification
-  decisions), which is already queued as
-  `task-add-the-policy-matrix-triage-plan-merge-and-notification-decisions-v2`.
+  `feat/task-add-the-policy-matrix-triage-plan-merge-and-notification-decisions-v2`
+  — sprint 54 slice 4, the policy matrix, run as a dogfood task. Next: sprint
+  54 slice 5 (the planner step per task), and the notification *delivery*
+  channels this slice deliberately left out.
 - **Operator action from slice 6 is done, and superseded.** The `foreman`
   project no longer sets `worktree_link_paths=["venv"]`; it sets
   `worktree_setup_command` to build each worktree its own venv and editable
@@ -27,6 +26,19 @@
 
 ## Active branches
 
+- `feat/task-add-the-policy-matrix-triage-plan-merge-and-notification-decisions-v2`
+  — sprint 54 slice 4: new `foreman/policy.py` resolving `triage`,
+  `plan_approval`, `merge_approval`, and `notification` as task override >
+  task-type rule (`policy_rules`) > project default; the new `triage` task
+  status with `foreman task accept` and `POST /api/tasks/{id}/accept`; a
+  `policy.resolved` event on every task's first step naming the layer that
+  decided each answer; `GET /api/projects/{id}/policy`;
+  `task override --triage/--notification`; the board's triage column, the
+  drawer's Policy section, and the settings panel's matrix editor; ADR-0014,
+  MANUAL §14, `tests/test_policy.py`.
+  **The task specified ADR-0013; slice 3 took it**, so this is ADR-0014.
+  **No migration was needed** (`status` is text, settings are JSON).
+  `notification` is recorded, not delivered — no channel reads it yet.
 - `feat/task-add-the-intake-endpoint-and-api-tokens-v2` — sprint 54 slice 3:
   new `foreman/api_tokens.py` (mint, SHA-256 hash, scopes), migration 17
   (`api_tokens` + `tasks.source_system`/`source_ref`/`source_url`/`reporter`),

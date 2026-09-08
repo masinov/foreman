@@ -402,6 +402,46 @@ describe("React dashboard foundation", () => {
     expect(screen.getByText("engine")).toBeInTheDocument();
   });
 
+  it("hides the triage column until filed work is waiting there", async () => {
+    const { services } = createMockServices();
+    window.history.replaceState({}, "", "/dashboard/projects/proj-1/sprints/sprint-1");
+
+    render(<App services={services} browser={window} />);
+
+    expect(await screen.findByText("Build the frontend")).toBeInTheDocument();
+    expect(screen.queryByText("Triage")).not.toBeInTheDocument();
+  });
+
+  it("shows a triage column with Accept and queues the task", async () => {
+    const { services } = createMockServices();
+    services.listSprintTasks.mockResolvedValue({
+      tasks: [
+        {
+          id: "task-9",
+          title: "Disk full on web-3",
+          status: "triage",
+          task_type: "fix",
+          branch_name: null,
+          assigned_role: null,
+          blocked_reason: null,
+          acceptance_criteria: null,
+          totals: { run_count: 0, total_token_count: 0, total_cost_usd: 0 },
+        },
+      ],
+    });
+    services.acceptTask = vi.fn().mockResolvedValue({ id: "task-9", status: "todo" });
+    window.history.replaceState({}, "", "/dashboard/projects/proj-1/sprints/sprint-1");
+
+    render(<App services={services} browser={window} />);
+
+    expect(await screen.findByText("Triage")).toBeInTheDocument();
+    expect(await screen.findByText("Disk full on web-3")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Accept" }));
+
+    await waitFor(() => expect(services.acceptTask).toHaveBeenCalledWith("task-9"));
+  });
+
   it("opens the roles modal from the topbar and lists roles", async () => {
     const { services } = createMockServices();
     render(<App services={services} browser={window} />);

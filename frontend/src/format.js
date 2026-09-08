@@ -126,6 +126,17 @@ export function formatTaskStatus(status) {
   }
 }
 
+const POLICY_DECISION_LABELS = {
+  triage: "Triage",
+  plan_approval: "Plan approval",
+  merge_approval: "Merge approval",
+  notification: "Notification",
+};
+
+export function formatPolicyDecision(decision) {
+  return POLICY_DECISION_LABELS[decision] || titleizeId(decision);
+}
+
 const SELECTION_MODE_LABELS = {
   directed: "Directed",
   supervised: "Supervised",

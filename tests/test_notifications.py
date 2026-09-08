@@ -164,6 +164,21 @@ class NotificationPolicyTests(unittest.TestCase):
         self.assertEqual(resolve_notification_policy(_project(), None), "attention")
         self.assertEqual(resolve_notification_policy(None, None), "attention")
 
+    def test_resolution_uses_the_canonical_task_type_rule(self) -> None:
+        project = _project(
+            notification="none",
+            policy_rules={"feature": {"notification": "all"}},
+        )
+        task = Task(
+            id="t1",
+            sprint_id="s1",
+            project_id="p1",
+            title="T",
+            task_type="feature",
+        )
+
+        self.assertEqual(resolve_notification_policy(project, task), "all")
+
     def test_a_malformed_setting_falls_back_rather_than_raising(self) -> None:
         # Settings are validated at write time; a row edited by hand must
         # still yield a safe answer mid-run.
