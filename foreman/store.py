@@ -977,9 +977,10 @@ class ForemanStore:
                     WHEN 'in_progress' THEN 0
                     WHEN 'blocked' THEN 1
                     WHEN 'todo' THEN 2
-                    WHEN 'done' THEN 3
-                    WHEN 'cancelled' THEN 4
-                    ELSE 5
+                    WHEN 'triage' THEN 3
+                    WHEN 'done' THEN 4
+                    WHEN 'cancelled' THEN 5
+                    ELSE 6
                 END,
                 created_at DESC,
                 id DESC
@@ -1203,6 +1204,20 @@ class ForemanStore:
             "SELECT timestamp, rowid FROM events WHERE id = ?",
             (event_id,),
         ).fetchone()
+
+    def has_event(self, *, task_id: str, event_type: str) -> bool:
+        """Return whether one task has already recorded an event of this type.
+
+        Used for events that must be written once per task (the resolved
+        policy matrix), which would otherwise be re-emitted every time a task
+        resumes.
+        """
+
+        row = self._connection.execute(
+            "SELECT 1 FROM events WHERE task_id = ? AND event_type = ? LIMIT 1",
+            (task_id, event_type),
+        ).fetchone()
+        return row is not None
 
     def list_events(
         self,

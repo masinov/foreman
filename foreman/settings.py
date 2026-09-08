@@ -6,6 +6,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .models import TASK_TYPES
+from .policy import (
+    POLICY_DECISIONS,
+    POLICY_DEFAULTS,
+    POLICY_VALUES,
+    is_valid_value,
+)
+
 
 class SettingsError(ValueError):
     """Raised when project settings fail validation."""
@@ -58,10 +66,15 @@ class ProjectSettings:
     # Wall-clock cap for ``worktree_setup_command``; 0 disables the timeout.
     worktree_setup_timeout_seconds: int = 1800
     completion_guard_enabled: bool = True
-    # Gate policies: "auto" lets the engine approve the gate on its own and
-    # records a policy decision; "human" pauses the task for a person.
+    # The policy matrix (see foreman/policy.py). Each decision names a
+    # project default; "auto" lets the engine decide on its own and records
+    # the decision, "human" routes it to a person. `policy_rules` refines the
+    # defaults per task type, and a task override beats both.
     merge_approval: str = "auto"
     plan_approval: str = "human"
+    triage: str = "human"
+    notification: str = "attention"
+    policy_rules: dict[str, dict[str, str]] = field(default_factory=dict)
     runner_max_cost_usd: float = 1000.0
     runner_permission_mode: str = "auto"
     default_model: str = ""
@@ -120,8 +133,11 @@ class ProjectSettings:
                 raw.get("worktree_setup_timeout_seconds"), default=1800
             ),
             completion_guard_enabled=bool(raw.get("completion_guard_enabled", True)),
-            merge_approval=_validate_gate_policy(raw.get("merge_approval"), default="auto"),
-            plan_approval=_validate_gate_policy(raw.get("plan_approval"), default="human"),
+            merge_approval=_validate_policy_default(raw, "merge_approval"),
+            plan_approval=_validate_policy_default(raw, "plan_approval"),
+            triage=_validate_policy_default(raw, "triage"),
+            notification=_validate_policy_default(raw, "notification"),
+            policy_rules=_validate_policy_rules(raw.get("policy_rules")),
             runner_max_cost_usd=_validate_non_negative_float(
                 raw.get("runner_max_cost_usd"), default=1000.0
             ),
@@ -174,14 +190,62 @@ def _validate_worktree_link_paths(value: Any) -> tuple[str, ...]:
 GATE_POLICY_VALUES: tuple[str, ...] = ("auto", "human")
 
 
-def _validate_gate_policy(value: Any, *, default: str) -> str:
+def _validate_policy_default(raw: dict[str, Any], decision: str) -> str:
+    """Validate one project-level policy default from the raw settings."""
+
+    value = raw.get(decision)
     if value is None:
-        return default
-    if not isinstance(value, str) or value not in GATE_POLICY_VALUES:
+        return POLICY_DEFAULTS[decision]
+    if not is_valid_value(decision, value):
         raise SettingsError(
-            f"Gate policy must be one of {', '.join(GATE_POLICY_VALUES)}, got {value!r}"
+            f"Policy {decision!r} must be one of "
+            f"{', '.join(POLICY_VALUES[decision])}, got {value!r}"
         )
-    return value
+    return str(value)
+
+
+def _validate_policy_rules(value: Any) -> dict[str, dict[str, str]]:
+    """Validate the per-task-type policy rules object.
+
+    Shape: ``{"<task_type>": {"<decision>": "<value>"}}``. Task types, decision
+    names, and values are all checked, so a typo is refused at the point of
+    writing rather than silently ignored on the next run.
+    """
+
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise SettingsError(
+            f"policy_rules must be an object keyed by task type, got "
+            f"{type(value).__name__!r}"
+        )
+    rules: dict[str, dict[str, str]] = {}
+    for task_type, rule in value.items():
+        if not isinstance(task_type, str) or task_type not in TASK_TYPES:
+            raise SettingsError(
+                f"policy_rules key {task_type!r} is not a task type; expected one of "
+                f"{', '.join(TASK_TYPES)}"
+            )
+        if not isinstance(rule, dict):
+            raise SettingsError(
+                f"policy_rules[{task_type!r}] must be an object mapping a policy "
+                f"decision to a value, got {type(rule).__name__!r}"
+            )
+        cleaned: dict[str, str] = {}
+        for decision, decision_value in rule.items():
+            if not isinstance(decision, str) or decision not in POLICY_VALUES:
+                raise SettingsError(
+                    f"policy_rules[{task_type!r}] has unknown policy decision "
+                    f"{decision!r}; expected one of {', '.join(POLICY_DECISIONS)}"
+                )
+            if not is_valid_value(decision, decision_value):
+                raise SettingsError(
+                    f"policy_rules[{task_type!r}][{decision!r}] must be one of "
+                    f"{', '.join(POLICY_VALUES[decision])}, got {decision_value!r}"
+                )
+            cleaned[decision] = str(decision_value)
+        rules[task_type] = cleaned
+    return rules
 
 
 def _validate_task_selection_mode(value: Any) -> str:
