@@ -270,6 +270,43 @@ leasing any task, so a repository whose worktree root is not ignored, or whose
 git predates `git worktree`, fails with one clear message instead of a
 half-executed task. See ADR-0012.
 
+### Intake: the third door into the engine
+
+The CLI and the dashboard both assume a person and a sprint.
+`POST /api/projects/{id}/intake` is the door for everything else — an incident
+tracker, a chat bot, a CI job (ADR-0013).
+
+- `foreman/api_tokens.py` — the only module that mints or hashes a token
+  secret, plus the scope vocabulary. Secrets are `fmn_` + 32 random bytes;
+  only their SHA-256 is persisted, so the store, the CLI, and the HTTP layer
+  share one definition of what a token is and none of them can leak one.
+- `api_tokens` (migration 17) — named, per-project, revocable credentials with
+  a scope list and a unique index on `token_hash`. `ForemanStore` gains
+  `create_api_token` (the one place a secret is returned), `find_api_token`
+  (hash lookup, bumps `last_used_at`, invisible to revoked rows),
+  `list_api_tokens`, and `revoke_api_token`.
+- `tasks.source_system` / `source_ref` / `source_url` / `reporter`
+  (migration 17) — where machine-filed work came from, indexed on
+  `(project_id, source_system, source_ref)`, which is the idempotency lookup.
+- `DashboardService.authenticate_intake` and `intake_task` — the service owns
+  both the auth outcome and the filing. Auth raises `DashboardAuthError` (401)
+  or `DashboardPermissionError` (403) so the transport maps status codes
+  instead of deciding them.
+- `foreman/dashboard_backend.py` — the route, and the middleware rule that
+  keeps the two credentials apart: the shared dashboard token is refused on
+  intake, and a project API token is refused on every other `/api` route
+  whether or not a dashboard token is configured.
+- `foreman/cli.py` — `foreman token create|list|revoke`.
+
+Two shapes are worth preserving. **Intake is idempotent on the caller's own
+key** `(project, source.system, source.external_ref)`, because the caller is
+what retries; Foreman-generated keys would force callers to store Foreman
+state. And **the intake queue is a sprint** (`<project>-intake`, created on
+first use): sprints stay the unit of grouping, a continuous queue is a sprint
+that never completes, and no consumer — task selection, the board, the digest,
+the context projection — needs a code path for a task that belongs to no
+sprint.
+
 ### Inspection and dashboard surfaces
 
 Foreman now exposes two first-class observation surfaces:

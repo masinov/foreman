@@ -1059,6 +1059,46 @@ function CompletionEvidenceSection({ evidence }) {
   );
 }
 
+function TaskSourceSection({ source }) {
+  // Only work filed through the intake API carries a source; a task a person
+  // created in the UI renders no Source section at all.
+  const { system, external_ref: externalRef, url, reporter } = source;
+  if (!system && !externalRef && !url && !reporter) {
+    return null;
+  }
+  return (
+    <div className="detail-section">
+      <div className="detail-section-title">Source</div>
+      {system ? (
+        <div className="detail-field">
+          <span className="detail-field-label">System</span>
+          <span className="detail-field-value">{system}</span>
+        </div>
+      ) : null}
+      {externalRef || url ? (
+        <div className="detail-field">
+          <span className="detail-field-label">Reference</span>
+          <span className="detail-field-value">
+            {url ? (
+              <a className="detail-source-link" href={url} target="_blank" rel="noreferrer noopener">
+                {externalRef || url}
+              </a>
+            ) : (
+              externalRef
+            )}
+          </span>
+        </div>
+      ) : null}
+      {reporter ? (
+        <div className="detail-field">
+          <span className="detail-field-label">Reporter</span>
+          <span className="detail-field-value">{reporter}</span>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function TaskDetailDrawer({
   task,
   taskIndex,
@@ -1249,6 +1289,7 @@ export function TaskDetailDrawer({
             <div className="detail-criteria">{task.acceptance_criteria || <span className="detail-empty">None specified.</span>}</div>
           )}
         </div>
+        {task.source ? <TaskSourceSection source={task.source} /> : null}
         {task.completion_evidence ? (
           <CompletionEvidenceSection evidence={task.completion_evidence} />
         ) : null}

@@ -23,6 +23,7 @@ from .dashboard_runtime import (
     ensure_dashboard_assets,
     normalize_frontend_dev_url,
 )
+from .api_tokens import looks_like_api_token
 from .dashboard_service import (
     ACTIVITY_EVENT_LIMIT,
     ENGINE_COMMAND_LIMIT,
@@ -31,7 +32,9 @@ from .dashboard_service import (
     STREAM_POLL_INTERVAL_SECONDS,
     DashboardService,
     DashboardActionError,
+    DashboardAuthError,
     DashboardNotFoundError,
+    DashboardPermissionError,
     DashboardValidationError,
 )
 from .store import ForemanStore
@@ -118,6 +121,17 @@ def _token_matches(request: Request, expected: str) -> bool:
     return hmac.compare_digest(presented.encode("utf-8"), expected.encode("utf-8"))
 
 
+def _is_intake_path(path: str) -> bool:
+    """True for ``/api/projects/{id}/intake`` and nothing else.
+
+    Project ids are opaque but never contain a slash, so the segment count is
+    an exact test rather than a prefix guess.
+    """
+
+    parts = path.strip("/").split("/")
+    return len(parts) == 4 and parts[0] == "api" and parts[1] == "projects" and parts[3] == "intake"
+
+
 def create_dashboard_app(
     db_path: str,
     *,
@@ -175,9 +189,47 @@ def create_dashboard_app(
 
     @app.middleware("http")
     async def require_dashboard_token(request: Request, call_next):
+        """Separate the two credentials that can reach ``/api``.
+
+        The shared dashboard token opens every route except intake; a project
+        API token opens intake and nothing else. The second half holds whether
+        or not a dashboard token is configured, so a leaked intake token can
+        never be replayed as a dashboard session on an unauthenticated bind.
+        The intake route authenticates its own token against the database --
+        the middleware only decides which credential is allowed where.
+        """
+
+        path = request.url.path
         expected = app.state.auth_token
-        if expected and request.url.path.startswith("/api/"):
-            if request.method != "OPTIONS" and not _token_matches(request, expected):
+        if path.startswith("/api/") and request.method != "OPTIONS":
+            is_intake = _is_intake_path(path)
+            presented = _presented_token(request)
+            is_dashboard_token = bool(expected) and _token_matches(request, expected)
+            if is_intake:
+                # The dashboard's shared token is a session credential, not an
+                # attributable identity; intake records who filed the work.
+                if not looks_like_api_token(presented):
+                    return JSONResponse(
+                        {
+                            "error": (
+                                "Unauthorized: intake requires a project API token "
+                                "(`foreman token create`) as `Authorization: Bearer <token>`."
+                            )
+                        },
+                        status_code=401,
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
+            elif not is_dashboard_token and looks_like_api_token(presented):
+                return JSONResponse(
+                    {
+                        "error": (
+                            "Forbidden: a project API token is only valid on "
+                            "POST /api/projects/{id}/intake."
+                        )
+                    },
+                    status_code=403,
+                )
+            elif expected and not is_dashboard_token:
                 return JSONResponse(
                     {"error": "Unauthorized: a dashboard token is required."},
                     status_code=401,
@@ -203,6 +255,18 @@ def create_dashboard_app(
     @app.exception_handler(DashboardActionError)
     async def handle_action(_: Request, exc: DashboardActionError) -> JSONResponse:
         return JSONResponse({"error": str(exc)}, status_code=500)
+
+    @app.exception_handler(DashboardAuthError)
+    async def handle_auth(_: Request, exc: DashboardAuthError) -> JSONResponse:
+        return JSONResponse(
+            {"error": str(exc)},
+            status_code=401,
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    @app.exception_handler(DashboardPermissionError)
+    async def handle_permission(_: Request, exc: DashboardPermissionError) -> JSONResponse:
+        return JSONResponse({"error": str(exc)}, status_code=403)
 
     @app.exception_handler(DashboardForbiddenError)
     async def handle_forbidden(_: Request, exc: DashboardForbiddenError) -> JSONResponse:
@@ -287,6 +351,39 @@ def create_dashboard_app(
         return with_api(
             lambda api: api.update_project_settings(project_id, updates=data)
         )
+
+    @app.post("/api/projects/{project_id}/intake")
+    async def intake_task(project_id: str, request: Request) -> Response:
+        """Accept work from another system (MANUAL "Intake API").
+
+        The only ``/api`` route authenticated by a project API token rather
+        than the dashboard's shared token. 201 when the task is new, 200 when
+        the same ``(source.system, source.external_ref)`` was already filed.
+        """
+
+        data = await _read_json_body(request)
+        source = data.get("source")
+        if source is not None and not isinstance(source, dict):
+            raise DashboardValidationError("'source' must be an object.")
+        sprint_id = data.get("sprint_id")
+
+        def _intake(api: DashboardService) -> dict[str, Any]:
+            token = api.authenticate_intake(project_id, _presented_token(request))
+            return api.intake_task(
+                project_id,
+                token=token,
+                title=str(data.get("title", "")),
+                description=data.get("description"),
+                acceptance_criteria=data.get("acceptance_criteria"),
+                task_type=str(data.get("task_type", "fix")),
+                priority=data.get("priority") or 0,
+                complexity=data.get("complexity") or None,
+                source=source,
+                sprint_id=str(sprint_id) if sprint_id else None,
+            )
+
+        payload = with_api(_intake)
+        return JSONResponse(payload, status_code=201 if payload["created"] else 200)
 
     @app.get("/api/projects/{project_id}/sprints")
     async def list_project_sprints(project_id: str) -> dict[str, Any]:

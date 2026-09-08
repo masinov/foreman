@@ -30,7 +30,19 @@ from .engine_control import (
     serve_log_path,
     spawn_serve,
 )
-from .models import AUTONOMY_LEVELS, DecisionGate, EngineCommand, Event, Project, Run, Sprint, SprintStatus, Task
+from .api_tokens import INTAKE_SCOPE
+from .models import (
+    AUTONOMY_LEVELS,
+    ApiToken,
+    DecisionGate,
+    EngineCommand,
+    Event,
+    Project,
+    Run,
+    Sprint,
+    SprintStatus,
+    Task,
+)
 from .orchestrator import ForemanOrchestrator, OrchestratorError
 from .scaffold import generate_project_id
 from .settings import ProjectSettings, SettingsError
@@ -67,6 +79,16 @@ DASHBOARD_REQUESTER = "dashboard"
 #: How many engine commands the status payload carries.
 ENGINE_COMMAND_LIMIT = 10
 
+#: Suffix of a project's intake queue sprint id, and its title. The queue is a
+#: real sprint (ADR-0013): sprints stay the unit of grouping, and a continuous
+#: queue is simply a sprint that never completes.
+INTAKE_SPRINT_SUFFIX = "-intake"
+INTAKE_SPRINT_TITLE = "Intake queue"
+INTAKE_SPRINT_GOAL = (
+    "Work handed to Foreman by other systems through the intake API. "
+    "This sprint is a standing queue and is not expected to complete."
+)
+
 
 class DashboardServiceError(Exception):
     """Base error for dashboard service failures."""
@@ -82,6 +104,14 @@ class DashboardValidationError(DashboardServiceError):
 
 class DashboardActionError(DashboardServiceError):
     """Raised when one dashboard action cannot be completed."""
+
+
+class DashboardAuthError(DashboardServiceError):
+    """Raised when a request presents no usable credential (HTTP 401)."""
+
+
+class DashboardPermissionError(DashboardServiceError):
+    """Raised when a valid credential is not allowed to do this (HTTP 403)."""
 
 
 _ALLOWED_ROLE_FIELDS: frozenset[str] = frozenset(
@@ -156,6 +186,23 @@ def _serialize_completion_evidence(evidence: "Any") -> dict[str, Any] | None:
         "builtin_test_detail": evidence.builtin_test_detail,
         "failure_reasons": list(evidence.failure_reasons),
         "built_at": evidence.built_at,
+    }
+
+
+def _serialize_task_source(task: Task) -> dict[str, Any] | None:
+    """Return where a task came from, or None when a person filed it.
+
+    Absent rather than empty: the drawer renders a Source section only for work
+    that arrived from another system, so tasks created in the UI stay clean.
+    """
+
+    if not any((task.source_system, task.source_ref, task.source_url, task.reporter)):
+        return None
+    return {
+        "system": task.source_system,
+        "external_ref": task.source_ref,
+        "url": task.source_url,
+        "reporter": task.reporter,
     }
 
 
@@ -712,6 +759,7 @@ class DashboardService:
                     "blocked_kind": blocked_kind(task, gates),
                     "complexity": task.complexity,
                     "executor_overrides": task.executor_overrides,
+                    "source": _serialize_task_source(task),
                     "totals": {
                         "total_token_count": metrics.get("total_token_count", 0),
                         "total_cost_usd": metrics.get("total_cost_usd", 0.0),
@@ -832,6 +880,7 @@ class DashboardService:
             "awaiting_human_gate": self._at_human_gate(task, gates),
             "blocked_kind": blocked_kind(task, gates),
             "completion_evidence": _serialize_completion_evidence(task.completion_evidence),
+            "source": _serialize_task_source(task),
             "totals": self.store.run_totals(task_id=task_id),
             "runs": runs_data,
         }
@@ -1495,8 +1544,15 @@ class DashboardService:
         step: str,
         outcome: str,
         now: datetime | None = None,
+        role_id: str = "human",
+        agent_backend: str = "dashboard",
     ) -> str:
-        """Return a real run id for dashboard-authored task events."""
+        """Return a real run id for dashboard-authored task events.
+
+        ``role_id`` and ``agent_backend`` name the author of the synthetic run,
+        so an event filed by the intake API is distinguishable from one a
+        person clicked.
+        """
 
         runs = self.store.list_runs(task_id=task.id)
         if runs:
@@ -1508,9 +1564,9 @@ class DashboardService:
             id=f"run-{step}-{timestamp.strftime('%Y%m%d%H%M%S%f')}-{task.id[:8]}",
             task_id=task.id,
             project_id=task.project_id,
-            role_id="human",
+            role_id=role_id,
             workflow_step=step,
-            agent_backend="dashboard",
+            agent_backend=agent_backend,
             status="completed",
             outcome=outcome,
             started_at=timestamp_text,
@@ -1519,6 +1575,236 @@ class DashboardService:
         )
         self.store.save_run(synthetic_run)
         return synthetic_run.id
+
+    # ── Intake ────────────────────────────────────────────────────────────────
+
+    def authenticate_intake(self, project_id: str, secret: str | None) -> ApiToken:
+        """Resolve the API token allowed to file work on this project.
+
+        401 when no live token matches the secret, 403 when a live token
+        belongs to another project or lacks the ``intake`` scope. The two are
+        kept apart deliberately: a caller that gets 403 knows its credential is
+        real and its configuration is wrong.
+        """
+
+        presented = (secret or "").strip()
+        if not presented:
+            raise DashboardAuthError(
+                "Unauthorized: send an intake API token as `Authorization: Bearer <token>`."
+            )
+        token = self.store.find_api_token(presented)
+        if token is None:
+            raise DashboardAuthError("Unauthorized: unknown or revoked API token.")
+        if token.project_id != project_id:
+            raise DashboardPermissionError(
+                "Forbidden: this API token belongs to a different project."
+            )
+        if not token.has_scope(INTAKE_SCOPE):
+            raise DashboardPermissionError(
+                f"Forbidden: this API token does not carry the `{INTAKE_SCOPE}` scope."
+            )
+        return token
+
+    def intake_task(
+        self,
+        project_id: str,
+        *,
+        token: ApiToken,
+        title: str,
+        description: str | None = None,
+        acceptance_criteria: str | None = None,
+        task_type: str = "fix",
+        priority: int = 0,
+        complexity: str | None = None,
+        source: dict[str, Any] | None = None,
+        sprint_id: str | None = None,
+    ) -> dict[str, Any]:
+        """File one task handed to Foreman by another system.
+
+        Returns the task serialized as ``GET /api/tasks/{id}`` serializes it,
+        plus ``created``: False means the same ``(system, external_ref)`` was
+        already filed and this call changed nothing. The transport turns that
+        flag into 201 or 200.
+        """
+
+        from .models import TASK_COMPLEXITIES, TASK_TYPES
+
+        project = self._require_project(project_id)
+
+        clean_title = (title or "").strip()
+        if not clean_title:
+            raise DashboardValidationError("Task title is required.")
+        if task_type not in TASK_TYPES:
+            raise DashboardValidationError(
+                f"Unsupported task type: {task_type}. "
+                f"Expected one of: {', '.join(TASK_TYPES)}."
+            )
+        if complexity is not None and complexity not in TASK_COMPLEXITIES:
+            raise DashboardValidationError(
+                f"Unsupported complexity: {complexity}. "
+                f"Expected one of: {', '.join(TASK_COMPLEXITIES)}."
+            )
+        try:
+            priority_value = int(priority or 0)
+        except (TypeError, ValueError):
+            raise DashboardValidationError("'priority' must be an integer.") from None
+
+        source_fields = self._normalize_intake_source(source)
+
+        # Idempotency: the same incident posted twice is one task. Only a
+        # caller that names both its system and its own reference for the work
+        # gets this guarantee -- without a key there is nothing to match on.
+        if source_fields["system"] and source_fields["external_ref"]:
+            existing = self.store.find_task_by_source(
+                project_id=project_id,
+                source_system=source_fields["system"],
+                source_ref=source_fields["external_ref"],
+            )
+            if existing is not None:
+                payload = self.get_task(existing.id)
+                payload["created"] = False
+                return payload
+
+        if sprint_id:
+            sprint = self.store.get_sprint(sprint_id)
+            if sprint is None:
+                raise DashboardNotFoundError(f"Sprint not found: {sprint_id}")
+            if sprint.project_id != project_id:
+                raise DashboardValidationError(
+                    "Sprint does not belong to this project."
+                )
+        else:
+            sprint = self._ensure_intake_sprint(project)
+
+        task_id = f"task-{_stable_slug(clean_title)}"
+        suffix = 2
+        while self.store.get_task(task_id) is not None:
+            task_id = f"task-{_stable_slug(clean_title)}-{suffix}"
+            suffix += 1
+
+        existing_tasks = self.store.list_tasks(sprint_id=sprint.id)
+        now = self._now()
+        task = Task(
+            id=task_id,
+            sprint_id=sprint.id,
+            project_id=project_id,
+            title=clean_title,
+            task_type=task_type,  # type: ignore[arg-type]
+            description=(description or "").strip() or None,
+            acceptance_criteria=(acceptance_criteria or "").strip() or None,
+            complexity=complexity,
+            priority=priority_value,
+            order_index=max((t.order_index for t in existing_tasks), default=-1) + 1,
+            # The audit trail names the token, never the secret.
+            created_by=f"api:{token.name}",
+            source_system=source_fields["system"],
+            source_ref=source_fields["external_ref"],
+            source_url=source_fields["url"],
+            reporter=source_fields["reporter"],
+            created_at=now.isoformat(),
+        )
+        task = self.store.save_task(task)
+
+        run_id = self._ensure_event_run(
+            task,
+            step="intake",
+            outcome="created",
+            now=now,
+            role_id="api",
+            agent_backend="api",
+        )
+        self.store.save_event(
+            Event(
+                id=f"evt-intake-{now.strftime('%Y%m%d%H%M%S%f')}-{task.id[:8]}",
+                run_id=run_id,
+                task_id=task.id,
+                project_id=project_id,
+                event_type="intake.task_created",
+                role_id="api",
+                timestamp=now.isoformat(),
+                payload={
+                    "task_key": task.task_key,
+                    "title": task.title,
+                    "task_type": task.task_type,
+                    "sprint_id": sprint.id,
+                    "created_by": task.created_by,
+                    # The token's identity, never its secret.
+                    "token_id": token.id,
+                    "token_name": token.name,
+                    "source": _serialize_task_source(task) or {},
+                },
+            )
+        )
+
+        payload = self.get_task(task.id)
+        payload["created"] = True
+        return payload
+
+    @staticmethod
+    def _normalize_intake_source(source: dict[str, Any] | None) -> dict[str, str | None]:
+        """Validate the caller's ``source`` object into task columns."""
+
+        if source is None:
+            source = {}
+        if not isinstance(source, dict):
+            raise DashboardValidationError("'source' must be an object.")
+        unknown = set(source) - {"system", "external_ref", "url", "reporter"}
+        if unknown:
+            raise DashboardValidationError(
+                "Unknown `source` fields: "
+                f"{', '.join(sorted(unknown))}. "
+                "Expected: system, external_ref, url, reporter."
+            )
+        normalized: dict[str, str | None] = {}
+        for field_name in ("system", "external_ref", "url", "reporter"):
+            value = source.get(field_name)
+            if value is None:
+                normalized[field_name] = None
+                continue
+            if not isinstance(value, str):
+                raise DashboardValidationError(
+                    f"'source.{field_name}' must be a string."
+                )
+            normalized[field_name] = value.strip() or None
+        return normalized
+
+    def _ensure_intake_sprint(self, project: Project) -> Sprint:
+        """Return the project's intake queue, creating or reopening it.
+
+        The queue is `<project>-intake`. It is created on first use and is
+        `active` when the project has no active sprint, `planned` when one is
+        already running -- the engine runs exactly one active sprint at a time,
+        and intake must not silently displace the sprint a team is mid-way
+        through. A queue left `planned` (or wrongly completed) is reactivated
+        on the next intake once the project has no active sprint, so queued
+        work does not sit forever behind a sprint that has since finished.
+        """
+
+        sprint_id = f"{project.id}{INTAKE_SPRINT_SUFFIX}"
+        existing = self.store.get_sprint(sprint_id)
+        active = self.store.get_active_sprint(project.id)
+        now = self._now().isoformat()
+
+        if existing is not None:
+            if existing.status != "active" and active is None:
+                existing.status = "active"
+                existing.started_at = existing.started_at or now
+                existing.completed_at = None
+                self.store.save_sprint(existing)
+            return existing
+
+        sprints = self.store.list_sprints(project.id)
+        sprint = Sprint(
+            id=sprint_id,
+            project_id=project.id,
+            title=INTAKE_SPRINT_TITLE,
+            goal=INTAKE_SPRINT_GOAL,
+            status="active" if active is None else "planned",
+            order_index=max((s.order_index for s in sprints), default=-1) + 1,
+            created_at=now,
+            started_at=now if active is None else None,
+        )
+        return self.store.save_sprint(sprint)
 
     # ── Decision gates ────────────────────────────────────────────────────────
 

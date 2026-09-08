@@ -66,8 +66,14 @@ The integrated pre-release baseline now contains:
 - accepted ADRs for runner session and backend contract boundaries
   (`ADR-0001`), dashboard data access (`ADR-0002`), and the product web UI
   and API boundary (`ADR-0003`), plus the dashboard backend framework
-  (`ADR-0004`), the resident engine and project lock (`ADR-0011`), and one
-  worktree per task (`ADR-0012`),
+  (`ADR-0004`), the resident engine and project lock (`ADR-0011`), one
+  worktree per task (`ADR-0012`), and the intake endpoint and API tokens
+  (`ADR-0013`),
+- a project-level intake endpoint, `POST /api/projects/{id}/intake`, that any
+  system can call to file work — authenticated by named per-project API tokens
+  (`foreman token create|list|revoke`, SHA-256 stored, secret shown once),
+  idempotent on the caller's `(source.system, source.external_ref)`, and
+  landing unsprinted work in the project's standing intake queue sprint,
 - a dashboard service layer in `foreman/dashboard_service.py` for project,
   sprint, task, action, and streaming payloads,
 - a FastAPI dashboard backend in `foreman/dashboard_backend.py` served by
@@ -291,6 +297,21 @@ network, set `FOREMAN_DASHBOARD_TOKEN` (or pass `--token` / `--token-file`)
 and bind with `--host`; every `/api` request must then carry the token, and
 the manager chat stays loopback-only unless `--allow-remote-manager`. See
 the manual's "Access and exposure" section.
+
+The intake endpoint takes a different credential: a named per-project API
+token, not the shared dashboard token. Mint one with `foreman token create
+<project> --name NAME` — the secret is printed once and only its SHA-256 is
+stored — then file work with it:
+
+```bash
+curl -X POST http://localhost:8000/api/projects/<project>/intake \
+  -H "Authorization: Bearer $FOREMAN_INTAKE_TOKEN" \
+  -d '{"title": "Disk full on web-3",
+       "source": {"system": "pagerduty", "external_ref": "INC-42"}}'
+```
+
+Repeating the same `(system, external_ref)` returns the same task instead of a
+duplicate. See the manual's "Intake API" section.
 
 Use the dedicated frontend workflow when you want Vite HMR against the live
 FastAPI backend:

@@ -3849,6 +3849,17 @@ select.form-input {
   text-align: right;
 }
 
+/* The link back to the system that filed the task. */
+.detail-source-link {
+  color: var(--accent);
+  text-decoration: none;
+  word-break: break-all;
+}
+
+.detail-source-link:hover {
+  text-decoration: underline;
+}
+
 /* ═══ Dashboard overview header ═════════════════════ */
 .dashboard-overview-header {
   display: flex;

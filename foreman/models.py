@@ -191,6 +191,14 @@ class Task:
     executor_overrides: dict[str, Any] = field(default_factory=dict)
     complexity: str | None = None
     completion_evidence: CompletionEvidence | None = None
+    #: Where the task came from when another system filed it through the
+    #: intake API: the calling system, its own identifier for the work, a link
+    #: back to it, and who reported it there. All None for tasks a person
+    #: created through the CLI or the dashboard.
+    source_system: str | None = None
+    source_ref: str | None = None
+    source_url: str | None = None
+    reporter: str | None = None
     created_at: str = field(default_factory=utc_now_text)
     started_at: str | None = None
     completed_at: str | None = None
@@ -357,6 +365,37 @@ class Event:
     timestamp: str = field(default_factory=utc_now_text)
     role_id: str | None = None
     payload: JsonDict = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class ApiToken:
+    """A project API token, as persisted -- the secret is never in this record.
+
+    ``token_hash`` is the SHA-256 of the secret (``foreman.api_tokens``). The
+    secret exists only in the response to ``create_api_token`` and in whatever
+    the operator pasted it into.
+    """
+
+    id: str
+    project_id: str
+    name: str
+    token_hash: str
+    scopes: list[str] = field(default_factory=lambda: ["intake"])
+    created_by: str = "human"
+    created_at: str = field(default_factory=utc_now_text)
+    last_used_at: str | None = None
+    revoked_at: str | None = None
+
+    @property
+    def is_active(self) -> bool:
+        """True while the token can still authenticate a request."""
+
+        return self.revoked_at is None
+
+    def has_scope(self, scope: str) -> bool:
+        """True when this token carries ``scope``."""
+
+        return scope in self.scopes
 
 
 LeaseStatus = Literal["active", "released", "expired"]

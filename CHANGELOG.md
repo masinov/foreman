@@ -166,6 +166,42 @@ memory changes rather than versioned product releases.
   and a Prune worktrees control, backed by new
   `GET /api/projects/{id}/worktrees` and
   `POST /api/projects/{id}/worktrees/prune`. ADR-0012 amended.
+- **slice 5, the intake endpoint and API tokens**
+  (`feat/task-add-the-intake-endpoint-and-api-tokens-v2`): Foreman can now be
+  handed work by a system rather than a person. New
+  `POST /api/projects/{id}/intake` files one task from a JSON body (`title`
+  required; `description`, `acceptance_criteria`, `task_type` defaulting to
+  `fix`, `priority`, `complexity`, `source`, `sprint_id`) and answers **201**
+  with `created: true` for new work or **200** with `created: false` for a
+  repeat, returning the task exactly as `GET /api/tasks/{id}` serializes it.
+  Migration 17 adds `api_tokens` — named, per-project, revocable credentials
+  with a scope list, cascading from `projects`, unique on `token_hash` — plus
+  `tasks.source_system` / `source_ref` / `source_url` / `reporter` indexed on
+  `(project_id, source_system, source_ref)`. New `foreman/api_tokens.py` is the
+  only module that mints or hashes a secret (`fmn_` + 32 random bytes,
+  SHA-256); the secret is returned once by `create_api_token`, printed once by
+  `foreman token create <project> --name NAME`, and reaches no row, log line,
+  or event payload. `foreman token list|revoke` complete the surface; revoke
+  writes a timestamp rather than deleting, so old tasks' `created_by` still
+  resolves. **Intake is idempotent on the caller's own key** `(project,
+  source.system, source.external_ref)` — the caller is what retries, so a
+  re-delivered webhook is one task, returned unchanged. **The intake queue is
+  a sprint**: work filed without `sprint_id` lands in `<project>-intake`
+  ("Intake queue"), created on first use, `active` when no sprint is running
+  and `planned` when one is, reactivated once that sprint finishes — sprints
+  stay the unit of grouping and a continuous queue is a sprint that never
+  completes, so no consumer needs a code path for a sprintless task. The two
+  credentials are kept apart in both directions by the token middleware: the
+  shared dashboard token is refused on intake, and an `fmn_` token is refused
+  with 403 on every other `/api` route whether or not a dashboard token is
+  configured. Auth outcomes are now service errors (`DashboardAuthError` 401,
+  `DashboardPermissionError` 403) so the transport maps status codes instead
+  of deciding them. Tasks carry `source` in their serialization and the task
+  drawer shows the system, the reference (linked when a `url` was sent), and
+  the reporter; filing emits `intake.task_created` on a synthetic `intake` run
+  carrying the source and the token's id and name. Recorded as ADR-0013 and
+  documented in MANUAL §25. (The task specified migration 16 and ADR-0012;
+  both were taken by slice 4, so this landed as 17 and ADR-0013.)
 - `fix/cancelled-dependency-blocks`: only a `done` dependency satisfies a
   task's `depends_on`; a task whose dependency was cancelled is blocked with
   "Dependency cancelled: …" and an `engine.attention_needed` turn

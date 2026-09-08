@@ -11,12 +11,12 @@
 - Latest completed sprint: `sprint-53-phase0-unattended-safety`.
 - Last merged branch: `fix/cancelled-dependency-blocks` (sprint 54 live-run
   fix F4), after slice 2b and slice 1 (`a462659`, merged by the engine).
-- Current implementation branch: `chore/task-c68378a4e541` — sprint 54 slice
-  6b, the two ADR-0012 follow-ups: `max_live_worktrees` bounds worktree disk
-  use, `worktree_setup_command` gives each tree its own environment, and the
-  dashboard project screen can prune. It branches from slice 6, which has not
-  merged to `main` yet (see below). Next: sprint 54 slice 3 (intake endpoint
-  and API tokens) as a dogfood task picked up by `foreman serve foreman`.
+- Current implementation branch:
+  `feat/task-add-the-intake-endpoint-and-api-tokens-v2` — sprint 54 slice 3,
+  the intake endpoint and API tokens, run as a dogfood task. Next: sprint 54
+  slice 4 (the policy matrix: triage, plan, merge, and notification
+  decisions), which is already queued as
+  `task-add-the-policy-matrix-triage-plan-merge-and-notification-decisions-v2`.
 - **Operator action from slice 6 is done, and superseded.** The `foreman`
   project no longer sets `worktree_link_paths=["venv"]`; it sets
   `worktree_setup_command` to build each worktree its own venv and editable
@@ -27,6 +27,15 @@
 
 ## Active branches
 
+- `feat/task-add-the-intake-endpoint-and-api-tokens-v2` — sprint 54 slice 3:
+  new `foreman/api_tokens.py` (mint, SHA-256 hash, scopes), migration 17
+  (`api_tokens` + `tasks.source_system`/`source_ref`/`source_url`/`reporter`),
+  `POST /api/projects/{id}/intake` with `DashboardService.intake_task`,
+  `foreman token create|list|revoke`, the drawer's Source section, ADR-0013,
+  MANUAL §25, `tests/test_intake.py`.
+  **The task specified migration 16 and ADR-0012; both were taken by slice 6**,
+  so this is migration 17 and ADR-0013 (verified against a version-16
+  database).
 - `fix/keep-session-on-kill` — sprint 54 live-run fix F5; merged to `main`
 - `chore/task-c68378a4e541` — sprint 54 slice 6b: `max_live_worktrees` with
   `worktrees.enforce_worktree_limit` (reclaims clean idle trees oldest-first,

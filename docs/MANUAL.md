@@ -40,7 +40,8 @@ This manual is the detailed reference. For product intent and architecture see
 22. [Stopping and interrupting a run](#22-stopping-and-interrupting-a-run)
 23. [Talking to the resident engine](#23-talking-to-the-resident-engine)
 24. [Worktrees](#24-worktrees)
-25. [Troubleshooting](#25-troubleshooting)
+25. [Intake API](#25-intake-api)
+26. [Troubleshooting](#26-troubleshooting)
 
 ---
 
@@ -294,6 +295,17 @@ foreman worktree prune <project-id>   # drop trees of done/cancelled tasks + dan
 ```
 
 Every task runs in its own git worktree; see [§24 Worktrees](#24-worktrees).
+
+### API tokens
+
+```bash
+foreman token create <project-id> --name NAME   # print the secret once
+foreman token create <project-id> --name NAME --scope intake
+foreman token list <project-id>                 # id, name, scopes, last use
+foreman token revoke <project-id> <token-id>    # stop it authenticating
+```
+
+The credential other systems use to file work; see [§25 Intake API](#25-intake-api).
 
 ### Monitoring
 
@@ -1023,7 +1035,9 @@ export FOREMAN_DASHBOARD_TOKEN="$(openssl rand -hex 24)"
 - `GET /api/sprints/{id}/events` caps `limit` at 500.
 
 A shared token is not identity: every holder is the same actor. Per-user
-login and actor attribution arrive in Phase 1.
+login and actor attribution arrive in Phase 1. The one exception is the intake
+endpoint (§25), which takes a named per-project API token instead and records
+which token filed each task.
 
 ### Endpoint map
 
@@ -1040,6 +1054,7 @@ login and actor attribution arrive in Phase 1.
 | `GET /api/tasks/{id}` · `PATCH` · `DELETE` | task detail / edit / delete |
 | `POST /api/tasks/{id}/stop\|cancel\|approve\|deny` | task actions |
 | `POST /api/tasks/{id}/messages` | post a human message to a task |
+| `POST /api/projects/{id}/intake` | **file work from another system** (project API token, not the dashboard token — §25) |
 | `GET /api/projects/{id}/agent/status` | engine residency, pause state, heartbeat age, current task, recent commands |
 | `POST /api/projects/{id}/agent/start\|stop` | queue `resume` (spawning `foreman serve` if none is resident) / queue `pause` |
 | `GET /api/projects/{id}/engine/commands` | recent engine commands (`limit`, `status`) |
@@ -1103,6 +1118,10 @@ Events are the append-only truth of what happened. Families:
   `crash_recovery`, `event_pruned`/`run_pruned`, `test_run`/`test_output`,
   `command_applied`/`command_rejected` (one per engine command, carrying
   `command_id`, `command`, `requested_by`, `task_id`, and `detail`).
+- **`intake.*`** — `task_created`, one per task filed through the intake API
+  (§25), on a synthetic `intake` run. Carries the `source` object, the task
+  key, the sprint it landed in, and the filing token's `token_id` and
+  `token_name` — never the secret.
 - **`gate.*`** — `cost_exceeded`, `time_exceeded`.
 - **`signal.*`** — agent-emitted signals the engine consumes: `task_started`,
   `task_created`, `blocker`.
@@ -1143,6 +1162,7 @@ Recent migrations:
 | 14 | gate tables rebuilt with `ON DELETE` rules, `events(task_id, timestamp)` index, `projects.task_key_seq` + unique task keys |
 | 15 | `engine_commands` + `(project_id, status, requested_at)` index (the control channel to a resident engine) |
 | 16 | `tasks.worktree_path` (the Foreman-owned checkout a task runs in) |
+| 17 | `api_tokens` + unique `token_hash` index; `tasks.source_system`/`source_ref`/`source_url`/`reporter` + `(project_id, source_system, source_ref)` index (intake, §25) |
 
 ---
 
@@ -1489,7 +1509,134 @@ See [ADR-0012](adr/ADR-0012-worktree-per-task.md).
 
 ---
 
-## 25. Troubleshooting
+## 25. Intake API
+
+The CLI and the dashboard both assume a person and a sprint. The intake
+endpoint is the door for everything else: an incident tracker, a chat bot, a CI
+job. One `POST` files a task; Foreman decides where it lands.
+
+### The token
+
+Intake is authenticated by a **project API token**, not the dashboard's shared
+token. The two are deliberately separate credentials: the dashboard token is a
+session key every holder shares, while an API token is named, scoped to one
+project, revocable on its own, and recorded on every task it files.
+
+```bash
+./venv/bin/foreman token create foreman --name pagerduty
+```
+
+```
+API token created
+Project: foreman | Foreman
+Token: tok-3e69a2a2649c | pagerduty
+Scopes: intake
+
+  fmn_M2jJs9H9bkn9-C3u471JJwfFg51jIiJw1CH1L1ONceA
+
+This secret is shown once and is not stored — only its SHA-256 is.
+Copy it now; if it is lost, revoke this token and create another.
+```
+
+The secret is shown exactly once. Only its SHA-256 reaches SQLite, so a stolen
+database yields no usable credential and there is no "show me the token again".
+Lost it? `foreman token revoke` and create another.
+
+- `foreman token list <project>` shows id, name, scopes, creation, and last
+  use — never a secret.
+- `foreman token revoke <project> <token-id>` is a timestamp, not a delete: the
+  row stays so old tasks' `created_by = "api:<name>"` still resolves.
+- The only scope today is `intake`. `--scope` is repeatable, and the column
+  stores a list, so later scopes need no migration.
+
+### Filing work
+
+```bash
+curl -sS -X POST http://localhost:8000/api/projects/foreman/intake \
+  -H "Authorization: Bearer $FOREMAN_INTAKE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+        "title": "Disk full on web-3",
+        "description": "web-3 crossed 98% disk; the log rotation job is not running.",
+        "acceptance_criteria": "Free space stays above 20% for 24h.",
+        "task_type": "fix",
+        "source": {
+          "system": "pagerduty",
+          "external_ref": "INC-42",
+          "url": "https://pd.example.com/incidents/INC-42",
+          "reporter": "ana"
+        }
+      }'
+```
+
+| Field | Required | Notes |
+|---|---|---|
+| `title` | yes | |
+| `description` · `acceptance_criteria` | no | free text |
+| `task_type` | no | defaults to `fix` (not `feature`: most work arriving from outside is a problem report) |
+| `priority` · `complexity` | no | integer; `small`/`medium`/`large` |
+| `source` | no | `system`, `external_ref`, `url`, `reporter` — all strings |
+| `sprint_id` | no | omit to use the intake queue |
+
+The response is the task exactly as `GET /api/tasks/{id}` serializes it, plus
+`created`. **201** with `"created": true` means a new task; **200** with
+`"created": false` means this work was already filed.
+
+### Idempotency
+
+Intake is idempotent on `(project, source.system, source.external_ref)`. Post
+the same incident five times — because your webhook retried, or the alert
+re-fired — and there is one task. A caller that sends no `source.system` or no
+`source.external_ref` has given Foreman nothing to match on, so every call
+files new work; send both if you want the guarantee.
+
+A repeat returns the existing task **unchanged**. Intake does not edit tasks:
+a second call with a different title does not rename the first.
+
+### Where the task lands
+
+With `sprint_id`, the named sprint (it must belong to the project). Without it,
+the project's **intake queue**: a sprint per project, id `<project>-intake`,
+titled "Intake queue", created on first use.
+
+Sprints stay the unit of grouping, so a continuous queue is simply a sprint
+that never completes. The queue is `active` when the project has no active
+sprint and `planned` when one is already running — intake must not displace the
+sprint a team is mid-way through. A `planned` queue activates on the next
+intake once the active sprint finishes, so queued work never strands. To the
+resident engine an active intake queue is an ordinary sprint: it picks up
+`todo` tasks there exactly as it would anywhere else.
+
+Tasks arrive as `todo`.
+
+### The audit trail
+
+Every intake task records where it came from:
+
+- `created_by` is `api:<token name>` — `api:pagerduty` above,
+- `source_system`, `source_ref`, `source_url`, and `reporter` are columns on
+  the task, returned as `source` in the API and shown in the dashboard's task
+  drawer (the reference links back when a `url` was sent),
+- an `intake.task_created` event on a synthetic `intake` run carries the source
+  and the token's **id and name**. The secret appears in no row and no event.
+
+### Errors
+
+| Status | Meaning |
+|---|---|
+| **401** | No bearer token, an unknown or revoked one, or the dashboard's shared token (it is not accepted here) |
+| **403** | A live token belonging to another project, or one without the `intake` scope |
+| **400** | Missing `title`, an unknown `task_type`/`complexity`, or a malformed `source` |
+
+A project API token is refused with **403** on every other `/api` route,
+whether or not a dashboard token is configured — a leaked intake token can
+never be replayed as a dashboard session.
+
+See [ADR-0013](adr/ADR-0013-intake-endpoint-and-api-tokens.md).
+
+---
+
+## 26. Troubleshooting
 
 | Symptom | Likely cause / fix |
 |---|---|
@@ -1511,6 +1658,11 @@ See [ADR-0012](adr/ADR-0012-worktree-per-task.md).
 | `engine.worktree_limit_exceeded` in the event stream | Every reclaim candidate had uncommitted work, so the cap yielded rather than destroying it. Finish or cancel those tasks, or raise `max_live_worktrees` (§24). |
 | A paused task's worktree disappeared | It was reclaimed under `max_live_worktrees`. Nothing was lost — the tree was clean, so its branch has everything, and the next visit recreates it (§24). |
 | Your checkout suddenly shows a large uncommitted diff | You are sitting on the default branch and a task merged into it, so the ref moved under you. `git checkout main` (or `git reset --hard main`) to catch up; your files were never modified. |
+| Intake answers 401 with a token you just created | The dashboard's shared token was sent instead of the project API token — intake takes only the `fmn_…` secret from `foreman token create`. |
+| Intake answers 403 | The token is live but belongs to another project (or lacks `intake`). `foreman token list <project>` shows which project's tokens exist. |
+| A route other than intake answers 403 with "only valid on … /intake" | An `fmn_…` API token was sent to a dashboard route. Use the dashboard token there. |
+| Intake keeps returning 200 and never creates a task | It is idempotent on `(system, external_ref)`: that pair was filed before. Send a new `external_ref`, or omit `source` to force a new task. |
+| Intake tasks are filed but never run | The intake queue is `planned` because another sprint is active. Complete or cancel that sprint — the next intake activates the queue — or activate `<project>-intake` yourself. |
 | `.foreman/worktrees/` keeps growing | Trees of tasks that never reached `mark_done`. Lower `max_live_worktrees`, or run `foreman worktree prune <project>` (or the dashboard's Prune worktrees button) to remove anything done, cancelled, or unclaimed. |
 
 ---

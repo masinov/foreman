@@ -24,3 +24,5 @@ Filename format:
 | ADR-0009 | Multi-Model Endpoints Via Role Env | accepted |
 | ADR-0010 | Tiered Review And LLM-Judged Evidence | accepted |
 | ADR-0011 | The Resident Engine And The Project Engine Lock | accepted |
+| ADR-0012 | One Git Worktree Per Task | accepted |
+| ADR-0013 | Intake Endpoint And API Tokens | accepted |
