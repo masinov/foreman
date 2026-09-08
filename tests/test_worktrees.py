@@ -835,7 +835,10 @@ class Migration16Tests(unittest.TestCase):
         applied = store.migrate()
 
         self.assertIn(16, applied)
-        self.assertEqual(store.schema_version(), 16)
+        # migrate() catches the database up to head, which moves as later
+        # migrations land; what this test owns is that 16 applied and left the
+        # column behind.
+        self.assertEqual(store.schema_version(), max(v for v, _, _ in MIGRATIONS))
         self.assertIn("worktree_path", self._task_columns(conn))
 
     def test_worktree_path_is_nullable_and_round_trips(self) -> None:
