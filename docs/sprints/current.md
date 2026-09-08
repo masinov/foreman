@@ -34,7 +34,8 @@ decides where a human is required.
 | 3 | Intake endpoint: project-level, API-token authenticated, idempotent on an external reference, source metadata, policy-chosen initial status; sprint optional over a continuous queue | todo | | `POST /api/projects/{id}/intake`, tokens, tests |
 | 4 | Policy matrix v1: `triage` and `notification` policies join `merge_approval` and `plan_approval`; task-type rules; per-task overrides | todo | | settings, models, orchestrator, tests |
 | 5 | Planner step per task producing criteria and a protected acceptance test; architect role repurposed to once-per-task | todo | | role, workflow, tests |
-| 6 | Worktree per task under a Foreman-owned directory | todo | | `foreman/git.py`, orchestrator, tests |
+| 6 | Worktree per task under a Foreman-owned directory | done | `feat/task-give-every-task-its-own-git-worktree` (engine-run) | `foreman/worktrees.py`, migration 16, orchestrator, built-ins, `foreman worktree`, ADR-0012, `tests/test_worktrees.py` |
+| 6b | Bounded worktree disk use (`max_live_worktrees`) and a per-worktree environment (`worktree_setup_command`); dashboard prune control | done | `chore/task-c68378a4e541` (engine-run, follow-up from ADR-0012) | `enforce_worktree_limit`, setup command + marker, `GET/POST /api/projects/{id}/worktrees[/prune]`, `WorktreePanel`, ADR-0012 amendment, tests |
 
 ### Slice 1 notes
 
@@ -49,6 +50,53 @@ decisions worth carrying forward:
 - The dashboard's Run button still spawned a `foreman run` subprocess, which
   competed for that lock instead of cooperating with the resident worker. This
   was the concrete reason slice 2 came next; slice 2b closed it.
+
+### Slice 6 notes
+
+Landed out of the numbered order because the live runs kept breaking on the
+shared working tree, not on anything slices 3–5 would fix
+(`docs/reviews/sprint-54-live-run-notes.md`, observations 7, 19, 33, 35). The
+engine no longer checks a branch out in `project.repo_path` at all: each task
+gets `<repo>/.foreman/worktrees/<task-key>/`, merges land through a shared
+`_integration` tree pinned to the default branch, and the operator's checkout
+only sees refs move. ADR-0012. Two decisions worth carrying forward:
+
+- `worktree_link_paths` had to exist for the slice to be usable at all. A
+  worktree is a clean checkout, so this repo's own `test_command`
+  (`./venv/bin/python …`) has no interpreter until `venv` is symlinked in.
+  Superseded by slice 6b: the `foreman` project now sets
+  `worktree_setup_command` to build a per-tree venv and editable install, and
+  `worktree_link_paths` is empty. Sharing the operator's venv meant a task's
+  test run was never really isolated from it.
+- `tests/test_cli.py` reinstalled the package into `./venv` from whatever
+  checkout ran it, which inside a worktree would repoint the operator's
+  virtualenv at a tree `mark_done` later deletes. It now runs
+  `python -m foreman` with `PYTHONPATH` pinned to the checkout under test and
+  only reinstalls when the virtualenv already points there.
+
+### Slice 6b notes
+
+The two follow-ups ADR-0012 recorded, closed together because they are the
+same question — what a worktree costs and what it contains.
+
+- The follow-up suggested "pruning the oldest paused task's tree under
+  pressure". Implementing it that way would have been wrong: *paused* is
+  exactly when a tree holds uncommitted work, so the policy would most often
+  destroy the state worktrees exist to preserve. `enforce_worktree_limit`
+  orders by age but gates on **cleanliness** — a clean tree holds nothing its
+  branch does not, a dirty one is never taken, and a project whose candidates
+  are all dirty exceeds its cap and says so
+  (`engine.worktree_limit_exceeded`). The cap is a ceiling the engine reaches
+  for, not an invariant.
+- Provisioning a tree's own venv costs about six seconds and runs once per
+  tree. The setup marker lives in the tree's **git admin directory**, not the
+  tree: an untracked marker file would make the tree dirty and block
+  `_builtin:merge`. That constraint applies to whatever the setup command
+  itself creates, which is why the manual calls out that its output must be
+  gitignored.
+- Verified end to end rather than by unit test alone: a worktree provisioned
+  from scratch by the new setting runs all 830 tests green on its own
+  interpreter, with `git status --porcelain` empty afterwards.
 
 ### Slice 2b notes
 

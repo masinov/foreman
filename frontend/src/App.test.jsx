@@ -216,6 +216,13 @@ function createMockServices() {
       command: { id: "cmd-2", command: "resume", status: "pending" },
     }),
     metaHistory: vi.fn().mockResolvedValue({ turns: [], has_more: false }),
+    listWorktrees: vi.fn().mockResolvedValue({
+      project_id: "proj-1",
+      root: "/tmp/foreman/.foreman/worktrees",
+      max_live_worktrees: 4,
+      worktrees: [],
+    }),
+    pruneWorktrees: vi.fn().mockResolvedValue({ removed: [], kept: [] }),
     listRoles: vi.fn().mockResolvedValue({
       roles: [
         {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   costUnknownNote,
@@ -324,6 +324,92 @@ function DecisionGateBanner({ gate, sprints, onResolve }) {
 const AGENT_MIN_WIDTH = 360;
 const AGENT_MAX_WIDTH = 820;
 const AGENT_DEFAULT_WIDTH = 540;
+
+/**
+ * The project screen's view of the checkouts Foreman owns on disk, with the
+ * one action an operator has on them. Without this, the screen named the
+ * repository path but gave no way to see or reclaim what the engine had
+ * accumulated under it.
+ */
+export function WorktreePanel({ project, services }) {
+  const [payload, setPayload] = useState(null);
+  const [error, setError] = useState("");
+  const [pruning, setPruning] = useState(false);
+
+  const projectId = project?.id;
+  // A read-only or older binding may not carry the worktree calls; the panel
+  // is a secondary control and must not take the project screen down with it.
+  const supported = typeof services?.listWorktrees === "function";
+
+  const load = useCallback(() => {
+    if (!supported || !projectId) return;
+    services
+      .listWorktrees(projectId)
+      .then((next) => {
+        setPayload(next);
+        setError("");
+      })
+      .catch((err) => setError(err.message));
+  }, [services, projectId, supported]);
+
+  useEffect(load, [load]);
+
+  async function prune() {
+    if (!supported || !projectId) return;
+    setPruning(true);
+    setError("");
+    try {
+      const result = await services.pruneWorktrees(projectId);
+      setPayload((prev) => (prev ? { ...prev, worktrees: result.kept || [] } : prev));
+      load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setPruning(false);
+    }
+  }
+
+  if (!supported || !projectId) return null;
+
+  const entries = payload?.worktrees || [];
+  // The integration tree is shared and never pruned, so it is not part of the
+  // count the cap applies to.
+  const taskTrees = entries.filter((entry) => !entry.is_integration);
+  const limit = payload?.max_live_worktrees || 0;
+  const prunable = taskTrees.filter(
+    (entry) => !entry.task_id || entry.task_status === "done" || entry.task_status === "cancelled",
+  ).length;
+
+  return (
+    <div className="project-meta worktree-meta">
+      <span>
+        Worktrees{" "}
+        <span className="v">
+          {payload === null ? "…" : `${taskTrees.length}${limit ? ` / ${limit}` : ""}`}
+        </span>
+      </span>
+      {payload?.root ? (
+        <span className="worktree-root" title={payload.root}>
+          {payload.root}
+        </span>
+      ) : null}
+      <button
+        className="btn btn-small"
+        type="button"
+        disabled={pruning || payload === null}
+        title={
+          prunable > 0
+            ? `Remove ${prunable} worktree(s) of done, cancelled, or deleted tasks`
+            : "Nothing to prune: every worktree belongs to a live task"
+        }
+        onClick={prune}
+      >
+        {pruning ? "Pruning…" : "Prune worktrees"}
+      </button>
+      {error ? <span className="meta-error">{error}</span> : null}
+    </div>
+  );
+}
 
 export function SprintList({ project, sprints, pendingGates, engineStatus, onSelectSprint, onOpenNewSprint, onTransitionSprint, onDeleteSprint, onReorderSprints, onStartAgent, onStopAgent, onResolveGate, onSprintsChanged, services, isActionPending }) {
   const [agentCollapsed, setAgentCollapsed] = useState(!services);
@@ -666,6 +752,7 @@ export function SprintList({ project, sprints, pendingGates, engineStatus, onSel
                   {formatEngineSummary(engineStatusPayload)}
                 </span>
               </div>
+              <WorktreePanel project={project} services={services} />
               {(project.blocked_gate || 0) + (project.blocked_engine || 0) > 0 ? (
                 <div className="project-badges">
                   {project.blocked_gate > 0 ? (
@@ -1092,6 +1179,12 @@ export function TaskDetailDrawer({
             <span className="detail-field-label">Branch</span>
             <span className="detail-field-value">{task.branch_name || "—"}</span>
           </div>
+          {task.worktree_path ? (
+            <div className="detail-field">
+              <span className="detail-field-label">Worktree</span>
+              <span className="detail-field-value detail-path">{task.worktree_path}</span>
+            </div>
+          ) : null}
           <div className="detail-field">
             <span className="detail-field-label">Role</span>
             <span className="detail-field-value">{task.assigned_role || "Unassigned"}</span>

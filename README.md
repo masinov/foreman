@@ -43,6 +43,9 @@ The integrated pre-release baseline now contains:
   prompt-rendering support,
 - an orchestrator with built-ins for tests, merge, mark-done, human gates, and
   runtime context projection into `.foreman/`,
+- one git worktree per task under `.foreman/worktrees/` plus a shared
+  integration worktree for merges, so the engine never changes what is checked
+  out in the operator's repository (`ADR-0012`),
 - repo-local `.foreman.db` discovery for normal CLI usage plus optional `--db`
   override semantics,
 - `foreman init` defaulting to `<repo>/.foreman.db` for project scaffold
@@ -63,7 +66,8 @@ The integrated pre-release baseline now contains:
 - accepted ADRs for runner session and backend contract boundaries
   (`ADR-0001`), dashboard data access (`ADR-0002`), and the product web UI
   and API boundary (`ADR-0003`), plus the dashboard backend framework
-  (`ADR-0004`),
+  (`ADR-0004`), the resident engine and project lock (`ADR-0011`), and one
+  worktree per task (`ADR-0012`),
 - a dashboard service layer in `foreman/dashboard_service.py` for project,
   sprint, task, action, and streaming payloads,
 - a FastAPI dashboard backend in `foreman/dashboard_backend.py` served by
@@ -350,16 +354,35 @@ The bootstrap supervisor scripts that once drove this repository were removed
 in sprint 53. Run all Python commands through the repo virtual environment
 (`./venv/bin/foreman`).
 
+## Worktree per task
+
+The engine never changes what is checked out in your repository. Every task
+gets its own git worktree under `<repo>/.foreman/worktrees/<task-key>/`, and
+merges land on the default branch through a shared
+`.foreman/worktrees/_integration/` tree. Agent steps, the test command, and the
+branch-refresh and conflict-recovery merges all run in the task's tree; your
+checkout only ever sees refs move.
+
+```bash
+foreman worktree list <project>       # the trees Foreman owns, and whose they are
+foreman worktree prune <project>      # done/cancelled tasks + dangling entries
+```
+
+A worktree is a clean checkout, so name any ignored local tooling your
+`test_command` needs — `venv`, `node_modules` — in the `worktree_link_paths`
+setting and Foreman symlinks it in. See
+[ADR-0012](docs/adr/ADR-0012-worktree-per-task.md) and
+[§24 of the manual](docs/MANUAL.md#24-worktrees).
+
 ## Next implementation slice
 
 Phase 0 of the production readiness review
 (`docs/reviews/production-readiness-review.md`) shipped as sprint 53: an
 unattended run is safe on one machine. Sprint 54 is Phase 1. Slice 1, the
-resident `foreman serve` worker and the project engine lock, and slice 2, the
-`engine_commands` table and the `foreman engine` CLI, have landed; next is
-rewiring the dashboard onto the command table and reporting dead-lettered
-tasks, then the intake endpoint, the policy matrix, a per-task planner step,
-and worktree isolation.
+resident `foreman serve` worker and the project engine lock, slice 2, the
+`engine_commands` table and the `foreman engine` CLI, slice 2b, the dashboard
+on the command table, and worktree isolation have landed; next are the intake
+endpoint, the policy matrix, and a per-task planner step.
 `docs/sprints/current.md` lists the slice order.
 
 ## Validation

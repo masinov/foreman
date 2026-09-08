@@ -21,6 +21,53 @@ repo-memory validation and code-level regression coverage:
 - `./venv/bin/python scripts/dashboard_dev.py --help`
 - `./venv/bin/python -m unittest discover -s tests -v`
 
+## Running the suite inside a task worktree
+
+Foreman runs every task in its own git worktree (ADR-0012), and the engine runs
+this repository's own `test_command` in that tree. Two things follow, and both
+are load-bearing:
+
+**1. The CLI suite must not repoint the operator's virtualenv.**
+`tests/test_cli.py` used to run `pip install -e .` in `setUpClass` so the
+`venv/bin/foreman` console script matched the checkout under test. Inside a
+worktree that is actively harmful: the worktree borrows the operator's `venv/`
+through a symlink, so the reinstall would repoint the operator's own `foreman`
+command at a temporary tree that `mark_done` later deletes.
+
+The suite now:
+
+- probes which `foreman` package the interpreter imports on its own (no
+  `PYTHONPATH`, run outside the repository), and **skips the reinstall**
+  whenever that is a different checkout — recording the reason on
+  `ForemanCLISmokeTests.reinstall_skipped_for`;
+- runs every CLI subprocess as `python -m foreman` with `PYTHONPATH` pinned to
+  the checkout the test file lives in, so the code under test is always this
+  checkout regardless of what the virtualenv is wired to;
+- uses `sys.executable` rather than a hard-coded `venv/bin/python`, because a
+  worktree need not have a `venv/` at all.
+
+The reinstall still happens in the normal case — running the suite from the
+operator's own checkout — so the console entry point stays fresh there.
+
+**2. The test command needs the local tooling.** A worktree is a clean
+checkout, so `./venv/bin/python` does not exist in it until the project's
+`worktree_link_paths` setting names `venv`. For this repository:
+
+```bash
+./venv/bin/foreman config foreman --set 'worktree_link_paths=["venv"]'
+```
+
+Verify both properties after changing either:
+
+```bash
+git worktree add --force /tmp/wt-selftest HEAD --detach
+ln -s "$PWD/venv" /tmp/wt-selftest/venv
+(cd /tmp/wt-selftest && ./venv/bin/python -m unittest discover -s tests)
+# then confirm the operator venv still points at the operator checkout:
+./venv/bin/python -c "import foreman, pathlib; print(pathlib.Path(foreman.__file__).parent)"
+git worktree remove --force /tmp/wt-selftest
+```
+
 ## Slice coverage that exists today
 
 The current suite covers:
@@ -59,6 +106,13 @@ The current suite covers:
   configuration loading and validation
 - `tests/test_runner_env.py` for role `[agent.env]` value resolution and
   missing-secret preflight classification
+- `tests/test_worktrees.py` for the per-task git worktrees: layout and the
+  `worktree_root` override, create/reuse/remove/prune, the refusal paths
+  (no branch, a path outside the worktree root, a root git would commit, a
+  git without worktree support), migration 16, and the engine guarantees —
+  the operator's checkout never moves during a task, agent steps and the test
+  command run in the task's tree, the merge lands through the integration
+  worktree, gate and quota pauses keep the tree, and `mark_done` removes it
 - `tests/test_scaffold.py` for generated `AGENTS.md`, idempotent `.gitignore`
   updates, default `.foreman.db` ignore behavior, and repo re-initialization
   behavior
@@ -104,6 +158,7 @@ Unit tests:
 
 Integration tests:
 
+- per-task worktree lifecycle across a full workflow run
 - project initialization
 - sprint and task lifecycle
 - orchestrator transitions

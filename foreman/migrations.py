@@ -412,4 +412,17 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         ON engine_commands(project_id, status, requested_at);
         """,
     ),
+    (
+        16,
+        "add tasks.worktree_path: the Foreman-owned checkout a task runs in",
+        """
+        -- Every task now runs in its own git worktree instead of the
+        -- operator's checkout. The path is persisted so the CLI, the
+        -- dashboard, and a restarted engine can find the tree a paused task
+        -- was working in without recomputing the layout. Nullable: tasks that
+        -- never reached a develop step have no worktree, and a project whose
+        -- worktree root moves gets a new path on the next visit.
+        ALTER TABLE tasks ADD COLUMN worktree_path TEXT;
+        """,
+    ),
 ]

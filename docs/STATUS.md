@@ -9,16 +9,42 @@
   (`foreman run foreman`) wherever the engine can carry them; findings are
   recorded in `docs/reviews/sprint-54-live-run-notes.md`.
 - Latest completed sprint: `sprint-53-phase0-unattended-safety`.
-- Last merged branch: `fix/runner-quota-exhaustion` (sprint 54 live-run
-  fix F2), after slice 1 (`a462659`, merged by the engine) and
-  `docs/sprint-54-live-run-1`.
-- Current implementation branch: none by hand. Next: sprint 54 slice 3
-  (intake endpoint and API tokens) as a dogfood task picked up by
-  `foreman serve foreman`.
+- Last merged branch: `fix/cancelled-dependency-blocks` (sprint 54 live-run
+  fix F4), after slice 2b and slice 1 (`a462659`, merged by the engine).
+- Current implementation branch: `chore/task-c68378a4e541` — sprint 54 slice
+  6b, the two ADR-0012 follow-ups: `max_live_worktrees` bounds worktree disk
+  use, `worktree_setup_command` gives each tree its own environment, and the
+  dashboard project screen can prune. It branches from slice 6, which has not
+  merged to `main` yet (see below). Next: sprint 54 slice 3 (intake endpoint
+  and API tokens) as a dogfood task picked up by `foreman serve foreman`.
+- **Operator action from slice 6 is done, and superseded.** The `foreman`
+  project no longer sets `worktree_link_paths=["venv"]`; it sets
+  `worktree_setup_command` to build each worktree its own venv and editable
+  install, and `worktree_link_paths` is empty. Sharing the operator's
+  virtualenv meant a task's test run was never isolated from it. Verified: a
+  tree provisioned from scratch runs all 830 tests on its own interpreter and
+  stays clean. See `docs/MANUAL.md` §24.
 
 ## Active branches
 
+<<<<<<< HEAD
 - `fix/keep-session-on-kill` — sprint 54 live-run fix F5; merged to `main`
+=======
+- `chore/task-c68378a4e541` — sprint 54 slice 6b: `max_live_worktrees` with
+  `worktrees.enforce_worktree_limit` (reclaims clean idle trees oldest-first,
+  never a dirty one), `worktree_setup_command` with a marker in the tree's git
+  admin directory, `GET/POST /api/projects/{id}/worktrees[/prune]` and the
+  project-screen `WorktreePanel`, ADR-0012 amended.
+  **Branched from `feat/task-give-every-task-its-own-git-worktree`, not from
+  `main`** — the follow-up cannot exist without the slice it follows up. That
+  branch is still blocked awaiting human approval, so this one carries both
+  and should be reviewed and merged as a unit, or slice 6 approved first.
+- `feat/task-give-every-task-its-own-git-worktree` — sprint 54 slice 6: new
+  `foreman/worktrees.py`, migration 16 (`tasks.worktree_path`), every agent
+  step / test run / branch refresh / conflict-recovery merge in the task's own
+  worktree, `_builtin:merge` through a shared `_integration` worktree,
+  `foreman worktree list|prune`, ADR-0012
+>>>>>>> main
 - `fix/cancelled-dependency-blocks` — sprint 54 live-run fix F4; merged to
   `main`
 - `feat/task-rewire-the-dashboard-onto-the-resident-engine-and-report-dead-letter-tasks`
@@ -91,6 +117,7 @@
 - Phase 0 of the production readiness review is complete: an unattended run
   is safe on one machine.
 
+<<<<<<< HEAD
 ## Latest update — sprint 54 live run 6: pause and resume exercised
 
 - With the worktree slice running under the resident engine, `foreman engine
@@ -101,6 +128,49 @@
   branch `fix/keep-session-on-kill` (F5) records the id from `agent.session`
   and keeps it on abandoned runs.
 - Observations 38–39 in `docs/reviews/sprint-54-live-run-notes.md`.
+=======
+## Latest update — sprint 54 slice 6: one worktree per task
+
+The engine and the operator no longer share a working tree. `foreman run` and
+`foreman serve` never run `checkout`, `merge`, or `reset` in
+`project.repo_path`; each task executes in
+`<repo>/.foreman/worktrees/<task-key-or-id>/`, and `_builtin:merge` lands its
+`--no-ff` merge in `<worktree_root>/_integration`, a shared tree pinned to the
+default branch. The operator's checkout sees refs move and nothing else.
+
+This closes live-run observations 7, 19, 33, and 35 as a class rather than
+individually: all four were consequences of the shared tree, not of the
+particular step that tripped over it.
+
+What landed: `foreman/worktrees.py` (the only module that builds a working-tree
+path), migration 16 (`tasks.worktree_path`, nullable), worktree-scoped native
+steps / `_builtin:run_tests` / branch refresh / conflict recovery, the context
+projection mirrored into the worktree's own `.foreman/`, a run-start preflight
+that refuses an unignored worktree root or a git without `git worktree`,
+`foreman worktree list|prune`, the path in `foreman task show` and the
+dashboard drawer, worktree removal on `mark_done` / cancel / delete, and
+ADR-0012.
+
+Two things a reader should know:
+
+- **`worktree_link_paths` is required for this repository.** A worktree is a
+  clean checkout, so `./venv/bin/python -m unittest discover -s tests` has no
+  interpreter until `venv` is symlinked in. Set
+  `worktree_link_paths=["venv"]` on the `foreman` project before the next
+  engine-driven run.
+- **A suite run inside a worktree no longer repoints the operator's
+  virtualenv.** `tests/test_cli.py` used to `pip install -e .` from whatever
+  checkout ran it. It now runs `python -m foreman` with `PYTHONPATH` pinned to
+  the checkout under test and reinstalls only when the virtualenv already
+  points there. Verified by running the full 802-test suite inside a real
+  worktree of this repository and re-probing the virtualenv afterwards
+  (`docs/TESTING.md`).
+
+Open follow-ups: nothing bounds total worktree disk use; the linked virtualenv
+is shared rather than per-worktree; the dashboard shows the path but offers no
+prune action. All three are recorded in
+`docs/prs/feat-task-give-every-task-its-own-git-worktree.md`.
+>>>>>>> main
 
 ## Previous update — sprint 54 live run 5: slice 2b landed, two more findings
 

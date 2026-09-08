@@ -273,6 +273,15 @@ export function createDashboardServices({
         }
       }
     },
+    listWorktrees(projectId) {
+      return request(`/api/projects/${encodeURIComponent(projectId)}/worktrees`);
+    },
+    pruneWorktrees(projectId, { requestedBy } = {}) {
+      return request(`/api/projects/${encodeURIComponent(projectId)}/worktrees/prune`, {
+        method: "POST",
+        body: { requested_by: requestedBy || undefined },
+      });
+    },
     listRoles() {
       return request("/api/roles");
     },

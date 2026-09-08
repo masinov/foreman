@@ -202,6 +202,9 @@ def _row_to_task(row: sqlite3.Row) -> Task:
         priority=row["priority"],
         order_index=row["order_index"],
         branch_name=row["branch_name"],
+        worktree_path=(
+            row["worktree_path"] if "worktree_path" in row.keys() else None
+        ),
         assigned_role=row["assigned_role"],
         acceptance_criteria=row["acceptance_criteria"],
         blocked_reason=row["blocked_reason"],
@@ -549,6 +552,11 @@ class ForemanStore:
                 self._connection.execute(
                     "ALTER TABLE tasks ADD COLUMN task_key TEXT NOT NULL DEFAULT ''"
                 )
+        if "worktree_path" not in task_columns:
+            with self._connection:
+                self._connection.execute(
+                    "ALTER TABLE tasks ADD COLUMN worktree_path TEXT"
+                )
 
         project_columns = {
             str(row["name"])
@@ -728,13 +736,13 @@ class ForemanStore:
                 """
                 INSERT INTO tasks (
                     id, sprint_id, project_id, title, task_key, description, status, task_type,
-                    priority, order_index, branch_name, assigned_role,
+                    priority, order_index, branch_name, worktree_path, assigned_role,
                     acceptance_criteria, blocked_reason, created_by,
                     depends_on_task_ids, workflow_current_step,
                     workflow_carried_output, step_visit_counts, completion_evidence_json,
                     executor_overrides_json, complexity,
                     created_at, started_at, completed_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     sprint_id = excluded.sprint_id,
                     project_id = excluded.project_id,
@@ -745,6 +753,7 @@ class ForemanStore:
                     priority = excluded.priority,
                     order_index = excluded.order_index,
                     branch_name = excluded.branch_name,
+                    worktree_path = excluded.worktree_path,
                     assigned_role = excluded.assigned_role,
                     acceptance_criteria = excluded.acceptance_criteria,
                     blocked_reason = excluded.blocked_reason,
@@ -772,6 +781,7 @@ class ForemanStore:
                     task.priority,
                     task.order_index,
                     task.branch_name,
+                    getattr(task, "worktree_path", None),
                     task.assigned_role,
                     task.acceptance_criteria,
                     task.blocked_reason,

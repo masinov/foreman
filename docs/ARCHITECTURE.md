@@ -43,6 +43,7 @@ The current codebase maps closely onto that split:
 - `foreman/store.py` and `foreman/models.py` own persisted state,
 - `foreman/roles.py` and `foreman/workflows.py` own declarative configuration,
 - `foreman/orchestrator.py` owns workflow execution and durable transitions,
+- `foreman/worktrees.py` owns the git working trees a task executes in,
 - `foreman/runner/` owns backend-specific transport and event normalization,
 - `foreman/cli.py`, `foreman/dashboard_runtime.py`,
   `foreman/dashboard_service.py`, `foreman/dashboard_backend.py`, and
@@ -72,7 +73,13 @@ The runtime repo integration remains intentionally narrow:
 
 - generated `AGENTS.md`
 - `docs/adr/`
-- gitignored `.foreman/`
+- gitignored `.foreman/`, which now also holds the per-task worktrees
+
+The engine's write surface on the operator's checkout is deliberately
+*ref-only*. It reads the checkout (refs, `AGENTS.md`, `git log`, `git diff`)
+and writes the context projection under `context_dir`, but it never runs
+`checkout`, `merge`, or `reset` there. Everything with a working tree happens
+in a Foreman-owned worktree (ADR-0012).
 
 Per the spec, convention docs such as branching and testing should eventually
 be generated or projected rather than treated as the product database.
@@ -214,6 +221,54 @@ engine the same way every other surface does (ADR-0002 amendment):
   service spawns a detached `foreman serve` through its injected spawner —
   the single-machine bootstrap, and the only place the dashboard starts a
   process at all.
+
+### One worktree per task
+
+`foreman/worktrees.py` is the only module that constructs a working-tree path.
+`WorktreeManager` is bound to a project and owns the layout under
+`worktree_root` (default `<repo>/.foreman/worktrees`):
+
+- `ensure(task)` — the task's tree, on the task branch, created on the first
+  develop visit and reused on every later visit,
+- `ensure_integration()` — one shared tree pinned to the default branch, where
+  `_builtin:merge` runs its `--no-ff` merge,
+- `remove(task)` / `remove_path(path)` — deletion, refusing anything outside
+  the worktree root,
+- `list()` and `prune_project_worktrees(store, project)` — the operator
+  surfaces behind `foreman worktree list|prune` and the dashboard's prune
+  control,
+- `enforce_worktree_limit(store, project, keep_slug=...)` — the
+  `max_live_worktrees` policy.
+
+The split inside the module is deliberate: `WorktreeManager` is filesystem and
+git only, while the policy that needs to know what a *task* is
+(`prune_project_worktrees`, `enforce_worktree_limit`) lives in store-aware
+module functions. Nothing in the manager imports the store.
+
+Two settings shape what a tree contains and how many exist.
+`worktree_setup_command` runs once inside each newly created tree to build its
+own environment, tracked by a marker in the tree's git admin directory so it
+never dirties the tree; without it a tree either borrows the operator's tooling
+through `worktree_link_paths` or has none. `max_live_worktrees` caps the number
+of task trees, enforced by the orchestrator immediately before it creates one —
+clean idle trees are reclaimed oldest-first, and a tree holding uncommitted
+work is never taken, so the cap yields rather than destroying unmerged state.
+
+The orchestrator holds one manager per project and resolves a working directory
+once per step (`_task_working_dir`), which native runner steps, the built-in
+executor, the branch invariants, the refresh-before-develop merge, and the
+conflict-recovery merge all consume. `tasks.worktree_path` (migration 16)
+persists the path so a restarted engine, the CLI, and the dashboard agree on
+where a paused task's work lives.
+
+Lifetime is tied to task state, not to a run: a worktree survives human gates,
+quota pauses, review rounds, and engine restarts, and is removed by
+`_builtin:mark_done`, by cancel and delete, and by `foreman worktree prune`.
+
+The boundary is enforced at run start: `run_project` calls `preflight()` before
+leasing any task, so a repository whose worktree root is not ignored, or whose
+git predates `git worktree`, fails with one clear message instead of a
+half-executed task. See ADR-0012.
 
 ### Inspection and dashboard surfaces
 
@@ -443,11 +498,12 @@ The following items were implemented as hardening before the 1.0 release:
 
 ## Next architectural slice
 
-The engine is resident, steerable through `engine_commands`, and every surface
-that controls it now goes through that table. What it still cannot do is
-accept work from anything other than a person at a keyboard: task creation
-lives on `dashboard_service.create_task`, needs a sprint, and has no
-authentication, no idempotency, and no record of where the request came from.
+The engine is resident, steerable through `engine_commands`, isolated from the
+operator's checkout by a worktree per task, and every surface that controls it
+goes through that table. What it still cannot do is accept work from anything
+other than a person at a keyboard: task creation lives on
+`dashboard_service.create_task`, needs a sprint, and has no authentication, no
+idempotency, and no record of where the request came from.
 
 The next slice (sprint 54 slice 3) adds the intake endpoint:
 `POST /api/projects/{id}/intake`, authenticated with per-project API tokens,

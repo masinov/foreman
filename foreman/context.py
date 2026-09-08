@@ -12,25 +12,41 @@ from .store import ForemanStore
 
 @dataclass(slots=True)
 class ProjectContextProjection:
-    """Rendered runtime context for one project."""
+    """Rendered runtime context for one project.
+
+    ``mirror_dirs`` are additional directories that receive the same two
+    files. The engine passes the task worktree's own context directory so an
+    agent working inside its worktree finds ``.foreman/context.md`` where it
+    is working, not only in the operator's checkout.
+    """
 
     context_path: Path
     status_path: Path
     context_markdown: str
     status_markdown: str
+    mirror_dirs: tuple[Path, ...] = ()
 
     @property
-    def written_paths(self) -> tuple[Path, Path]:
+    def written_paths(self) -> tuple[Path, ...]:
         """Return the runtime files written by this projection."""
 
-        return (self.context_path, self.status_path)
+        paths: list[Path] = [self.context_path, self.status_path]
+        for directory in self.mirror_dirs:
+            paths.append(directory / self.context_path.name)
+            paths.append(directory / self.status_path.name)
+        return tuple(paths)
 
-    def write(self) -> tuple[Path, Path]:
+    def write(self) -> tuple[Path, ...]:
         """Write the rendered runtime context to disk."""
 
-        self.context_path.parent.mkdir(parents=True, exist_ok=True)
-        self.context_path.write_text(self.context_markdown, encoding="utf-8")
-        self.status_path.write_text(self.status_markdown, encoding="utf-8")
+        for path in self.written_paths:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            markdown = (
+                self.context_markdown
+                if path.name == self.context_path.name
+                else self.status_markdown
+            )
+            path.write_text(markdown, encoding="utf-8")
         return self.written_paths
 
 
@@ -40,6 +56,7 @@ def build_project_context(
     *,
     current_task: Task | None = None,
     carried_output: str | None = None,
+    mirror_dirs: tuple[Path, ...] = (),
 ) -> ProjectContextProjection:
     """Render the runtime context snapshot for one project."""
 
@@ -79,6 +96,9 @@ def build_project_context(
     return ProjectContextProjection(
         context_path=runtime_dir / "context.md",
         status_path=runtime_dir / "status.md",
+        mirror_dirs=tuple(
+            directory for directory in mirror_dirs if directory != runtime_dir
+        ),
         context_markdown=render_sprint_context(
             project,
             active_sprint,
@@ -102,6 +122,7 @@ def write_project_context(
     *,
     current_task: Task | None = None,
     carried_output: str | None = None,
+    mirror_dirs: tuple[Path, ...] = (),
 ) -> ProjectContextProjection:
     """Render and write the runtime context snapshot for one project."""
 
@@ -110,19 +131,25 @@ def write_project_context(
         project,
         current_task=current_task,
         carried_output=carried_output,
+        mirror_dirs=mirror_dirs,
     )
     projection.write()
     return projection
 
 
-def context_directory(project: Project) -> Path:
-    """Return the configured runtime context directory for one project."""
+def context_directory(project: Project, *, root: Path | None = None) -> Path:
+    """Return the configured runtime context directory for one project.
+
+    ``root`` renders the same relative layout under another checkout — the
+    task's worktree — so the agent finds the projection where it works. An
+    absolute ``context_dir`` is shared by every checkout and ignores ``root``.
+    """
 
     configured = str(project.settings.get("context_dir", DEFAULT_CONTEXT_DIR)).strip()
     raw_path = Path(configured or DEFAULT_CONTEXT_DIR).expanduser()
     if raw_path.is_absolute():
         return raw_path
-    return Path(project.repo_path) / raw_path
+    return (root or Path(project.repo_path)) / raw_path
 
 
 def relative_project_path(project: Project, path: Path) -> str:
@@ -189,6 +216,8 @@ def render_sprint_context(
         )
         if current_task.branch_name:
             lines.append(f"Branch: {current_task.branch_name}")
+        if current_task.worktree_path:
+            lines.append(f"Worktree: {current_task.worktree_path}")
         if current_task.blocked_reason:
             lines.append(f"Blocked reason: {current_task.blocked_reason}")
         if current_task.workflow_current_step:

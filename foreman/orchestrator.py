@@ -13,18 +13,20 @@ from typing import Any, Protocol
 from uuid import uuid4
 
 from .builtins import BuiltinEventRecord, BuiltinExecutor
-from .context import ProjectContextProjection, build_project_context, relative_project_path
+from .context import (
+    ProjectContextProjection,
+    build_project_context,
+    context_directory,
+    relative_project_path,
+)
 from .errors import EngineCommandInterrupt, ForemanError
 from .git import (
     GitError,
     assert_default_branch_unchanged,
     commits_behind,
     merge_in_progress,
-    assert_not_on_default_branch,
     branch_exists,
     changed_files,
-    checkout_branch,
-    current_branch,
     head_sha,
     is_worktree_clean,
     recent_commits,
@@ -45,6 +47,12 @@ from .roles import RoleDefinition, default_roles_dir, load_roles
 from .settings import ProjectSettings, SettingsError
 from .store import ForemanStore
 from .workflows import WorkflowDefinition, WorkflowStep, default_workflows_dir, load_workflows
+from .worktrees import (
+    WorktreeError,
+    WorktreeManager,
+    enforce_worktree_limit,
+    task_slug,
+)
 
 _LOGGER = get_logger("orchestrator")
 
@@ -243,6 +251,7 @@ class ForemanOrchestrator:
         self._task_lease_tokens: dict[str, str] = {}
         self._task_started_received: set[str] = set()
         self._developer_step_executed: set[str] = set()
+        self._worktree_managers: dict[str, WorktreeManager] = {}
         #: Called with the running task id before every workflow step and on
         #: every silent-agent tick. The resident engine supplies it so an
         #: operator's `pause` or `stop_task` reaches an agent that may run for
@@ -250,6 +259,136 @@ class ForemanOrchestrator:
         #: ``EngineCommandInterrupt`` to stop the step. A one-shot ``foreman
         #: run`` leaves it None and behaves exactly as before.
         self.command_poll = command_poll
+
+    def worktrees(self, project: Project) -> WorktreeManager:
+        """Return the worktree manager for one project, created once per run."""
+
+        manager = self._worktree_managers.get(project.id)
+        if manager is None or manager.project.repo_path != project.repo_path:
+            manager = WorktreeManager(project)
+            self._worktree_managers[project.id] = manager
+        return manager
+
+    def _ensure_task_worktree(self, project: Project, task: Task) -> Path | None:
+        """Return the task's own checkout, creating it on the first develop visit.
+
+        Every agent step, every test run, and every branch invariant works in
+        this tree. The operator's checkout is never checked out or merged by
+        the engine, so a person editing it — or a second engine — cannot
+        corrupt a run. Existing in-progress tasks get a worktree here on their
+        next visit; their branch already exists, so the tree is just added.
+        """
+
+        if not task.branch_name:
+            return None
+        manager = self.worktrees(project)
+        if not manager.is_git_repository():
+            return None
+        self._reclaim_worktrees_for(project, task, manager)
+        path = manager.ensure(task)
+        recorded = str(path)
+        if task.worktree_path != recorded:
+            task.worktree_path = recorded
+            self.store.save_task(task)
+        return path
+
+    def _reclaim_worktrees_for(
+        self,
+        project: Project,
+        task: Task,
+        manager: WorktreeManager,
+    ) -> None:
+        """Make room under ``max_live_worktrees`` before this task's tree exists.
+
+        Enforced here rather than after the fact so the cap bounds peak disk
+        use, not just its steady state. A reclaim is invisible to the task that
+        loses its tree — the branch keeps the work and the next visit recreates
+        the checkout — so it is recorded, not raised.
+        """
+
+        try:
+            outcome = enforce_worktree_limit(
+                self.store, project, keep_slug=task_slug(task), manager=manager
+            )
+        except WorktreeError as exc:
+            # Reclaiming is an optimisation; failing it must not stop the task
+            # that was about to run from getting its worktree.
+            self._emit_worktree_event(
+                task,
+                "engine.worktree_reclaim_failed",
+                {"error": str(exc)},
+                detail=f"Could not enforce max_live_worktrees: {exc}",
+            )
+            return
+
+        if outcome.reclaimed:
+            self._emit_worktree_event(
+                task,
+                "engine.worktrees_reclaimed",
+                {
+                    "limit": outcome.limit,
+                    "live_before": outcome.live_before,
+                    "live_after": outcome.live_after,
+                    "reclaimed": [entry.slug for entry in outcome.reclaimed],
+                },
+                detail=(
+                    f"Reclaimed {len(outcome.reclaimed)} worktree(s) to stay under "
+                    f"max_live_worktrees={outcome.limit}."
+                ),
+            )
+        if outcome.over_limit:
+            # Not a failure: the alternative was destroying uncommitted work.
+            self._emit_worktree_event(
+                task,
+                "engine.worktree_limit_exceeded",
+                {
+                    "limit": outcome.limit,
+                    "live_after": outcome.live_after,
+                    "retained_dirty": [
+                        entry.slug for entry in outcome.retained_dirty
+                    ],
+                },
+                detail=(
+                    f"{outcome.live_after} worktrees exceed max_live_worktrees="
+                    f"{outcome.limit}; "
+                    f"{len(outcome.retained_dirty)} hold uncommitted work and were "
+                    f"kept."
+                ),
+            )
+
+    def _emit_worktree_event(
+        self,
+        task: Task,
+        event_type: str,
+        payload: dict[str, Any],
+        *,
+        detail: str,
+    ) -> None:
+        """Record one worktree-lifecycle event against a synthetic system run."""
+
+        run = self._create_system_run(
+            task,
+            workflow_step="orchestrator",
+            outcome="success",
+            detail=detail,
+        )
+        self._emit_event(run, event_type, payload)
+
+    def _task_working_dir(self, project: Project, task: Task) -> Path:
+        """Return the directory a step for this task should run in."""
+
+        recorded = task.worktree_path
+        if recorded and Path(recorded).is_dir():
+            return Path(recorded)
+        return Path(project.repo_path)
+
+    def _context_mirror_dirs(self, project: Project, task: Task) -> tuple[Path, ...]:
+        """Return the worktree context directory the projection is mirrored into."""
+
+        working_dir = self._task_working_dir(project, task)
+        if working_dir == Path(project.repo_path):
+            return ()
+        return (context_directory(project, root=working_dir),)
 
     def _poll_commands(self, task_id: str) -> None:
         """Give the resident engine a chance to interrupt this task.
@@ -337,6 +476,7 @@ class ForemanOrchestrator:
             raise OrchestratorError(f"Unknown project {project_id!r}.")
         settings = resolve_project_settings(project)
         workflow = self._load_workflow_for_project(project)
+        self._preflight_worktrees(project)
         if maintenance:
             self.prune_old_history(project, settings=settings)
             self.recover_orphaned_tasks(project.id)
@@ -1193,7 +1333,6 @@ class ForemanOrchestrator:
         resume_step = workflow.entry_step
         resume_carried_output: str | None = None
         is_resuming = current_task.workflow_current_step is not None
-        restore_branch = self._safe_current_branch(project.repo_path)
 
         if current_task.status == "blocked":
             if current_task.workflow_current_step:
@@ -1221,12 +1360,7 @@ class ForemanOrchestrator:
             current_task.branch_name = current_task.branch_name or generate_branch_name(
                 current_task
             )
-            checkout_branch(
-                project.repo_path,
-                current_task.branch_name,
-                create=True,
-                base_branch=project.default_branch,
-            )
+            self._ensure_task_worktree(project, current_task)
 
         current_task.status = "in_progress"
         current_task.blocked_reason = None
@@ -1237,32 +1371,33 @@ class ForemanOrchestrator:
         current_task.started_at = current_task.started_at or utc_now_text()
         self.store.save_task(current_task)
 
-        try:
-            self.run_workflow_from_step(
+        # No try/finally around the workflow: the engine never changes what is
+        # checked out in the operator's repository, so there is no branch to
+        # restore when a task ends, pauses, or fails.
+        self.run_workflow_from_step(
+            project,
+            workflow,
+            current_task,
+            step=resume_step,
+            carried_output=resume_carried_output,
+        )
+        refreshed = self.store.get_task(current_task.id)
+        if refreshed is None:
+            raise OrchestratorError(f"Task {current_task.id!r} disappeared during execution.")
+        latest_run = self.store.get_latest_run(refreshed.id)
+        if latest_run is not None:
+            self._write_runtime_context(
+                latest_run,
                 project,
-                workflow,
-                current_task,
-                step=resume_step,
-                carried_output=resume_carried_output,
-            )
-            refreshed = self.store.get_task(current_task.id)
-            if refreshed is None:
-                raise OrchestratorError(f"Task {current_task.id!r} disappeared during execution.")
-            latest_run = self.store.get_latest_run(refreshed.id)
-            if latest_run is not None:
-                self._write_runtime_context(
-                    latest_run,
+                context_projection=build_project_context(
+                    self.store,
                     project,
-                    context_projection=build_project_context(
-                        self.store,
-                        project,
-                        current_task=refreshed,
-                        carried_output=refreshed.workflow_carried_output,
-                    ),
-                )
-            return refreshed
-        finally:
-            self._restore_branch_if_safe(project.repo_path, restore_branch)
+                    current_task=refreshed,
+                    carried_output=refreshed.workflow_carried_output,
+                    mirror_dirs=self._context_mirror_dirs(project, refreshed),
+                ),
+            )
+        return refreshed
 
     def resume_human_gate(
         self,
@@ -1401,54 +1536,46 @@ class ForemanOrchestrator:
                 note=note,
             )
 
-        restore_branch = self._safe_current_branch(project.repo_path)
         if str(project.settings.get("task_selection_mode", "directed")) == "directed":
             current_task.branch_name = current_task.branch_name or generate_branch_name(
                 current_task
             )
-            checkout_branch(
-                project.repo_path,
-                current_task.branch_name,
-                create=True,
-                base_branch=project.default_branch,
-            )
+            self._ensure_task_worktree(project, current_task)
 
-        try:
-            self.run_workflow_from_step(
+        self.run_workflow_from_step(
+            project,
+            workflow,
+            current_task,
+            step=transition.to_step,
+            carried_output=carried_output,
+        )
+        refreshed = self.store.get_task(current_task.id)
+        if refreshed is None:
+            raise OrchestratorError(
+                f"Task {current_task.id!r} disappeared during human-gate resume."
+            )
+        latest_run = self.store.get_latest_run(refreshed.id)
+        if latest_run is not None:
+            self._write_runtime_context(
+                latest_run,
                 project,
-                workflow,
-                current_task,
-                step=transition.to_step,
-                carried_output=carried_output,
-            )
-            refreshed = self.store.get_task(current_task.id)
-            if refreshed is None:
-                raise OrchestratorError(
-                    f"Task {current_task.id!r} disappeared during human-gate resume."
-                )
-            latest_run = self.store.get_latest_run(refreshed.id)
-            if latest_run is not None:
-                self._write_runtime_context(
-                    latest_run,
+                context_projection=build_project_context(
+                    self.store,
                     project,
-                    context_projection=build_project_context(
-                        self.store,
-                        project,
-                        current_task=refreshed,
-                        carried_output=refreshed.workflow_carried_output,
-                    ),
-                )
-            return HumanGateResumeResult(
-                task=refreshed,
-                decision=outcome,
-                paused_step=paused_step.id,
-                next_step=transition.to_step,
-                deferred=False,
-                carried_output=carried_output,
-                note=note,
+                    current_task=refreshed,
+                    carried_output=refreshed.workflow_carried_output,
+                    mirror_dirs=self._context_mirror_dirs(project, refreshed),
+                ),
             )
-        finally:
-            self._restore_branch_if_safe(project.repo_path, restore_branch)
+        return HumanGateResumeResult(
+            task=refreshed,
+            decision=outcome,
+            paused_step=paused_step.id,
+            next_step=transition.to_step,
+            deferred=False,
+            carried_output=carried_output,
+            note=note,
+        )
 
     def run_workflow_from_step(
         self,
@@ -1476,32 +1603,28 @@ class ForemanOrchestrator:
             default_branch = project.default_branch
             original_default_sha = head_sha(project.repo_path, f"refs/heads/{default_branch}")
 
-            # Verify task branch exists (for native role steps) or is being created.
+            # Verify the task's own worktree exists and sits on the task branch.
+            # The operator's checkout is not consulted: what is checked out
+            # there is none of the engine's business.
             if step_def.role not in {"_builtin:merge", "_builtin:mark_done"}:
                 if current_task.branch_name:
                     try:
+                        worktree_path = self._ensure_task_worktree(project, current_task)
+                        if worktree_path is None:
+                            raise OrchestratorError(
+                                f"Task branch {current_task.branch_name!r} has no worktree."
+                            )
                         if not branch_exists(project.repo_path, current_task.branch_name):
                             raise OrchestratorError(
                                 f"Task branch {current_task.branch_name!r} does not exist."
                             )
-                        # In directed mode, current branch must be the task branch.
-                        mode = str(project.settings.get("task_selection_mode", "directed"))
-                        if mode == "directed":
-                            active_branch = worktree_branch(project.repo_path)
-                            if active_branch != current_task.branch_name:
-                                if is_worktree_clean(project.repo_path):
-                                    checkout_branch(project.repo_path, current_task.branch_name)
-                                else:
-                                    raise OrchestratorError(
-                                        f"Expected to be on task branch {current_task.branch_name!r} "
-                                        f"but found {active_branch!r}."
-                                    )
-                            if worktree_branch(project.repo_path) != current_task.branch_name:
-                                raise OrchestratorError(
-                                    f"Expected to be on task branch {current_task.branch_name!r} "
-                                    f"but found {worktree_branch(project.repo_path)!r}."
-                                )
-                    except OrchestratorError as e:
+                        active_branch = worktree_branch(worktree_path)
+                        if active_branch != current_task.branch_name:
+                            raise OrchestratorError(
+                                f"Worktree {worktree_path} should be on task branch "
+                                f"{current_task.branch_name!r} but is on {active_branch!r}."
+                            )
+                    except (OrchestratorError, WorktreeError, GitError) as e:
                         run = self._create_system_run(
                             current_task,
                             workflow_step=current_step,
@@ -1686,12 +1809,6 @@ class ForemanOrchestrator:
                 "_builtin:merge",
                 "_builtin:mark_done",
             }:
-                checkout_branch(
-                    project.repo_path,
-                    current_task.branch_name,
-                    create=True,
-                    base_branch=project.default_branch,
-                )
                 (
                     carried_output,
                     branch_sync_event,
@@ -1737,6 +1854,7 @@ class ForemanOrchestrator:
                         carried_output=carried_output,
                         store=self.store,
                         event_recorder=lambda event_record: self._persist_builtin_event(run, event_record),
+                        working_dir=self._task_working_dir(project, current_task),
                     )
                     self.store.save_task(current_task)
                     self._complete_run(
@@ -1773,6 +1891,7 @@ class ForemanOrchestrator:
                     carried_output=carried_output,
                     store=self.store,
                     evidence_builder=self.build_completion_evidence,
+                    working_dir=self._task_working_dir(project, current_task),
                 )
                 self.store.save_task(current_task)
                 self._complete_run(
@@ -1806,6 +1925,7 @@ class ForemanOrchestrator:
                     project,
                     current_task=current_task,
                     carried_output=carried_output,
+                    mirror_dirs=self._context_mirror_dirs(project, current_task),
                 )
                 prompt = self._build_prompt(
                     role,
@@ -2077,7 +2197,9 @@ class ForemanOrchestrator:
             # Merge builtin intentionally changes the default branch — skip check.
             # If worktree is dirty (e.g. unresolved merge conflicts), skip to avoid
             # false positives from in-progress recovery workflows.
-            if step_def.role != "_builtin:merge" and is_worktree_clean(project.repo_path):
+            if step_def.role != "_builtin:merge" and is_worktree_clean(
+                self._task_working_dir(project, current_task)
+            ):
                 try:
                     assert_default_branch_unchanged(
                         project.repo_path,
@@ -2242,29 +2364,19 @@ class ForemanOrchestrator:
             return workflow.fallback.message
         return f"No transition for '{outcome}' at '{step}'"
 
-    def _safe_current_branch(self, repo_path: str) -> str | None:
-        """Return the current branch name or None when git state is unavailable."""
+    def _preflight_worktrees(self, project: Project) -> None:
+        """Fail a run at the start when the repository cannot host worktrees.
+
+        Every task runs in a Foreman-owned worktree, so a git that is too old
+        or a worktree root git would try to commit is a project-level problem.
+        Discovering it here, before any task is leased, gives the operator one
+        clear message instead of a task blocked halfway through a step.
+        """
 
         try:
-            branch = current_branch(repo_path)
-        except GitError:
-            return None
-        return branch or None
-
-    def _restore_branch_if_safe(self, repo_path: str, branch_name: str | None) -> None:
-        """Best-effort restore of the caller's branch when the worktree is clean."""
-
-        if not branch_name:
-            return
-        try:
-            active_branch = current_branch(repo_path)
-            if active_branch == branch_name:
-                return
-            if not is_worktree_clean(repo_path):
-                return
-            checkout_branch(repo_path, branch_name)
-        except GitError:
-            return
+            self.worktrees(project).preflight()
+        except WorktreeError as exc:
+            raise OrchestratorError(str(exc)) from exc
 
     def recover_orphaned_tasks(self, project_id: str) -> None:
         """Reset orphaned in-progress tasks after a prior engine crash."""
@@ -2359,7 +2471,6 @@ class ForemanOrchestrator:
         task.workflow_carried_output = None
         task.step_visit_counts = {}
         self.store.save_task(task)
-        self._restore_branch_if_safe(project.repo_path, project.default_branch)
 
     def _run_is_stale(self, project: Project, run: Run) -> bool:
         """Return whether a persisted running run has exceeded its allowed ownership window.
@@ -2666,7 +2777,9 @@ class ForemanOrchestrator:
             "spec_path": project.spec_path or "",
             "previous_feedback": carried_output or "",
             "previous_output": latest_run.outcome_detail if latest_run else "",
-            "git_status": self._safe_git_status(project.repo_path),
+            # Status describes the tree the agent works in; diffs and log come
+            # from refs, which every worktree shares.
+            "git_status": self._safe_git_status(self._task_working_dir(project, task)),
             "changed_files": self._safe_changed_files(
                 project.repo_path,
                 project.default_branch,
@@ -2730,7 +2843,7 @@ class ForemanOrchestrator:
             return ""
         return agents_path.read_text(encoding="utf-8")
 
-    def _safe_git_status(self, repo_path: str) -> str:
+    def _safe_git_status(self, repo_path: str | Path) -> str:
         try:
             return status_text(repo_path)
         except GitError:
@@ -2777,7 +2890,11 @@ class ForemanOrchestrator:
         if step != "develop" or not task.branch_name:
             return carried_output, None
 
-        if merge_in_progress(project.repo_path):
+        # Every merge below happens in the task's own worktree; the operator's
+        # checkout is never a party to conflict recovery.
+        work_dir = self._task_working_dir(project, task)
+
+        if merge_in_progress(work_dir):
             # The previous develop pass was cut off (quota, shutdown) while
             # concluding a merge. Aborting it here would throw away the
             # developer's conflict resolution; leave the tree as it is and say
@@ -2813,7 +2930,7 @@ class ForemanOrchestrator:
             )
 
         sync_result = sync_branch_with_base(
-            project.repo_path,
+            work_dir,
             task.branch_name,
             project.default_branch,
         )
@@ -2886,15 +3003,16 @@ class ForemanOrchestrator:
         """
 
         branch = task.branch_name or ""
+        work_dir = self._task_working_dir(project, task)
         if not branch_exists(project.repo_path, branch):
             return carried_output, None
         behind = commits_behind(project.repo_path, branch, project.default_branch)
         if behind <= 0:
             return carried_output, None
-        if not is_worktree_clean(project.repo_path):
+        if not is_worktree_clean(work_dir):
             return carried_output, None
 
-        sync_result = sync_branch_with_base(project.repo_path, branch, project.default_branch)
+        sync_result = sync_branch_with_base(work_dir, branch, project.default_branch)
         payload = {
             "step": step,
             "branch": branch,
@@ -3141,7 +3259,9 @@ class ForemanOrchestrator:
             backend=role.agent.backend,
             model=model or None,
             prompt=prompt,
-            working_dir=Path(project.repo_path),
+            # The agent edits its task's own worktree, never the operator's
+            # checkout.
+            working_dir=self._task_working_dir(project, task),
             session_id=session_id,
             permission_mode=role.agent.permission_mode,
             disallowed_tools=role.agent.tools.disallowed,
