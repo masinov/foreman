@@ -198,7 +198,10 @@ class IntakeMigrationTests(unittest.TestCase):
                 applied = store.migrate()
 
                 self.assertIn(17, applied)
-                self.assertEqual(store.schema_version(), 17)
+                # The head version, not the literal 17: this test is about
+                # migration 17 reaching an old database, not about 17 being
+                # the newest migration Foreman has.
+                self.assertEqual(store.schema_version(), MIGRATIONS[-1][0])
                 tables = {
                     row["name"]
                     for row in store._connection.execute(

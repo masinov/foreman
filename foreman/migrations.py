@@ -473,4 +473,68 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         ON tasks(project_id, source_system, source_ref);
         """,
     ),
+    (
+        18,
+        "add notification destinations and deliveries: telling people what happened",
+        """
+        -- Where a project wants to be told. `webhook` is the only kind today
+        -- because it is the only one that needs no credential beyond a URL;
+        -- `kind` exists so a later transport (chat, email) is a row rather
+        -- than a table. `config_json` carries the per-kind detail (extra
+        -- headers, the environment variable holding a signing secret) so a
+        -- new transport's options do not require a migration.
+        CREATE TABLE IF NOT EXISTS notification_destinations (
+            id          TEXT PRIMARY KEY,
+            project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            name        TEXT NOT NULL,
+            kind        TEXT NOT NULL DEFAULT 'webhook',
+            target      TEXT NOT NULL,
+            config_json TEXT NOT NULL DEFAULT '{}',
+            enabled     INTEGER NOT NULL DEFAULT 1,
+            created_at  TEXT NOT NULL,
+            updated_at  TEXT NOT NULL
+        );
+
+        -- A destination's name is how a person refers to it on the CLI, so it
+        -- has to be unique inside the project.
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_notification_destinations_name
+        ON notification_destinations(project_id, name);
+
+        -- One row per (destination, notifiable event). The row is the record:
+        -- it survives the process that tried to send it, so a destination that
+        -- was down is retried by whoever runs next rather than forgotten, and
+        -- a destination that stayed down leaves `failed` behind with the error
+        -- instead of silence.
+        CREATE TABLE IF NOT EXISTS notification_deliveries (
+            id              TEXT PRIMARY KEY,
+            project_id      TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            destination_id  TEXT NOT NULL REFERENCES notification_destinations(id)
+                            ON DELETE CASCADE,
+            task_id         TEXT,
+            event_id        TEXT,
+            kind            TEXT NOT NULL,
+            payload_json    TEXT NOT NULL,
+            status          TEXT NOT NULL DEFAULT 'pending'
+                            CHECK (status IN ('pending', 'delivered', 'failed')),
+            attempts        INTEGER NOT NULL DEFAULT 0,
+            max_attempts    INTEGER NOT NULL DEFAULT 5,
+            next_attempt_at TEXT NOT NULL,
+            last_error      TEXT,
+            created_at      TEXT NOT NULL,
+            updated_at      TEXT NOT NULL,
+            delivered_at    TEXT
+        );
+
+        -- The delivery worker's only hot query: what is due for this project.
+        CREATE INDEX IF NOT EXISTS idx_notification_deliveries_due
+        ON notification_deliveries(project_id, status, next_attempt_at);
+
+        -- The engine may emit the same attention turn to the same destination
+        -- twice (a retried pass, two orchestrators racing); the acceptance
+        -- criterion is one delivery per turn, so the database enforces it.
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_notification_deliveries_event
+        ON notification_deliveries(destination_id, event_id)
+        WHERE event_id IS NOT NULL;
+        """,
+    ),
 ]

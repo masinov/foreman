@@ -46,6 +46,8 @@ NARRATIVE_EVENT_PREFIXES: tuple[str, ...] = (
     "workflow.",
     "gate.",
     "signal.",
+    "task.",
+    "notification.",
 )
 
 #: The `agent.*` events that mark a step's lifecycle rather than its contents.

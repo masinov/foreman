@@ -398,6 +398,60 @@ class ApiToken:
         return scope in self.scopes
 
 
+@dataclass(slots=True)
+class NotificationDestination:
+    """Somewhere a project wants to be told what the engine is doing.
+
+    ``kind`` selects the transport (``webhook`` today) and ``target`` is the
+    address that transport understands -- a URL, for a webhook. Per-kind
+    options live in ``config``: a webhook reads ``headers`` and
+    ``secret_env``, the name of an environment variable holding the key its
+    payload signature is computed with. Secrets are named here, never stored
+    here, so a copied database carries no credential.
+    """
+
+    id: str
+    project_id: str
+    name: str
+    target: str
+    kind: str = "webhook"
+    config: JsonDict = field(default_factory=dict)
+    enabled: bool = True
+    created_at: str = field(default_factory=utc_now_text)
+    updated_at: str = field(default_factory=utc_now_text)
+
+
+NotificationStatus = Literal["pending", "delivered", "failed"]
+
+
+@dataclass(slots=True)
+class NotificationDelivery:
+    """One notification owed to one destination, and how that has gone.
+
+    The row is written when the engine decides something is worth announcing
+    and updated by whichever process later drains the queue. It is the audit
+    record as well as the work item: a ``failed`` row keeps the last error and
+    the attempt count, which is what "the destination was unreachable" looks
+    like after the fact.
+    """
+
+    id: str
+    project_id: str
+    destination_id: str
+    kind: str
+    payload: JsonDict = field(default_factory=dict)
+    task_id: str | None = None
+    event_id: str | None = None
+    status: NotificationStatus = "pending"
+    attempts: int = 0
+    max_attempts: int = 5
+    next_attempt_at: str = field(default_factory=utc_now_text)
+    last_error: str | None = None
+    created_at: str = field(default_factory=utc_now_text)
+    updated_at: str = field(default_factory=utc_now_text)
+    delivered_at: str | None = None
+
+
 LeaseStatus = Literal["active", "released", "expired"]
 
 

@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .notifications import NOTIFICATION_POLICIES
+
 
 class SettingsError(ValueError):
     """Raised when project settings fail validation."""
@@ -62,6 +64,11 @@ class ProjectSettings:
     # records a policy decision; "human" pauses the task for a person.
     merge_approval: str = "auto"
     plan_approval: str = "human"
+    # Notification policy: "none" says nothing, "attention" delivers the
+    # moments that want a person (engine attention turns, human gates), and
+    # "all" adds task completions. Read by ``foreman.notifications``; where
+    # the message goes is a destination row, not a setting.
+    notification: str = "attention"
     runner_max_cost_usd: float = 1000.0
     runner_permission_mode: str = "auto"
     default_model: str = ""
@@ -122,6 +129,9 @@ class ProjectSettings:
             completion_guard_enabled=bool(raw.get("completion_guard_enabled", True)),
             merge_approval=_validate_gate_policy(raw.get("merge_approval"), default="auto"),
             plan_approval=_validate_gate_policy(raw.get("plan_approval"), default="human"),
+            notification=_validate_notification_policy(
+                raw.get("notification"), default="attention"
+            ),
             runner_max_cost_usd=_validate_non_negative_float(
                 raw.get("runner_max_cost_usd"), default=1000.0
             ),
@@ -180,6 +190,22 @@ def _validate_gate_policy(value: Any, *, default: str) -> str:
     if not isinstance(value, str) or value not in GATE_POLICY_VALUES:
         raise SettingsError(
             f"Gate policy must be one of {', '.join(GATE_POLICY_VALUES)}, got {value!r}"
+        )
+    return value
+
+
+#: Re-exported so a caller validating settings and a caller delivering
+#: notifications cannot disagree about the vocabulary.
+NOTIFICATION_POLICY_VALUES: tuple[str, ...] = NOTIFICATION_POLICIES
+
+
+def _validate_notification_policy(value: Any, *, default: str) -> str:
+    if value is None:
+        return default
+    if not isinstance(value, str) or value not in NOTIFICATION_POLICY_VALUES:
+        raise SettingsError(
+            f"notification must be one of {', '.join(NOTIFICATION_POLICY_VALUES)}, "
+            f"got {value!r}"
         )
     return value
 
