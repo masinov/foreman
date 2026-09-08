@@ -50,6 +50,7 @@ from .scaffold import (
     resolve_spec_path,
     scaffold_repository,
 )
+from .policy import POLICY_DECISIONS, POLICY_VALUES, PolicyMatrix, is_valid_value
 from .settings import ProjectSettings, SettingsError
 from .api_tokens import API_TOKEN_SCOPES, ApiTokenError
 from .store import ForemanStore
@@ -68,6 +69,7 @@ DB_OPTION_NOTE = (
     f"Defaults to repo-local `{DEFAULT_DB_FILENAME}` discovery; pass `--db PATH` to override."
 )
 BOARD_STATUS_SECTIONS: tuple[tuple[str, str], ...] = (
+    ("triage", "Triage"),
     ("todo", "Todo"),
     ("in_progress", "In Progress"),
     ("blocked", "Blocked"),
@@ -202,6 +204,7 @@ _BLOCKED_KIND_HINTS = {
 def _format_task_counts(counts: dict[str, int]) -> str:
     return (
         "Tasks: "
+        f"triage={counts['triage']} "
         f"todo={counts['todo']} "
         f"in_progress={counts['in_progress']} "
         f"blocked={counts['blocked']} "
@@ -597,6 +600,7 @@ def handle_board(args: argparse.Namespace) -> int:
                 f"blocked={counts['blocked']} "
                 f"(gate={blocked_counts['gate']} engine={blocked_counts['engine']}) | "
                 f"todo={counts['todo']} | "
+                f"triage={counts['triage']} | "
                 f"cancelled={counts['cancelled']}"
             ),
             (
@@ -608,7 +612,9 @@ def handle_board(args: argparse.Namespace) -> int:
     )
 
     for status, label in BOARD_STATUS_SECTIONS:
-        if status == "cancelled" and counts["cancelled"] == 0:
+        # `triage` and `cancelled` are exception states: show them only when a
+        # project actually has work sitting there.
+        if status in ("triage", "cancelled") and counts[status] == 0:
             continue
         lines.append(f"{label} ({counts[status]})")
         status_tasks = [task for task in tasks if task.status == status]
@@ -1212,6 +1218,7 @@ def handle_projects(args: argparse.Namespace) -> int:
                 )
                 lines.append(
                     f"repo={project.repo_path} | "
+                    f"triage={task_counts['triage']} "
                     f"todo={task_counts['todo']} "
                     f"in_progress={task_counts['in_progress']} "
                     f"blocked={task_counts['blocked']} "
@@ -1859,6 +1866,29 @@ def handle_task_override(args: argparse.Namespace) -> int:
             else:
                 overrides.pop("gates", None)
 
+            policy = dict(overrides.get("policy") or {})
+            for decision, raw_value in (
+                ("triage", args.triage),
+                ("notification", args.notification),
+            ):
+                if raw_value is None:
+                    continue
+                if not raw_value:
+                    policy.pop(decision, None)
+                elif not is_valid_value(decision, raw_value):
+                    print(
+                        f"Policy {decision!r} must be one of "
+                        f"{', '.join(POLICY_VALUES[decision])}, got {raw_value!r}.",
+                        file=sys.stderr,
+                    )
+                    return 1
+                else:
+                    policy[decision] = raw_value
+            if policy:
+                overrides["policy"] = policy
+            else:
+                overrides.pop("policy", None)
+
         task.executor_overrides = overrides
         store.save_task(task)
         db_path = store.db_path
@@ -2001,6 +2031,39 @@ def handle_task_unblock(args: argparse.Namespace) -> int:
         f"Task: {task.id} | {task.title}",
         f"Status: {task.status}",
         "Step visits reset: yes",
+    )
+    return 0
+
+
+def handle_task_accept(args: argparse.Namespace) -> int:
+    """Handle ``foreman task accept``."""
+
+    db_path = _resolve_db_path_or_print(args.db)
+    if db_path is None:
+        return 1
+
+    with ForemanStore(db_path) as store:
+        store.initialize()
+        task = _resolve_task_or_print(store, args.task_id)
+        if task is None:
+            return 1
+        if task.status != "triage":
+            print(
+                f"Task {task.id} is not in triage (status: {task.status}); only "
+                "tasks awaiting triage can be accepted.",
+                file=sys.stderr,
+            )
+            return 1
+
+        task.status = "todo"
+        store.save_task(task)
+        db_path = store.db_path
+
+    _print_lines(
+        "Accepted task",
+        f"Database: {db_path}",
+        f"Task: {task.id} | {task.title}",
+        f"Status: {task.status}",
     )
     return 0
 
@@ -2444,8 +2507,31 @@ def handle_config(args: argparse.Namespace) -> int:
     else:
         for key in sorted(project.settings):
             lines.append(f"- {key}={_format_setting_value(project.settings[key])}")
+    lines.extend(_policy_matrix_lines(project))
     _print_lines(*lines)
     return 0
+
+
+def _policy_matrix_lines(project: Project) -> list[str]:
+    """Render the project's policy matrix: the defaults and the type rules."""
+
+    matrix = PolicyMatrix.for_project(project)
+    described = matrix.describe()
+    lines = ["Policy matrix:"]
+    for decision in POLICY_DECISIONS:
+        entry = described["defaults"][decision]
+        origin = "set" if entry["source"] == "project_default" else "default"
+        lines.append(f"- {decision}={entry['value']} ({origin})")
+    rules = described["rules"]
+    if not rules:
+        lines.append("Policy rules: none")
+    else:
+        lines.append("Policy rules:")
+        for task_type in sorted(rules):
+            rule = rules[task_type]
+            joined = " ".join(f"{d}={rule[d]}" for d in POLICY_DECISIONS if d in rule)
+            lines.append(f"- {task_type}: {joined}")
+    return lines
 
 
 def handle_db_version(args: argparse.Namespace) -> int:
@@ -2847,6 +2933,22 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     task_override.add_argument(
+        "--triage",
+        metavar="auto|human",
+        help=(
+            "Override the triage policy for this task. An empty value removes "
+            "the override."
+        ),
+    )
+    task_override.add_argument(
+        "--notification",
+        metavar="none|attention|all",
+        help=(
+            "Override the notification policy for this task. An empty value "
+            "removes the override."
+        ),
+    )
+    task_override.add_argument(
         "--clear",
         action="store_true",
         help="Reset all executor overrides for this task to empty.",
@@ -2902,6 +3004,16 @@ def build_parser() -> argparse.ArgumentParser:
         help_text=f"Path to the SQLite store containing the task. {DB_OPTION_NOTE}",
     )
     _set_handler(task_unblock, handle_task_unblock, "task unblock")
+
+    task_accept = task_commands.add_parser(
+        "accept", help="Accept a task out of triage into the runnable queue."
+    )
+    task_accept.add_argument("task_id", help="Task identifier.")
+    _add_db_option(
+        task_accept,
+        help_text=f"Path to the SQLite store containing the task. {DB_OPTION_NOTE}",
+    )
+    _set_handler(task_accept, handle_task_accept, "task accept")
 
     task_cancel = task_commands.add_parser("cancel", help="Cancel a task.")
     task_cancel.add_argument("task_id", help="Task identifier.")

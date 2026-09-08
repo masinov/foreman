@@ -156,6 +156,7 @@ class ForemanStoreTests(unittest.TestCase):
             self.assertEqual(
                 reopened.task_counts(project.id),
                 {
+                    "triage": 0,
                     "todo": 0,
                     "in_progress": 1,
                     "blocked": 0,
@@ -876,6 +877,7 @@ class ForemanStoreTests(unittest.TestCase):
             self.assertEqual(
                 store.task_counts(sprint_id=active_sprint.id),
                 {
+                    "triage": 0,
                     "todo": 1,
                     "in_progress": 1,
                     "blocked": 0,

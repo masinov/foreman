@@ -278,7 +278,8 @@ class IntakeServiceTests(unittest.TestCase):
         self.assertEqual(task.source_url, "https://pd.example.com/INC-42")
         self.assertEqual(task.reporter, "ana")
         self.assertEqual(task.created_by, "api:pagerduty")
-        self.assertEqual(task.status, "todo")
+        # `triage` is the default policy: filed work waits for a person.
+        self.assertEqual(task.status, "triage")
         self.assertEqual(task.task_type, "fix")
 
     def test_the_same_reference_returns_the_same_task_untouched(self) -> None:

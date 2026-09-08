@@ -345,6 +345,10 @@ def create_dashboard_app(
     async def get_project_settings(project_id: str) -> dict[str, Any]:
         return with_api(lambda api: api.get_project_settings(project_id))
 
+    @app.get("/api/projects/{project_id}/policy")
+    async def get_project_policy(project_id: str, task_id: str | None = None) -> dict[str, Any]:
+        return with_api(lambda api: api.get_project_policy(project_id, task_id=task_id))
+
     @app.patch("/api/projects/{project_id}/settings")
     async def update_project_settings(project_id: str, request: Request) -> dict[str, Any]:
         data = await _read_json_body(request)
@@ -743,6 +747,10 @@ def create_dashboard_app(
         data = await _read_json_body(request)
         requested_by = data.get("requested_by") or None
         return with_api(lambda api: api.stop_task(task_id, requested_by=requested_by))
+
+    @app.post("/api/tasks/{task_id}/accept")
+    async def accept_task(task_id: str) -> dict[str, Any]:
+        return with_api(lambda api: api.accept_task(task_id))
 
     @app.post("/api/tasks/{task_id}/cancel")
     async def cancel_task(task_id: str) -> dict[str, Any]:
