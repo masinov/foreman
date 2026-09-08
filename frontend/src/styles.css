@@ -1943,6 +1943,16 @@ button {
   background: rgba(74, 169, 136, 0.3);
 }
 
+.btn-accept {
+  color: var(--blue);
+  border-color: rgba(85, 153, 187, 0.3);
+  background: var(--blue-dim);
+}
+
+.btn-accept:hover {
+  background: rgba(85, 153, 187, 0.3);
+}
+
 .btn-deny {
   color: var(--red);
   border-color: rgba(204, 85, 85, 0.3);
@@ -4308,4 +4318,36 @@ select.form-input {
 .token-prompt-card input:focus {
   outline: none;
   border-color: var(--accent);
+}
+
+/* ═══ Policy matrix ══════════════════════════════════ */
+.policy-source {
+  color: var(--text-tertiary);
+}
+
+.policy-rules {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.policy-rule-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.policy-rule-type {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--accent);
+  min-width: 56px;
+}
+
+.policy-rule-select {
+  flex: 1 1 140px;
+  font-size: 10px;
+  padding: 4px 6px;
 }

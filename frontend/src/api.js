@@ -164,6 +164,11 @@ export function createDashboardServices({
         body: { requested_by: requestedBy || undefined },
       });
     },
+    acceptTask(taskId) {
+      return request(`/api/tasks/${encodeURIComponent(taskId)}/accept`, {
+        method: "POST",
+      });
+    },
     cancelTask(taskId) {
       return request(`/api/tasks/${encodeURIComponent(taskId)}/cancel`, {
         method: "POST",
