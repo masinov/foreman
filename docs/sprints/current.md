@@ -31,7 +31,7 @@ decides where a human is required.
 | F3 | Live-run fix: task branch refreshed from the default branch at every develop visit; an unconcluded merge is never aborted; approve/deny report a quota pause honestly | done | `fix/task-branch-refresh` | git, orchestrator, CLI, tests |
 | F4 | Live-run fix: a cancelled dependency blocks the dependent task for re-planning instead of releasing it; cancel refuses a task with a live run | done | `fix/cancelled-dependency-blocks` | orchestrator, CLI, dashboard, tests |
 | F5 | Live-run fix: a killed or interrupted run keeps the backend session announced at start, so a pause or shutdown resumes the conversation | done | `fix/keep-session-on-kill` | orchestrator, tests |
-| 3 | Intake endpoint: project-level, API-token authenticated, idempotent on an external reference, source metadata, policy-chosen initial status; sprint optional over a continuous queue | todo | | `POST /api/projects/{id}/intake`, tokens, tests |
+| 3 | Intake endpoint: project-level, API-token authenticated, idempotent on an external reference, source metadata, initial status `todo`; sprint optional over a continuous queue | done | `feat/task-add-the-intake-endpoint-and-api-tokens-v2` (engine-run) | `foreman/api_tokens.py`, migration 17 (`api_tokens` + task source columns), `POST /api/projects/{id}/intake`, `foreman token`, drawer Source section, ADR-0013, MANUAL §25, `tests/test_intake.py` |
 | 4 | Policy matrix v1: `triage` and `notification` policies join `merge_approval` and `plan_approval`; task-type rules; per-task overrides | todo | | settings, models, orchestrator, tests |
 | 5 | Planner step per task producing criteria and a protected acceptance test; architect role repurposed to once-per-task | todo | | role, workflow, tests |
 | 6 | Worktree per task under a Foreman-owned directory | done | `feat/task-give-every-task-its-own-git-worktree` (engine-run) | `foreman/worktrees.py`, migration 16, orchestrator, built-ins, `foreman worktree`, ADR-0012, `tests/test_worktrees.py` |
@@ -50,6 +50,29 @@ decisions worth carrying forward:
 - The dashboard's Run button still spawned a `foreman run` subprocess, which
   competed for that lock instead of cooperating with the resident worker. This
   was the concrete reason slice 2 came next; slice 2b closed it.
+
+### Slice 3 notes
+
+Two numbers in the task description were already taken by slice 6, which
+landed first: migration 16 (`tasks.worktree_path`) and ADR-0012
+(worktree-per-task). Intake therefore landed as **migration 17** and
+**ADR-0013**, verified against a version-16 database. Nothing else about the
+slice changed.
+
+Two decisions worth carrying into slice 4 (policy matrix):
+
+- **Idempotency uses the caller's key**, `(project, source.system,
+  source.external_ref)`, not one Foreman generates — the caller is what
+  retries, and a Foreman-generated key would make callers store Foreman state
+  to retry safely. A caller that sends neither field gets a new task per call.
+- **The intake queue is a sprint** (`<project>-intake`, created on first use,
+  `active` unless another sprint is running). The alternative — a nullable
+  `tasks.sprint_id` — would have forced task selection, the board, the digest,
+  and the context projection each to grow an orphan path. Sprints stay the
+  unit of grouping; a continuous queue is a sprint that never completes.
+
+Intake tasks land as `todo`. The `triage` status is slice 4's, as is anything
+that ages or bounds the queue: nothing prunes it today.
 
 ### Slice 6 notes
 
