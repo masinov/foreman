@@ -28,7 +28,7 @@ from .engine_control import (
 from .engine_lock import EngineBusyError, EngineLock
 from .logs import configure_json_logging
 from .models import Event, EngineCommand, GATE_POLICY_NAMES, NotificationDelivery, NotificationDestination, Project, Sprint, TASK_COMPLEXITIES, TASK_TYPES, Task, utc_now_text
-from .orchestrator import ForemanOrchestrator, OrchestratorError, QuotaPauseError
+from .orchestrator import ForemanOrchestrator, OrchestratorError
 from .roles import RoleLoadError, default_roles_dir, load_roles
 from .runner.process import EngineShutdown, install_shutdown_handlers
 from .serve import DEFAULT_POLL_SECONDS, serve_project
@@ -3942,27 +3942,19 @@ def _handle_human_gate_decision(args: argparse.Namespace, *, outcome: str) -> in
         store.initialize()
         orchestrator = ForemanOrchestrator(store)
         try:
+            # A decision, not an execution: this process holds neither the
+            # project's engine lock nor a task lease, so the step the decision
+            # leads to is left for an engine. ADR-0011.
             result = orchestrator.resume_human_gate(
                 args.task_id,
                 outcome=outcome,
                 note=args.note,
+                defer=True,
             )
-        except QuotaPauseError as exc:
-            # The decision was recorded and the workflow resumed; it is the
-            # follow-on agent step that hit the backend quota. That is a pause,
-            # not a failed decision, so say so and use the temporary-failure
-            # exit code `foreman run` uses for the same condition.
-            print(
-                f"Recorded {outcome} for task {args.task_id}; the workflow resumed and "
-                f"then paused because the agent backend's quota ran out "
-                f"(retry after {exc.retry_after or 'unknown'}). The task keeps its "
-                "resume point; the next engine pass continues it.",
-                file=sys.stderr,
-            )
-            return EXIT_QUOTA_EXHAUSTED
         except OrchestratorError as exc:
             print(f"Failed to {outcome} task: {exc}", file=sys.stderr)
             return 1
+        engine_resident = store.get_engine_lock(result.task.project_id) is not None
         db_path = store.db_path
 
     action = "Approved" if outcome == "approve" else "Denied"
@@ -3973,7 +3965,14 @@ def _handle_human_gate_decision(args: argparse.Namespace, *, outcome: str) -> in
         f"Resume from: {result.paused_step}",
         f"Next step: {result.next_step}",
         f"Status: {result.task.status}",
-        f"Resume deferred: {'yes' if result.deferred else 'no'}",
+        (
+            "Engine: resident; it continues the task"
+            if engine_resident
+            else (
+                "Engine: none running; continue with "
+                f"`foreman run {result.task.project_id}` or `foreman serve {result.task.project_id}`"
+            )
+        ),
     ]
     if args.note:
         lines.append(f"Note: {args.note}")

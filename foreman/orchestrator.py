@@ -1487,8 +1487,16 @@ class ForemanOrchestrator:
         *,
         outcome: str,
         note: str | None = None,
+        defer: bool = False,
     ) -> HumanGateResumeResult:
-        """Apply one human-gate decision and continue execution when possible."""
+        """Apply one human-gate decision and continue execution when possible.
+
+        With ``defer`` the decision is recorded and the task is left
+        ``in_progress`` at the step the decision leads to, for the project's
+        engine to continue. That is what every caller outside an engine must
+        use: the CLI and the dashboard decide, the engine (which holds the
+        project lock and the task lease) executes. ADR-0011.
+        """
 
         if outcome not in {APPROVE, DENY}:
             raise OrchestratorError(f"Unsupported human-gate outcome {outcome!r}.")
@@ -1548,6 +1556,7 @@ class ForemanOrchestrator:
                 self.agent_executor is None
                 and not native_backend_available
             )
+        deferred = deferred or defer
         decision_run = self._create_system_run(
             current_task,
             workflow_step=paused_step.id,
@@ -1595,14 +1604,13 @@ class ForemanOrchestrator:
 
         current_task.status = "in_progress"
         current_task.blocked_reason = None
-        current_task.workflow_current_step = None
-        current_task.workflow_carried_output = None
+        # One write: a crash between "decision recorded" and "next step
+        # recorded" must not leave a task that restarts from its entry step.
+        current_task.workflow_current_step = transition.to_step if deferred else None
+        current_task.workflow_carried_output = carried_output if deferred else None
         self.store.save_task(current_task)
 
         if deferred:
-            current_task.workflow_current_step = transition.to_step
-            current_task.workflow_carried_output = carried_output
-            self.store.save_task(current_task)
             refreshed = self.store.get_task(current_task.id)
             if refreshed is None:
                 raise OrchestratorError(
@@ -1964,6 +1972,10 @@ class ForemanOrchestrator:
                             "notify": self._notification_policy(project, current_task),
                         },
                     )
+                    # A task waiting for a person is not being worked on. Left
+                    # held, the lease made the engine wait out its remaining
+                    # lifetime before it could act on the decision.
+                    self._release_task_lease(current_task, project)
                     return current_task
 
             elif step_def.role.startswith("_builtin:"):

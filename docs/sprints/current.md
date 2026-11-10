@@ -28,7 +28,7 @@ spend, no orphaned agents, and one engine per project in fact.
 | 4 | Runner termination contract: stop at the terminal event and sweep the process group (landed with slice 3); SIGHUP is a shutdown; agents started by the engine receive SIGTERM when the engine dies without a handler running (Linux parent-death signal) | done | Claude, by hand | `fix/runner-parent-death`: `runner/process.py`, 3 tests |
 | 4b | Token usage decomposed: each run stores input, output, cache-read and cache-creation tokens as the backend reports them; totals, the API, `foreman cost` / `history`, the task drawer, run history and the sprint footer show the split | done | Claude, by hand | `feat/token-usage-breakdown`: `TokenUsage`, migration 19, runner, orchestrator, store, service, CLI, frontend, 5 tests |
 | 5 | Task lease lifecycle: a timer renews the lease for the whole of `run_task`, whatever the step is doing; stale-run recovery re-acquires instead of expiring the engine's own lease; a task left `blocked` by any gate or guard releases its lease | done | Claude, by hand | `fix/task-lease-lifecycle`: `foreman/task_lease.py`, orchestrator, 7 tests |
-| 6 | Approve and deny record a decision and enqueue an engine command; no workflow execution in the CLI or the web process | todo | | orchestrator, serve, CLI, service, ADR-0011 amendment, tests |
+| 6 | Approve and deny record a decision and leave execution to the engine; a task paused at a human gate releases its lease | done | Claude, by hand | `fix/gate-decisions-through-engine`: orchestrator `defer`, CLI, service, dashboard notice, ADR-0011 amendment, 1 new test and 4 updated |
 | 7 | First delegation trial: one self-contained slice from Phase 2 run through Foreman on a cheaper model, compared with a by-hand slice of similar size | todo | | cost and outcome note in this file |
 
 ### Carried from sprint 54
@@ -99,3 +99,16 @@ split and show only the old total. Codex runs report no split.
   without a lease (slice 6 moves approve/deny onto the engine).
 - The seven leases still marked `active` in the live database predate this
   and will be expired by the next engine start's recovery pass.
+
+### Slice 6 notes
+
+- No engine command was needed. The deferred state the orchestrator already
+  had (task `in_progress` at the next step) is the hand-off, and a resident
+  engine wakes on the write.
+- The new test (decide with `defer`, then let `run_project` continue) failed
+  first for a reason nobody had listed: a task paused at a human gate kept
+  its lease, so the engine's next pass found the task held and waited. With
+  the old inline resume this was invisible; with a resident engine it meant
+  up to five minutes between an approval and anything happening.
+- The dashboard does not start an engine on approve. Doing so from a click
+  that is not "Run" would spawn a process the person did not ask for.

@@ -262,3 +262,24 @@ which is the kind of failure nobody thinks to look for.
   different questions and would have to be unpicked for parallel workers.
 - **Polling tables on a fixed interval instead of `data_version`.** Rejected:
   it makes an idle engine's cost proportional to project size for no benefit.
+
+## Amendment, 2026-11-11: decisions are not executions
+
+`foreman approve`, `foreman deny` and the dashboard's Approve and Deny used
+to call `resume_human_gate`, which ran the rest of the workflow in the
+calling process whenever an agent backend was installed. That process held
+neither this lock nor a task lease, so a second engine ran beside a resident
+one, and in the dashboard an agent step blocked the web server for its whole
+duration.
+
+They now pass `defer=True`: the decision, its audit record and the next
+step are written in one task update, and the task is left `in_progress` at
+that step. The engine continues it: a resident engine wakes on the database
+change; with none running, the CLI prints the `foreman run` command and the
+dashboard tells the person to press Run. Inline continuation remains only
+for an orchestrator that is itself the engine (`defer=False`).
+
+A task paused at a human gate, and any task left `blocked`, now releases
+its lease. Previously the paused task kept it, so an engine had to wait out
+the lease before it could act on the decision.
+

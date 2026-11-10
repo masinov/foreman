@@ -14,15 +14,16 @@ Current snapshot only. History up to 2026-09-08 (sprints 1 to 54) is in
   Work happens on short branches from `main`; the operator checkout stays
   off `main` (the `_integration` worktree holds it).
 
-## Do not run unattended yet
+## Running unattended
 
-Until sprint 55 slices 3 to 6 land, do not run `foreman serve` unattended.
-Still open from the review: a cost gate that cannot stop spend mid-run,
-agents that can outlive the engine, a lease loss that re-runs the developer
-agent without bound, and approve/deny running workflow steps outside the
-engine lock. Closed so far: the browser routes into the API (ADR-0016) and
-API control over shell commands, storage paths and role permissions, plus
-prune deleting non-worktree directories (ADR-0017).
+Sprint 55 closed the six host and money risks the 2026-11-10 review
+reproduced: browser routes into the API (ADR-0016), API control over shell
+commands, paths and role permissions (ADR-0017), unbounded per-run spend,
+agents outliving the engine, the lease loss that re-ran the developer, and
+approve/deny executing outside the engine lock (ADR-0011 amendment). None of
+this has yet been exercised by a real engine run since the fixes; slice 7 is
+that run. Still true: agents run with full permissions as the engine's user
+(sandboxing is Phase 5), and there is no login.
 
 ## Operating decisions (owner, 2026-11-10)
 
@@ -45,8 +46,6 @@ prune deleting non-worktree directories (ADR-0017).
   the task. Spec §6.4 sprint checkpoints (tag, note, event) are not built.
 - ADR-0007 describes a restricted planner session; the shipped manager chat
   is a full-access Claude Code session.
-- ADR-0011 says one engine per project; `foreman approve`/`deny` and the
-  dashboard's Approve still run workflow steps outside the engine lock.
 - The dashboard has diverged from `docs/mockups/foreman-mockup-v6.html`
   (project view, settings, policy matrix, triage, manager chat). The mockup
   is no longer an accurate reference for those screens; a design reference

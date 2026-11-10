@@ -3,6 +3,7 @@ import { startTransition, useEffect, useLayoutEffect, useRef, useState } from "r
 import {
   EmptyPanel,
   ErrorBanner,
+  NoticeBanner,
   EventList,
   NewProjectModal,
   NewSprintModal,
@@ -105,6 +106,7 @@ export default function App({ services, browser }) {
   const [messageText, setMessageText] = useState("");
   const [denyNote, setDenyNote] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [noticeMessage, setNoticeMessage] = useState("");
   const [authRequired, setAuthRequired] = useState(false);
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const [isActionPending, setIsActionPending] = useState(false);
@@ -408,7 +410,9 @@ export default function App({ services, browser }) {
     setIsActionPending(true);
     setErrorMessage("");
     try {
-      await services.approveTask(taskId);
+      const decision = await services.approveTask(taskId);
+      // A decision is recorded, not executed: say whether an engine will act on it.
+      setNoticeMessage(decision?.engine_resident === false ? decision.message || "" : "");
       await refreshAllVisibleState();
     } catch (error) {
       handleError(error);
@@ -421,7 +425,8 @@ export default function App({ services, browser }) {
     setIsActionPending(true);
     setErrorMessage("");
     try {
-      await services.denyTask(taskId, denyNote);
+      const decision = await services.denyTask(taskId, denyNote);
+      setNoticeMessage(decision?.engine_resident === false ? decision.message || "" : "");
       setDenyNote("");
       await refreshAllVisibleState();
     } catch (error) {
@@ -780,6 +785,7 @@ export default function App({ services, browser }) {
         onOpenRoles={() => setRolesOpen(true)}
       />
       <ErrorBanner message={errorMessage} onDismiss={() => setErrorMessage("")} />
+      <NoticeBanner message={noticeMessage} onDismiss={() => setNoticeMessage("")} />
       {isBootstrapping ? (
         <EmptyPanel title="Loading dashboard" message="Reading projects and sprint state from SQLite." />
       ) : null}

@@ -1499,6 +1499,21 @@ export function ErrorBanner({ message, onDismiss }) {
   );
 }
 
+// Something happened that the person should know and that is not an error.
+export function NoticeBanner({ message, onDismiss }) {
+  if (!message) {
+    return null;
+  }
+  return (
+    <div className="notice-banner" role="status">
+      <span>{message}</span>
+      <button className="detail-close" type="button" onClick={onDismiss} aria-label="Dismiss notice">
+        ×
+      </button>
+    </div>
+  );
+}
+
 const WORKFLOW_OPTIONS = [
   { value: "development", label: "development" },
   { value: "development_tiered", label: "development_tiered" },

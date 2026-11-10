@@ -1842,6 +1842,104 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 ],
             )
 
+    def test_a_deferred_approval_is_a_decision_the_engine_then_carries_out(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(
+                store,
+                repo_path=repo_path,
+                workflow_id="development_with_architect",
+                task_title="Approve the architect plan",
+                branch_name="feat/task-1",
+            )
+            executor = ScriptedAgentExecutor({})
+
+            def architect_handler(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
+                self.assertIsNone(carried_output)
+                self.assertIn("Title: Approve the architect plan", prompt)
+                self.write_text(self.work_dir(task, repo_path) / "plan.md", "Initial plan\n")
+                self.commit_all(self.work_dir(task, repo_path), "docs: capture initial plan")
+                return AgentExecutionResult(
+                    outcome="done",
+                    detail="Architect plan ready for approval.",
+                )
+
+            def developer_handler(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
+                self.assertIsNone(carried_output)
+                self.assertIn("## Task: Approve the architect plan", prompt)
+                self.write_text(self.work_dir(task, repo_path) / "plan.md", "approved plan\n")
+                # Commit concrete files on the branch; file names contain keywords
+                # from the task acceptance criteria "Task reaches done after review,
+                # test, and merge." so the completion guard can score them.
+                (self.work_dir(task, repo_path) / "plan_review.py").write_text("def review(): pass\n")
+                (self.work_dir(task, repo_path) / "plan_test.py").write_text("def test(): pass\n")
+                (self.work_dir(task, repo_path) / "plan_merge.py").write_text("def merge(): pass\n")
+                (self.work_dir(task, repo_path) / "ready.txt").write_text("ok\n")
+                self.commit_all(self.work_dir(task, repo_path), "feat: implement approved plan")
+                return AgentExecutionResult(
+                    outcome="done",
+                    detail="Implemented the approved plan.",
+                )
+
+            def reviewer_handler(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
+                del task
+                self.assertIsNone(carried_output)
+                self.assertIn("Implemented the approved plan.", prompt)
+                return AgentExecutionResult(
+                    outcome="approve",
+                    detail="Approved after review.",
+                )
+
+            executor.handlers.update(
+                {
+                    ("architect", 1): architect_handler,
+                    ("developer", 1): developer_handler,
+                    ("code_reviewer", 1): reviewer_handler,
+                }
+            )
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=self.roles,
+                workflows=self.workflows,
+                agent_executor=executor,
+            )
+
+            first_result = orchestrator.run_project(project.id)
+
+            self.assertEqual(first_result.executed_task_ids, (task.id,))
+            self.assertEqual(first_result.blocked_task_ids, (task.id,))
+
+            # The approver is not an engine: it records the decision and stops,
+            # even though it could run the next step itself.
+            approver = ForemanOrchestrator(
+                store,
+                roles=self.roles,
+                workflows=self.workflows,
+                agent_executor=executor,
+            )
+            decision = approver.resume_human_gate(
+                task.id, outcome="approve", note="looks good", defer=True
+            )
+
+            self.assertTrue(decision.deferred)
+            self.assertEqual(decision.task.status, "in_progress")
+            self.assertEqual(decision.task.workflow_current_step, "develop")
+            self.assertEqual(executor.call_counts.get("developer", 0), 0)
+            recorded = store._connection.execute(
+                "SELECT decision FROM human_gate_decisions WHERE task_id = ?", (task.id,)
+            ).fetchall()
+            self.assertEqual([row["decision"] for row in recorded], ["approve"])
+
+            # The engine's next pass continues from the step the decision led to.
+            second_result = orchestrator.run_project(project.id)
+
+            self.assertEqual(second_result.executed_task_ids, (task.id,))
+            self.assertEqual(store.get_task(task.id).status, "done")
+            self.assertEqual(executor.call_counts.get("developer", 0), 1)
+
     def test_human_gate_deny_carries_the_note_back_into_planning(self) -> None:
         repo_path, db_path = self.create_workspace()
         self.initialize_repo(repo_path)

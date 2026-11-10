@@ -1433,33 +1433,47 @@ class DashboardService:
     def approve_task(self, task_id: str) -> dict[str, Any]:
         """Resume one human gate with an approval outcome."""
 
-        self._require_task(task_id)
-        orchestrator = ForemanOrchestrator(self.store)
-        try:
-            result = orchestrator.resume_human_gate(task_id, outcome="approve")
-        except OrchestratorError as exc:
-            raise DashboardActionError(f"Failed to approve: {exc}") from exc
-        return {
-            "status": "approved",
-            "task_id": task_id,
-            "next_step": result.next_step,
-            "deferred": result.deferred,
-        }
+        return self._decide_human_gate(task_id, outcome="approve", note=None)
 
     def deny_task(self, task_id: str, *, note: str | None = None) -> dict[str, Any]:
         """Resume one human gate with a denial outcome."""
 
-        self._require_task(task_id)
+        return self._decide_human_gate(task_id, outcome="deny", note=note)
+
+    def _decide_human_gate(
+        self, task_id: str, *, outcome: str, note: str | None
+    ) -> dict[str, Any]:
+        """Record a gate decision and leave the work to the project's engine.
+
+        The web process never runs workflow steps: it holds neither the
+        project's engine lock nor a task lease, and an agent step would block
+        every other request for as long as it ran. The task is left at the
+        step the decision leads to; a resident engine wakes on the change.
+        """
+
+        task = self._require_task(task_id)
         orchestrator = ForemanOrchestrator(self.store)
         try:
-            result = orchestrator.resume_human_gate(task_id, outcome="deny", note=note)
+            result = orchestrator.resume_human_gate(
+                task_id, outcome=outcome, note=note, defer=True
+            )
         except OrchestratorError as exc:
-            raise DashboardActionError(f"Failed to deny: {exc}") from exc
+            raise DashboardActionError(f"Failed to {outcome}: {exc}") from exc
+        resident = self.store.get_engine_lock(task.project_id) is not None
         return {
-            "status": "denied",
+            "status": "approved" if outcome == "approve" else "denied",
             "task_id": task_id,
             "next_step": result.next_step,
             "deferred": result.deferred,
+            "engine_resident": resident,
+            "message": (
+                f"Decision recorded. The engine continues from `{result.next_step}`."
+                if resident
+                else (
+                    f"Decision recorded. No engine is running, so the task waits at "
+                    f"`{result.next_step}` until you press Run."
+                )
+            ),
         }
 
     def create_human_message(self, task_id: str, *, text: str) -> dict[str, Any]:
