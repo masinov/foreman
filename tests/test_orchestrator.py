@@ -2993,6 +2993,70 @@ class ForemanOrchestratorTests(unittest.TestCase):
             assert refreshed_fresh_run is not None
             self.assertEqual(refreshed_fresh_run.status, "running")
 
+    def test_the_lease_heartbeat_runs_only_while_run_task_does(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+            seen: dict[str, bool] = {}
+
+            class Probe(ScriptedAgentExecutor):
+                def execute(inner, *args, **kwargs):  # noqa: N805
+                    seen["during"] = task.id in orchestrator._task_lease_heartbeats
+                    return super().execute(*args, **kwargs)
+
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=self.roles,
+                workflows=self.workflows,
+                agent_executor=Probe(
+                    {"developer": [AgentExecutionResult(outcome="error", detail="stop here")]}
+                ),
+            )
+            orchestrator.run_project(project.id)
+
+            self.assertTrue(seen.get("during"), "the lease must be heartbeated during a step")
+            self.assertEqual(orchestrator._task_lease_heartbeats, {})
+
+    def test_stale_run_recovery_does_not_cost_the_engine_its_own_lease(self) -> None:
+        """``run_task`` recovers stale runs while holding the lease it just took."""
+
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+            task.status = "in_progress"
+            store.save_task(task)
+            stale_run = Run(
+                id="run-stale",
+                task_id=task.id,
+                project_id=project.id,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude_code",
+                status="running",
+                started_at="2026-03-30T12:20:00Z",
+                created_at="2026-03-30T12:20:00Z",
+            )
+            store.save_run(stale_run)
+            orchestrator = ForemanOrchestrator(store, roles=self.roles, workflows=self.workflows)
+            self.addCleanup(orchestrator.close)
+            self.assertIsNotNone(orchestrator._acquire_task_lease(task, project))
+
+            orchestrator._recover_stale_running_runs(project, task, [stale_run])
+
+            self.assertEqual(store.get_run(stale_run.id).status, "failed")
+            self.assertTrue(orchestrator._renew_task_lease(task, project))
+            lease = store.get_active_lease(
+                project_id=project.id, resource_type="task", resource_id=task.id
+            )
+            self.assertIsNotNone(lease)
+            self.assertEqual(lease.holder_id, orchestrator.holder_id)
+
     def test_recover_stale_running_runs_expires_active_task_lease(self) -> None:
         """Recovery must force-expire the active task lease so the next
         orchestrator can acquire it without waiting for ``expires_at``.
@@ -4037,6 +4101,13 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 blocked_task.blocked_reason,
                 "Sprint cost $5.25 exceeds limit $5.00",
             )
+            # A task parked by a gate is not being worked on: no lease is held.
+            self.assertIsNone(
+                store.get_active_lease(
+                    project_id=project.id, resource_type="task", resource_id=task.id
+                )
+            )
+            self.assertEqual(orchestrator._task_lease_heartbeats, {})
 
             runs = store.list_runs(task_id=task.id)
             self.assertEqual(len(runs), 1)

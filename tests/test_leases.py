@@ -673,3 +673,81 @@ class MigrationTests(unittest.TestCase):
             "SELECT name FROM sqlite_master WHERE type='table' AND name='leases'"
         ).fetchall()
         self.assertEqual(len(rows), 1)
+
+
+class TaskLeaseHeartbeatTests(unittest.TestCase):
+    """A held lease outlives its own duration; a released one stops being renewed."""
+
+    def setUp(self) -> None:
+        import time
+
+        from foreman.models import Project, Sprint, Task
+        from foreman.task_lease import TaskLeaseHeartbeat
+
+        self.time = time
+        self.TaskLeaseHeartbeat = TaskLeaseHeartbeat
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.db_path = str(Path(temp.name) / "foreman.db")
+        self.store = ForemanStore(self.db_path)
+        self.addCleanup(self.store.close)
+        self.store.initialize()
+        self.store.save_project(Project(id="p", name="P", repo_path=temp.name, workflow_id="development"))
+        self.store.save_sprint(Sprint(id="s", project_id="p", title="S", status="active"))
+        self.store.save_task(Task(id="t", sprint_id="s", project_id="p", title="T"))
+
+    def _acquire(self, seconds: float):
+        return self.store.acquire_lease(
+            project_id="p", resource_type="task", resource_id="t",
+            holder_id="engine", lease_token="tok", duration_seconds=seconds,
+        )
+
+    def _renew(self):
+        return self.store.renew_lease(
+            project_id="p", resource_type="task", resource_id="t",
+            holder_id="engine", lease_token="tok", duration_seconds=1.0,
+        )
+
+    def _heartbeat(self):
+        return self.TaskLeaseHeartbeat(
+            db_path=self.db_path, project_id="p", task_id="t", holder_id="engine",
+            lease_token="tok", lease_seconds=1.0, interval_seconds=0.2,
+        )
+
+    def test_without_a_heartbeat_a_long_step_loses_the_lease(self) -> None:
+        self.assertIsNotNone(self._acquire(1.0))
+        self.time.sleep(1.4)
+        self.store.expire_resource_leases(project_id="p", resource_type="task", resource_id="t")
+        self.assertIsNone(self._renew())
+
+    def test_a_heartbeat_keeps_the_lease_through_a_step_longer_than_the_lease(self) -> None:
+        self.assertIsNotNone(self._acquire(1.0))
+        heartbeat = self._heartbeat()
+        heartbeat.start()
+        self.addCleanup(heartbeat.stop)
+        self.time.sleep(2.5)  # two and a half lease lifetimes with no step activity
+        self.store.expire_resource_leases(project_id="p", resource_type="task", resource_id="t")
+        self.assertFalse(heartbeat.lost)
+        self.assertIsNotNone(self._renew())
+
+    def test_a_stopped_heartbeat_lets_the_lease_expire(self) -> None:
+        self.assertIsNotNone(self._acquire(1.0))
+        heartbeat = self._heartbeat()
+        heartbeat.start()
+        heartbeat.stop()
+        self.time.sleep(1.4)
+        self.store.expire_resource_leases(project_id="p", resource_type="task", resource_id="t")
+        self.assertIsNone(self._renew())
+
+    def test_a_refused_renewal_marks_the_heartbeat_lost(self) -> None:
+        self.assertIsNotNone(self._acquire(60.0))
+        heartbeat = self._heartbeat()
+        heartbeat.start()
+        self.addCleanup(heartbeat.stop)
+        self.store.expire_resource_leases(
+            project_id="p", resource_type="task", resource_id="t", force=True
+        )
+        deadline = self.time.monotonic() + 3.0
+        while not heartbeat.lost and self.time.monotonic() < deadline:
+            self.time.sleep(0.05)
+        self.assertTrue(heartbeat.lost)
