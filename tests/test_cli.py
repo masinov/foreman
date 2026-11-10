@@ -2267,7 +2267,7 @@ class ForemanCLISmokeTests(unittest.TestCase):
         self.assertIn("Resume from: human_approval", result.stdout)
         self.assertIn("Next step: develop", result.stdout)
         self.assertIn("Status: in_progress", result.stdout)
-        self.assertIn("Resume deferred: yes", result.stdout)
+        self.assertIn("Engine: none running; continue with `foreman run project-1`", result.stdout)
         self.assertIn("Persisted step: develop", result.stdout)
 
         refreshed = store.get_task(task.id)
@@ -2375,7 +2375,7 @@ class ForemanCLISmokeTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Denied task", result.stdout)
         self.assertIn("Next step: plan", result.stdout)
-        self.assertIn("Resume deferred: yes", result.stdout)
+        self.assertIn("Engine: none running; continue with `foreman run project-1`", result.stdout)
         self.assertIn("Note: rethink the approach", result.stdout)
         self.assertIn("Persisted step: plan", result.stdout)
 

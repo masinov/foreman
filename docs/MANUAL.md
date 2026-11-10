@@ -925,6 +925,12 @@ foreman approve <task-id> --note "ship it"
 foreman deny <task-id> --note "rework error handling"
 ```
 
+Approve and deny record a decision; they do not run anything. The task moves
+to the step the decision leads to and the project's engine continues it. If a
+resident engine (`foreman serve`) is running it picks the task up at once. If
+none is, the command prints `foreman run <project-id>` to continue, and the
+dashboard shows a notice to press Run. See ADR-0011.
+
 Resume is immediate when a native backend is available, else deferred until the
 next run. The dashboard exposes the same via `POST /api/tasks/{id}/approve|deny`
 and the gates endpoints.

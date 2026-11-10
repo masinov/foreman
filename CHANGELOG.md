@@ -9,6 +9,22 @@ memory changes rather than versioned product releases.
 
 ### Sprint 55 — baseline and host safety
 
+- **slice 6, gate decisions through the engine**
+  (`fix/gate-decisions-through-engine`): `foreman approve`, `foreman deny`
+  and the dashboard's Approve and Deny record the decision and leave the
+  task at the step it leads to; the engine continues it. They no longer run
+  workflow steps in the CLI or the web process, outside the engine lock.
+  The CLI prints whether an engine is resident and the command to continue;
+  the dashboard shows a notice when none is. A task paused at a human gate
+  now releases its lease instead of making the engine wait it out.
+  ADR-0011 amended.
+- **slice 5, task lease lifecycle** (`fix/task-lease-lifecycle`): new
+  `foreman/task_lease.py` renews a task's lease on a timer for the whole of
+  `run_task`, so a built-in step longer than the lease (tests, worktree
+  setup) no longer loses it and re-runs the developer; stale-run recovery
+  inside `run_task` re-acquires the lease instead of expiring the one just
+  taken; a task parked `blocked` by a loop, cost or time gate or a failed
+  guard releases its lease.
 - **token split** (`feat/token-usage-breakdown`): runs store input, output,
   cache-read and cache-creation tokens separately (migration 19,
   `TokenUsage`); `run_totals` and `task_run_totals` sum them; the API adds
