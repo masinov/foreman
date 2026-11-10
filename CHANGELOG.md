@@ -9,6 +9,14 @@ memory changes rather than versioned product releases.
 
 ### Sprint 55 — baseline and host safety
 
+- **completion-evidence diff stats from numstat**
+  (`fix/task-parse-completion-evidence-diff-stats-from-git-numstat`): the
+  evidence builder reads changed files and added/deleted totals from
+  `git diff --numstat -z` instead of parsing `git diff --stat`. Paths with
+  spaces and long paths are reported whole, binary files are listed as
+  changed, renames are reported under the new path, and deletion totals are
+  exact. The returned tuple shape is unchanged; its integer is now the
+  changed-file count.
 - **slice 6, gate decisions through the engine**
   (`fix/gate-decisions-through-engine`): `foreman approve`, `foreman deny`
   and the dashboard's Approve and Deny record the decision and leave the

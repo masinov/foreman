@@ -1060,68 +1060,68 @@ class ForemanOrchestrator:
         target_branch: str,
         branch_name: str,
     ) -> str:
-        """Return diff text for one branch, or empty string on failure."""
-        try:
-            result = subprocess.run(
-                ["git", "diff", "--stat", f"{target_branch}...{branch_name}"],
-                cwd=str(repo_path),
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if result.returncode == 0:
-                return result.stdout
-        except Exception:  # pragma: no cover
-            pass
-        try:
-            result2 = subprocess.run(
-                ["git", "diff", target_branch, branch_name, "--stat"],
-                cwd=str(repo_path),
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if result2.returncode == 0:
-                return result2.stdout
-        except Exception:  # pragma: no cover
-            pass
+        """Return ``git diff --numstat -z`` output for one branch, or an empty
+        string on failure."""
+        for rev_args in (
+            [f"{target_branch}...{branch_name}"],
+            [target_branch, branch_name],
+        ):
+            try:
+                result = subprocess.run(
+                    ["git", "diff", "--numstat", "-z", *rev_args],
+                    cwd=str(repo_path),
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="surrogateescape",
+                    check=False,
+                )
+                if result.returncode == 0:
+                    return result.stdout
+            except Exception:  # pragma: no cover
+                pass
         return ""
 
     def _parse_diff_stats(
         self,
         diff_output: str,
     ) -> tuple[tuple[str, ...], int, str]:
-        """Parse git diff --stat output into structured fields.
+        """Parse ``git diff --numstat -z`` output into structured fields.
 
-        Returns (changed_files, total_context_lines, summary_line).
+        Returns ``(changed_files, changed_file_count, summary_line)``. The
+        integer is the number of changed files. The summary has the form
+        ``"N file(s), +A, -D"``. Binary files (``-`` counts) are listed with 0
+        added and 0 deleted. A rename is listed under its new path. Paths are
+        used exactly as git reports them.
         """
-        lines = [l.strip() for l in diff_output.strip().splitlines() if l.strip()]
+        tokens = diff_output.split("\0")
         changed_files: list[str] = []
         total_additions = 0
         total_deletions = 0
-        context_lines = 0
-
-        for line in lines:
-            if " | " in line and "Binary" not in line:
-                parts = line.split()
-                if parts:
-                    changed_files.append(parts[0])
-                if "+" in line:
-                    match = re.search(r"(\d+)\s*\+", line)
-                    if match:
-                        total_additions += int(match.group(1))
-                if "-" in line:
-                    match = re.search(r"(\d+)\s*-", line)
-                    if match:
-                        total_deletions += int(match.group(1))
-            elif re.match(r"\d+ file", line):
-                pass  # summary line captured below
-            elif re.match(r"\d+ insertion", line) or re.match(r"\d+ deletion", line):
-                pass  # cumulative stat line
-            context_lines += 1
+        i = 0
+        while i < len(tokens):
+            token = tokens[i]
+            i += 1
+            if not token:
+                continue
+            parts = token.split("\t", 2)
+            if len(parts) != 3:
+                continue
+            added, deleted, path = parts
+            if path == "":
+                # Rename/copy: the old and new paths follow as separate records.
+                path = tokens[i + 1] if i + 1 < len(tokens) else ""
+                i += 2
+                if not path:
+                    continue
+            changed_files.append(path)
+            if added.isdigit():
+                total_additions += int(added)
+            if deleted.isdigit():
+                total_deletions += int(deleted)
 
         summary = f"{len(changed_files)} file(s), +{total_additions}, -{total_deletions}"
-        return (tuple(changed_files), context_lines, summary)
+        return (tuple(changed_files), len(changed_files), summary)
 
     def _collect_agent_outputs(self, runs: list[Run]) -> tuple[str, ...]:
         """Extract meaningful output snippets from completed agent runs."""
