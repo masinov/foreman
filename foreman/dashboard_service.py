@@ -17,6 +17,7 @@ import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
+from urllib.parse import urlsplit
 
 from .engine_control import (
     EngineStateView,
@@ -46,7 +47,12 @@ from .models import (
 from .orchestrator import ForemanOrchestrator, OrchestratorError
 from .policy import PolicyMatrix, describe_resolution
 from .scaffold import generate_project_id
-from .settings import ProjectSettings, SettingsError
+from .settings import (
+    HOST_LEVEL_SETTINGS,
+    ProjectSettings,
+    SettingsError,
+    changed_host_level_settings,
+)
 from .store import ForemanStore
 from .worktrees import (
     WorktreeEntry,
@@ -118,6 +124,7 @@ class DashboardPermissionError(DashboardServiceError):
 _ALLOWED_ROLE_FIELDS: frozenset[str] = frozenset(
     {"backend", "model", "permission_mode", "timeout_minutes", "max_cost_usd"}
 )
+_HOST_LEVEL_ROLE_FIELDS: frozenset[str] = frozenset({"backend", "permission_mode"})
 
 
 def _validate_role_updates(updates: dict[str, Any]) -> None:
@@ -371,6 +378,8 @@ class DashboardService:
             "spec_path": project.spec_path or "",
             "autonomy_level": project.autonomy_level,
             "settings": dict(project.settings),
+            # Shown read-only in the dashboard; see HOST_LEVEL_SETTINGS.
+            "host_level_settings": sorted(HOST_LEVEL_SETTINGS),
         }
 
     def update_project_settings(
@@ -396,8 +405,21 @@ class DashboardService:
         if settings_updates is not None:
             if not isinstance(settings_updates, dict):
                 raise DashboardValidationError("Settings must be a JSON object.")
+            blocked = changed_host_level_settings(project.settings, settings_updates)
+            if blocked:
+                raise DashboardPermissionError(
+                    f"{', '.join(blocked)} cannot be changed through the dashboard: "
+                    "these settings decide what runs on the host. Change them at a "
+                    f"terminal with `foreman config {project.id} --set <key>=<value>`."
+                )
             merged = dict(project.settings)
-            merged.update(settings_updates)
+            merged.update(
+                {
+                    key: value
+                    for key, value in settings_updates.items()
+                    if key not in HOST_LEVEL_SETTINGS
+                }
+            )
             try:
                 ProjectSettings.from_raw(merged)
             except SettingsError as exc:
@@ -1392,6 +1414,7 @@ class DashboardService:
             "branch": entry.branch,
             "exists": entry.exists,
             "is_integration": entry.is_integration,
+            "owned": entry.owned,
             "task_id": task.id if task is not None else None,
             "task_key": (task.task_key or task.id) if task is not None else None,
             "task_status": task.status if task is not None else None,
@@ -1538,6 +1561,20 @@ class DashboardService:
         with open(role.source_path, encoding="utf-8") as fh:
             doc = tomlkit.load(fh)
 
+        # What an agent may do on the host is not a dashboard decision. A
+        # client that sends back the value it read is not changing anything.
+        blocked = sorted(
+            key
+            for key in _HOST_LEVEL_ROLE_FIELDS
+            if key in updates and updates[key] != doc["agent"].get(key)
+        )
+        if blocked:
+            raise DashboardPermissionError(
+                f"{', '.join(blocked)} cannot be changed through the dashboard: "
+                "these fields decide what an agent may do on the host. Edit "
+                f"{Path(role.source_path).name} in the roles directory instead."
+            )
+
         for key, value in updates.items():
             if key in ("backend", "model", "permission_mode"):
                 doc["agent"][key] = value
@@ -1546,14 +1583,22 @@ class DashboardService:
             elif key == "max_cost_usd":
                 doc["completion"]["max_cost_usd"] = float(value)
 
-        with open(role.source_path, "w", encoding="utf-8") as fh:
-            tomlkit.dump(doc, fh)
-
+        # Validate the new file before it replaces the old one, so a bad value
+        # never leaves a role that fails to load.
+        source_path = Path(role.source_path)
+        candidate = source_path.with_name(f".{source_path.name}.tmp")
         try:
-            updated_role = load_role(role.source_path)
-        except RoleLoadError as exc:
-            raise DashboardActionError(f"Failed to reload role after update: {exc}") from exc
-        return _serialize_role(updated_role)
+            with open(candidate, "w", encoding="utf-8") as fh:
+                tomlkit.dump(doc, fh)
+            try:
+                load_role(candidate)
+            except RoleLoadError as exc:
+                raise DashboardValidationError(f"Invalid role update: {exc}") from exc
+            os.replace(candidate, source_path)
+        finally:
+            candidate.unlink(missing_ok=True)
+
+        return _serialize_role(load_role(source_path))
 
     def get_project_status(self, project_id: str) -> str:
         """Derive one project status from its task states."""
@@ -1871,6 +1916,10 @@ class DashboardService:
                     f"'source.{field_name}' must be a string."
                 )
             normalized[field_name] = value.strip() or None
+        url = normalized["url"]
+        if url is not None and urlsplit(url).scheme.lower() not in {"http", "https"}:
+            # The dashboard renders this as a link.
+            raise DashboardValidationError("'source.url' must be an http or https URL.")
         return normalized
 
     def _ensure_intake_sprint(self, project: Project) -> Sprint:

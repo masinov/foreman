@@ -15,6 +15,47 @@ from .policy import (
 )
 
 
+# Settings that decide what runs on the host, where Foreman writes, or where it
+# sends data and credentials. They are changed by an operator at a terminal
+# (`foreman config <project> --set key=value`), never over the dashboard API:
+# an API caller who could set them could run commands as the engine's user.
+HOST_LEVEL_SETTINGS: frozenset[str] = frozenset(
+    {
+        "test_command",
+        "worktree_setup_command",
+        "worktree_root",
+        "worktree_link_paths",
+        "context_dir",
+        "judge_base_url",
+        "judge_api_key_env",
+    }
+)
+
+
+def changed_host_level_settings(
+    current: dict[str, Any], updates: dict[str, Any]
+) -> tuple[str, ...]:
+    """Return the host-level keys ``updates`` would change, sorted.
+
+    A client that sends back the settings it read is not changing anything, so
+    a key counts only when its value differs. An absent key and an empty value
+    are the same setting.
+    """
+
+    def normalized(value: Any) -> Any:
+        if value is None or value == "" or value == [] or value == ():
+            return None
+        return list(value) if isinstance(value, tuple) else value
+
+    return tuple(
+        sorted(
+            key
+            for key in HOST_LEVEL_SETTINGS
+            if key in updates and normalized(updates[key]) != normalized(current.get(key))
+        )
+    )
+
+
 class SettingsError(ValueError):
     """Raised when project settings fail validation."""
 

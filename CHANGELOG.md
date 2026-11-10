@@ -9,6 +9,18 @@ memory changes rather than versioned product releases.
 
 ### Sprint 55 — baseline and host safety
 
+- **slice 2, host-level settings** (`fix/host-level-settings`): the dashboard
+  API refuses changes to `test_command`, `worktree_setup_command`,
+  `worktree_root`, `worktree_link_paths`, `context_dir`, `judge_base_url`
+  and `judge_api_key_env` (403 naming the key and the `foreman config`
+  command) and to a role's `backend` and `permission_mode`; the Settings and
+  Roles screens show them read-only. Worktree removal deletes only git
+  worktrees of the project's repository and never the root; other
+  directories are listed as not owned and kept. Role files are validated
+  before they replace the old one. Intake source URLs must be http(s).
+  ADR-0017.
+- CI: install setuptools before the editable install (first run failed in
+  `tests/test_cli.py` on a fresh 3.12 virtualenv).
 - **slice 1, browser-origin defence** (`fix/dashboard-browser-origin-defence`):
   new `foreman/dashboard_guard.py`; every `/api` request except intake is
   refused when its `Host` is not a trusted name (token-less binds), when its

@@ -80,6 +80,9 @@ class WorktreeEntry:
     slug: str
     exists: bool
     is_integration: bool = False
+    # False for a directory under the worktree root that is not a git worktree
+    # of this repository. Foreman lists such a directory and never deletes it.
+    owned: bool = True
 
 
 def worktree_root(project: Project) -> Path:
@@ -277,6 +280,12 @@ class WorktreeManager:
                 f"Refusing to remove {path}: it is outside the Foreman worktree root "
                 f"{self.root}."
             )
+        if _resolve(path) == _resolve(self.root):
+            raise WorktreeError(f"Refusing to remove the worktree root {self.root} itself.")
+        if path.exists() and not self.is_owned(path):
+            # The root is a setting, so it can point at a directory holding
+            # other things. Only a git worktree of this repository is ours.
+            return False
         removed = False
         if path.exists() or self._is_registered(path):
             result = run_git(
@@ -323,6 +332,7 @@ class WorktreeManager:
                         slug=child.name,
                         exists=True,
                         is_integration=child.name == INTEGRATION_WORKTREE_NAME,
+                        owned=self._is_linked_to_this_repository(child),
                     )
                 )
         return tuple(sorted(entries, key=lambda entry: entry.slug))
@@ -357,6 +367,41 @@ class WorktreeManager:
             return False
         result = run_git(path, "rev-parse", "--is-inside-work-tree", check=False)
         return result.returncode == 0 and result.stdout.strip() == "true"
+
+    def is_owned(self, path: Path) -> bool:
+        """Return whether ``path`` is a git worktree of this repository.
+
+        True for a tree git has registered, and for a directory whose ``.git``
+        file still points into this repository's worktree admin area (a tree
+        whose registration was pruned while the directory survived).
+        """
+
+        return self._is_registered(path) or self._is_linked_to_this_repository(path)
+
+    def _is_linked_to_this_repository(self, path: Path) -> bool:
+        git_file = path / ".git"
+        if not git_file.is_file():
+            return False
+        try:
+            first_line = git_file.read_text(encoding="utf-8", errors="replace").splitlines()[0]
+        except (OSError, IndexError):
+            return False
+        if not first_line.startswith("gitdir:"):
+            return False
+        target = Path(first_line[len("gitdir:") :].strip())
+        if not target.is_absolute():
+            target = path / target
+        result = run_git(self.repo_path, "rev-parse", "--git-common-dir", check=False)
+        if result.returncode != 0 or not result.stdout.strip():
+            return False
+        common_dir = Path(result.stdout.strip())
+        if not common_dir.is_absolute():
+            common_dir = self.repo_path / common_dir
+        try:
+            _resolve(target).relative_to(_resolve(common_dir) / "worktrees")
+        except ValueError:
+            return False
+        return True
 
     def _is_inside_root(self, path: Path) -> bool:
         try:
@@ -645,7 +690,9 @@ def enforce_worktree_limit(
 
     manager = manager or WorktreeManager(project)
     limit = max_live_worktrees(project)
-    entries = [entry for entry in manager.list() if not entry.is_integration]
+    entries = [
+        entry for entry in manager.list() if not entry.is_integration and entry.owned
+    ]
     live_before = sum(1 for entry in entries if entry.exists)
     if limit <= 0:
         return ReclaimOutcome(
@@ -738,8 +785,11 @@ def prune_project_worktrees(
 
     Returns ``(removed, kept)``. A worktree is removed when it belongs to a
     task that is done or cancelled, or when no task in the project claims it
-    any more (a task that was deleted, or a directory left by an older
-    layout). The integration worktree and the worktrees of live tasks stay.
+    any more (a task that was deleted). The integration worktree and the
+    worktrees of live tasks stay, and so does any directory under the root
+    that is not a git worktree of this repository: the root is a setting, and
+    a wrong value must not turn prune into a recursive delete of someone
+    else's files.
     """
 
     manager = WorktreeManager(project)
@@ -756,7 +806,7 @@ def prune_project_worktrees(
     removed: list[WorktreeEntry] = []
     kept: list[WorktreeEntry] = []
     for entry in manager.list():
-        if entry.is_integration or entry.slug in slugs_to_keep:
+        if entry.is_integration or entry.slug in slugs_to_keep or not entry.owned:
             kept.append(entry)
             continue
         manager.remove_path(entry.path)
