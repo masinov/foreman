@@ -10,7 +10,7 @@ import time
 from typing import TYPE_CHECKING, Any, Callable
 
 from .context import context_directory, relative_project_path, write_project_context
-from .git import GitMergeResult, is_worktree_clean, merge_branch, merge_preflight, run_git
+from .git import GitMergeResult, head_sha, is_worktree_clean, merge_branch, merge_preflight, run_git
 from .models import CompletionEvidence, Project, Task, utc_now_text
 from .notifications import resolve_notification_policy
 from .runner.process import ManagedProcess
@@ -145,6 +145,7 @@ class BuiltinExecutor:
                 "working_dir": str(working_dir),
             },
         )
+        started_at = time.monotonic()
         proc = subprocess.Popen(
             ["bash", "-lc", command],
             cwd=working_dir,
@@ -204,6 +205,7 @@ class BuiltinExecutor:
                 proc.wait()
                 managed.close()
 
+        duration_seconds = round(max(time.monotonic() - started_at, 0.0), 1)
         stdout_text = "".join(stdout_chunks).strip()
         stderr_text = "".join(stderr_chunks).strip()
         output = _combine_output(stdout_text, stderr_text)
@@ -217,7 +219,11 @@ class BuiltinExecutor:
             exit_code: int | None = None
         else:
             outcome = "success" if proc.returncode == 0 else "failure"
-            detail = output_tail or f"Command exited with {proc.returncode}."
+            verdict = "passed" if proc.returncode == 0 else "failed"
+            detail = (
+                f"Tests {verdict} in {duration_seconds:.1f}s (exit {proc.returncode})."
+                + (f"\n\n{output_tail}" if output_tail else "")
+            )
             exit_code = proc.returncode
         emit(
             "engine.test_run",
@@ -227,6 +233,8 @@ class BuiltinExecutor:
                 "exit_code": exit_code,
                 "passed": exit_code == 0,
                 "timed_out": timed_out,
+                "duration_seconds": duration_seconds,
+                "head_sha": _safe_head_sha(working_dir),
                 "stdout": stdout_text,
                 "stderr": stderr_text,
                 "output_tail": output_tail,
@@ -873,6 +881,13 @@ def _bool_setting(project: Project, key: str, *, default: bool) -> bool:
     if isinstance(value, int):
         return bool(value)
     return default
+
+
+def _safe_head_sha(working_dir: Path) -> str | None:
+    try:
+        return head_sha(working_dir) or None
+    except OSError:
+        return None
 
 
 def _combine_output(stdout: str, stderr: str) -> str:
