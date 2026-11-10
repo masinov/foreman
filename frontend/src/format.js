@@ -30,6 +30,22 @@ export function formatCompactCount(value) {
   return compactNumberFormatter.format(value || 0);
 }
 
+// Where the tokens went. Cache reads dominate a long agent session and are
+// counted at a different rate, so they are shown apart from fresh input and
+// output instead of being folded into one number.
+export function formatTokenUsage(usage) {
+  if (!usage) {
+    return "";
+  }
+  const parts = [
+    ["in", usage.input],
+    ["out", usage.output],
+    ["cache read", usage.cache_read],
+    ["cache write", usage.cache_creation],
+  ].filter(([, count]) => count > 0);
+  return parts.map(([label, count]) => `${formatCompactCount(count)} ${label}`).join(" · ");
+}
+
 export function formatTokenCount(value) {
   const tokenCount = value || 0;
   if (tokenCount >= 1000) {

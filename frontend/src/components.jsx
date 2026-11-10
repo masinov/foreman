@@ -19,6 +19,7 @@ import {
   formatSprintStatus,
   formatTaskStatus,
   formatTokenCount,
+  formatTokenUsage,
   formatWorkflowCounts,
   formatWorkflowLabel,
   getEventCategory,
@@ -1315,6 +1316,12 @@ export function TaskDetailDrawer({
             <span className="detail-field-label">Tokens</span>
             <span className="detail-field-value">{formatTokenCount(task.totals.total_token_count)}</span>
           </div>
+          {formatTokenUsage(task.totals.token_usage) ? (
+            <div className="detail-field">
+              <span className="detail-field-label">Token split</span>
+              <span className="detail-field-value">{formatTokenUsage(task.totals.token_usage)}</span>
+            </div>
+          ) : null}
           <div className="detail-field">
             <span className="detail-field-label">Step visits</span>
             <span className="detail-field-value">{formatWorkflowCounts(task.step_visit_counts)}</span>
@@ -1455,7 +1462,9 @@ export function TaskDetailDrawer({
                   </span>
                   <span className="run-entry-right">
                     <span className={`run-outcome outcome-${run.status}`}>{run.status}</span>
-                    <div className="run-tokens">{formatTokenCount(run.token_count)}</div>
+                    <div className="run-tokens" title={formatTokenUsage(run.token_usage) || undefined}>
+                      {formatTokenUsage(run.token_usage) || formatTokenCount(run.token_count)}
+                    </div>
                   </span>
                 </div>
               ))

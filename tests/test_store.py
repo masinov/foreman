@@ -891,6 +891,7 @@ class ForemanStoreTests(unittest.TestCase):
                     "run_count": 3,
                     "total_cost_usd": 5.5,
                     "total_token_count": 350,
+                    "token_usage": {"input": 0, "output": 0, "cache_read": 0, "cache_creation": 0},
                     "total_duration_ms": 3500,
                     "zero_cost_token_runs": 1,
                 },
@@ -901,6 +902,7 @@ class ForemanStoreTests(unittest.TestCase):
                     "run_count": 2,
                     "total_cost_usd": 1.5,
                     "total_token_count": 150,
+                    "token_usage": {"input": 0, "output": 0, "cache_read": 0, "cache_creation": 0},
                     "total_duration_ms": 2500,
                     "zero_cost_token_runs": 1,
                 },
@@ -1033,3 +1035,45 @@ class ForemanStoreTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TokenUsageTests(unittest.TestCase):
+    def test_a_run_keeps_its_token_split_and_totals_sum_it(self) -> None:
+        from foreman.models import Run, TokenUsage
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with ForemanStore(Path(tmp) / "foreman.db") as store:
+                store.initialize()
+                store.save_project(Project(id="p", name="P", repo_path=tmp, workflow_id="development"))
+                store.save_sprint(Sprint(id="s", project_id="p", title="S", status="active"))
+                store.save_task(Task(id="t", sprint_id="s", project_id="p", title="T"))
+                for index, usage in enumerate(
+                    (
+                        TokenUsage(input=10, output=500, cache_read=9000, cache_creation=400),
+                        TokenUsage(input=5, output=100, cache_read=1000),
+                    )
+                ):
+                    store.save_run(
+                        Run(
+                            id=f"r{index}",
+                            task_id="t",
+                            project_id="p",
+                            role_id="developer",
+                            workflow_step="develop",
+                            agent_backend="claude_code",
+                            status="completed",
+                            token_count=usage.input + usage.output,
+                            token_usage=usage,
+                        )
+                    )
+                self.assertEqual(store.get_run("r0").token_usage.cache_read, 9000)
+                expected = {"input": 15, "output": 600, "cache_read": 10000, "cache_creation": 400}
+                self.assertEqual(store.run_totals(task_id="t")["token_usage"], expected)
+                self.assertEqual(store.task_run_totals(project_id="p")[0]["token_usage"], expected)
+
+    def test_usage_from_a_payload_ignores_junk(self) -> None:
+        from foreman.models import TokenUsage
+
+        self.assertIsNone(TokenUsage.from_mapping(None))
+        usage = TokenUsage.from_mapping({"input": 3, "output": "x", "cache_read": -4, "cache_creation": True})
+        self.assertEqual(usage.as_dict(), {"input": 3, "output": 0, "cache_read": 0, "cache_creation": 0})

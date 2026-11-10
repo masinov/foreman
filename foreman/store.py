@@ -30,6 +30,7 @@ from .models import (
     NotificationDestination,
     Project,
     Run,
+    TokenUsage,
     Sprint,
     TASK_STATUSES,
     Task,
@@ -234,6 +235,17 @@ def _row_to_task(row: sqlite3.Row) -> Task:
     )
 
 
+def _token_usage_from_row(row: sqlite3.Row) -> dict[str, int]:
+    """Return the summed token split of an aggregate row."""
+
+    return TokenUsage(
+        input=int(row["input_tokens"]),
+        output=int(row["output_tokens"]),
+        cache_read=int(row["cache_read_tokens"]),
+        cache_creation=int(row["cache_creation_tokens"]),
+    ).as_dict()
+
+
 def _row_to_run(row: sqlite3.Row) -> Run:
     return Run(
         id=row["id"],
@@ -251,6 +263,12 @@ def _row_to_run(row: sqlite3.Row) -> Run:
         prompt_text=row["prompt_text"],
         cost_usd=row["cost_usd"],
         token_count=row["token_count"],
+        token_usage=TokenUsage(
+            input=row["input_tokens"],
+            output=row["output_tokens"],
+            cache_read=row["cache_read_tokens"],
+            cache_creation=row["cache_creation_tokens"],
+        ),
         duration_ms=row["duration_ms"],
         retry_count=row["retry_count"],
         failure_type=row["failure_type"],
@@ -1036,8 +1054,9 @@ class ForemanStore:
                     id, task_id, project_id, role_id, workflow_step, status, outcome,
                     outcome_detail, agent_backend, model, session_id, branch_name,
                     prompt_text, cost_usd, token_count, duration_ms, retry_count,
-                    failure_type, started_at, completed_at, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    failure_type, started_at, completed_at, created_at,
+                    input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     task_id = excluded.task_id,
                     project_id = excluded.project_id,
@@ -1058,7 +1077,11 @@ class ForemanStore:
                     failure_type = excluded.failure_type,
                     started_at = excluded.started_at,
                     completed_at = excluded.completed_at,
-                    created_at = excluded.created_at
+                    created_at = excluded.created_at,
+                    input_tokens = excluded.input_tokens,
+                    output_tokens = excluded.output_tokens,
+                    cache_read_tokens = excluded.cache_read_tokens,
+                    cache_creation_tokens = excluded.cache_creation_tokens
                 """,
                 (
                     run.id,
@@ -1082,6 +1105,10 @@ class ForemanStore:
                     run.started_at,
                     run.completed_at,
                     run.created_at,
+                    run.token_usage.input,
+                    run.token_usage.output,
+                    run.token_usage.cache_read,
+                    run.token_usage.cache_creation,
                 ),
             )
 
@@ -1591,6 +1618,10 @@ class ForemanStore:
                 COUNT(runs.id) AS run_count,
                 COALESCE(SUM(runs.cost_usd), 0.0) AS total_cost_usd,
                 COALESCE(SUM(runs.token_count), 0) AS total_token_count,
+                COALESCE(SUM(runs.input_tokens), 0) AS input_tokens,
+                COALESCE(SUM(runs.output_tokens), 0) AS output_tokens,
+                COALESCE(SUM(runs.cache_read_tokens), 0) AS cache_read_tokens,
+                COALESCE(SUM(runs.cache_creation_tokens), 0) AS cache_creation_tokens,
                 COALESCE(SUM(runs.duration_ms), 0) AS total_duration_ms,
                 COALESCE(
                     SUM(
@@ -1613,6 +1644,7 @@ class ForemanStore:
             "run_count": int(row["run_count"]),
             "total_cost_usd": float(row["total_cost_usd"]),
             "total_token_count": int(row["total_token_count"]),
+            "token_usage": _token_usage_from_row(row),
             "total_duration_ms": int(row["total_duration_ms"]),
             "zero_cost_token_runs": int(row["zero_cost_token_runs"]),
         }
@@ -1645,6 +1677,10 @@ class ForemanStore:
                 COUNT(runs.id) AS run_count,
                 COALESCE(SUM(runs.cost_usd), 0.0) AS total_cost_usd,
                 COALESCE(SUM(runs.token_count), 0) AS total_token_count,
+                COALESCE(SUM(runs.input_tokens), 0) AS input_tokens,
+                COALESCE(SUM(runs.output_tokens), 0) AS output_tokens,
+                COALESCE(SUM(runs.cache_read_tokens), 0) AS cache_read_tokens,
+                COALESCE(SUM(runs.cache_creation_tokens), 0) AS cache_creation_tokens,
                 COALESCE(SUM(runs.duration_ms), 0) AS total_duration_ms
             FROM tasks
             LEFT JOIN runs ON runs.task_id = tasks.id
@@ -1675,6 +1711,7 @@ class ForemanStore:
                 "run_count": int(row["run_count"]),
                 "total_cost_usd": float(row["total_cost_usd"]),
                 "total_token_count": int(row["total_token_count"]),
+                "token_usage": _token_usage_from_row(row),
                 "total_duration_ms": int(row["total_duration_ms"]),
             }
             for row in rows

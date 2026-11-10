@@ -10,6 +10,7 @@ import {
   formatEventSummary,
   formatHeartbeatAge,
   formatSelectionMode,
+  formatTokenUsage,
   formatWorkflowLabel,
   getEventCategory,
   getTaskTypeClass,
@@ -127,5 +128,18 @@ describe("formatBlockedKind", () => {
     expect(formatBlockedKind("gate")).toBe("human gate");
     expect(formatBlockedKind("engine")).toBe("engine");
     expect(formatBlockedKind(null)).toBe("");
+  });
+});
+
+describe("formatTokenUsage", () => {
+  it("names each part and leaves out the empty ones", () => {
+    expect(
+      formatTokenUsage({ input: 10, output: 5000, cache_read: 900000, cache_creation: 0 }),
+    ).toBe("10 in · 5K out · 900K cache read");
+  });
+
+  it("is empty when nothing was reported", () => {
+    expect(formatTokenUsage(null)).toBe("");
+    expect(formatTokenUsage({ input: 0, output: 0, cache_read: 0, cache_creation: 0 })).toBe("");
   });
 });

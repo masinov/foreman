@@ -714,6 +714,7 @@ def handle_history(args: argparse.Namespace) -> int:
                 f"status={run.status}",
                 f"cost_usd={_format_usd(run.cost_usd)}",
                 f"tokens={run.token_count}",
+                *_token_split_parts(run.token_usage.as_dict()),
                 f"duration_ms={run.duration_ms or 0}",
                 f"retries={run.retry_count}",
             ]
@@ -982,6 +983,11 @@ def handle_cost(args: argparse.Namespace) -> int:
             f"tokens={totals['total_token_count']} | "
             f"cost_usd={_format_usd(float(totals['total_cost_usd']))} | "
             f"duration_ms={totals['total_duration_ms']}"
+        ),
+        *(
+            [f"Token split: {' | '.join(_token_split_parts(totals.get('token_usage')))}"]
+            if _token_split_parts(totals.get("token_usage"))
+            else []
         ),
         "By task:",
     ]
@@ -3041,6 +3047,19 @@ def _set_handler(
 ) -> argparse.ArgumentParser:
     parser.set_defaults(handler=handler, command_path=command_path)
     return parser
+
+
+def _token_split_parts(usage: dict[str, int] | None) -> list[str]:
+    """Return ``key=value`` parts for a token split, or nothing when it is empty."""
+
+    if not usage or not any(usage.values()):
+        return []
+    return [
+        f"in={usage.get('input', 0)}",
+        f"out={usage.get('output', 0)}",
+        f"cache_read={usage.get('cache_read', 0)}",
+        f"cache_write={usage.get('cache_creation', 0)}",
+    ]
 
 
 def build_parser() -> argparse.ArgumentParser:

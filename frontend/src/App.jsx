@@ -23,6 +23,7 @@ import {
   deriveEngineState,
   engineState,
   formatCompactCount,
+  formatTokenUsage,
   formatCount,
   formatEngineSummary,
   formatSprintStatus,
@@ -1149,6 +1150,9 @@ export default function App({ services, browser }) {
                   title={costUnknownNote(currentSprint.totals) || undefined}
                 >
                   <span className="sv">{formatCompactCount(currentSprint.totals.total_token_count)}</span> tokens
+                  {formatTokenUsage(currentSprint.totals.token_usage) ? (
+                    <span className="sprint-stat-note"> ({formatTokenUsage(currentSprint.totals.token_usage)})</span>
+                  ) : null}
                   {costUnknownNote(currentSprint.totals) ? (
                     <span className="sprint-stat-note"> ({costUnknownNote(currentSprint.totals)})</span>
                   ) : null}

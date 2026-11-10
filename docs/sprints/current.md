@@ -26,6 +26,7 @@ spend, no orphaned agents, and one engine per project in fact.
 | 2 | Host-level settings out of the general API: shell commands, storage paths, judge endpoint, and role backend and permission mode are refused over HTTP and shown read-only; prune deletes only git worktrees of the project; http(s)-only source URLs; atomic role writes | done | Claude, by hand | `fix/host-level-settings`: `HOST_LEVEL_SETTINGS`, service and worktree changes, ADR-0017, 11 Python tests and 1 frontend test |
 | 3 | Real cost control: the per-run ceiling is passed to Claude Code as `--max-budget-usd`; a finished run is never turned into a kill; a budget stop is a cost kill that keeps its cost; role ceilings of $2 to $30 in place of $1,000; `runner_max_cost_usd` can lower a role ceiling; a cost limit of 0 means off; reading stops at the result line and leftover process groups are swept | done | Claude, by hand | `fix/runner-cost-control`: runner, process, orchestrator, `roles/*.toml`, 8 tests |
 | 4 | Runner termination contract: stop at the terminal event and sweep the process group (landed with slice 3); SIGHUP is a shutdown; agents started by the engine receive SIGTERM when the engine dies without a handler running (Linux parent-death signal) | done | Claude, by hand | `fix/runner-parent-death`: `runner/process.py`, 3 tests |
+| 4b | Token usage decomposed: each run stores input, output, cache-read and cache-creation tokens as the backend reports them; totals, the API, `foreman cost` / `history`, the task drawer, run history and the sprint footer show the split | done | Claude, by hand | `feat/token-usage-breakdown`: `TokenUsage`, migration 19, runner, orchestrator, store, service, CLI, frontend, 5 tests |
 | 5 | Task lease lifecycle: timer heartbeat for the whole hold, no self-expiry in stale-run recovery, one `block_task()` helper that releases the lease | todo | | orchestrator, store, tests |
 | 6 | Approve and deny record a decision and enqueue an engine command; no workflow execution in the CLI or the web process | todo | | orchestrator, serve, CLI, service, ADR-0011 amendment, tests |
 | 7 | First delegation trial: one self-contained slice from Phase 2 run through Foreman on a cheaper model, compared with a by-hand slice of similar size | todo | | cost and outcome note in this file |
@@ -79,3 +80,11 @@ process group, and is set only for children started from the main thread
 (Linux ties it to the starting thread). The engine starts agents there. The
 manager chat's subprocess is separate code and is not covered; it moves onto
 the runner in Phase 5.
+
+### Token split notes
+
+Owner decision (2026-11-10): models are used through a subscription, so the
+dollar figure is notional and tokens are the real measure. `token_count`
+keeps its meaning (fresh input plus output) so existing numbers do not jump;
+the cache figures sit beside it. Runs recorded before migration 19 have no
+split and show only the old total. Codex runs report no split.
