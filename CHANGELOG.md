@@ -9,6 +9,14 @@ memory changes rather than versioned product releases.
 
 ### Sprint 55 — baseline and host safety
 
+- **slice 1, browser-origin defence** (`fix/dashboard-browser-origin-defence`):
+  new `foreman/dashboard_guard.py`; every `/api` request except intake is
+  refused when its `Host` is not a trusted name (token-less binds), when its
+  `Origin` is not the dashboard's own or an allowlisted one, or when the
+  browser labels a write cross-site; request bodies must be declared
+  `application/json`; `?token=` works on GET only; `/docs`, `/redoc` and
+  `/openapi.json` are off. Closes the cross-site and DNS-rebinding routes to
+  the settings API reproduced in the 2026-11-10 review. ADR-0016.
 - **slice 0, baseline** (`chore/phase0-baseline`): merged the three operator
   UI fixes with the policy matrix and triage UI and rebuilt the bundle; added
   CI (`.github/workflows/ci.yml`: Python suite on 3.10 and 3.12, ruff,

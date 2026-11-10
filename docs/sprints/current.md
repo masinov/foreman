@@ -22,7 +22,7 @@ spend, no orphaned agents, and one engine per project in fact.
 | # | Slice | Status | Executed by | Deliverable |
 |---|-------|--------|-------------|-------------|
 | 0 | Baseline: merge the three operator UI fixes with `main`, rebuild the bundle, CI, ruff baseline, compact STATUS, review in the repo | done (unmerged) | Claude, by hand | `chore/phase0-baseline`, `.github/workflows/ci.yml`, `docs/prs/chore-phase0-baseline.md` |
-| 1 | Browser-origin defence: JSON content type required on mutating routes, Origin and Host checks, a token always required (generated for loopback), no token in query strings except the stream, `/docs` behind the token | todo | | backend, runtime, frontend token bootstrap, tests |
+| 1 | Browser-origin defence: Host check on token-less binds, Origin and `Sec-Fetch-Site` checks, JSON content type required for bodies, query-string token on GET only, generated docs routes off | done (unmerged) | Claude, by hand | `fix/dashboard-browser-origin-defence`: `foreman/dashboard_guard.py`, ADR-0016, 12 tests in `tests/test_dashboard_safety.py`, live check with attack requests and a real browser |
 | 2 | Host-level settings out of the general API: `test_command`, `worktree_setup_command`, `worktree_root`, `context_dir`, `judge_*`, role backend and permission mode are operator-only (CLI); prune only git-registered worktrees of the project; http(s)-only source URLs | todo | | service, worktrees, CLI, tests |
 | 3 | Real cost control: `--max-budget-usd`, usage from `message.usage` including cache tokens, a gate never drops `agent.completed`, per-role ceilings, `0` means off | todo | | runner, roles, orchestrator, tests |
 | 4 | Runner termination contract: stop at the terminal event, always kill the process group, SIGHUP handler, parent-death signal | todo | | `runner/process.py`, runners, tests |
@@ -35,3 +35,9 @@ spend, no orphaned agents, and one engine per project in fact.
 - Planner step per task (old slice 5) moves to Phase 5 of the finish plan.
 - Database reconciliation for FOR-11 and FOR-12 waits for owner confirmation
   (see `docs/STATUS.md`).
+
+### Slice 1 notes
+
+The planned "token always required, generated for loopback" was dropped: the
+Host and Origin checks close both browser routes without adding a secret to
+bootstrap and store. Rationale in ADR-0016.

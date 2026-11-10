@@ -10,7 +10,8 @@ Current snapshot only. History up to 2026-09-08 (sprints 1 to 54) is in
   plan, 0 to 5).
 - Active sprint: **sprint 55 — baseline and host safety**
   (`docs/sprints/current.md`). Sprint 54 is closed and archived.
-- Current branch: `chore/phase0-baseline` (Phase 0). Not yet merged to `main`.
+- Branches awaiting merge, in order: `chore/phase0-baseline` (slice 0), then
+  `fix/dashboard-browser-origin-defence` (slice 1, branched from it).
 - `main` is at `79d78ab` and is 10 commits ahead of `origin/main` (unpushed).
 
 ## Do not run unattended yet
@@ -18,7 +19,8 @@ Current snapshot only. History up to 2026-09-08 (sprints 1 to 54) is in
 Until sprint 55 slices 1 to 6 land, do not run `foreman serve` unattended and
 do not open the dashboard in a browser profile used for general browsing. The
 review reproduced: shell commands settable through the settings API and run by
-the engine, no CSRF or Origin defence on the default loopback bind, worktree
+the engine (the browser route to it is closed by slice 1, ADR-0016; the API
+itself still accepts them), worktree
 prune deleting arbitrary directories, a cost gate that cannot stop spend, and
 a lease loss that re-runs the developer agent without bound.
 

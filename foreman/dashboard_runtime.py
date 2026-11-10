@@ -7,6 +7,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .dashboard_guard import trusted_hosts_for_bind
 from .store import ForemanStore
 
 
@@ -171,6 +172,9 @@ def run_dashboard_server(
     for notice in security.notices:
         print(notice)
     print("Press Ctrl+C to stop.")
+    # Without a token nothing but the Host header tells the dashboard's own
+    # page from a hostile name re-pointed at this machine.
+    trusted_hosts = None if security.auth_token else trusted_hosts_for_bind(host)
     if reload:
         os.environ["FOREMAN_DASHBOARD_DB_PATH"] = db_path
         os.environ["FOREMAN_DASHBOARD_FRONTEND_MODE"] = frontend_mode
@@ -180,6 +184,10 @@ def run_dashboard_server(
             os.environ.pop("FOREMAN_DASHBOARD_TOKEN", None)
         os.environ["FOREMAN_DASHBOARD_ALLOWED_ORIGINS"] = ",".join(allowed_origins)
         os.environ["FOREMAN_DASHBOARD_MANAGER"] = "1" if security.manager_enabled else "0"
+        if trusted_hosts is None:
+            os.environ.pop("FOREMAN_DASHBOARD_TRUSTED_HOSTS", None)
+        else:
+            os.environ["FOREMAN_DASHBOARD_TRUSTED_HOSTS"] = ",".join(trusted_hosts)
         if frontend_mode == "dev":
             os.environ["FOREMAN_DASHBOARD_FRONTEND_DEV_URL"] = frontend_dev_url
         else:
@@ -194,6 +202,7 @@ def run_dashboard_server(
             auth_token=security.auth_token,
             allowed_origins=allowed_origins,
             manager_enabled=security.manager_enabled,
+            trusted_hosts=trusted_hosts,
         )
         app_kwargs = {}
 

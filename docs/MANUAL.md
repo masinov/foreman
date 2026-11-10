@@ -1098,9 +1098,9 @@ export FOREMAN_DASHBOARD_TOKEN="$(openssl rand -hex 24)"
 ```
 
 - Every `/api` request must carry the token: `Authorization: Bearer <token>`,
-  `X-Foreman-Token: <token>`, or `?token=<token>` (used by the event stream,
-  because `EventSource` cannot set headers). Missing or wrong tokens get
-  **401**. The React shell asks for the token once and keeps it in the
+  `X-Foreman-Token: <token>`, or `?token=<token>` on GET requests only (used
+  by the event stream, because `EventSource` cannot set headers). Missing or
+  wrong tokens get **401**. The React shell asks for the token once and keeps it in the
   browser's local storage.
 - A non-loopback bind **without** a token is refused. Pass
   `--allow-insecure-network` only on a network you trust.
@@ -1108,9 +1108,18 @@ export FOREMAN_DASHBOARD_TOKEN="$(openssl rand -hex 24)"
   enabled on loopback binds and disabled elsewhere (its routes answer **403**)
   unless you pass `--allow-remote-manager`, in which case every token holder
   can run that agent.
-- Cross-origin browser calls are off. The shipped frontend is same-origin
-  (served by FastAPI, or proxied by Vite). Pass `--allowed-origin <origin>`
-  (repeatable) if another web app must call the API from a browser.
+- Cross-origin browser calls are refused with **403**, not only left without
+  CORS headers: a request whose `Origin` is not the dashboard's own is
+  rejected, and so is a write the browser labels cross-site. The shipped
+  frontend is same-origin (served by FastAPI, or proxied by Vite). Pass
+  `--allowed-origin <origin>` (repeatable) if another web app must call the
+  API from a browser.
+- Without a token the API answers only to `localhost`, `127.0.0.1`, `::1`
+  and the bind host. A proxy in front of a token-less dashboard must keep
+  the `Host` header, or you must configure a token.
+- Request bodies must be sent as `Content-Type: application/json`.
+- The intake endpoint (§25) is exempt from these three rules; it
+  authenticates its own project API token. See ADR-0016.
 - `POST /api/projects` accepts only an existing git repository path; set
   `FOREMAN_DASHBOARD_REPO_ROOTS` (`os.pathsep`-separated) to confine projects
   to specific directories.
