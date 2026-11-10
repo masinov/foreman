@@ -24,6 +24,7 @@ from .dashboard_runtime import (
     normalize_frontend_dev_url,
 )
 from .api_tokens import looks_like_api_token
+from .dashboard_guard import browser_request_violation, is_json_content_type
 from .dashboard_service import (
     ACTIVITY_EVENT_LIMIT,
     ENGINE_COMMAND_LIMIT,
@@ -78,6 +79,10 @@ async def _read_json_body(request: Request) -> dict[str, Any]:
     body = await request.body()
     if not body:
         return {}
+    if not is_json_content_type(request.headers.get("content-type")):
+        # A declared JSON body is what forces a browser to preflight a
+        # cross-origin request; see foreman/dashboard_guard.py.
+        raise DashboardValidationError("Content-Type must be application/json")
     try:
         data = json.loads(body)
     except json.JSONDecodeError as exc:
@@ -99,7 +104,9 @@ def _presented_token(request: Request) -> str | None:
     """Return the token a request presents, from header or query string.
 
     The header forms serve fetch calls; the ``token`` query parameter exists
-    for ``EventSource``, which cannot set headers.
+    for ``EventSource``, which cannot set headers, so it is honoured on GET
+    requests only. A token in a URL reaches logs and history, and no
+    state-changing route needs one there.
     """
 
     authorization = request.headers.get("Authorization", "")
@@ -108,7 +115,7 @@ def _presented_token(request: Request) -> str | None:
     header_token = request.headers.get(TOKEN_HEADER)
     if header_token:
         return header_token.strip()
-    query_token = request.query_params.get("token")
+    query_token = request.query_params.get("token") if request.method == "GET" else None
     if query_token:
         return query_token.strip()
     return None
@@ -140,6 +147,7 @@ def create_dashboard_app(
     auth_token: str | None = None,
     allowed_origins: tuple[str, ...] | list[str] = (),
     manager_enabled: bool = True,
+    trusted_hosts: tuple[str, ...] | list[str] | None = None,
 ) -> FastAPI:
     """Create the FastAPI application used for dashboard delivery.
 
@@ -149,7 +157,10 @@ def create_dashboard_app(
     origins; the shipped frontend is same-origin and needs none.
     ``manager_enabled`` gates the manager chat, which runs a full-access
     agent session on the server and must stay off on non-loopback binds
-    unless explicitly allowed.
+    unless explicitly allowed. ``trusted_hosts`` lists the host names the API
+    answers to; the runtime sets it whenever no token protects the API, so a
+    hostile name re-pointed at this machine is refused. ``None`` leaves the
+    ``Host`` header unchecked.
     """
 
     if frontend_mode == "dist":
@@ -172,6 +183,12 @@ def create_dashboard_app(
     app = FastAPI(
         title="Foreman Dashboard API",
         version="0.1.0",
+        # The generated schema carries no request or response models yet, and
+        # these routes sit outside /api, so they would be served without the
+        # token. They return with the typed API contract.
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
     )
     app.state.db_path = db_path
     app.state.frontend_mode = frontend_mode
@@ -179,6 +196,10 @@ def create_dashboard_app(
     app.state.auth_token = auth_token or None
     app.state.manager_enabled = bool(manager_enabled)
     origins = tuple(origin.strip() for origin in allowed_origins if origin and origin.strip())
+    app.state.trusted_hosts = tuple(trusted_hosts) if trusted_hosts is not None else None
+    # In dev mode the browser talks to the Vite server, which proxies /api
+    # here and forwards its own origin.
+    guard_origins = origins + ((frontend_dev_url,) if frontend_mode == "dev" and frontend_dev_url else ())
     if origins:
         app.add_middleware(
             CORSMiddleware,
@@ -235,6 +256,26 @@ def create_dashboard_app(
                     status_code=401,
                     headers={"WWW-Authenticate": "Bearer"},
                 )
+        return await call_next(request)
+
+    @app.middleware("http")
+    async def refuse_foreign_browser_requests(request: Request, call_next):
+        """Refuse cross-site and rebinding requests before any credential check.
+
+        Intake is exempt from the origin rules: it is a server-to-server route
+        that authenticates its own project API token, which no web page holds.
+        """
+
+        path = request.url.path
+        if path.startswith("/api/") and request.method != "OPTIONS" and not _is_intake_path(path):
+            violation = browser_request_violation(
+                method=request.method,
+                headers=request.headers,
+                trusted_hosts=app.state.trusted_hosts,
+                allowed_origins=guard_origins,
+            )
+            if violation is not None:
+                return JSONResponse({"error": violation}, status_code=403)
         return await call_next(request)
 
     def _require_manager() -> None:
@@ -798,6 +839,12 @@ def create_dashboard_app_from_env() -> FastAPI:
         origin for origin in os.environ.get("FOREMAN_DASHBOARD_ALLOWED_ORIGINS", "").split(",") if origin
     )
     manager_enabled = os.environ.get("FOREMAN_DASHBOARD_MANAGER", "1") != "0"
+    trusted_hosts_setting = os.environ.get("FOREMAN_DASHBOARD_TRUSTED_HOSTS")
+    trusted_hosts = (
+        tuple(name for name in trusted_hosts_setting.split(",") if name)
+        if trusted_hosts_setting
+        else None
+    )
     return create_dashboard_app(
         db_path,
         frontend_mode=frontend_mode,
@@ -805,4 +852,5 @@ def create_dashboard_app_from_env() -> FastAPI:
         auth_token=auth_token,
         allowed_origins=allowed_origins,
         manager_enabled=manager_enabled,
+        trusted_hosts=trusted_hosts,
     )

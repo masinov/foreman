@@ -87,7 +87,7 @@ class CorsTests(unittest.TestCase):
     def test_no_cross_origin_headers_by_default(self) -> None:
         app = create_dashboard_app(str(self.db_path))
         response = _request(app, "GET", "/api/projects", headers={"Origin": "http://evil.example"})
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 403)
         self.assertIsNone(response.headers.get("access-control-allow-origin"))
 
     def test_allowlisted_origin_gets_cors_headers(self) -> None:
@@ -183,3 +183,132 @@ class RepoPathValidationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BrowserOriginDefenceTests(unittest.TestCase):
+    """A web page the operator visits must not be able to drive the API."""
+
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.db_path = Path(self.temp.name) / "foreman.db"
+        _seed(self.db_path, self.temp.name)
+        self.app = create_dashboard_app(
+            str(self.db_path),
+            trusted_hosts=("localhost", "127.0.0.1", "::1"),
+        )
+
+    def _local(self, method: str, url: str, **kwargs) -> httpx.Response:
+        headers = {"Host": "localhost:8080", **kwargs.pop("headers", {})}
+        return _request(self.app, method, url, headers=headers, **kwargs)
+
+    def test_the_dashboards_own_page_can_read_and_write(self) -> None:
+        self.assertEqual(self._local("GET", "/api/projects").status_code, 200)
+        same_origin = self._local(
+            "PATCH",
+            "/api/projects/p1/settings",
+            headers={"Origin": "http://localhost:8080"},
+            json={"settings": {"max_step_visits": 4}},
+        )
+        self.assertEqual(same_origin.status_code, 200, same_origin.text)
+
+    def test_a_rebound_host_name_is_refused(self) -> None:
+        for host in ("evil.example.com", "evil.example.com:8080", "localhost.evil.example.com"):
+            with self.subTest(host=host):
+                response = _request(self.app, "GET", "/api/projects", headers={"Host": host})
+                self.assertEqual(response.status_code, 403)
+                self.assertIn("host name", response.json()["error"])
+
+    def test_loopback_addresses_are_trusted_with_or_without_a_port(self) -> None:
+        for host in ("localhost", "127.0.0.1:8212", "[::1]:8080"):
+            with self.subTest(host=host):
+                response = _request(self.app, "GET", "/api/projects", headers={"Host": host})
+                self.assertEqual(response.status_code, 200)
+
+    def test_a_cross_origin_write_is_refused_and_changes_nothing(self) -> None:
+        for origin in ("http://evil.example.com", "http://localhost:3000", "null"):
+            with self.subTest(origin=origin):
+                response = self._local(
+                    "PATCH",
+                    "/api/projects/p1/settings",
+                    headers={"Origin": origin},
+                    json={"settings": {"test_command": "id > /tmp/pwned"}},
+                )
+                self.assertEqual(response.status_code, 403)
+        with ForemanStore(self.db_path) as store:
+            self.assertNotIn("test_command", store.get_project("p1").settings or {})
+
+    def test_a_cross_origin_read_is_refused(self) -> None:
+        response = self._local("GET", "/api/projects", headers={"Origin": "http://evil.example.com"})
+        self.assertEqual(response.status_code, 403)
+
+    def test_a_cross_site_write_without_an_origin_header_is_refused(self) -> None:
+        response = self._local(
+            "POST",
+            "/api/projects/p1/worktrees/prune",
+            headers={"Sec-Fetch-Site": "cross-site"},
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_a_body_that_is_not_declared_as_json_is_refused(self) -> None:
+        # text/plain is what a no-cors fetch can send without a preflight.
+        response = self._local(
+            "PATCH",
+            "/api/projects/p1/settings",
+            headers={"Content-Type": "text/plain"},
+            content=b'{"settings": {"test_command": "id > /tmp/pwned"}}',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("application/json", response.json()["error"])
+        with ForemanStore(self.db_path) as store:
+            self.assertNotIn("test_command", store.get_project("p1").settings or {})
+
+    def test_an_allowlisted_origin_may_call_the_api(self) -> None:
+        app = create_dashboard_app(
+            str(self.db_path),
+            allowed_origins=("https://ops.example.com",),
+            trusted_hosts=("localhost",),
+        )
+        response = _request(
+            app,
+            "GET",
+            "/api/projects",
+            headers={"Host": "localhost:8080", "Origin": "https://ops.example.com"},
+        )
+        self.assertEqual(response.status_code, 200)
+
+    def test_the_vite_dev_server_origin_is_accepted_in_dev_mode(self) -> None:
+        app = create_dashboard_app(
+            str(self.db_path),
+            frontend_mode="dev",
+            frontend_dev_url="http://127.0.0.1:5173",
+            trusted_hosts=("localhost", "127.0.0.1"),
+        )
+        response = _request(
+            app,
+            "GET",
+            "/api/projects",
+            headers={"Host": "127.0.0.1:8080", "Origin": "http://127.0.0.1:5173"},
+        )
+        self.assertEqual(response.status_code, 200)
+
+    def test_the_schema_and_docs_routes_are_not_served(self) -> None:
+        for path in ("/openapi.json", "/docs", "/redoc"):
+            with self.subTest(path=path):
+                self.assertEqual(self._local("GET", path).status_code, 404)
+
+    def test_a_token_in_the_query_string_only_opens_get_requests(self) -> None:
+        app = create_dashboard_app(str(self.db_path), auth_token="s3cret")
+        self.assertEqual(_request(app, "GET", "/api/projects?token=s3cret").status_code, 200)
+        write = _request(
+            app, "PATCH", "/api/projects/p1/settings?token=s3cret", json={"settings": {"max_step_visits": 4}}
+        )
+        self.assertEqual(write.status_code, 401)
+
+    def test_the_runtime_trusts_only_loopback_names_without_a_token(self) -> None:
+        from foreman.dashboard_guard import trusted_hosts_for_bind
+
+        self.assertEqual(trusted_hosts_for_bind("localhost"), ("localhost", "127.0.0.1", "::1"))
+        self.assertEqual(trusted_hosts_for_bind("127.0.0.1"), ("localhost", "127.0.0.1", "::1"))
+        self.assertIn("devbox.lan", trusted_hosts_for_bind("devbox.lan"))
+        self.assertNotIn("0.0.0.0", trusted_hosts_for_bind("0.0.0.0"))
