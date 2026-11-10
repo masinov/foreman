@@ -3896,6 +3896,65 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 {"step": "review", "outcome": "unknown"},
             )
 
+    def test_a_zero_cost_limit_means_no_limit(self) -> None:
+        """0 is the documented off value and what the settings screen saves."""
+
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project = Project(
+                id="project-1",
+                name="Foreman Demo",
+                repo_path=str(repo_path),
+                workflow_id="development",
+                default_branch="main",
+                settings={"cost_limit_per_task_usd": 0, "cost_limit_per_sprint_usd": 0.0},
+                created_at="2026-03-30T12:00:00Z",
+                updated_at="2026-03-30T12:00:00Z",
+            )
+            sprint = Sprint(
+                id="sprint-1",
+                project_id=project.id,
+                title="Unbudgeted sprint",
+                status="active",
+                created_at="2026-03-30T12:05:00Z",
+                started_at="2026-03-30T12:10:00Z",
+            )
+            task = Task(
+                id="task-1",
+                sprint_id=sprint.id,
+                project_id=project.id,
+                title="Must not be blocked by a zero limit",
+                status="todo",
+                created_at="2026-03-30T12:15:00Z",
+            )
+            store.save_project(project)
+            store.save_sprint(sprint)
+            store.save_task(task)
+
+            executor = ScriptedAgentExecutor(
+                {"developer": [AgentExecutionResult(outcome="error", detail="stop here")]}
+            )
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=self.roles,
+                workflows=self.workflows,
+                agent_executor=executor,
+            )
+            orchestrator.run_project(project.id)
+
+            self.assertEqual(
+                [e for e in store.list_events(task_id=task.id) if e.event_type == "gate.cost_exceeded"],
+                [],
+            )
+            self.assertNotIn("exceeds limit", store.get_task(task.id).blocked_reason or "")
+            self.assertTrue(
+                any(run.role_id == "developer" for run in store.list_runs(task_id=task.id)),
+                "the developer step should have run",
+            )
+
     def test_sprint_cost_limit_blocks_task_before_next_step_runs(self) -> None:
         repo_path, db_path = self.create_workspace()
         self.initialize_repo(repo_path)

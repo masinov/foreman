@@ -1726,7 +1726,8 @@ class ForemanOrchestrator:
                 "cost_limit_per_task_usd",
                 default=None,
             )
-            if cost_limit is not None and task_cost >= cost_limit:
+            # 0 is the documented "off" value, and what the settings screen saves.
+            if cost_limit is not None and cost_limit > 0 and task_cost >= cost_limit:
                 detail = f"Task cost ${task_cost:.2f} exceeds limit ${cost_limit:.2f}"
                 run = self._create_system_run(
                     current_task,
@@ -1756,7 +1757,11 @@ class ForemanOrchestrator:
             sprint_cost = float(
                 self.store.run_totals(sprint_id=current_task.sprint_id)["total_cost_usd"]
             )
-            if sprint_cost_limit is not None and sprint_cost >= sprint_cost_limit:
+            if (
+                sprint_cost_limit is not None
+                and sprint_cost_limit > 0
+                and sprint_cost >= sprint_cost_limit
+            ):
                 detail = (
                     f"Sprint cost ${sprint_cost:.2f} exceeds limit "
                     f"${sprint_cost_limit:.2f}"
@@ -3307,7 +3312,7 @@ class ForemanOrchestrator:
                 project,
                 role_timeout_minutes=role.completion.timeout_minutes,
             ),
-            max_cost_usd=max(role.completion.max_cost_usd, 0.0),
+            max_cost_usd=_run_cost_ceiling(project, role.completion.max_cost_usd),
         )
         max_retries = _int_setting(project, "max_infra_retries", default=3)
 
@@ -3437,6 +3442,18 @@ class ForemanOrchestrator:
                 detail = (
                     _optional_string(event.payload.get("reason"))
                     or "Agent run was killed by a gate."
+                )
+                # A backend that stops a run at its budget reports what the
+                # run cost; a kill must not erase that from the books.
+                final_session_id = (
+                    _optional_string(event.payload.get("session_id")) or final_session_id
+                )
+                cost_usd = _coerce_float_value(event.payload.get("cost_usd"), default=cost_usd)
+                token_count = _coerce_int_value(
+                    event.payload.get("token_count"), default=token_count
+                )
+                duration_ms = _coerce_int_value(
+                    event.payload.get("duration_ms"), default=duration_ms
                 )
                 continue
 
@@ -4096,6 +4113,24 @@ def _coerce_int_value(value: Any, *, default: int | None) -> int | None:
     if isinstance(value, float):
         return int(value)
     return default
+
+
+def _run_cost_ceiling(project: Project, role_max_cost_usd: float) -> float:
+    """Return the cost ceiling for one agent run; 0 means no ceiling.
+
+    The role sets a ceiling and the project's ``runner_max_cost_usd`` may
+    lower it. Neither can raise the other.
+    """
+
+    ceilings = [
+        value
+        for value in (
+            max(float(role_max_cost_usd or 0.0), 0.0),
+            max(_float_setting(project, "runner_max_cost_usd", default=None) or 0.0, 0.0),
+        )
+        if value > 0
+    ]
+    return min(ceilings) if ceilings else 0.0
 
 
 def _project_timeout_seconds(
