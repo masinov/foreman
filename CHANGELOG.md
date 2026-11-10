@@ -7,6 +7,18 @@ memory changes rather than versioned product releases.
 
 ## [Unreleased]
 
+### Sprint 55 — baseline and host safety
+
+- **slice 0, baseline** (`chore/phase0-baseline`): merged the three operator
+  UI fixes with the policy matrix and triage UI and rebuilt the bundle; added
+  CI (`.github/workflows/ci.yml`: Python suite on 3.10 and 3.12, ruff,
+  repo-memory validation, frontend tests and build, bundle freshness) and a
+  ruff baseline with a `dev` extra; restored six completion-evidence tests
+  that a lost class header had shadowed; replaced the 1,067-line
+  `docs/STATUS.md` with a current snapshot (history preserved under
+  `docs/checkpoints/`); added the 2026-09-08 reviews and the 2026-11-10 full
+  review and finish plan; closed and archived sprint 54
+
 ### Sprint 54 — Phase 1 resident engine and intake
 
 - opened sprint 54 from Phase 1 of the production readiness review with the

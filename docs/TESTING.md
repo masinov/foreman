@@ -20,6 +20,12 @@ repo-memory validation and code-level regression coverage:
 - `npm --prefix frontend run build`
 - `./venv/bin/python scripts/dashboard_dev.py --help`
 - `./venv/bin/python -m unittest discover -s tests -v`
+- `./venv/bin/ruff check foreman tests scripts` (install with
+  `./venv/bin/pip install -e ".[dev]"`)
+
+CI (`.github/workflows/ci.yml`) runs the suite, ruff, the repo-memory
+validation, the frontend tests and build, and fails when the committed
+bundle under `foreman/dashboard_frontend_dist` does not match the source.
 
 ## Running the suite inside a task worktree
 
