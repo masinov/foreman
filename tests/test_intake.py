@@ -32,7 +32,7 @@ from foreman.dashboard_service import (
     DashboardService,
     DashboardValidationError,
 )
-from foreman.models import Project, Sprint, Task
+from foreman.models import NotificationDestination, Project, Sprint, Task
 from foreman.store import ForemanStore
 
 from tests.test_cli import cli_argv, cli_env
@@ -1109,3 +1109,88 @@ class TriageCliTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class IntakeAttentionNotificationTests(unittest.TestCase):
+    """A triaged intake task reaches the notification dispatcher's queue."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.store = ForemanStore(Path(self._tmp.name) / "foreman.db")
+        self.addCleanup(self.store.close)
+        self.store.initialize()
+        self.api = DashboardService(self.store)
+
+    def _project(self, settings: dict) -> None:
+        self.store.save_project(
+            Project(
+                id="project-1",
+                name="Foreman Demo",
+                repo_path=self._tmp.name,
+                workflow_id="development",
+                settings=settings,
+            )
+        )
+        self.store.save_notification_destination(
+            NotificationDestination(
+                id="dst-ops",
+                project_id="project-1",
+                name="ops",
+                target="https://example.test/hook",
+            )
+        )
+        self.token, _ = self.store.create_api_token(project_id="project-1", name="pagerduty")
+
+    def file(self):
+        return self.api.intake_task(
+            "project-1",
+            token=self.token,
+            title="Disk full on web-3",
+            task_type="fix",
+            source={"system": "pagerduty", "external_ref": "INC-42"},
+        )
+
+    def deliveries(self):
+        return self.store.list_notification_deliveries("project-1")
+
+    def test_a_triaged_task_queues_one_pending_delivery(self) -> None:
+        self._project({"notification": "attention"})
+
+        result = self.file()
+
+        rows = self.deliveries()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].status, "pending")
+        attention = [
+            event
+            for event in self.store.list_events(task_id=result["id"])
+            if event.event_type == "engine.attention_needed"
+        ]
+        self.assertEqual(len(attention), 1)
+        self.assertEqual(rows[0].event_id, attention[0].id)
+
+    def test_policy_none_queues_nothing(self) -> None:
+        self._project({"notification": "none"})
+
+        self.file()
+
+        self.assertEqual(self.deliveries(), [])
+
+    def test_an_idempotent_replay_adds_no_second_delivery(self) -> None:
+        self._project({"notification": "attention"})
+
+        first = self.file()
+        second = self.file()
+
+        self.assertFalse(second["created"])
+        self.assertEqual(second["id"], first["id"])
+        self.assertEqual(len(self.deliveries()), 1)
+
+    def test_auto_triage_queues_nothing(self) -> None:
+        self._project({"notification": "all", "triage": "auto"})
+
+        result = self.file()
+
+        self.assertEqual(result["status"], "todo")
+        self.assertEqual(self.deliveries(), [])
