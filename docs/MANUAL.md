@@ -931,9 +931,8 @@ resident engine (`foreman serve`) is running it picks the task up at once. If
 none is, the command prints `foreman run <project-id>` to continue, and the
 dashboard shows a notice to press Run. See ADR-0011.
 
-Resume is immediate when a native backend is available, else deferred until the
-next run. The dashboard exposes the same via `POST /api/tasks/{id}/approve|deny`
-and the gates endpoints.
+The dashboard exposes the same via `POST /api/tasks/{id}/approve|deny` and the
+gates endpoints.
 
 **Merge waivers** let a human override a *criteria-based* completion-guard block
 (missing/incomplete criteria, or docs-only-on-impl-task) — but never a
