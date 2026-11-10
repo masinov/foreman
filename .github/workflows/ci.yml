@@ -19,6 +19,9 @@ jobs:
       - name: Install
         run: |
           python -m venv venv
+          # tests/test_cli.py reinstalls the package with --no-build-isolation,
+          # which needs setuptools in the environment (absent from 3.12 venvs).
+          ./venv/bin/pip install setuptools wheel
           ./venv/bin/pip install -e ".[dev]"
       - name: Lint
         run: ./venv/bin/ruff check foreman tests scripts
