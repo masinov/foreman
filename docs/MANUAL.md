@@ -326,7 +326,8 @@ foreman board [<project-id>]          # terminal task board
 foreman watch <project-id>            # tail active sprint (live)
 foreman watch --sprint <sprint-id>    # tail one sprint
 foreman watch --run <run-id>          # tail one run
-foreman cost <project-id>             # cost / token totals
+foreman cost <project-id>             # cost / token totals, with the input / output /
+                                      # cache-read / cache-write split when runs report it
 foreman history <task-id>             # run + event history for a task
 foreman transcript <run-id>           # full persisted transcript for one run
 ```

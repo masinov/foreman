@@ -431,6 +431,20 @@ class ClaudeRunnerLifecycleTests(unittest.TestCase):
         self.assertEqual(events[-1].payload["cost_usd"], 1.02)
         self.assertEqual(events[-1].payload["session_id"], "s1")
 
+    def test_the_result_carries_the_token_split(self) -> None:
+        result = (
+            "{'type': 'result', 'is_error': False, 'session_id': 's1', 'result': 'done',"
+            " 'total_cost_usd': 0.4, 'usage': {'input_tokens': 10, 'output_tokens': 5000,"
+            " 'cache_read_input_tokens': 900000, 'cache_creation_input_tokens': 40000}}"
+        )
+        script = f"import json, sys\nsys.stdin.read()\nprint(json.dumps({result}), flush=True)\n"
+        events = self._run_script(script)
+        self.assertEqual(
+            events[-1].payload["token_usage"],
+            {"input": 10, "output": 5000, "cache_read": 900000, "cache_creation": 40000},
+        )
+        self.assertEqual(events[-1].payload["token_count"], 5010)
+
     def test_the_cost_ceiling_is_handed_to_the_cli(self) -> None:
         from dataclasses import replace
 

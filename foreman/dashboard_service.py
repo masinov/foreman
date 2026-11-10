@@ -785,6 +785,7 @@ class DashboardService:
                     "source": _serialize_task_source(task),
                     "totals": {
                         "total_token_count": metrics.get("total_token_count", 0),
+                        "token_usage": metrics.get("token_usage"),
                         "total_cost_usd": metrics.get("total_cost_usd", 0.0),
                         "run_count": metrics.get("run_count", 0),
                     },
@@ -870,6 +871,7 @@ class DashboardService:
                     "outcome": run.outcome,
                     "outcome_detail": run.outcome_detail,
                     "token_count": run.token_count,
+                    "token_usage": run.token_usage.as_dict(),
                     "cost_usd": run.cost_usd,
                     "duration_ms": run.duration_ms,
                     "created_at": run.created_at,

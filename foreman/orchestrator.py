@@ -37,7 +37,7 @@ from .git import (
 from .leases import generate_lease_token
 from .logs import compact_payload, event_log_level, get_logger, log_event
 from .judge import judge_criteria, truncate_diff
-from .models import CompletionEvidence, Event, HumanGateDecision, Lease, Project, Run, Sprint, TASK_COMPLEXITIES, Task, utc_now_text
+from .models import CompletionEvidence, Event, HumanGateDecision, Lease, Project, Run, Sprint, TASK_COMPLEXITIES, Task, TokenUsage, utc_now_text
 from .notifications import NotificationDispatcher, resolve_notification_policy
 from .policy import GATE_DECISIONS, PolicyMatrix, describe_resolution
 from .outcomes import APPROVE, BLOCKED, DENY, DONE, ERROR, normalize_agent_outcome, normalize_reviewer_decision
@@ -131,6 +131,7 @@ class AgentExecutionResult:
     session_id: str | None = None
     cost_usd: float = 0.0
     token_count: int = 0
+    token_usage: TokenUsage | None = None
     duration_ms: int | None = None
     model: str | None = None
     events: tuple[AgentEventRecord, ...] = ()
@@ -2054,6 +2055,7 @@ class ForemanOrchestrator:
                     session_id=result.session_id,
                     cost_usd=result.cost_usd,
                     token_count=result.token_count,
+                    token_usage=result.token_usage,
                     duration_ms=result.duration_ms,
                     retry_count=result.retry_count,
                     failure_type=result.failure_type,
@@ -2138,6 +2140,7 @@ class ForemanOrchestrator:
                         session_id=retry_result.session_id,
                         cost_usd=retry_result.cost_usd,
                         token_count=retry_result.token_count,
+                        token_usage=retry_result.token_usage,
                         duration_ms=retry_result.duration_ms,
                         retry_count=retry_result.retry_count,
                         failure_type=retry_result.failure_type,
@@ -3327,6 +3330,7 @@ class ForemanOrchestrator:
         final_session_id = session_id
         cost_usd = 0.0
         token_count = 0
+        token_usage: TokenUsage | None = None
         duration_ms: int | None = None
         failure_type: str | None = None
         retry_after: str | None = None
@@ -3417,6 +3421,7 @@ class ForemanOrchestrator:
                     event.payload.get("token_count"),
                     default=token_count,
                 )
+                token_usage = TokenUsage.from_mapping(event.payload.get("token_usage")) or token_usage
                 duration_ms = _coerce_int_value(
                     event.payload.get("duration_ms"),
                     default=duration_ms,
@@ -3452,6 +3457,7 @@ class ForemanOrchestrator:
                 token_count = _coerce_int_value(
                     event.payload.get("token_count"), default=token_count
                 )
+                token_usage = TokenUsage.from_mapping(event.payload.get("token_usage")) or token_usage
                 duration_ms = _coerce_int_value(
                     event.payload.get("duration_ms"), default=duration_ms
                 )
@@ -3469,6 +3475,7 @@ class ForemanOrchestrator:
                     event.payload.get("token_count"),
                     default=token_count,
                 )
+                token_usage = TokenUsage.from_mapping(event.payload.get("token_usage")) or token_usage
                 duration_ms = _coerce_int_value(
                     event.payload.get("duration_ms"),
                     default=duration_ms,
@@ -3501,6 +3508,7 @@ class ForemanOrchestrator:
             session_id=final_session_id,
             cost_usd=cost_usd,
             token_count=token_count,
+            token_usage=token_usage,
             duration_ms=duration_ms,
             model=model or None,
             events=tuple(events),
@@ -3864,6 +3872,7 @@ class ForemanOrchestrator:
         session_id: str | None = None,
         cost_usd: float | None = None,
         token_count: int | None = None,
+        token_usage: TokenUsage | None = None,
         duration_ms: int | None = None,
         retry_count: int | None = None,
         failure_type: str | None = None,
@@ -3879,6 +3888,8 @@ class ForemanOrchestrator:
             run.cost_usd = cost_usd
         if token_count is not None:
             run.token_count = token_count
+        if token_usage is not None:
+            run.token_usage = token_usage
         if retry_count is not None:
             run.retry_count = retry_count
         run.duration_ms = duration_ms

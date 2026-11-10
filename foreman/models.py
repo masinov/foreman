@@ -231,6 +231,55 @@ class Task:
     completed_at: str | None = None
 
 
+@dataclass(slots=True, frozen=True)
+class TokenUsage:
+    """Where one run's tokens went, as the backend reported them.
+
+    ``input`` and ``output`` are freshly processed tokens. ``cache_read`` is
+    context served from the prompt cache and ``cache_creation`` is context
+    written to it; on a long agent session these dwarf the other two, and
+    they are billed (or counted against a subscription) at different rates,
+    so they are kept apart rather than summed into one number.
+    """
+
+    input: int = 0
+    output: int = 0
+    cache_read: int = 0
+    cache_creation: int = 0
+
+    @property
+    def total(self) -> int:
+        return self.input + self.output + self.cache_read + self.cache_creation
+
+    def as_dict(self) -> dict[str, int]:
+        return {
+            "input": self.input,
+            "output": self.output,
+            "cache_read": self.cache_read,
+            "cache_creation": self.cache_creation,
+        }
+
+    @classmethod
+    def from_mapping(cls, value: Any) -> "TokenUsage | None":
+        """Build from a payload mapping; ``None`` when it carries no usage."""
+
+        if not isinstance(value, dict):
+            return None
+
+        def count(key: str) -> int:
+            raw = value.get(key)
+            if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+                return 0
+            return max(int(raw), 0)
+
+        return cls(
+            input=count("input"),
+            output=count("output"),
+            cache_read=count("cache_read"),
+            cache_creation=count("cache_creation"),
+        )
+
+
 @dataclass(slots=True)
 class Run:
     """A persisted agent run."""
@@ -249,7 +298,9 @@ class Run:
     branch_name: str | None = None
     prompt_text: str | None = None
     cost_usd: float = 0.0
+    # Fresh input plus output tokens; the cache split is in ``token_usage``.
     token_count: int = 0
+    token_usage: TokenUsage = field(default_factory=TokenUsage)
     duration_ms: int | None = None
     retry_count: int = 0
     failure_type: str | None = None  # e.g. 'preflight', 'infrastructure', 'policy', 'gate'

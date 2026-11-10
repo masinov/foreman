@@ -9,6 +9,12 @@ memory changes rather than versioned product releases.
 
 ### Sprint 55 — baseline and host safety
 
+- **token split** (`feat/token-usage-breakdown`): runs store input, output,
+  cache-read and cache-creation tokens separately (migration 19,
+  `TokenUsage`); `run_totals` and `task_run_totals` sum them; the API adds
+  `token_usage` to runs and totals; `foreman cost` prints a `Token split`
+  line and `foreman history` adds `in=`/`out=`/`cache_read=`/`cache_write=`;
+  the task drawer, run history and sprint footer show the split.
 - **slice 4, engine death** (`fix/runner-parent-death`): SIGHUP (a closed
   terminal or dropped SSH session) is handled as a shutdown like SIGTERM;
   on Linux every agent the engine starts is sent SIGTERM if the engine dies

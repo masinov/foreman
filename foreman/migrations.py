@@ -537,4 +537,17 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         WHERE event_id IS NOT NULL;
         """,
     ),
+    (
+        19,
+        "add the token split to runs: input, output, cache read, cache creation",
+        """
+        -- `token_count` stays what it always was (fresh input plus output).
+        -- A long agent session mostly re-reads cached context, which the
+        -- single number hid entirely; the four parts are stored as reported.
+        ALTER TABLE runs ADD COLUMN input_tokens INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE runs ADD COLUMN output_tokens INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE runs ADD COLUMN cache_read_tokens INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE runs ADD COLUMN cache_creation_tokens INTEGER NOT NULL DEFAULT 0;
+        """,
+    ),
 ]

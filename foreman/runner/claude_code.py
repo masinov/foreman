@@ -347,6 +347,9 @@ class ClaudeCodeRunner(AgentRunner):
                 "duration_ms": _coerce_int(event.get("duration_ms")),
                 "token_count": _extract_total_tokens(event),
             }
+            token_usage = _extract_token_usage(event)
+            if token_usage is not None:
+                payload["token_usage"] = token_usage
             if "max_budget" in str(event.get("subtype") or ""):
                 # The CLI stopped the run at --max-budget-usd. That is the
                 # cost gate firing, with the real cost attached.
@@ -657,6 +660,20 @@ def _extra_flag_args(flags: dict[str, Any]) -> list[str]:
             continue
         args.extend([flag, str(value)])
     return args
+
+
+def _extract_token_usage(event: dict[str, Any]) -> dict[str, int] | None:
+    """Return the input / output / cache split of a result line's usage."""
+
+    usage = event.get("usage")
+    if not isinstance(usage, dict):
+        return None
+    return {
+        "input": _coerce_int(usage.get("input_tokens"), default=0) or 0,
+        "output": _coerce_int(usage.get("output_tokens"), default=0) or 0,
+        "cache_read": _coerce_int(usage.get("cache_read_input_tokens"), default=0) or 0,
+        "cache_creation": _coerce_int(usage.get("cache_creation_input_tokens"), default=0) or 0,
+    }
 
 
 def _extract_total_tokens(event: dict[str, Any]) -> int:
