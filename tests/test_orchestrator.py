@@ -3118,6 +3118,111 @@ class ForemanOrchestratorTests(unittest.TestCase):
             self.assertTrue(seen.get("during"), "the lease must be heartbeated during a step")
             self.assertEqual(orchestrator._task_lease_heartbeats, {})
 
+    def _run_with_developer(self, store, project, handler):
+        executor = ScriptedAgentExecutor({("developer", 1): handler})
+        orchestrator = ForemanOrchestrator(
+            store, roles=self.roles, workflows=self.workflows, agent_executor=executor
+        )
+        return orchestrator, executor, orchestrator.run_project(project.id)
+
+    def test_a_task_cancelled_mid_step_stays_cancelled_and_is_not_merged(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+
+            def developer(*, task: Task, prompt: str, carried_output: str | None):
+                # The operator cancels from another process while the agent works.
+                with ForemanStore(db_path) as operator:
+                    theirs = operator.get_task(task.id)
+                    theirs.status = "cancelled"
+                    theirs.title = "Renamed by the operator"
+                    operator.save_task(theirs)
+                (self.work_dir(task, repo_path) / "ready.txt").write_text("ok\n")
+                self.commit_all(self.work_dir(task, repo_path), "feat: work nobody wants")
+                return AgentExecutionResult(outcome="done", detail="Implemented.")
+
+            orchestrator, executor, _ = self._run_with_developer(store, project, developer)
+
+            stored = store.get_task(task.id)
+            self.assertEqual(stored.status, "cancelled")
+            self.assertEqual(stored.title, "Renamed by the operator")
+            self.assertEqual(executor.call_counts.get("code_reviewer", 0), 0)
+            steps = [run.workflow_step for run in store.list_runs(task_id=task.id)]
+            self.assertNotIn("merge", steps)
+            self.assertNotIn("done", steps)
+            self.assertEqual(
+                [run.id for run in store.list_runs(task_id=task.id) if run.status == "running"], []
+            )
+            self.assertIsNone(
+                store.get_active_lease(
+                    project_id=project.id, resource_type="task", resource_id=task.id
+                )
+            )
+            self.assertNotIn(
+                "feat: work nobody wants",
+                self.git(repo_path, "log", "--format=%s", "main").stdout,
+            )
+
+    def test_an_operator_edit_made_mid_step_survives_the_engines_next_write(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+
+            def developer(*, task: Task, prompt: str, carried_output: str | None):
+                with ForemanStore(db_path) as operator:
+                    theirs = operator.get_task(task.id)
+                    theirs.title = "Sharper title"
+                    theirs.acceptance_criteria = "Sharper criteria."
+                    theirs.priority = 7
+                    operator.save_task(theirs)
+                return AgentExecutionResult(outcome="error", detail="stop after one step")
+
+            self._run_with_developer(store, project, developer)
+
+            stored = store.get_task(task.id)
+            self.assertEqual(stored.title, "Sharper title")
+            self.assertEqual(stored.acceptance_criteria, "Sharper criteria.")
+            self.assertEqual(stored.priority, 7)
+
+    def test_a_blocker_reported_by_the_agent_stops_the_workflow(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+
+            def developer(*, task: Task, prompt: str, carried_output: str | None):
+                (self.work_dir(task, repo_path) / "ready.txt").write_text("ok\n")
+                self.commit_all(self.work_dir(task, repo_path), "feat: implement")
+                return AgentExecutionResult(
+                    outcome="done",
+                    detail="Implemented, but something is in the way.",
+                    events=(
+                        AgentEventRecord(
+                            event_type="signal.blocker",
+                            payload={"message": "Need credentials for the staging API."},
+                        ),
+                    ),
+                )
+
+            orchestrator, executor, result = self._run_with_developer(store, project, developer)
+
+            stored = store.get_task(task.id)
+            self.assertEqual(stored.status, "blocked")
+            self.assertEqual(stored.blocked_reason, "Need credentials for the staging API.")
+            self.assertEqual(executor.call_counts.get("code_reviewer", 0), 0)
+            self.assertNotIn(
+                "merge", [run.workflow_step for run in store.list_runs(task_id=task.id)]
+            )
+            self.assertIn(task.id, result.blocked_task_ids)
+
     def test_stale_run_recovery_does_not_cost_the_engine_its_own_lease(self) -> None:
         """``run_task`` recovers stale runs while holding the lease it just took."""
 

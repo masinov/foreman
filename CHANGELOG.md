@@ -9,6 +9,14 @@ memory changes rather than versioned product releases.
 
 ### Sprint 56 — engine truthfulness
 
+- **slice 1, safe task writes** (`fix/safe-task-writes`): the engine no
+  longer replaces a task's whole row. `update_task_engine_state` writes
+  workflow state only and never a cancelled row; before every step the
+  engine re-reads the task, adopts an operator's edits, and stops if the
+  task was cancelled or blocked. A task cancelled while a step runs stays
+  cancelled, its open run is settled, and it is not merged. A blocker
+  reported by the agent stops the workflow instead of being overtaken by the
+  completion marker.
 - opened sprint 56 from Phase 2 of the 2026-11-10 finish plan; refreshed
   shipped role model ids (reviewers `claude-sonnet-5-5`, triage
   `claude-haiku-5-5`, architect and frontier reviewer `claude-opus-5-5`)
