@@ -1571,14 +1571,17 @@ task is using.
 
 ### From the dashboard
 
-The project screen shows the live tree count against the cap, the worktree
-root, and a **Prune worktrees** button:
+Open **Settings → Task working copies** to inspect retained task checkouts
+and their disk-use limit. These are separate values, not an agent-concurrency
+counter. The folder path is available under **Storage details**.
 
 ```
-Worktrees  2 / 4   /repo/.foreman/worktrees   [ Prune worktrees ]
+Stored copies              2
+Configured storage limit   4
+[ Remove unused copies ]
 ```
 
-It runs the same policy as `foreman worktree prune`. The count excludes the
+Remove unused copies runs the same policy as `foreman worktree prune`. The count excludes the
 shared integration tree, which is never pruned.
 
 ### Refusals
@@ -1764,7 +1767,7 @@ See [ADR-0013](adr/ADR-0013-intake-endpoint-and-api-tokens.md) and
 | A route other than intake answers 403 with "only valid on … /intake" | An `fmn_…` API token was sent to a dashboard route. Use the dashboard token there. |
 | Intake keeps returning 200 and never creates a task | It is idempotent on `(system, external_ref)`: that pair was filed before. Send a new `external_ref`, or omit `source` to force a new task. |
 | Intake tasks are filed but never run | The intake queue is `planned` because another sprint is active. Complete or cancel that sprint — the next intake activates the queue — or activate `<project>-intake` yourself. |
-| `.foreman/worktrees/` keeps growing | Trees of tasks that never reached `mark_done`. Lower `max_live_worktrees`, or run `foreman worktree prune <project>` (or the dashboard's Prune worktrees button) to remove anything done, cancelled, or unclaimed. |
+| `.foreman/worktrees/` keeps growing | Trees of tasks that never reached `mark_done`. Lower `max_live_worktrees`, or run `foreman worktree prune <project>` (or Settings → Task working copies → Remove unused copies) to remove anything done, cancelled, or unclaimed. |
 
 ---
 

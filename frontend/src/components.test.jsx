@@ -23,7 +23,7 @@ function tree(slug, overrides = {}) {
 }
 
 describe("WorktreePanel", () => {
-  it("shows the live task-tree count against the cap", async () => {
+  it("shows stored copies separately from the configured storage limit", async () => {
     const services = {
       listWorktrees: vi.fn().mockResolvedValue(
         payload([
@@ -39,11 +39,14 @@ describe("WorktreePanel", () => {
 
     render(<WorktreePanel project={PROJECT} services={services} />);
 
-    await waitFor(() => expect(screen.getByText("2 / 4")).toBeInTheDocument());
-    expect(screen.getByText("/tmp/repo/.foreman/worktrees")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("2")).toBeInTheDocument());
+    expect(screen.getByText("4")).toBeInTheDocument();
+    expect(screen.getByText("/tmp/repo/.foreman/worktrees")).not.toBeVisible();
+    fireEvent.click(screen.getByText("Storage details"));
+    expect(screen.getByText("/tmp/repo/.foreman/worktrees")).toBeVisible();
   });
 
-  it("omits the cap when it is disabled", async () => {
+  it("shows unlimited storage when the cap is disabled", async () => {
     const services = {
       listWorktrees: vi.fn().mockResolvedValue(payload([tree("FOR-1")], { limit: 0 })),
       pruneWorktrees: vi.fn(),
@@ -52,6 +55,7 @@ describe("WorktreePanel", () => {
     render(<WorktreePanel project={PROJECT} services={services} />);
 
     await waitFor(() => expect(screen.getByText("1")).toBeInTheDocument());
+    expect(screen.getByText("Unlimited")).toBeInTheDocument();
   });
 
   it("prunes and reloads what the engine still holds", async () => {
@@ -64,14 +68,14 @@ describe("WorktreePanel", () => {
     };
 
     render(<WorktreePanel project={PROJECT} services={services} />);
-    await waitFor(() => expect(screen.getByText("2 / 4")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("2")).toBeInTheDocument());
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /prune worktrees/i }));
+      fireEvent.click(screen.getByRole("button", { name: /remove unused copies/i }));
     });
 
     expect(services.pruneWorktrees).toHaveBeenCalledWith("proj-1");
-    await waitFor(() => expect(screen.getByText("1 / 4")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("1")).toBeInTheDocument());
   });
 
   it("says there is nothing to prune when every tree is live", async () => {
@@ -83,9 +87,9 @@ describe("WorktreePanel", () => {
     render(<WorktreePanel project={PROJECT} services={services} />);
 
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: /prune worktrees/i })).toHaveAttribute(
+      expect(screen.getByRole("button", { name: /remove unused copies/i })).toHaveAttribute(
         "title",
-        "Nothing to prune: every worktree belongs to a live task",
+        "No unused copies: every copy belongs to an unfinished task",
       ),
     );
   });
@@ -97,10 +101,10 @@ describe("WorktreePanel", () => {
     };
 
     render(<WorktreePanel project={PROJECT} services={services} />);
-    await waitFor(() => expect(screen.getByText("1 / 4")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("1")).toBeInTheDocument());
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /prune worktrees/i }));
+      fireEvent.click(screen.getByRole("button", { name: /remove unused copies/i }));
     });
 
     await waitFor(() =>

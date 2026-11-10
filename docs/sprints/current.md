@@ -38,6 +38,41 @@ decides where a human is required.
 | 6 | Worktree per task under a Foreman-owned directory | done | `feat/task-give-every-task-its-own-git-worktree` (engine-run) | `foreman/worktrees.py`, migration 16, orchestrator, built-ins, `foreman worktree`, ADR-0012, `tests/test_worktrees.py` |
 | 6b | Bounded worktree disk use (`max_live_worktrees`) and a per-worktree environment (`worktree_setup_command`); dashboard prune control | done | `chore/task-c68378a4e541` (engine-run, follow-up from ADR-0012) | `enforce_worktree_limit`, setup command + marker, `GET/POST /api/projects/{id}/worktrees[/prune]`, `WorktreePanel`, ADR-0012 amendment, tests |
 
+### Operator UI fix — Working-copy settings
+
+- Status: in_progress; branch `fix/dashboard-working-copy-settings`, following
+  header correction `166e992`.
+- Move checkout storage/cleanup from the sprint overview to Settings → Task
+  working copies, with plain-language disk-use guidance and collapsed path
+  details. Retained copies must not be labeled as parallel workflows/agents.
+- Keep the existing API and cleanup policy; validate settings-only loading
+  and cleanup binding, then rebuild and inspect the live dashboard.
+
+### Operator UI fix — Project header
+
+- Status: done (unmerged); branch `fix/dashboard-project-header`, following the
+  Manager fix at `1690a2a`.
+- User-requested descriptor order: Repository, Branch, Workflow. Worktree
+  details remain with the descriptors; engine residency/heartbeat and blocked
+  counts form a single plain-text status row below them.
+- Deliverables: header markup and consistent spacing, rebuilt frontend and
+  live browser validation with Manager folded and open.
+- Validation passed: 39 frontend tests, production build, repository memory
+  checks and live browser assertions for descriptor order, status placement
+  and plain-text styling. Screenshots inspected at 1440 × 1000.
+
+### Operator UI fix — Manager panel
+
+- Status: done; branch `fix/dashboard-manager-panel` (unmerged).
+- User-reported correction: Manager starts folded in the sprint overview,
+  with a Manager tab distinct from the sprint's Agent execution activity.
+- Deliverables: lazy opening, retained draft/chat when folded, explicit
+  Manager layout names, frontend regression coverage and rebuilt assets.
+- This focused fix does not revive the withdrawn dashboard UX refactor.
+- Validation: 39 frontend tests, production build, repo memory validation,
+  and live browser checks for folded default, open/fold/reopen, reload and
+  separate sprint execution activity all passed.
+
 ### Slice 1 notes
 
 Landed by the engine in three gate rounds (one deny with corrections, one

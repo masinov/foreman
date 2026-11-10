@@ -223,12 +223,17 @@ system, so an error is recorded and the task proceeds.
 ### Operator surfaces
 
 `foreman worktree list` and `foreman worktree prune` cover the CLI. The
-dashboard project screen shows the live tree count against the cap, the
-worktree root, and a **Prune worktrees** control backed by
+dashboard's Project Settings → Task working copies section shows the stored
+copy count and configured storage limit separately, the worktree root under
+collapsed Storage details, and a **Remove unused copies** control backed by
 `GET /api/projects/{id}/worktrees` and
 `POST /api/projects/{id}/worktrees/prune`. The control runs the same policy as
 the CLI — done, cancelled, and unclaimed trees only — so it can never take a
 tree a live task is using.
+
+The settings placement and wording were corrected on 2026-09-08 after operator
+feedback: retained checkout count is a disk-use concern, not execution
+concurrency, and does not belong in the general sprint overview.
 
 ## Consequences
 

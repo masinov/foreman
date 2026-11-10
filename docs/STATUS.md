@@ -1,5 +1,40 @@
 # STATUS
 
+## Working-copy settings correction — 2026-09-08
+
+Sprint 54 follow-up on `fix/dashboard-working-copy-settings`, after header
+commit `166e992`: the user found the worktree count, hidden storage path and
+prune control too technical for the sprint overview. Move them into project
+settings as Task working copies, with storage details collapsed. The existing
+`max_live_worktrees` setting bounds retained checkouts, not parallel agents;
+do not relabel it as execution concurrency or change its cleanup policy.
+
+## Project header correction — 2026-09-08
+
+Sprint 54 operator follow-up on `fix/dashboard-project-header`, based on the
+completed Manager fix (`1690a2a`). The user requested Repository, Branch, then
+Workflow, with engine residency/heartbeat and blocked counts together below
+the project descriptors. Existing code interleaves activity with worktree
+metadata and styles blocked counts like buttons. Replace those badges with
+plain status text and normalize header spacing; keep controls distinct.
+Completed in the React frontend and rebuilt assets: 39 frontend tests,
+production build, repository validation and live browser checks passed.
+Screenshots checked at 1440 × 1000 with Manager folded and open. Dashboard
+port 8212 was restarted to refresh its startup-cached HTML. Change unmerged.
+
+## Dashboard panel correction — 2026-09-08
+
+Sprint 54 operator fix on `fix/dashboard-manager-panel`: the sprint overview
+mounted and opened the Manager automatically and labeled its folded tab
+"Agent". This conflated project planning/supervision with task execution
+activity. The user clarified that these are distinct panels and Manager must
+start folded. The dedicated React frontend now starts Manager folded, labels
+its tab correctly and preserves chat state when folded; execution activity
+remains separate. Validated with 39 frontend tests, a production build and
+live browser checks. The dashboard on port 8212 was restarted explicitly via
+`./venv/bin/python -m foreman` to serve this checkout's rebuilt assets.
+The broader UX refactor remains withdrawn; this fix is unmerged.
+
 ## Current sprint
 
 - Active implementation sprint: **sprint 54 — Phase 1: resident engine and
