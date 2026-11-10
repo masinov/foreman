@@ -2982,11 +2982,22 @@ class DashboardRolesTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        import shutil
+        from unittest import mock
+
+        from foreman.roles import default_roles_dir
+
         cls.temp_dir = tempfile.TemporaryDirectory()
         cls.db_path = Path(cls.temp_dir.name) / "foreman.db"
+        # PATCH rewrites role files; work on a copy, never the shipped roles.
+        cls.roles_dir = Path(cls.temp_dir.name) / "roles"
+        shutil.copytree(default_roles_dir(), cls.roles_dir)
+        cls._roles_patch = mock.patch("foreman.roles.default_roles_dir", return_value=cls.roles_dir)
+        cls._roles_patch.start()
 
     @classmethod
     def tearDownClass(cls):
+        cls._roles_patch.stop()
         cls.temp_dir.cleanup()
 
     def _request(self, method, url, **kwargs):
@@ -3000,6 +3011,35 @@ class DashboardRolesTests(unittest.TestCase):
                 return await client.request(method, url, **kwargs)
 
         return asyncio.run(send())
+
+    def test_patch_cannot_change_what_an_agent_may_do_on_the_host(self):
+        before = (self.roles_dir / "code_reviewer.toml").read_text(encoding="utf-8")
+        for field, value in (("permission_mode", "plan"), ("backend", "codex")):
+            with self.subTest(field=field):
+                resp = self._request("PATCH", "/api/roles/code_reviewer", json={field: value})
+                self.assertEqual(resp.status_code, 403)
+                self.assertIn(field, resp.json()["error"])
+        self.assertEqual((self.roles_dir / "code_reviewer.toml").read_text(encoding="utf-8"), before)
+
+    def test_patch_accepts_host_level_fields_sent_back_unchanged(self):
+        role = next(
+            r for r in self._request("GET", "/api/roles").json()["roles"] if r["id"] == "code_reviewer"
+        )
+        resp = self._request(
+            "PATCH",
+            "/api/roles/code_reviewer",
+            json={
+                "model": "claude-test-model",
+                "backend": role["backend"],
+                "permission_mode": role["permission_mode"],
+            },
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        self.assertEqual(resp.json()["model"], "claude-test-model")
+
+    def test_patch_leaves_no_temporary_file_behind(self):
+        self._request("PATCH", "/api/roles/architect", json={"model": "claude-test-model"})
+        self.assertEqual([p.name for p in self.roles_dir.iterdir() if p.name.startswith(".")], [])
 
     # ── GET /api/roles ────────────────────────────────────────────────────────
 

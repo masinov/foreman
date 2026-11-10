@@ -302,6 +302,8 @@ foreman revoke-waiver <task-id>
 ```bash
 foreman worktree list <project-id>    # the trees Foreman owns, and whose they are
 foreman worktree prune <project-id>   # drop trees of done/cancelled tasks + dangling ones
+                                      # (only git worktrees of this repo; other
+                                      # directories under the root are kept)
 ```
 
 Every task runs in its own git worktree; see [§24 Worktrees](#24-worktrees).
@@ -1118,6 +1120,13 @@ export FOREMAN_DASHBOARD_TOKEN="$(openssl rand -hex 24)"
   and the bind host. A proxy in front of a token-less dashboard must keep
   the `Host` header, or you must configure a token.
 - Request bodies must be sent as `Content-Type: application/json`.
+- Settings that decide what runs on the host cannot be changed through the
+  API or the Settings screen (they answer **403** and are shown read-only):
+  `test_command`, `worktree_setup_command`, `worktree_root`,
+  `worktree_link_paths`, `context_dir`, `judge_base_url`,
+  `judge_api_key_env`. Set them at a terminal with
+  `foreman config <project-id> --set <key>=<value>`. A role's `backend` and
+  `permission_mode` are likewise changed only in its TOML file. See ADR-0017.
 - The intake endpoint (§25) is exempt from these three rules; it
   authenticates its own project API token. See ADR-0016.
 - `POST /api/projects` accepts only an existing git repository path; set

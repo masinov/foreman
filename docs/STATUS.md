@@ -10,19 +10,19 @@ Current snapshot only. History up to 2026-09-08 (sprints 1 to 54) is in
   plan, 0 to 5).
 - Active sprint: **sprint 55 — baseline and host safety**
   (`docs/sprints/current.md`). Sprint 54 is closed and archived.
-- Branches awaiting merge, in order: `chore/phase0-baseline` (slice 0), then
-  `fix/dashboard-browser-origin-defence` (slice 1, branched from it).
-- `main` is at `79d78ab` and is 10 commits ahead of `origin/main` (unpushed).
+- `main` carries sprint 55 slices 0 to 2 and is pushed to `origin/main`.
+  Work happens on short branches from `main`; the operator checkout stays
+  off `main` (the `_integration` worktree holds it).
 
 ## Do not run unattended yet
 
-Until sprint 55 slices 1 to 6 land, do not run `foreman serve` unattended and
-do not open the dashboard in a browser profile used for general browsing. The
-review reproduced: shell commands settable through the settings API and run by
-the engine (the browser route to it is closed by slice 1, ADR-0016; the API
-itself still accepts them), worktree
-prune deleting arbitrary directories, a cost gate that cannot stop spend, and
-a lease loss that re-runs the developer agent without bound.
+Until sprint 55 slices 3 to 6 land, do not run `foreman serve` unattended.
+Still open from the review: a cost gate that cannot stop spend mid-run,
+agents that can outlive the engine, a lease loss that re-runs the developer
+agent without bound, and approve/deny running workflow steps outside the
+engine lock. Closed so far: the browser routes into the API (ADR-0016) and
+API control over shell commands, storage paths and role permissions, plus
+prune deleting non-worktree directories (ADR-0017).
 
 ## Operating decisions (owner, 2026-11-10)
 
@@ -33,15 +33,6 @@ a lease loss that re-runs the developer agent without bound.
   notification stay pluggable seams for adopters to fill.
 - Codex stays in the tree but is treated as experimental until it has a
   shipped role, cost accounting and a real-binary smoke test.
-
-## Known state to reconcile (needs owner confirmation)
-
-- `.foreman.db`: FOR-12 is `blocked` ("Stopped by dashboard") although its
-  branch was merged by hand; its worktree `.foreman/worktrees/FOR-12` is still
-  registered. FOR-11 is a leftover live-test task in the intake queue.
-- `/tmp/foreman-ui-refactor` is a stale registered git worktree.
-- The operator checkout sits on `fix/dashboard-working-copy-settings` with
-  uncommitted edits. Those edits are included in `chore/phase0-baseline`.
 
 ## Documented conflicts between spec, mockup and code
 

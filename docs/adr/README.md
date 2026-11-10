@@ -29,3 +29,4 @@ Filename format:
 | ADR-0014 | Autonomy As Policy | accepted |
 | ADR-0015 | Durable Notification Delivery | accepted |
 | ADR-0016 | Dashboard Browser-Origin Defence | accepted |
+| ADR-0017 | Host-Level Settings Are Operator-Only | accepted |

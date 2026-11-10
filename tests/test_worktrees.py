@@ -333,6 +333,46 @@ class WorktreePruningTests(unittest.TestCase):
         self.store.save_task(task)
         return task
 
+    def test_prune_never_deletes_a_directory_that_is_not_a_worktree(self) -> None:
+        """The root is a setting; a wrong value must not delete other files."""
+
+        shared = Path(self.repo).parent / "shared"
+        (shared / "precious").mkdir(parents=True)
+        (shared / "precious" / "notes.txt").write_text("keep me\n", encoding="utf-8")
+        self.project.settings = {"worktree_root": str(shared)}
+        self.store.save_project(self.project)
+        manager = WorktreeManager(self.project)
+        finished_path = manager.ensure(self.seed_task("finished", "done"))
+
+        removed, kept = prune_project_worktrees(self.store, self.project)
+
+        self.assertEqual([entry.slug for entry in removed], [finished_path.name])
+        self.assertFalse(finished_path.exists())
+        self.assertTrue((shared / "precious" / "notes.txt").is_file())
+        stray = next(entry for entry in kept if entry.slug == "precious")
+        self.assertFalse(stray.owned)
+        self.assertFalse(manager.remove_path(shared / "precious"))
+        self.assertTrue((shared / "precious").is_dir())
+
+    def test_the_worktree_root_itself_is_never_removed(self) -> None:
+        manager = WorktreeManager(self.project)
+        manager.ensure(self.seed_task("live", "in_progress"))
+        with self.assertRaises(WorktreeError):
+            manager.remove_path(manager.root)
+        self.assertTrue(manager.root.is_dir())
+
+    def test_a_tree_whose_registration_was_lost_is_still_recognised(self) -> None:
+        manager = WorktreeManager(self.project)
+        path = manager.ensure(self.seed_task("finished", "done"))
+        admin = Path(self.repo) / ".git" / "worktrees" / path.name
+        (admin / "gitdir").unlink()  # git no longer lists the tree
+        self.assertTrue(manager.is_owned(path))
+
+        removed, _ = prune_project_worktrees(self.store, self.project)
+
+        self.assertIn(path.name, [entry.slug for entry in removed])
+        self.assertFalse(path.exists())
+
     def test_prune_removes_finished_tasks_and_keeps_live_ones(self) -> None:
         manager = WorktreeManager(self.project)
         live = self.seed_task("live", "in_progress")

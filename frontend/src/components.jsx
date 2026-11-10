@@ -1612,6 +1612,17 @@ export function PolicyMatrixSection({ settings, onChange }) {
   );
 }
 
+// Settings that decide what runs on the host are shown here and changed at a
+// terminal; the API refuses them (see HOST_LEVEL_SETTINGS on the server).
+function TerminalOnlyHint({ projectId, settingKey }) {
+  return (
+    <div className="form-hint">
+      Read-only here because it decides what runs on the host. Change it with{" "}
+      <code>foreman config {projectId || "<project>"} --set {settingKey}=…</code>
+    </div>
+  );
+}
+
 export function SettingsPanel({ settings, project, services, onUpdate, onClose }) {
   const [draft, setDraft] = useState(null);
 
@@ -1735,8 +1746,10 @@ export function SettingsPanel({ settings, project, services, onUpdate, onClose }
                 type="text"
                 placeholder="https://api.example.io/anthropic"
                 value={innerSettings.judge_base_url ?? ""}
-                onChange={(e) => handleChange("judge_base_url", e.target.value)}
+                readOnly
+                aria-readonly="true"
               />
+              <TerminalOnlyHint projectId={project?.id} settingKey="judge_base_url" />
             </div>
             <div className="form-group">
               <label className="form-label">Judge model</label>
@@ -1754,8 +1767,10 @@ export function SettingsPanel({ settings, project, services, onUpdate, onClose }
                 type="text"
                 placeholder="e.g. JUDGE_API_KEY"
                 value={innerSettings.judge_api_key_env ?? ""}
-                onChange={(e) => handleChange("judge_api_key_env", e.target.value)}
+                readOnly
+                aria-readonly="true"
               />
+              <TerminalOnlyHint projectId={project?.id} settingKey="judge_api_key_env" />
             </div>
             <div className="form-group">
               <label className="form-label">Judge diff cap (chars)</label>
@@ -1862,8 +1877,10 @@ export function SettingsPanel({ settings, project, services, onUpdate, onClose }
                 type="text"
                 placeholder="e.g. ./venv/bin/python -m unittest discover -s tests"
                 value={innerSettings.test_command ?? ""}
-                onChange={(e) => handleChange("test_command", e.target.value)}
+                readOnly
+                aria-readonly="true"
               />
+              <TerminalOnlyHint projectId={project?.id} settingKey="test_command" />
             </div>
           </div>
           <WorktreePanel key={project?.id} project={project} services={services} />
@@ -2294,8 +2311,9 @@ export function RolesModal({ services, onClose }) {
         </div>
         <div className="modal-body">
           <div className="form-hint">
-            Roles are shared across projects. Editing writes the role's TOML file in
-            the <code>roles/</code> directory.
+            Roles are shared across projects. Saving a model writes the role's TOML
+            file in the <code>roles/</code> directory. Backend and permission mode
+            decide what an agent may do on the host and are changed in that file.
           </div>
           {error ? <div className="meta-error">{error}</div> : null}
           {roles === null ? (
@@ -2324,14 +2342,14 @@ export function RolesModal({ services, onClose }) {
                       </label>
                       <label className="role-field">
                         <span>Backend</span>
-                        <select
+                        <input
                           className="form-input"
+                          type="text"
                           value={fieldValue(role, "backend")}
-                          onChange={(e) => setField(role.id, "backend", e.target.value)}
-                        >
-                          <option value="claude_code">claude_code</option>
-                          <option value="codex">codex</option>
-                        </select>
+                          readOnly
+                          aria-readonly="true"
+                          title="Set in the role's TOML file"
+                        />
                       </label>
                       <label className="role-field">
                         <span>Permission mode</span>
@@ -2339,7 +2357,9 @@ export function RolesModal({ services, onClose }) {
                           className="form-input"
                           type="text"
                           value={fieldValue(role, "permission_mode")}
-                          onChange={(e) => setField(role.id, "permission_mode", e.target.value)}
+                          readOnly
+                          aria-readonly="true"
+                          title="Set in the role's TOML file"
                         />
                       </label>
                       <button

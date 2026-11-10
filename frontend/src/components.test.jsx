@@ -1,6 +1,12 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
-import { PolicyMatrixSection, TaskCard, TaskDetailDrawer, WorktreePanel } from "./components";
+import {
+  PolicyMatrixSection,
+  SettingsPanel,
+  TaskCard,
+  TaskDetailDrawer,
+  WorktreePanel,
+} from "./components";
 
 const PROJECT = { id: "proj-1", name: "Foreman" };
 
@@ -310,5 +316,29 @@ describe("PolicyMatrixSection", () => {
     fireEvent.change(screen.getByLabelText("docs Triage"), { target: { value: "" } });
 
     expect(onChange).toHaveBeenCalledWith("policy_rules", {});
+  });
+});
+
+describe("SettingsPanel host-level settings", () => {
+  it("shows the test command read-only with the terminal command to change it", async () => {
+    const services = { listWorktrees: vi.fn().mockResolvedValue(payload([])), pruneWorktrees: vi.fn() };
+    const onUpdate = vi.fn();
+    render(
+      <SettingsPanel
+        settings={{ settings: { test_command: "make test" }, autonomy_level: "directed" }}
+        project={PROJECT}
+        services={services}
+        onUpdate={onUpdate}
+        onClose={() => {}}
+      />,
+    );
+
+    const input = screen.getByDisplayValue("make test");
+    expect(input).toHaveAttribute("readonly");
+    fireEvent.change(input, { target: { value: "rm -rf /" } });
+    expect(screen.queryByText("Save")).not.toBeInTheDocument();
+    expect(onUpdate).not.toHaveBeenCalled();
+    expect(screen.getByText(/foreman config proj-1 --set test_command/)).toBeInTheDocument();
+    await waitFor(() => expect(services.listWorktrees).toHaveBeenCalled());
   });
 });
