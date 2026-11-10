@@ -29,7 +29,7 @@ spend, no orphaned agents, and one engine per project in fact.
 | 4b | Token usage decomposed: each run stores input, output, cache-read and cache-creation tokens as the backend reports them; totals, the API, `foreman cost` / `history`, the task drawer, run history and the sprint footer show the split | done | Claude, by hand | `feat/token-usage-breakdown`: `TokenUsage`, migration 19, runner, orchestrator, store, service, CLI, frontend, 5 tests |
 | 5 | Task lease lifecycle: a timer renews the lease for the whole of `run_task`, whatever the step is doing; stale-run recovery re-acquires instead of expiring the engine's own lease; a task left `blocked` by any gate or guard releases its lease | done | Claude, by hand | `fix/task-lease-lifecycle`: `foreman/task_lease.py`, orchestrator, 7 tests |
 | 6 | Approve and deny record a decision and leave execution to the engine; a task paused at a human gate releases its lease | done | Claude, by hand | `fix/gate-decisions-through-engine`: orchestrator `defer`, CLI, service, dashboard notice, ADR-0011 amendment, 1 new test and 4 updated |
-| 7 | First delegation trial: one self-contained slice from Phase 2 run through Foreman on a cheaper model, compared with a by-hand slice of similar size | todo | | cost and outcome note in this file |
+| 7 | First delegation trial: FOR-13, completion-evidence diff stats from `git diff --numstat -z`, run through Foreman with the developer on `claude-sonnet-5-5` | at the merge gate, awaiting the owner | Foreman (developer Sonnet 5.5, reviewer Sonnet 4.6); brief and diff review by Claude | branch `fix/task-parse-completion-evidence-diff-stats-from-git-numstat`, 1 commit, 3 files, +144/-49 |
 
 ### Carried from sprint 54
 
@@ -112,3 +112,46 @@ split and show only the old total. Codex runs report no split.
   up to five minutes between an approval and anything happening.
 - The dashboard does not start an engine on approve. Doing so from a click
   that is not "Run" would spawn a process the person did not ask for.
+
+### Slice 7 notes: first Foreman run since the safety fixes (2026-11-10)
+
+FOR-13 went from `todo` to the merge gate in 11 min 46 s with no
+intervention: develop 8 min 0 s, test, review 1 min 45 s.
+
+| Step | Model | In | Out | Cache read | Cache write | Notional cost |
+|------|-------|----|-----|------------|-------------|---------------|
+| develop | claude-sonnet-5-5 | 22 | 5,516 | 406,505 | 32,872 | $0.23 |
+| review | claude-sonnet-4-6 | 6 | 6,871 | 140,834 | 28,759 | $0.32 |
+
+- **Quality.** The diff is correct and stays inside the brief: one function
+  pair rewritten, a rename and binary case handled as specified, a test
+  module on a real temporary repository, a changelog entry. Checked by hand
+  in the worktree: the new tests pass and ruff is clean.
+- **Cost against the sprint-54 runs.** Those ran the developer on Opus at
+  $20 to $30 per slice over several gate rounds. This task was smaller and
+  much more tightly specified, so the figures are not like for like, but a
+  well-briefed small task on Sonnet finished first time for well under a
+  dollar of notional cost. The brief did most of the work: it named the
+  function, the output shape to keep, and each numstat edge case.
+- **What the split shows.** Over 97% of the tokens in both steps are cache
+  reads, which the old single number (5,538 and 6,877) did not show at all.
+- **The fixes held.** `--max-budget-usd` was passed, the lease heartbeat ran
+  for the eight-minute step, the run stopped at the result line, and the
+  task released its lease at the gate.
+- **Approval is the owner's.** Claude reviewed the diff and found it sound,
+  but the session's permission rules refuse an agent approving a human
+  gate, which is the right rule. To land it:
+  `foreman approve task-parse-completion-evidence-diff-stats-from-git-numstat`
+  then `foreman run foreman`.
+
+Findings from the run, for Phase 2:
+
+1. The `test` step's run records `duration_ms=0` and its detail is a slice
+   of test stdout ("Updated config ..."), not a result line such as
+   "1032 tests passed in 104 s".
+2. The worktree venv has no ruff (`worktree_setup_command` installs the
+   package without the `dev` extra), so an agent cannot check a lint
+   criterion it is given. The setup command should install `.[dev]`.
+3. The reviewer ran on a role default of `claude-sonnet-4-6` and cost more
+   than the developer. Role model ids are stale; reviewers on a small diff
+   are a candidate for Haiku.
