@@ -25,7 +25,7 @@ states facts.
 
 | # | Slice | Status | Executed by | Deliverable |
 |---|-------|--------|-------------|-------------|
-| 1 | Safe task writes: the engine updates the columns it owns with an expected status and re-reads the task before every step, so an operator's cancel, block or edit made mid-step is not overwritten; `signal.blocker` stops the workflow | todo | Claude, by hand | store, orchestrator, tests |
+| 1 | Safe task writes: the engine updates only the columns it owns, never touches a cancelled task, re-reads the task before every step, and stops when it finds the task cancelled or blocked; `signal.blocker` stops the workflow | done | Claude, by hand | `fix/safe-task-writes`: `update_task_engine_state`, `_save_task`, `_adopt_operator_changes`, 3 tests |
 | 2 | Crash-safe steps: try/finally settles every run; the next step is persisted in the same write as the transition; recovery resumes at that step | todo | Claude, by hand | orchestrator, tests |
 | 3 | Worktree check in place of the default-branch assertion; the integration worktree heals an interrupted merge; a task tree on the wrong branch is never force-checked-out while dirty | todo | Claude, by hand | orchestrator, worktrees, git, ADR-0012 amendment |
 | 4 | Test step truth: real duration, a result line as the run detail, test result tied to the head commit | todo | Foreman | builtins, tests |
@@ -44,3 +44,24 @@ Findings from the FOR-13 run: the worktree setup command now installs the
 role model ids were refreshed (reviewers on `claude-sonnet-5-5`, triage on
 `claude-haiku-5-5`, architect and frontier reviewer on `claude-opus-5-5`);
 the test-step findings are slice 4.
+
+### Slice 1 notes
+
+- A task's status is not guarded by an expected-value check on every write.
+  The rule that matters is narrower and absolute: a cancelled row is never
+  written by the engine, and a step never starts for a task that is
+  cancelled or blocked. Edits to wording, criteria, priority, dependencies
+  and overrides are picked up between steps.
+- `foreman task block` on a running task still does not interrupt the agent
+  mid-step; the workflow stops when that step ends. Interrupting is the
+  engine command `stop-task`.
+- The fencing token on leases is still not checked on writes. With one
+  engine per project (ADR-0011) nothing can exploit that today; it returns
+  with parallel workers.
+
+### Lesson from opening this sprint
+
+The role model refresh was merged after running only `test_roles.py`, and
+broke an assertion in `test_cli.py` on `main` for 40 minutes while Foreman
+tasks were starting from it. Fixed in `5d5528f`. The whole suite runs
+before every merge, including docs-and-config ones.

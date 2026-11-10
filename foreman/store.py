@@ -793,6 +793,70 @@ class ForemanStore:
         ).fetchone()
         return _row_to_sprint(row) if row else None
 
+    def update_task_engine_state(
+        self, task: Task, *, include_definition: bool = False
+    ) -> bool | None:
+        """Write only the columns the engine owns for an existing task.
+
+        ``save_task`` replaces the whole row, so an engine holding a task
+        object for the length of a workflow overwrote whatever an operator
+        changed in the meantime: an edited title or criteria, a changed
+        priority or override, and a cancellation, after which the cancelled
+        task was merged and marked done.
+
+        This writes workflow state only (status, block reason, branch,
+        worktree, role, step, carried output, visit counts, evidence, start
+        and completion times) and never touches a row whose status is
+        ``cancelled``: cancellation is an operator's terminal decision.
+        ``include_definition`` adds title, type and acceptance criteria, for
+        the autonomous flow in which the agent names the task it picked.
+
+        Returns True when written, False when the task is cancelled (the row
+        is left alone), and None when no such task exists.
+        """
+
+        assignments = [
+            "status = ?",
+            "blocked_reason = ?",
+            "branch_name = ?",
+            "worktree_path = ?",
+            "assigned_role = ?",
+            "workflow_current_step = ?",
+            "workflow_carried_output = ?",
+            "step_visit_counts = ?",
+            "completion_evidence_json = ?",
+            "started_at = ?",
+            "completed_at = ?",
+        ]
+        values: list[Any] = [
+            task.status,
+            task.blocked_reason,
+            task.branch_name,
+            getattr(task, "worktree_path", None),
+            task.assigned_role,
+            task.workflow_current_step,
+            task.workflow_carried_output,
+            _json_dumps(task.step_visit_counts),
+            _serialize_evidence(getattr(task, "completion_evidence", None)),
+            task.started_at,
+            task.completed_at,
+        ]
+        if include_definition:
+            assignments += ["title = ?", "task_type = ?", "acceptance_criteria = ?"]
+            values += [task.title, task.task_type, task.acceptance_criteria]
+
+        def _write(connection: sqlite3.Connection) -> int:
+            cursor = connection.execute(
+                f"UPDATE tasks SET {', '.join(assignments)} "
+                "WHERE id = ? AND status != 'cancelled'",
+                (*values, task.id),
+            )
+            return cursor.rowcount
+
+        if self._write(_write) > 0:
+            return True
+        return False if self.get_task(task.id) is not None else None
+
     def save_task(self, task: Task) -> Task:
         """Insert or update a task record.
 
