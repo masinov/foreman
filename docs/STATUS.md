@@ -8,11 +8,13 @@ Current snapshot only. History up to 2026-09-08 (sprints 1 to 54) is in
 - Driving document: `docs/reviews/2026-11-10-full-review-and-finish-plan.md`
   (full review of engine, runner, dashboard, frontend and UX, with a six-phase
   plan, 0 to 5).
-- Active sprint: **sprint 55 — baseline and host safety**
-  (`docs/sprints/current.md`). Sprint 54 is closed and archived.
-- `main` carries sprint 55 slices 0 to 2 and is pushed to `origin/main`.
-  Work happens on short branches from `main`; the operator checkout stays
-  off `main` (the `_integration` worktree holds it).
+- Active sprint: **sprint 56 — engine truthfulness**
+  (`docs/sprints/current.md`). Sprint 55 (baseline and host safety) is
+  closed and archived; its last slice was the first task run through
+  Foreman since the safety fixes (FOR-13, merged by the engine).
+- `main` is pushed to `origin/main`. Work happens on short branches from
+  `main`; the operator checkout stays off `main` (the `_integration`
+  worktree holds it).
 
 ## Running unattended
 
@@ -21,8 +23,8 @@ reproduced: browser routes into the API (ADR-0016), API control over shell
 commands, paths and role permissions (ADR-0017), unbounded per-run spend,
 agents outliving the engine, the lease loss that re-ran the developer, and
 approve/deny executing outside the engine lock (ADR-0011 amendment). None of
-this has yet been exercised by a real engine run since the fixes; slice 7 is
-that run. Still true: agents run with full permissions as the engine's user
+this was exercised by one real engine run (FOR-13, 2026-11-10: develop, test,
+review, human gate, deferred approval, merge). Still true: agents run with full permissions as the engine's user
 (sandboxing is Phase 5), and there is no login.
 
 ## Operating decisions (owner, 2026-11-10)

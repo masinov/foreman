@@ -7,6 +7,12 @@ memory changes rather than versioned product releases.
 
 ## [Unreleased]
 
+### Sprint 56 — engine truthfulness
+
+- opened sprint 56 from Phase 2 of the 2026-11-10 finish plan; refreshed
+  shipped role model ids (reviewers `claude-sonnet-5-5`, triage
+  `claude-haiku-5-5`, architect and frontier reviewer `claude-opus-5-5`)
+
 ### Sprint 55 — baseline and host safety
 
 - **completion-evidence diff stats from numstat**

@@ -5,7 +5,7 @@ description = "Cheap-model first-pass reviewer that approves, denies, or escalat
 
 [agent]
 backend = "claude_code"
-model = "claude-haiku-4-5-20251001"
+model = "claude-haiku-5-5"
 session_persistence = false
 permission_mode = "bypassPermissions"
 

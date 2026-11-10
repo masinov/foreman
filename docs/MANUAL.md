@@ -427,13 +427,13 @@ A role is a declarative TOML file describing one agent identity. Shipped roles:
 
 | Role | Model (default) | Session | Purpose |
 |---|---|---|---|
-| `architect` | `claude-opus-4-6` | ephemeral | Plan/decompose into tasks (emits `signal.task_created`). |
+| `architect` | `claude-opus-5-5` | ephemeral | Plan/decompose into tasks (emits `signal.task_created`). |
 | `developer` | project default | persistent | Implement the change on the task branch. |
 | `developer_worker` | project default | persistent | Worker-fleet developer; carries a commented `[agent.env]` example. |
-| `code_reviewer` | `claude-sonnet-4-6` | ephemeral | Agentic review with repo tools. |
-| `security_reviewer` | `claude-sonnet-4-6` | ephemeral | Security-focused review (in `development_secure`). |
-| `triage_reviewer` | `claude-haiku-4-5` | ephemeral | Cheap payload-only triage; can `ESCALATE`. |
-| `frontier_reviewer` | `claude-opus-4-8` | ephemeral | Tool-less frontier adjudication of a curated diff. |
+| `code_reviewer` | `claude-sonnet-5-5` | ephemeral | Agentic review with repo tools. |
+| `security_reviewer` | `claude-sonnet-5-5` | ephemeral | Security-focused review (in `development_secure`). |
+| `triage_reviewer` | `claude-haiku-5-5` | ephemeral | Cheap payload-only triage; can `ESCALATE`. |
+| `frontier_reviewer` | `claude-opus-5-5` | ephemeral | Tool-less frontier adjudication of a curated diff. |
 
 ### Role TOML anatomy
 
