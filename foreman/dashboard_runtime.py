@@ -7,11 +7,6 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .dashboard_service import (
-    STREAM_BATCH_LIMIT,
-    STREAM_HEARTBEAT_SECONDS,
-    STREAM_POLL_INTERVAL_SECONDS,
-)
 from .store import ForemanStore
 
 

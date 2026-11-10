@@ -577,7 +577,7 @@ button {
   transition: grid-template-columns 250ms ease;
 }
 
-.project-view-inner.with-agent {
+.project-view-inner.with-manager {
   grid-template-columns: 1fr 540px;
 }
 
@@ -587,7 +587,7 @@ button {
   cursor: col-resize;
 }
 
-.project-view-inner.agent-hidden {
+.project-view-inner.manager-hidden {
   grid-template-columns: 1fr 32px;
 }
 
@@ -614,44 +614,62 @@ button {
   font-family: var(--font-serif);
   font-size: 20px;
   font-weight: 600;
-  margin-bottom: 4px;
+  margin-bottom: 8px;
 }
 
 .project-meta {
   display: flex;
-  gap: 20px;
+  flex-wrap: wrap;
+  gap: 4px 20px;
   font-size: 11px;
+  line-height: 1.6;
   color: var(--text-tertiary);
 }
 
 .project-meta .v {
   color: var(--text-secondary);
+  overflow-wrap: anywhere;
 }
 
-/* The worktree row carries a control, so it needs vertical centring and a
-   smaller gap than the plain metadata rows above it. */
-.worktree-meta {
-  align-items: center;
-  gap: 10px;
-  margin-top: 4px;
+.working-copy-settings .form-hint {
+  display: block;
+  margin: 8px 0;
 }
 
-/* The root is long and only meaningful character by character; it gives way
-   to the count and the control when the header is narrow. */
-.worktree-root {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--text-tertiary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 40ch;
+.working-copy-details {
+  margin: 12px 0;
+  font-size: 11px;
+  color: var(--text-secondary);
 }
 
-.project-badges {
+.working-copy-details summary {
+  cursor: pointer;
+}
+
+.working-copy-details code {
+  overflow-wrap: anywhere;
+}
+
+.project-status-summary {
   display: flex;
-  gap: 8px;
-  margin-top: 6px;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 20px;
+  margin-top: 10px;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.project-status-summary .engine-state {
+  white-space: normal;
+}
+
+.project-status-gate {
+  color: var(--amber);
+}
+
+.project-status-blocked {
+  color: var(--red);
 }
 
 .badge {
@@ -712,7 +730,7 @@ button {
   margin-inline: auto;
 }
 
-.agent-panel {
+.manager-panel {
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -721,7 +739,7 @@ button {
 }
 
 /* Drag handle on the panel's left edge to resize the manager pane. */
-.agent-resize-handle {
+.manager-resize-handle {
   position: absolute;
   top: 0;
   bottom: 0;
@@ -734,7 +752,7 @@ button {
   z-index: 6;
 }
 
-.agent-resize-grip {
+.manager-resize-grip {
   width: 3px;
   height: 32px;
   border-radius: 2px;
@@ -742,17 +760,17 @@ button {
   transition: background 180ms ease, height 180ms ease;
 }
 
-.agent-resize-handle:hover .agent-resize-grip,
-.project-view-inner.is-resizing .agent-resize-grip {
+.manager-resize-handle:hover .manager-resize-grip,
+.project-view-inner.is-resizing .manager-resize-grip {
   background: var(--accent);
   height: 52px;
 }
 
-.project-view-inner.agent-hidden .agent-panel {
+.project-view-inner.manager-hidden .manager-panel {
   display: none;
 }
 
-.agent-tab {
+.manager-tab {
   display: none;
   writing-mode: vertical-rl;
   text-orientation: mixed;
@@ -770,12 +788,12 @@ button {
   border-left: 1px solid var(--border-subtle);
 }
 
-.agent-tab:hover {
+.manager-tab:hover {
   color: var(--text-secondary);
   background: var(--bg-raised);
 }
 
-.project-view-inner.agent-hidden .agent-tab {
+.project-view-inner.manager-hidden .manager-tab {
   display: flex;
   align-items: center;
 }
@@ -3920,12 +3938,12 @@ select.form-input {
   }
 
   .project-view-inner,
-  .project-view-inner.agent-hidden {
+  .project-view-inner.manager-hidden {
     grid-template-columns: 1fr;
   }
 
-  .agent-panel,
-  .agent-tab {
+  .manager-panel,
+  .manager-tab {
     border-left: 0;
     border-top: 1px solid var(--border-subtle);
   }

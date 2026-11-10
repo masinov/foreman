@@ -214,7 +214,7 @@ __marimo__/
 .claude/
 
 # Frontend workspace
-frontend/node_modules/
+frontend/node_modules
 frontend/.vite/
 .foreman.db
 .foreman.db-wal

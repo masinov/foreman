@@ -216,6 +216,7 @@ function createMockServices() {
       command: { id: "cmd-2", command: "resume", status: "pending" },
     }),
     metaHistory: vi.fn().mockResolvedValue({ turns: [], has_more: false }),
+    getProjectSettings: vi.fn().mockResolvedValue({ project_id: "proj-1", settings: {} }),
     listWorktrees: vi.fn().mockResolvedValue({
       project_id: "proj-1",
       root: "/tmp/foreman/.foreman/worktrees",
@@ -269,6 +270,53 @@ describe("React dashboard foundation", () => {
     // The project header reports the engine, and its stop control pauses it.
     expect(await screen.findByText("Engine: resident · heartbeat 4s ago")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Pause engine" })).toBeInTheDocument();
+  });
+
+  it("keeps Manager folded until opened and preserves its draft across folding", async () => {
+    const { services } = createMockServices();
+    window.history.replaceState({}, "", "/dashboard/projects/proj-1");
+    render(<App services={services} browser={window} />);
+
+    const managerTab = await screen.findByRole("button", { name: "Manager", exact: true });
+    expect(managerTab).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("button", { name: "Agent", exact: true })).not.toBeInTheDocument();
+    expect(screen.queryByRole("complementary", { name: "Manager" })).not.toBeInTheDocument();
+    expect(services.metaHistory).not.toHaveBeenCalled();
+
+    fireEvent.click(managerTab);
+    expect(await screen.findByText("Planning & supervision")).toBeVisible();
+    await waitFor(() => expect(services.metaHistory).toHaveBeenCalledTimes(1));
+    const draft = screen.getByPlaceholderText("Describe a change, ask a question, or give a directive…");
+    fireEvent.change(draft, { target: { value: "Plan the next sprint" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Collapse Manager" }));
+    expect(draft).not.toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Manager", exact: true }));
+    expect(draft).toBeVisible();
+    expect(draft).toHaveValue("Plan the next sprint");
+    expect(services.metaHistory).toHaveBeenCalledTimes(1);
+
+    // Execution activity belongs to the sprint, not the project Manager chat.
+    fireEvent.click(screen.getByText("React foundation"));
+    expect(await screen.findByText("Build the frontend")).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Agent", exact: true })).toBeInTheDocument();
+    expect(screen.queryByRole("complementary", { name: "Manager" })).not.toBeInTheDocument();
+  });
+
+  it("loads working-copy maintenance only inside project settings", async () => {
+    const { services } = createMockServices();
+    window.history.replaceState({}, "", "/dashboard/projects/proj-1");
+    render(<App services={services} browser={window} />);
+    await screen.findByText("React foundation");
+    expect(services.listWorktrees).not.toHaveBeenCalled();
+    expect(screen.queryByText("Task working copies")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Settings", exact: true }));
+    expect(await screen.findByRole("region", { name: "Task working copies" })).toBeVisible();
+    await waitFor(() => expect(services.listWorktrees).toHaveBeenCalledWith("proj-1"));
+    expect(screen.getByText("/tmp/foreman/.foreman/worktrees")).not.toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Remove unused copies" }));
+    await waitFor(() => expect(services.pruneWorktrees).toHaveBeenCalledWith("proj-1"));
   });
 
   it("sends human guidance through the selected task context", async () => {

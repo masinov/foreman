@@ -17,18 +17,16 @@ required.
 from __future__ import annotations
 
 import socket
-import tempfile
 import threading
 import time
 import unittest
-from pathlib import Path
 
 try:
     import pytest
 except ImportError as exc:  # pragma: no cover - exercised in minimal envs.
     raise unittest.SkipTest("pytest package not installed") from exc
 
-from foreman.models import Project, Sprint, Task, utc_now_text
+from foreman.models import Project, Sprint, Task
 from foreman.store import ForemanStore
 
 # ---------------------------------------------------------------------------

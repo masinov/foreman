@@ -1,5 +1,34 @@
 # Backlog
 
+## Finish plan — `docs/reviews/2026-11-10-full-review-and-finish-plan.md`
+
+The 2026-11-10 review is the forward roadmap and supersedes the ordering of
+the Phase 1 and Phase 2 lists below where they overlap. Sprint 55 covers its
+Phases 0 and 1. Queued after that, in order:
+
+- **Phase 2, engine truthfulness:** column-scoped task updates and a status
+  re-read before each step; try/finally around every step with the next step
+  persisted in the same write; worktree checks in place of the default-branch
+  assertion; facts-based evidence tied to the head commit; session-aware
+  retry and structured quota detection; durable engine commands; triage
+  events through the notification dispatcher; guidance delivered to the agent
+  or relabelled as a note; enums with CHECK constraints; one settings object.
+- **Phase 3, structure:** `foreman/engine/`, `foreman/store/` and
+  `foreman/cli/` packages; one task and sprint mutation service shared by CLI
+  and dashboard; routers, request models, one error envelope and `/api/v1`;
+  roles, workflows and templates as package data; test suite split with
+  shared fixtures.
+- **Phase 4, frontend rebuild:** design reference agreed first; primitives
+  (dialog, slide-over, field, button, menu); per-scope data hooks with stale
+  guards; task page with the pending decision first; settings as sections
+  with one autonomy model; readable activity; browser acceptance tests;
+  ESLint.
+- **Phase 5, finish the product:** planner step per task; pull-request
+  integration; login and roles as a pluggable seam (no provider chosen);
+  agent sandbox; manager chat through the runner; spec §6.4 checkpoints;
+  Codex role and smoke test; database out of the repository; deployment
+  guide.
+
 ## Production readiness roadmap — `docs/reviews/production-readiness-review.md`
 
 The readiness review is the forward roadmap. Phase 0 shipped as sprint 53

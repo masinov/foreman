@@ -39,8 +39,8 @@ from .logs import compact_payload, event_log_level, get_logger, log_event
 from .judge import judge_criteria, truncate_diff
 from .models import CompletionEvidence, Event, HumanGateDecision, Lease, Project, Run, Sprint, TASK_COMPLEXITIES, Task, utc_now_text
 from .notifications import NotificationDispatcher, resolve_notification_policy
-from .policy import GATE_DECISIONS, POLICY_DEFAULTS, PolicyMatrix, describe_resolution
-from .outcomes import APPROVE, BLOCKED, DENY, DONE, ERROR, ESCALATE, normalize_agent_outcome, normalize_reviewer_decision, STEER
+from .policy import GATE_DECISIONS, PolicyMatrix, describe_resolution
+from .outcomes import APPROVE, BLOCKED, DENY, DONE, ERROR, normalize_agent_outcome, normalize_reviewer_decision
 from .runner import AgentRunConfig, ClaudeCodeRunner, CodexRunner, PreflightError, run_with_retry
 from .runner.base import AgentRunner as NativeAgentRunner
 from .runner.process import EngineShutdown
@@ -2329,21 +2329,6 @@ class ForemanOrchestrator:
         return (
             PolicyMatrix.for_project(project)
             .resolve(policy, task_type=task.task_type, overrides=task.executor_overrides)
-            .value
-        )
-
-    def _notification_policy(self, project: Project | None, task: Task | None) -> str:
-        """Resolve the notification decision for the events worth announcing."""
-
-        if project is None:
-            return POLICY_DEFAULTS["notification"]
-        return (
-            PolicyMatrix.for_project(project)
-            .resolve(
-                "notification",
-                task_type=getattr(task, "task_type", None),
-                overrides=getattr(task, "executor_overrides", None),
-            )
             .value
         )
 

@@ -325,12 +325,12 @@ function DecisionGateBanner({ gate, sprints, onResolve }) {
   );
 }
 
-const AGENT_MIN_WIDTH = 360;
-const AGENT_MAX_WIDTH = 820;
-const AGENT_DEFAULT_WIDTH = 540;
+const MANAGER_MIN_WIDTH = 360;
+const MANAGER_MAX_WIDTH = 820;
+const MANAGER_DEFAULT_WIDTH = 540;
 
 /**
- * The project screen's view of the checkouts Foreman owns on disk, with the
+ * Project settings' view of the checkouts Foreman owns on disk, with the
  * one action an operator has on them. Without this, the screen named the
  * repository path but gave no way to see or reclaim what the engine had
  * accumulated under it.
@@ -385,17 +385,30 @@ export function WorktreePanel({ project, services }) {
   ).length;
 
   return (
-    <div className="project-meta worktree-meta">
-      <span>
-        Worktrees{" "}
-        <span className="v">
-          {payload === null ? "…" : `${taskTrees.length}${limit ? ` / ${limit}` : ""}`}
-        </span>
-      </span>
+    <section className="settings-section working-copy-settings" aria-label="Task working copies">
+      <div className="settings-section-title">Task working copies</div>
+      <p className="form-hint">
+        Each task gets an isolated copy of the repository. Copies can remain
+        while tasks are paused or waiting for review.
+      </p>
+      <div className="settings-row">
+        <span>Stored copies</span>
+        <span>{payload === null ? "…" : taskTrees.length}</span>
+      </div>
+      <div className="settings-row">
+        <span>Configured storage limit</span>
+        <span>{payload === null ? "…" : limit || "Unlimited"}</span>
+      </div>
+      <p className="form-hint">
+        This limit manages disk usage, not parallel agents. Foreman can exceed
+        it to preserve unfinished changes.
+      </p>
       {payload?.root ? (
-        <span className="worktree-root" title={payload.root}>
-          {payload.root}
-        </span>
+        <details className="working-copy-details">
+          <summary>Storage details</summary>
+          <p>Git worktree folder</p>
+          <code>{payload.root}</code>
+        </details>
       ) : null}
       <button
         className="btn btn-small"
@@ -403,23 +416,27 @@ export function WorktreePanel({ project, services }) {
         disabled={pruning || payload === null}
         title={
           prunable > 0
-            ? `Remove ${prunable} worktree(s) of done, cancelled, or deleted tasks`
-            : "Nothing to prune: every worktree belongs to a live task"
+            ? `Remove ${prunable} working copies of completed, cancelled, or deleted tasks`
+            : "No unused copies: every copy belongs to an unfinished task"
         }
         onClick={prune}
       >
-        {pruning ? "Pruning…" : "Prune worktrees"}
+        {pruning ? "Removing…" : "Remove unused copies"}
       </button>
+      <p className="form-hint">
+        Removes copies for completed, cancelled, or deleted tasks. Copies for
+        unfinished tasks are kept.
+      </p>
       {error ? <span className="meta-error">{error}</span> : null}
-    </div>
+    </section>
   );
 }
 
 export function SprintList({ project, sprints, pendingGates, engineStatus, onSelectSprint, onOpenNewSprint, onTransitionSprint, onDeleteSprint, onReorderSprints, onStartAgent, onStopAgent, onResolveGate, onSprintsChanged, services, isActionPending }) {
-  const [agentCollapsed, setAgentCollapsed] = useState(!services);
-  const [agentMounted, setAgentMounted] = useState(Boolean(services));
-  const [agentWidth, setAgentWidth] = useState(AGENT_DEFAULT_WIDTH);
-  const [agentResizing, setAgentResizing] = useState(false);
+  const [managerCollapsed, setManagerCollapsed] = useState(true);
+  const [managerMounted, setManagerMounted] = useState(false);
+  const [managerWidth, setManagerWidth] = useState(MANAGER_DEFAULT_WIDTH);
+  const [managerResizing, setManagerResizing] = useState(false);
   const [archiveExpanded, setArchiveExpanded] = useState(false);
   const [expandedSprintId, setExpandedSprintId] = useState(null);
   const [expandedTasks, setExpandedTasks] = useState([]);
@@ -479,23 +496,23 @@ export function SprintList({ project, sprints, pendingGates, engineStatus, onSel
     onSprintsChanged?.();
   }
 
-  function openAgent() {
-    setAgentCollapsed(false);
-    setAgentMounted(true);
+  function openManager() {
+    setManagerCollapsed(false);
+    setManagerMounted(true);
   }
 
-  function startAgentResize(event) {
+  function startManagerResize(event) {
     event.preventDefault();
-    setAgentResizing(true);
+    setManagerResizing(true);
     const onMove = (moveEvent) => {
       const next = Math.min(
-        AGENT_MAX_WIDTH,
-        Math.max(AGENT_MIN_WIDTH, window.innerWidth - moveEvent.clientX),
+        MANAGER_MAX_WIDTH,
+        Math.max(MANAGER_MIN_WIDTH, window.innerWidth - moveEvent.clientX),
       );
-      setAgentWidth(next);
+      setManagerWidth(next);
     };
     const onUp = () => {
-      setAgentResizing(false);
+      setManagerResizing(false);
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
@@ -726,15 +743,15 @@ export function SprintList({ project, sprints, pendingGates, engineStatus, onSel
     </button>
   );
 
-  const agentBodyClass = services
-    ? (agentCollapsed ? "agent-hidden" : "with-agent")
+  const managerBodyClass = services
+    ? (managerCollapsed ? "manager-hidden" : "with-manager")
     : "";
 
   return (
     <section className="project-view view visible">
       <div
-        className={`project-view-inner ${agentBodyClass}${agentResizing ? " is-resizing" : ""}`}
-        style={services && !agentCollapsed ? { gridTemplateColumns: `1fr ${agentWidth}px` } : undefined}
+        className={`project-view-inner ${managerBodyClass}${managerResizing ? " is-resizing" : ""}`}
+        style={services && !managerCollapsed ? { gridTemplateColumns: `1fr ${managerWidth}px` } : undefined}
       >
         <div className="project-left">
           <div className="project-top">
@@ -742,35 +759,30 @@ export function SprintList({ project, sprints, pendingGates, engineStatus, onSel
               <h1>{project.name}</h1>
               <div className="project-meta">
                 <span>
+                  Repository <span className="v">{project.repo_path}</span>
+                </span>
+                <span>
+                  Branch <span className="v">{project.default_branch || "main"}</span>
+                </span>
+                <span>
                   Workflow <span className="v">{project.workflow_id}</span>
                 </span>
-                <span>
-                  Default branch <span className="v">{project.default_branch || "main"}</span>
-                </span>
-                <span>
-                  Repo <span className="v">{project.repo_path}</span>
-                </span>
               </div>
-              <div className="project-meta">
+              <div className="project-status-summary" role="group" aria-label="Project activity">
                 <span className={`engine-state engine-${engineMode}`}>
                   {formatEngineSummary(engineStatusPayload)}
                 </span>
+                {project.blocked_gate > 0 ? (
+                  <span className="project-status-gate">
+                    {project.blocked_gate} at a human gate
+                  </span>
+                ) : null}
+                {project.blocked_engine > 0 ? (
+                  <span className="project-status-blocked">
+                    {project.blocked_engine} blocked by the engine
+                  </span>
+                ) : null}
               </div>
-              <WorktreePanel project={project} services={services} />
-              {(project.blocked_gate || 0) + (project.blocked_engine || 0) > 0 ? (
-                <div className="project-badges">
-                  {project.blocked_gate > 0 ? (
-                    <span className="badge badge-warn">
-                      {project.blocked_gate} at a human gate
-                    </span>
-                  ) : null}
-                  {project.blocked_engine > 0 ? (
-                    <span className="badge badge-danger">
-                      {project.blocked_engine} blocked by the engine
-                    </span>
-                  ) : null}
-                </div>
-              ) : null}
             </div>
 
             {pendingGates && pendingGates.length > 0 ? (
@@ -900,31 +912,31 @@ export function SprintList({ project, sprints, pendingGates, engineStatus, onSel
         </div>
 
         {services ? (
-          <aside className="agent-panel">
+          <aside id="project-manager-panel" className="manager-panel" aria-label="Manager" hidden={managerCollapsed}>
             <div
-              className="agent-resize-handle"
+              className="manager-resize-handle"
               role="separator"
               aria-orientation="vertical"
               aria-label="Resize manager panel"
               title="Drag to resize"
-              onMouseDown={startAgentResize}
+              onMouseDown={startManagerResize}
             >
-              <span className="agent-resize-grip" aria-hidden="true" />
+              <span className="manager-resize-grip" aria-hidden="true" />
             </div>
-            {agentMounted ? (
+            {managerMounted ? (
               <MetaAgentPanel
                 projectId={project.id}
                 services={services}
                 onSprintsChanged={onSprintsChanged}
-                onCollapse={() => setAgentCollapsed(true)}
+                onCollapse={() => setManagerCollapsed(true)}
               />
             ) : null}
           </aside>
         ) : null}
 
-        {services && agentCollapsed ? (
-          <button className="agent-tab" type="button" onClick={openAgent}>
-            Agent
+        {services && managerCollapsed ? (
+          <button className="manager-tab" type="button" aria-expanded={false} aria-controls="project-manager-panel" onClick={openManager}>
+            Manager
           </button>
         ) : null}
       </div>
@@ -1600,7 +1612,7 @@ export function PolicyMatrixSection({ settings, onChange }) {
   );
 }
 
-export function SettingsPanel({ settings, onUpdate, onClose }) {
+export function SettingsPanel({ settings, project, services, onUpdate, onClose }) {
   const [draft, setDraft] = useState(null);
 
   const current = draft || settings;
@@ -1854,6 +1866,7 @@ export function SettingsPanel({ settings, onUpdate, onClose }) {
               />
             </div>
           </div>
+          <WorktreePanel key={project?.id} project={project} services={services} />
         </div>
         {draft ? (
           <div className="settings-footer">
@@ -2651,7 +2664,7 @@ export function MetaAgentPanel({ projectId, services, onSprintsChanged, onCollap
           <button className="meta-action-btn" type="button" onClick={handleClear} title="Clear session">
             Clear
           </button>
-          <button className="meta-action-btn" type="button" onClick={onCollapse} title="Collapse">
+          <button className="meta-action-btn" type="button" onClick={onCollapse} title="Collapse Manager" aria-label="Collapse Manager">
             »
           </button>
         </div>
