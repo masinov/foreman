@@ -9,6 +9,15 @@ memory changes rather than versioned product releases.
 
 ### Sprint 55 — baseline and host safety
 
+- **slice 3, cost control** (`fix/runner-cost-control`): the per-run cost
+  ceiling is handed to Claude Code as `--max-budget-usd` so spend stops
+  while the agent works; a run whose result has arrived is never reported
+  as killed; a budget stop is recorded as a cost kill with its real cost;
+  shipped roles carry ceilings of $2 to $30 in place of $1,000;
+  `runner_max_cost_usd` now lowers a role's ceiling (it was documented and
+  unused); a task or sprint cost limit of 0 means off instead of blocking
+  every task; the runner stops reading at the result line, bounds the wait
+  for exit, and kills process-group leftovers after a normal finish.
 - **slice 2, host-level settings** (`fix/host-level-settings`): the dashboard
   API refuses changes to `test_command`, `worktree_setup_command`,
   `worktree_root`, `worktree_link_paths`, `context_dir`, `judge_base_url`

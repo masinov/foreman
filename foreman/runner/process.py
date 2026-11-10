@@ -241,6 +241,10 @@ class ManagedProcess:
         if self.is_running():
             self.terminate()
             return
+        # The child has exited, but anything it left running in its process
+        # group (a dev server, a watcher) would outlive the run and hold
+        # ports and worktree files.
+        _kill_leftover_group(self.proc)
         self._unregister()
 
     def _unregister(self) -> None:
@@ -354,6 +358,25 @@ def _iter_stream(stream: Any) -> Iterator[str]:
         text = read()
         if text:
             yield from str(text).splitlines(keepends=True)
+
+
+def _kill_leftover_group(proc: Any) -> None:
+    """SIGKILL what remains of an exited child's process group, if anything.
+
+    Only for a real ``Popen`` child, which ``popen_kwargs`` starts as the
+    leader of its own session: its group id is its pid, and that id stays
+    reserved while any member of the group is alive.
+    """
+
+    if not isinstance(proc, subprocess.Popen):
+        return
+    pid = proc.pid
+    if not isinstance(pid, int) or pid <= 1 or pid == os.getpgrp():
+        return
+    try:
+        os.killpg(pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError, OSError):
+        return
 
 
 def _signal_group(proc: Any, sig: signal.Signals) -> bool:

@@ -311,6 +311,92 @@ class ClaudeRunnerLifecycleTests(unittest.TestCase):
         self.assertEqual(completed[0].payload["session_id"], "sess-flood")
         self.assertEqual(live_processes(), 0)
 
+    def _run_script(self, script: str, *, timeout_seconds: int = 0, max_cost_usd: float = 0.0):
+        from dataclasses import replace
+
+        def factory(command, **kwargs):
+            return subprocess.Popen([sys.executable, "-c", script], **kwargs)
+
+        runner = ClaudeCodeRunner(
+            popen_factory=factory, which=lambda name: "/usr/bin/claude", tick_seconds=0.1
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            config = replace(
+                self._config(Path(tmp), timeout_seconds=timeout_seconds),
+                max_cost_usd=max_cost_usd,
+            )
+            return list(runner.run(config))
+
+    _RESULT = (
+        "{'type': 'result', 'is_error': False, 'session_id': 's1', 'result': 'done',"
+        " 'total_cost_usd': 3.5, 'duration_ms': 10}"
+    )
+
+    def test_a_finished_run_over_its_ceiling_is_reported_as_completed(self) -> None:
+        """The money is spent and the work is done; a kill would throw both away."""
+
+        script = f"import json, sys\nsys.stdin.read()\nprint(json.dumps({self._RESULT}), flush=True)\n"
+        events = self._run_script(script, max_cost_usd=1.0)
+        types = [event.event_type for event in events]
+        self.assertNotIn("agent.killed", types)
+        self.assertEqual(types[-1], "agent.completed")
+        self.assertEqual(events[-1].payload["cost_usd"], 3.5)
+
+    def test_a_process_that_lingers_after_its_result_does_not_hold_the_step(self) -> None:
+        from unittest import mock
+
+        script = (
+            "import json, sys, time\nsys.stdin.read()\n"
+            f"print(json.dumps({self._RESULT}), flush=True)\n"
+            "time.sleep(60)\n"
+        )
+        started = time.monotonic()
+        with mock.patch("foreman.runner.claude_code.TERMINAL_EXIT_GRACE_SECONDS", 0.2):
+            events = self._run_script(script, timeout_seconds=2)
+        self.assertLess(time.monotonic() - started, 8.0)
+        types = [event.event_type for event in events]
+        self.assertEqual(types[-1], "agent.completed")
+        self.assertNotIn("agent.killed", types)
+        self.assertEqual(live_processes(), 0)
+
+    def test_background_children_do_not_outlive_a_normal_finish(self) -> None:
+        script = (
+            "import json, subprocess, sys\nsys.stdin.read()\n"
+            "child = subprocess.Popen(['sleep', '60'])\n"
+            "print(json.dumps({'type': 'assistant', 'message': {'content': [{'type': 'text',"
+            " 'text': str(child.pid)}]}}), flush=True)\n"
+            f"print(json.dumps({self._RESULT}), flush=True)\n"
+        )
+        events = self._run_script(script)
+        grandchild_pid = int(
+            next(e for e in events if e.event_type == "agent.message").payload["text"].strip()
+        )
+        self.assertEqual(events[-1].event_type, "agent.completed")
+        self.assertTrue(_wait_until(lambda: not _pid_is_alive(grandchild_pid), timeout=8.0))
+
+    def test_a_budget_stop_by_the_cli_is_a_cost_kill_that_keeps_its_cost(self) -> None:
+        result = (
+            "{'type': 'result', 'subtype': 'error_max_budget_usd', 'is_error': True,"
+            " 'session_id': 's1', 'total_cost_usd': 1.02, 'duration_ms': 10}"
+        )
+        script = f"import json, sys\nsys.stdin.read()\nprint(json.dumps({result}), flush=True)\n"
+        events = self._run_script(script, max_cost_usd=1.0)
+        self.assertEqual(events[-1].event_type, "agent.killed")
+        self.assertEqual(events[-1].payload["gate_type"], "cost")
+        self.assertEqual(events[-1].payload["cost_usd"], 1.02)
+        self.assertEqual(events[-1].payload["session_id"], "s1")
+
+    def test_the_cost_ceiling_is_handed_to_the_cli(self) -> None:
+        from dataclasses import replace
+
+        runner = ClaudeCodeRunner(which=lambda name: "/usr/bin/claude")
+        with tempfile.TemporaryDirectory() as tmp:
+            base = self._config(Path(tmp), timeout_seconds=0)
+            capped = runner.build_command(replace(base, max_cost_usd=12.5))
+            uncapped = runner.build_command(base)
+        self.assertEqual(capped[capped.index("--max-budget-usd") + 1], "12.50")
+        self.assertNotIn("--max-budget-usd", uncapped)
+
     def test_abandoned_generator_kills_the_agent_process_group(self) -> None:
         script = (
             "import json, subprocess, sys, time\n"
@@ -340,6 +426,20 @@ class ClaudeRunnerLifecycleTests(unittest.TestCase):
 
         self.assertTrue(_wait_until(lambda: not _pid_is_alive(grandchild_pid), timeout=8.0))
         self.assertEqual(live_processes(), 0)
+
+
+class RunCostCeilingTests(unittest.TestCase):
+    def _project(self, settings: dict) -> Project:
+        return Project(id="p", name="P", repo_path="/tmp", workflow_id="development", settings=settings)
+
+    def test_the_project_setting_can_lower_the_role_ceiling_but_not_raise_it(self) -> None:
+        from foreman.orchestrator import _run_cost_ceiling
+
+        self.assertEqual(_run_cost_ceiling(self._project({}), 30.0), 30.0)
+        self.assertEqual(_run_cost_ceiling(self._project({"runner_max_cost_usd": 8}), 30.0), 8.0)
+        self.assertEqual(_run_cost_ceiling(self._project({"runner_max_cost_usd": 500}), 30.0), 30.0)
+        self.assertEqual(_run_cost_ceiling(self._project({"runner_max_cost_usd": 8}), 0.0), 8.0)
+        self.assertEqual(_run_cost_ceiling(self._project({"runner_max_cost_usd": 0}), 0.0), 0.0)
 
 
 class CodexRunnerLifecycleTests(unittest.TestCase):

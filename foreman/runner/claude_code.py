@@ -36,6 +36,10 @@ TOOL_RESULT_PREVIEW_CHARS = 500
 # They drive the heartbeat and the gates but are never persisted.
 _PROGRESS_SYSTEM_SUBTYPES = frozenset({"thinking_tokens"})
 _NOT_JSON = object()
+# The result line ends a run: completed, failed, or stopped at its budget.
+_TERMINAL_EVENT_TYPES = frozenset({"agent.completed", "agent.error", "agent.killed"})
+# How long a process may take to exit after its stream has finished.
+TERMINAL_EXIT_GRACE_SECONDS = 5.0
 #: Error texts the CLI returns when the account's usage window is spent.
 _QUOTA_ERROR_PATTERN = re.compile(
     r"session limit|usage limit|rate limit|out of (?:extra )?usage|quota",
@@ -84,6 +88,10 @@ class ClaudeCodeRunner(AgentRunner):
             command.extend(
                 ["--disallowed-tools", ",".join(config.disallowed_tools)]
             )
+        if config.max_cost_usd > 0:
+            # Cost is only reported in the final result line, so nothing on
+            # this side can stop spend while the agent works. The CLI can.
+            command.extend(["--max-budget-usd", f"{config.max_cost_usd:.2f}"])
         command.extend(_extra_flag_args(config.extra_flags))
         return command
 
@@ -189,6 +197,12 @@ class ClaudeCodeRunner(AgentRunner):
                     for event in parsed_events
                 ):
                     saw_assistant_text = True
+                # A line carrying the run's terminal event is the end of the
+                # run: its cost is already spent and its outcome is decided,
+                # so no gate may turn it into a kill.
+                line_is_terminal = any(
+                    event.event_type in _TERMINAL_EVENT_TYPES for event in parsed_events
+                )
                 for event in parsed_events:
                     if event.event_type == "agent.cost_update":
                         last_cost_usd = _coerce_float(
@@ -213,10 +227,12 @@ class ClaudeCodeRunner(AgentRunner):
                                 if key in event.payload
                             },
                         )
-                    if event.event_type in {"agent.completed", "agent.error"}:
+                    if event.event_type in _TERMINAL_EVENT_TYPES:
                         saw_terminal_event = True
                     yield event
 
+                    if line_is_terminal:
+                        continue
                     gate_event = self._check_gates(
                         managed,
                         config,
@@ -227,7 +243,15 @@ class ClaudeCodeRunner(AgentRunner):
                         yield gate_event
                         return
 
-            managed.wait()
+                if saw_terminal_event:
+                    # Nothing after the result matters. A process that lingers
+                    # must not hold the step open or reach the time gate.
+                    break
+
+            # Bounded: the stream is finished, so give the process a moment to
+            # exit on its own; ``close`` in the ``finally`` stops whatever is
+            # left of it and its process group.
+            managed.wait(timeout=TERMINAL_EXIT_GRACE_SECONDS)
             stderr = managed.stderr_text()
             if stderr:
                 for line in stderr.splitlines():
@@ -323,7 +347,22 @@ class ClaudeCodeRunner(AgentRunner):
                 "duration_ms": _coerce_int(event.get("duration_ms")),
                 "token_count": _extract_total_tokens(event),
             }
-            if bool(event.get("is_error")):
+            if "max_budget" in str(event.get("subtype") or ""):
+                # The CLI stopped the run at --max-budget-usd. That is the
+                # cost gate firing, with the real cost attached.
+                timestamp_events.append(
+                    AgentEvent(
+                        "agent.killed",
+                        payload={
+                            **payload,
+                            "reason": (
+                                f"Run exceeded cost limit (${payload['cost_usd']:.2f} spent)."
+                            ),
+                            "gate_type": "cost",
+                        },
+                    )
+                )
+            elif bool(event.get("is_error")):
                 payload["error"] = result_text or "Claude Code returned an error."
                 timestamp_events.append(AgentEvent("agent.error", payload=payload))
             else:

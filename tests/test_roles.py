@@ -41,7 +41,7 @@ class RoleLoaderTests(unittest.TestCase):
         self.assertTrue(roles["developer"].agent.session_persistence)
         self.assertTrue(roles["developer_worker"].agent.session_persistence)
         self.assertEqual(roles["developer_worker"].agent.model, "")
-        self.assertEqual(roles["code_reviewer"].completion.max_cost_usd, 1000.0)
+        self.assertEqual(roles["code_reviewer"].completion.max_cost_usd, 5.0)
         self.assertTrue(roles["architect"].completion.output.extract_json)
 
     def test_loads_agent_env_table(self) -> None:

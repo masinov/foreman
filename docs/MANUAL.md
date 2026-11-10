@@ -949,7 +949,7 @@ task blocks and a gate event fires:
 | `cost_limit_per_task_usd` | `gate.cost_exceeded` (scope task) |
 | `cost_limit_per_sprint_usd` | `gate.cost_exceeded` (scope sprint) |
 | `time_limit_per_task_ms` | `gate.time_exceeded` |
-| `runner_max_cost_usd` | aborts a single runner stream (default 1000) |
+| `runner_max_cost_usd` | lowers the per-run ceiling a role sets (`[completion] max_cost_usd`); the lower of the two is passed to Claude Code as `--max-budget-usd`, which stops the run when it is reached |
 
 > Third-party Anthropic-compatible endpoints usually report
 > `total_cost_usd = 0` while token counts stay accurate. Foreman tracks
@@ -1000,7 +1000,7 @@ offending value, rather than running on silent defaults.
 | `time_limit_per_task_ms` | 0 (off) | per-task cumulative time cap |
 | `cost_limit_per_task_usd` | 0 (off) | per-task cost ceiling |
 | `cost_limit_per_sprint_usd` | 0 (off) | per-sprint cost ceiling |
-| `runner_max_cost_usd` | 1000 | single-stream cost abort |
+| `runner_max_cost_usd` | unset (role ceiling applies) | per-run cost ceiling; can lower a role's, never raise it |
 | `runner_permission_mode` | `auto` | native runner approval policy |
 | `event_retention_days` | unset (off) | prune events older than N days at engine start |
 | `run_retention_days` | unset (off) | prune terminal runs older than N days; gate decisions keep their record with the run link nulled |

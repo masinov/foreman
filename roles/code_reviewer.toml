@@ -71,7 +71,7 @@ STEER: <specific corrective action>
 marker = ""
 outcomes = ['approve', 'deny', 'steer']
 timeout_minutes = 10
-max_cost_usd = 1000.0
+max_cost_usd = 5.0
 
 [completion.output]
 extract_decision = true
