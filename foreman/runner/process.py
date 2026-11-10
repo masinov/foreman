@@ -22,6 +22,7 @@ import atexit
 import os
 import queue
 import signal
+import sys
 import subprocess
 import threading
 import time
@@ -76,7 +77,42 @@ def popen_kwargs(*, cwd: str | Path, env: dict[str, str] | None = None) -> dict[
     }
     if env:
         kwargs["env"] = {**os.environ, **env}
+    if _can_bind_child_to_parent():
+        kwargs["preexec_fn"] = _die_with_parent
     return kwargs
+
+
+_PR_SET_PDEATHSIG = 1
+
+
+def _can_bind_child_to_parent() -> bool:
+    """Whether a child started now can be told to stop when this process dies.
+
+    Linux delivers the parent-death signal when the *thread* that started the
+    child exits, so it is only safe from the main thread, whose exit is the
+    process's exit. The engine starts its agents there.
+    """
+
+    return sys.platform.startswith("linux") and (
+        threading.current_thread() is threading.main_thread()
+    )
+
+
+def _die_with_parent() -> None:
+    """Run in the child before exec: SIGTERM this process if the engine dies.
+
+    A handled SIGTERM or SIGINT already stops every child. This covers the
+    exits no handler sees (SIGKILL, the out-of-memory killer, a crash), which
+    would otherwise leave a full-permission agent working with nobody
+    watching it. SIGTERM, not SIGKILL, so the agent can stop its own tools.
+    """
+
+    try:
+        import ctypes
+
+        ctypes.CDLL(None, use_errno=True).prctl(_PR_SET_PDEATHSIG, int(signal.SIGTERM), 0, 0, 0)
+    except Exception:  # noqa: BLE001 - never block the exec over a safety net
+        pass
 
 
 class ManagedProcess:
@@ -296,7 +332,7 @@ def terminate_all(*, grace_seconds: float = DEFAULT_GRACE_SECONDS) -> int:
 
 
 def install_shutdown_handlers() -> bool:
-    """Install SIGTERM / SIGINT handlers that stop children and raise ``EngineShutdown``.
+    """Install SIGTERM / SIGINT / SIGHUP handlers that stop children and raise ``EngineShutdown``.
 
     Only the main thread may install handlers; returns False when called from
     elsewhere so callers can proceed without them. Idempotent.
@@ -307,7 +343,11 @@ def install_shutdown_handlers() -> bool:
         return True
     if threading.current_thread() is not threading.main_thread():
         return False
-    for signum in (signal.SIGTERM, signal.SIGINT):
+    # SIGHUP is what a closed terminal or a dropped SSH session sends.
+    shutdown_signals = [signal.SIGTERM, signal.SIGINT]
+    if hasattr(signal, "SIGHUP"):
+        shutdown_signals.append(signal.SIGHUP)
+    for signum in shutdown_signals:
         _previous_handlers[signum] = signal.signal(signum, _handle_shutdown_signal)
     atexit.register(terminate_all)
     _handlers_installed = True

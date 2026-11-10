@@ -25,7 +25,7 @@ spend, no orphaned agents, and one engine per project in fact.
 | 1 | Browser-origin defence: Host check on token-less binds, Origin and `Sec-Fetch-Site` checks, JSON content type required for bodies, query-string token on GET only, generated docs routes off | done | Claude, by hand | `fix/dashboard-browser-origin-defence`: `foreman/dashboard_guard.py`, ADR-0016, 12 tests in `tests/test_dashboard_safety.py`, live check with attack requests and a real browser |
 | 2 | Host-level settings out of the general API: shell commands, storage paths, judge endpoint, and role backend and permission mode are refused over HTTP and shown read-only; prune deletes only git worktrees of the project; http(s)-only source URLs; atomic role writes | done | Claude, by hand | `fix/host-level-settings`: `HOST_LEVEL_SETTINGS`, service and worktree changes, ADR-0017, 11 Python tests and 1 frontend test |
 | 3 | Real cost control: the per-run ceiling is passed to Claude Code as `--max-budget-usd`; a finished run is never turned into a kill; a budget stop is a cost kill that keeps its cost; role ceilings of $2 to $30 in place of $1,000; `runner_max_cost_usd` can lower a role ceiling; a cost limit of 0 means off; reading stops at the result line and leftover process groups are swept | done | Claude, by hand | `fix/runner-cost-control`: runner, process, orchestrator, `roles/*.toml`, 8 tests |
-| 4 | Runner termination contract: stop at the terminal event, always kill the process group, SIGHUP handler, parent-death signal | todo | | `runner/process.py`, runners, tests |
+| 4 | Runner termination contract: stop at the terminal event and sweep the process group (landed with slice 3); SIGHUP is a shutdown; agents started by the engine receive SIGTERM when the engine dies without a handler running (Linux parent-death signal) | done | Claude, by hand | `fix/runner-parent-death`: `runner/process.py`, 3 tests |
 | 5 | Task lease lifecycle: timer heartbeat for the whole hold, no self-expiry in stale-run recovery, one `block_task()` helper that releases the lease | todo | | orchestrator, store, tests |
 | 6 | Approve and deny record a decision and enqueue an engine command; no workflow execution in the CLI or the web process | todo | | orchestrator, serve, CLI, service, ADR-0011 amendment, tests |
 | 7 | First delegation trial: one self-contained slice from Phase 2 run through Foreman on a cheaper model, compared with a by-hand slice of similar size | todo | | cost and outcome note in this file |
@@ -71,3 +71,11 @@ bootstrap and store. Rationale in ADR-0016.
 - Left open: token counts still ignore cache tokens (changing that changes
   every number the dashboard shows and needs a decision on what "tokens"
   means), and Codex still reports no cost.
+
+### Slice 4 notes
+
+The parent-death signal reaches the agent process itself, not its whole
+process group, and is set only for children started from the main thread
+(Linux ties it to the starting thread). The engine starts agents there. The
+manager chat's subprocess is separate code and is not covered; it moves onto
+the runner in Phase 5.

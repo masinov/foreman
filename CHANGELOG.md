@@ -9,6 +9,11 @@ memory changes rather than versioned product releases.
 
 ### Sprint 55 — baseline and host safety
 
+- **slice 4, engine death** (`fix/runner-parent-death`): SIGHUP (a closed
+  terminal or dropped SSH session) is handled as a shutdown like SIGTERM;
+  on Linux every agent the engine starts is sent SIGTERM if the engine dies
+  with no handler running (SIGKILL, out-of-memory kill, crash), so a
+  full-permission agent no longer keeps working unobserved.
 - **slice 3, cost control** (`fix/runner-cost-control`): the per-run cost
   ceiling is handed to Claude Code as `--max-budget-usd` so spend stops
   while the agent works; a run whose result has arrived is never reported

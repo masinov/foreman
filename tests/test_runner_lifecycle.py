@@ -149,6 +149,51 @@ class ManagedProcessTests(unittest.TestCase):
         finally:
             managed.close()
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "parent-death signal is Linux-only")
+    def test_a_child_stops_when_its_engine_is_killed_outright(self) -> None:
+        """SIGKILL gives the engine no chance to clean up; the child must still stop."""
+
+        engine = (
+            "import subprocess, sys, time\n"
+            "from foreman.runner.process import popen_kwargs\n"
+            "child = subprocess.Popen(['sleep', '60'], **popen_kwargs(cwd='.'))\n"
+            "print(child.pid, flush=True)\n"
+            "time.sleep(60)\n"
+        )
+        proc = subprocess.Popen(
+            [sys.executable, "-c", engine],
+            stdout=subprocess.PIPE,
+            text=True,
+            cwd=str(Path(__file__).resolve().parent.parent),
+        )
+        try:
+            child_pid = int(proc.stdout.readline().strip())
+            self.assertTrue(_pid_is_alive(child_pid))
+            proc.kill()
+            proc.wait(timeout=5)
+            self.assertTrue(_wait_until(lambda: not _pid_is_alive(child_pid), timeout=8.0))
+        finally:
+            proc.kill()
+            proc.stdout.close()
+
+    def test_a_child_started_off_the_main_thread_is_not_bound_to_that_thread(self) -> None:
+        """The parent-death signal follows the starting thread, so only main may set it."""
+
+        seen: dict[str, object] = {}
+        thread = threading.Thread(target=lambda: seen.update(popen_kwargs(cwd=".")))
+        thread.start()
+        thread.join()
+        self.assertNotIn("preexec_fn", seen)
+
+    def test_a_hangup_is_a_shutdown(self) -> None:
+        reset_shutdown_handlers()
+        self.addCleanup(reset_shutdown_handlers)
+        self.assertTrue(install_shutdown_handlers())
+        with self.assertRaises(EngineShutdown) as caught:
+            os.kill(os.getpid(), signal.SIGHUP)
+            time.sleep(1)
+        self.assertIn("SIGHUP", str(caught.exception))
+
     def test_fake_process_without_pid_is_signalled_directly(self) -> None:
         class _Fake:
             def __init__(self) -> None:
