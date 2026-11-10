@@ -16,11 +16,8 @@ from uuid import uuid4
 
 from . import __version__
 from .migrations import MIGRATIONS
-from .dashboard_runtime import (
-    DEFAULT_FRONTEND_DEV_URL,
-    STREAM_POLL_INTERVAL_SECONDS,
-    run_dashboard_server,
-)
+from .dashboard_runtime import DEFAULT_FRONTEND_DEV_URL, run_dashboard_server
+from .dashboard_service import STREAM_POLL_INTERVAL_SECONDS
 from .engine_control import (
     blocked_kind,
     blocked_kind_counts,
@@ -1305,7 +1302,6 @@ def handle_waive_merge(args: argparse.Namespace) -> int:
         return 1
 
     from .models import MergeWaiver
-    from .context import relative_project_path
 
     waiver_types = {
         "missing_acceptance_criteria",
@@ -1368,7 +1364,7 @@ def handle_waive_merge(args: argparse.Namespace) -> int:
         store.save_merge_waiver(waiver)
 
     _print_lines(
-        f"Waiver created",
+        "Waiver created",
         f"Database: {db_path}",
         f"Task ID: {task.id}",
         f"Type: {waiver.waiver_type}",
@@ -1400,7 +1396,7 @@ def handle_revoke_waiver(args: argparse.Namespace) -> int:
             return 1
 
     _print_lines(
-        f"Waiver revoked",
+        "Waiver revoked",
         f"Database: {db_path}",
         f"Waiver ID: {args.waiver_id}",
         f"Task ID: {waiver.task_id}",

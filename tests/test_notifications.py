@@ -49,7 +49,7 @@ from foreman.notifications import (
     retry_delay_seconds,
     validate_target,
 )
-from foreman.orchestrator import AgentEventRecord, ForemanOrchestrator
+from foreman.orchestrator import ForemanOrchestrator
 from foreman.runner import AgentRunConfig
 from foreman.runner.base import AgentEvent
 from foreman.settings import ProjectSettings, SettingsError

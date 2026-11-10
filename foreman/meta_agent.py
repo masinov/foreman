@@ -67,7 +67,6 @@ def build_state_header(store: Any, project: Any) -> str:
     is deliberately bounded (≈≤1,500 tokens) so it can be cheaply re-injected.
     """
 
-    settings = project.settings or {}
     lines: list[str] = [
         "## FOREMAN STATE (regenerated each turn)",
         (

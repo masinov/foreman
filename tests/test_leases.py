@@ -13,7 +13,6 @@ from foreman.leases import (
     is_lease_expired,
     is_lease_stale,
     validate_lease_holder,
-    DEFAULT_LEASE_DURATION_SECONDS,
 )
 from foreman.models import Lease
 from foreman.store import ForemanStore

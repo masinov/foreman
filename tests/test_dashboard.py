@@ -14,14 +14,13 @@ import httpx
 
 from foreman.dashboard_service import (
     DashboardService,
-    DashboardActionError,
     DashboardNotFoundError,
     DashboardValidationError,
 )
 from foreman.dashboard_backend import create_dashboard_app
 from foreman.engine_control import ServeSpawn
 from foreman.leases import generate_lease_token
-from foreman.models import DecisionGate, Event, Project, Run, Sprint, Task
+from foreman.models import Event, Project, Run, Sprint, Task
 from foreman.store import ENGINE_RESOURCE_TYPE, ForemanStore
 
 

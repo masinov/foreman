@@ -12,7 +12,6 @@ from foreman.runner.base import (
     run_with_retry,
 )
 from foreman.runner.claude_code import ClaudeCodeRunner
-from foreman.runner.codex import CodexRunner
 from foreman.runner.signals import extract_signal_events
 
 

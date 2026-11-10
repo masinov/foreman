@@ -14,7 +14,6 @@ from foreman.models import Event, Project, Run, Sprint, Task
 from foreman.orchestrator import (
     AgentEventRecord,
     AgentExecutionResult,
-    CompletionEvidence,
     ForemanOrchestrator,
     OrchestratorError,
     _extract_decision_output,
@@ -5144,6 +5143,8 @@ class CompletionEvidenceTests(unittest.TestCase):
             self.assertEqual(evidence.verdict, "insufficient")
             self.assertIn("No acceptance criteria defined", evidence.verdict_reasons)
 
+
+class CompletionEvidenceFalsePositiveTests(unittest.TestCase):
     """Regression coverage for CompletionEvidence false-positive scenarios.
 
     Proves that Foreman does not treat docs-only or tests-only changes as
@@ -6397,7 +6398,7 @@ class EvidenceCachingTests(unittest.TestCase):
 
             role = self.roles["code_reviewer"]
             # First call — should build and cache evidence
-            prompt1 = orchestrator._build_prompt(role, project, task, None)
+            orchestrator._build_prompt(role, project, task, None)
             self.assertGreater(call_count[0], 0, "build_completion_evidence should have been called on first _build_prompt")
             self.assertIsNotNone(
                 task.completion_evidence,
@@ -6406,7 +6407,7 @@ class EvidenceCachingTests(unittest.TestCase):
             first_evidence = task.completion_evidence
 
             # Second call — evidence must be reused, not rebuilt
-            prompt2 = orchestrator._build_prompt(role, project, task, None)
+            orchestrator._build_prompt(role, project, task, None)
             self.assertEqual(
                 call_count[0],
                 1,
@@ -6419,7 +6420,7 @@ class EvidenceCachingTests(unittest.TestCase):
             )
 
             # Third call — still no rebuild
-            prompt3 = orchestrator._build_prompt(role, project, task, None)
+            orchestrator._build_prompt(role, project, task, None)
             self.assertEqual(call_count[0], 1)
             self.assertIs(task.completion_evidence, first_evidence)
 
