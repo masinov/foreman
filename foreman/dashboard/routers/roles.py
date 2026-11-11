@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends
 
 from ..context import (
     ApiContext,
@@ -19,12 +19,11 @@ def build_router(ctx: ApiContext) -> APIRouter:
     with_api = ctx.with_api
 
     @router.get("/roles")
-    async def list_roles() -> dict[str, Any]:
+    def list_roles() -> dict[str, Any]:
         return with_api(lambda api: api.list_roles())
 
     @router.patch("/roles/{role_id}")
-    async def update_role(role_id: str, request: Request) -> dict[str, Any]:
-        data = await read_json_body(request)
+    def update_role(role_id: str, data: dict[str, Any] = Depends(read_json_body)) -> dict[str, Any]:
         return with_api(lambda api: api.update_role(role_id, updates=data))
 
     return router

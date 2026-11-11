@@ -849,6 +849,36 @@ class DashboardService:
             for event in events
         ]
 
+    def list_project_stream_messages(
+        self,
+        project_id: str,
+        *,
+        limit: int = STREAM_BATCH_LIMIT,
+        after_event_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return the next streaming batch for a whole project.
+
+        With a cursor: the events after it, oldest first. Without one: the
+        most recent ``limit`` events, so a new listener starts with context.
+        A cursor that no longer exists (its event was pruned) starts over
+        from the most recent events instead of going silent.
+        """
+
+        self._require_project(project_id)
+        if after_event_id and self.store.get_event(after_event_id) is not None:
+            events = self.store.list_events(
+                project_id=project_id, after_event_id=after_event_id, limit=limit
+            )
+        else:
+            events = self.store.list_recent_events(project_id=project_id, limit=limit)
+        return [
+            {
+                "event_id": event.id,
+                "payload": {"type": "event", "event": self._serialize_event(event)},
+            }
+            for event in events
+        ]
+
     def get_task(self, task_id: str) -> dict[str, Any]:
         """Return one task detail payload including run history."""
 
