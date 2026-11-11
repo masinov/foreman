@@ -869,8 +869,8 @@ class ForemanOrchestratorTests(unittest.TestCase):
 
             def developer_two(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
                 # Tests run before review: the failure comes straight back.
-                self.assertEqual(carried_output, "Command exited with 1.")
-                self.assertIn("Command exited with 1.", prompt)
+                self.assertRegex(carried_output or "", r"^Tests failed in \d+\.\ds \(exit 1\)\.$")
+                self.assertIn("(exit 1).", prompt)
                 self.write_text(self.work_dir(task, repo_path) / "ready.txt", "ready now\n")
                 self.commit_all(self.work_dir(task, repo_path), "fix: add ready marker")
                 return AgentExecutionResult(
@@ -963,9 +963,9 @@ class ForemanOrchestratorTests(unittest.TestCase):
                     "done",
                 ],
             )
-            self.assertEqual(
-                executor.capture("developer", 2).carried_output,
-                "Command exited with 1.",
+            self.assertRegex(
+                executor.capture("developer", 2).carried_output or "",
+                r"^Tests failed in \d+\.\ds \(exit 1\)\.$",
             )
             self.assertEqual(
                 executor.capture("developer", 3).carried_output,
