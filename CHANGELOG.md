@@ -9,6 +9,17 @@ memory changes rather than versioned product releases.
 
 ### Sprint 56 — engine truthfulness
 
+- **slices 4, 5, 6, built through Foreman** (approved at the merge gate and
+  merged by the engine):
+  - the test step's run detail opens with a result line ("Tests passed in
+    114.2s (exit 0)."), and `engine.test_run` carries `duration_seconds`
+    and the `head_sha` the tests ran against;
+  - a new item waiting for triage is handed to the notification dispatcher,
+    so the webhook channel hears about it under the same policy as other
+    attention events;
+  - the manager's operating contract names only commands and flags the CLI
+    has, with a test that fails when the two drift apart.
+
 - **slice 7** (`fix/completed-sprint-delete`): the sprint page offers
   Delete on a completed sprint; it compared the status with `"done"`, which
   no sprint ever has.
