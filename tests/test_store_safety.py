@@ -572,7 +572,7 @@ class SettingsValidationTests(unittest.TestCase):
             project, _, task = _seed(store, settings={"run_retention_days": 1})
             _old_run(store, task)
             orchestrator = ForemanOrchestrator(store)
-            counts = orchestrator.prune_old_history(project)
+            counts = orchestrator.retention.prune_old_history(project)
             self.assertEqual(counts.get("runs"), 1)
             self.assertNotIn("events", counts)
 

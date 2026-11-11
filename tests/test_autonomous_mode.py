@@ -13,7 +13,8 @@ import tempfile
 import unittest
 
 from foreman.models import Project, Sprint
-from foreman.orchestrator import AUTONOMOUS_PLACEHOLDER_TITLE, ForemanOrchestrator
+from foreman.engine.selection import AUTONOMOUS_PLACEHOLDER_TITLE
+from foreman.orchestrator import ForemanOrchestrator
 from foreman.runner.base import AgentEvent, AgentRunConfig
 from foreman.store import ForemanStore
 
