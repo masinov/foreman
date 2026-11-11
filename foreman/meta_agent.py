@@ -103,7 +103,7 @@ def build_state_header(store: Any, project: Any) -> str:
         if not active_tasks:
             lines.append("(no tasks)")
         else:
-            lines.append("id | status | type | title | model_override | blocked_reason")
+            lines.append("id | status | type | title | assigned_role | blocked_reason")
             for task in active_tasks:
                 override = getattr(task, "assigned_role", None) or "-"
                 lines.append(
@@ -154,9 +154,12 @@ def build_operating_contract(project: Any) -> str:
             "Inspect:",
             f"  foreman board {pid}",
             "  foreman task show <task-id>",
-            f"  foreman history {pid}",
+            "  foreman history <task-id>",
             f"  foreman cost {pid}",
             f"  foreman sprint list {pid}",
+            f"  foreman worktree list {pid}",
+            f"  foreman notify list {pid}",
+            f"  foreman notify deliveries {pid} [--status pending|delivered|failed]",
             "",
             "Plan:",
             f"  foreman sprint add {pid} --title ... --goal ...",
@@ -166,12 +169,22 @@ def build_operating_contract(project: Any) -> str:
             "      --description ... --sprint <sprint-id> --depends-on <task-id,...>",
             "",
             "Assign (per-task model override; Phase 3):",
-            "  foreman task override <task-id> --step develop --model ... [--ladder-start N]",
+            "  foreman task override <task-id> --step <step>=<model> [--ladder-start N]",
             "",
             "Steer:",
             "  foreman approve <task-id> --note ...",
             "  foreman deny <task-id> --note ...",
-            "  foreman task block/unblock/cancel <task-id>",
+            "  foreman task accept <task-id>",
+            "  foreman task block <task-id> --reason ...",
+            "  foreman task unblock <task-id>",
+            "  foreman task cancel <task-id>",
+            "",
+            "Engine (resident engine for this project):",
+            f"  foreman engine status {pid}",
+            f"  foreman engine pause {pid}",
+            f"  foreman engine resume {pid}",
+            f"  foreman engine run-task {pid} <task-id>",
+            f"  foreman engine stop-task {pid} <task-id>",
             "",
             "Hard rules:",
             "- Never edit anything under `.foreman/` (tool-managed runtime state).",
