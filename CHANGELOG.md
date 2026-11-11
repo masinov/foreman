@@ -9,6 +9,16 @@ memory changes rather than versioned product releases.
 
 ### Sprint 57 — structure
 
+- **slice 2b, engine package, third cut** (`refactor/engine-collaborators`):
+  the orchestrator now composes collaborators from `foreman/engine/`:
+  `TaskWrites`, `Retention`, `SprintFlow`, `Recovery`, `TaskSelector`,
+  `SignalHandler`, `AgentStepRunner`, `PromptBuilder`, `TaskWorktrees`. The
+  750-line step loop is a 170-line loop over named phases
+  (`_task_worktree_problem`, `_limit_reached`, `_run_human_gate_step`,
+  `_run_builtin_step`, `_run_agent_step`, `_record_step_completed`,
+  `_follow_transition`), with one `_block_at_step` where seven copies of
+  "record a blocked run and park the task" used to be. No behaviour change;
+  `orchestrator.py` is 1883 lines, from 4574 at the start of the sprint.
 - **slice 2a, engine package, second cut**
   (`refactor/engine-leases-and-records`): `TaskLeases` (`engine/leasing.py`)
   owns lease tokens and heartbeats; `RunRecords` (`engine/records.py`) is
