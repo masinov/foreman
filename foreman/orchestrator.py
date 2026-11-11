@@ -9,6 +9,7 @@ from pathlib import Path
 import json
 import re
 import subprocess
+import time
 from typing import Any, Protocol
 from uuid import uuid4
 
@@ -22,7 +23,7 @@ from .context import (
 from .errors import EngineCommandInterrupt, ForemanError
 from .git import (
     GitError,
-    assert_default_branch_unchanged,
+    task_commits_on_default_branch,
     commits_behind,
     merge_in_progress,
     branch_exists,
@@ -71,6 +72,14 @@ _BRANCH_PREFIXES = {
 
 class OrchestratorError(ForemanError):
     """Raised when Foreman cannot execute the requested workflow slice."""
+
+
+class TaskCancelledError(OrchestratorError):
+    """The task was cancelled by an operator while the engine was working on it."""
+
+    def __init__(self, task_id: str) -> None:
+        super().__init__(f"Task {task_id!r} was cancelled; the engine stopped working on it.")
+        self.task_id = task_id
 
 
 class LeaseLostError(OrchestratorError):
@@ -303,7 +312,7 @@ class ForemanOrchestrator:
         recorded = str(path)
         if task.worktree_path != recorded:
             task.worktree_path = recorded
-            self.store.save_task(task)
+            self._save_task(task)
         return path
 
     def _reclaim_worktrees_for(
@@ -416,6 +425,50 @@ class ForemanOrchestrator:
 
         if self.command_poll is not None:
             self.command_poll(task_id)
+
+    def _save_task(self, task: Task, *, include_definition: bool = False) -> None:
+        """Persist the engine's view of a task without overwriting an operator's.
+
+        Only workflow state is written (see ``update_task_engine_state``). A
+        task the store does not know yet is inserted whole. A task an operator
+        cancelled is left exactly as it is and ``TaskCancelledError`` stops
+        whatever the engine was doing with it.
+        """
+
+        written = self.store.update_task_engine_state(
+            task, include_definition=include_definition
+        )
+        if written is None:
+            self.store.save_task(task)
+        elif written is False:
+            raise TaskCancelledError(task.id)
+
+    def _adopt_operator_changes(self, task: Task) -> Task:
+        """Refresh the fields an operator owns from the store, in place.
+
+        The engine keeps one task object for a whole workflow. Between steps
+        it picks up what a person changed (wording, criteria, priority,
+        dependencies, overrides) so the next prompt and model choice use it,
+        and it returns the stored row so the caller can see a status change.
+        """
+
+        fresh = self.store.get_task(task.id)
+        if fresh is None:
+            raise OrchestratorError(f"Task {task.id!r} disappeared during execution.")
+        for name in (
+            "title",
+            "description",
+            "acceptance_criteria",
+            "task_type",
+            "priority",
+            "order_index",
+            "depends_on_task_ids",
+            "executor_overrides",
+            "complexity",
+            "sprint_id",
+        ):
+            setattr(task, name, getattr(fresh, name))
+        return fresh
 
     def _acquire_task_lease(self, task: Task, project: Project) -> str | None:
         """Acquire a lease on a task. Returns the lease token or None if denied."""
@@ -693,7 +746,7 @@ class ForemanOrchestrator:
         task.blocked_reason = None
         task.workflow_current_step = step
         task.workflow_carried_output = carried_output
-        self.store.save_task(task)
+        self._save_task(task)
         self._emit_event(
             run,
             "engine.quota_exhausted",
@@ -734,7 +787,7 @@ class ForemanOrchestrator:
         if task.status not in {"done", "cancelled"}:
             task.status = "blocked"
             task.blocked_reason = reason
-            self.store.save_task(task)
+            self._save_task(task)
         self._create_system_run(
             task,
             workflow_step=workflow_step,
@@ -781,7 +834,7 @@ class ForemanOrchestrator:
             return task
         task.status = "blocked"
         task.blocked_reason = reason
-        self.store.save_task(task)
+        self._save_task(task)
         return task
 
     def record_engine_event(
@@ -1346,7 +1399,7 @@ class ForemanOrchestrator:
             status="todo",
             created_by="orchestrator",
         )
-        self.store.save_task(placeholder)
+        self._save_task(placeholder)
         # Acquire lease for the new placeholder immediately.
         if self._acquire_task_lease(placeholder, project) is None:
             # Race: another orchestrator created one first; reload and return it.
@@ -1451,7 +1504,7 @@ class ForemanOrchestrator:
         if not is_resuming:
             current_task.step_visit_counts = {}
         current_task.started_at = current_task.started_at or utc_now_text()
-        self.store.save_task(current_task)
+        self._save_task(current_task)
 
         # No try/finally around the workflow: the engine never changes what is
         # checked out in the operator's repository, so there is no branch to
@@ -1608,7 +1661,7 @@ class ForemanOrchestrator:
         # recorded" must not leave a task that restarts from its entry step.
         current_task.workflow_current_step = transition.to_step if deferred else None
         current_task.workflow_carried_output = carried_output if deferred else None
-        self.store.save_task(current_task)
+        self._save_task(current_task)
 
         if deferred:
             refreshed = self.store.get_task(current_task.id)
@@ -1678,11 +1731,89 @@ class ForemanOrchestrator:
     ) -> Task:
         """Execute a workflow from one step until completion or a block."""
 
+        try:
+            return self._run_workflow_steps(
+                project, workflow, task, step=step, carried_output=carried_output
+            )
+        except TaskCancelledError:
+            # An operator cancelled the task while a step was running or
+            # between two writes. Their decision stands: settle what the
+            # engine left open and walk away without touching the task.
+            return self._abandon_cancelled_task(project, task)
+        except (
+            EngineCommandInterrupt,
+            EngineShutdown,
+            KeyboardInterrupt,
+            LeaseLostError,
+            QuotaPauseError,
+        ):
+            # Each of these settles its own run on the way out.
+            raise
+        except Exception as exc:
+            # Anything else escaped between a run being opened and closed (a
+            # git failure in a built-in, an unknown built-in, a bookkeeping
+            # error). Left ``running``, the run made the task refuse to start
+            # again until the stale-run window passed.
+            self._settle_open_runs(task.id, detail=f"Step failed with an engine error: {exc}")
+            raise
+
+    def _settle_open_runs(self, task_id: str, *, detail: str) -> None:
+        """Mark every run still ``running`` for a task as failed."""
+
+        for run in self.store.list_runs(task_id=task_id, status="running"):
+            self._complete_run(
+                run,
+                status="failed",
+                outcome=ERROR,
+                detail=detail,
+                session_id=self._session_id_from_events(run) or run.session_id,
+                failure_type="infrastructure",
+            )
+
+    def _abandon_cancelled_task(self, project: Project, task: Task) -> Task:
+        """Close the engine's open work on a task an operator cancelled."""
+
+        for run in self.store.list_runs(task_id=task.id):
+            if run.status == "running":
+                self._complete_run(
+                    run,
+                    status="killed",
+                    outcome=ERROR,
+                    detail="Task was cancelled while this step was running.",
+                    session_id=run.session_id,
+                )
+        self._release_task_lease(task, project)
+        refreshed = self.store.get_task(task.id)
+        if refreshed is None:
+            raise OrchestratorError(f"Task {task.id!r} disappeared during execution.")
+        return refreshed
+
+    def _run_workflow_steps(
+        self,
+        project: Project,
+        workflow: WorkflowDefinition,
+        task: Task,
+        *,
+        step: str,
+        carried_output: str | None,
+    ) -> Task:
         current_task = self.store.get_task(task.id) or task
         current_step = step
         session_ids: dict[tuple[str, str], str] = {}
 
         while current_step is not None:
+            # A step only starts for a task that is still the engine's to
+            # work on. A person may have cancelled or blocked it, and an
+            # agent may have reported a blocker during the previous step.
+            stored = self._adopt_operator_changes(current_task)
+            if stored.status == "cancelled":
+                raise TaskCancelledError(current_task.id)
+            if stored.status == "blocked":
+                current_task.status = stored.status
+                current_task.blocked_reason = stored.blocked_reason
+                self._release_task_lease(current_task, project)
+                return stored
+
             step_def = workflow.get_step(current_step)
             if step_def is None:
                 raise OrchestratorError(
@@ -1692,6 +1823,7 @@ class ForemanOrchestrator:
             # ── Before every step: enforce branch invariants ─────────────────
             default_branch = project.default_branch
             original_default_sha = head_sha(project.repo_path, f"refs/heads/{default_branch}")
+            refreshed_default_sha: str | None = None
 
             # Verify the task's own worktree exists and sits on the task branch.
             # The operator's checkout is not consulted: what is checked out
@@ -1733,7 +1865,7 @@ class ForemanOrchestrator:
                         current_task.blocked_reason = str(e)
                         current_task.workflow_current_step = None
                         current_task.workflow_carried_output = None
-                        self.store.save_task(current_task)
+                        self._save_task(current_task)
                         current_step = None
                         self._release_task_lease(current_task, project)
                         break
@@ -1766,14 +1898,14 @@ class ForemanOrchestrator:
                         )
                         current_task.status = "blocked"
                         current_task.blocked_reason = detail
-                        self.store.save_task(current_task)
+                        self._save_task(current_task)
                         current_step = None
                         self._release_task_lease(current_task, project)
                         break
 
             visit_count = current_task.step_visit_counts.get(current_step, 0) + 1
             current_task.step_visit_counts[current_step] = visit_count
-            self.store.save_task(current_task)
+            self._save_task(current_task)
 
             max_step_visits = _int_setting(project, "max_step_visits", default=5)
             if visit_count > max_step_visits:
@@ -1799,7 +1931,7 @@ class ForemanOrchestrator:
                 )
                 current_task.status = "blocked"
                 current_task.blocked_reason = detail
-                self.store.save_task(current_task)
+                self._save_task(current_task)
                 break
 
             task_cost = sum(run.cost_usd for run in self.store.list_runs(task_id=current_task.id))
@@ -1828,7 +1960,7 @@ class ForemanOrchestrator:
                 )
                 current_task.status = "blocked"
                 current_task.blocked_reason = detail
-                self.store.save_task(current_task)
+                self._save_task(current_task)
                 break
 
             sprint_cost_limit = _float_setting(
@@ -1865,7 +1997,7 @@ class ForemanOrchestrator:
                 )
                 current_task.status = "blocked"
                 current_task.blocked_reason = detail
-                self.store.save_task(current_task)
+                self._save_task(current_task)
                 break
 
             task_duration_ms = sum(
@@ -1896,7 +2028,7 @@ class ForemanOrchestrator:
                 )
                 current_task.status = "blocked"
                 current_task.blocked_reason = detail
-                self.store.save_task(current_task)
+                self._save_task(current_task)
                 break
 
             branch_sync_event: tuple[str, dict[str, Any]] | None = None
@@ -1913,10 +2045,14 @@ class ForemanOrchestrator:
                     step=current_step,
                     carried_output=carried_output,
                 )
+                # What the refresh may just have merged into the task branch.
+                refreshed_default_sha = head_sha(
+                    project.repo_path, f"refs/heads/{default_branch}"
+                )
 
             current_task.workflow_current_step = current_step
             current_task.workflow_carried_output = carried_output
-            self.store.save_task(current_task)
+            self._save_task(current_task)
 
             # Poll *after* the resume point is persisted: an interrupt here
             # must leave the task resumable at the step it was about to run,
@@ -1952,7 +2088,7 @@ class ForemanOrchestrator:
                         event_recorder=lambda event_record: self._persist_builtin_event(run, event_record),
                         working_dir=self._task_working_dir(project, current_task),
                     )
-                    self.store.save_task(current_task)
+                    self._save_task(current_task)
                     self._complete_run(
                         run,
                         status="completed",
@@ -1991,6 +2127,7 @@ class ForemanOrchestrator:
                     {"step": current_step, "visit_count": visit_count},
                 )
                 self._emit_policy_resolved(run, project, current_task)
+                builtin_started = time.monotonic()
                 result = self.builtin_executor.execute(
                     step_def.role,
                     project=project,
@@ -2001,12 +2138,15 @@ class ForemanOrchestrator:
                     evidence_builder=self.build_completion_evidence,
                     working_dir=self._task_working_dir(project, current_task),
                 )
-                self.store.save_task(current_task)
+                self._save_task(current_task)
                 self._complete_run(
                     run,
                     status="completed",
                     outcome=result.outcome,
                     detail=result.detail,
+                    # A test run or a merge takes real time; recording 0 made
+                    # every built-in step look instantaneous.
+                    duration_ms=int((time.monotonic() - builtin_started) * 1000),
                 )
                 self._emit_builtin_events(run, result.events)
                 # A builtin that blocks (e.g. the merge/mark_done completion
@@ -2026,7 +2166,7 @@ class ForemanOrchestrator:
                 if role is None:
                     raise OrchestratorError(f"Unknown role {step_def.role!r}.")
                 current_task.assigned_role = role.id
-                self.store.save_task(current_task)
+                self._save_task(current_task)
 
                 context_projection = build_project_context(
                     self.store,
@@ -2293,7 +2433,7 @@ class ForemanOrchestrator:
                         )
                         current_task.status = "blocked"
                         current_task.blocked_reason = detail
-                        self.store.save_task(current_task)
+                        self._save_task(current_task)
                         current_step = None
                         self._release_task_lease(current_task, project)
                         break
@@ -2304,49 +2444,55 @@ class ForemanOrchestrator:
                 {"step": current_step, "outcome": outcome},
             )
 
-            # ── After every step: verify default branch was not mutated.
-            # Merge builtin intentionally changes the default branch — skip check.
-            # If worktree is dirty (e.g. unresolved merge conflicts), skip to avoid
-            # false positives from in-progress recovery workflows.
-            if step_def.role != "_builtin:merge" and is_worktree_clean(
-                self._task_working_dir(project, current_task)
-            ):
-                try:
-                    assert_default_branch_unchanged(
-                        project.repo_path,
-                        default_branch,
-                        original_default_sha,
-                    )
-                except GitError as e:
-                    run = self._create_system_run(
-                        current_task,
-                        workflow_step=current_step,
-                        outcome="blocked",
-                        detail=str(e),
-                    )
-                    self._emit_event(
-                        run,
-                        "engine.branch_violation",
-                        {
-                            "branch": default_branch,
-                            "detail": str(e),
-                        },
-                    )
-                    current_task.status = "blocked"
-                    current_task.blocked_reason = str(e)
-                    current_task.workflow_current_step = None
-                    current_task.workflow_carried_output = None
-                    self.store.save_task(current_task)
-                    current_step = None
-                    self._release_task_lease(current_task, project)
-                    break
+            # ── After every step: the task's own work must not be on the
+            # default branch before the merge step puts it there. The default
+            # branch itself may move (an operator commits, another task
+            # merges); that is none of this task's business. ADR-0012.
+            leaked_commits: tuple[str, ...] = ()
+            if step_def.role != "_builtin:merge" and current_task.branch_name:
+                leaked_commits = task_commits_on_default_branch(
+                    project.repo_path,
+                    task_branch=current_task.branch_name,
+                    default_branch=default_branch,
+                    default_shas_seen=(original_default_sha, refreshed_default_sha),
+                )
+            if leaked_commits:
+                detail = (
+                    f"{len(leaked_commits)} commit(s) from task branch "
+                    f"{current_task.branch_name!r} are on {default_branch!r} before the "
+                    f"merge step (first: {leaked_commits[0][:12]}). The task's work must "
+                    "reach the default branch only through the workflow's merge."
+                )
+                run = self._create_system_run(
+                    current_task,
+                    workflow_step=current_step,
+                    outcome="blocked",
+                    detail=detail,
+                )
+                self._emit_event(
+                    run,
+                    "engine.branch_violation",
+                    {
+                        "branch": default_branch,
+                        "detail": detail,
+                        "commits": list(leaked_commits[:20]),
+                    },
+                )
+                current_task.status = "blocked"
+                current_task.blocked_reason = detail
+                current_task.workflow_current_step = None
+                current_task.workflow_carried_output = None
+                self._save_task(current_task)
+                current_step = None
+                self._release_task_lease(current_task, project)
+                break
 
             transition = workflow.find_transition(current_step, outcome)
             if transition is None:
                 if current_task.status == "done":
                     current_task.workflow_current_step = None
                     current_task.workflow_carried_output = None
-                    self.store.save_task(current_task)
+                    self._save_task(current_task)
                     current_step = None
                     self._release_task_lease(current_task, project)
                     break
@@ -2365,7 +2511,7 @@ class ForemanOrchestrator:
                 )
                 current_task.workflow_current_step = None
                 current_task.workflow_carried_output = None
-                self.store.save_task(current_task)
+                self._save_task(current_task)
                 current_step = None
                 self._release_task_lease(current_task, project)
                 continue
@@ -2391,9 +2537,15 @@ class ForemanOrchestrator:
                         "to_step": transition.to_step,
                     },
                 )
-            current_task.workflow_current_step = None
-            current_task.workflow_carried_output = None
-            self.store.save_task(current_task)
+            # The next step is recorded in the same write that leaves this
+            # one. A crash before that step starts then resumes there; with
+            # the step cleared first, recovery restarted the whole task and
+            # an approval recorded a moment earlier was lost.
+            current_task.workflow_current_step = transition.to_step
+            current_task.workflow_carried_output = (
+                carried_output if transition.to_step is not None else None
+            )
+            self._save_task(current_task)
             current_step = transition.to_step
 
             # Renew lease after each step (heartbeat during workflow execution).
@@ -2552,7 +2704,7 @@ class ForemanOrchestrator:
             task.status = "todo"
             task.blocked_reason = None
             task.step_visit_counts = {}
-            self.store.save_task(task)
+            self._save_task(task)
 
     def _recover_stale_running_runs(
         self,
@@ -2621,7 +2773,7 @@ class ForemanOrchestrator:
         task.workflow_current_step = None
         task.workflow_carried_output = None
         task.step_visit_counts = {}
-        self.store.save_task(task)
+        self._save_task(task)
 
     def _run_is_stale(self, project: Project, run: Run) -> bool:
         """Return whether a persisted running run has exceeded its allowed ownership window.
@@ -2915,7 +3067,7 @@ class ForemanOrchestrator:
         if evidence is None and role.completion.output.extract_decision:
             evidence = self.build_completion_evidence(task, project)
             task.completion_evidence = evidence
-            self.store.save_task(task)
+            self._save_task(task)
         context = {
             "task_title": task.title,
             "task_description": task.description or "",
@@ -3782,7 +3934,7 @@ class ForemanOrchestrator:
             task.acceptance_criteria = str(
                 payload.get("criteria", task.acceptance_criteria or "")
             ) or task.acceptance_criteria
-            self.store.save_task(task)
+            self._save_task(task, include_definition=True)
             self._task_started_received.add(task.id)
             return
 
@@ -3806,7 +3958,7 @@ class ForemanOrchestrator:
                 created_by=f"agent:{role_id}",
                 created_at=event_record.timestamp,
             )
-            self.store.save_task(created_task)
+            self._save_task(created_task)
             self._emit_event(
                 run,
                 "engine.task_created",
@@ -3824,7 +3976,7 @@ class ForemanOrchestrator:
             if message:
                 task.status = "blocked"
                 task.blocked_reason = message
-                self.store.save_task(task)
+                self._save_task(task)
                 self._release_task_lease(task, project)
                 self._emit_attention_needed(run, task.id, "task_blocked")
 
