@@ -550,4 +550,100 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         ALTER TABLE runs ADD COLUMN cache_creation_tokens INTEGER NOT NULL DEFAULT 0;
         """,
     ),
+    (
+        20,
+        "refuse statuses and types the engine does not know",
+        """
+        -- The older tables were created without CHECK constraints, and SQLite
+        -- cannot add one to an existing table without rebuilding it. Triggers
+        -- give the same guarantee without touching the rows: a status, task
+        -- type, complexity or autonomy level outside the vocabulary in
+        -- foreman/models.py is refused whoever writes it. Rows that already
+        -- hold such a value stay readable; they cannot be written back
+        -- unchanged in that column.
+        CREATE TRIGGER IF NOT EXISTS tasks_status_insert_guard
+        BEFORE INSERT ON tasks
+        WHEN NEW.status NOT IN ('triage', 'todo', 'in_progress', 'blocked', 'done', 'cancelled')
+        BEGIN
+            SELECT RAISE(ABORT, 'invalid tasks.status');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS tasks_status_update_guard
+        BEFORE UPDATE OF status ON tasks
+        WHEN NEW.status NOT IN ('triage', 'todo', 'in_progress', 'blocked', 'done', 'cancelled')
+        BEGIN
+            SELECT RAISE(ABORT, 'invalid tasks.status');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS tasks_task_type_insert_guard
+        BEFORE INSERT ON tasks
+        WHEN NEW.task_type NOT IN ('feature', 'fix', 'refactor', 'docs', 'spike', 'chore')
+        BEGIN
+            SELECT RAISE(ABORT, 'invalid tasks.task_type');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS tasks_task_type_update_guard
+        BEFORE UPDATE OF task_type ON tasks
+        WHEN NEW.task_type NOT IN ('feature', 'fix', 'refactor', 'docs', 'spike', 'chore')
+        BEGIN
+            SELECT RAISE(ABORT, 'invalid tasks.task_type');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS tasks_complexity_insert_guard
+        BEFORE INSERT ON tasks
+        WHEN NEW.complexity IS NOT NULL AND NEW.complexity NOT IN ('small', 'medium', 'large')
+        BEGIN
+            SELECT RAISE(ABORT, 'invalid tasks.complexity');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS tasks_complexity_update_guard
+        BEFORE UPDATE OF complexity ON tasks
+        WHEN NEW.complexity IS NOT NULL AND NEW.complexity NOT IN ('small', 'medium', 'large')
+        BEGIN
+            SELECT RAISE(ABORT, 'invalid tasks.complexity');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS sprints_status_insert_guard
+        BEFORE INSERT ON sprints
+        WHEN NEW.status NOT IN ('planned', 'active', 'completed', 'cancelled')
+        BEGIN
+            SELECT RAISE(ABORT, 'invalid sprints.status');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS sprints_status_update_guard
+        BEFORE UPDATE OF status ON sprints
+        WHEN NEW.status NOT IN ('planned', 'active', 'completed', 'cancelled')
+        BEGIN
+            SELECT RAISE(ABORT, 'invalid sprints.status');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS runs_status_insert_guard
+        BEFORE INSERT ON runs
+        WHEN NEW.status NOT IN ('pending', 'running', 'completed', 'failed', 'killed', 'timeout')
+        BEGIN
+            SELECT RAISE(ABORT, 'invalid runs.status');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS runs_status_update_guard
+        BEFORE UPDATE OF status ON runs
+        WHEN NEW.status NOT IN ('pending', 'running', 'completed', 'failed', 'killed', 'timeout')
+        BEGIN
+            SELECT RAISE(ABORT, 'invalid runs.status');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS projects_autonomy_level_insert_guard
+        BEFORE INSERT ON projects
+        WHEN NEW.autonomy_level NOT IN ('directed', 'supervised', 'autonomous')
+        BEGIN
+            SELECT RAISE(ABORT, 'invalid projects.autonomy_level');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS projects_autonomy_level_update_guard
+        BEFORE UPDATE OF autonomy_level ON projects
+        WHEN NEW.autonomy_level NOT IN ('directed', 'supervised', 'autonomous')
+        BEGIN
+            SELECT RAISE(ABORT, 'invalid projects.autonomy_level');
+        END;
+        """,
+    ),
 ]

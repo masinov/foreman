@@ -8,6 +8,18 @@ import unittest
 from pathlib import Path
 
 from foreman.migrations import MIGRATIONS
+from foreman.models import (
+    AUTONOMY_LEVELS,
+    RUN_STATUSES,
+    SPRINT_STATUSES,
+    TASK_COMPLEXITIES,
+    TASK_STATUSES,
+    TASK_TYPES,
+    Project,
+    Run,
+    Sprint,
+    Task,
+)
 from foreman.store import ForemanStore, _SCHEMA_MIGRATIONS_DDL
 
 
@@ -322,6 +334,107 @@ class MetaAgentPersistenceMigrationTests(unittest.TestCase):
                 }
                 self.assertIn("meta_sessions", tables)
                 self.assertIn("meta_turns", tables)
+
+
+class VocabularyGuardTests(unittest.TestCase):
+    """Migration 20: the database refuses statuses and types Foreman lacks."""
+
+    def setUp(self) -> None:
+        self._temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._temp.cleanup)
+        self.store = ForemanStore(Path(self._temp.name) / "foreman.db")
+        self.addCleanup(self.store.close)
+        self.store.initialize()
+        self.store.save_project(
+            Project(id="p1", name="P", repo_path=self._temp.name, workflow_id="development")
+        )
+        self.store.save_sprint(Sprint(id="s1", project_id="p1", title="S", status="active"))
+        self.store.save_task(Task(id="t1", sprint_id="s1", project_id="p1", title="T"))
+
+    def _execute(self, sql: str, params: tuple = ()) -> None:
+        connection = self.store._connection
+        try:
+            connection.execute(sql, params)
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+
+    def test_an_unknown_task_status_is_refused_on_update_and_insert(self) -> None:
+        with self.assertRaises(sqlite3.IntegrityError) as caught:
+            self._execute("UPDATE tasks SET status = 'finished' WHERE id = 't1'")
+        self.assertIn("invalid tasks.status", str(caught.exception))
+
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.store.save_task(
+                Task(id="t2", sprint_id="s1", project_id="p1", title="T", status="doing")  # type: ignore[arg-type]
+            )
+        self.assertIsNone(self.store.get_task("t2"))
+        self.assertEqual(self.store.get_task("t1").status, "todo")
+
+    def test_unknown_task_type_sprint_status_run_status_and_autonomy_are_refused(self) -> None:
+        cases = (
+            ("UPDATE tasks SET task_type = 'bug' WHERE id = 't1'", "tasks.task_type"),
+            ("UPDATE tasks SET complexity = 'huge' WHERE id = 't1'", "tasks.complexity"),
+            ("UPDATE sprints SET status = 'done' WHERE id = 's1'", "sprints.status"),
+            ("UPDATE projects SET autonomy_level = 'full' WHERE id = 'p1'", "projects.autonomy_level"),
+        )
+        for sql, column in cases:
+            with self.subTest(column=column):
+                with self.assertRaises(sqlite3.IntegrityError) as caught:
+                    self._execute(sql)
+                self.assertIn(f"invalid {column}", str(caught.exception))
+
+        with self.assertRaises(sqlite3.IntegrityError) as caught:
+            self.store.save_run(
+                Run(
+                    id="r1",
+                    task_id="t1",
+                    project_id="p1",
+                    role_id="developer",
+                    workflow_step="develop",
+                    agent_backend="claude_code",
+                    status="blocked",  # type: ignore[arg-type]
+                )
+            )
+        self.assertIn("invalid runs.status", str(caught.exception))
+
+    def test_every_value_in_the_models_vocabulary_is_accepted(self) -> None:
+        for status in TASK_STATUSES:
+            self._execute("UPDATE tasks SET status = ? WHERE id = 't1'", (status,))
+        for task_type in TASK_TYPES:
+            self._execute("UPDATE tasks SET task_type = ? WHERE id = 't1'", (task_type,))
+        for complexity in (*TASK_COMPLEXITIES, None):
+            self._execute("UPDATE tasks SET complexity = ? WHERE id = 't1'", (complexity,))
+        for status in SPRINT_STATUSES:
+            self._execute("UPDATE sprints SET status = ? WHERE id = 's1'", (status,))
+        for level in AUTONOMY_LEVELS:
+            self._execute("UPDATE projects SET autonomy_level = ? WHERE id = 'p1'", (level,))
+        self.store.save_run(
+            Run(
+                id="r1",
+                task_id="t1",
+                project_id="p1",
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude_code",
+            )
+        )
+        for status in RUN_STATUSES:
+            self._execute("UPDATE runs SET status = ? WHERE id = 'r1'", (status,))
+
+    def test_a_row_that_already_holds_an_unknown_value_can_still_be_changed(self) -> None:
+        connection = self.store._connection
+        connection.execute("DROP TRIGGER tasks_status_update_guard")
+        connection.execute("UPDATE tasks SET status = 'legacy' WHERE id = 't1'")
+        connection.commit()
+        self.store.close()
+        self.store = ForemanStore(Path(self._temp.name) / "foreman.db")
+        self.addCleanup(self.store.close)
+        # Other columns of the row stay writable, and the status can be fixed.
+        self._execute("UPDATE tasks SET title = 'renamed' WHERE id = 't1'")
+        self._execute("UPDATE tasks SET status = 'todo' WHERE id = 't1'")
+        self.assertEqual(self.store.get_task("t1").title, "renamed")
 
 
 if __name__ == "__main__":
