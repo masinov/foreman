@@ -8,7 +8,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import argparse
+
 from foreman import meta_agent
+from foreman.cli import build_parser
 from foreman.models import Project, Sprint, Task, Event
 from foreman.store import ForemanStore
 
@@ -65,6 +68,10 @@ class StateHeaderTests(unittest.TestCase):
         )
         header = meta_agent.build_state_header(self.store, self.project)
         self.assertIn("Active sprint task table", header)
+        self.assertIn(
+            "id | status | type | title | assigned_role | blocked_reason", header
+        )
+        self.assertNotIn("model_override", header)
         self.assertIn("task-1 | blocked | feature | Build feature", header)
         # blocked_reason is truncated to <= 80 chars (plus ellipsis), never full.
         self.assertNotIn(long_reason, header)
@@ -116,6 +123,61 @@ class StateHeaderTests(unittest.TestCase):
         header = meta_agent.build_state_header(self.store, self.project)
         self.assertEqual(header.count("engine.task_blocked"), 5)
         self.assertNotIn("agent.text", header)
+
+
+def _subparser_choices(parser: argparse.ArgumentParser) -> dict[str, argparse.ArgumentParser]:
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            return dict(action.choices)
+    return {}
+
+
+class OperatingContractDriftTests(unittest.TestCase):
+    """Every `foreman ...` line in the contract must name a real CLI command."""
+
+    def test_every_contract_command_is_accepted_by_cli_parser(self) -> None:
+        project = Project(
+            id="proj-1",
+            name="Demo",
+            repo_path="/tmp/demo",
+            workflow_id="development",
+        )
+        contract = meta_agent.build_operating_contract(project)
+        command_lines = [
+            line.strip()
+            for line in contract.splitlines()
+            if line.strip().startswith("foreman ")
+        ]
+        self.assertGreater(len(command_lines), 20)
+
+        top_level = _subparser_choices(build_parser())
+        for line in command_lines:
+            tokens = line.split()
+            self.assertGreaterEqual(len(tokens), 2, line)
+            command = tokens[1]
+            self.assertIn(command, top_level, f"unknown command in contract: {line}")
+            sub_choices = _subparser_choices(top_level[command])
+            if sub_choices:
+                self.assertGreaterEqual(len(tokens), 3, f"missing subcommand: {line}")
+                subcommand = tokens[2]
+                self.assertIn(
+                    subcommand,
+                    sub_choices,
+                    f"unknown subcommand in contract: {line}",
+                )
+
+    def test_contract_uses_corrected_history_and_override_syntax(self) -> None:
+        project = Project(
+            id="proj-1",
+            name="Demo",
+            repo_path="/tmp/demo",
+            workflow_id="development",
+        )
+        contract = meta_agent.build_operating_contract(project)
+        self.assertNotIn("foreman history proj-1", contract)
+        self.assertIn("foreman history <task-id>", contract)
+        self.assertNotIn("--model", contract)
+        self.assertIn("foreman task override <task-id> --step <step>=<model>", contract)
 
 
 class ProcessMessagePersistenceTests(unittest.TestCase):
