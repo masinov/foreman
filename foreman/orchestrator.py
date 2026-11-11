@@ -29,6 +29,7 @@ from .engine.branch_sync import (
     task_working_dir,
 )
 from .engine.evidence import EvidenceBuilder, branch_diff_content
+from .engine.gates import blocked_reason_for_unhandled_outcome, gate_policy_decision
 from .engine.leasing import TASK_LEASE_HEARTBEAT_SECONDS, TaskLeases
 from .engine.limits import (
     active_run_recovery_timeout_seconds,
@@ -46,6 +47,12 @@ from .engine.output_contract import (
     extract_completion_output,
     with_retry_instruction,
 )
+from .engine.prompts import (
+    load_repo_instructions,
+    safe_changed_files,
+    safe_git_status,
+    safe_recent_commits,
+)
 from .engine.records import RunRecords, new_id
 from .engine.results import (
     AgentEventRecord,
@@ -53,24 +60,22 @@ from .engine.results import (
     AgentExecutor,
     HumanGateResumeResult,
     ProjectRunResult,
+    quota_run_result,
 )
 from .errors import EngineCommandInterrupt
 from .git import (
     GitError,
     task_commits_on_default_branch,
     branch_exists,
-    changed_files,
     head_sha,
-    recent_commits,
     run_git,
-    status_text,
     worktree_branch,
 )
 from .logs import get_logger
 from .guidance import GUIDANCE_DELIVERED_EVENT, pending_guidance, prompt_with_guidance
 from .models import CompletionEvidence, Event, HumanGateDecision, Lease, Project, Run, Sprint, TASK_COMPLEXITIES, TASK_TYPES, Task, TokenUsage, utc_now_text
 from .notifications import NotificationDispatcher
-from .policy import GATE_DECISIONS, PolicyMatrix, describe_resolution
+from .policy import PolicyMatrix, describe_resolution
 from .outcomes import APPROVE, BLOCKED, DENY, ERROR, normalize_agent_outcome, normalize_reviewer_decision
 from .runner import AgentRunConfig, ClaudeCodeRunner, CodexRunner, PreflightError, run_with_retry
 from .runner.base import AgentRunner as NativeAgentRunner
@@ -416,7 +421,7 @@ class ForemanOrchestrator:
             try:
                 completed = self._run_task_isolated(project, workflow, task)
             except QuotaPauseError as exc:
-                return self._quota_run_result(project, exc, executed_task_ids, blocked_task_ids)
+                return quota_run_result(project, exc, executed_task_ids, blocked_task_ids)
             executed_task_ids.append(completed.id)
             if completed.status == "blocked":
                 blocked_task_ids.append(completed.id)
@@ -435,7 +440,7 @@ class ForemanOrchestrator:
                 try:
                     completed = self._run_task_isolated(project, workflow, task)
                 except QuotaPauseError as exc:
-                    return self._quota_run_result(
+                    return quota_run_result(
                         project, exc, executed_task_ids, blocked_task_ids
                     )
                 executed_task_ids.append(completed.id)
@@ -499,25 +504,6 @@ class ForemanOrchestrator:
             raise
         except Exception as exc:
             raise TaskExecutionError(task.id, exc) from exc
-
-    def _quota_run_result(
-        self,
-        project: Project,
-        exc: QuotaPauseError,
-        executed_task_ids: list[str],
-        blocked_task_ids: list[str],
-    ) -> ProjectRunResult:
-        """Summarize a pass that stopped because the backend quota ran out."""
-
-        executed_task_ids.append(exc.task_id)
-        return ProjectRunResult(
-            project_id=project.id,
-            executed_task_ids=tuple(executed_task_ids),
-            blocked_task_ids=tuple(blocked_task_ids),
-            stop_reason="quota_exhausted",
-            retry_after=exc.retry_after,
-            detail=exc.detail,
-        )
 
     def _pause_for_quota(
         self,
@@ -1419,7 +1405,7 @@ class ForemanOrchestrator:
                     {"step": current_step, "visit_count": visit_count},
                 )
                 self._emit_policy_resolved(run, project, current_task)
-                gate_policy = self._gate_policy_decision(project, current_task, step_def)
+                gate_policy = gate_policy_decision(project, current_task, step_def)
                 if gate_policy == "auto":
                     outcome, detail = self._auto_approve_gate(
                         run, project, current_task, step_def
@@ -1876,7 +1862,7 @@ class ForemanOrchestrator:
                     {"step": current_step, "outcome": outcome},
                 )
                 current_task.status = "blocked"
-                current_task.blocked_reason = self._blocked_reason_for_unhandled_outcome(
+                current_task.blocked_reason = blocked_reason_for_unhandled_outcome(
                     workflow=workflow,
                     step=current_step,
                     outcome=outcome,
@@ -1933,29 +1919,6 @@ class ForemanOrchestrator:
 
         return current_task
 
-    def _gate_policy_decision(
-        self,
-        project: Project,
-        task: Task,
-        step: WorkflowStep,
-    ) -> str:
-        """Return ``auto`` or ``human`` for one human-gate step.
-
-        The answer comes from the project's policy matrix, which resolves the
-        step's policy from the task's overrides, the rule for its task type,
-        and the project default, in that order. Gate steps that name no
-        policy are not part of the matrix and always require a person.
-        """
-
-        policy = step.policy
-        if not policy or policy not in GATE_DECISIONS:
-            return "human"
-        return (
-            PolicyMatrix.for_project(project)
-            .resolve(policy, task_type=task.task_type, overrides=task.executor_overrides)
-            .value
-        )
-
     def _emit_policy_resolved(self, run: Run, project: Project, task: Task) -> None:
         """Record the resolved policy matrix once, on the task's first step.
 
@@ -2007,22 +1970,6 @@ class ForemanOrchestrator:
             )
         )
         return (APPROVE, detail)
-
-    def _blocked_reason_for_unhandled_outcome(
-        self,
-        *,
-        workflow: WorkflowDefinition,
-        step: str,
-        outcome: str,
-        detail: str | None,
-    ) -> str:
-        """Return the task block reason for a step outcome with no transition."""
-
-        if outcome in {"error", "killed", "blocked"} and detail:
-            return detail
-        if workflow.fallback is not None:
-            return workflow.fallback.message
-        return f"No transition for '{outcome}' at '{step}'"
 
     def _preflight_worktrees(self, project: Project) -> None:
         """Fail a run at the start when the repository cannot host worktrees.
@@ -2430,19 +2377,19 @@ class ForemanOrchestrator:
             "branch_name": task.branch_name or "",
             "sprint_context": context_projection.context_markdown,
             "project_status": context_projection.status_markdown,
-            "repo_instructions": self._load_repo_instructions(project.repo_path),
+            "repo_instructions": load_repo_instructions(project.repo_path),
             "spec_path": project.spec_path or "",
             "previous_feedback": carried_output or "",
             "previous_output": latest_run.outcome_detail if latest_run else "",
             # Status describes the tree the agent works in; diffs and log come
             # from refs, which every worktree shares.
-            "git_status": self._safe_git_status(task_working_dir(project, task)),
-            "changed_files": self._safe_changed_files(
+            "git_status": safe_git_status(task_working_dir(project, task)),
+            "changed_files": safe_changed_files(
                 project.repo_path,
                 project.default_branch,
                 task.branch_name,
             ),
-            "recent_commits": self._safe_recent_commits(project.repo_path, task.branch_name),
+            "recent_commits": safe_recent_commits(project.repo_path, task.branch_name),
             "completion_evidence": (
                 str(evidence)
                 if role.completion.output.extract_decision
@@ -2506,39 +2453,6 @@ class ForemanOrchestrator:
         if not branch_exists(project.repo_path, branch):
             return f"Branch {branch!r} does not exist in the repository."
         return None
-
-    def _load_repo_instructions(self, repo_path: str) -> str:
-        agents_path = Path(repo_path) / "AGENTS.md"
-        if not agents_path.is_file():
-            return ""
-        return agents_path.read_text(encoding="utf-8")
-
-    def _safe_git_status(self, repo_path: str | Path) -> str:
-        try:
-            return status_text(repo_path)
-        except GitError:
-            return ""
-
-    def _safe_changed_files(
-        self,
-        repo_path: str,
-        target_branch: str,
-        branch_name: str | None,
-    ) -> str:
-        try:
-            return changed_files(
-                repo_path,
-                target_branch=target_branch,
-                branch_name=branch_name,
-            )
-        except GitError:
-            return ""
-
-    def _safe_recent_commits(self, repo_path: str, branch_name: str | None) -> str:
-        try:
-            return recent_commits(repo_path, branch_name=branch_name)
-        except GitError:
-            return ""
 
     def _write_runtime_context(
         self,
