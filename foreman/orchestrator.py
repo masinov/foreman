@@ -37,11 +37,9 @@ from .engine.model_selection import (
 )
 from .engine.output_contract import (
     FINAL_MESSAGE_PHASES,
-    contains_completion_marker,
-    decision_option_lines,
-    extract_decision_output,
-    extract_json_block,
-    strip_completion_marker,
+    contract_retry_reason,
+    extract_completion_output,
+    with_retry_instruction,
 )
 from .engine.results import (
     AgentEventRecord,
@@ -73,7 +71,7 @@ from .models import CompletionEvidence, Event, HumanGateDecision, Lease, Project
 from .task_lease import TaskLeaseHeartbeat
 from .notifications import NotificationDispatcher, resolve_notification_policy
 from .policy import GATE_DECISIONS, PolicyMatrix, describe_resolution
-from .outcomes import APPROVE, BLOCKED, DENY, DONE, ERROR, normalize_agent_outcome, normalize_reviewer_decision
+from .outcomes import APPROVE, BLOCKED, DENY, ERROR, normalize_agent_outcome, normalize_reviewer_decision
 from .runner import AgentRunConfig, ClaudeCodeRunner, CodexRunner, PreflightError, run_with_retry
 from .runner.base import AgentRunner as NativeAgentRunner
 from .runner.process import EngineShutdown
@@ -1766,7 +1764,7 @@ class ForemanOrchestrator:
                 retry_reason = (
                     None
                     if result.failure_type == "quota"
-                    else self._output_contract_retry_reason(role, result)
+                    else contract_retry_reason(role, result)
                 )
                 if retry_reason is not None:
                     self._emit_event(
@@ -1779,7 +1777,7 @@ class ForemanOrchestrator:
                             "retry_attempt": 1,
                         },
                     )
-                    retry_prompt = self._append_output_contract_retry_instruction(
+                    retry_prompt = with_retry_instruction(
                         prompt,
                         role,
                         retry_reason,
@@ -3201,7 +3199,7 @@ class ForemanOrchestrator:
                     event.payload.get("duration_ms"),
                     default=duration_ms,
                 )
-                outcome, detail = self._extract_completion_output(
+                outcome, detail = extract_completion_output(
                     role,
                     final_message,
                     transcript="\n\n".join(message_fragments),
@@ -3292,91 +3290,6 @@ class ForemanOrchestrator:
             failure_type=failure_type,
             retry_after=retry_after,
         )
-
-    def _extract_completion_output(
-        self,
-        role: RoleDefinition,
-        text: str,
-        *,
-        transcript: str | None = None,
-    ) -> tuple[str, str]:
-        """Apply the role's completion contract to the agent's final message.
-
-        ``text`` is the final assistant message: the marker or verdict must
-        appear there, not anywhere in the transcript, so a plan that mentions
-        the marker or a reviewer that restates the options never counts.
-        ``transcript`` is only a fallback for the returned detail when the
-        final message is empty once the marker is stripped.
-        """
-
-        cleaned_text = text.strip()
-        output_config = role.completion.output
-        marker = role.completion.marker.strip()
-
-        if output_config.extract_decision:
-            return extract_decision_output(cleaned_text, allowed=role.completion.outcomes)
-
-        if marker:
-            if not contains_completion_marker(cleaned_text, marker):
-                return (ERROR, f"Missing completion marker `{marker}`.")
-            cleaned_text = strip_completion_marker(cleaned_text, marker)
-            if not cleaned_text and transcript:
-                cleaned_text = strip_completion_marker(transcript.strip(), marker)
-
-        if output_config.extract_json:
-            json_block = extract_json_block(cleaned_text)
-            return (DONE, json_block or cleaned_text or "Completed without JSON output.")
-
-        if output_config.extract_summary or output_config.extract_branch:
-            return (DONE, cleaned_text or "Completed.")
-
-        return (DONE, cleaned_text or "Completed.")
-
-    def _output_contract_retry_reason(
-        self,
-        role: RoleDefinition,
-        result: AgentExecutionResult,
-    ) -> str | None:
-        """Return a retry reason when one malformed agent response merits one corrective retry."""
-
-        if result.status != "completed" or result.outcome != "error":
-            return None
-
-        if role.completion.output.extract_decision:
-            return "decision_format"
-
-        marker = role.completion.marker.strip()
-        if marker and result.detail == f"Missing completion marker `{marker}`.":
-            return "missing_completion_marker"
-
-        return None
-
-    def _append_output_contract_retry_instruction(
-        self,
-        prompt: str,
-        role: RoleDefinition,
-        reason: str,
-    ) -> str:
-        """Append a minimal corrective instruction for one malformed-output retry."""
-
-        if reason == "decision_format":
-            options = "\n".join(decision_option_lines(role.completion.outcomes))
-            correction = (
-                "Your previous response did not follow the required final output format.\n"
-                "Do not do more review work.\n"
-                "Return exactly one line and nothing else:\n"
-                f"{options}"
-            )
-        elif reason == "missing_completion_marker":
-            correction = (
-                "Your previous response did not include the required completion marker.\n"
-                "Do not do more work.\n"
-                f"Return your completion summary again and end with `{role.completion.marker}` "
-                "on its own line."
-            )
-        else:
-            return prompt
-        return f"{prompt}\n\n### Output Correction\n{correction}"
 
     def _emit_agent_events(
         self,

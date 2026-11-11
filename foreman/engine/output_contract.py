@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import re
 
-from ..outcomes import ERROR
+from ..outcomes import DONE, ERROR
+from ..roles import RoleDefinition
+from .results import AgentExecutionResult
 
 
 FINAL_MESSAGE_PHASES = frozenset({"result", "final_answer"})
@@ -125,3 +127,88 @@ def extract_json_block(text: str) -> str | None:
     if match is None:
         return None
     return match.group(1).strip() or None
+
+
+def extract_completion_output(
+    role: RoleDefinition,
+    text: str,
+    *,
+    transcript: str | None = None,
+) -> tuple[str, str]:
+    """Apply the role's completion contract to the agent's final message.
+
+    ``text`` is the final assistant message: the marker or verdict must
+    appear there, not anywhere in the transcript, so a plan that mentions
+    the marker or a reviewer that restates the options never counts.
+    ``transcript`` is only a fallback for the returned detail when the
+    final message is empty once the marker is stripped.
+    """
+
+    cleaned_text = text.strip()
+    output_config = role.completion.output
+    marker = role.completion.marker.strip()
+
+    if output_config.extract_decision:
+        return extract_decision_output(cleaned_text, allowed=role.completion.outcomes)
+
+    if marker:
+        if not contains_completion_marker(cleaned_text, marker):
+            return (ERROR, f"Missing completion marker `{marker}`.")
+        cleaned_text = strip_completion_marker(cleaned_text, marker)
+        if not cleaned_text and transcript:
+            cleaned_text = strip_completion_marker(transcript.strip(), marker)
+
+    if output_config.extract_json:
+        json_block = extract_json_block(cleaned_text)
+        return (DONE, json_block or cleaned_text or "Completed without JSON output.")
+
+    if output_config.extract_summary or output_config.extract_branch:
+        return (DONE, cleaned_text or "Completed.")
+
+    return (DONE, cleaned_text or "Completed.")
+
+
+def contract_retry_reason(
+    role: RoleDefinition,
+    result: AgentExecutionResult,
+) -> str | None:
+    """Return a retry reason when one malformed agent response merits one corrective retry."""
+
+    if result.status != "completed" or result.outcome != "error":
+        return None
+
+    if role.completion.output.extract_decision:
+        return "decision_format"
+
+    marker = role.completion.marker.strip()
+    if marker and result.detail == f"Missing completion marker `{marker}`.":
+        return "missing_completion_marker"
+
+    return None
+
+
+def with_retry_instruction(
+    prompt: str,
+    role: RoleDefinition,
+    reason: str,
+) -> str:
+    """Append a minimal corrective instruction for one malformed-output retry."""
+
+    if reason == "decision_format":
+        options = "\n".join(decision_option_lines(role.completion.outcomes))
+        correction = (
+            "Your previous response did not follow the required final output format.\n"
+            "Do not do more review work.\n"
+            "Return exactly one line and nothing else:\n"
+            f"{options}"
+        )
+    elif reason == "missing_completion_marker":
+        correction = (
+            "Your previous response did not include the required completion marker.\n"
+            "Do not do more work.\n"
+            f"Return your completion summary again and end with `{role.completion.marker}` "
+            "on its own line."
+        )
+    else:
+        return prompt
+    return f"{prompt}\n\n### Output Correction\n{correction}"

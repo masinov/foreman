@@ -16,7 +16,7 @@ import unittest
 from pathlib import Path
 
 from foreman.models import Project, Run, Sprint, Task
-from foreman.engine.output_contract import extract_decision_output
+from foreman.engine.output_contract import extract_decision_output, with_retry_instruction
 from foreman.orchestrator import ForemanOrchestrator
 from foreman.roles import RoleLoadError, default_roles_dir, load_role, load_roles
 from foreman.runner import AgentRunConfig, ClaudeCodeRunner
@@ -558,7 +558,7 @@ class OrchestratorContractTests(unittest.TestCase):
             store.initialize()
             orchestrator = ForemanOrchestrator(store, agent_runners={"claude_code": _ScriptedRunner([])})
             triage = orchestrator.roles["triage_reviewer"]
-            corrected = orchestrator._append_output_contract_retry_instruction("prompt", triage, "decision_format")
+            corrected = with_retry_instruction("prompt", triage, "decision_format")
             self.assertIn("ESCALATE: <why the senior reviewer is needed>", corrected)
             self.assertNotIn("STEER", corrected)
 

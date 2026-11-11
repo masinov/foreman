@@ -7,6 +7,15 @@ memory changes rather than versioned product releases.
 
 ## [Unreleased]
 
+### Sprint 57 — structure
+
+- **slice 1, engine package, first cut** (`refactor/engine-package`): the
+  separable parts of `foreman/orchestrator.py` are now modules of
+  `foreman/engine/`: `errors`, `results`, `limits`, `model_selection`,
+  `output_contract` and `evidence` (`EvidenceBuilder`). No behaviour change;
+  `orchestrator.py` went from 4574 to 3754 lines. `builtins.py` no longer
+  constructs an orchestrator to build evidence.
+
 ### Sprint 56 — engine truthfulness
 
 - **slice 11, vocabulary and settings** (`refactor/status-constraints`):

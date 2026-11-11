@@ -10,14 +10,11 @@ import subprocess
 import tempfile
 import unittest
 
+from foreman.engine.output_contract import extract_completion_output, extract_decision_output
 from foreman.models import CompletionEvidence, Event, Project, Run, Sprint, Task
-from foreman.orchestrator import (
-    AgentEventRecord,
-    AgentExecutionResult,
-    ForemanOrchestrator,
-    OrchestratorError,
-    extract_decision_output,
-)
+from foreman.engine.errors import OrchestratorError
+from foreman.engine.results import AgentEventRecord, AgentExecutionResult
+from foreman.orchestrator import ForemanOrchestrator
 from foreman.git import current_branch
 from foreman.runner.base import AgentEvent, AgentRunConfig, InfrastructureError, PreflightError
 from foreman.roles import default_roles_dir, load_roles
@@ -5280,7 +5277,7 @@ class DecisionExtractionTests(unittest.TestCase):
     def test_extract_completion_output_accepts_markdown_wrapped_marker(self) -> None:
         role = self.roles["developer"]
 
-        outcome, detail = self.orchestrator._extract_completion_output(
+        outcome, detail = extract_completion_output(
             role,
             "Completed the slice.\n\n**TASK_COMPLETE**",
         )
