@@ -242,9 +242,10 @@ def render_sprint_context(
                 [
                     "",
                     "### Autonomous Signal Contract",
-                    "When in autonomous mode, the developer must emit signal.task_started",
-                    "before proceeding past the first developer step. Required fields:",
-                    "title (not placeholder), branch, criteria.",
+                    "You choose what this task is. In the first developer step, name it",
+                    "by emitting signal.task_started with: title, criteria (the acceptance",
+                    "criteria you will meet), and task_type. The engine has already put",
+                    "you on this task's branch in its own worktree; stay on it.",
                 ]
             )
 

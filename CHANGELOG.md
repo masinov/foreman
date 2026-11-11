@@ -9,6 +9,19 @@ memory changes rather than versioned product releases.
 
 ### Sprint 56 — engine truthfulness
 
+- **slice 10c, autonomous mode** (`fix/autonomous-mode`):
+  - an autonomous task now gets its own branch and worktree like any other.
+    It had neither, so the agent ran in the operator's checkout, committed
+    to the branch checked out there, and the merge step failed with "Task
+    branch is not set" (found by the first tests written for this mode);
+  - an agent that never sends `signal.task_started` no longer blocks the
+    task: the gap is recorded once and review goes ahead, as spec §6.2
+    describes;
+  - nothing about the mode is kept in memory, so a restart mid-task changes
+    nothing; the check no longer names the `developer` role, it applies to
+    any role allowed to send the signal;
+  - a task type or branch reported by the agent is checked before it is
+    stored; one that is not acceptable is refused with `signal.rejected`.
 - **slice 10b, resident engine** (`fix/resident-engine-commands`):
   - a one-shot `foreman run` answers engine commands while it holds the
     project: `pause`, `shutdown` and `stop_task` stop its step (they sat

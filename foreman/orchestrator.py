@@ -31,6 +31,7 @@ from .git import (
     head_sha,
     is_worktree_clean,
     recent_commits,
+    run_git,
     status_text,
     sync_branch_with_base,
     worktree_branch,
@@ -39,7 +40,7 @@ from .leases import generate_lease_token
 from .logs import compact_payload, event_log_level, get_logger, log_event
 from .guidance import GUIDANCE_DELIVERED_EVENT, pending_guidance, prompt_with_guidance
 from .judge import NOT_JUDGED, judge_criteria, truncate_diff
-from .models import CompletionEvidence, Event, HumanGateDecision, Lease, Project, Run, Sprint, TASK_COMPLEXITIES, Task, TokenUsage, utc_now_text
+from .models import CompletionEvidence, Event, HumanGateDecision, Lease, Project, Run, Sprint, TASK_COMPLEXITIES, TASK_TYPES, Task, TokenUsage, utc_now_text
 from .task_lease import TaskLeaseHeartbeat
 from .notifications import NotificationDispatcher, resolve_notification_policy
 from .policy import GATE_DECISIONS, PolicyMatrix, describe_resolution
@@ -60,6 +61,10 @@ from .worktrees import (
 )
 
 _LOGGER = get_logger("orchestrator")
+
+#: Title of the task the engine creates in autonomous mode for the agent to
+#: name. A task that still has it was never named by ``signal.task_started``.
+AUTONOMOUS_PLACEHOLDER_TITLE = "[autonomous] new task"
 
 _BRANCH_PREFIXES = {
     "feature": "feat",
@@ -273,8 +278,6 @@ class ForemanOrchestrator:
         )
         self._task_lease_tokens: dict[str, str] = {}
         self._task_lease_heartbeats: dict[str, TaskLeaseHeartbeat] = {}
-        self._task_started_received: set[str] = set()
-        self._developer_step_executed: set[str] = set()
         self._worktree_managers: dict[str, WorktreeManager] = {}
         #: Called with the running task id before every workflow step and on
         #: every silent-agent tick. The resident engine supplies it so an
@@ -1345,7 +1348,7 @@ class ForemanOrchestrator:
             id=str(uuid4()),
             sprint_id=sprint.id,
             project_id=project.id,
-            title="[autonomous] new task",
+            title=AUTONOMOUS_PLACEHOLDER_TITLE,
             status="todo",
             created_by="orchestrator",
         )
@@ -1441,11 +1444,14 @@ class ForemanOrchestrator:
             resume_step = persisted_step.id
             resume_carried_output = current_task.workflow_carried_output
 
-        if str(project.settings.get("task_selection_mode", "directed")) == "directed":
-            current_task.branch_name = current_task.branch_name or generate_branch_name(
-                current_task
-            )
-            self._ensure_task_worktree(project, current_task)
+        # Every task gets its own branch and worktree from the engine, in both
+        # selection modes (ADR-0012). In autonomous mode the agent chooses what
+        # to work on, not where: without a worktree it would run in the
+        # operator's checkout and commit to whatever is checked out there.
+        current_task.branch_name = current_task.branch_name or generate_branch_name(
+            current_task
+        )
+        self._ensure_task_worktree(project, current_task)
 
         current_task.status = "in_progress"
         current_task.blocked_reason = None
@@ -1629,11 +1635,14 @@ class ForemanOrchestrator:
                 note=note,
             )
 
-        if str(project.settings.get("task_selection_mode", "directed")) == "directed":
-            current_task.branch_name = current_task.branch_name or generate_branch_name(
-                current_task
-            )
-            self._ensure_task_worktree(project, current_task)
+        # Every task gets its own branch and worktree from the engine, in both
+        # selection modes (ADR-0012). In autonomous mode the agent chooses what
+        # to work on, not where: without a worktree it would run in the
+        # operator's checkout and commit to whatever is checked out there.
+        current_task.branch_name = current_task.branch_name or generate_branch_name(
+            current_task
+        )
+        self._ensure_task_worktree(project, current_task)
 
         self.run_workflow_from_step(
             project,
@@ -1815,39 +1824,6 @@ class ForemanOrchestrator:
                         current_task.blocked_reason = str(e)
                         current_task.workflow_current_step = None
                         current_task.workflow_carried_output = None
-                        self._save_task(current_task)
-                        current_step = None
-                        self._release_task_lease(current_task, project)
-                        break
-
-            # ── Autonomous contract: require signal.task_started after first developer step ──
-            # Pre-step check only for non-developer steps; developer step is checked
-            # after execution so the agent has a chance to emit signal.task_started.
-            mode = str(project.settings.get("task_selection_mode", "directed"))
-            if mode == "autonomous" and current_task.created_by == "orchestrator":
-                if current_task.id not in self._task_started_received:
-                    if step_def.role not in {"_builtin:merge", "_builtin:mark_done", "developer"}:
-                        detail = (
-                            "Autonomous task did not emit required signal.task_started. "
-                            "Missing: title, branch, or acceptance_criteria."
-                        )
-                        run = self._create_system_run(
-                            current_task,
-                            workflow_step=current_step,
-                            outcome="blocked",
-                            detail=detail,
-                        )
-                        self._emit_event(
-                            run,
-                            "workflow.autonomous_contract_missing",
-                            {
-                                "task_id": current_task.id,
-                                "step": current_step,
-                                "reason": detail,
-                            },
-                        )
-                        current_task.status = "blocked"
-                        current_task.blocked_reason = detail
                         self._save_task(current_task)
                         current_step = None
                         self._release_task_lease(current_task, project)
@@ -2372,49 +2348,33 @@ class ForemanOrchestrator:
                     outcome = normalize_agent_outcome(result.outcome)
                 detail = result.detail
 
-            # ── Autonomous contract check: after developer step executes ──
-            # Record that a developer step ran, then check whether signal was received.
-            mode = str(project.settings.get("task_selection_mode", "directed"))
-            if mode == "autonomous" and current_task.created_by == "orchestrator":
-                if step_def.role == "developer":
-                    self._developer_step_executed.add(current_task.id)
-                if (
-                    current_task.id in self._developer_step_executed
-                    and current_task.id not in self._task_started_received
-                ):
-                    # Also accept persisted non-placeholder fields as valid signal substitute
-                    has_persisted_signal = (
-                        current_task.title
-                        and current_task.title != "[autonomous] new task"
-                        and current_task.branch_name
-                        and current_task.acceptance_criteria
-                    )
-                    if not has_persisted_signal:
-                        detail = (
-                            "Autonomous task did not emit required signal.task_started "
-                            "after the first developer step."
-                        )
-                        run = self._create_system_run(
-                            current_task,
-                            workflow_step=current_step,
-                            outcome="blocked",
-                            detail=detail,
-                        )
-                        self._emit_event(
-                            run,
-                            "workflow.autonomous_contract_missing",
-                            {
-                                "task_id": current_task.id,
-                                "step": current_step,
-                                "reason": detail,
-                            },
-                        )
-                        current_task.status = "blocked"
-                        current_task.blocked_reason = detail
-                        self._save_task(current_task)
-                        current_step = None
-                        self._release_task_lease(current_task, project)
-                        break
+            # ── Autonomous mode: an agent that never named its task ──
+            # The agent is asked to report what it chose to work on with
+            # signal.task_started. If it has not after a step that may send
+            # that signal, the task goes on as it is (spec §6.2: degraded but
+            # functional). The gap is recorded once, and what is recorded for
+            # the task is read from the store, so a restart changes nothing.
+            if (
+                str(project.settings.get("task_selection_mode", "directed")) == "autonomous"
+                and current_task.created_by == "orchestrator"
+                and current_task.title == AUTONOMOUS_PLACEHOLDER_TITLE
+                and step_def.role in self.roles
+                and "task_started" in self.roles[step_def.role].signals
+                and not self._autonomous_gap_recorded(current_task)
+            ):
+                self._emit_event(
+                    run,
+                    "workflow.autonomous_contract_missing",
+                    {
+                        "task_id": current_task.id,
+                        "step": current_step,
+                        "reason": (
+                            "The agent did not send signal.task_started, so the task "
+                            "has no title or acceptance criteria of its own. The "
+                            "workflow continues; review judges what the agent did."
+                        ),
+                    },
+                )
 
             self._emit_event(
                 run,
@@ -3116,6 +3076,34 @@ class ForemanOrchestrator:
                 "completion_builtin_test_detail": evidence.builtin_test_detail,
             })
         return role.render_prompt(context)
+
+    def _autonomous_gap_recorded(self, task: Task) -> bool:
+        """True when this task's missing task_started was already recorded."""
+
+        return any(
+            event.event_type == "workflow.autonomous_contract_missing"
+            for event in self.store.list_events(task_id=task.id)
+        )
+
+    def _signalled_branch_problem(self, project: Project, branch: str) -> str | None:
+        """Say why a branch an agent reported cannot become the task's branch."""
+
+        if branch == project.default_branch:
+            return (
+                f"{branch!r} is the default branch; a task's work reaches it only "
+                "through the merge step."
+            )
+        try:
+            valid = run_git(
+                project.repo_path, "check-ref-format", "--branch", branch, check=False
+            )
+        except (GitError, OSError) as exc:
+            return f"The branch name {branch!r} could not be checked: {exc}"
+        if valid.returncode != 0:
+            return f"{branch!r} is not a valid branch name."
+        if not branch_exists(project.repo_path, branch):
+            return f"Branch {branch!r} does not exist in the repository."
+        return None
 
     def _safe_branch_head(self, project: Project, task: Task) -> str:
         """Return the task branch's head commit, or "" when it cannot be read."""
@@ -3943,14 +3931,44 @@ class ForemanOrchestrator:
                 )
                 return
         if event_record.event_type == "signal.task_started":
-            task.title = str(payload.get("title", task.title))
-            task.task_type = str(payload.get("task_type", task.task_type))
-            task.branch_name = str(payload.get("branch", task.branch_name or "")) or task.branch_name
-            task.acceptance_criteria = str(
-                payload.get("criteria", task.acceptance_criteria or "")
-            ) or task.acceptance_criteria
+            task.title = _optional_string(payload.get("title")) or task.title
+            task.acceptance_criteria = (
+                _optional_string(payload.get("criteria")) or task.acceptance_criteria
+            )
+            # The type and the branch are checked before they are stored: a
+            # type Foreman does not know breaks branch naming and the merge
+            # guard, and the branch decides which worktree later steps use
+            # and what gets merged.
+            refused: dict[str, str] = {}
+            task_type = _optional_string(payload.get("task_type"))
+            if task_type and task_type != task.task_type:
+                if task_type in TASK_TYPES:
+                    task.task_type = task_type
+                else:
+                    refused["task_type"] = (
+                        f"{task_type!r} is not a task type "
+                        f"(expected one of: {', '.join(TASK_TYPES)})."
+                    )
+            branch = _optional_string(payload.get("branch"))
+            if branch and branch != task.branch_name:
+                problem = self._signalled_branch_problem(project, branch)
+                if problem is None:
+                    task.branch_name = branch
+                else:
+                    refused["branch"] = problem
             self._save_task(task, include_definition=True)
-            self._task_started_received.add(task.id)
+            for field_name, reason in refused.items():
+                self._emit_event(
+                    run,
+                    "signal.rejected",
+                    {
+                        "signal": "task_started",
+                        "role_id": role_id,
+                        "field": field_name,
+                        "reason": reason,
+                    },
+                    role_id=role_id,
+                )
             return
 
         if event_record.event_type == "signal.task_created":
@@ -4229,7 +4247,7 @@ def _failure_type_for_error(payload: Mapping[str, Any]) -> str:
 
 
 def generate_branch_name(task: Task) -> str:
-    """Generate a stable branch name for one directed task."""
+    """Generate a stable branch name for one task."""
 
     prefix = _BRANCH_PREFIXES.get(task.task_type, "feat")
     return f"{prefix}/{task.id}"

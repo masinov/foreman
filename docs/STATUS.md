@@ -44,8 +44,11 @@ review, human gate, deferred approval, merge). Still true: agents run with full 
 - `_builtin:mark_done` terminates a workflow with no outbound transition.
 - Events require a run and a task, so project-level events attach to a
   synthetic system run on one project task.
-- Spec §6.2 says a missing `signal.task_started` degrades; the code blocks
-  the task. Spec §6.4 sprint checkpoints (tag, note, event) are not built.
+- Spec §6.2 says that in autonomous mode the orchestrator does not create a
+  branch and the agent reports its own. The engine creates the branch and
+  worktree in both modes (ADR-0012, amended 2026-11-11); the agent names the
+  task, not the place it works in.
+- Spec §6.4 sprint checkpoints (tag, note, event) are not built.
 - ADR-0007 describes a restricted planner session; the shipped manager chat
   is a full-access Claude Code session.
 - The dashboard has diverged from `docs/mockups/foreman-mockup-v6.html`

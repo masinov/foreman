@@ -496,8 +496,14 @@ The following items were implemented as hardening before the 1.0 release:
 - `engine.branch_violation` is emitted on invariant failure
 
 **Autonomous contract (Item 5)**
-- After the first developer step in autonomous mode, `signal.task_started` is required
-- Missing signal emits `workflow.autonomous_contract_missing` and blocks the task
+- In autonomous mode the agent names its task with `signal.task_started`
+  (title, criteria, task type). The engine gives the task its branch and
+  worktree as in directed mode.
+- A missing signal emits `workflow.autonomous_contract_missing` once and the
+  workflow continues (spec §6.2, degraded path); with the completion guard
+  on, the merge is what stops a task that has no acceptance criteria.
+- A reported task type or branch that cannot be accepted is refused with
+  `signal.rejected` naming the field; the rest of the signal is applied.
 
 **Signal validation (Items 6–7)**
 - `foreman/runner/signals.py` now emits `signal.invalid` or `signal.unknown` instead of silently dropping bad signals
