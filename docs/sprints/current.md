@@ -32,7 +32,7 @@ states facts.
 | 4 | Test step truth: real duration, a result line as the run detail, test result tied to the head commit | todo | Foreman | builtins, tests |
 | 5 | Triage attention events go through the notification dispatcher | todo | Foreman | service, notifications, tests |
 | 6 | Manager operating contract lists commands that exist | todo | Foreman | meta_agent, tests |
-| 7 | Completed sprints can be deleted from the sprint page (`"done"` vs `"completed"`) | todo | Foreman | frontend, test |
+| 7 | Completed sprints can be deleted from the sprint page (the page compared the status with `"done"`; the status is `"completed"`) | done | Claude, by hand (a frontend task needs `npm ci` and a bundle rebuild in the worktree, which the engine's test step does not cover) | `fix/completed-sprint-delete`: `App.jsx`, 1 test, rebuilt bundle |
 | 8 | Facts-based evidence: no numeric score or verdict ladder; test, review and criteria facts tied to the head commit; "verified" only for checks that ran | todo | to decide | orchestrator, judge, frontend, ADR |
 | 9 | Guidance reaches the agent: recorded, delivered and acknowledged states, or relabelled as a note | todo | to decide | service, orchestrator, runner, frontend |
 | 10 | Session-aware retry, structured quota detection, durable engine commands, autonomous-mode state persisted | todo | to decide | runner, serve, orchestrator |
