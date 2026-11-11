@@ -3,18 +3,36 @@
 Current snapshot only. History up to 2026-09-08 (sprints 1 to 54) is in
 `docs/checkpoints/status-history-through-2026-09-08.md`.
 
-## Where the project is (2026-11-10)
+## Where the project is (2026-11-11)
 
 - Driving document: `docs/reviews/2026-11-10-full-review-and-finish-plan.md`
   (full review of engine, runner, dashboard, frontend and UX, with a six-phase
   plan, 0 to 5).
-- Active sprint: **sprint 56 — engine truthfulness**
-  (`docs/sprints/current.md`). Sprint 55 (baseline and host safety) is
-  closed and archived; its last slice was the first task run through
-  Foreman since the safety fixes (FOR-13, merged by the engine).
-- `main` is pushed to `origin/main`. Work happens on short branches from
-  `main`; the operator checkout stays off `main` (the `_integration`
-  worktree holds it).
+- Phases 0, 1 and 2 are done: sprint 55 (baseline and host safety) and
+  sprint 56 (engine truthfulness) are closed and archived under
+  `docs/sprints/archive/`.
+- Active sprint: **sprint 57 — structure** (`docs/sprints/current.md`),
+  Phase 3 of the plan: behaviour-preserving reorganisation into engine,
+  store, CLI and API packages.
+- `main` is pushed to `origin/main` and CI is green. Work happens on short
+  branches from `main`; the operator checkout stays off `main` (the
+  `_integration` worktree holds it).
+- Schema version 20. 1064 Python tests, 60 frontend tests.
+
+## What sprint 56 changed for an operator
+
+- A cancelled task is never written to or merged by the engine; a blocker
+  signal stops the workflow; a crash between steps costs one step.
+- Completion evidence states facts tied to the branch head (tests, review,
+  judged criteria) and has no score (ADR-0018).
+- Guidance written for a task reaches its next agent step and shows as
+  waiting or read.
+- Retries continue the interrupted session; a quota stop needs the CLI's
+  own notice or wording; a pause survives an engine restart; `foreman run`
+  answers engine commands; a crash of `foreman serve` exits non-zero.
+- Autonomous mode works inside a per-task worktree and degrades, not
+  blocks, when the agent does not name its task.
+- The database refuses statuses and types outside the vocabulary.
 
 ## Running unattended
 

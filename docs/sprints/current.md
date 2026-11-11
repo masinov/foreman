@@ -1,87 +1,58 @@
 # Current Sprint
 
-## Sprint 56 — engine truthfulness
+## Sprint 57 — structure
 
-- **Opened:** 2026-11-11, from Phase 2 of
+- **Opened:** 2026-11-11, from Phase 3 of
   `docs/reviews/2026-11-10-full-review-and-finish-plan.md`
 - **Status:** in_progress
-- **Method:** Claude drives. Cross-cutting changes to the workflow loop and
-  the store are done by hand. Self-contained items are filed as tasks and
-  run through Foreman with the developer on Sonnet, to keep measuring where
-  delegation is safe and cheaper. Foreman tasks are told not to edit
-  `CHANGELOG.md` (every branch touching the same lines conflicts at merge);
-  the entry is added when the task lands. Merge approval stays a human
-  gate: Claude reviews each diff and the owner approves, or authorises
-  Claude to.
+- **Method:** Claude drives. Every slice is behaviour-preserving: code moves,
+  the tests that cover it keep passing unchanged, and anything that has to
+  change behaviour is split out and named. The whole suite runs before every
+  merge. Mechanical, self-contained moves with an existing test net are
+  candidates for Foreman; anything that reshapes a write path is done by
+  hand.
 
 ### Goal
 
-What the engine records is what happened, and what an operator does takes
-effect: a cancelled task is not merged, a blocker stops the workflow, a
-crash costs one step, a triage task reaches its notification, and evidence
-states facts.
+The code is organised the way the product is: an engine package, a store
+package, one mutation service, a CLI package, a routed and versioned API,
+and tests split along the same lines. No file is the place where everything
+lives.
+
+### Starting point
+
+| File | Lines |
+|---|---|
+| `foreman/orchestrator.py` | 4574 |
+| `foreman/cli.py` | 4009 |
+| `foreman/store.py` | 3213 |
+| `foreman/dashboard_service.py` | 2122 |
+| `tests/test_orchestrator.py` | about 8000 |
 
 ### Slices
 
 | # | Slice | Status | Executed by | Deliverable |
 |---|-------|--------|-------------|-------------|
-| 1 | Safe task writes: the engine updates only the columns it owns, never touches a cancelled task, re-reads the task before every step, and stops when it finds the task cancelled or blocked; `signal.blocker` stops the workflow | done | Claude, by hand | `fix/safe-task-writes`: `update_task_engine_state`, `_save_task`, `_adopt_operator_changes`, 3 tests |
-| 2 | Crash-safe steps: the next step is written in the same update that leaves the current one, so a crash between steps resumes there; an engine error inside a step settles its run as failed instead of leaving it `running`; built-in steps record their real duration | done | Claude, by hand | `fix/crash-safe-steps`: orchestrator, 2 tests |
-| 3 | Default-branch check: a task is blocked only when its own commits are on the default branch before the merge step, not whenever that branch moves | done | Claude, by hand | `fix/default-branch-check`: `git.task_commits_on_default_branch`, orchestrator, ADR-0012 amendment, 3 tests |
-| 3b | The integration worktree heals an interrupted merge; a task tree on the wrong branch is never force-checked-out while dirty | done | Claude, by hand | `fix/worktree-self-heal`: `worktrees.py`, 3 tests |
-| 4 | Test step truth: real duration, a result line as the run detail, the head commit recorded on `engine.test_run` (using it as evidence is slice 8) | done | Foreman (Sonnet 5.5 developer and reviewer; about $0.72 notional, half of it a repeat visit caused by the old default-branch check) | `foreman/builtins.py`, `tests/test_builtins.py` (7 tests) |
-| 5 | Triage attention events go through the notification dispatcher | done | Foreman (Sonnet 5.5; about $0.56 notional, same repeat visit) | `dashboard_service.py`, 4 tests in `tests/test_intake.py` |
-| 6 | Manager operating contract lists commands that exist | done | Foreman (Haiku 5.5 developer and reviewer; about $0.03 notional) | contract text, drift test |
-| 7 | Completed sprints can be deleted from the sprint page (the page compared the status with `"done"`; the status is `"completed"`) | done | Claude, by hand (a frontend task needs `npm ci` and a bundle rebuild in the worktree, which the engine's test step does not cover) | `fix/completed-sprint-delete`: `App.jsx`, 1 test, rebuilt bundle |
-| 8 | Facts-based evidence: no numeric score or verdict ladder; test and review facts tied to the head commit; criteria reported as not checked unless a judge model ran | done | Claude, by hand (touches the model, builder, merge guard, events, prompts and the task drawer together) | `refactor/facts-based-evidence`: ADR-0018, `models.py`, `orchestrator.py`, `judge.py`, `builtins.py`, drawer panel; 11 backend and 4 frontend tests replace 17 score tests |
-| 9 | Guidance reaches the agent: a note is recorded, put into the next agent step's prompt, and marked delivered with the role and step. No "acknowledged" state: nothing in an agent's output can prove it, so none is claimed | done | Claude, by hand | `feat/guidance-delivery`: `foreman/guidance.py`, orchestrator, service, drawer section; 4 backend and 2 frontend tests |
-| 10a | Infrastructure retries continue the interrupted session and keep its cost; an unknown session id is dropped; quota stops are decided by the rate-limit notice, not by any error mentioning "quota" | done | Claude, by hand | `fix/retry-and-quota`: `runner/base.py`, `runner/claude_code.py`, orchestrator; 7 tests |
-| 10b | Resident engine: `foreman run` answers engine commands; a pause survives a restart; `run_task` is completed when its task has run; an unexpected exception ends `serve` non-zero; idle engines do not wake on unrelated commits | done | Claude, by hand | `fix/resident-engine-commands`: `serve.py`, `cli.py`, `store.project_activity_token`; 11 tests |
-| 10c | Autonomous mode: tasks get a branch and worktree (they ran in the operator's checkout); a missing `task_started` degrades instead of blocking; no in-memory state; no hard-coded role id; reported type and branch validated | done | Claude, by hand | `fix/autonomous-mode`: orchestrator, `context.py`, ADR-0012 amendment; `tests/test_autonomous_mode.py` (6 tests, the first for this mode) |
-| 11 | The database refuses statuses and types outside the models' vocabulary (migration 20, triggers); one typed settings accessor replaces the scattered raw reads; unused code removed | done | Claude, by hand | `refactor/status-constraints`: `migrations.py`, `settings.settings_of`, orchestrator, builtins, worktrees, context; 4 guard tests. Not done here: Python `Enum` classes for statuses (the `Literal` types and tuples stay); the judge still takes a mapping |
+| 1 | `foreman/engine/` package, first cut: move the parts of `orchestrator.py` that are already separable (completion evidence, output contract and signal parsing, model selection, timeouts and cost ceilings) into modules with their own tests; `foreman.orchestrator` keeps re-exporting what callers import | todo | Claude, by hand | `foreman/engine/` |
+| 2 | Engine package, second cut: task selection and leasing, recovery, the workflow step loop and its guards as separate modules; `ForemanOrchestrator` becomes a thin composition | todo | Claude, by hand | `foreman/engine/` |
+| 3 | `foreman/store/` package: one transaction helper used by every write, a module per aggregate (projects, sprints, tasks, runs and events, leases and locks, engine commands, notifications, tokens), `ForemanStore` kept as the facade | todo | Claude, by hand | `foreman/store/` |
+| 4 | One mutation service for task and sprint changes, used by the CLI and the dashboard: validates, writes, emits the audit event, and refuses what a running engine owns | todo | Claude, by hand | `foreman/mutations.py`, CLI and service call it |
+| 5 | `foreman/cli/` package: a module per command group with `register()`, one top-level error boundary, `--json` on read commands | todo | to decide | `foreman/cli/` |
+| 6 | Dashboard API: routers per resource, Pydantic request and response models, one error envelope, `/api/v1` (old paths kept as aliases for one release), pagination on list endpoints, a project-level event stream | todo | Claude, by hand | `foreman/dashboard/` |
+| 7 | Roles, workflows and templates as package data; one version source | todo | Foreman | packaging |
+| 8 | Tests split along the new modules with shared fixtures; `test_git.py`; store concurrency tests | todo | Foreman for the additions, by hand for the split | `tests/` |
+| 9 | Built frontend bundle out of git: built in CI and at install, with the freshness check replaced by a build step | todo | to decide | CI, packaging |
 
-### Carried from sprint 55
+### Carried from sprint 56
 
-Findings from the FOR-13 run: the worktree setup command now installs the
-`dev` extra so agents can run ruff (project setting, changed 2026-11-11);
-role model ids were refreshed (reviewers on `claude-sonnet-5-5`, triage on
-`claude-haiku-5-5`, architect and frontier reviewer on `claude-opus-5-5`);
-the test-step findings are slice 4.
-
-### Slice 1 notes
-
-- A task's status is not guarded by an expected-value check on every write.
-  The rule that matters is narrower and absolute: a cancelled row is never
-  written by the engine, and a step never starts for a task that is
-  cancelled or blocked. Edits to wording, criteria, priority, dependencies
-  and overrides are picked up between steps.
-- `foreman task block` on a running task still does not interrupt the agent
-  mid-step; the workflow stops when that step ends. Interrupting is the
-  engine command `stop-task`.
-- The fencing token on leases is still not checked on writes. With one
-  engine per project (ADR-0011) nothing can exploit that today; it returns
-  with parallel workers.
-
-### Lesson from opening this sprint
-
-The role model refresh was merged after running only `test_roles.py`, and
-broke an assertion in `test_cli.py` on `main` for 40 minutes while Foreman
-tasks were starting from it. Fixed in `5d5528f`. The whole suite runs
-before every merge, including docs-and-config ones.
-
-### Slice 3 notes
-
-Done out of order because it stopped the sprint: the old assertion blocked
-FOR-14 when the test hotfix reached `main` during its develop step, and
-would block anything in flight at every later merge. The developer's work
-was intact on its branch each time; only the resume point was thrown away.
-
-### Slice 2 notes
-
-- Recovery itself is unchanged: a task found `in_progress` with a step
-  resumes at that step, one found without a step is reset to `todo`. What
-  changed is that the second state no longer occurs between steps, so the
-  common crash costs one step, not the task.
-- A stale `running` agent run is still reset by `_recover_stale_running_runs`
-  to the entry step with visit counts cleared. Resuming that step in place
-  (the session id is kept on the run) is left for slice 10.
+- A planted-defect test of the reviewer roles.
+- The fencing token on leases is unchecked on writes (returns with parallel
+  workers).
+- `foreman task block` on a running task does not interrupt the agent
+  mid-step; `stop-task` does.
+- A stale `running` agent run is reset to the entry step; resuming it in
+  place is not built.
+- Python `Enum` classes for statuses; the judge takes a mapping, not the
+  settings object.
+- No end-to-end CLI test of interrupting a one-shot `foreman run` with an
+  engine command.
