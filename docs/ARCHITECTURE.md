@@ -72,6 +72,7 @@ It composes these parts of `foreman/engine/`, each taking only what it uses:
 | `task_worktrees` (`TaskWorktrees`) | a worktree per task, reclaimed under a cap |
 | `branch_sync` | refreshing a task branch and turning conflicts into guidance |
 | `prompts` (`PromptBuilder`) | what an agent is told |
+| `workflow_runner` (`WorkflowRunner`) | the step loop: checks, the step, the record, the transition |
 | `agent_step` (`AgentStepRunner`) | running a role and reading its event stream |
 | `signals` (`SignalHandler`) | persisting agent events and applying signals |
 | `output_contract` | completion markers and reviewer decisions |

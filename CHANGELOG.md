@@ -9,6 +9,11 @@ memory changes rather than versioned product releases.
 
 ### Sprint 57 — structure
 
+- **slice 2c, workflow runner** (`refactor/workflow-runner`): the step loop
+  and its phases are `foreman/engine/workflow_runner.py` (`WorkflowRunner`).
+  `foreman/orchestrator.py` is 832 lines (4574 at the start of the sprint)
+  and holds the project pass, running one task under a lease, and resuming
+  a human gate. No behaviour change.
 - **slice 8, tests along the modules** (`test/split-orchestrator-tests`):
   `tests/test_orchestrator.py` (8279 lines) is 13 files named for what they
   cover, on shared fixtures in `tests/engine_support.py`; 31 copies of the
