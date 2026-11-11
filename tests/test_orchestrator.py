@@ -21,6 +21,7 @@ from foreman.orchestrator import (
 from foreman.git import current_branch
 from foreman.runner.base import AgentEvent, AgentRunConfig, InfrastructureError, PreflightError
 from foreman.roles import default_roles_dir, load_roles
+from foreman.runner.process import EngineShutdown
 from foreman.store import ForemanStore
 from foreman.workflows import (
     WorkflowDefinition,
@@ -3319,6 +3320,95 @@ class ForemanOrchestratorTests(unittest.TestCase):
         self.assertEqual(leaked(), ())
         self.git(repo_path, "merge", "-q", "--no-edit", "feat/x")
         self.assertEqual(len(leaked()), 2)  # the task's commit and its refresh merge
+
+    def test_an_engine_error_inside_a_step_does_not_leave_a_running_run(self) -> None:
+        from unittest import mock
+
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+
+            def developer(*, task: Task, prompt: str, carried_output: str | None):
+                tree = self.work_dir(task, repo_path)
+                (tree / "ready.txt").write_text("ok\n")
+                self.commit_all(tree, "feat: implement")
+                return AgentExecutionResult(outcome="done", detail="Implemented.")
+
+            executor = ScriptedAgentExecutor({("developer", 1): developer})
+            orchestrator = ForemanOrchestrator(
+                store, roles=self.roles, workflows=self.workflows, agent_executor=executor
+            )
+            with mock.patch.object(
+                orchestrator.builtin_executor, "execute", side_effect=ValueError("built-in exploded")
+            ):
+                with self.assertRaises(Exception) as caught:
+                    orchestrator.run_project(project.id)
+            self.assertIn("built-in exploded", str(caught.exception))
+
+            runs = store.list_runs(task_id=task.id)
+            self.assertEqual([run.id for run in runs if run.status == "running"], [])
+            failed = [run for run in runs if run.workflow_step == "test"]
+            self.assertEqual([run.status for run in failed], ["failed"])
+            self.assertIn("built-in exploded", failed[0].outcome_detail)
+
+    def test_a_crash_between_two_steps_resumes_at_the_next_step(self) -> None:
+        from unittest import mock
+
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+
+            def developer(*, task: Task, prompt: str, carried_output: str | None):
+                tree = self.work_dir(task, repo_path)
+                (tree / "ready.txt").write_text("ok\n")
+                self.commit_all(tree, "feat: implement")
+                return AgentExecutionResult(outcome="done", detail="Implemented the loop.")
+
+            def reviewer(*, task: Task, prompt: str, carried_output: str | None):
+                return AgentExecutionResult(outcome="approve", detail="Approved.")
+
+            executor = ScriptedAgentExecutor(
+                {("developer", 1): developer, ("code_reviewer", 1): reviewer}
+            )
+            crashing = ForemanOrchestrator(
+                store, roles=self.roles, workflows=self.workflows, agent_executor=executor
+            )
+            # The engine dies right after develop hands over to test.
+            with mock.patch.object(
+                crashing, "_renew_task_lease", side_effect=EngineShutdown("SIGKILL")
+            ):
+                with self.assertRaises(EngineShutdown):
+                    crashing.run_project(project.id)
+            crashing.release_task(task.id)  # a dead engine's lease expires; skip the wait
+
+            stored = store.get_task(task.id)
+            self.assertEqual(stored.status, "in_progress")
+            self.assertEqual(stored.workflow_current_step, "test")
+
+            restarted = ForemanOrchestrator(
+                store, roles=self.roles, workflows=self.workflows, agent_executor=executor
+            )
+            restarted.run_project(project.id)
+
+            self.assertEqual(executor.call_counts.get("developer", 0), 1)
+            self.assertEqual(executor.call_counts.get("code_reviewer", 0), 1)
+            steps = [
+                run.workflow_step
+                for run in store.list_runs(task_id=task.id)
+                if run.role_id != "_builtin:orchestrator"
+            ]
+            self.assertEqual(steps[:3], ["develop", "test", "review"])
+            test_run = next(
+                run for run in store.list_runs(task_id=task.id) if run.workflow_step == "test"
+            )
+            self.assertIsNotNone(test_run.duration_ms)
+            self.assertGreaterEqual(test_run.duration_ms, 0)
 
     def test_stale_run_recovery_does_not_cost_the_engine_its_own_lease(self) -> None:
         """``run_task`` recovers stale runs while holding the lease it just took."""
