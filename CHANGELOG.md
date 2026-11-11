@@ -9,6 +9,15 @@ memory changes rather than versioned product releases.
 
 ### Sprint 57 — structure
 
+- **slice 3, store package** (`refactor/store-package`): `foreman/store.py`
+  (3213 lines) is the package `foreman/store/`: `base` (connection, write
+  helper, migrations), `rows` (row to model), and a part per aggregate
+  (`projects`, `sprints`, `tasks`, `runs`, `events`, `gates`, `meta`,
+  `leases`, `commands`, `tokens`, `notifications`). `ForemanStore` is those
+  parts together and its interface is unchanged. One behaviour change: the
+  20 writes that opened their own transaction (leases, sprints, projects,
+  gates, manager sessions, pruning, task delete) failed immediately when
+  another process held the database lock; they now retry like the rest.
 - **slice 2b, engine package, third cut** (`refactor/engine-collaborators`):
   the orchestrator now composes collaborators from `foreman/engine/`:
   `TaskWrites`, `Retention`, `SprintFlow`, `Recovery`, `TaskSelector`,
