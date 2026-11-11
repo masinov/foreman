@@ -29,12 +29,8 @@ from foreman.models import (
 )
 from foreman.orchestrator import ForemanOrchestrator, OrchestratorError
 from foreman.settings import ProjectSettings, SettingsError
-from foreman.store import (
-    ForemanStore,
-    MigrationError,
-    _SCHEMA_MIGRATIONS_DDL,
-    _split_sql_statements,
-)
+from foreman.store import ForemanStore
+from foreman.store.base import MigrationError, _SCHEMA_MIGRATIONS_DDL, _split_sql_statements
 
 _OLD = "2020-01-01T00:00:00.000000Z"
 _CUTOFF = "2025-01-01T00:00:00.000000Z"
@@ -179,6 +175,47 @@ class ConnectionSafetyTests(unittest.TestCase):
             elapsed = time.monotonic() - started
             self.assertGreaterEqual(elapsed, 0.3)
             self.assertIsNotNone(writer.get_event("late-event"))
+            writer.close()
+            blocker.close()
+
+    def test_writes_that_hold_their_own_transaction_wait_out_a_lock_too(self) -> None:
+        """Lease, sprint and project writes used to fail at once on a held lock."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "safety.db"
+            with ForemanStore(db_path) as seed:
+                seed.initialize()
+                project, sprint, task = _seed(seed)
+
+            writer = ForemanStore(db_path, busy_timeout_seconds=0.05, write_retries=8)
+            blocker = sqlite3.connect(str(db_path), timeout=1.0, check_same_thread=False)
+            blocker.execute("BEGIN IMMEDIATE")
+            blocker.execute("UPDATE projects SET updated_at = updated_at")
+
+            def release() -> None:
+                time.sleep(0.4)
+                blocker.commit()
+
+            threading.Thread(target=release, daemon=True).start()
+            started = time.monotonic()
+            lease = writer.acquire_lease(
+                project_id=project.id,
+                resource_type="task",
+                resource_id=task.id,
+                holder_id="engine-a",
+                lease_token="token-a",
+            )
+            elapsed = time.monotonic() - started
+            self.assertGreaterEqual(elapsed, 0.3)
+            self.assertIsNotNone(lease)
+
+            # The same holds for the other parts of the store.
+            sprint.title = "Renamed"
+            writer.save_sprint(sprint)
+            project.name = "Renamed"
+            writer.save_project(project)
+            self.assertEqual(writer.get_sprint(sprint.id).title, "Renamed")
+            self.assertEqual(writer.get_project(project.id).name, "Renamed")
             writer.close()
             blocker.close()
 
