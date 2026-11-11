@@ -9,6 +9,9 @@ memory changes rather than versioned product releases.
 
 ### Sprint 56 — engine truthfulness
 
+- **slice 7** (`fix/completed-sprint-delete`): the sprint page offers
+  Delete on a completed sprint; it compared the status with `"done"`, which
+  no sprint ever has.
 - **slice 2, crash-safe steps** (`fix/crash-safe-steps`): a workflow
   transition records the next step in the same write, so an engine that
   dies between two steps resumes at the next one instead of restarting the

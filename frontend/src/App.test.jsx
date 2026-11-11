@@ -319,6 +319,21 @@ describe("React dashboard foundation", () => {
     await waitFor(() => expect(services.pruneWorktrees).toHaveBeenCalledWith("proj-1"));
   });
 
+  it("offers Delete on a completed sprint and not on an active one", async () => {
+    const { services } = createMockServices();
+    window.history.replaceState({}, "", "/dashboard/projects/proj-1/sprints/sprint-1");
+    const { unmount } = render(<App services={services} browser={window} />);
+    await screen.findByText("Build the frontend");
+    expect(screen.queryByTitle("Delete sprint")).not.toBeInTheDocument();
+    unmount();
+
+    const finished = createMockServices().services;
+    const sprint = await finished.getSprint();
+    finished.getSprint = vi.fn().mockResolvedValue({ ...sprint, status: "completed" });
+    render(<App services={finished} browser={window} />);
+    expect(await screen.findByTitle("Delete sprint")).toBeInTheDocument();
+  });
+
   it("sends human guidance through the selected task context", async () => {
     const { services } = createMockServices();
     window.history.replaceState({}, "", "/dashboard/projects/proj-1/sprints/sprint-1");
