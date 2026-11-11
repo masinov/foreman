@@ -12,7 +12,9 @@ import httpx
 
 from foreman.dashboard.app import ROUTERS, _is_intake_path, create_dashboard_app
 from foreman.dashboard.context import API_PREFIXES, ApiContext
-from foreman.models import Project, Sprint, Task
+from foreman.dashboard.streaming import event_stream_response
+from foreman.dashboard_service import DashboardService
+from foreman.models import Event, Project, Run, Sprint, Task
 from foreman.store import ForemanStore
 
 
@@ -33,7 +35,9 @@ class DashboardApiShapeTests(unittest.TestCase):
     def request(self, method: str, path: str, *, token: str | None = None, app=None, **kwargs):
         async def call():
             transport = httpx.ASGITransport(app=app or self.app, raise_app_exceptions=False)
-            headers = {"Authorization": f"Bearer {token}"} if token else {}
+            headers = dict(kwargs.pop("headers", {}))
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
             async with httpx.AsyncClient(transport=transport, base_url="http://localhost") as client:
                 return await client.request(method, path, headers=headers, **kwargs)
 
@@ -127,6 +131,60 @@ class DashboardApiShapeTests(unittest.TestCase):
         ok = self.request("GET", "/api/v1/projects", app=app, token="dashboard-secret")
         self.assertEqual(ok.status_code, 200)
 
+    # ── typed request bodies ─────────────────────────────────────────────
+
+    def test_a_field_of_the_wrong_type_is_refused_by_name(self) -> None:
+        cases = (
+            ("/api/v1/sprints/s1/tasks", {"title": None}, "title"),
+            ("/api/v1/sprints/s1/tasks", {"title": 42}, "title"),
+            ("/api/v1/sprints/s1/tasks", {"title": "T", "depends_on": "t1"}, "depends_on"),
+            ("/api/v1/projects/p1/sprints", {"title": "S", "initial_tasks": {"title": "x"}}, "initial_tasks"),
+            ("/api/v1/tasks/t1/messages", {"text": ["a", "b"]}, "text"),
+        )
+        for path, body, field in cases:
+            with self.subTest(path=path, body=body):
+                message = self.assert_envelope(
+                    self.request("POST", path, json=body), 400, "invalid_request"
+                )
+                self.assertIn(f"'{field}", message)
+        with ForemanStore(self.db_path) as store:
+            self.assertEqual([task.title for task in store.list_tasks(sprint_id="s1")], ["Do it"])
+
+    def test_a_null_title_is_no_longer_stored_as_the_text_none(self) -> None:
+        self.request("POST", "/api/v1/sprints/s1/tasks", json={"title": None})
+
+        with ForemanStore(self.db_path) as store:
+            self.assertNotIn("None", [task.title for task in store.list_tasks(sprint_id="s1")])
+
+    def test_a_well_typed_body_is_accepted_and_unknown_fields_are_ignored(self) -> None:
+        response = self.request(
+            "POST",
+            "/api/v1/sprints/s1/tasks",
+            json={"title": "Typed", "task_type": "fix", "colour": "blue"},
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        with ForemanStore(self.db_path) as store:
+            created = [task for task in store.list_tasks(sprint_id="s1") if task.title == "Typed"]
+        self.assertEqual([task.task_type for task in created], ["fix"])
+
+    def test_the_service_still_owns_the_rule_for_a_missing_title(self) -> None:
+        message = self.assert_envelope(
+            self.request("POST", "/api/v1/sprints/s1/tasks", json={}), 400, "invalid_request"
+        )
+        self.assertNotIn("'title'", message)  # the service's sentence, not a type error
+
+    def test_a_body_that_is_not_declared_as_json_is_still_refused(self) -> None:
+        response = self.request(
+            "POST",
+            "/api/v1/sprints/s1/tasks",
+            content='{"title": "sneaky"}',
+            headers={"Content-Type": "text/plain"},
+        )
+
+        message = self.assert_envelope(response, 400, "invalid_request")
+        self.assertIn("application/json", message)
+
     # ── the intake path is recognised under every prefix, and only there ─
 
     def test_intake_path_detection(self) -> None:
@@ -160,6 +218,116 @@ class DashboardApiShapeTests(unittest.TestCase):
 
         refused = self.request("GET", "/api/v1/projects", app=app, token=secret)
         self.assert_envelope(refused, 403, "forbidden")
+
+
+class ProjectEventStreamTests(unittest.TestCase):
+    """One stream for a whole project, across its sprints."""
+
+    def setUp(self) -> None:
+        self._temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._temp.cleanup)
+        self.db_path = str(Path(self._temp.name) / "foreman.db")
+        self.store = ForemanStore(self.db_path)
+        self.addCleanup(self.store.close)
+        self.store.initialize()
+        for project_id in ("p1", "other"):
+            self.store.save_project(
+                Project(id=project_id, name=project_id, repo_path=self._temp.name,
+                        workflow_id="development")
+            )
+        self.store.save_sprint(Sprint(id="s1", project_id="p1", title="One", status="completed"))
+        self.store.save_sprint(Sprint(id="s2", project_id="p1", title="Two", status="active"))
+        self.store.save_sprint(Sprint(id="sx", project_id="other", title="X", status="active"))
+        self.add_event("e1", project="p1", sprint="s1", stamp="2026-01-01T00:00:01Z")
+        self.add_event("e2", project="p1", sprint="s2", stamp="2026-01-01T00:00:02Z")
+        self.add_event("ex", project="other", sprint="sx", stamp="2026-01-01T00:00:03Z")
+        self.add_event("e3", project="p1", sprint="s2", stamp="2026-01-01T00:00:04Z")
+        self.api = DashboardService(self.store)
+
+    def add_event(self, event_id: str, *, project: str, sprint: str, stamp: str) -> None:
+        task_id = f"task-{event_id}"
+        self.store.save_task(Task(id=task_id, sprint_id=sprint, project_id=project, title="T"))
+        self.store.save_run(
+            Run(id=f"run-{event_id}", task_id=task_id, project_id=project, role_id="developer",
+                workflow_step="develop", agent_backend="claude_code", status="completed")
+        )
+        self.store.save_event(
+            Event(id=event_id, run_id=f"run-{event_id}", task_id=task_id, project_id=project,
+                  event_type="agent.message", timestamp=stamp, payload={"text": event_id})
+        )
+
+    def ids(self, messages) -> list[str]:
+        return [message["event_id"] for message in messages]
+
+    def test_a_new_listener_gets_the_recent_events_of_every_sprint_in_order(self) -> None:
+        messages = self.api.list_project_stream_messages("p1")
+
+        self.assertEqual(self.ids(messages), ["e1", "e2", "e3"])
+        self.assertEqual(messages[0]["payload"]["type"], "event")
+        self.assertEqual(messages[0]["payload"]["event"]["project_id"], "p1")
+
+    def test_a_cursor_resumes_after_that_event_and_other_projects_stay_out(self) -> None:
+        self.assertEqual(
+            self.ids(self.api.list_project_stream_messages("p1", after_event_id="e1")),
+            ["e2", "e3"],
+        )
+        self.assertEqual(self.api.list_project_stream_messages("p1", after_event_id="e3"), [])
+
+    def test_a_cursor_that_no_longer_exists_starts_over(self) -> None:
+        messages = self.api.list_project_stream_messages("p1", after_event_id="pruned-long-ago")
+
+        self.assertEqual(self.ids(messages), ["e1", "e2", "e3"])
+
+    def test_the_limit_keeps_the_newest_events(self) -> None:
+        self.assertEqual(
+            self.ids(self.api.list_project_stream_messages("p1", limit=2)), ["e2", "e3"]
+        )
+
+    def test_an_unknown_project_is_a_404_before_any_stream_starts(self) -> None:
+        app = create_dashboard_app(self.db_path)
+
+        async def call():
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://localhost") as client:
+                return await client.get("/api/v1/projects/nope/stream")
+
+        response = asyncio.run(call())
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json()["code"], "not_found")
+
+    def test_the_stream_sends_each_event_once_with_its_id_then_stops_when_the_client_leaves(self) -> None:
+        class _Request:
+            headers: dict[str, str] = {}
+
+            def __init__(self) -> None:
+                self.checks = 0
+
+            async def is_disconnected(self) -> bool:
+                self.checks += 1
+                return self.checks > 1
+
+        context = ApiContext(db_path=self.db_path, manager_enabled=True)
+
+        async def collect() -> list[bytes]:
+            response = event_stream_response(
+                context,
+                _Request(),  # type: ignore[arg-type]
+                after="e1",
+                next_messages=lambda api, last: api.list_project_stream_messages(
+                    "p1", after_event_id=last
+                ),
+            )
+            with mock.patch("foreman.dashboard.streaming.STREAM_POLL_INTERVAL_SECONDS", 0):
+                return [chunk async for chunk in response.body_iterator]
+
+        chunks = asyncio.run(collect())
+        text = b"".join(chunks).decode()
+
+        self.assertTrue(text.startswith("retry: 1000"))
+        self.assertEqual(text.count("id: e2\n"), 1)
+        self.assertEqual(text.count("id: e3\n"), 1)
+        self.assertNotIn("id: e1\n", text)
+        self.assertNotIn("id: ex\n", text)
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, Response
 
 from ...dashboard_service import (
@@ -25,7 +25,7 @@ def build_router(ctx: ApiContext) -> APIRouter:
     with_api = ctx.with_api
 
     @router.post("/projects/{project_id}/intake")
-    async def intake_task(project_id: str, request: Request) -> Response:
+    def intake_task(project_id: str, request: Request, data: dict[str, Any] = Depends(read_json_body)) -> Response:
         """Accept work from another system (MANUAL "Intake API").
 
         The only ``/api`` route authenticated by a project API token rather
@@ -33,7 +33,6 @@ def build_router(ctx: ApiContext) -> APIRouter:
         the same ``(source.system, source.external_ref)`` was already filed.
         """
 
-        data = await read_json_body(request)
         source = data.get("source")
         if source is not None and not isinstance(source, dict):
             raise DashboardValidationError("'source' must be an object.")

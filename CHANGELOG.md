@@ -9,6 +9,17 @@ memory changes rather than versioned product releases.
 
 ### Sprint 57 — structure
 
+- **slice 6b, API handlers, typed bodies, project stream**
+  (`refactor/api-handlers-off-loop`):
+  - the 37 non-streaming handlers run on the thread pool; they blocked the
+    event loop on every database call, so one slow request stalled the
+    event streams of everyone connected;
+  - write routes with a fixed shape take typed bodies
+    (`foreman/dashboard/schemas.py`). A field of the wrong type is refused
+    by name; `{"title": null}` used to create a task titled "None";
+  - `GET /api/v1/projects/{id}/stream`: one event stream for a whole
+    project across its sprints, resumable with `Last-Event-ID`. The loop it
+    shares with the sprint stream is `foreman/dashboard/streaming.py`.
 - **slice 6a, routed and versioned API** (`refactor/dashboard-api`,
   ADR-0019): the 40 API routes moved out of the application factory into
   `foreman/dashboard/routers/` (projects, intake, sprints, meta, gates,

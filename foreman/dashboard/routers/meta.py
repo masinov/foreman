@@ -64,7 +64,7 @@ def build_router(ctx: ApiContext) -> APIRouter:
         )
 
     @router.get("/projects/{project_id}/meta/history")
-    async def meta_history(
+    def meta_history(
         project_id: str,
         limit: int = 50,
         before: str | None = None,
@@ -84,7 +84,7 @@ def build_router(ctx: ApiContext) -> APIRouter:
         }
 
     @router.delete("/projects/{project_id}/meta/session")
-    async def clear_meta_session(project_id: str) -> dict[str, Any]:
+    def clear_meta_session(project_id: str) -> dict[str, Any]:
         from ...meta_agent import clear_session as meta_clear_session
 
         ctx.require_manager()
