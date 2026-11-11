@@ -9,6 +9,15 @@ memory changes rather than versioned product releases.
 
 ### Sprint 57 — structure
 
+- **slice 5, CLI package** (`refactor/cli-package`): `foreman/cli.py` (3915
+  lines) is the package `foreman/cli/`: `parser` (the parser and `main`),
+  `common`, and a module per command group (`projects`, `sprints`, `tasks`,
+  `gates`, `monitor`, `engine`, `tokens`, `notify`, `worktree`, `catalog`,
+  `db`). Each command adds itself with a `register_<command>` function; the
+  829-line parser builder is 26 calls. New for an operator: `--json` on
+  `projects`, `sprint list`, `task list` and `engine status`; and one error
+  boundary, so a failure is one `foreman:` line with exit 1, a bug says it
+  is one and exits 70 (`FOREMAN_DEBUG=1` for the traceback).
 - **slice 4, one mutation service** (`refactor/mutation-service`):
   `foreman/mutations.py` is the single implementation of the changes a
   person makes to tasks (accept, block, unblock, cancel, delete) and sprints

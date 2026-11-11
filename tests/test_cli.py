@@ -2548,7 +2548,7 @@ class EngineCommandCliTests(unittest.TestCase):
                 self.assertIn(queued[0].id, result.stdout)
 
     def test_the_requester_defaults_to_the_os_user_name(self) -> None:
-        from foreman.cli import default_command_requester
+        from foreman.engine_control import default_command_requester
 
         result = self.run_cli("engine", "pause", "project-1", "--db", str(self.db_path))
 

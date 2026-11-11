@@ -46,7 +46,7 @@ The current codebase maps closely onto that split:
   durable transitions,
 - `foreman/worktrees.py` owns the git working trees a task executes in,
 - `foreman/runner/` owns backend-specific transport and event normalization,
-- `foreman/cli.py`, `foreman/dashboard_runtime.py`,
+- `foreman/cli/`, `foreman/dashboard_runtime.py`,
   `foreman/dashboard_service.py`, `foreman/dashboard_backend.py`, and
   `frontend/` expose inspection and control surfaces.
 
@@ -223,7 +223,7 @@ is also the audit trail: who asked, when, and what the engine did about it.
   every pass, the paused state, and settlement of an interrupt once the stack
   has unwound. Policy lives here, next to the loop state it changes, rather
   than in the orchestrator.
-- `foreman/cli.py` — `foreman engine status|pause|resume|shutdown|run-task|
+- `foreman/cli/` — `foreman engine status|pause|resume|shutdown|run-task|
   stop-task`, which read the lock view and enqueue commands.
 - `foreman/engine_control.py` — the read-side derivations every surface needs
   over the lock view and the command log, plus the local `foreman serve`
@@ -333,7 +333,7 @@ tracker, a chat bot, a CI job (ADR-0013).
   keeps the two credentials apart: the shared dashboard token is refused on
   intake, and a project API token is refused on every other `/api` route
   whether or not a dashboard token is configured.
-- `foreman/cli.py` — `foreman token create|list|revoke`.
+- `foreman/cli/` — `foreman token create|list|revoke`.
 
 Two shapes are worth preserving. **Intake is idempotent on the caller's own
 key** `(project, source.system, source.external_ref)`, because the caller is
