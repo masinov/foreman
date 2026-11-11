@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from foreman.orchestrator import ForemanOrchestrator
+from foreman.engine.evidence import branch_numstat, parse_numstat
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -36,9 +36,7 @@ class EvidenceDiffStatsTests(unittest.TestCase):
     def _stats(self) -> tuple[tuple[str, ...], int, str]:
         _git(self.repo, "add", "-A")
         _git(self.repo, "commit", "-q", "-m", "work")
-        orch = ForemanOrchestrator.__new__(ForemanOrchestrator)
-        text = orch._safe_branch_diff(str(self.repo), "main", "feature")
-        return orch._parse_diff_stats(text)
+        return parse_numstat(branch_numstat(str(self.repo), "main", "feature"))
 
     def test_all_cases_through_evidence_code_path(self) -> None:
         spaced = self.repo / "dir with space" / "my file.txt"
@@ -79,8 +77,7 @@ class EvidenceDiffStatsTests(unittest.TestCase):
         self.assertEqual(summary, "1 file(s), +0, -3")
 
     def test_empty_output(self) -> None:
-        orch = ForemanOrchestrator.__new__(ForemanOrchestrator)
-        self.assertEqual(orch._parse_diff_stats(""), ((), 0, "0 file(s), +0, -0"))
+        self.assertEqual(parse_numstat(""), ((), 0, "0 file(s), +0, -0"))
 
 
 if __name__ == "__main__":

@@ -10,14 +10,11 @@ import subprocess
 import tempfile
 import unittest
 
+from foreman.engine.output_contract import extract_completion_output, extract_decision_output
 from foreman.models import CompletionEvidence, Event, Project, Run, Sprint, Task
-from foreman.orchestrator import (
-    AgentEventRecord,
-    AgentExecutionResult,
-    ForemanOrchestrator,
-    OrchestratorError,
-    _extract_decision_output,
-)
+from foreman.engine.errors import OrchestratorError
+from foreman.engine.results import AgentEventRecord, AgentExecutionResult
+from foreman.orchestrator import ForemanOrchestrator
 from foreman.git import current_branch
 from foreman.runner.base import AgentEvent, AgentRunConfig, InfrastructureError, PreflightError
 from foreman.roles import default_roles_dir, load_roles
@@ -5152,7 +5149,7 @@ class ResolveStepModelTests(unittest.TestCase):
         return Task(id="t", sprint_id="s", project_id="p", title="T", **kw)
 
     def _resolve(self, **kw) -> str | None:
-        from foreman.orchestrator import resolve_step_model
+        from foreman.engine.model_selection import resolve_step_model
 
         return resolve_step_model(**kw)
 
@@ -5254,7 +5251,7 @@ class DecisionExtractionTests(unittest.TestCase):
         cls.orchestrator = object.__new__(ForemanOrchestrator)
 
     def test_extract_decision_output_accepts_preamble_and_markdown_wrapped_verdict(self) -> None:
-        outcome, detail = _extract_decision_output(
+        outcome, detail = extract_decision_output(
             "I verified the changes.\n\nEverything checks out.\n\n**APPROVE**"
         )
 
@@ -5262,7 +5259,7 @@ class DecisionExtractionTests(unittest.TestCase):
         self.assertEqual(detail, "APPROVE")
 
     def test_extract_decision_output_accepts_trailing_deny_reason(self) -> None:
-        outcome, detail = _extract_decision_output(
+        outcome, detail = extract_decision_output(
             "I found one issue.\n\n- DENY: add the missing migration test"
         )
 
@@ -5270,8 +5267,8 @@ class DecisionExtractionTests(unittest.TestCase):
         self.assertEqual(detail, "add the missing migration test")
 
     def test_extract_decision_output_recognizes_escalate(self) -> None:
-        self.assertEqual(_extract_decision_output("ESCALATE")[0], "escalate")
-        outcome, detail = _extract_decision_output(
+        self.assertEqual(extract_decision_output("ESCALATE")[0], "escalate")
+        outcome, detail = extract_decision_output(
             "Looks risky.\n\nESCALATE: touches the auth module, needs senior review"
         )
         self.assertEqual(outcome, "escalate")
@@ -5280,7 +5277,7 @@ class DecisionExtractionTests(unittest.TestCase):
     def test_extract_completion_output_accepts_markdown_wrapped_marker(self) -> None:
         role = self.roles["developer"]
 
-        outcome, detail = self.orchestrator._extract_completion_output(
+        outcome, detail = extract_completion_output(
             role,
             "Completed the slice.\n\n**TASK_COMPLETE**",
         )

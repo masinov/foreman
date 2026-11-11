@@ -492,16 +492,16 @@ class RunCostCeilingTests(unittest.TestCase):
         return Project(id="p", name="P", repo_path="/tmp", workflow_id="development", settings=settings)
 
     def test_the_project_setting_can_lower_the_role_ceiling_but_not_raise_it(self) -> None:
-        from foreman.orchestrator import _run_cost_ceiling
+        from foreman.engine.limits import run_cost_ceiling
 
-        self.assertEqual(_run_cost_ceiling(self._project({}), 30.0), 30.0)
-        self.assertEqual(_run_cost_ceiling(self._project({"runner_max_cost_usd": 8}), 30.0), 8.0)
-        self.assertEqual(_run_cost_ceiling(self._project({"runner_max_cost_usd": 500}), 30.0), 30.0)
-        self.assertEqual(_run_cost_ceiling(self._project({"runner_max_cost_usd": 8}), 0.0), 8.0)
-        self.assertEqual(_run_cost_ceiling(self._project({"runner_max_cost_usd": 0}), 0.0), 0.0)
+        self.assertEqual(run_cost_ceiling(self._project({}), 30.0), 30.0)
+        self.assertEqual(run_cost_ceiling(self._project({"runner_max_cost_usd": 8}), 30.0), 8.0)
+        self.assertEqual(run_cost_ceiling(self._project({"runner_max_cost_usd": 500}), 30.0), 30.0)
+        self.assertEqual(run_cost_ceiling(self._project({"runner_max_cost_usd": 8}), 0.0), 8.0)
+        self.assertEqual(run_cost_ceiling(self._project({"runner_max_cost_usd": 0}), 0.0), 0.0)
         # Unset means the role's ceiling applies, and no ceiling when it has none.
-        self.assertEqual(_run_cost_ceiling(self._project({}), 30.0), 30.0)
-        self.assertEqual(_run_cost_ceiling(self._project({}), 0.0), 0.0)
+        self.assertEqual(run_cost_ceiling(self._project({}), 30.0), 30.0)
+        self.assertEqual(run_cost_ceiling(self._project({}), 0.0), 0.0)
 
 
 class CodexRunnerLifecycleTests(unittest.TestCase):

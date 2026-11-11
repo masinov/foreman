@@ -3,14 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import json
-import re
-import subprocess
 import time
-from typing import Any, Protocol
+from typing import Any
 from uuid import uuid4
 
 from .builtins import BuiltinEventRecord, BuiltinExecutor
@@ -20,7 +17,38 @@ from .context import (
     context_directory,
     relative_project_path,
 )
-from .errors import EngineCommandInterrupt, ForemanError
+from .engine.errors import (
+    LeaseLostError,
+    OrchestratorError,
+    QuotaPauseError,
+    TaskCancelledError,
+    TaskExecutionError,
+)
+from .engine.evidence import EvidenceBuilder, branch_diff_content
+from .engine.limits import (
+    active_run_recovery_timeout_seconds,
+    project_timeout_seconds,
+    resolve_project_settings,
+    run_cost_ceiling,
+)
+from .engine.model_selection import (
+    resolve_step_model,
+    resolve_step_model_selection,
+)
+from .engine.output_contract import (
+    FINAL_MESSAGE_PHASES,
+    contract_retry_reason,
+    extract_completion_output,
+    with_retry_instruction,
+)
+from .engine.results import (
+    AgentEventRecord,
+    AgentExecutionResult,
+    AgentExecutor,
+    HumanGateResumeResult,
+    ProjectRunResult,
+)
+from .errors import EngineCommandInterrupt
 from .git import (
     GitError,
     task_commits_on_default_branch,
@@ -39,18 +67,17 @@ from .git import (
 from .leases import generate_lease_token
 from .logs import compact_payload, event_log_level, get_logger, log_event
 from .guidance import GUIDANCE_DELIVERED_EVENT, pending_guidance, prompt_with_guidance
-from .judge import NOT_JUDGED, judge_criteria, truncate_diff
 from .models import CompletionEvidence, Event, HumanGateDecision, Lease, Project, Run, Sprint, TASK_COMPLEXITIES, TASK_TYPES, Task, TokenUsage, utc_now_text
 from .task_lease import TaskLeaseHeartbeat
 from .notifications import NotificationDispatcher, resolve_notification_policy
 from .policy import GATE_DECISIONS, PolicyMatrix, describe_resolution
-from .outcomes import APPROVE, BLOCKED, DENY, DONE, ERROR, normalize_agent_outcome, normalize_reviewer_decision
+from .outcomes import APPROVE, BLOCKED, DENY, ERROR, normalize_agent_outcome, normalize_reviewer_decision
 from .runner import AgentRunConfig, ClaudeCodeRunner, CodexRunner, PreflightError, run_with_retry
 from .runner.base import AgentRunner as NativeAgentRunner
 from .runner.process import EngineShutdown
 from .runner.env import resolve_env
 from .roles import RoleDefinition, default_roles_dir, load_roles
-from .settings import ProjectSettings, SettingsError, settings_of
+from .settings import ProjectSettings
 from .store import ForemanStore
 from .workflows import WorkflowDefinition, WorkflowStep, default_workflows_dir, load_workflows
 from .worktrees import (
@@ -74,132 +101,6 @@ _BRANCH_PREFIXES = {
     "spike": "spike",
     "chore": "chore",
 }
-
-
-class OrchestratorError(ForemanError):
-    """Raised when Foreman cannot execute the requested workflow slice."""
-
-
-class TaskCancelledError(OrchestratorError):
-    """The task was cancelled by an operator while the engine was working on it."""
-
-    def __init__(self, task_id: str) -> None:
-        super().__init__(f"Task {task_id!r} was cancelled; the engine stopped working on it.")
-        self.task_id = task_id
-
-
-class LeaseLostError(OrchestratorError):
-    """Raised when this engine's task lease is renewed and found to be gone.
-
-    Another engine has taken the task over, or the lease expired while the
-    agent was silent. The active agent is stopped and this engine exits
-    without touching the task, which the new holder now owns.
-    """
-
-
-class QuotaPauseError(OrchestratorError):
-    """Raised when a task must pause because the agent backend's quota ran out.
-
-    The task keeps its resume point (``workflow_current_step`` and the carried
-    output) and its ``in_progress`` status, so the next pass resumes it at the
-    same step; nothing about the task itself failed. ``retry_after`` is the
-    backend's reset time when it reported one.
-    """
-
-    def __init__(self, task_id: str, *, retry_after: str | None, detail: str) -> None:
-        super().__init__(f"Task {task_id!r} paused until the backend quota resets: {detail}")
-        self.task_id = task_id
-        self.retry_after = retry_after
-        self.detail = detail
-
-
-class TaskExecutionError(OrchestratorError):
-    """Raised when running one specific task failed.
-
-    Carries the task identifier so a resident engine can isolate the failure:
-    block that one task, raise an attention turn for it, and keep serving the
-    rest of the project instead of exiting. A one-shot ``foreman run`` treats
-    it like any other ``OrchestratorError``.
-    """
-
-    def __init__(self, task_id: str, cause: BaseException) -> None:
-        super().__init__(f"Task {task_id!r} failed: {cause}")
-        self.task_id = task_id
-        self.cause = cause
-
-
-@dataclass(slots=True)
-class AgentEventRecord:
-    """One structured event returned from an agent executor."""
-
-    event_type: str
-    payload: dict[str, Any] = field(default_factory=dict)
-    timestamp: str = field(default_factory=utc_now_text)
-
-
-@dataclass(slots=True)
-class AgentExecutionResult:
-    """Normalized output from one agent workflow step."""
-
-    outcome: str
-    detail: str = ""
-    status: str = "completed"
-    session_id: str | None = None
-    cost_usd: float = 0.0
-    token_count: int = 0
-    token_usage: TokenUsage | None = None
-    duration_ms: int | None = None
-    model: str | None = None
-    events: tuple[AgentEventRecord, ...] = ()
-    events_streamed: bool = False
-    retry_count: int = 0
-    #: ``quota`` | ``preflight`` | ``infrastructure`` | ``agent`` when the run failed.
-    failure_type: str | None = None
-    #: ISO 8601 UTC time after which a quota failure may be retried.
-    retry_after: str | None = None
-
-
-@dataclass(slots=True)
-class ProjectRunResult:
-    """Summary of one orchestrator invocation."""
-
-    project_id: str
-    executed_task_ids: tuple[str, ...]
-    blocked_task_ids: tuple[str, ...]
-    stop_reason: str
-    #: Set with ``stop_reason="quota_exhausted"``: when the backend said it will serve again.
-    retry_after: str | None = None
-    detail: str | None = None
-
-
-@dataclass(slots=True)
-class HumanGateResumeResult:
-    """Summary of one human-gate decision and any resumed execution."""
-
-    task: Task
-    decision: str
-    paused_step: str
-    next_step: str
-    deferred: bool
-    carried_output: str | None = None
-    note: str | None = None
-
-
-class AgentExecutor(Protocol):
-    """Execution protocol for workflow agent steps."""
-
-    def execute(
-        self,
-        *,
-        role: RoleDefinition,
-        project: Project,
-        task: Task,
-        workflow_step: str,
-        prompt: str,
-        session_id: str | None,
-        carried_output: str | None,
-    ) -> AgentExecutionResult:
-        """Execute one agent step and return normalized results."""
 
 
 class ForemanOrchestrator:
@@ -250,6 +151,7 @@ class ForemanOrchestrator:
         )
         self.store = store
         self.roles = loaded_roles
+        self.evidence = EvidenceBuilder(self.store, self.roles)
         self.workflows = loaded_workflows
         self.agent_executor = agent_executor
         self.agent_runners = (
@@ -295,6 +197,13 @@ class ForemanOrchestrator:
             manager = WorktreeManager(project)
             self._worktree_managers[project.id] = manager
         return manager
+
+    def build_completion_evidence(
+        self, task: Task, project: Project
+    ) -> CompletionEvidence | None:
+        """Build completion evidence for one task (see ``engine.evidence``)."""
+
+        return self.evidence.build(task, project)
 
     def _ensure_task_worktree(self, project: Project, task: Task) -> Path | None:
         """Return the task's own checkout, creating it on the first develop visit.
@@ -890,365 +799,6 @@ class ForemanOrchestrator:
         next_sprint.completed_at = None
         self.store.save_sprint(next_sprint)
         return next_sprint
-
-    def build_completion_evidence(
-        self,
-        task: Task,
-        project: Project,
-    ) -> CompletionEvidence | None:
-        """Build structured completion evidence for one task.
-
-        Records facts and nothing derived from them by weighting: which
-        commit is the branch head, whether the test step passed and on which
-        commit, what each reviewer decided and on which commit, and what a
-        judge model said about each acceptance criterion when one is
-        configured. ``proof_status`` is ``passed`` only when the tests passed
-        on the head commit and the criteria were either all passed by a judge
-        or covered by an approving code review of the head commit (ADR-0018).
-        """
-        runs = self.store.list_runs(task_id=task.id)
-
-        # Git positional reference
-        base_sha = ""
-        head_sha_val = ""
-        merge_base_sha_val = ""
-        commit_count = 0
-        try:
-            base_sha = head_sha(project.repo_path, f"refs/heads/{project.default_branch}") or ""
-            if task.branch_name:
-                head_sha_val = head_sha(project.repo_path, f"refs/heads/{task.branch_name}") or ""
-                merge_base_result = subprocess.run(
-                    ["git", "merge-base", project.default_branch, task.branch_name],
-                    cwd=project.repo_path,
-                    capture_output=True,
-                    text=True,
-                )
-                merge_base_sha_val = merge_base_result.stdout.strip()
-                commit_count_result = subprocess.run(
-                    ["git", "rev-list", "--count", f"{project.default_branch}..{task.branch_name}"],
-                    cwd=project.repo_path,
-                    capture_output=True,
-                    text=True,
-                )
-                if commit_count_result.returncode == 0:
-                    commit_count = int(commit_count_result.stdout.strip())
-        except (FileNotFoundError, GitError, OSError, ValueError):
-            pass
-
-        # Changed files from git diff
-        changed_files: tuple[str, ...] = ()
-        diff_context_lines = 0
-        branch_diff_stat = ""
-        if task.branch_name:
-            diff_text = self._safe_branch_diff(
-                project.repo_path,
-                project.default_branch,
-                task.branch_name,
-            )
-            if diff_text:
-                changed_files, diff_context_lines, branch_diff_stat = self._parse_diff_stats(
-                    diff_text,
-                )
-
-        # Agent output summaries
-        agent_outputs = self._collect_agent_outputs(runs)
-
-        # Built-in test results
-        test_events = [
-            event
-            for event in self.store.list_events(task_id=task.id)
-            if event.event_type in ("engine.test_run", "engine.test_output")
-        ]
-        builtin_test_passed = False
-        builtin_test_result = ""
-        builtin_test_detail = ""
-        test_exit_code: int | None = None
-        tested_sha = ""
-        test_duration_seconds: float | None = None
-        for event in sorted(test_events, key=lambda e: e.timestamp):
-            payload = event.payload
-            if event.event_type == "engine.test_run":
-                builtin_test_result = payload.get("command", "")
-                test_exit_code = payload.get("exit_code")
-                builtin_test_passed = test_exit_code == 0
-                tested_sha = str(payload.get("head_sha") or "")
-                duration = payload.get("duration_seconds")
-                test_duration_seconds = (
-                    float(duration) if isinstance(duration, (int, float)) else None
-                )
-            elif event.event_type == "engine.test_output":
-                if payload.get("exit_code") == 0:
-                    builtin_test_passed = True
-                builtin_test_detail = payload.get("output", "")
-
-        # A test run on a commit that is no longer the branch head says
-        # nothing about the head. Runs recorded before the commit was captured
-        # carry no SHA and are taken at face value.
-        if not builtin_test_result:
-            tests_status = "not_run"
-        elif tested_sha and head_sha_val and tested_sha != head_sha_val:
-            tests_status = "stale"
-        else:
-            tests_status = "passed" if builtin_test_passed else "failed"
-
-        # Reviewer outcomes from completed decision-role runs. Roles declare
-        # whether their decision is a code review or a security review, so any
-        # reviewer (triage, frontier, a custom QA role) counts by contract.
-        review_outcome = ""
-        reviewed_sha = ""
-        security_review_outcome = ""
-        security_reviewed_sha = ""
-        reviewed_sha_by_run = {
-            event.run_id: str(event.payload.get("head_sha") or "")
-            for event in self.store.list_events(task_id=task.id)
-            if event.event_type == "engine.review_recorded"
-        }
-        review_kind_by_role = {
-            role_id: role.completion.review_kind
-            for role_id, role in self.roles.items()
-            if role.completion.output.extract_decision
-        }
-        reviewer_runs = [
-            r for r in runs
-            if r.status == "completed" and r.role_id in review_kind_by_role
-        ]
-        for run in sorted(reviewer_runs, key=lambda r: r.completed_at or "", reverse=True):
-            kind = review_kind_by_role[run.role_id]
-            if kind == "code" and not review_outcome:
-                review_outcome = run.outcome or ""
-                reviewed_sha = reviewed_sha_by_run.get(run.id, "")
-            if kind == "security" and not security_review_outcome:
-                security_review_outcome = run.outcome or ""
-                security_reviewed_sha = reviewed_sha_by_run.get(run.id, "")
-
-        # Criteria coverage
-        criteria_count = 0
-        criteria_addressed = 0
-        criteria_partially_addressed = 0
-        criteria_text = task.acceptance_criteria or ""
-        criteria_list = [c.strip() for c in criteria_text.split("\n") if c.strip()]
-        criteria_count = len(criteria_list)
-        criteria_checklist: list[dict[str, str]] = []
-        judged_by = NOT_JUDGED
-
-        if criteria_list:
-            all_output_text = "\n".join(agent_outputs).lower()
-            judge_diff = self._safe_branch_diff_content(
-                project.repo_path,
-                project.default_branch,
-                task.branch_name,
-            ) if task.branch_name else ""
-            judgment = judge_criteria(
-                criteria=criteria_list,
-                diff_text=judge_diff,
-                agent_summary=all_output_text,
-                changed_files=changed_files,
-                settings=project.settings,
-            )
-            judged_by = judgment.judged_by
-            criteria_checklist = [dict(item) for item in judgment.checklist]
-            criteria_addressed = sum(
-                1 for item in criteria_checklist if item.get("status") == "passed"
-            )
-            criteria_partially_addressed = sum(
-                1 for item in criteria_checklist if item.get("status") == "partial"
-            )
-
-        judged = judged_by != NOT_JUDGED
-        review_approved = review_outcome == "approve"
-        failure_reasons: list[str] = []
-        outstanding: list[str] = []
-
-        if tests_status == "failed":
-            failure_reasons.append(f"Tests failed (exit code {test_exit_code}).")
-        elif tests_status == "stale":
-            failure_reasons.append(
-                f"Tests ran on {tested_sha[:8]}; the branch is now at {head_sha_val[:8]}."
-            )
-        elif tests_status == "not_run":
-            outstanding.append("Tests have not run.")
-
-        review_is_stale = bool(
-            review_approved and reviewed_sha and head_sha_val and reviewed_sha != head_sha_val
-        )
-        if review_is_stale:
-            failure_reasons.append(
-                f"Code review approved {reviewed_sha[:8]}; the branch is now at "
-                f"{head_sha_val[:8]}."
-            )
-
-        # An approving code review covers the acceptance criteria. Without one,
-        # only a judge model's "passed" on every criterion does; a criterion no
-        # judge looked at is not counted as met.
-        if criteria_checklist and not review_approved:
-            if judged:
-                for item in criteria_checklist:
-                    if item.get("status") != "passed":
-                        failure_reasons.append(
-                            f"Criterion not fully addressed: {item.get('criterion', '')!r} "
-                            f"({item.get('status')})."
-                        )
-            else:
-                outstanding.append(
-                    "Acceptance criteria were not checked by a judge model and code "
-                    "review has not approved."
-                )
-        # Implementation tasks require acceptance criteria
-        if task.task_type in {"feature", "fix", "refactor"} and not criteria_checklist:
-            failure_reasons.append("No acceptance criteria defined.")
-
-        if failure_reasons:
-            proof_status = "failed"
-        elif outstanding:
-            proof_status = "pending"
-        else:
-            proof_status = "passed"
-
-        return CompletionEvidence(
-            task_id=task.id,
-            task_title=task.title,
-            acceptance_criteria=criteria_text,
-            criteria_count=criteria_count,
-            criteria_addressed=criteria_addressed,
-            criteria_partially_addressed=criteria_partially_addressed,
-            changed_files=changed_files,
-            diff_context_lines=diff_context_lines,
-            branch_diff_stat=branch_diff_stat,
-            agent_outputs=agent_outputs,
-            builtin_test_result=builtin_test_result,
-            builtin_test_passed=builtin_test_passed,
-            builtin_test_detail=builtin_test_detail,
-            base_sha=base_sha,
-            head_sha=head_sha_val,
-            merge_base_sha=merge_base_sha_val,
-            commit_count=commit_count,
-            test_command=builtin_test_result,
-            test_exit_code=test_exit_code,
-            tests_status=tests_status,
-            tested_sha=tested_sha,
-            test_duration_seconds=test_duration_seconds,
-            review_outcome=review_outcome,
-            reviewed_sha=reviewed_sha,
-            security_review_outcome=security_review_outcome,
-            security_reviewed_sha=security_reviewed_sha,
-            criteria_checklist=tuple(criteria_checklist),
-            proof_status=proof_status,
-            failure_reasons=tuple(failure_reasons),
-            outstanding=tuple(outstanding),
-            judged_by=judged_by,
-        )
-
-    def _safe_branch_diff(
-        self,
-        repo_path: str,
-        target_branch: str,
-        branch_name: str,
-    ) -> str:
-        """Return ``git diff --numstat -z`` output for one branch, or an empty
-        string on failure."""
-        for rev_args in (
-            [f"{target_branch}...{branch_name}"],
-            [target_branch, branch_name],
-        ):
-            try:
-                result = subprocess.run(
-                    ["git", "diff", "--numstat", "-z", *rev_args],
-                    cwd=str(repo_path),
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    errors="surrogateescape",
-                    check=False,
-                )
-                if result.returncode == 0:
-                    return result.stdout
-            except Exception:  # pragma: no cover
-                pass
-        return ""
-
-    def _parse_diff_stats(
-        self,
-        diff_output: str,
-    ) -> tuple[tuple[str, ...], int, str]:
-        """Parse ``git diff --numstat -z`` output into structured fields.
-
-        Returns ``(changed_files, changed_file_count, summary_line)``. The
-        integer is the number of changed files. The summary has the form
-        ``"N file(s), +A, -D"``. Binary files (``-`` counts) are listed with 0
-        added and 0 deleted. A rename is listed under its new path. Paths are
-        used exactly as git reports them.
-        """
-        tokens = diff_output.split("\0")
-        changed_files: list[str] = []
-        total_additions = 0
-        total_deletions = 0
-        i = 0
-        while i < len(tokens):
-            token = tokens[i]
-            i += 1
-            if not token:
-                continue
-            parts = token.split("\t", 2)
-            if len(parts) != 3:
-                continue
-            added, deleted, path = parts
-            if path == "":
-                # Rename/copy: the old and new paths follow as separate records.
-                path = tokens[i + 1] if i + 1 < len(tokens) else ""
-                i += 2
-                if not path:
-                    continue
-            changed_files.append(path)
-            if added.isdigit():
-                total_additions += int(added)
-            if deleted.isdigit():
-                total_deletions += int(deleted)
-
-        summary = f"{len(changed_files)} file(s), +{total_additions}, -{total_deletions}"
-        return (tuple(changed_files), len(changed_files), summary)
-
-    def _collect_agent_outputs(self, runs: list[Run]) -> tuple[str, ...]:
-        """Extract meaningful output snippets from completed agent runs."""
-        outputs: list[str] = []
-        for run in runs:
-            if run.status not in {"completed", "failed", "killed", "timeout"}:
-                continue
-            detail = run.outcome_detail or ""
-            # Capture first meaningful chunk of output (up to 500 chars)
-            snippet = detail[:500].strip() if detail.strip() else ""
-            if snippet:
-                role_and_step = f"[{run.role_id} / {run.workflow_step}]"
-                outputs.append(f"{role_and_step}: {snippet}")
-        return tuple(outputs)
-
-    def _safe_branch_diff_content(
-        self,
-        repo_path: str,
-        target_branch: str,
-        branch_name: str,
-        *,
-        max_chars: int = 24000,
-    ) -> str:
-        """Return unified ``git diff`` content for one branch, head+tail capped
-        to ``max_chars``, or empty string on failure."""
-        for diff_args in (
-            ["git", "diff", f"{target_branch}...{branch_name}"],
-            ["git", "diff", target_branch, branch_name],
-        ):
-            try:
-                result = subprocess.run(
-                    diff_args,
-                    cwd=str(repo_path),
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
-            except Exception:  # pragma: no cover - defensive
-                continue
-            if result.returncode == 0 and result.stdout:
-                return truncate_diff(result.stdout, max_chars)
-        return ""
-
 
     def select_next_task(self, project: Project) -> Task | None:
         """Return the next runnable task for one project."""
@@ -2214,7 +1764,7 @@ class ForemanOrchestrator:
                 retry_reason = (
                     None
                     if result.failure_type == "quota"
-                    else self._output_contract_retry_reason(role, result)
+                    else contract_retry_reason(role, result)
                 )
                 if retry_reason is not None:
                     self._emit_event(
@@ -2227,7 +1777,7 @@ class ForemanOrchestrator:
                             "retry_attempt": 1,
                         },
                     )
-                    retry_prompt = self._append_output_contract_retry_instruction(
+                    retry_prompt = with_retry_instruction(
                         prompt,
                         role,
                         retry_reason,
@@ -2326,7 +1876,7 @@ class ForemanOrchestrator:
                             "role": role.id,
                             "review_kind": role.completion.review_kind,
                             "outcome": outcome,
-                            "head_sha": self._safe_branch_head(project, current_task),
+                            "head_sha": self.evidence.branch_head(project, current_task),
                         },
                     )
                 else:
@@ -2723,7 +2273,7 @@ class ForemanOrchestrator:
            being heartbeated).
         """
 
-        timeout_seconds = _active_run_recovery_timeout_seconds(project)
+        timeout_seconds = active_run_recovery_timeout_seconds(project)
         if timeout_seconds is None or timeout_seconds <= 0:
             return False
 
@@ -2998,7 +2548,7 @@ class ForemanOrchestrator:
         # Reuse cached evidence on the task record to avoid recomputing on
         # repeated reviewer prompts. Built once at first reviewer render.
         evidence = task.completion_evidence
-        if evidence is not None and self._completion_evidence_stale(evidence, task, project):
+        if evidence is not None and self.evidence.is_stale(evidence, task, project):
             evidence = None
             task.completion_evidence = None
         if evidence is None and role.completion.output.extract_decision:
@@ -3036,7 +2586,7 @@ class ForemanOrchestrator:
             # Curated diff payload, only for decision roles so they can review
             # the change without exploring the repo. Other roles get "".
             "completion_diff": (
-                self._safe_branch_diff_content(
+                branch_diff_content(
                     project.repo_path,
                     project.default_branch,
                     task.branch_name,
@@ -3089,30 +2639,6 @@ class ForemanOrchestrator:
         if not branch_exists(project.repo_path, branch):
             return f"Branch {branch!r} does not exist in the repository."
         return None
-
-    def _safe_branch_head(self, project: Project, task: Task) -> str:
-        """Return the task branch's head commit, or "" when it cannot be read."""
-
-        if not task.branch_name:
-            return ""
-        try:
-            return head_sha(project.repo_path, f"refs/heads/{task.branch_name}") or ""
-        except (GitError, OSError):
-            return ""
-
-    def _completion_evidence_stale(
-        self,
-        evidence: CompletionEvidence,
-        task: Task,
-        project: Project,
-    ) -> bool:
-        if not task.branch_name:
-            return False
-        try:
-            current_head = head_sha(project.repo_path, f"refs/heads/{task.branch_name}") or ""
-        except Exception:
-            return False
-        return bool(evidence.head_sha and current_head and evidence.head_sha != current_head)
 
     def _load_repo_instructions(self, repo_path: str) -> str:
         agents_path = Path(repo_path) / "AGENTS.md"
@@ -3544,11 +3070,11 @@ class ForemanOrchestrator:
             disallowed_tools=role.agent.tools.disallowed,
             extra_flags=role.agent.flags,
             env=resolved_env,
-            timeout_seconds=_project_timeout_seconds(
+            timeout_seconds=project_timeout_seconds(
                 project,
                 role_timeout_minutes=role.completion.timeout_minutes,
             ),
-            max_cost_usd=_run_cost_ceiling(project, role.completion.max_cost_usd),
+            max_cost_usd=run_cost_ceiling(project, role.completion.max_cost_usd),
         )
         max_retries = resolve_project_settings(project).max_infra_retries
 
@@ -3625,7 +3151,7 @@ class ForemanOrchestrator:
                     message_fragments.append(text)
                 if text:
                     phase = _optional_string(event.payload.get("phase"))
-                    if phase in _FINAL_MESSAGE_PHASES:
+                    if phase in FINAL_MESSAGE_PHASES:
                         final_message = text
                         saw_final_phase = True
                     elif not saw_final_phase:
@@ -3673,7 +3199,7 @@ class ForemanOrchestrator:
                     event.payload.get("duration_ms"),
                     default=duration_ms,
                 )
-                outcome, detail = self._extract_completion_output(
+                outcome, detail = extract_completion_output(
                     role,
                     final_message,
                     transcript="\n\n".join(message_fragments),
@@ -3764,91 +3290,6 @@ class ForemanOrchestrator:
             failure_type=failure_type,
             retry_after=retry_after,
         )
-
-    def _extract_completion_output(
-        self,
-        role: RoleDefinition,
-        text: str,
-        *,
-        transcript: str | None = None,
-    ) -> tuple[str, str]:
-        """Apply the role's completion contract to the agent's final message.
-
-        ``text`` is the final assistant message: the marker or verdict must
-        appear there, not anywhere in the transcript, so a plan that mentions
-        the marker or a reviewer that restates the options never counts.
-        ``transcript`` is only a fallback for the returned detail when the
-        final message is empty once the marker is stripped.
-        """
-
-        cleaned_text = text.strip()
-        output_config = role.completion.output
-        marker = role.completion.marker.strip()
-
-        if output_config.extract_decision:
-            return _extract_decision_output(cleaned_text, allowed=role.completion.outcomes)
-
-        if marker:
-            if not _contains_completion_marker(cleaned_text, marker):
-                return (ERROR, f"Missing completion marker `{marker}`.")
-            cleaned_text = _strip_completion_marker(cleaned_text, marker)
-            if not cleaned_text and transcript:
-                cleaned_text = _strip_completion_marker(transcript.strip(), marker)
-
-        if output_config.extract_json:
-            json_block = _extract_json_block(cleaned_text)
-            return (DONE, json_block or cleaned_text or "Completed without JSON output.")
-
-        if output_config.extract_summary or output_config.extract_branch:
-            return (DONE, cleaned_text or "Completed.")
-
-        return (DONE, cleaned_text or "Completed.")
-
-    def _output_contract_retry_reason(
-        self,
-        role: RoleDefinition,
-        result: AgentExecutionResult,
-    ) -> str | None:
-        """Return a retry reason when one malformed agent response merits one corrective retry."""
-
-        if result.status != "completed" or result.outcome != "error":
-            return None
-
-        if role.completion.output.extract_decision:
-            return "decision_format"
-
-        marker = role.completion.marker.strip()
-        if marker and result.detail == f"Missing completion marker `{marker}`.":
-            return "missing_completion_marker"
-
-        return None
-
-    def _append_output_contract_retry_instruction(
-        self,
-        prompt: str,
-        role: RoleDefinition,
-        reason: str,
-    ) -> str:
-        """Append a minimal corrective instruction for one malformed-output retry."""
-
-        if reason == "decision_format":
-            options = "\n".join(_decision_option_lines(role.completion.outcomes))
-            correction = (
-                "Your previous response did not follow the required final output format.\n"
-                "Do not do more review work.\n"
-                "Return exactly one line and nothing else:\n"
-                f"{options}"
-            )
-        elif reason == "missing_completion_marker":
-            correction = (
-                "Your previous response did not include the required completion marker.\n"
-                "Do not do more work.\n"
-                f"Return your completion summary again and end with `{role.completion.marker}` "
-                "on its own line."
-            )
-        else:
-            return prompt
-        return f"{prompt}\n\n### Output Correction\n{correction}"
 
     def _emit_agent_events(
         self,
@@ -4242,112 +3683,6 @@ def _new_id(prefix: str) -> str:
     return f"{prefix}-{uuid4().hex[:12]}"
 
 
-# Complexity → ladder start index when no explicit ladder_start override is set.
-_COMPLEXITY_LADDER_START: dict[str, int] = {"small": 0, "medium": 0, "large": 1}
-
-
-@dataclass(slots=True)
-class ModelSelection:
-    """The model chosen for one agent step plus the rule that chose it."""
-
-    model: str | None
-    source: str  # "override" | "ladder" | "role" | "project_default"
-
-
-def resolve_step_model_selection(
-    *,
-    task: Task,
-    role: RoleDefinition,
-    project: Project,
-    step_id: str,
-    visit_count: int,
-) -> ModelSelection:
-    """Resolve the model for one workflow step, recording the deciding rule.
-
-    Precedence (see review.md Phase 3.3):
-
-    1. a per-task override for this step. The ladder still escalates above an
-       override that itself appears in the role ladder (resume from its index);
-       an override absent from the ladder is pinned for every visit.
-    2. the role ``model_ladder`` indexed by ``ladder_start + visit_count - 1``,
-       where ``ladder_start`` comes from the task override, else a complexity
-       map, else 0.
-    3. the role's single ``model``.
-    4. the project ``default_model`` setting.
-    5. ``None`` (harness default).
-    """
-
-    overrides = task.executor_overrides or {}
-    ladder = tuple(role.agent.model_ladder)
-    step_visit_index = max(visit_count - 1, 0)
-
-    override_model = None
-    models_map = overrides.get("models")
-    if isinstance(models_map, dict):
-        override_model = models_map.get(step_id)
-
-    if override_model:
-        if ladder and override_model in ladder:
-            base_index = ladder.index(override_model)
-            index = min(base_index + step_visit_index, len(ladder) - 1)
-            chosen = ladder[index]
-            source = "override" if index == base_index else "ladder"
-            return ModelSelection(model=chosen, source=source)
-        # Pinned deliberately by the manager; keep it for every visit.
-        return ModelSelection(model=str(override_model), source="override")
-
-    if ladder:
-        ladder_start = overrides.get("ladder_start")
-        if not isinstance(ladder_start, int) or isinstance(ladder_start, bool):
-            ladder_start = _COMPLEXITY_LADDER_START.get(task.complexity or "", 0)
-        index = min(ladder_start + step_visit_index, len(ladder) - 1)
-        index = max(index, 0)
-        return ModelSelection(model=ladder[index], source="ladder")
-
-    if role.agent.model:
-        return ModelSelection(model=role.agent.model, source="role")
-
-    default_model = resolve_project_settings(project).default_model
-    if default_model:
-        return ModelSelection(model=default_model, source="project_default")
-
-    return ModelSelection(model=None, source="project_default")
-
-
-def resolve_step_model(
-    *,
-    task: Task,
-    role: RoleDefinition,
-    project: Project,
-    step_id: str,
-    visit_count: int,
-) -> str | None:
-    """Return only the resolved model id for one step (see ``ModelSelection``)."""
-
-    return resolve_step_model_selection(
-        task=task,
-        role=role,
-        project=project,
-        step_id=step_id,
-        visit_count=visit_count,
-    ).model
-
-
-def resolve_project_settings(project: Project) -> ProjectSettings:
-    """Validate a project's raw settings blob, or fail fast with a clear error.
-
-    An unattended engine must not run a misconfigured project on silent
-    defaults; invalid settings stop the run before any task is touched.
-    """
-
-    try:
-        return settings_of(project)
-    except SettingsError as exc:
-        raise OrchestratorError(
-            f"Project {project.id!r} has invalid settings: {exc}"
-        ) from exc
-
-
 def _optional_string(value: Any) -> str | None:
     if value is None:
         return None
@@ -4371,53 +3706,6 @@ def _coerce_int_value(value: Any, *, default: int | None) -> int | None:
     if isinstance(value, float):
         return int(value)
     return default
-
-
-def _run_cost_ceiling(project: Project, role_max_cost_usd: float) -> float:
-    """Return the cost ceiling for one agent run; 0 means no ceiling.
-
-    The role sets a ceiling and the project's ``runner_max_cost_usd`` may
-    lower it. Neither can raise the other.
-    """
-
-    ceilings = [
-        value
-        for value in (
-            max(float(role_max_cost_usd or 0.0), 0.0),
-            resolve_project_settings(project).runner_max_cost_usd,
-        )
-        if value > 0
-    ]
-    return min(ceilings) if ceilings else 0.0
-
-
-def _project_timeout_seconds(
-    project: Project,
-    *,
-    role_timeout_minutes: int | None = None,
-) -> int:
-    """Return the effective timeout window for native runs and stale-run recovery."""
-
-    setting = resolve_project_settings(project).time_limit_per_run_minutes
-    if setting > 0:
-        return setting * 60
-    if role_timeout_minutes is not None and role_timeout_minutes > 0:
-        return role_timeout_minutes * 60
-    return 0
-
-
-def _active_run_recovery_timeout_seconds(project: Project) -> int:
-    """Return the stale-run ownership window used for crash recovery."""
-
-    setting = resolve_project_settings(project).active_run_recovery_timeout_minutes
-    if setting > 0:
-        return setting * 60
-
-    project_timeout = _project_timeout_seconds(project)
-    default_timeout = 5 * 60
-    if project_timeout <= 0:
-        return default_timeout
-    return min(project_timeout, default_timeout)
 
 
 def _is_lease_live(
@@ -4450,108 +3738,6 @@ def _parse_utc_timestamp(value: str | None) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
-_FINAL_MESSAGE_PHASES = frozenset({"result", "final_answer"})
-_DECISION_PREFIX_RE = re.compile(
-    r"^(?:(?:final\s+)?(?:decision|verdict|result)\s*[:\-\u2013\u2014]\s*)",
-    re.IGNORECASE,
-)
-_DECISION_LINE_RE = re.compile(r"^(APPROVE|DENY|STEER|ESCALATE)(?![A-Z])\s*(.*)$")
-_DECISION_OPTION_TEMPLATES = {
-    "approve": "APPROVE",
-    "deny": "DENY: <reason>",
-    "steer": "STEER: <specific corrective action>",
-    "escalate": "ESCALATE: <why the senior reviewer is needed>",
-}
-
-
-def _decision_option_lines(outcomes: tuple[str, ...]) -> list[str]:
-    lines = [_DECISION_OPTION_TEMPLATES[o] for o in outcomes if o in _DECISION_OPTION_TEMPLATES]
-    return lines or list(_DECISION_OPTION_TEMPLATES.values())[:3]
-
-
-def _parse_decision_line(raw_line: str) -> tuple[str, str] | None:
-    """Return ``(verdict, reason)`` when a line carries a reviewer verdict.
-
-    Accepts the bare word, ``VERDICT: reason``, markdown emphasis, list
-    markers, and a ``Decision:`` / ``Verdict:`` prefix. Lines whose reason is
-    a ``<placeholder>`` are option restatements, not verdicts, and are ignored.
-    """
-
-    line = _normalize_decision_line(raw_line)
-    line = _DECISION_PREFIX_RE.sub("", line)
-    line = line.strip("*_` ").strip()
-    match = _DECISION_LINE_RE.match(line)
-    if match is None:
-        return None
-    verdict = match.group(1).lower()
-    reason = match.group(2).strip()
-    reason = reason.lstrip(":-\u2013\u2014 ").strip().strip("*_`").strip()
-    if reason.startswith("<") and reason.endswith(">"):
-        return None
-    return (verdict, reason)
-
-
-def _extract_decision_output(
-    text: str,
-    *,
-    allowed: tuple[str, ...] | None = None,
-) -> tuple[str, str]:
-    """Extract exactly one reviewer verdict from the final message.
-
-    More than one distinct verdict is an error rather than a guess, and a
-    verdict the role does not declare is an error naming the allowed set;
-    both trigger the one-shot output-contract retry.
-    """
-
-    if not text:
-        return (ERROR, "Reviewer returned no decision.")
-
-    found: list[tuple[str, str]] = []
-    for raw_line in text.splitlines():
-        parsed = _parse_decision_line(raw_line)
-        if parsed is not None:
-            found.append(parsed)
-    if not found:
-        return (ERROR, text)
-
-    verdicts = {verdict for verdict, _ in found}
-    if len(verdicts) > 1:
-        return (
-            ERROR,
-            "Ambiguous decision: found "
-            + ", ".join(sorted(v.upper() for v in verdicts))
-            + ". Return exactly one verdict.",
-        )
-    verdict, reason = found[-1]
-    if allowed and verdict not in allowed:
-        return (
-            ERROR,
-            f"Decision {verdict.upper()} is not valid for this role; expected one of "
-            + ", ".join(o.upper() for o in allowed)
-            + ".",
-        )
-    return (verdict, reason or verdict.upper())
-
-
-def _normalize_decision_line(line: str) -> str:
-    normalized = line.strip()
-    normalized = normalized.strip("`")
-    normalized = normalized.strip()
-    if normalized.startswith(("* ", "- ")):
-        normalized = normalized[2:].strip()
-    normalized = normalized.strip("*").strip()
-    return normalized
-
-
-def _contains_completion_marker(text: str, marker: str) -> bool:
-    return any(_normalize_decision_line(line) == marker for line in text.splitlines())
-
-
-def _strip_completion_marker(text: str, marker: str) -> str:
-    lines = [line for line in text.splitlines() if _normalize_decision_line(line) != marker]
-    return "\n".join(lines).strip()
-
-
 def _is_merge_conflict_feedback(text: str | None) -> bool:
     if not text:
         return False
@@ -4566,9 +3752,3 @@ def _append_feedback_note(existing: str | None, note: str) -> str:
         return note
     return f"{existing}\n\n{note}"
 
-
-def _extract_json_block(text: str) -> str | None:
-    match = re.search(r"```json\s*(.*?)```", text, re.DOTALL | re.IGNORECASE)
-    if match is None:
-        return None
-    return match.group(1).strip() or None
