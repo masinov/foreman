@@ -25,6 +25,7 @@ from .engine.errors import (
     TaskExecutionError,
 )
 from .engine.evidence import EvidenceBuilder, branch_diff_content
+from .engine.leasing import TASK_LEASE_HEARTBEAT_SECONDS, TaskLeases
 from .engine.limits import (
     active_run_recovery_timeout_seconds,
     project_timeout_seconds,
@@ -64,11 +65,9 @@ from .git import (
     sync_branch_with_base,
     worktree_branch,
 )
-from .leases import generate_lease_token
 from .logs import compact_payload, event_log_level, get_logger, log_event
 from .guidance import GUIDANCE_DELIVERED_EVENT, pending_guidance, prompt_with_guidance
 from .models import CompletionEvidence, Event, HumanGateDecision, Lease, Project, Run, Sprint, TASK_COMPLEXITIES, TASK_TYPES, Task, TokenUsage, utc_now_text
-from .task_lease import TaskLeaseHeartbeat
 from .notifications import NotificationDispatcher, resolve_notification_policy
 from .policy import GATE_DECISIONS, PolicyMatrix, describe_resolution
 from .outcomes import APPROVE, BLOCKED, DENY, ERROR, normalize_agent_outcome, normalize_reviewer_decision
@@ -118,7 +117,7 @@ class ForemanOrchestrator:
     _LEASE_LIVENESS_THRESHOLD_SECONDS = 60.0
     # Well inside both the 300-second lease and the 60-second liveness window
     # above; see foreman/task_lease.py.
-    _TASK_LEASE_HEARTBEAT_SECONDS = 20.0
+    _TASK_LEASE_HEARTBEAT_SECONDS = TASK_LEASE_HEARTBEAT_SECONDS
 
     def __init__(
         self,
@@ -178,8 +177,9 @@ class ForemanOrchestrator:
             if native_step_heartbeat_seconds is not None
             else self._DEFAULT_NATIVE_STEP_HEARTBEAT_SECONDS
         )
-        self._task_lease_tokens: dict[str, str] = {}
-        self._task_lease_heartbeats: dict[str, TaskLeaseHeartbeat] = {}
+        self.leases = TaskLeases(
+            store, self.holder_id, heartbeat_seconds=self._TASK_LEASE_HEARTBEAT_SECONDS
+        )
         self._worktree_managers: dict[str, WorktreeManager] = {}
         #: Called with the running task id before every workflow step and on
         #: every silent-agent tick. The resident engine supplies it so an
@@ -188,6 +188,11 @@ class ForemanOrchestrator:
         #: ``EngineCommandInterrupt`` to stop the step. A one-shot ``foreman
         #: run`` leaves it None and behaves exactly as before.
         self.command_poll = command_poll
+
+    def close(self) -> None:
+        """Stop the background work this orchestrator started."""
+
+        self.leases.close()
 
     def worktrees(self, project: Project) -> WorktreeManager:
         """Return the worktree manager for one project, created once per run."""
@@ -383,111 +388,6 @@ class ForemanOrchestrator:
             setattr(task, name, getattr(fresh, name))
         return fresh
 
-    def _acquire_task_lease(self, task: Task, project: Project) -> str | None:
-        """Acquire a lease on a task. Returns the lease token or None if denied."""
-        token = generate_lease_token()
-        lease = self.store.acquire_lease(
-            project_id=project.id,
-            resource_type="task",
-            resource_id=task.id,
-            holder_id=self.holder_id,
-            lease_token=token,
-        )
-        if lease is None:
-            return None
-        self._task_lease_tokens[task.id] = token
-        return token
-
-    def _start_task_lease_heartbeat(self, task: Task, project: Project, token: str) -> None:
-        """Renew the lease on a timer while this engine works on the task.
-
-        ``run_task`` starts the timer and stops it when it returns or raises,
-        so the timer never outlives the work it vouches for. A step is not
-        obliged to produce output, and a built-in step produces none the
-        orchestrator sees, so renewal cannot depend on step activity.
-        An in-memory database has one connection and no second process to
-        defend against; it gets no heartbeat thread.
-        """
-
-        previous = self._task_lease_heartbeats.pop(task.id, None)
-        if previous is not None:
-            previous.stop()
-        if self.store.db_path == ":memory:" or self._TASK_LEASE_HEARTBEAT_SECONDS <= 0:
-            return
-        heartbeat = TaskLeaseHeartbeat(
-            db_path=self.store.db_path,
-            project_id=project.id,
-            task_id=task.id,
-            holder_id=self.holder_id,
-            lease_token=token,
-            interval_seconds=self._TASK_LEASE_HEARTBEAT_SECONDS,
-        )
-        heartbeat.start()
-        self._task_lease_heartbeats[task.id] = heartbeat
-
-    def _stop_task_lease_heartbeat(self, task_id: str) -> bool:
-        """Stop the timer for one task. Returns whether one was running."""
-
-        heartbeat = self._task_lease_heartbeats.pop(task_id, None)
-        if heartbeat is None:
-            return False
-        heartbeat.stop()
-        return True
-
-    def _forget_task_lease(self, task_id: str) -> str | None:
-        """Stop heartbeating a task and drop its token without releasing it."""
-
-        self._stop_task_lease_heartbeat(task_id)
-        return self._task_lease_tokens.pop(task_id, None)
-
-    def close(self) -> None:
-        """Stop every lease heartbeat this orchestrator started.
-
-        Leases whose tokens are still held are left to expire on their own,
-        which is what a crashed engine's leases do.
-        """
-
-        for task_id in list(self._task_lease_heartbeats):
-            self._stop_task_lease_heartbeat(task_id)
-
-    def _release_task_lease(self, task: Task, project: Project) -> None:
-        """Release the lease on a task if held by this orchestrator."""
-        token = self._forget_task_lease(task.id)
-        if token is not None:
-            self.store.release_lease(
-                project_id=project.id,
-                resource_type="task",
-                resource_id=task.id,
-                holder_id=self.holder_id,
-                lease_token=token,
-            )
-
-    def _renew_task_lease(self, task: Task, project: Project) -> bool:
-        """Renew the lease on a task held by this orchestrator.
-
-        Returns True when renewed, False when this orchestrator holds no
-        token for the task. Raises ``LeaseLostError`` when the token exists
-        but the store refuses the renewal, meaning the lease expired or was
-        taken over: continuing would race the new holder in the same checkout.
-        """
-        token = self._task_lease_tokens.get(task.id)
-        if token is None:
-            return False
-        renewed = self.store.renew_lease(
-            project_id=project.id,
-            resource_type="task",
-            resource_id=task.id,
-            holder_id=self.holder_id,
-            lease_token=token,
-        )
-        if renewed is None:
-            self._forget_task_lease(task.id)
-            raise LeaseLostError(
-                f"Lease on task {task.id!r} was lost (expired or taken over by another "
-                "engine). Stopping this engine without touching the task."
-            )
-        return True
-
     def run_project(
         self,
         project_id: str,
@@ -523,7 +423,7 @@ class ForemanOrchestrator:
                 )
             # Acquire the lease before running; skip if task is already leased
             # by another orchestrator.
-            if self._acquire_task_lease(task, project) is None:
+            if self.leases.acquire(task, project) is None:
                 raise OrchestratorError(
                     f"Task {task_id!r} is already leased by another orchestrator."
                 )
@@ -670,7 +570,7 @@ class ForemanOrchestrator:
                 "error": result.detail,
             },
         )
-        self._release_task_lease(task, project)
+        self.leases.release(task, project)
 
     def block_task_for_error(
         self,
@@ -694,7 +594,7 @@ class ForemanOrchestrator:
 
         project = self.store.get_project(task.project_id)
         if project is not None:
-            self._release_task_lease(task, project)
+            self.leases.release(task, project)
 
         workflow_step = task.workflow_current_step or "orchestrator"
         if task.status not in {"done", "cancelled"}:
@@ -724,7 +624,7 @@ class ForemanOrchestrator:
             return
         project = self.store.get_project(task.project_id)
         if project is not None:
-            self._release_task_lease(task, project)
+            self.leases.release(task, project)
 
     def stop_task(self, task_id: str, *, reason: str) -> Task | None:
         """Park one task as ``blocked`` at an operator's request.
@@ -742,7 +642,7 @@ class ForemanOrchestrator:
             return None
         project = self.store.get_project(task.project_id)
         if project is not None:
-            self._release_task_lease(task, project)
+            self.leases.release(task, project)
         if task.status in {"done", "cancelled"}:
             return task
         task.status = "blocked"
@@ -821,7 +721,7 @@ class ForemanOrchestrator:
                 # For resumption, try to acquire the lease. If the old holder is
                 # still alive (lease not expired), skip this task to avoid stealing
                 # work. If the lease has expired, we take it over.
-                if self._acquire_task_lease(task, project) is None:
+                if self.leases.acquire(task, project) is None:
                     return None  # Another orchestrator holds an active lease.
                 return task
         if any(
@@ -849,7 +749,7 @@ class ForemanOrchestrator:
                 continue
             # Lease the task before returning it. If denied, another
             # orchestrator holds it — skip to the next candidate.
-            if self._acquire_task_lease(task, project) is None:
+            if self.leases.acquire(task, project) is None:
                 continue
             return task
         return None
@@ -875,7 +775,7 @@ class ForemanOrchestrator:
                 # For resumption, try to acquire the lease. If the old holder is
                 # still alive (lease not expired), skip this task to avoid
                 # stealing work. If the lease has expired, we take it over.
-                if self._acquire_task_lease(task, project) is None:
+                if self.leases.acquire(task, project) is None:
                     return None  # Another orchestrator holds an active lease.
                 return task
         if any(
@@ -901,7 +801,7 @@ class ForemanOrchestrator:
         )
         self._save_task(placeholder)
         # Acquire lease for the new placeholder immediately.
-        if self._acquire_task_lease(placeholder, project) is None:
+        if self.leases.acquire(placeholder, project) is None:
             # Race: another orchestrator created one first; reload and return it.
             sprint_tasks = self.store.list_tasks(sprint_id=sprint.id)
             for task in sprint_tasks:
@@ -918,13 +818,13 @@ class ForemanOrchestrator:
     ) -> Task:
         """Run one task from the workflow entry step, heartbeating its lease throughout."""
 
-        token = self._task_lease_tokens.get(task.id)
+        token = self.leases.token_for(task.id)
         if token is not None:
-            self._start_task_lease_heartbeat(task, project, token)
+            self.leases.start_heartbeat(task, project, token)
         try:
             return self._run_leased_task(project, workflow, task)
         finally:
-            self._stop_task_lease_heartbeat(task.id)
+            self.leases.stop_heartbeat(task.id)
 
     def _run_leased_task(
         self,
@@ -1288,7 +1188,7 @@ class ForemanOrchestrator:
                     detail="Task was cancelled while this step was running.",
                     session_id=run.session_id,
                 )
-        self._release_task_lease(task, project)
+        self.leases.release(task, project)
         refreshed = self.store.get_task(task.id)
         if refreshed is None:
             raise OrchestratorError(f"Task {task.id!r} disappeared during execution.")
@@ -1317,7 +1217,7 @@ class ForemanOrchestrator:
             if stored.status == "blocked":
                 current_task.status = stored.status
                 current_task.blocked_reason = stored.blocked_reason
-                self._release_task_lease(current_task, project)
+                self.leases.release(current_task, project)
                 return stored
 
             step_def = workflow.get_step(current_step)
@@ -1373,7 +1273,7 @@ class ForemanOrchestrator:
                         current_task.workflow_carried_output = None
                         self._save_task(current_task)
                         current_step = None
-                        self._release_task_lease(current_task, project)
+                        self.leases.release(current_task, project)
                         break
 
             visit_count = current_task.step_visit_counts.get(current_step, 0) + 1
@@ -1572,7 +1472,7 @@ class ForemanOrchestrator:
                     # A task waiting for a person is not being worked on. Left
                     # held, the lease made the engine wait out its remaining
                     # lifetime before it could act on the decision.
-                    self._release_task_lease(current_task, project)
+                    self.leases.release(current_task, project)
                     return current_task
 
             elif step_def.role.startswith("_builtin:"):
@@ -1971,7 +1871,7 @@ class ForemanOrchestrator:
                 current_task.workflow_carried_output = None
                 self._save_task(current_task)
                 current_step = None
-                self._release_task_lease(current_task, project)
+                self.leases.release(current_task, project)
                 break
 
             transition = workflow.find_transition(current_step, outcome)
@@ -1981,7 +1881,7 @@ class ForemanOrchestrator:
                     current_task.workflow_carried_output = None
                     self._save_task(current_task)
                     current_step = None
-                    self._release_task_lease(current_task, project)
+                    self.leases.release(current_task, project)
                     break
 
                 self._emit_event(
@@ -2000,7 +1900,7 @@ class ForemanOrchestrator:
                 current_task.workflow_carried_output = None
                 self._save_task(current_task)
                 current_step = None
-                self._release_task_lease(current_task, project)
+                self.leases.release(current_task, project)
                 continue
 
             self._emit_event(
@@ -2037,13 +1937,13 @@ class ForemanOrchestrator:
 
             # Renew lease after each step (heartbeat during workflow execution).
             if current_step is not None:
-                self._renew_task_lease(current_task, project)
+                self.leases.renew(current_task, project)
 
         # Every path that parks a task leaves it ``blocked``: a gate, a loop
         # or cost limit, a failed guard. A parked task is not being worked on,
         # so nothing may keep holding (and heartbeating) its lease.
         if current_task.status == "blocked":
-            self._release_task_lease(current_task, project)
+            self.leases.release(current_task, project)
 
         return current_task
 
@@ -2236,10 +2136,10 @@ class ForemanOrchestrator:
         # Expiring that one too made the very next renewal fail, so every
         # resume after a crash cost one wasted agent run. Clear what a dead
         # engine left, then hold the task again.
-        held_by_us = task.id in self._task_lease_tokens
-        heartbeating = task.id in self._task_lease_heartbeats
+        held_by_us = self.leases.holds(task.id)
+        heartbeating = task.id in self.leases.heartbeats
         if held_by_us:
-            self._forget_task_lease(task.id)
+            self.leases.forget(task.id)
         self.store.expire_resource_leases(
             project_id=project.id,
             resource_type="task",
@@ -2247,13 +2147,13 @@ class ForemanOrchestrator:
             force=True,
         )
         if held_by_us:
-            token = self._acquire_task_lease(task, project)
+            token = self.leases.acquire(task, project)
             if token is None:
                 raise LeaseLostError(
                     f"Lease on task {task.id!r} could not be re-acquired after stale-run recovery."
                 )
             if heartbeating:
-                self._start_task_lease_heartbeat(task, project, token)
+                self.leases.start_heartbeat(task, project, token)
 
         task.status = "todo"
         task.blocked_reason = None
@@ -2944,9 +2844,9 @@ class ForemanOrchestrator:
             session_id=self._session_id_from_events(run) or run.session_id,
         )
         if release_lease:
-            self._release_task_lease(task, project)
+            self.leases.release(task, project)
         else:
-            self._forget_task_lease(task.id)
+            self.leases.forget(task.id)
 
     def _session_id_from_events(self, run: Run) -> str | None:
         """Return the backend session id announced during ``run``, if any.
@@ -3119,7 +3019,7 @@ class ForemanOrchestrator:
                     or (now - last_heartbeat).total_seconds() >= heartbeat_interval
                 )
             ):
-                self._renew_task_lease(task, project)
+                self.leases.renew(task, project)
                 last_heartbeat = now
             if event.event_type == "agent.tick":
                 # Silent-child ticks exist only to drive the heartbeat above
@@ -3436,7 +3336,7 @@ class ForemanOrchestrator:
                 task.status = "blocked"
                 task.blocked_reason = message
                 self._save_task(task)
-                self._release_task_lease(task, project)
+                self.leases.release(task, project)
                 self._emit_attention_needed(run, task.id, "task_blocked")
 
     def _emit_builtin_events(
