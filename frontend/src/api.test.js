@@ -49,8 +49,8 @@ describe("dashboard access token", () => {
   });
 
   it("puts the token on the event stream URL because EventSource cannot set headers", () => {
-    expect(buildStreamPath("s1", "evt-9", "tok")).toBe("/api/sprints/s1/stream?after=evt-9&token=tok");
-    expect(buildStreamPath("s1", undefined, "")).toBe("/api/sprints/s1/stream");
+    expect(buildStreamPath("s1", "evt-9", "tok")).toBe("/api/v1/sprints/s1/stream?after=evt-9&token=tok");
+    expect(buildStreamPath("s1", undefined, "")).toBe("/api/v1/sprints/s1/stream");
   });
 
   it("stores and clears the token in the provided storage", () => {
@@ -74,7 +74,7 @@ describe("engine control calls", () => {
 
     await services.agentStatus("proj-1");
 
-    expect(fetchImpl.mock.calls[0][0]).toBe("/api/projects/proj-1/agent/status");
+    expect(fetchImpl.mock.calls[0][0]).toBe("/api/v1/projects/proj-1/agent/status");
   });
 
   it("posts a pause request and forwards the requester", async () => {
@@ -84,7 +84,7 @@ describe("engine control calls", () => {
     await services.stopAgent("proj-1", { requestedBy: "ana" });
 
     const [path, options] = fetchImpl.mock.calls[0];
-    expect(path).toBe("/api/projects/proj-1/agent/stop");
+    expect(path).toBe("/api/v1/projects/proj-1/agent/stop");
     expect(options.method).toBe("POST");
     expect(JSON.parse(options.body)).toEqual({ requested_by: "ana" });
   });
@@ -95,6 +95,6 @@ describe("engine control calls", () => {
 
     await services.listEngineCommands("proj-1", { limit: 5 });
 
-    expect(fetchImpl.mock.calls[0][0]).toBe("/api/projects/proj-1/engine/commands?limit=5");
+    expect(fetchImpl.mock.calls[0][0]).toBe("/api/v1/projects/proj-1/engine/commands?limit=5");
   });
 });

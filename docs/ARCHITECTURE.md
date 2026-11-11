@@ -47,7 +47,7 @@ The current codebase maps closely onto that split:
 - `foreman/worktrees.py` owns the git working trees a task executes in,
 - `foreman/runner/` owns backend-specific transport and event normalization,
 - `foreman/cli/`, `foreman/dashboard_runtime.py`,
-  `foreman/dashboard_service.py`, `foreman/dashboard_backend.py`, and
+  `foreman/dashboard_service.py`, `foreman/dashboard/`, and
   `frontend/` expose inspection and control surfaces.
 
 ### Engine and store layout (sprint 57)
@@ -329,7 +329,7 @@ tracker, a chat bot, a CI job (ADR-0013).
   both the auth outcome and the filing. Auth raises `DashboardAuthError` (401)
   or `DashboardPermissionError` (403) so the transport maps status codes
   instead of deciding them.
-- `foreman/dashboard_backend.py` — the route, and the middleware rule that
+- `foreman/dashboard/` — the route, and the middleware rule that
   keeps the two credentials apart: the shared dashboard token is refused on
   intake, and a project API token is refused on every other `/api` route
   whether or not a dashboard token is configured.
@@ -350,7 +350,7 @@ Foreman now exposes two first-class observation surfaces:
 
 - CLI inspection commands: `board`, `history`, `cost`, and live `watch`
 - a dashboard service layer in `foreman/dashboard_service.py`, a FastAPI
-  transport layer in `foreman/dashboard_backend.py`, a React frontend
+  transport layer in `foreman/dashboard/`, a React frontend
   workspace in `frontend/`, and a runtime entrypoint in
   `foreman/dashboard_runtime.py`
 
@@ -378,7 +378,7 @@ The current dashboard baseline includes:
 
 - extracted backend responses for project, sprint, task, action, and
   streaming contracts in `foreman/dashboard_service.py`,
-- FastAPI route delivery in `foreman/dashboard_backend.py`,
+- FastAPI route delivery in `foreman/dashboard/`,
 - a dedicated React and Vite frontend source workspace in `frontend/`,
 - built frontend assets in `foreman/dashboard_frontend_dist/`,
 - Vite dev-mode `/api` proxying plus a combined local dashboard dev launcher

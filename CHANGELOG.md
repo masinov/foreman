@@ -9,6 +9,14 @@ memory changes rather than versioned product releases.
 
 ### Sprint 57 — structure
 
+- **slice 6a, routed and versioned API** (`refactor/dashboard-api`,
+  ADR-0019): the 40 API routes moved out of the application factory into
+  `foreman/dashboard/routers/` (projects, intake, sprints, meta, gates,
+  engine, worktrees, tasks, roles). The API is served under `/api/v1`, with
+  `/api` kept as an alias; the frontend uses `/api/v1`. Every error,
+  including unknown routes, bad parameters, authentication failures and
+  bugs, is `{"error": "<sentence>", "code": "<kind>"}`; an unhandled
+  exception no longer leaks as a bare 500.
 - **slice 5, CLI package** (`refactor/cli-package`): `foreman/cli.py` (3915
   lines) is the package `foreman/cli/`: `parser` (the parser and `main`),
   `common`, and a module per command group (`projects`, `sprints`, `tasks`,

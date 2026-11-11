@@ -1,3 +1,7 @@
+// Every request goes to the versioned API. The server still answers the
+// unversioned /api paths for older clients.
+export const API_BASE = "/api/v1";
+
 const TOKEN_STORAGE_KEY = "foreman.dashboard.token";
 
 export class UnauthorizedError extends Error {
@@ -70,7 +74,7 @@ async function requestJson(fetchImpl, path, options = {}, tokenProvider = getDas
 }
 
 export function buildStreamPath(sprintId, afterEventId, token = "") {
-  const path = `/api/sprints/${encodeURIComponent(sprintId)}/stream`;
+  const path = `${API_BASE}/sprints/${encodeURIComponent(sprintId)}/stream`;
   const params = new URLSearchParams();
   if (afterEventId) params.set("after", afterEventId);
   // EventSource cannot send headers, so the token travels as a query parameter.
@@ -107,19 +111,19 @@ export function createDashboardServices({
 
   return {
     listProjects() {
-      return request("/api/projects");
+      return request(`${API_BASE}/projects`);
     },
     getProject(projectId) {
-      return request(`/api/projects/${encodeURIComponent(projectId)}`);
+      return request(`${API_BASE}/projects/${encodeURIComponent(projectId)}`);
     },
     listProjectSprints(projectId) {
-      return request(`/api/projects/${encodeURIComponent(projectId)}/sprints`);
+      return request(`${API_BASE}/projects/${encodeURIComponent(projectId)}/sprints`);
     },
     getSprint(sprintId) {
-      return request(`/api/sprints/${encodeURIComponent(sprintId)}`);
+      return request(`${API_BASE}/sprints/${encodeURIComponent(sprintId)}`);
     },
     listSprintTasks(sprintId) {
-      return request(`/api/sprints/${encodeURIComponent(sprintId)}/tasks`);
+      return request(`${API_BASE}/sprints/${encodeURIComponent(sprintId)}/tasks`);
     },
     listSprintEvents(sprintId, { afterEventId, beforeEventId, limit } = {}) {
       const params = new URLSearchParams();
@@ -127,55 +131,55 @@ export function createDashboardServices({
       if (beforeEventId) params.set("before", beforeEventId);
       if (typeof limit === "number") params.set("limit", String(limit));
       const suffix = params.size > 0 ? `?${params.toString()}` : "";
-      return request(`/api/sprints/${encodeURIComponent(sprintId)}/events${suffix}`);
+      return request(`${API_BASE}/sprints/${encodeURIComponent(sprintId)}/events${suffix}`);
     },
     getTask(taskId) {
-      return request(`/api/tasks/${encodeURIComponent(taskId)}`);
+      return request(`${API_BASE}/tasks/${encodeURIComponent(taskId)}`);
     },
     approveTask(taskId) {
-      return request(`/api/tasks/${encodeURIComponent(taskId)}/approve`, {
+      return request(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/approve`, {
         method: "POST",
       });
     },
     denyTask(taskId, note) {
-      return request(`/api/tasks/${encodeURIComponent(taskId)}/deny`, {
+      return request(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/deny`, {
         method: "POST",
         body: { note },
       });
     },
     getProjectSettings(projectId) {
-      return request(`/api/projects/${encodeURIComponent(projectId)}/settings`);
+      return request(`${API_BASE}/projects/${encodeURIComponent(projectId)}/settings`);
     },
     updateProjectSettings(projectId, updates) {
-      return request(`/api/projects/${encodeURIComponent(projectId)}/settings`, {
+      return request(`${API_BASE}/projects/${encodeURIComponent(projectId)}/settings`, {
         method: "PATCH",
         body: updates,
       });
     },
     createSprint(projectId, { title, goal, initialTasks }) {
-      return request(`/api/projects/${encodeURIComponent(projectId)}/sprints`, {
+      return request(`${API_BASE}/projects/${encodeURIComponent(projectId)}/sprints`, {
         method: "POST",
         body: { title, goal, initial_tasks: initialTasks || undefined },
       });
     },
     stopTask(taskId, { requestedBy } = {}) {
-      return request(`/api/tasks/${encodeURIComponent(taskId)}/stop`, {
+      return request(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/stop`, {
         method: "POST",
         body: { requested_by: requestedBy || undefined },
       });
     },
     acceptTask(taskId) {
-      return request(`/api/tasks/${encodeURIComponent(taskId)}/accept`, {
+      return request(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/accept`, {
         method: "POST",
       });
     },
     cancelTask(taskId) {
-      return request(`/api/tasks/${encodeURIComponent(taskId)}/cancel`, {
+      return request(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/cancel`, {
         method: "POST",
       });
     },
     createTask(sprintId, { title, taskType, acceptanceCriteria, description, complexity, dependsOn }) {
-      return request(`/api/sprints/${encodeURIComponent(sprintId)}/tasks`, {
+      return request(`${API_BASE}/sprints/${encodeURIComponent(sprintId)}/tasks`, {
         method: "POST",
         body: {
           title,
@@ -188,19 +192,19 @@ export function createDashboardServices({
       });
     },
     transitionSprint(sprintId, status) {
-      return request(`/api/sprints/${encodeURIComponent(sprintId)}`, {
+      return request(`${API_BASE}/sprints/${encodeURIComponent(sprintId)}`, {
         method: "PATCH",
         body: { status },
       });
     },
     updateSprint(sprintId, updates) {
-      return request(`/api/sprints/${encodeURIComponent(sprintId)}`, {
+      return request(`${API_BASE}/sprints/${encodeURIComponent(sprintId)}`, {
         method: "PATCH",
         body: updates,
       });
     },
     updateTask(taskId, updates) {
-      return request(`/api/tasks/${encodeURIComponent(taskId)}`, {
+      return request(`${API_BASE}/tasks/${encodeURIComponent(taskId)}`, {
         method: "PATCH",
         body: updates,
       });
@@ -208,13 +212,13 @@ export function createDashboardServices({
     // Pause: the engine stays resident and keeps its lock; it just stops
     // picking up work. Nothing here changes a task's status.
     stopAgent(projectId, { requestedBy } = {}) {
-      return request(`/api/projects/${encodeURIComponent(projectId)}/agent/stop`, {
+      return request(`${API_BASE}/projects/${encodeURIComponent(projectId)}/agent/stop`, {
         method: "POST",
         body: { requested_by: requestedBy || undefined },
       });
     },
     agentStatus(projectId) {
-      return request(`/api/projects/${encodeURIComponent(projectId)}/agent/status`);
+      return request(`${API_BASE}/projects/${encodeURIComponent(projectId)}/agent/status`);
     },
     listEngineCommands(projectId, { limit, status } = {}) {
       const params = new URLSearchParams();
@@ -222,13 +226,13 @@ export function createDashboardServices({
       if (status) params.set("status", status);
       const suffix = params.size > 0 ? `?${params.toString()}` : "";
       return request(
-        `/api/projects/${encodeURIComponent(projectId)}/engine/commands${suffix}`,
+        `${API_BASE}/projects/${encodeURIComponent(projectId)}/engine/commands${suffix}`,
       );
     },
     async *metaMessage(projectId, message) {
       const response = await streamNdjson(
         fetchImpl,
-        `/api/projects/${encodeURIComponent(projectId)}/meta/message`,
+        `${API_BASE}/projects/${encodeURIComponent(projectId)}/meta/message`,
         { message },
         tokenProvider,
       );
@@ -253,12 +257,12 @@ export function createDashboardServices({
       if (typeof limit === "number") params.set("limit", String(limit));
       if (before) params.set("before", before);
       const suffix = params.size > 0 ? `?${params.toString()}` : "";
-      return request(`/api/projects/${encodeURIComponent(projectId)}/meta/history${suffix}`);
+      return request(`${API_BASE}/projects/${encodeURIComponent(projectId)}/meta/history${suffix}`);
     },
     async *superviseMeta(projectId, eventId) {
       const response = await streamNdjson(
         fetchImpl,
-        `/api/projects/${encodeURIComponent(projectId)}/meta/supervise`,
+        `${API_BASE}/projects/${encodeURIComponent(projectId)}/meta/supervise`,
         { event_id: eventId },
         tokenProvider,
       );
@@ -279,46 +283,46 @@ export function createDashboardServices({
       }
     },
     listWorktrees(projectId) {
-      return request(`/api/projects/${encodeURIComponent(projectId)}/worktrees`);
+      return request(`${API_BASE}/projects/${encodeURIComponent(projectId)}/worktrees`);
     },
     pruneWorktrees(projectId, { requestedBy } = {}) {
-      return request(`/api/projects/${encodeURIComponent(projectId)}/worktrees/prune`, {
+      return request(`${API_BASE}/projects/${encodeURIComponent(projectId)}/worktrees/prune`, {
         method: "POST",
         body: { requested_by: requestedBy || undefined },
       });
     },
     listRoles() {
-      return request("/api/roles");
+      return request(`${API_BASE}/roles`);
     },
     updateRole(roleId, updates) {
-      return request(`/api/roles/${encodeURIComponent(roleId)}`, {
+      return request(`${API_BASE}/roles/${encodeURIComponent(roleId)}`, {
         method: "PATCH",
         body: updates,
       });
     },
     clearMetaSession(projectId) {
-      return request(`/api/projects/${encodeURIComponent(projectId)}/meta/session`, {
+      return request(`${API_BASE}/projects/${encodeURIComponent(projectId)}/meta/session`, {
         method: "DELETE",
       });
     },
     listGates(projectId, { status } = {}) {
       const params = status ? `?status=${encodeURIComponent(status)}` : "";
-      return request(`/api/projects/${encodeURIComponent(projectId)}/gates${params}`);
+      return request(`${API_BASE}/projects/${encodeURIComponent(projectId)}/gates${params}`);
     },
     resolveGate(gateId, { resolution, resolvedBy = "human" } = {}) {
-      return request(`/api/gates/${encodeURIComponent(gateId)}`, {
+      return request(`${API_BASE}/gates/${encodeURIComponent(gateId)}`, {
         method: "PATCH",
         body: { resolution, resolved_by: resolvedBy },
       });
     },
     startAgent(projectId, { taskId, requestedBy } = {}) {
-      return request(`/api/projects/${encodeURIComponent(projectId)}/agent/start`, {
+      return request(`${API_BASE}/projects/${encodeURIComponent(projectId)}/agent/start`, {
         method: "POST",
         body: { task_id: taskId || undefined, requested_by: requestedBy || undefined },
       });
     },
     createProject({ name, repoPath, workflowId }) {
-      return request("/api/projects", {
+      return request(`${API_BASE}/projects`, {
         method: "POST",
         body: {
           name,
@@ -328,17 +332,17 @@ export function createDashboardServices({
       });
     },
     deleteTask(taskId) {
-      return request(`/api/tasks/${encodeURIComponent(taskId)}`, {
+      return request(`${API_BASE}/tasks/${encodeURIComponent(taskId)}`, {
         method: "DELETE",
       });
     },
     deleteSprint(sprintId) {
-      return request(`/api/sprints/${encodeURIComponent(sprintId)}`, {
+      return request(`${API_BASE}/sprints/${encodeURIComponent(sprintId)}`, {
         method: "DELETE",
       });
     },
     createHumanMessage(taskId, text) {
-      return request(`/api/tasks/${encodeURIComponent(taskId)}/messages`, {
+      return request(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/messages`, {
         method: "POST",
         body: { text },
       });

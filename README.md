@@ -76,7 +76,7 @@ The integrated pre-release baseline now contains:
   landing unsprinted work in the project's standing intake queue sprint,
 - a dashboard service layer in `foreman/dashboard_service.py` for project,
   sprint, task, action, and streaming payloads,
-- a FastAPI dashboard backend in `foreman/dashboard_backend.py` served by
+- a FastAPI dashboard backend in `foreman/dashboard/` served by
   uvicorn,
 - a dedicated React dashboard frontend in `frontend/` with project overview,
   queue-oriented sprint management, task detail, activity feed, human message
@@ -297,7 +297,7 @@ rendering repeated snapshots.
 The product dashboard now ships through the accepted architecture:
 
 - Python backend modules expose JSON and streaming APIs through
-  `foreman/dashboard_service.py` and `foreman/dashboard_backend.py`,
+  `foreman/dashboard_service.py` and `foreman/dashboard/`,
 - the dedicated React frontend in `frontend/` owns product UI rendering and
   client state,
 - built frontend assets are served by FastAPI from
