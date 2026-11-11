@@ -313,3 +313,20 @@ any of those is reachable from the default branch
 with `git branch -f`, `git push .` or `git update-ref`, so the check keeps
 its purpose.
 
+## Amendment, 2026-11-11: autonomous tasks get a worktree too
+
+Branch and worktree creation was conditional on
+`task_selection_mode == "directed"`, following spec §6.2 ("the orchestrator
+does not create a branch; the agent creates its own branch and reports
+it"). The first tests written for autonomous mode showed what that meant
+under this ADR: the placeholder task had no branch, so no worktree, so
+`_task_working_dir` fell back to the repository path and the agent ran in
+the operator's checkout, committing to whatever branch was checked out
+there. The merge step then failed with "Task branch is not set".
+
+The engine now assigns the branch and creates the worktree for every task,
+in both modes. In autonomous mode the agent still chooses the work and
+names it with `signal.task_started`; a branch it reports is accepted only
+when it is a valid name, exists, and is not the default branch. This
+deviates from the letter of spec §6.2 and is recorded as a documented
+conflict in `docs/STATUS.md`.
