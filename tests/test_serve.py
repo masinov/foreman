@@ -1170,10 +1170,10 @@ class EventLogLevelTests(unittest.TestCase):
                 )
                 store.save_run(run)
 
-                orchestrator._emit_event(
+                orchestrator.records.emit_event(
                     run, "agent.raw_output", {"text": "chatter " * 50}
                 )
-                orchestrator._emit_event(
+                orchestrator.records.emit_event(
                     run, "workflow.step_started", {"step": "develop"}
                 )
 
@@ -1214,7 +1214,7 @@ class EventLogLevelTests(unittest.TestCase):
                     status="running",
                 )
                 store.save_run(run)
-                orchestrator._emit_event(run, "agent.raw_output", {"text": "chatter"})
+                orchestrator.records.emit_event(run, "agent.raw_output", {"text": "chatter"})
 
         logged = [
             json.loads(line) for line in stream.getvalue().splitlines() if line

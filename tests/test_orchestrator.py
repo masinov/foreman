@@ -6865,7 +6865,7 @@ class CompletionGuardTests(unittest.TestCase):
 
         base = Task(id="t", sprint_id="s", project_id="p", title="T")
         self.assertEqual(
-            orchestrator._attention_trigger_for_block(base), "task_blocked"
+            orchestrator.records.attention_trigger_for_block(base), "task_blocked"
         )
 
         failed = replace(
@@ -6878,7 +6878,7 @@ class CompletionGuardTests(unittest.TestCase):
             ),
         )
         self.assertEqual(
-            orchestrator._attention_trigger_for_block(failed), "evidence_failed"
+            orchestrator.records.attention_trigger_for_block(failed), "evidence_failed"
         )
 
         passed = replace(
@@ -6891,7 +6891,7 @@ class CompletionGuardTests(unittest.TestCase):
             ),
         )
         self.assertEqual(
-            orchestrator._attention_trigger_for_block(passed), "task_blocked"
+            orchestrator.records.attention_trigger_for_block(passed), "task_blocked"
         )
 
 

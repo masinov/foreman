@@ -863,7 +863,7 @@ class EngineDeliveryTests(unittest.TestCase):
                     status="running",
                 )
             )
-            orchestrator._emit_attention_needed(run, "t1", "task_blocked")
+            orchestrator.records.emit_attention_needed(run, "t1", "task_blocked")
             self.assertEqual(self._kinds(store), [ATTENTION])
 
     def test_all_adds_the_completion(self) -> None:
