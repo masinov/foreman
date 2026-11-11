@@ -34,7 +34,8 @@ lives.
 | # | Slice | Status | Executed by | Deliverable |
 |---|-------|--------|-------------|-------------|
 | 1 | `foreman/engine/` package, first cut: errors, results, limits, model selection, output contract and the evidence builder moved out of `orchestrator.py` (4574 to 3754 lines); tests import from the new modules | done | Claude, by hand | `refactor/engine-package`: `foreman/engine/` (7 modules) |
-| 2 | Engine package, second cut: task selection and leasing, recovery, the workflow step loop and its guards as separate modules; `ForemanOrchestrator` becomes a thin composition | todo | Claude, by hand | `foreman/engine/` |
+| 2a | Engine package, second cut: task leasing (`TaskLeases`), run and event recording (`RunRecords`), branch sync, prompt-context and gate helpers out of `orchestrator.py` (now 3144 lines) | done | Claude, by hand | `refactor/engine-leases-and-records` |
+| 2b | Engine package, third cut: task selection, recovery, retention, sprint advance and signal handling as collaborators; then the 750-line step loop split into named phases | todo | Claude, by hand | `foreman/engine/` |
 | 3 | `foreman/store/` package: one transaction helper used by every write, a module per aggregate (projects, sprints, tasks, runs and events, leases and locks, engine commands, notifications, tokens), `ForemanStore` kept as the facade | todo | Claude, by hand | `foreman/store/` |
 | 4 | One mutation service for task and sprint changes, used by the CLI and the dashboard: validates, writes, emits the audit event, and refuses what a running engine owns | todo | Claude, by hand | `foreman/mutations.py`, CLI and service call it |
 | 5 | `foreman/cli/` package: a module per command group with `register()`, one top-level error boundary, `--json` on read commands | todo | to decide | `foreman/cli/` |

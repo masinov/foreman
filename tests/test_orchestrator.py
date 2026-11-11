@@ -12,6 +12,7 @@ import unittest
 
 from foreman.engine.output_contract import extract_completion_output, extract_decision_output
 from foreman.models import CompletionEvidence, Event, Project, Run, Sprint, Task
+from foreman.engine.branch_sync import prepare_task_branch_for_step
 from foreman.engine.errors import OrchestratorError
 from foreman.engine.results import AgentEventRecord, AgentExecutionResult
 from foreman.orchestrator import ForemanOrchestrator
@@ -1530,12 +1531,6 @@ class ForemanOrchestratorTests(unittest.TestCase):
             )
             project.settings["completion_guard_enabled"] = False
             store.save_project(project)
-            orchestrator = ForemanOrchestrator(
-                store,
-                roles=self.roles,
-                workflows=self.workflows,
-                agent_executor=ScriptedAgentExecutor({}),
-            )
 
             self.git(repo_path, "checkout", "-b", task.branch_name)
             self.write_text(repo_path / "feature.txt", "task work\n")
@@ -1545,7 +1540,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
             self.write_text(repo_path / "notes.txt", "main moved\n")
             self.commit_all(repo_path, "docs: main moves forward")
 
-            carried_output, sync_event = orchestrator._prepare_task_branch_for_step(
+            carried_output, sync_event = prepare_task_branch_for_step(
                 project=project,
                 task=task,
                 step="develop",
@@ -1578,12 +1573,6 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 repo_path=repo_path,
                 branch_name="feat/task-1",
             )
-            orchestrator = ForemanOrchestrator(
-                store,
-                roles=self.roles,
-                workflows=self.workflows,
-                agent_executor=ScriptedAgentExecutor({}),
-            )
 
             self.git(repo_path, "checkout", "-b", task.branch_name)
             self.write_text(repo_path / "feature.txt", "task work\n")
@@ -1593,7 +1582,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
             self.commit_all(repo_path, "docs: main moves forward")
             self.git(repo_path, "checkout", task.branch_name)
 
-            carried_output, sync_event = orchestrator._prepare_task_branch_for_step(
+            carried_output, sync_event = prepare_task_branch_for_step(
                 project=project,
                 task=task,
                 step="develop",
@@ -1610,7 +1599,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
             self.assertEqual(current_branch(repo_path), "feat/task-1")
 
             # Up to date now: a second visit does nothing and carries nothing.
-            again, again_event = orchestrator._prepare_task_branch_for_step(
+            again, again_event = prepare_task_branch_for_step(
                 project=project,
                 task=task,
                 step="develop",
@@ -1634,12 +1623,6 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 repo_path=repo_path,
                 branch_name="feat/task-1",
             )
-            orchestrator = ForemanOrchestrator(
-                store,
-                roles=self.roles,
-                workflows=self.workflows,
-                agent_executor=ScriptedAgentExecutor({}),
-            )
 
             self.git(repo_path, "checkout", "-b", task.branch_name)
             self.write_text(repo_path / "shared.txt", "task version\n")
@@ -1659,7 +1642,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
             # trip over the unresolved index.
             checkout_branch(repo_path, task.branch_name, create=True, base_branch="main")
 
-            carried_output, sync_event = orchestrator._prepare_task_branch_for_step(
+            carried_output, sync_event = prepare_task_branch_for_step(
                 project=project,
                 task=task,
                 step="develop",
@@ -1690,12 +1673,6 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 repo_path=repo_path,
                 branch_name="feat/task-1",
             )
-            orchestrator = ForemanOrchestrator(
-                store,
-                roles=self.roles,
-                workflows=self.workflows,
-                agent_executor=ScriptedAgentExecutor({}),
-            )
 
             self.git(repo_path, "checkout", "-b", task.branch_name)
             self.write_text(repo_path / "shared.txt", "task version\n")
@@ -1705,7 +1682,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
             self.commit_all(repo_path, "fix: main edit")
             self.git(repo_path, "checkout", task.branch_name)
 
-            carried_output, sync_event = orchestrator._prepare_task_branch_for_step(
+            carried_output, sync_event = prepare_task_branch_for_step(
                 project=project,
                 task=task,
                 step="develop",
@@ -3161,7 +3138,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
 
             class Probe(ScriptedAgentExecutor):
                 def execute(inner, *args, **kwargs):  # noqa: N805
-                    seen["during"] = task.id in orchestrator._task_lease_heartbeats
+                    seen["during"] = task.id in orchestrator.leases.heartbeats
                     return super().execute(*args, **kwargs)
 
             orchestrator = ForemanOrchestrator(
@@ -3175,7 +3152,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
             orchestrator.run_project(project.id)
 
             self.assertTrue(seen.get("during"), "the lease must be heartbeated during a step")
-            self.assertEqual(orchestrator._task_lease_heartbeats, {})
+            self.assertEqual(orchestrator.leases.heartbeats, {})
 
     def _run_with_developer(self, store, project, handler):
         executor = ScriptedAgentExecutor({("developer", 1): handler})
@@ -3439,7 +3416,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
             )
             # The engine dies right after develop hands over to test.
             with mock.patch.object(
-                crashing, "_renew_task_lease", side_effect=EngineShutdown("SIGKILL")
+                crashing.leases, "renew", side_effect=EngineShutdown("SIGKILL")
             ):
                 with self.assertRaises(EngineShutdown):
                     crashing.run_project(project.id)
@@ -3493,12 +3470,12 @@ class ForemanOrchestratorTests(unittest.TestCase):
             store.save_run(stale_run)
             orchestrator = ForemanOrchestrator(store, roles=self.roles, workflows=self.workflows)
             self.addCleanup(orchestrator.close)
-            self.assertIsNotNone(orchestrator._acquire_task_lease(task, project))
+            self.assertIsNotNone(orchestrator.leases.acquire(task, project))
 
             orchestrator._recover_stale_running_runs(project, task, [stale_run])
 
             self.assertEqual(store.get_run(stale_run.id).status, "failed")
-            self.assertTrue(orchestrator._renew_task_lease(task, project))
+            self.assertTrue(orchestrator.leases.renew(task, project))
             lease = store.get_active_lease(
                 project_id=project.id, resource_type="task", resource_id=task.id
             )
@@ -3750,7 +3727,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 agent_runners={"claude_code": _LongStreamingRunner()},
                 native_step_heartbeat_seconds=0.001,  # renew on every event
             )
-            token = orchestrator._acquire_task_lease(task, project)
+            token = orchestrator.leases.acquire(task, project)
             assert token is not None
             initial_lease = store.get_active_lease(
                 project_id=project.id,
@@ -3809,7 +3786,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 agent_runners={"claude_code": _LongStreamingRunner()},
                 native_step_heartbeat_seconds=0.0,
             )
-            token = orchestrator._acquire_task_lease(task, project)
+            token = orchestrator.leases.acquire(task, project)
             assert token is not None
             initial_lease = store.get_active_lease(
                 project_id=project.id,
@@ -4555,7 +4532,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
                     project_id=project.id, resource_type="task", resource_id=task.id
                 )
             )
-            self.assertEqual(orchestrator._task_lease_heartbeats, {})
+            self.assertEqual(orchestrator.leases.heartbeats, {})
 
             runs = store.list_runs(task_id=task.id)
             self.assertEqual(len(runs), 1)
@@ -4647,7 +4624,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
             self.assertEqual(attention[0].get("trigger"), "dependency_cancelled")
 
             # Blocking is idempotent: a second selection pass leaves one block.
-            orchestrator._release_task_lease(selected, project)
+            orchestrator.leases.release(selected, project)
             orchestrator.select_next_task(project)
             self.assertEqual(
                 len([e for e in store.list_events(task_id="task-1") if e.event_type == "engine.attention_needed"]),
@@ -6865,7 +6842,7 @@ class CompletionGuardTests(unittest.TestCase):
 
         base = Task(id="t", sprint_id="s", project_id="p", title="T")
         self.assertEqual(
-            orchestrator._attention_trigger_for_block(base), "task_blocked"
+            orchestrator.records.attention_trigger_for_block(base), "task_blocked"
         )
 
         failed = replace(
@@ -6878,7 +6855,7 @@ class CompletionGuardTests(unittest.TestCase):
             ),
         )
         self.assertEqual(
-            orchestrator._attention_trigger_for_block(failed), "evidence_failed"
+            orchestrator.records.attention_trigger_for_block(failed), "evidence_failed"
         )
 
         passed = replace(
@@ -6891,7 +6868,7 @@ class CompletionGuardTests(unittest.TestCase):
             ),
         )
         self.assertEqual(
-            orchestrator._attention_trigger_for_block(passed), "task_blocked"
+            orchestrator.records.attention_trigger_for_block(passed), "task_blocked"
         )
 
 

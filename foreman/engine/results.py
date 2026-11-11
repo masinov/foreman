@@ -7,6 +7,7 @@ from typing import Any, Protocol
 
 from ..models import Project, Task, TokenUsage, utc_now_text
 from ..roles import RoleDefinition
+from .errors import QuotaPauseError
 
 
 @dataclass(slots=True)
@@ -81,3 +82,22 @@ class AgentExecutor(Protocol):
         carried_output: str | None,
     ) -> AgentExecutionResult:
         """Execute one agent step and return normalized results."""
+
+
+def quota_run_result(
+    project: Project,
+    exc: QuotaPauseError,
+    executed_task_ids: list[str],
+    blocked_task_ids: list[str],
+) -> ProjectRunResult:
+    """Summarize a pass that stopped because the backend quota ran out."""
+
+    executed_task_ids.append(exc.task_id)
+    return ProjectRunResult(
+        project_id=project.id,
+        executed_task_ids=tuple(executed_task_ids),
+        blocked_task_ids=tuple(blocked_task_ids),
+        stop_reason="quota_exhausted",
+        retry_after=exc.retry_after,
+        detail=exc.detail,
+    )

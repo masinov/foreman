@@ -14,7 +14,6 @@ from .builtins import BuiltinEventRecord, BuiltinExecutor
 from .context import (
     ProjectContextProjection,
     build_project_context,
-    context_directory,
     relative_project_path,
 )
 from .engine.errors import (
@@ -24,7 +23,14 @@ from .engine.errors import (
     TaskCancelledError,
     TaskExecutionError,
 )
+from .engine.branch_sync import (
+    context_mirror_dirs,
+    prepare_task_branch_for_step,
+    task_working_dir,
+)
 from .engine.evidence import EvidenceBuilder, branch_diff_content
+from .engine.gates import blocked_reason_for_unhandled_outcome, gate_policy_decision
+from .engine.leasing import TASK_LEASE_HEARTBEAT_SECONDS, TaskLeases
 from .engine.limits import (
     active_run_recovery_timeout_seconds,
     project_timeout_seconds,
@@ -41,36 +47,35 @@ from .engine.output_contract import (
     extract_completion_output,
     with_retry_instruction,
 )
+from .engine.prompts import (
+    load_repo_instructions,
+    safe_changed_files,
+    safe_git_status,
+    safe_recent_commits,
+)
+from .engine.records import RunRecords, new_id
 from .engine.results import (
     AgentEventRecord,
     AgentExecutionResult,
     AgentExecutor,
     HumanGateResumeResult,
     ProjectRunResult,
+    quota_run_result,
 )
 from .errors import EngineCommandInterrupt
 from .git import (
     GitError,
     task_commits_on_default_branch,
-    commits_behind,
-    merge_in_progress,
     branch_exists,
-    changed_files,
     head_sha,
-    is_worktree_clean,
-    recent_commits,
     run_git,
-    status_text,
-    sync_branch_with_base,
     worktree_branch,
 )
-from .leases import generate_lease_token
-from .logs import compact_payload, event_log_level, get_logger, log_event
+from .logs import get_logger
 from .guidance import GUIDANCE_DELIVERED_EVENT, pending_guidance, prompt_with_guidance
 from .models import CompletionEvidence, Event, HumanGateDecision, Lease, Project, Run, Sprint, TASK_COMPLEXITIES, TASK_TYPES, Task, TokenUsage, utc_now_text
-from .task_lease import TaskLeaseHeartbeat
-from .notifications import NotificationDispatcher, resolve_notification_policy
-from .policy import GATE_DECISIONS, PolicyMatrix, describe_resolution
+from .notifications import NotificationDispatcher
+from .policy import PolicyMatrix, describe_resolution
 from .outcomes import APPROVE, BLOCKED, DENY, ERROR, normalize_agent_outcome, normalize_reviewer_decision
 from .runner import AgentRunConfig, ClaudeCodeRunner, CodexRunner, PreflightError, run_with_retry
 from .runner.base import AgentRunner as NativeAgentRunner
@@ -118,7 +123,7 @@ class ForemanOrchestrator:
     _LEASE_LIVENESS_THRESHOLD_SECONDS = 60.0
     # Well inside both the 300-second lease and the 60-second liveness window
     # above; see foreman/task_lease.py.
-    _TASK_LEASE_HEARTBEAT_SECONDS = 20.0
+    _TASK_LEASE_HEARTBEAT_SECONDS = TASK_LEASE_HEARTBEAT_SECONDS
 
     def __init__(
         self,
@@ -168,6 +173,7 @@ class ForemanOrchestrator:
         #: announce without a transport, and so a caller that has no business
         #: notifying anyone can pass one that does nothing.
         self.notifier = notifier if notifier is not None else NotificationDispatcher(store)
+        self.records = RunRecords(store, self.notifier)
         self.runner_sleep = runner_sleep
         self.utc_now = utc_now or (lambda: datetime.now(timezone.utc))
         self.holder_id = holder_id or str(uuid4())
@@ -178,8 +184,9 @@ class ForemanOrchestrator:
             if native_step_heartbeat_seconds is not None
             else self._DEFAULT_NATIVE_STEP_HEARTBEAT_SECONDS
         )
-        self._task_lease_tokens: dict[str, str] = {}
-        self._task_lease_heartbeats: dict[str, TaskLeaseHeartbeat] = {}
+        self.leases = TaskLeases(
+            store, self.holder_id, heartbeat_seconds=self._TASK_LEASE_HEARTBEAT_SECONDS
+        )
         self._worktree_managers: dict[str, WorktreeManager] = {}
         #: Called with the running task id before every workflow step and on
         #: every silent-agent tick. The resident engine supplies it so an
@@ -188,6 +195,11 @@ class ForemanOrchestrator:
         #: ``EngineCommandInterrupt`` to stop the step. A one-shot ``foreman
         #: run`` leaves it None and behaves exactly as before.
         self.command_poll = command_poll
+
+    def close(self) -> None:
+        """Stop the background work this orchestrator started."""
+
+        self.leases.close()
 
     def worktrees(self, project: Project) -> WorktreeManager:
         """Return the worktree manager for one project, created once per run."""
@@ -302,29 +314,13 @@ class ForemanOrchestrator:
     ) -> None:
         """Record one worktree-lifecycle event against a synthetic system run."""
 
-        run = self._create_system_run(
+        run = self.records.create_system_run(
             task,
             workflow_step="orchestrator",
             outcome="success",
             detail=detail,
         )
-        self._emit_event(run, event_type, payload)
-
-    def _task_working_dir(self, project: Project, task: Task) -> Path:
-        """Return the directory a step for this task should run in."""
-
-        recorded = task.worktree_path
-        if recorded and Path(recorded).is_dir():
-            return Path(recorded)
-        return Path(project.repo_path)
-
-    def _context_mirror_dirs(self, project: Project, task: Task) -> tuple[Path, ...]:
-        """Return the worktree context directory the projection is mirrored into."""
-
-        working_dir = self._task_working_dir(project, task)
-        if working_dir == Path(project.repo_path):
-            return ()
-        return (context_directory(project, root=working_dir),)
+        self.records.emit_event(run, event_type, payload)
 
     def _poll_commands(self, task_id: str) -> None:
         """Give the resident engine a chance to interrupt this task.
@@ -383,111 +379,6 @@ class ForemanOrchestrator:
             setattr(task, name, getattr(fresh, name))
         return fresh
 
-    def _acquire_task_lease(self, task: Task, project: Project) -> str | None:
-        """Acquire a lease on a task. Returns the lease token or None if denied."""
-        token = generate_lease_token()
-        lease = self.store.acquire_lease(
-            project_id=project.id,
-            resource_type="task",
-            resource_id=task.id,
-            holder_id=self.holder_id,
-            lease_token=token,
-        )
-        if lease is None:
-            return None
-        self._task_lease_tokens[task.id] = token
-        return token
-
-    def _start_task_lease_heartbeat(self, task: Task, project: Project, token: str) -> None:
-        """Renew the lease on a timer while this engine works on the task.
-
-        ``run_task`` starts the timer and stops it when it returns or raises,
-        so the timer never outlives the work it vouches for. A step is not
-        obliged to produce output, and a built-in step produces none the
-        orchestrator sees, so renewal cannot depend on step activity.
-        An in-memory database has one connection and no second process to
-        defend against; it gets no heartbeat thread.
-        """
-
-        previous = self._task_lease_heartbeats.pop(task.id, None)
-        if previous is not None:
-            previous.stop()
-        if self.store.db_path == ":memory:" or self._TASK_LEASE_HEARTBEAT_SECONDS <= 0:
-            return
-        heartbeat = TaskLeaseHeartbeat(
-            db_path=self.store.db_path,
-            project_id=project.id,
-            task_id=task.id,
-            holder_id=self.holder_id,
-            lease_token=token,
-            interval_seconds=self._TASK_LEASE_HEARTBEAT_SECONDS,
-        )
-        heartbeat.start()
-        self._task_lease_heartbeats[task.id] = heartbeat
-
-    def _stop_task_lease_heartbeat(self, task_id: str) -> bool:
-        """Stop the timer for one task. Returns whether one was running."""
-
-        heartbeat = self._task_lease_heartbeats.pop(task_id, None)
-        if heartbeat is None:
-            return False
-        heartbeat.stop()
-        return True
-
-    def _forget_task_lease(self, task_id: str) -> str | None:
-        """Stop heartbeating a task and drop its token without releasing it."""
-
-        self._stop_task_lease_heartbeat(task_id)
-        return self._task_lease_tokens.pop(task_id, None)
-
-    def close(self) -> None:
-        """Stop every lease heartbeat this orchestrator started.
-
-        Leases whose tokens are still held are left to expire on their own,
-        which is what a crashed engine's leases do.
-        """
-
-        for task_id in list(self._task_lease_heartbeats):
-            self._stop_task_lease_heartbeat(task_id)
-
-    def _release_task_lease(self, task: Task, project: Project) -> None:
-        """Release the lease on a task if held by this orchestrator."""
-        token = self._forget_task_lease(task.id)
-        if token is not None:
-            self.store.release_lease(
-                project_id=project.id,
-                resource_type="task",
-                resource_id=task.id,
-                holder_id=self.holder_id,
-                lease_token=token,
-            )
-
-    def _renew_task_lease(self, task: Task, project: Project) -> bool:
-        """Renew the lease on a task held by this orchestrator.
-
-        Returns True when renewed, False when this orchestrator holds no
-        token for the task. Raises ``LeaseLostError`` when the token exists
-        but the store refuses the renewal, meaning the lease expired or was
-        taken over: continuing would race the new holder in the same checkout.
-        """
-        token = self._task_lease_tokens.get(task.id)
-        if token is None:
-            return False
-        renewed = self.store.renew_lease(
-            project_id=project.id,
-            resource_type="task",
-            resource_id=task.id,
-            holder_id=self.holder_id,
-            lease_token=token,
-        )
-        if renewed is None:
-            self._forget_task_lease(task.id)
-            raise LeaseLostError(
-                f"Lease on task {task.id!r} was lost (expired or taken over by another "
-                "engine). Stopping this engine without touching the task."
-            )
-        return True
-
     def run_project(
         self,
         project_id: str,
@@ -523,14 +414,14 @@ class ForemanOrchestrator:
                 )
             # Acquire the lease before running; skip if task is already leased
             # by another orchestrator.
-            if self._acquire_task_lease(task, project) is None:
+            if self.leases.acquire(task, project) is None:
                 raise OrchestratorError(
                     f"Task {task_id!r} is already leased by another orchestrator."
                 )
             try:
                 completed = self._run_task_isolated(project, workflow, task)
             except QuotaPauseError as exc:
-                return self._quota_run_result(project, exc, executed_task_ids, blocked_task_ids)
+                return quota_run_result(project, exc, executed_task_ids, blocked_task_ids)
             executed_task_ids.append(completed.id)
             if completed.status == "blocked":
                 blocked_task_ids.append(completed.id)
@@ -549,7 +440,7 @@ class ForemanOrchestrator:
                 try:
                     completed = self._run_task_isolated(project, workflow, task)
                 except QuotaPauseError as exc:
-                    return self._quota_run_result(
+                    return quota_run_result(
                         project, exc, executed_task_ids, blocked_task_ids
                     )
                 executed_task_ids.append(completed.id)
@@ -614,25 +505,6 @@ class ForemanOrchestrator:
         except Exception as exc:
             raise TaskExecutionError(task.id, exc) from exc
 
-    def _quota_run_result(
-        self,
-        project: Project,
-        exc: QuotaPauseError,
-        executed_task_ids: list[str],
-        blocked_task_ids: list[str],
-    ) -> ProjectRunResult:
-        """Summarize a pass that stopped because the backend quota ran out."""
-
-        executed_task_ids.append(exc.task_id)
-        return ProjectRunResult(
-            project_id=project.id,
-            executed_task_ids=tuple(executed_task_ids),
-            blocked_task_ids=tuple(blocked_task_ids),
-            stop_reason="quota_exhausted",
-            retry_after=exc.retry_after,
-            detail=exc.detail,
-        )
-
     def _pause_for_quota(
         self,
         project: Project,
@@ -660,7 +532,7 @@ class ForemanOrchestrator:
         task.workflow_current_step = step
         task.workflow_carried_output = carried_output
         self._save_task(task)
-        self._emit_event(
+        self.records.emit_event(
             run,
             "engine.quota_exhausted",
             {
@@ -670,7 +542,7 @@ class ForemanOrchestrator:
                 "error": result.detail,
             },
         )
-        self._release_task_lease(task, project)
+        self.leases.release(task, project)
 
     def block_task_for_error(
         self,
@@ -694,14 +566,14 @@ class ForemanOrchestrator:
 
         project = self.store.get_project(task.project_id)
         if project is not None:
-            self._release_task_lease(task, project)
+            self.leases.release(task, project)
 
         workflow_step = task.workflow_current_step or "orchestrator"
         if task.status not in {"done", "cancelled"}:
             task.status = "blocked"
             task.blocked_reason = reason
             self._save_task(task)
-        self._create_system_run(
+        self.records.create_system_run(
             task,
             workflow_step=workflow_step,
             outcome="blocked",
@@ -724,7 +596,7 @@ class ForemanOrchestrator:
             return
         project = self.store.get_project(task.project_id)
         if project is not None:
-            self._release_task_lease(task, project)
+            self.leases.release(task, project)
 
     def stop_task(self, task_id: str, *, reason: str) -> Task | None:
         """Park one task as ``blocked`` at an operator's request.
@@ -742,7 +614,7 @@ class ForemanOrchestrator:
             return None
         project = self.store.get_project(task.project_id)
         if project is not None:
-            self._release_task_lease(task, project)
+            self.leases.release(task, project)
         if task.status in {"done", "cancelled"}:
             return task
         task.status = "blocked"
@@ -772,16 +644,16 @@ class ForemanOrchestrator:
 
         task = self.store.get_task(task_id) if task_id else None
         if task is None:
-            task = self._select_project_system_task(project_id)
+            task = self.records.select_project_system_task(project_id)
         if task is None:
             return None
-        run = self._create_system_run(
+        run = self.records.create_system_run(
             task,
             workflow_step=task.workflow_current_step or workflow_step,
             outcome=outcome,
             detail=detail,
         )
-        return self._emit_event(run, event_type, payload)
+        return self.records.emit_event(run, event_type, payload)
 
     def _activate_first_planned_sprint(self, project_id: str) -> Sprint | None:
         """Activate the first planned sprint when project-scoped execution starts idle."""
@@ -821,7 +693,7 @@ class ForemanOrchestrator:
                 # For resumption, try to acquire the lease. If the old holder is
                 # still alive (lease not expired), skip this task to avoid stealing
                 # work. If the lease has expired, we take it over.
-                if self._acquire_task_lease(task, project) is None:
+                if self.leases.acquire(task, project) is None:
                     return None  # Another orchestrator holds an active lease.
                 return task
         if any(
@@ -849,7 +721,7 @@ class ForemanOrchestrator:
                 continue
             # Lease the task before returning it. If denied, another
             # orchestrator holds it — skip to the next candidate.
-            if self._acquire_task_lease(task, project) is None:
+            if self.leases.acquire(task, project) is None:
                 continue
             return task
         return None
@@ -875,7 +747,7 @@ class ForemanOrchestrator:
                 # For resumption, try to acquire the lease. If the old holder is
                 # still alive (lease not expired), skip this task to avoid
                 # stealing work. If the lease has expired, we take it over.
-                if self._acquire_task_lease(task, project) is None:
+                if self.leases.acquire(task, project) is None:
                     return None  # Another orchestrator holds an active lease.
                 return task
         if any(
@@ -901,7 +773,7 @@ class ForemanOrchestrator:
         )
         self._save_task(placeholder)
         # Acquire lease for the new placeholder immediately.
-        if self._acquire_task_lease(placeholder, project) is None:
+        if self.leases.acquire(placeholder, project) is None:
             # Race: another orchestrator created one first; reload and return it.
             sprint_tasks = self.store.list_tasks(sprint_id=sprint.id)
             for task in sprint_tasks:
@@ -918,13 +790,13 @@ class ForemanOrchestrator:
     ) -> Task:
         """Run one task from the workflow entry step, heartbeating its lease throughout."""
 
-        token = self._task_lease_tokens.get(task.id)
+        token = self.leases.token_for(task.id)
         if token is not None:
-            self._start_task_lease_heartbeat(task, project, token)
+            self.leases.start_heartbeat(task, project, token)
         try:
             return self._run_leased_task(project, workflow, task)
         finally:
-            self._stop_task_lease_heartbeat(task.id)
+            self.leases.stop_heartbeat(task.id)
 
     def _run_leased_task(
         self,
@@ -1032,7 +904,7 @@ class ForemanOrchestrator:
                     project,
                     current_task=refreshed,
                     carried_output=refreshed.workflow_carried_output,
-                    mirror_dirs=self._context_mirror_dirs(project, refreshed),
+                    mirror_dirs=context_mirror_dirs(project, refreshed),
                 ),
             )
         return refreshed
@@ -1113,7 +985,7 @@ class ForemanOrchestrator:
                 and not native_backend_available
             )
         deferred = deferred or defer
-        decision_run = self._create_system_run(
+        decision_run = self.records.create_system_run(
             current_task,
             workflow_step=paused_step.id,
             outcome=outcome,
@@ -1121,7 +993,7 @@ class ForemanOrchestrator:
             role_id="_builtin:human_gate",
             agent_backend="human",
         )
-        self._emit_event(
+        self.records.emit_event(
             decision_run,
             "workflow.transition",
             {
@@ -1138,7 +1010,7 @@ class ForemanOrchestrator:
         }
         if note:
             event_payload["note"] = note
-        self._emit_event(
+        self.records.emit_event(
             decision_run,
             "workflow.resumed",
             event_payload,
@@ -1146,7 +1018,7 @@ class ForemanOrchestrator:
 
         # Persist human gate decision as a durable audit record
         human_decision = HumanGateDecision(
-            id=_new_id("hg"),
+            id=new_id("hg"),
             task_id=current_task.id,
             project_id=project.id,
             workflow_step=paused_step.id,
@@ -1213,7 +1085,7 @@ class ForemanOrchestrator:
                     project,
                     current_task=refreshed,
                     carried_output=refreshed.workflow_carried_output,
-                    mirror_dirs=self._context_mirror_dirs(project, refreshed),
+                    mirror_dirs=context_mirror_dirs(project, refreshed),
                 ),
             )
         return HumanGateResumeResult(
@@ -1267,12 +1139,12 @@ class ForemanOrchestrator:
         """Mark every run still ``running`` for a task as failed."""
 
         for run in self.store.list_runs(task_id=task_id, status="running"):
-            self._complete_run(
+            self.records.complete_run(
                 run,
                 status="failed",
                 outcome=ERROR,
                 detail=detail,
-                session_id=self._session_id_from_events(run) or run.session_id,
+                session_id=self.records.session_id_from_events(run) or run.session_id,
                 failure_type="infrastructure",
             )
 
@@ -1281,14 +1153,14 @@ class ForemanOrchestrator:
 
         for run in self.store.list_runs(task_id=task.id):
             if run.status == "running":
-                self._complete_run(
+                self.records.complete_run(
                     run,
                     status="killed",
                     outcome=ERROR,
                     detail="Task was cancelled while this step was running.",
                     session_id=run.session_id,
                 )
-        self._release_task_lease(task, project)
+        self.leases.release(task, project)
         refreshed = self.store.get_task(task.id)
         if refreshed is None:
             raise OrchestratorError(f"Task {task.id!r} disappeared during execution.")
@@ -1317,7 +1189,7 @@ class ForemanOrchestrator:
             if stored.status == "blocked":
                 current_task.status = stored.status
                 current_task.blocked_reason = stored.blocked_reason
-                self._release_task_lease(current_task, project)
+                self.leases.release(current_task, project)
                 return stored
 
             step_def = workflow.get_step(current_step)
@@ -1353,13 +1225,13 @@ class ForemanOrchestrator:
                                 f"{current_task.branch_name!r} but is on {active_branch!r}."
                             )
                     except (OrchestratorError, WorktreeError, GitError) as e:
-                        run = self._create_system_run(
+                        run = self.records.create_system_run(
                             current_task,
                             workflow_step=current_step,
                             outcome="blocked",
                             detail=str(e),
                         )
-                        self._emit_event(
+                        self.records.emit_event(
                             run,
                             "engine.branch_violation",
                             {
@@ -1373,7 +1245,7 @@ class ForemanOrchestrator:
                         current_task.workflow_carried_output = None
                         self._save_task(current_task)
                         current_step = None
-                        self._release_task_lease(current_task, project)
+                        self.leases.release(current_task, project)
                         break
 
             visit_count = current_task.step_visit_counts.get(current_step, 0) + 1
@@ -1387,14 +1259,14 @@ class ForemanOrchestrator:
                     f"Step '{current_step}' visited {visit_count} times "
                     f"(limit: {max_step_visits}). Stuck in a loop."
                 )
-                run = self._create_system_run(
+                run = self.records.create_system_run(
                     current_task,
                     workflow_step=current_step,
                     outcome="blocked",
                     detail=detail,
                     attention_trigger="loop_limit",
                 )
-                self._emit_event(
+                self.records.emit_event(
                     run,
                     "workflow.loop_limit",
                     {
@@ -1413,13 +1285,13 @@ class ForemanOrchestrator:
             # 0 is the documented "off" value, and what the settings screen saves.
             if cost_limit > 0 and task_cost >= cost_limit:
                 detail = f"Task cost ${task_cost:.2f} exceeds limit ${cost_limit:.2f}"
-                run = self._create_system_run(
+                run = self.records.create_system_run(
                     current_task,
                     workflow_step=current_step,
                     outcome="blocked",
                     detail=detail,
                 )
-                self._emit_event(
+                self.records.emit_event(
                     run,
                     "gate.cost_exceeded",
                     {
@@ -1445,13 +1317,13 @@ class ForemanOrchestrator:
                     f"Sprint cost ${sprint_cost:.2f} exceeds limit "
                     f"${sprint_cost_limit:.2f}"
                 )
-                run = self._create_system_run(
+                run = self.records.create_system_run(
                     current_task,
                     workflow_step=current_step,
                     outcome="blocked",
                     detail=detail,
                 )
-                self._emit_event(
+                self.records.emit_event(
                     run,
                     "gate.cost_exceeded",
                     {
@@ -1472,13 +1344,13 @@ class ForemanOrchestrator:
             time_limit_ms = settings.time_limit_per_task_ms
             if time_limit_ms > 0 and task_duration_ms >= time_limit_ms:
                 detail = f"Task time {task_duration_ms/1000:.1f}s exceeds limit {time_limit_ms/1000:.1f}s"
-                run = self._create_system_run(
+                run = self.records.create_system_run(
                     current_task,
                     workflow_step=current_step,
                     outcome="blocked",
                     detail=detail,
                 )
-                self._emit_event(
+                self.records.emit_event(
                     run,
                     "gate.time_exceeded",
                     {
@@ -1500,7 +1372,7 @@ class ForemanOrchestrator:
                 (
                     carried_output,
                     branch_sync_event,
-                ) = self._prepare_task_branch_for_step(
+                ) = prepare_task_branch_for_step(
                     project=project,
                     task=current_task,
                     step=current_step,
@@ -1521,19 +1393,19 @@ class ForemanOrchestrator:
             self._poll_commands(current_task.id)
 
             if step_def.role == "_builtin:human_gate":
-                run = self._create_running_run(
+                run = self.records.create_running_run(
                     current_task,
                     role_id=step_def.role,
                     workflow_step=current_step,
                     agent_backend="builtin",
                 )
-                self._emit_event(
+                self.records.emit_event(
                     run,
                     "workflow.step_started",
                     {"step": current_step, "visit_count": visit_count},
                 )
                 self._emit_policy_resolved(run, project, current_task)
-                gate_policy = self._gate_policy_decision(project, current_task, step_def)
+                gate_policy = gate_policy_decision(project, current_task, step_def)
                 if gate_policy == "auto":
                     outcome, detail = self._auto_approve_gate(
                         run, project, current_task, step_def
@@ -1547,17 +1419,17 @@ class ForemanOrchestrator:
                         carried_output=carried_output,
                         store=self.store,
                         event_recorder=lambda event_record: self._persist_builtin_event(run, event_record),
-                        working_dir=self._task_working_dir(project, current_task),
+                        working_dir=task_working_dir(project, current_task),
                     )
                     self._save_task(current_task)
-                    self._complete_run(
+                    self.records.complete_run(
                         run,
                         status="completed",
                         outcome=result.outcome,
                         detail=result.detail,
                     )
                     self._emit_builtin_events(run, result.events)
-                    self._emit_event(
+                    self.records.emit_event(
                         run,
                         "workflow.paused",
                         {
@@ -1566,23 +1438,23 @@ class ForemanOrchestrator:
                             "policy": step_def.policy,
                             # What the project asked to be told about; the
                             # delivery worker acts on this persisted decision.
-                            "notify": self._notification_policy(project, current_task),
+                            "notify": self.records.notification_policy(project, current_task),
                         },
                     )
                     # A task waiting for a person is not being worked on. Left
                     # held, the lease made the engine wait out its remaining
                     # lifetime before it could act on the decision.
-                    self._release_task_lease(current_task, project)
+                    self.leases.release(current_task, project)
                     return current_task
 
             elif step_def.role.startswith("_builtin:"):
-                run = self._create_running_run(
+                run = self.records.create_running_run(
                     current_task,
                     role_id=step_def.role,
                     workflow_step=current_step,
                     agent_backend="builtin",
                 )
-                self._emit_event(
+                self.records.emit_event(
                     run,
                     "workflow.step_started",
                     {"step": current_step, "visit_count": visit_count},
@@ -1597,10 +1469,10 @@ class ForemanOrchestrator:
                     carried_output=carried_output,
                     store=self.store,
                     evidence_builder=self.build_completion_evidence,
-                    working_dir=self._task_working_dir(project, current_task),
+                    working_dir=task_working_dir(project, current_task),
                 )
                 self._save_task(current_task)
-                self._complete_run(
+                self.records.complete_run(
                     run,
                     status="completed",
                     outcome=result.outcome,
@@ -1615,10 +1487,10 @@ class ForemanOrchestrator:
                 # and never routes through ``_create_system_run``; raise the one
                 # attention-needed turn here so supervision still fires.
                 if result.outcome == BLOCKED:
-                    self._emit_attention_needed(
+                    self.records.emit_attention_needed(
                         run,
                         current_task.id,
-                        self._attention_trigger_for_block(current_task),
+                        self.records.attention_trigger_for_block(current_task),
                     )
                 outcome = normalize_agent_outcome(result.outcome)
                 detail = result.detail
@@ -1634,7 +1506,7 @@ class ForemanOrchestrator:
                     project,
                     current_task=current_task,
                     carried_output=carried_output,
-                    mirror_dirs=self._context_mirror_dirs(project, current_task),
+                    mirror_dirs=context_mirror_dirs(project, current_task),
                 )
                 prompt = self._build_prompt(
                     role,
@@ -1656,7 +1528,7 @@ class ForemanOrchestrator:
                     visit_count=visit_count,
                 )
                 model = model_selection.model or ""
-                run = self._create_running_run(
+                run = self.records.create_running_run(
                     current_task,
                     role_id=role.id,
                     workflow_step=current_step,
@@ -1665,7 +1537,7 @@ class ForemanOrchestrator:
                     branch_name=current_task.branch_name,
                     prompt_text=prompt,
                 )
-                self._emit_event(
+                self.records.emit_event(
                     run,
                     "workflow.model_selected",
                     {
@@ -1675,7 +1547,7 @@ class ForemanOrchestrator:
                         "source": model_selection.source,
                     },
                 )
-                self._emit_event(
+                self.records.emit_event(
                     run,
                     "engine.role_policy",
                     {
@@ -1690,14 +1562,14 @@ class ForemanOrchestrator:
                     project,
                     context_projection=context_projection,
                 )
-                self._emit_event(
+                self.records.emit_event(
                     run,
                     "agent.prompt",
                     {"text": prompt},
                     role_id=role.id,
                 )
                 if guidance:
-                    self._emit_event(
+                    self.records.emit_event(
                         run,
                         GUIDANCE_DELIVERED_EVENT,
                         {
@@ -1706,7 +1578,7 @@ class ForemanOrchestrator:
                             "step": current_step,
                         },
                     )
-                self._emit_event(
+                self.records.emit_event(
                     run,
                     "workflow.step_started",
                     {"step": current_step, "visit_count": visit_count},
@@ -1714,7 +1586,7 @@ class ForemanOrchestrator:
                 self._emit_policy_resolved(run, project, current_task)
                 if branch_sync_event is not None:
                     event_type, payload = branch_sync_event
-                    self._emit_event(run, event_type, payload)
+                    self.records.emit_event(run, event_type, payload)
                 session_key = (role.id, role.agent.backend)
                 session_id: str | None = None
                 if role.agent.session_persistence:
@@ -1747,7 +1619,7 @@ class ForemanOrchestrator:
                 )
                 if not result.events_streamed:
                     self._emit_agent_events(run, current_task, project, role.id, result.events)
-                self._complete_run(
+                self.records.complete_run(
                     run,
                     status=result.status,
                     outcome=result.outcome,
@@ -1767,7 +1639,7 @@ class ForemanOrchestrator:
                     else contract_retry_reason(role, result)
                 )
                 if retry_reason is not None:
-                    self._emit_event(
+                    self.records.emit_event(
                         run,
                         "engine.output_contract_retry",
                         {
@@ -1783,7 +1655,7 @@ class ForemanOrchestrator:
                         retry_reason,
                     )
                     retry_session_id = result.session_id or session_id
-                    retry_run = self._create_running_run(
+                    retry_run = self.records.create_running_run(
                         current_task,
                         role_id=role.id,
                         workflow_step=current_step,
@@ -1797,7 +1669,7 @@ class ForemanOrchestrator:
                         project,
                         context_projection=context_projection,
                     )
-                    self._emit_event(
+                    self.records.emit_event(
                         retry_run,
                         "workflow.step_started",
                         {
@@ -1832,7 +1704,7 @@ class ForemanOrchestrator:
                             role.id,
                             retry_result.events,
                         )
-                    self._complete_run(
+                    self.records.complete_run(
                         retry_run,
                         status=retry_result.status,
                         outcome=retry_result.outcome,
@@ -1869,7 +1741,7 @@ class ForemanOrchestrator:
                     # A decision is about the commit the reviewer saw. Record
                     # it, so evidence can tell an approval of the head commit
                     # from an approval of an earlier one.
-                    self._emit_event(
+                    self.records.emit_event(
                         run,
                         "engine.review_recorded",
                         {
@@ -1897,7 +1769,7 @@ class ForemanOrchestrator:
                 and "task_started" in self.roles[step_def.role].signals
                 and not self._autonomous_gap_recorded(current_task)
             ):
-                self._emit_event(
+                self.records.emit_event(
                     run,
                     "workflow.autonomous_contract_missing",
                     {
@@ -1911,7 +1783,7 @@ class ForemanOrchestrator:
                     },
                 )
 
-            self._emit_event(
+            self.records.emit_event(
                 run,
                 "workflow.step_completed",
                 {"step": current_step, "outcome": outcome},
@@ -1950,13 +1822,13 @@ class ForemanOrchestrator:
                     f"merge step (first: {leaked_commits[0][:12]}). The task's work must "
                     "reach the default branch only through the workflow's merge."
                 )
-                run = self._create_system_run(
+                run = self.records.create_system_run(
                     current_task,
                     workflow_step=current_step,
                     outcome="blocked",
                     detail=detail,
                 )
-                self._emit_event(
+                self.records.emit_event(
                     run,
                     "engine.branch_violation",
                     {
@@ -1971,7 +1843,7 @@ class ForemanOrchestrator:
                 current_task.workflow_carried_output = None
                 self._save_task(current_task)
                 current_step = None
-                self._release_task_lease(current_task, project)
+                self.leases.release(current_task, project)
                 break
 
             transition = workflow.find_transition(current_step, outcome)
@@ -1981,16 +1853,16 @@ class ForemanOrchestrator:
                     current_task.workflow_carried_output = None
                     self._save_task(current_task)
                     current_step = None
-                    self._release_task_lease(current_task, project)
+                    self.leases.release(current_task, project)
                     break
 
-                self._emit_event(
+                self.records.emit_event(
                     run,
                     "workflow.no_transition",
                     {"step": current_step, "outcome": outcome},
                 )
                 current_task.status = "blocked"
-                current_task.blocked_reason = self._blocked_reason_for_unhandled_outcome(
+                current_task.blocked_reason = blocked_reason_for_unhandled_outcome(
                     workflow=workflow,
                     step=current_step,
                     outcome=outcome,
@@ -2000,10 +1872,10 @@ class ForemanOrchestrator:
                 current_task.workflow_carried_output = None
                 self._save_task(current_task)
                 current_step = None
-                self._release_task_lease(current_task, project)
+                self.leases.release(current_task, project)
                 continue
 
-            self._emit_event(
+            self.records.emit_event(
                 run,
                 "workflow.transition",
                 {
@@ -2015,7 +1887,7 @@ class ForemanOrchestrator:
             carried_output = detail if transition.carry_output else None
             if transition.trigger == "completion:conflict":
                 current_task.step_visit_counts = {}
-                self._emit_event(
+                self.records.emit_event(
                     run,
                     "workflow.step_visit_reset",
                     {
@@ -2037,38 +1909,15 @@ class ForemanOrchestrator:
 
             # Renew lease after each step (heartbeat during workflow execution).
             if current_step is not None:
-                self._renew_task_lease(current_task, project)
+                self.leases.renew(current_task, project)
 
         # Every path that parks a task leaves it ``blocked``: a gate, a loop
         # or cost limit, a failed guard. A parked task is not being worked on,
         # so nothing may keep holding (and heartbeating) its lease.
         if current_task.status == "blocked":
-            self._release_task_lease(current_task, project)
+            self.leases.release(current_task, project)
 
         return current_task
-
-    def _gate_policy_decision(
-        self,
-        project: Project,
-        task: Task,
-        step: WorkflowStep,
-    ) -> str:
-        """Return ``auto`` or ``human`` for one human-gate step.
-
-        The answer comes from the project's policy matrix, which resolves the
-        step's policy from the task's overrides, the rule for its task type,
-        and the project default, in that order. Gate steps that name no
-        policy are not part of the matrix and always require a person.
-        """
-
-        policy = step.policy
-        if not policy or policy not in GATE_DECISIONS:
-            return "human"
-        return (
-            PolicyMatrix.for_project(project)
-            .resolve(policy, task_type=task.task_type, overrides=task.executor_overrides)
-            .value
-        )
 
     def _emit_policy_resolved(self, run: Run, project: Project, task: Task) -> None:
         """Record the resolved policy matrix once, on the task's first step.
@@ -2082,7 +1931,7 @@ class ForemanOrchestrator:
         if self.store.has_event(task_id=task.id, event_type="policy.resolved"):
             return
         resolved = PolicyMatrix.for_project(project).resolve_task(task)
-        self._emit_event(
+        self.records.emit_event(
             run,
             "policy.resolved",
             {
@@ -2101,15 +1950,15 @@ class ForemanOrchestrator:
         """Approve a policy-governed gate on the engine's behalf, with an audit record."""
 
         detail = f"Auto-approved by policy ({step.policy}=auto)."
-        self._emit_event(
+        self.records.emit_event(
             run,
             "workflow.gate_auto_approved",
             {"step": step.id, "policy": step.policy},
         )
-        self._complete_run(run, status="completed", outcome=APPROVE, detail=detail)
+        self.records.complete_run(run, status="completed", outcome=APPROVE, detail=detail)
         self.store.save_human_gate_decision(
             HumanGateDecision(
-                id=_new_id("hg"),
+                id=new_id("hg"),
                 task_id=task.id,
                 project_id=project.id,
                 workflow_step=step.id,
@@ -2121,22 +1970,6 @@ class ForemanOrchestrator:
             )
         )
         return (APPROVE, detail)
-
-    def _blocked_reason_for_unhandled_outcome(
-        self,
-        *,
-        workflow: WorkflowDefinition,
-        step: str,
-        outcome: str,
-        detail: str | None,
-    ) -> str:
-        """Return the task block reason for a step outcome with no transition."""
-
-        if outcome in {"error", "killed", "blocked"} and detail:
-            return detail
-        if workflow.fallback is not None:
-            return workflow.fallback.message
-        return f"No transition for '{outcome}' at '{step}'"
 
     def _preflight_worktrees(self, project: Project) -> None:
         """Fail a run at the start when the repository cannot host worktrees.
@@ -2173,13 +2006,13 @@ class ForemanOrchestrator:
                 continue
 
             if not active_runs:
-                system_run = self._create_system_run(
+                system_run = self.records.create_system_run(
                     task,
                     workflow_step=task.workflow_current_step or "orchestrator",
                     outcome="error",
                     detail="Recovered orphaned task without an active run.",
                 )
-                self._emit_event(
+                self.records.emit_event(
                     system_run,
                     "engine.crash_recovery",
                     {
@@ -2216,7 +2049,7 @@ class ForemanOrchestrator:
             run.outcome_detail = "Recovered stale running run after exceeding the active-run limit."
             run.completed_at = now
             self.store.save_run(run)
-            self._emit_event(
+            self.records.emit_event(
                 run,
                 "engine.crash_recovery",
                 {
@@ -2236,10 +2069,10 @@ class ForemanOrchestrator:
         # Expiring that one too made the very next renewal fail, so every
         # resume after a crash cost one wasted agent run. Clear what a dead
         # engine left, then hold the task again.
-        held_by_us = task.id in self._task_lease_tokens
-        heartbeating = task.id in self._task_lease_heartbeats
+        held_by_us = self.leases.holds(task.id)
+        heartbeating = task.id in self.leases.heartbeats
         if held_by_us:
-            self._forget_task_lease(task.id)
+            self.leases.forget(task.id)
         self.store.expire_resource_leases(
             project_id=project.id,
             resource_type="task",
@@ -2247,13 +2080,13 @@ class ForemanOrchestrator:
             force=True,
         )
         if held_by_us:
-            token = self._acquire_task_lease(task, project)
+            token = self.leases.acquire(task, project)
             if token is None:
                 raise LeaseLostError(
                     f"Lease on task {task.id!r} could not be re-acquired after stale-run recovery."
                 )
             if heartbeating:
-                self._start_task_lease_heartbeat(task, project, token)
+                self.leases.start_heartbeat(task, project, token)
 
         task.status = "todo"
         task.blocked_reason = None
@@ -2370,16 +2203,16 @@ class ForemanOrchestrator:
     ) -> None:
         """Emit a project-scoped lifecycle event for a completed pruning operation."""
 
-        task = self._select_project_system_task(project.id)
+        task = self.records.select_project_system_task(project.id)
         if task is None:
             return
-        run = self._create_system_run(
+        run = self.records.create_system_run(
             task,
             workflow_step="orchestrator",
             outcome="success",
             detail=f"{event_type}: {count} rows older than {older_than}.",
         )
-        self._emit_event(run, event_type, {"count": count, "older_than": older_than})
+        self.records.emit_event(run, event_type, {"count": count, "older_than": older_than})
 
     # Keep the old name as a thin delegate so any existing call sites outside
     # this class continue to work during the transition period.
@@ -2388,25 +2221,6 @@ class ForemanOrchestrator:
 
         result = self.prune_old_history(project)
         return result.get("events", 0)
-
-    def _select_project_system_task(self, project_id: str) -> Task | None:
-        """Choose a stable task for project-scoped synthetic orchestrator events."""
-
-        active_tasks = self.store.list_tasks(
-            project_id=project_id,
-            statuses=("in_progress", "blocked"),
-        )
-        if active_tasks:
-            return active_tasks[0]
-
-        active_sprint = self.store.get_active_sprint(project_id)
-        if active_sprint is not None:
-            sprint_tasks = self.store.list_tasks(sprint_id=active_sprint.id)
-            if sprint_tasks:
-                return sprint_tasks[0]
-
-        project_tasks = self.store.list_tasks(project_id=project_id)
-        return project_tasks[0] if project_tasks else None
 
     # ── Sprint advancement ────────────────────────────────────────────────────
 
@@ -2468,13 +2282,13 @@ class ForemanOrchestrator:
     ) -> None:
         """Emit a sprint-scoped lifecycle event via a synthetic run."""
         tasks = self.store.list_tasks(sprint_id=sprint.id)
-        task = tasks[0] if tasks else self._select_project_system_task(project.id)
+        task = tasks[0] if tasks else self.records.select_project_system_task(project.id)
         if task is None:
             return
-        run = self._create_system_run(
+        run = self.records.create_system_run(
             task, workflow_step="orchestrator", outcome="success", detail=event_type
         )
-        self._emit_event(run, event_type, payload)
+        self.records.emit_event(run, event_type, payload)
 
     def _latest_agent_run(self, task_id: str) -> Run | None:
         """Return the most recent completed agent (non-builtin) run for a task.
@@ -2563,19 +2377,19 @@ class ForemanOrchestrator:
             "branch_name": task.branch_name or "",
             "sprint_context": context_projection.context_markdown,
             "project_status": context_projection.status_markdown,
-            "repo_instructions": self._load_repo_instructions(project.repo_path),
+            "repo_instructions": load_repo_instructions(project.repo_path),
             "spec_path": project.spec_path or "",
             "previous_feedback": carried_output or "",
             "previous_output": latest_run.outcome_detail if latest_run else "",
             # Status describes the tree the agent works in; diffs and log come
             # from refs, which every worktree shares.
-            "git_status": self._safe_git_status(self._task_working_dir(project, task)),
-            "changed_files": self._safe_changed_files(
+            "git_status": safe_git_status(task_working_dir(project, task)),
+            "changed_files": safe_changed_files(
                 project.repo_path,
                 project.default_branch,
                 task.branch_name,
             ),
-            "recent_commits": self._safe_recent_commits(project.repo_path, task.branch_name),
+            "recent_commits": safe_recent_commits(project.repo_path, task.branch_name),
             "completion_evidence": (
                 str(evidence)
                 if role.completion.output.extract_decision
@@ -2640,216 +2454,6 @@ class ForemanOrchestrator:
             return f"Branch {branch!r} does not exist in the repository."
         return None
 
-    def _load_repo_instructions(self, repo_path: str) -> str:
-        agents_path = Path(repo_path) / "AGENTS.md"
-        if not agents_path.is_file():
-            return ""
-        return agents_path.read_text(encoding="utf-8")
-
-    def _safe_git_status(self, repo_path: str | Path) -> str:
-        try:
-            return status_text(repo_path)
-        except GitError:
-            return ""
-
-    def _safe_changed_files(
-        self,
-        repo_path: str,
-        target_branch: str,
-        branch_name: str | None,
-    ) -> str:
-        try:
-            return changed_files(
-                repo_path,
-                target_branch=target_branch,
-                branch_name=branch_name,
-            )
-        except GitError:
-            return ""
-
-    def _safe_recent_commits(self, repo_path: str, branch_name: str | None) -> str:
-        try:
-            return recent_commits(repo_path, branch_name=branch_name)
-        except GitError:
-            return ""
-
-    def _prepare_task_branch_for_step(
-        self,
-        *,
-        project: Project,
-        task: Task,
-        step: str,
-        carried_output: str | None,
-    ) -> tuple[str | None, tuple[str, dict[str, Any]] | None]:
-        """Prepare one task branch before a native role step.
-
-        Merge conflicts are special: the next develop pass should work from an
-        existing task branch that has been refreshed against the latest default
-        branch whenever that refresh is clean. If the refresh still conflicts,
-        carry explicit resolution guidance into the developer prompt and force
-        the usual develop -> review cycle after the resolution.
-        """
-
-        if step != "develop" or not task.branch_name:
-            return carried_output, None
-
-        # Every merge below happens in the task's own worktree; the operator's
-        # checkout is never a party to conflict recovery.
-        work_dir = self._task_working_dir(project, task)
-
-        if merge_in_progress(work_dir):
-            # The previous develop pass was cut off (quota, shutdown) while
-            # concluding a merge. Aborting it here would throw away the
-            # developer's conflict resolution; leave the tree as it is and say
-            # so, because the resumed session knows where it stopped.
-            guidance = _append_feedback_note(
-                carried_output,
-                (
-                    f"A merge into branch {task.branch_name!r} is still in progress in the "
-                    "working tree (MERGE_HEAD exists) from the previous pass. Finish "
-                    "resolving it and commit the merge before continuing the task."
-                ),
-            )
-            return (
-                guidance,
-                (
-                    "engine.branch_sync",
-                    {
-                        "step": step,
-                        "branch": task.branch_name,
-                        "target": project.default_branch,
-                        "mode": "merge_in_progress",
-                        "detail": "Unconcluded merge left by the previous pass; not aborted.",
-                    },
-                ),
-            )
-
-        if not _is_merge_conflict_feedback(carried_output):
-            return self._refresh_task_branch(
-                project=project,
-                task=task,
-                step=step,
-                carried_output=carried_output,
-            )
-
-        sync_result = sync_branch_with_base(
-            work_dir,
-            task.branch_name,
-            project.default_branch,
-        )
-        if sync_result.success:
-            guidance = _append_feedback_note(
-                carried_output,
-                (
-                    f"Foreman refreshed branch {task.branch_name!r} with the latest "
-                    f"{project.default_branch!r} before this develop pass. Review the "
-                    "merged base-branch changes, make any remaining adjustments, and end "
-                    "with TASK_COMPLETE. This conflict-resolution pass will go back "
-                    "through code review before merge."
-                ),
-            )
-            return (
-                guidance,
-                (
-                    "engine.branch_sync",
-                    {
-                        "step": step,
-                        "branch": task.branch_name,
-                        "target": project.default_branch,
-                        "mode": "merge_conflict_recovery",
-                        "detail": sync_result.detail,
-                    },
-                ),
-            )
-
-        guidance = _append_feedback_note(
-            carried_output,
-            (
-                f"You are resolving a merge conflict against {project.default_branch!r}. "
-                f"Reconcile branch {task.branch_name!r} with the latest "
-                f"{project.default_branch!r} so it merges cleanly, then complete another "
-                "develop pass. Your conflict-resolution changes will go back through code "
-                "review before merge.\n\n"
-                f"Latest merge attempt detail:\n{sync_result.detail}"
-            ),
-        )
-        return (
-            guidance,
-            (
-                "engine.branch_sync_conflict",
-                {
-                    "step": step,
-                    "branch": task.branch_name,
-                    "target": project.default_branch,
-                    "mode": "merge_conflict_recovery",
-                    "detail": sync_result.detail,
-                },
-            ),
-        )
-
-    def _refresh_task_branch(
-        self,
-        *,
-        project: Project,
-        task: Task,
-        step: str,
-        carried_output: str | None,
-    ) -> tuple[str | None, tuple[str, dict[str, Any]] | None]:
-        """Bring a task branch up to date with the default branch before a develop pass.
-
-        A task can wait a long time between visits (a human gate, a quota
-        reset, a review round) while the default branch moves. Merging the
-        base in now, while the merge is clean, means the developer works on
-        current code and the final merge cannot conflict on changes it never
-        saw. A refresh that conflicts is handed to the developer as guidance,
-        exactly like a merge conflict found at the end.
-        """
-
-        branch = task.branch_name or ""
-        work_dir = self._task_working_dir(project, task)
-        if not branch_exists(project.repo_path, branch):
-            return carried_output, None
-        behind = commits_behind(project.repo_path, branch, project.default_branch)
-        if behind <= 0:
-            return carried_output, None
-        if not is_worktree_clean(work_dir):
-            return carried_output, None
-
-        sync_result = sync_branch_with_base(work_dir, branch, project.default_branch)
-        payload = {
-            "step": step,
-            "branch": branch,
-            "target": project.default_branch,
-            "mode": "refresh",
-            "commits_behind": behind,
-            "detail": sync_result.detail,
-        }
-        if sync_result.success:
-            guidance = _append_feedback_note(
-                carried_output,
-                (
-                    f"Foreman refreshed branch {branch!r} with the latest "
-                    f"{project.default_branch!r} ({behind} new commit(s)) before this "
-                    "develop pass. Review the merged base-branch changes where they touch "
-                    "your work; no other action is needed."
-                ),
-            )
-            return guidance, ("engine.branch_sync", payload)
-
-        payload["mode"] = "refresh_conflict"
-        guidance = _append_feedback_note(
-            carried_output,
-            (
-                f"Branch {branch!r} is {behind} commit(s) behind {project.default_branch!r} "
-                "and merging the base branch into it conflicts. Reconcile the branch with "
-                f"the latest {project.default_branch!r} first (resolve the conflict, commit "
-                "the merge), then continue the task. The result goes through test and "
-                "review as usual.\n\n"
-                f"Merge attempt detail:\n{sync_result.detail}"
-            ),
-        )
-        return guidance, ("engine.branch_sync_conflict", payload)
-
     def _write_runtime_context(
         self,
         run: Run,
@@ -2859,7 +2463,7 @@ class ForemanOrchestrator:
     ) -> None:
         context_projection.write()
         for path in context_projection.written_paths:
-            self._emit_event(
+            self.records.emit_event(
                 run,
                 "engine.context_write",
                 {"path": relative_project_path(project, path)},
@@ -2928,7 +2532,7 @@ class ForemanOrchestrator:
         gate_type: str,
         release_lease: bool,
     ) -> None:
-        self._emit_event(
+        self.records.emit_event(
             run,
             "agent.killed",
             {"reason": reason, "gate_type": gate_type},
@@ -2936,32 +2540,17 @@ class ForemanOrchestrator:
         # The backend announced its session id at start; keep it on the run
         # so the resumed step continues that conversation instead of
         # re-reading the repository from scratch.
-        self._complete_run(
+        self.records.complete_run(
             run,
             status="killed",
             outcome=ERROR,
             detail=reason,
-            session_id=self._session_id_from_events(run) or run.session_id,
+            session_id=self.records.session_id_from_events(run) or run.session_id,
         )
         if release_lease:
-            self._release_task_lease(task, project)
+            self.leases.release(task, project)
         else:
-            self._forget_task_lease(task.id)
-
-    def _session_id_from_events(self, run: Run) -> str | None:
-        """Return the backend session id announced during ``run``, if any.
-
-        Runners emit ``agent.session`` as soon as the backend reports its
-        session (Claude Code's ``init`` line); completion payloads repeat it,
-        but a run that is killed or interrupted never reaches completion.
-        """
-
-        for event in reversed(self.store.list_events(run_id=run.id)):
-            if event.event_type == "agent.session":
-                session_id = _optional_string(event.payload.get("session_id"))
-                if session_id:
-                    return session_id
-        return None
+            self.leases.forget(task.id)
 
     def _execute_agent_step(
         self,
@@ -3064,7 +2653,7 @@ class ForemanOrchestrator:
             prompt=prompt,
             # The agent edits its task's own worktree, never the operator's
             # checkout.
-            working_dir=self._task_working_dir(project, task),
+            working_dir=task_working_dir(project, task),
             session_id=session_id,
             permission_mode=role.agent.permission_mode,
             disallowed_tools=role.agent.tools.disallowed,
@@ -3119,7 +2708,7 @@ class ForemanOrchestrator:
                     or (now - last_heartbeat).total_seconds() >= heartbeat_interval
                 )
             ):
-                self._renew_task_lease(task, project)
+                self.leases.renew(task, project)
                 last_heartbeat = now
             if event.event_type == "agent.tick":
                 # Silent-child ticks exist only to drive the heartbeat above
@@ -3300,7 +2889,7 @@ class ForemanOrchestrator:
         events: tuple[AgentEventRecord, ...],
     ) -> None:
         for event_record in events:
-            self._emit_event(
+            self.records.emit_event(
                 run,
                 event_record.event_type,
                 event_record.payload,
@@ -3319,7 +2908,7 @@ class ForemanOrchestrator:
     ) -> None:
         """Persist one agent event immediately while a native step is active."""
 
-        self._emit_event(
+        self.records.emit_event(
             run,
             event_record.event_type,
             event_record.payload,
@@ -3345,7 +2934,7 @@ class ForemanOrchestrator:
             signal_name = event_record.event_type.removeprefix("signal.")
             role = self.roles.get(role_id)
             if role is not None and signal_name not in role.signals:
-                self._emit_event(
+                self.records.emit_event(
                     run,
                     "signal.rejected",
                     {
@@ -3384,7 +2973,7 @@ class ForemanOrchestrator:
                     refused["branch"] = problem
             self._save_task(task, include_definition=True)
             for field_name, reason in refused.items():
-                self._emit_event(
+                self.records.emit_event(
                     run,
                     "signal.rejected",
                     {
@@ -3405,7 +2994,7 @@ class ForemanOrchestrator:
             raw_complexity = _optional_string(payload.get("complexity"))
             complexity = raw_complexity if raw_complexity in TASK_COMPLEXITIES else None
             created_task = Task(
-                id=_new_id("task"),
+                id=new_id("task"),
                 sprint_id=sprint.id,
                 project_id=project.id,
                 title=str(payload.get("title", "(agent-created task)")),
@@ -3418,7 +3007,7 @@ class ForemanOrchestrator:
                 created_at=event_record.timestamp,
             )
             self._save_task(created_task)
-            self._emit_event(
+            self.records.emit_event(
                 run,
                 "engine.task_created",
                 {
@@ -3436,8 +3025,8 @@ class ForemanOrchestrator:
                 task.status = "blocked"
                 task.blocked_reason = message
                 self._save_task(task)
-                self._release_task_lease(task, project)
-                self._emit_attention_needed(run, task.id, "task_blocked")
+                self.leases.release(task, project)
+                self.records.emit_attention_needed(run, task.id, "task_blocked")
 
     def _emit_builtin_events(
         self,
@@ -3447,7 +3036,7 @@ class ForemanOrchestrator:
         for event_record in events:
             payload = dict(event_record.payload)
             payload["schema_version"] = event_record.schema_version
-            self._emit_event(run, event_record.event_type, payload)
+            self.records.emit_event(run, event_record.event_type, payload)
 
     def _persist_builtin_event(
         self,
@@ -3458,106 +3047,7 @@ class ForemanOrchestrator:
 
         payload = dict(event_record.payload)
         payload["schema_version"] = event_record.schema_version
-        self._emit_event(run, event_record.event_type, payload)
-
-    def _create_running_run(
-        self,
-        task: Task,
-        *,
-        role_id: str,
-        workflow_step: str,
-        agent_backend: str,
-        model: str | None = None,
-        branch_name: str | None = None,
-        prompt_text: str | None = None,
-    ) -> Run:
-        now = utc_now_text()
-        run = Run(
-            id=_new_id("run"),
-            task_id=task.id,
-            project_id=task.project_id,
-            role_id=role_id,
-            workflow_step=workflow_step,
-            agent_backend=agent_backend,
-            status="running",
-            model=model,
-            branch_name=branch_name,
-            prompt_text=prompt_text,
-            started_at=now,
-            created_at=now,
-        )
-        self.store.save_run(run)
-        return run
-
-    def _create_system_run(
-        self,
-        task: Task,
-        *,
-        workflow_step: str,
-        outcome: str,
-        detail: str,
-        role_id: str = "_builtin:orchestrator",
-        agent_backend: str = "orchestrator",
-        attention_trigger: str | None = None,
-    ) -> Run:
-        now = utc_now_text()
-        run = Run(
-            id=_new_id("run"),
-            task_id=task.id,
-            project_id=task.project_id,
-            role_id=role_id,
-            workflow_step=workflow_step,
-            agent_backend=agent_backend,
-            status="completed",
-            outcome=outcome,
-            outcome_detail=detail,
-            started_at=now,
-            completed_at=now,
-            created_at=now,
-        )
-        self.store.save_run(run)
-        # A blocked system run means the task is transitioning to blocked: raise
-        # exactly one attention-needed signal so a manager/human can intervene.
-        if outcome == "blocked":
-            self._emit_attention_needed(
-                run, task.id, attention_trigger or "task_blocked"
-            )
-        return run
-
-    def _emit_attention_needed(
-        self, run: Run, task_id: str | None, trigger: str
-    ) -> None:
-        """Emit one ``engine.attention_needed`` event for a supervision turn."""
-        project = self.store.get_project(run.project_id)
-        task = self.store.get_task(task_id) if task_id else None
-        self._emit_event(
-            run,
-            "engine.attention_needed",
-            {
-                "trigger": trigger,
-                "task_id": task_id,
-                # What the project asked to be told about, persisted so a
-                # later policy change cannot rewrite this moment.
-                "notify": self._notification_policy(project, task),
-            },
-        )
-
-    def _notification_policy(self, project: Project | None, task: Task | None) -> str:
-        """Resolve the notification decision for the events worth announcing."""
-
-        return resolve_notification_policy(project, task)
-
-    def _attention_trigger_for_block(self, task: Task) -> str:
-        """Pick the supervision trigger for a freshly-blocked task.
-
-        A block driven by a failed completion-evidence proof gate is surfaced as
-        ``evidence_failed`` so the digest leads with the proof verdict; any other
-        block is the generic ``task_blocked``.
-        """
-        evidence = task.completion_evidence
-        if evidence is not None and getattr(evidence, "proof_status", None) == "failed":
-            return "evidence_failed"
-        return "task_blocked"
+        self.records.emit_event(run, event_record.event_type, payload)
 
     def _emit_sprint_attention(self, project: Project, sprint: Sprint) -> None:
         """Raise one ``sprint_resolved`` attention turn when a sprint finishes and
@@ -3566,10 +3056,10 @@ class ForemanOrchestrator:
         Autonomous runs that auto-advance to the next sprint do not call this.
         """
         tasks = self.store.list_tasks(sprint_id=sprint.id)
-        anchor = tasks[0] if tasks else self._select_project_system_task(project.id)
+        anchor = tasks[0] if tasks else self.records.select_project_system_task(project.id)
         if anchor is None:
             return
-        run = self._create_system_run(
+        run = self.records.create_system_run(
             anchor,
             workflow_step="orchestrator",
             outcome="success",
@@ -3577,88 +3067,7 @@ class ForemanOrchestrator:
         )
         # task_id is None: the digest should lead with the sprint handoff, not a
         # single (already-done) task row.
-        self._emit_attention_needed(run, None, "sprint_resolved")
-
-    def _complete_run(
-        self,
-        run: Run,
-        *,
-        status: str,
-        outcome: str,
-        detail: str,
-        model: str | None = None,
-        session_id: str | None = None,
-        cost_usd: float | None = None,
-        token_count: int | None = None,
-        token_usage: TokenUsage | None = None,
-        duration_ms: int | None = None,
-        retry_count: int | None = None,
-        failure_type: str | None = None,
-    ) -> None:
-        run.status = status
-        run.outcome = outcome
-        run.outcome_detail = detail
-        if failure_type is not None:
-            run.failure_type = failure_type
-        run.model = model
-        run.session_id = session_id
-        if cost_usd is not None:
-            run.cost_usd = cost_usd
-        if token_count is not None:
-            run.token_count = token_count
-        if token_usage is not None:
-            run.token_usage = token_usage
-        if retry_count is not None:
-            run.retry_count = retry_count
-        run.duration_ms = duration_ms
-        run.completed_at = utc_now_text()
-        self.store.save_run(run)
-
-    def _emit_event(
-        self,
-        run: Run,
-        event_type: str,
-        payload: dict[str, Any],
-        *,
-        role_id: str | None = None,
-        timestamp: str | None = None,
-    ) -> Event:
-        event = Event(
-            id=_new_id("event"),
-            run_id=run.id,
-            task_id=run.task_id,
-            project_id=run.project_id,
-            event_type=event_type,
-            timestamp=timestamp or utc_now_text(),
-            role_id=role_id or run.role_id,
-            payload=payload,
-        )
-        self.store.save_event(event)
-        # Mirror every persisted event to the process log so `foreman serve`,
-        # which has no terminal, can be understood from its log alone. The
-        # level comes from the event family: the narrative at INFO, the agent
-        # output firehose at DEBUG, so a resident engine's own lifecycle stays
-        # readable. The logger is inert until the CLI configures a handler.
-        log_event(
-            _LOGGER,
-            event.event_type,
-            level=event_log_level(event.event_type),
-            project_id=event.project_id,
-            task_id=event.task_id,
-            run_id=event.run_id,
-            step=run.workflow_step,
-            role_id=event.role_id,
-            # Nested rather than flattened: event payloads carry their own
-            # ``task_id``/``run_id`` keys whose meaning differs from the row's.
-            payload=compact_payload(payload),
-        )
-        # Notification is a read of the persisted event, not a second source of
-        # truth: whatever the audit log says happened is what a destination is
-        # told. The dispatcher queues and returns; it never sends here, and it
-        # never raises, so no notification setup can fail a run.
-        self.notifier.consider(event)
-        return event
-
+        self.records.emit_attention_needed(run, None, "sprint_resolved")
 
 def _failure_type_for_error(payload: Mapping[str, Any]) -> str:
     """Classify an ``agent.error`` payload for ``Run.failure_type``."""
@@ -3677,10 +3086,6 @@ def generate_branch_name(task: Task) -> str:
 
     prefix = _BRANCH_PREFIXES.get(task.task_type, "feat")
     return f"{prefix}/{task.id}"
-
-
-def _new_id(prefix: str) -> str:
-    return f"{prefix}-{uuid4().hex[:12]}"
 
 
 def _optional_string(value: Any) -> str | None:
@@ -3736,19 +3141,4 @@ def _parse_utc_timestamp(value: str | None) -> datetime | None:
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)
-
-
-def _is_merge_conflict_feedback(text: str | None) -> bool:
-    if not text:
-        return False
-    normalized = text.lower()
-    return "merge conflict against" in normalized or "conflict (" in normalized
-
-
-def _append_feedback_note(existing: str | None, note: str) -> str:
-    existing = (existing or "").strip()
-    note = note.strip()
-    if not existing:
-        return note
-    return f"{existing}\n\n{note}"
 

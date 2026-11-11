@@ -9,6 +9,13 @@ memory changes rather than versioned product releases.
 
 ### Sprint 57 — structure
 
+- **slice 2a, engine package, second cut**
+  (`refactor/engine-leases-and-records`): `TaskLeases` (`engine/leasing.py`)
+  owns lease tokens and heartbeats; `RunRecords` (`engine/records.py`) is
+  the engine's only writer of runs and events; branch refresh and conflict
+  guidance are functions in `engine/branch_sync.py`; prompt-context and gate
+  helpers are in `engine/prompts.py` and `engine/gates.py`. No behaviour
+  change; `orchestrator.py` is 3144 lines.
 - **slice 1, engine package, first cut** (`refactor/engine-package`): the
   separable parts of `foreman/orchestrator.py` are now modules of
   `foreman/engine/`: `errors`, `results`, `limits`, `model_selection`,
