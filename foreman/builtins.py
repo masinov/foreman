@@ -14,6 +14,7 @@ from .git import GitMergeResult, head_sha, is_worktree_clean, merge_branch, merg
 from .models import CompletionEvidence, Project, Task, utc_now_text
 from .notifications import resolve_notification_policy
 from .runner.process import ManagedProcess
+from .settings import settings_of
 from .worktrees import WorktreeError, WorktreeManager
 
 DEFAULT_TEST_TIMEOUT_SECONDS = 1800
@@ -110,7 +111,8 @@ class BuiltinExecutor:
         working_dir: Path,
         event_recorder: Callable[[BuiltinEventRecord], None] | None = None,
     ) -> BuiltinResult:
-        command = str(project.settings.get("test_command", "")).strip()
+        settings = settings_of(project)
+        command = settings.test_command.strip()
         emitted_events: list[BuiltinEventRecord] = []
 
         def emit(event_type: str, payload: dict[str, Any]) -> None:
@@ -134,9 +136,7 @@ class BuiltinExecutor:
             )
             return BuiltinResult(outcome="failure", detail=detail, events=tuple(emitted_events))
 
-        timeout_seconds = _int_setting(
-            project, "test_timeout_seconds", default=DEFAULT_TEST_TIMEOUT_SECONDS
-        )
+        timeout_seconds = settings.test_timeout_seconds
         emit(
             "engine.test_started",
             {
@@ -320,7 +320,7 @@ class BuiltinExecutor:
                 },
             )
 
-        if _bool_setting(project, "completion_guard_enabled", default=True):
+        if settings_of(project).completion_guard_enabled:
             evidence = self._build_completion_evidence(
                 project=project,
                 task=task,
@@ -437,7 +437,7 @@ class BuiltinExecutor:
                 },
             )
 
-        if _bool_setting(project, "completion_guard_enabled", default=True):
+        if settings_of(project).completion_guard_enabled:
             # The guard evaluates completion evidence via git diff against the
             # default branch.  After a successful merge the branch tip may equal
             # HEAD (fast-forward or --no-ff with no new commit), making the diff
@@ -828,26 +828,6 @@ def _context_mirror_dirs(project: Project, working_dir: Path | None) -> tuple[Pa
     if resolved == Path(project.repo_path):
         return ()
     return (context_directory(project, root=resolved),)
-
-
-def _int_setting(project: Project, key: str, *, default: int) -> int:
-    value = project.settings.get(key)
-    if value is None or isinstance(value, bool):
-        return default
-    if isinstance(value, (int, float)):
-        return int(value)
-    return default
-
-
-def _bool_setting(project: Project, key: str, *, default: bool) -> bool:
-    value = project.settings.get(key)
-    if value is None:
-        return default
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, int):
-        return bool(value)
-    return default
 
 
 def _completion_guard_payload(evidence: CompletionEvidence) -> dict[str, Any]:

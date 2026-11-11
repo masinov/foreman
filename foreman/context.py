@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .models import Lease, Project, Sprint, Task
+from .settings import settings_of
 from .scaffold import DEFAULT_CONTEXT_DIR
 from .store import ForemanStore
 
@@ -145,7 +146,7 @@ def context_directory(project: Project, *, root: Path | None = None) -> Path:
     absolute ``context_dir`` is shared by every checkout and ignores ``root``.
     """
 
-    configured = str(project.settings.get("context_dir", DEFAULT_CONTEXT_DIR)).strip()
+    configured = settings_of(project).context_dir.strip()
     raw_path = Path(configured or DEFAULT_CONTEXT_DIR).expanduser()
     if raw_path.is_absolute():
         return raw_path
@@ -235,7 +236,7 @@ def render_sprint_context(
                 carried_output or "(none)",
             ]
         )
-        if str(project.settings.get("task_selection_mode", "directed")) == "autonomous":
+        if settings_of(project).task_selection_mode == "autonomous":
             # Only autonomous projects carry the self-selection contract; a
             # directed task has its title, branch, and criteria already.
             lines.extend(

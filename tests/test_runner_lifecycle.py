@@ -499,6 +499,9 @@ class RunCostCeilingTests(unittest.TestCase):
         self.assertEqual(_run_cost_ceiling(self._project({"runner_max_cost_usd": 500}), 30.0), 30.0)
         self.assertEqual(_run_cost_ceiling(self._project({"runner_max_cost_usd": 8}), 0.0), 8.0)
         self.assertEqual(_run_cost_ceiling(self._project({"runner_max_cost_usd": 0}), 0.0), 0.0)
+        # Unset means the role's ceiling applies, and no ceiling when it has none.
+        self.assertEqual(_run_cost_ceiling(self._project({}), 30.0), 30.0)
+        self.assertEqual(_run_cost_ceiling(self._project({}), 0.0), 0.0)
 
 
 class CodexRunnerLifecycleTests(unittest.TestCase):

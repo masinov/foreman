@@ -9,6 +9,20 @@ memory changes rather than versioned product releases.
 
 ### Sprint 56 — engine truthfulness
 
+- **slice 11, vocabulary and settings** (`refactor/status-constraints`):
+  - migration 20: the database refuses a task status, task type, task
+    complexity, sprint status, run status or project autonomy level that is
+    not in `foreman/models.py`, through triggers (SQLite cannot add a CHECK
+    to an existing table without rebuilding it). A test fixture that used
+    the task type `bug` was the first thing it caught;
+  - engine code reads settings through one typed, validated accessor,
+    `settings.settings_of(project)`; the per-module helpers that each
+    repeated a default and a type coercion are gone. `runner_max_cost_usd`
+    now defaults to 0 (the role's ceiling applies), which is what the code
+    did and the manual said; the model said 1000;
+  - removed code nothing called: the typed-events module
+    (`foreman/events.py`, never adopted by the engine) and six unused
+    functions.
 - **slice 10c, autonomous mode** (`fix/autonomous-mode`):
   - an autonomous task now gets its own branch and worktree like any other.
     It had neither, so the agent ran in the operator's checkout, committed

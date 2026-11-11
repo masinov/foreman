@@ -300,10 +300,12 @@ class WorktreeManagerTests(unittest.TestCase):
 
     def test_link_paths_reject_escaping_the_repository(self) -> None:
         repo = self.workspace()
-        manager = WorktreeManager(self.project(repo, worktree_link_paths=["../secrets"]))
-
+        # Every setting is validated together, so the bad one is reported as
+        # soon as the project's settings are read.
         with self.assertRaises(WorktreeError) as caught:
-            manager.ensure(self.task())
+            WorktreeManager(self.project(repo, worktree_link_paths=["../secrets"])).ensure(
+                self.task()
+            )
         self.assertIn("relative path inside", str(caught.exception))
 
     # ── Preflight ───────────────────────────────────────────────────────
