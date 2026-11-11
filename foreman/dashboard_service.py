@@ -44,6 +44,7 @@ from .models import (
     SprintStatus,
     Task,
 )
+from .notifications import NotificationDispatcher
 from .orchestrator import ForemanOrchestrator, OrchestratorError
 from .policy import PolicyMatrix, describe_resolution
 from .scaffold import generate_project_id
@@ -1893,7 +1894,7 @@ class DashboardService:
             )
             .value
         )
-        self.store.save_event(
+        event = self.store.save_event(
             Event(
                 id=f"evt-attention-{now.strftime('%Y%m%d%H%M%S%f')}-{task.id[:8]}",
                 run_id=run_id,
@@ -1905,6 +1906,8 @@ class DashboardService:
                 payload={"trigger": trigger, "task_id": task.id, "notify": notify},
             )
         )
+        # Queue only; the delivery worker sends. The dispatcher never raises.
+        NotificationDispatcher(self.store).consider(event)
 
     @staticmethod
     def _normalize_intake_source(source: dict[str, Any] | None) -> dict[str, str | None]:
