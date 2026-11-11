@@ -2347,6 +2347,67 @@ class ForemanOrchestratorTests(unittest.TestCase):
             ]
             self.assertEqual(len(infra_events), 1)
 
+    def test_an_interrupted_attempt_is_resumed_and_its_cost_stays_on_the_run(self) -> None:
+        from foreman.runner.base import RESUME_AFTER_INFRA_ERROR_PROMPT
+
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+            project.settings["default_model"] = "claude-sonnet-4-6"
+            store.save_project(project)
+
+            def interrupted(config: AgentRunConfig):
+                yield AgentEvent("agent.session", payload={"session_id": "dev-session"})
+                yield AgentEvent(
+                    "agent.cost_update", payload={"cumulative_usd": 0.5, "cumulative_tokens": 90}
+                )
+                raise InfrastructureError("stream ended without a terminal result event")
+
+            def resumed(config: AgentRunConfig):
+                work_dir = Path(config.working_dir)
+                self.write_text(work_dir / "feature.txt", "implemented\n")
+                self.write_text(work_dir / "ready.txt", "ready\n")
+                self.commit_all(work_dir, "feat: finish after the interruption")
+                yield AgentEvent(
+                    "agent.message",
+                    payload={"text": "Finished the slice.\nTASK_COMPLETE", "phase": "assistant"},
+                )
+                yield AgentEvent(
+                    "agent.completed",
+                    payload={"session_id": "dev-session", "cost_usd": 1.2, "token_count": 250},
+                )
+
+            runner = ScriptedNativeRunner(
+                {
+                    1: interrupted,
+                    2: resumed,
+                    3: lambda config: self._native_reviewer_approve(config),
+                }
+            )
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=self.roles,
+                workflows=self.workflows,
+                agent_runners={"claude_code": runner},
+                runner_sleep=lambda _seconds: None,
+            )
+
+            orchestrator.run_project(project.id)
+
+            # The second attempt continued the session instead of replaying
+            # the whole prompt into it.
+            self.assertEqual(runner.captures[1].session_id, "dev-session")
+            self.assertEqual(runner.captures[1].prompt, RESUME_AFTER_INFRA_ERROR_PROMPT)
+            develop_run = next(
+                r for r in store.list_runs(task_id=task.id) if r.workflow_step == "develop"
+            )
+            self.assertEqual(develop_run.retry_count, 1)
+            self.assertAlmostEqual(develop_run.cost_usd, 1.7)
+            self.assertEqual(develop_run.session_id, "dev-session")
+
     def test_native_runner_resolves_role_env_before_execution(self) -> None:
         repo_path, db_path = self.create_workspace()
         self.initialize_repo(repo_path)

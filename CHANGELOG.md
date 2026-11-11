@@ -9,6 +9,15 @@ memory changes rather than versioned product releases.
 
 ### Sprint 56 — engine truthfulness
 
+- **slice 10a, retries and quota** (`fix/retry-and-quota`): after an
+  infrastructure failure the retry continues the session the failed attempt
+  opened (it replayed the whole prompt before); a session id the backend
+  does not know is dropped and the step starts a fresh session instead of
+  failing three times on it; what a failed attempt had already cost is kept
+  on the run. A usage-quota stop is decided by the CLI's rate-limit notice
+  when there is one, and otherwise only by the CLI's own phrases, so an
+  error that merely mentions "quota" or "rate limit" no longer pauses the
+  engine.
 - **slice 9, guidance delivery** (`feat/guidance-delivery`): a guidance
   note written for a task now reaches an agent. The engine appends every
   note no agent has received to the prompt of the task's next agent step and

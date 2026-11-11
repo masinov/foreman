@@ -41,8 +41,11 @@ _TERMINAL_EVENT_TYPES = frozenset({"agent.completed", "agent.error", "agent.kill
 # How long a process may take to exit after its stream has finished.
 TERMINAL_EXIT_GRACE_SECONDS = 5.0
 #: Error texts the CLI returns when the account's usage window is spent.
+#: Used only when the CLI sent no rate-limit notice at all. The phrases are
+#: the CLI's own; a bare "quota" or "rate limit" also appears in errors from
+#: tools the agent called, which are not about this account's usage.
 _QUOTA_ERROR_PATTERN = re.compile(
-    r"session limit|usage limit|rate limit|out of (?:extra )?usage|quota",
+    r"hit your (?:\w+ ){0,2}limit|usage limit reached|out of (?:extra )?usage",
     re.IGNORECASE,
 )
 #: Rate-limit statuses under which the backend still serves requests.
@@ -171,6 +174,11 @@ class ClaudeCodeRunner(AgentRunner):
                     # the model thinks. They keep the lease heartbeat and the
                     # gates alive but are never persisted.
                     for event in progress_events:
+                        if event.payload.get("source") == "rate_limit":
+                            # The CLI said the account may go on. Remember it,
+                            # so a later error is not read as a quota stop
+                            # because of how it is worded.
+                            quota_notice = {"status": "allowed"}
                         yield event
                     gate_event = self._check_gates(
                         managed,
@@ -529,10 +537,16 @@ def _progress_events(decoded: Any) -> tuple[AgentEvent, ...] | None:
 
 
 def _is_quota_error(payload: dict[str, Any], notice: dict[str, Any] | None) -> bool:
-    """Return True when an error result means the usage quota is spent."""
+    """Return True when an error result means the usage quota is spent.
 
-    if notice is not None and str(notice.get("status", "")) not in _RATE_LIMIT_OK_STATUSES:
-        return True
+    The CLI's rate-limit notice is the fact: when one arrived, its status
+    decides, and an error that follows an "allowed" notice is an ordinary
+    error however it is worded. The error text is consulted only when no
+    notice was seen.
+    """
+
+    if notice is not None:
+        return str(notice.get("status", "")) not in _RATE_LIMIT_OK_STATUSES
     error_text = _optional_string(payload.get("error")) or ""
     return bool(_QUOTA_ERROR_PATTERN.search(error_text))
 

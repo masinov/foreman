@@ -242,6 +242,94 @@ class RunWithRetryTests(unittest.TestCase):
             },
         )
 
+    def _config(self, session_id: str | None = None) -> AgentRunConfig:
+        return AgentRunConfig(
+            backend="claude_code",
+            model=None,
+            prompt="Implement the whole task.",
+            working_dir=Path("."),
+            session_id=session_id,
+            permission_mode="default",
+        )
+
+    def test_a_retry_continues_the_session_the_failed_attempt_opened(self) -> None:
+        from foreman.runner.base import RESUME_AFTER_INFRA_ERROR_PROMPT
+
+        seen: list[AgentRunConfig] = []
+
+        class _Runner:
+            def run(self, config):
+                seen.append(config)
+                if len(seen) == 1:
+                    yield AgentEvent("agent.session", payload={"session_id": "sess-new"})
+                    yield AgentEvent("agent.cost_update", payload={"cumulative_usd": 0.4})
+                    raise InfrastructureError("stream ended without a result")
+                yield AgentEvent("agent.completed", payload={"cost_usd": 0.1})
+
+        events = list(run_with_retry(_Runner(), self._config(), sleep=lambda _: None))
+
+        self.assertEqual(len(seen), 2)
+        self.assertEqual(seen[1].session_id, "sess-new")
+        self.assertEqual(seen[1].prompt, RESUME_AFTER_INFRA_ERROR_PROMPT)
+        infra = [event for event in events if event.event_type == "agent.infra_error"]
+        self.assertEqual(len(infra), 1)
+        self.assertEqual(infra[0].payload["next_attempt"], "resume")
+        # What the failed attempt had already cost is reported, not lost.
+        self.assertEqual(infra[0].payload["cost_usd"], 0.4)
+        self.assertEqual(infra[0].payload["session_id"], "sess-new")
+
+    def test_a_session_id_the_backend_does_not_know_is_dropped_not_retried(self) -> None:
+        seen: list[AgentRunConfig] = []
+
+        class _Runner:
+            def run(self, config):
+                seen.append(config)
+                if config.session_id == "stale":
+                    raise InfrastructureError("No conversation found with session ID: stale")
+                yield AgentEvent("agent.session", payload={"session_id": "fresh"})
+                yield AgentEvent("agent.completed", payload={})
+
+        events = list(run_with_retry(_Runner(), self._config("stale"), sleep=lambda _: None))
+
+        self.assertEqual([config.session_id for config in seen], ["stale", None])
+        self.assertEqual(seen[1].prompt, "Implement the whole task.")
+        infra = [event for event in events if event.event_type == "agent.infra_error"]
+        self.assertEqual(infra[0].payload["next_attempt"], "session_dropped")
+        self.assertEqual(infra[0].payload["dropped_session_id"], "stale")
+        self.assertEqual(events[-1].event_type, "agent.completed")
+
+    def test_a_session_that_fails_twice_before_starting_is_dropped(self) -> None:
+        seen: list[AgentRunConfig] = []
+
+        class _Runner:
+            def run(self, config):
+                seen.append(config)
+                if config.session_id:
+                    raise InfrastructureError("exited with code 1")
+                yield AgentEvent("agent.completed", payload={})
+
+        list(run_with_retry(_Runner(), self._config("old"), sleep=lambda _: None))
+
+        # One plain replay in case the failure was transient, then a fresh session.
+        self.assertEqual([config.session_id for config in seen], ["old", "old", None])
+
+    def test_a_failure_without_any_session_replays_the_prompt(self) -> None:
+        seen: list[AgentRunConfig] = []
+
+        class _Runner:
+            def run(self, config):
+                seen.append(config)
+                if len(seen) == 1:
+                    raise InfrastructureError("could not start")
+                yield AgentEvent("agent.completed", payload={})
+
+        events = list(run_with_retry(_Runner(), self._config(), sleep=lambda _: None))
+
+        self.assertEqual(seen[1].prompt, "Implement the whole task.")
+        self.assertIsNone(seen[1].session_id)
+        self.assertEqual(events[0].payload["next_attempt"], "replay")
+        self.assertNotIn("cost_usd", events[0].payload)
+
     def test_does_not_retry_preflight_error(self) -> None:
         """Preflight failures should fail fast without infrastructure retries."""
         runner = MagicMock()
