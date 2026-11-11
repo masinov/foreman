@@ -40,14 +40,50 @@ The spec defines four layers that should remain explicit:
 
 The current codebase maps closely onto that split:
 
-- `foreman/store.py` and `foreman/models.py` own persisted state,
+- `foreman/store/` and `foreman/models.py` own persisted state,
 - `foreman/roles.py` and `foreman/workflows.py` own declarative configuration,
-- `foreman/orchestrator.py` owns workflow execution and durable transitions,
+- `foreman/orchestrator.py` and `foreman/engine/` own workflow execution and
+  durable transitions,
 - `foreman/worktrees.py` owns the git working trees a task executes in,
 - `foreman/runner/` owns backend-specific transport and event normalization,
 - `foreman/cli.py`, `foreman/dashboard_runtime.py`,
   `foreman/dashboard_service.py`, `foreman/dashboard_backend.py`, and
   `frontend/` expose inspection and control surfaces.
+
+### Engine and store layout (sprint 57)
+
+`ForemanOrchestrator` (`foreman/orchestrator.py`) is the entry point: it runs
+a project pass, runs one task under a lease, resumes a human gate, and walks a
+task through its workflow one step at a time. The step loop reads as its
+phases: worktree check, limits, branch refresh, the step itself (human gate,
+built-in, or agent), the record of what happened, and the transition.
+
+It composes these parts of `foreman/engine/`, each taking only what it uses:
+
+| Module | What it owns |
+|---|---|
+| `errors`, `results` | what the engine raises and returns |
+| `limits`, `model_selection` | validated settings, ceilings, which model a step runs on |
+| `leasing` (`TaskLeases`) | lease tokens and heartbeats for the tasks in hand |
+| `records` (`RunRecords`) | the only writer of runs, events and attention turns |
+| `task_writes` (`TaskWrites`) | writing a task without overwriting an operator |
+| `selection` (`TaskSelector`) | directed and autonomous task selection |
+| `recovery` (`Recovery`) | orphaned tasks and stale runs after a crash |
+| `task_worktrees` (`TaskWorktrees`) | a worktree per task, reclaimed under a cap |
+| `branch_sync` | refreshing a task branch and turning conflicts into guidance |
+| `prompts` (`PromptBuilder`) | what an agent is told |
+| `agent_step` (`AgentStepRunner`) | running a role and reading its event stream |
+| `signals` (`SignalHandler`) | persisting agent events and applying signals |
+| `output_contract` | completion markers and reviewer decisions |
+| `evidence` (`EvidenceBuilder`) | the facts recorded before a merge (ADR-0018) |
+| `gates`, `sprints`, `retention` | gate policy, sprint flow, history pruning |
+
+`ForemanStore` (`foreman/store/`) is one SQLite connection with a part per
+aggregate (`projects`, `sprints`, `tasks`, `runs`, `events`, `gates`, `meta`,
+`leases`, `commands`, `tokens`, `notifications`) over `base` (connection,
+`_write`, migrations) and `rows` (row to model). Every write goes through
+`_write` or `retried_on_lock`, so a held database lock is waited out.
+
 
 ## Source of truth
 
@@ -164,7 +200,8 @@ is also the audit trail: who asked, when, and what the engine did about it.
   vocabularies, and `EngineLockView`, a token-free read of the engine lease.
   The view deliberately omits `lease_token`: operator surfaces need to know who
   holds a project, not the secret that would let them release it.
-- `foreman/store.py` — `enqueue_engine_command`, `list_engine_commands`,
+- `foreman/store/commands.py` and `foreman/store/leases.py` —
+  `enqueue_engine_command`, `list_engine_commands`,
   `next_pending_engine_command`, `mark_engine_command`, and `get_engine_lock`.
   The insert commits on its own connection, which is what makes an idle
   engine's `PRAGMA data_version` wait notice a command without polling a table.
