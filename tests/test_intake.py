@@ -1058,7 +1058,7 @@ class TriageCliTests(unittest.TestCase):
         result = self.run_cli("task", "accept", "task-1", "--db", str(self.db_path))
 
         self.assertEqual(result.returncode, 1)
-        self.assertIn("is not in triage", result.stderr)
+        self.assertIn("only tasks in triage can be accepted", result.stderr)
 
     def test_cancel_works_from_triage(self) -> None:
         result = self.run_cli("task", "cancel", "task-1", "--db", str(self.db_path))

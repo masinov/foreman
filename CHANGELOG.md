@@ -9,6 +9,21 @@ memory changes rather than versioned product releases.
 
 ### Sprint 57 — structure
 
+- **slice 4, one mutation service** (`refactor/mutation-service`):
+  `foreman/mutations.py` is the single implementation of the changes a
+  person makes to tasks (accept, block, unblock, cancel, delete) and sprints
+  (lifecycle, delete). The CLI and the dashboard both call it. What changed
+  for an operator:
+  - every task change records an audit event (`human.task_accepted`,
+    `_blocked`, `_unblocked`, `_cancelled`) with who made it and from which
+    surface; CLI changes left no trace before;
+  - a task an engine is running cannot be deleted, and a sprint holding one
+    cannot be deleted (only cancel was guarded);
+  - the dashboard refuses to complete a sprint that still has unresolved
+    tasks and names them, as `foreman sprint complete` always did; cancel the
+    sprint to abandon what is left;
+  - `foreman sprint complete` on a planned sprint is refused (activate it
+    first), following the same transition table as the dashboard.
 - **slice 3, store package** (`refactor/store-package`): `foreman/store.py`
   (3213 lines) is the package `foreman/store/`: `base` (connection, write
   helper, migrations), `rows` (row to model), and a part per aggregate

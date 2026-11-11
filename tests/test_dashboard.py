@@ -1264,12 +1264,32 @@ class DashboardSprintLifecycleTests(unittest.TestCase):
 
     def test_transition_active_to_completed(self):
         """PATCH /api/sprints/{id} transitions active → completed and sets completed_at."""
-        _, active, _ = self._seed_active_project()
+        _, active, task = self._seed_active_project()
+        self._resolve(task)
         response = self._request("PATCH", f"/api/sprints/{active.id}", json={"status": "completed"})
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data["status"], "completed")
         self.assertIsNotNone(data["completed_at"])
+
+    def test_completing_a_sprint_with_unresolved_tasks_is_refused_and_names_them(self):
+        """The same rule as `foreman sprint complete`: nothing is left stranded."""
+        _, active, task = self._seed_active_project()
+        response = self._request("PATCH", f"/api/sprints/{active.id}", json={"status": "completed"})
+        self.assertEqual(response.status_code, 400)
+        store = ForemanStore(self.db_path)
+        key = store.get_task(task.id).task_key or task.id
+        self.assertEqual(store.get_sprint(active.id).status, "active")
+        store.close()
+        self.assertIn(key, response.text)
+        self.assertIn("unresolved tasks remain", response.text)
+
+    def _resolve(self, task):
+        store = ForemanStore(self.db_path)
+        stored = store.get_task(task.id)
+        stored.status = "done"
+        store.save_task(stored)
+        store.close()
 
     def test_transition_rejects_invalid_path(self):
         """PATCH /api/sprints/{id} rejects an invalid status transition."""
@@ -2398,7 +2418,12 @@ class DashboardTaskEditingTests(unittest.TestCase):
 
     def test_patch_sprint_status_still_works(self):
         """PATCH /api/sprints/{id} with status key still transitions the sprint."""
-        _, sprint, _ = self._seed()
+        _, sprint, task = self._seed()
+        store = ForemanStore(self.db_path)
+        stored = store.get_task(task.id)
+        stored.status = "done"
+        store.save_task(stored)
+        store.close()
         response = self._request(
             "PATCH",
             f"/api/sprints/{sprint.id}",
