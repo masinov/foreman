@@ -69,8 +69,8 @@ Two hard commitments shape everything:
   writes context files there for agents to read; it is gitignored and
   disposable.
 
-Roles and workflows are **declarative TOML** (`roles/*.toml`,
-`workflows/*.toml`), not hard-coded. Both **Claude Code and Codex** are
+Roles and workflows are **declarative TOML** (`foreman/data/roles/*.toml`,
+`foreman/data/workflows/*.toml`), not hard-coded. Both **Claude Code and Codex** are
 first-class agent backends.
 
 ---
@@ -147,8 +147,8 @@ Four subsystems (preserved from the spec — do not collapse them):
 | Subsystem | Module | Responsibility |
 |---|---|---|
 | **Agent Runner** | `foreman/runner/` | Launch a native `claude`/`codex` process, normalize its stream into `AgentEvent`s, retry on infrastructure errors. |
-| **Role System** | `foreman/roles.py`, `roles/*.toml` | Declarative agent identity: backend, model(s), tools, prompt template, env. |
-| **Workflow Engine** | `foreman/workflows.py`, `workflows/*.toml` | The state machine: steps, outcomes, transitions, gates, fallback. |
+| **Role System** | `foreman/roles.py`, `foreman/data/roles/*.toml` | Declarative agent identity: backend, model(s), tools, prompt template, env. |
+| **Workflow Engine** | `foreman/workflows.py`, `foreman/data/workflows/*.toml` | The state machine: steps, outcomes, transitions, gates, fallback. |
 | **Orchestrator** | `foreman/orchestrator.py`, `foreman/engine/` | Ties it together: selects tasks, builds prompts, runs steps, resolves transitions, enforces gates, persists everything. |
 
 A single step executes like this:

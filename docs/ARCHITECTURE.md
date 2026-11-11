@@ -140,7 +140,7 @@ The repository now ships:
 
 Foreman now has:
 
-- shipped `roles/*.toml` and `workflows/*.toml` defaults,
+- shipped `foreman/data/roles/*.toml` and `foreman/data/workflows/*.toml` defaults,
 - prompt rendering with completion and signal conventions,
 - a persisted orchestrator loop that can execute the shipped workflow graph,
 - end-to-end runtime coverage for the opt-in `development_secure` variant

@@ -9,8 +9,8 @@ from typing import Any
 
 from ._toml import load_toml_file
 from .errors import ForemanError
+from .data import WORKFLOWS_DIR
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # Outcome contracts for built-in steps. Agent roles declare their own
 # outcomes in TOML (``[completion] outcomes``); callers pass those through
@@ -225,7 +225,7 @@ def _optional_policy(step_data: Mapping[str, Any], workflow_path: Path) -> str |
 def default_workflows_dir() -> Path:
     """Return the shipped workflows directory."""
 
-    return _REPO_ROOT / "workflows"
+    return WORKFLOWS_DIR
 
 
 def load_workflow(

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "foreman"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Foreman is an autonomous development engine for spec-driven software delivery."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -30,7 +30,14 @@ include = ["foreman*"]
 foreman = [
   "dashboard_frontend_dist/*.html",
   "dashboard_frontend_dist/assets/*",
+  "data/roles/*.toml",
+  "data/workflows/*.toml",
+  "data/templates/*",
 ]
+
+[tool.setuptools.dynamic]
+# One place states the version: foreman/__init__.py.
+version = {attr = "foreman.__version__"}
 
 [project.optional-dependencies]
 dev = [
