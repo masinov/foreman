@@ -26,12 +26,13 @@ from .engine_control import (
     resolve_gate_steps,
 )
 from .engine_lock import EngineBusyError, EngineLock
+from .errors import EngineCommandInterrupt
 from .logs import configure_json_logging
 from .models import Event, EngineCommand, GATE_POLICY_NAMES, NotificationDelivery, NotificationDestination, Project, Sprint, TASK_COMPLEXITIES, TASK_TYPES, Task, utc_now_text
 from .orchestrator import ForemanOrchestrator, OrchestratorError
 from .roles import RoleLoadError, default_roles_dir, load_roles
 from .runner.process import EngineShutdown, install_shutdown_handlers
-from .serve import DEFAULT_POLL_SECONDS, serve_project
+from .serve import DEFAULT_POLL_SECONDS, ResidentEngine, serve_project
 
 #: Exit code of ``foreman run`` when the pass stopped because the agent backend's
 #: usage quota ran out (BSD ``EX_TEMPFAIL``): nothing is broken, try again later.
@@ -2644,8 +2645,32 @@ def handle_run(args: argparse.Namespace) -> int:
             return 1
 
         install_shutdown_handlers()
+        # While this run holds the project it is the only process that can act
+        # on a `pause` or a `stop_task`, so it answers engine commands the way
+        # a resident engine does. It ends after its pass, so it takes no run
+        # requests, and running it is itself the instruction to work, so a
+        # standing pause does not hold it back.
+        commands = ResidentEngine(
+            store=store,
+            project_id=project.id,
+            orchestrator=orchestrator,
+            lock=lock,
+            accepts_run_requests=False,
+            honour_standing_pause=False,
+        )
         try:
+            commands.attach()
             result = orchestrator.run_project(project.id, task_id=args.task)
+        except EngineCommandInterrupt as exc:
+            commands.settle_interrupt(exc)
+            command = exc.command
+            print(
+                f"Run stopped by engine command `{command.command}` from "
+                f"{command.requested_by}. The agent process was terminated and its "
+                "run settled as killed.",
+                file=sys.stderr,
+            )
+            return 130
         except (EngineShutdown, KeyboardInterrupt) as exc:
             if lock.lost:
                 print(

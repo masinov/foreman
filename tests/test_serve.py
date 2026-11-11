@@ -762,14 +762,18 @@ class ServeProjectTests(unittest.TestCase):
             def run_project(self, project_id, *, task_id=None, maintenance=True):
                 raise ValueError("unexpected")
 
-        with self.assertRaises(ValueError):
-            serve_project(
-                store=self.store,
-                project_id=self.project.id,
-                orchestrator=_Exploding([]),  # type: ignore[arg-type]
-                lock=self._lock("holder-serve"),
-            )
+        result = serve_project(
+            store=self.store,
+            project_id=self.project.id,
+            orchestrator=_Exploding([]),  # type: ignore[arg-type]
+            lock=self._lock("holder-serve"),
+        )
 
+        # A bug in the engine ends the service with a failure a supervisor
+        # can act on, not with what looks like a clean stop.
+        self.assertEqual(result.stop_reason, "crashed")
+        self.assertEqual(result.exit_code, 1)
+        self.assertEqual(result.detail, "ValueError: unexpected")
         self.assertIsNone(self._engine_lease())
 
     def test_second_serve_is_refused_while_the_first_holds_the_lock(self) -> None:
@@ -1316,6 +1320,77 @@ class EngineCommandStartupTests(unittest.TestCase):
         assert settled is not None
         self.assertEqual(settled.status, "completed")
         self.assertEqual(orchestrator.targets, ["task-1"])
+
+    def test_a_pause_applied_before_a_restart_still_holds(self) -> None:
+        pause = self._enqueue("pause")
+        self._engine(_StubOrchestrator([])).run(once=True)  # rejects it: nobody home
+        self.assertEqual(self.store.get_engine_command(pause.id).status, "rejected")
+
+        # A pause a resident engine did apply is a different thing.
+        applied = self._enqueue("pause")
+        self.store.mark_engine_command(applied.id, "completed", detail="Engine paused.")
+        orchestrator = _StubOrchestrator([_idle()])
+
+        result = self._engine(orchestrator).run(once=True)
+
+        self.assertEqual(result.passes, 0, "a restarted engine must not undo the pause")
+        self.assertEqual(result.detail, "Engine is paused.")
+        self.assertEqual(orchestrator.calls, [])
+
+    def test_a_resume_after_the_restart_lets_the_engine_work(self) -> None:
+        applied = self._enqueue("pause")
+        self.store.mark_engine_command(applied.id, "completed", detail="Engine paused.")
+        self._enqueue("resume")
+        orchestrator = _StubOrchestrator([_idle()])
+
+        result = self._engine(orchestrator).run(once=True)
+
+        self.assertEqual(result.passes, 1)
+
+    def test_a_run_task_the_dead_engine_had_accepted_is_run_by_the_next_one(self) -> None:
+        command = self._enqueue("run_task", task_id="task-1")
+        self.store.mark_engine_command(
+            command.id, "acknowledged", detail="Task 'task-1' will run next."
+        )
+        orchestrator = _StubOrchestrator([_executed("task-1")])
+
+        self._engine(orchestrator).run(once=True)
+
+        self.assertEqual(orchestrator.targets, ["task-1"])
+        settled = self.store.get_engine_command(command.id)
+        assert settled is not None
+        self.assertEqual(settled.status, "completed")
+        self.assertIn("was run", settled.result_detail)
+
+    def test_a_half_applied_stop_from_a_dead_engine_is_closed_with_the_reason(self) -> None:
+        command = self._enqueue("stop_task", task_id="task-1")
+        self.store.mark_engine_command(command.id, "acknowledged")
+
+        self._engine(_StubOrchestrator([_idle()])).run(once=True)
+
+        settled = self.store.get_engine_command(command.id)
+        assert settled is not None
+        self.assertEqual(settled.status, "rejected")
+        self.assertIn("stopped before it finished", settled.result_detail)
+
+    def test_a_one_shot_run_refuses_run_requests_and_ignores_a_standing_pause(self) -> None:
+        applied = self._enqueue("pause")
+        self.store.mark_engine_command(applied.id, "completed", detail="Engine paused.")
+        request = self._enqueue("run_task", task_id="task-1")
+        orchestrator = _StubOrchestrator([])
+        engine = self._engine(
+            orchestrator, accepts_run_requests=False, honour_standing_pause=False
+        )
+
+        engine.attach()
+        self.assertIsNotNone(orchestrator.command_poll)
+        orchestrator.command_poll("task-1")
+
+        settled = self.store.get_engine_command(request.id)
+        assert settled is not None
+        self.assertEqual(settled.status, "rejected")
+        self.assertIn("one-shot", settled.result_detail)
+        self.assertFalse(engine._paused)
 
     def test_rejection_is_recorded_as_an_engine_event(self) -> None:
         self._enqueue("pause")
@@ -2063,6 +2138,131 @@ class EngineRunTaskQueueTests(unittest.TestCase):
         )
         for command in self.store.list_engine_commands(self.project.id):
             self.assertEqual(command.status, "completed")
+            self.assertIn("was run", command.result_detail)
+
+    def test_a_run_request_is_not_completed_until_its_task_has_run(self) -> None:
+        command = self.store.enqueue_engine_command(
+            project_id=self.project.id,
+            command="run_task",
+            requested_by="alice",
+            task_id="task-1",
+        )
+        seen: list[str] = []
+        store = self.store
+
+        class _Watching(_StubOrchestrator):
+            def run_project(self, project_id, *, task_id=None, maintenance=True):
+                seen.append(store.get_engine_command(command.id).status)
+                return super().run_project(
+                    project_id, task_id=task_id, maintenance=maintenance
+                )
+
+        ResidentEngine(
+            store=self.store,
+            project_id=self.project.id,
+            orchestrator=_Watching([_executed("task-1")]),  # type: ignore[arg-type]
+            sleep=self.clock.sleep,
+            monotonic=self.clock.monotonic,
+        ).run(once=True)
+
+        self.assertEqual(seen, ["acknowledged"])
+        self.assertEqual(self.store.get_engine_command(command.id).status, "completed")
+
+    def test_a_run_request_that_could_not_start_is_rejected_with_the_reason(self) -> None:
+        command = self.store.enqueue_engine_command(
+            project_id=self.project.id,
+            command="run_task",
+            requested_by="alice",
+            task_id="task-1",
+        )
+
+        ResidentEngine(
+            store=self.store,
+            project_id=self.project.id,
+            orchestrator=_StubOrchestrator(  # type: ignore[arg-type]
+                [OrchestratorError("Task 'task-1' is leased by another engine.")]
+            ),
+            sleep=self.clock.sleep,
+            monotonic=self.clock.monotonic,
+        ).run(once=True)
+
+        settled = self.store.get_engine_command(command.id)
+        assert settled is not None
+        self.assertEqual(settled.status, "rejected")
+        self.assertIn("leased by another engine", settled.result_detail)
+
+
+class IdleWakeTests(unittest.TestCase):
+    """An idle engine wakes for its own project's changes, not for any commit."""
+
+    def setUp(self) -> None:
+        self._temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._temp.cleanup)
+        self.db_path = Path(self._temp.name) / "foreman.db"
+        self.store = ForemanStore(self.db_path)
+        self.addCleanup(self.store.close)
+        self.store.initialize()
+        self.project = _seed_project(self.store, self._temp.name, tasks=1)
+        self.other = ForemanStore(self.db_path)
+        self.addCleanup(self.other.close)
+
+    def _engine(self, on_tick) -> ResidentEngine:
+        clock = _FakeClock()
+
+        def sleep(seconds: float) -> None:
+            clock.sleep(seconds)
+            on_tick()
+
+        return ResidentEngine(
+            store=self.store,
+            project_id=self.project.id,
+            orchestrator=_StubOrchestrator([]),  # type: ignore[arg-type]
+            sleep=sleep,
+            monotonic=clock.monotonic,
+        )
+
+    def test_a_commit_about_something_else_does_not_end_the_wait(self) -> None:
+        ticks = []
+
+        def unrelated_commit() -> None:
+            ticks.append(1)
+            # Any other connection committing moves data_version: here, an
+            # unrelated project being registered.
+            self.other.save_project(
+                Project(
+                    id=f"other-{len(ticks)}",
+                    name="Other",
+                    repo_path=self._temp.name,
+                    workflow_id="development",
+                )
+            )
+
+        woke = self._engine(unrelated_commit)._wait_for_change(2.0)
+
+        self.assertFalse(woke)
+        self.assertGreater(len(ticks), 1, "the wait must run to its timeout")
+
+    def test_a_change_to_this_projects_tasks_ends_the_wait(self) -> None:
+        ticks = []
+
+        def task_becomes_runnable() -> None:
+            ticks.append(1)
+            task = self.other.get_task("task-1")
+            task.status = "blocked" if task.status == "todo" else "todo"
+            self.other.save_task(task)
+
+        woke = self._engine(task_becomes_runnable)._wait_for_change(60.0)
+
+        self.assertTrue(woke)
+        self.assertEqual(len(ticks), 1)
+
+    def test_a_queued_command_ends_the_wait(self) -> None:
+        def command_arrives() -> None:
+            self.other.enqueue_engine_command(
+                project_id=self.project.id, command="pause", requested_by="alice"
+            )
+
+        self.assertTrue(self._engine(command_arrives)._wait_for_change(60.0))
 
 
 class EngineCommandsDuringLongWaitsTests(unittest.TestCase):
