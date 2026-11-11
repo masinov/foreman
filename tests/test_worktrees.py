@@ -17,7 +17,7 @@ import time
 import unittest
 
 from foreman.migrations import MIGRATIONS
-from foreman.models import Project, Sprint, Task
+from foreman.models import Event, Project, Run, Sprint, Task
 from foreman.orchestrator import ForemanOrchestrator, OrchestratorError
 from foreman.runner.base import AgentEvent, AgentRunConfig
 from foreman.store import ForemanStore
@@ -1201,6 +1201,68 @@ class EngineWorktreeIsolationTests(unittest.TestCase):
             ]
             self.assertEqual(len(recorded), 1)
             self.assertEqual(recorded[0].payload["head_sha"], evidence.head_sha)
+
+    def test_guidance_reaches_the_next_agent_step_once_and_is_marked_delivered(self) -> None:
+        repo, db_path = self.workspace()
+        with ForemanStore(db_path) as store:
+            project, task = self.seed(store, repo)
+            note_run = Run(
+                id="run-note",
+                task_id=task.id,
+                project_id=project.id,
+                role_id="human",
+                workflow_step="message",
+                agent_backend="human",
+                status="completed",
+                outcome="message",
+            )
+            store.save_run(note_run)
+            store.save_event(
+                Event(
+                    id="evt-note-1",
+                    run_id=note_run.id,
+                    task_id=task.id,
+                    project_id=project.id,
+                    event_type="human.message",
+                    timestamp="2026-01-01T00:00:00+00:00",
+                    role_id="human",
+                    payload={"text": "Name the function feature_flag."},
+                )
+            )
+            prompts: list[str] = []
+
+            def recording(behaviour):
+                def run(config: AgentRunConfig):
+                    prompts.append(config.prompt)
+                    yield from behaviour(config)
+
+                return run
+
+            orchestrator = ForemanOrchestrator(
+                store,
+                agent_runners={
+                    "claude_code": _ScriptedRunner(
+                        [recording(_developer_commits), recording(_reviewer_approves)]
+                    )
+                },
+            )
+
+            orchestrator.run_project(project.id)
+
+            self.assertEqual(len(prompts), 2)
+            self.assertIn("## Guidance from a person", prompts[0])
+            self.assertIn("Name the function feature_flag.", prompts[0])
+            # Delivered once: the reviewer's prompt does not repeat it.
+            self.assertNotIn("Name the function feature_flag.", prompts[1])
+            delivered = [
+                event
+                for event in store.list_events(task_id=task.id)
+                if event.event_type == "human.message_delivered"
+            ]
+            self.assertEqual(len(delivered), 1)
+            self.assertEqual(delivered[0].payload["message_event_ids"], ["evt-note-1"])
+            self.assertEqual(delivered[0].payload["role"], "developer")
+            self.assertEqual(delivered[0].payload["step"], "develop")
 
     def test_mark_done_removes_the_worktree_and_forgets_the_path(self) -> None:
         repo, db_path = self.workspace()

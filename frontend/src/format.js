@@ -252,6 +252,12 @@ export function formatEventSummary(event) {
   if (event.event_type === "human.message") {
     return String(payload.text || "(no message text)");
   }
+  if (event.event_type === "human.message_delivered") {
+    const count = Array.isArray(payload.message_event_ids) ? payload.message_event_ids.length : 1;
+    const who = payload.role ? ` by ${payload.role}` : "";
+    const where = payload.step ? ` @ ${payload.step}` : "";
+    return `Guidance read${who}${where}${count > 1 ? ` (${count} notes)` : ""}`;
+  }
   if (event.event_type === "human.task_edited") {
     const fields = payload.changed_fields ? Object.keys(payload.changed_fields).join(", ") : "fields";
     return `Task edited: ${fields}`;
@@ -449,6 +455,16 @@ export function evidenceFacts(evidence) {
     });
   }
   return rows;
+}
+
+/** Say where a guidance note stands: waiting for an agent step, or read by one. */
+export function formatGuidanceState(note) {
+  if (!note?.delivered) {
+    return "Waiting for the next agent step";
+  }
+  const who = note.delivered_role || "an agent";
+  const where = note.delivered_step ? ` at ${note.delivered_step}` : "";
+  return `Read by ${who}${where}`;
 }
 
 export function formatBlockedKind(kind) {

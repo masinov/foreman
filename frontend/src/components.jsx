@@ -15,6 +15,7 @@ import {
   formatEngineSummary,
   formatEventSummary,
   formatEventTime,
+  formatGuidanceState,
   formatProjectStatus,
   formatSelectionMode,
   formatSprintStatus,
@@ -1181,6 +1182,28 @@ function TaskPolicySection({ policy }) {
   );
 }
 
+function TaskGuidanceSection({ guidance }) {
+  if (!Array.isArray(guidance) || guidance.length === 0) {
+    return null;
+  }
+  return (
+    <div className="detail-section">
+      <div className="detail-section-title">Guidance</div>
+      <ul className="guidance-list">
+        {guidance.map((note) => (
+          <li key={note.event_id} className={`guidance-note ${note.delivered ? "delivered" : "waiting"}`}>
+            <div className="guidance-text">{note.text}</div>
+            <div className="guidance-state">
+              {formatGuidanceState(note)}
+              {note.delivered && note.delivered_at ? ` · ${formatEventTime(note.delivered_at)}` : ""}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function TaskSourceSection({ source }) {
   // Only work filed through the intake API carries a source; a task a person
   // created in the UI renders no Source section at all.
@@ -1422,6 +1445,7 @@ export function TaskDetailDrawer({
         {task.completion_evidence ? (
           <CompletionEvidenceSection evidence={task.completion_evidence} />
         ) : null}
+        <TaskGuidanceSection guidance={task.guidance} />
         {task.blocked_reason ? (
           <div className="detail-section">
             <div className="detail-section-title">Blocked Reason</div>

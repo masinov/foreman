@@ -9,6 +9,13 @@ memory changes rather than versioned product releases.
 
 ### Sprint 56 — engine truthfulness
 
+- **slice 9, guidance delivery** (`feat/guidance-delivery`): a guidance
+  note written for a task now reaches an agent. The engine appends every
+  note no agent has received to the prompt of the task's next agent step and
+  records `human.message_delivered` with the notes, role and step. The API
+  answers `recorded` (it said `sent` while nothing read the note), says when
+  a finished task means no agent will read it, and the task drawer lists
+  each note as waiting or read.
 - **slice 8, facts-based evidence** (`refactor/facts-based-evidence`,
   ADR-0018): completion evidence no longer has a score or a verdict. It
   records whether the tests passed and on which commit, what each reviewer

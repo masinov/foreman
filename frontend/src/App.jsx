@@ -444,8 +444,9 @@ export default function App({ services, browser }) {
     setIsActionPending(true);
     setErrorMessage("");
     try {
-      await services.createHumanMessage(selectedTaskId, messageText.trim());
+      const recorded = await services.createHumanMessage(selectedTaskId, messageText.trim());
       setMessageText("");
+      setNoticeMessage(recorded?.message || "");
       await refreshAllVisibleState();
     } catch (error) {
       handleError(error);
@@ -1123,11 +1124,11 @@ export default function App({ services, browser }) {
                       id="human-message"
                       value={messageText}
                       onChange={(event) => setMessageText(event.target.value)}
-                      placeholder={selectedTaskId ? "Send guidance to the selected task." : "Select a task to send guidance."}
+                      placeholder={selectedTaskId ? "Guidance for this task. Its next agent step reads it." : "Select a task to write guidance for it."}
                       disabled={!selectedTaskId || isActionPending}
                     />
                     <button type="button" onClick={handleSendHumanMessage} disabled={!selectedTaskId || isActionPending}>
-                      Send
+                      Add guidance
                     </button>
                   </div>
                 </aside>

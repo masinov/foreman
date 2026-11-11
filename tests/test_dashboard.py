@@ -398,13 +398,70 @@ class DashboardBackendTests(unittest.TestCase):
         self.assertEqual(response.status_code, 307)
         self.assertEqual(response.headers["location"], "http://127.0.0.1:5173/dashboard")
 
+    def test_guidance_for_a_finished_task_says_no_agent_will_read_it(self):
+        task = Task(
+            id="task-guidance-done",
+            sprint_id=self.in_progress_task.sprint_id,
+            project_id=self.in_progress_task.project_id,
+            title="Finished work",
+            status="done",
+        )
+        self.store.save_task(task)
+        self.addCleanup(self.store.delete_task, task.id)
+
+        result = self.api.create_human_message(task.id, text="One more thing")
+
+        self.assertEqual(result["status"], "recorded")
+        self.assertFalse(result["will_deliver"])
+        self.assertIn("no agent step will read it", result["message"])
+
+    def test_task_detail_lists_guidance_with_its_delivery_state(self):
+        from foreman.models import Event
+
+        task = Task(
+            id="task-guidance-open",
+            sprint_id=self.in_progress_task.sprint_id,
+            project_id=self.in_progress_task.project_id,
+            title="Open work",
+            status="todo",
+        )
+        self.store.save_task(task)
+        self.addCleanup(self.store.delete_task, task.id)
+        first = self.api.create_human_message(task.id, text="Add more tests")
+        run_id = self.store.list_events(task_id=task.id)[-1].run_id
+        self.store.save_event(
+            Event(
+                id="evt-delivered-1",
+                run_id=run_id,
+                task_id=task.id,
+                project_id=task.project_id,
+                event_type="human.message_delivered",
+                timestamp="2026-03-30T14:05:00+00:00",
+                payload={
+                    "message_event_ids": [first["event_id"]],
+                    "role": "developer",
+                    "step": "develop",
+                },
+            )
+        )
+
+        guidance = self.api.get_task(task.id)["guidance"]
+
+        self.assertEqual(len(guidance), 1)
+        self.assertEqual(guidance[0]["text"], "Add more tests")
+        self.assertTrue(guidance[0]["delivered"])
+        self.assertEqual(guidance[0]["delivered_role"], "developer")
+        self.assertEqual(guidance[0]["delivered_step"], "develop")
+
     def test_human_message_event_storage(self):
         """Human guidance messages are persisted through the dashboard service contract."""
         result = self.api.create_human_message(
             self.in_progress_task.id,
             text="Please add more tests",
         )
-        self.assertEqual(result["status"], "sent")
+        self.assertEqual(result["status"], "recorded")
+        self.assertTrue(result["will_deliver"])
+        self.assertIn("next agent step", result["message"])
         self.assertEqual(result["task_id"], self.in_progress_task.id)
         events = self.store.list_events(task_id=self.in_progress_task.id)
         human_events = [e for e in events if e.event_type == "human.message"]
@@ -625,7 +682,7 @@ class DashboardApproveDenyIntegrationTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
-        self.assertEqual(payload["status"], "sent")
+        self.assertEqual(payload["status"], "recorded")
         self.assertEqual(payload["task_id"], task.id)
         self.assertTrue(any(event.event_type == "human.message" for event in events))
         self.assertTrue(
