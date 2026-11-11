@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 import json
 import time
@@ -54,6 +54,9 @@ from .engine.prompts import (
     safe_recent_commits,
 )
 from .engine.records import RunRecords, new_id
+from .engine.retention import Retention
+from .engine.sprints import SprintFlow
+from .engine.task_writes import TaskWrites
 from .engine.results import (
     AgentEventRecord,
     AgentExecutionResult,
@@ -73,7 +76,7 @@ from .git import (
 )
 from .logs import get_logger
 from .guidance import GUIDANCE_DELIVERED_EVENT, pending_guidance, prompt_with_guidance
-from .models import CompletionEvidence, Event, HumanGateDecision, Lease, Project, Run, Sprint, TASK_COMPLEXITIES, TASK_TYPES, Task, TokenUsage, utc_now_text
+from .models import CompletionEvidence, Event, HumanGateDecision, Lease, Project, Run, TASK_COMPLEXITIES, TASK_TYPES, Task, TokenUsage, utc_now_text
 from .notifications import NotificationDispatcher
 from .policy import PolicyMatrix, describe_resolution
 from .outcomes import APPROVE, BLOCKED, DENY, ERROR, normalize_agent_outcome, normalize_reviewer_decision
@@ -82,7 +85,6 @@ from .runner.base import AgentRunner as NativeAgentRunner
 from .runner.process import EngineShutdown
 from .runner.env import resolve_env
 from .roles import RoleDefinition, default_roles_dir, load_roles
-from .settings import ProjectSettings
 from .store import ForemanStore
 from .workflows import WorkflowDefinition, WorkflowStep, default_workflows_dir, load_workflows
 from .worktrees import (
@@ -174,8 +176,11 @@ class ForemanOrchestrator:
         #: notifying anyone can pass one that does nothing.
         self.notifier = notifier if notifier is not None else NotificationDispatcher(store)
         self.records = RunRecords(store, self.notifier)
+        self.tasks = TaskWrites(store)
         self.runner_sleep = runner_sleep
         self.utc_now = utc_now or (lambda: datetime.now(timezone.utc))
+        self.retention = Retention(store, self.records, self.utc_now)
+        self.sprints = SprintFlow(store, self.records, self.utc_now)
         self.holder_id = holder_id or str(uuid4())
         if native_step_heartbeat_seconds is not None and native_step_heartbeat_seconds < 0:
             native_step_heartbeat_seconds = 0.0
@@ -237,7 +242,7 @@ class ForemanOrchestrator:
         recorded = str(path)
         if task.worktree_path != recorded:
             task.worktree_path = recorded
-            self._save_task(task)
+            self.tasks.save(task)
         return path
 
     def _reclaim_worktrees_for(
@@ -335,50 +340,6 @@ class ForemanOrchestrator:
         if self.command_poll is not None:
             self.command_poll(task_id)
 
-    def _save_task(self, task: Task, *, include_definition: bool = False) -> None:
-        """Persist the engine's view of a task without overwriting an operator's.
-
-        Only workflow state is written (see ``update_task_engine_state``). A
-        task the store does not know yet is inserted whole. A task an operator
-        cancelled is left exactly as it is and ``TaskCancelledError`` stops
-        whatever the engine was doing with it.
-        """
-
-        written = self.store.update_task_engine_state(
-            task, include_definition=include_definition
-        )
-        if written is None:
-            self.store.save_task(task)
-        elif written is False:
-            raise TaskCancelledError(task.id)
-
-    def _adopt_operator_changes(self, task: Task) -> Task:
-        """Refresh the fields an operator owns from the store, in place.
-
-        The engine keeps one task object for a whole workflow. Between steps
-        it picks up what a person changed (wording, criteria, priority,
-        dependencies, overrides) so the next prompt and model choice use it,
-        and it returns the stored row so the caller can see a status change.
-        """
-
-        fresh = self.store.get_task(task.id)
-        if fresh is None:
-            raise OrchestratorError(f"Task {task.id!r} disappeared during execution.")
-        for name in (
-            "title",
-            "description",
-            "acceptance_criteria",
-            "task_type",
-            "priority",
-            "order_index",
-            "depends_on_task_ids",
-            "executor_overrides",
-            "complexity",
-            "sprint_id",
-        ):
-            setattr(task, name, getattr(fresh, name))
-        return fresh
-
     def run_project(
         self,
         project_id: str,
@@ -401,7 +362,7 @@ class ForemanOrchestrator:
         workflow = self._load_workflow_for_project(project)
         self._preflight_worktrees(project)
         if maintenance:
-            self.prune_old_history(project, settings=settings)
+            self.retention.prune_old_history(project, settings=settings)
             self.recover_orphaned_tasks(project.id)
 
         executed_task_ids: list[str] = []
@@ -432,7 +393,7 @@ class ForemanOrchestrator:
                 stop_reason="task_complete",
             )
 
-        self._activate_first_planned_sprint(project.id)
+        self.sprints.activate_first_planned(project.id)
         stop_reason = "idle"
         while True:
             task = self.select_next_task(project)
@@ -450,8 +411,8 @@ class ForemanOrchestrator:
 
             # No runnable task — check sprint state.
             sprint = self.store.get_active_sprint(project.id)
-            if sprint is not None and self._sprint_fully_resolved(sprint):
-                result = self._advance_sprint(project, sprint)
+            if sprint is not None and self.sprints.fully_resolved(sprint):
+                result = self.sprints.advance(project, sprint)
                 if result is None:
                     # Autonomous mode: next sprint now active — keep looping.
                     continue
@@ -531,7 +492,7 @@ class ForemanOrchestrator:
         task.blocked_reason = None
         task.workflow_current_step = step
         task.workflow_carried_output = carried_output
-        self._save_task(task)
+        self.tasks.save(task)
         self.records.emit_event(
             run,
             "engine.quota_exhausted",
@@ -572,7 +533,7 @@ class ForemanOrchestrator:
         if task.status not in {"done", "cancelled"}:
             task.status = "blocked"
             task.blocked_reason = reason
-            self._save_task(task)
+            self.tasks.save(task)
         self.records.create_system_run(
             task,
             workflow_step=workflow_step,
@@ -619,7 +580,7 @@ class ForemanOrchestrator:
             return task
         task.status = "blocked"
         task.blocked_reason = reason
-        self._save_task(task)
+        self.tasks.save(task)
         return task
 
     def record_engine_event(
@@ -654,23 +615,6 @@ class ForemanOrchestrator:
             detail=detail,
         )
         return self.records.emit_event(run, event_type, payload)
-
-    def _activate_first_planned_sprint(self, project_id: str) -> Sprint | None:
-        """Activate the first planned sprint when project-scoped execution starts idle."""
-
-        active = self.store.get_active_sprint(project_id)
-        if active is not None:
-            return active
-
-        next_sprint = self.store.get_next_planned_sprint(project_id)
-        if next_sprint is None:
-            return None
-
-        next_sprint.status = "active"
-        next_sprint.started_at = next_sprint.started_at or self.utc_now().isoformat()
-        next_sprint.completed_at = None
-        self.store.save_sprint(next_sprint)
-        return next_sprint
 
     def select_next_task(self, project: Project) -> Task | None:
         """Return the next runnable task for one project."""
@@ -771,7 +715,7 @@ class ForemanOrchestrator:
             status="todo",
             created_by="orchestrator",
         )
-        self._save_task(placeholder)
+        self.tasks.save(placeholder)
         # Acquire lease for the new placeholder immediately.
         if self.leases.acquire(placeholder, project) is None:
             # Race: another orchestrator created one first; reload and return it.
@@ -879,7 +823,7 @@ class ForemanOrchestrator:
         if not is_resuming:
             current_task.step_visit_counts = {}
         current_task.started_at = current_task.started_at or utc_now_text()
-        self._save_task(current_task)
+        self.tasks.save(current_task)
 
         # No try/finally around the workflow: the engine never changes what is
         # checked out in the operator's repository, so there is no branch to
@@ -1036,7 +980,7 @@ class ForemanOrchestrator:
         # recorded" must not leave a task that restarts from its entry step.
         current_task.workflow_current_step = transition.to_step if deferred else None
         current_task.workflow_carried_output = carried_output if deferred else None
-        self._save_task(current_task)
+        self.tasks.save(current_task)
 
         if deferred:
             refreshed = self.store.get_task(current_task.id)
@@ -1183,7 +1127,7 @@ class ForemanOrchestrator:
             # A step only starts for a task that is still the engine's to
             # work on. A person may have cancelled or blocked it, and an
             # agent may have reported a blocker during the previous step.
-            stored = self._adopt_operator_changes(current_task)
+            stored = self.tasks.adopt_operator_changes(current_task)
             if stored.status == "cancelled":
                 raise TaskCancelledError(current_task.id)
             if stored.status == "blocked":
@@ -1243,14 +1187,14 @@ class ForemanOrchestrator:
                         current_task.blocked_reason = str(e)
                         current_task.workflow_current_step = None
                         current_task.workflow_carried_output = None
-                        self._save_task(current_task)
+                        self.tasks.save(current_task)
                         current_step = None
                         self.leases.release(current_task, project)
                         break
 
             visit_count = current_task.step_visit_counts.get(current_step, 0) + 1
             current_task.step_visit_counts[current_step] = visit_count
-            self._save_task(current_task)
+            self.tasks.save(current_task)
 
             settings = resolve_project_settings(project)
             max_step_visits = settings.max_step_visits
@@ -1277,7 +1221,7 @@ class ForemanOrchestrator:
                 )
                 current_task.status = "blocked"
                 current_task.blocked_reason = detail
-                self._save_task(current_task)
+                self.tasks.save(current_task)
                 break
 
             task_cost = sum(run.cost_usd for run in self.store.list_runs(task_id=current_task.id))
@@ -1302,7 +1246,7 @@ class ForemanOrchestrator:
                 )
                 current_task.status = "blocked"
                 current_task.blocked_reason = detail
-                self._save_task(current_task)
+                self.tasks.save(current_task)
                 break
 
             sprint_cost_limit = settings.cost_limit_per_sprint_usd
@@ -1334,7 +1278,7 @@ class ForemanOrchestrator:
                 )
                 current_task.status = "blocked"
                 current_task.blocked_reason = detail
-                self._save_task(current_task)
+                self.tasks.save(current_task)
                 break
 
             task_duration_ms = sum(
@@ -1361,7 +1305,7 @@ class ForemanOrchestrator:
                 )
                 current_task.status = "blocked"
                 current_task.blocked_reason = detail
-                self._save_task(current_task)
+                self.tasks.save(current_task)
                 break
 
             branch_sync_event: tuple[str, dict[str, Any]] | None = None
@@ -1385,7 +1329,7 @@ class ForemanOrchestrator:
 
             current_task.workflow_current_step = current_step
             current_task.workflow_carried_output = carried_output
-            self._save_task(current_task)
+            self.tasks.save(current_task)
 
             # Poll *after* the resume point is persisted: an interrupt here
             # must leave the task resumable at the step it was about to run,
@@ -1421,7 +1365,7 @@ class ForemanOrchestrator:
                         event_recorder=lambda event_record: self._persist_builtin_event(run, event_record),
                         working_dir=task_working_dir(project, current_task),
                     )
-                    self._save_task(current_task)
+                    self.tasks.save(current_task)
                     self.records.complete_run(
                         run,
                         status="completed",
@@ -1471,7 +1415,7 @@ class ForemanOrchestrator:
                     evidence_builder=self.build_completion_evidence,
                     working_dir=task_working_dir(project, current_task),
                 )
-                self._save_task(current_task)
+                self.tasks.save(current_task)
                 self.records.complete_run(
                     run,
                     status="completed",
@@ -1499,7 +1443,7 @@ class ForemanOrchestrator:
                 if role is None:
                     raise OrchestratorError(f"Unknown role {step_def.role!r}.")
                 current_task.assigned_role = role.id
-                self._save_task(current_task)
+                self.tasks.save(current_task)
 
                 context_projection = build_project_context(
                     self.store,
@@ -1801,7 +1745,7 @@ class ForemanOrchestrator:
                 current_task.completion_evidence = self.build_completion_evidence(
                     current_task, project
                 )
-                self._save_task(current_task)
+                self.tasks.save(current_task)
 
             # ── After every step: the task's own work must not be on the
             # default branch before the merge step puts it there. The default
@@ -1841,7 +1785,7 @@ class ForemanOrchestrator:
                 current_task.blocked_reason = detail
                 current_task.workflow_current_step = None
                 current_task.workflow_carried_output = None
-                self._save_task(current_task)
+                self.tasks.save(current_task)
                 current_step = None
                 self.leases.release(current_task, project)
                 break
@@ -1851,7 +1795,7 @@ class ForemanOrchestrator:
                 if current_task.status == "done":
                     current_task.workflow_current_step = None
                     current_task.workflow_carried_output = None
-                    self._save_task(current_task)
+                    self.tasks.save(current_task)
                     current_step = None
                     self.leases.release(current_task, project)
                     break
@@ -1870,7 +1814,7 @@ class ForemanOrchestrator:
                 )
                 current_task.workflow_current_step = None
                 current_task.workflow_carried_output = None
-                self._save_task(current_task)
+                self.tasks.save(current_task)
                 current_step = None
                 self.leases.release(current_task, project)
                 continue
@@ -1904,7 +1848,7 @@ class ForemanOrchestrator:
             current_task.workflow_carried_output = (
                 carried_output if transition.to_step is not None else None
             )
-            self._save_task(current_task)
+            self.tasks.save(current_task)
             current_step = transition.to_step
 
             # Renew lease after each step (heartbeat during workflow execution).
@@ -2024,7 +1968,7 @@ class ForemanOrchestrator:
             task.status = "todo"
             task.blocked_reason = None
             task.step_visit_counts = {}
-            self._save_task(task)
+            self.tasks.save(task)
 
     def _recover_stale_running_runs(
         self,
@@ -2093,7 +2037,7 @@ class ForemanOrchestrator:
         task.workflow_current_step = None
         task.workflow_carried_output = None
         task.step_visit_counts = {}
-        self._save_task(task)
+        self.tasks.save(task)
 
     def _run_is_stale(self, project: Project, run: Run) -> bool:
         """Return whether a persisted running run has exceeded its allowed ownership window.
@@ -2138,157 +2082,7 @@ class ForemanOrchestrator:
 
         return True
 
-    def prune_old_history(
-        self,
-        project: Project,
-        *,
-        settings: ProjectSettings | None = None,
-    ) -> dict[str, int]:
-        """Prune old project history according to per-type retention settings.
-
-        Reads three optional retention settings through the validated
-        ``ProjectSettings`` model:
-
-        - ``event_retention_days`` — hard-delete old events
-        - ``run_retention_days`` — hard-delete old terminal runs and their events
-        - ``prompt_retention_days`` — null out prompt_text on old terminal runs
-
-        Each setting is independent and disabled when unset. Returns a dict
-        with counts for each type that was actually pruned.
-        """
-
-        counts: dict[str, int] = {}
-        if settings is None:
-            settings = resolve_project_settings(project)
-
-        event_days = settings.event_retention_days
-        if event_days is not None:
-            cutoff = self._retention_cutoff(event_days)
-            n = self.store.prune_old_events(project_id=project.id, older_than=cutoff)
-            if n > 0:
-                counts["events"] = n
-                self._emit_pruned_event(project, "engine.event_pruned", n, cutoff)
-
-        run_days = settings.run_retention_days
-        if run_days is not None:
-            cutoff = self._retention_cutoff(run_days)
-            n = self.store.prune_old_runs(project_id=project.id, older_than=cutoff)
-            if n > 0:
-                counts["runs"] = n
-                self._emit_pruned_event(project, "engine.run_pruned", n, cutoff)
-
-        prompt_days = settings.prompt_retention_days
-        if prompt_days is not None:
-            cutoff = self._retention_cutoff(prompt_days)
-            n = self.store.strip_old_run_prompts(project_id=project.id, older_than=cutoff)
-            if n > 0:
-                counts["prompts"] = n
-                self._emit_pruned_event(project, "engine.prompt_stripped", n, cutoff)
-
-        return counts
-
-    def _retention_cutoff(self, days: int) -> str:
-        """Return an ISO 8601 UTC timestamp ``days`` before now."""
-
-        return (
-            self.utc_now() - timedelta(days=days)
-        ).isoformat(timespec="microseconds").replace("+00:00", "Z")
-
-    def _emit_pruned_event(
-        self,
-        project: Project,
-        event_type: str,
-        count: int,
-        older_than: str,
-    ) -> None:
-        """Emit a project-scoped lifecycle event for a completed pruning operation."""
-
-        task = self.records.select_project_system_task(project.id)
-        if task is None:
-            return
-        run = self.records.create_system_run(
-            task,
-            workflow_step="orchestrator",
-            outcome="success",
-            detail=f"{event_type}: {count} rows older than {older_than}.",
-        )
-        self.records.emit_event(run, event_type, {"count": count, "older_than": older_than})
-
-    # Keep the old name as a thin delegate so any existing call sites outside
-    # this class continue to work during the transition period.
-    def prune_old_events(self, project: Project) -> int:
-        """Prune old project events only.  Prefer prune_old_history() for new code."""
-
-        result = self.prune_old_history(project)
-        return result.get("events", 0)
-
     # ── Sprint advancement ────────────────────────────────────────────────────
-
-    def _sprint_fully_resolved(self, sprint: Sprint) -> bool:
-        """Return True when every task in the sprint is done or cancelled."""
-        tasks = self.store.list_tasks(sprint_id=sprint.id)
-        return bool(tasks) and all(t.status in {"done", "cancelled"} for t in tasks)
-
-    def _advance_sprint(self, project: Project, sprint: Sprint) -> str | None:
-        """Complete *sprint* and advance to the next planned sprint if appropriate.
-
-        Returns:
-            None            — autonomous mode advanced; caller should continue loop.
-            "sprint_complete" — next sprint is queued but waiting for human.
-            "idle"          — sprint done, no further sprints in the queue.
-        """
-        now = self.utc_now().isoformat()
-        sprint.status = "completed"
-        sprint.completed_at = now
-        self.store.save_sprint(sprint)
-        self._emit_sprint_event(project, "engine.sprint_completed", {
-            "sprint_id": sprint.id,
-            "sprint_title": sprint.title,
-        }, sprint=sprint)
-
-        next_sprint = self.store.get_next_planned_sprint(project.id)
-        if next_sprint is None:
-            # Work is exhausted; the manager may want to plan more.
-            self._emit_sprint_attention(project, sprint)
-            return "idle"
-
-        if project.autonomy_level == "autonomous":
-            next_sprint.status = "active"
-            next_sprint.started_at = now
-            self.store.save_sprint(next_sprint)
-            self._emit_sprint_event(project, "engine.sprint_started", {
-                "sprint_id": next_sprint.id,
-                "sprint_title": next_sprint.title,
-            }, sprint=next_sprint)
-            return None  # continue loop
-
-        # supervised or directed: emit ready signal and stop.
-        if project.autonomy_level == "supervised":
-            self._emit_sprint_event(project, "engine.sprint_ready", {
-                "sprint_id": next_sprint.id,
-                "sprint_title": next_sprint.title,
-            }, sprint=sprint)
-        # The engine stops here and hands the next move to the manager/human.
-        self._emit_sprint_attention(project, sprint)
-        return "sprint_complete"
-
-    def _emit_sprint_event(
-        self,
-        project: Project,
-        event_type: str,
-        payload: dict[str, Any],
-        *,
-        sprint: Sprint,
-    ) -> None:
-        """Emit a sprint-scoped lifecycle event via a synthetic run."""
-        tasks = self.store.list_tasks(sprint_id=sprint.id)
-        task = tasks[0] if tasks else self.records.select_project_system_task(project.id)
-        if task is None:
-            return
-        run = self.records.create_system_run(
-            task, workflow_step="orchestrator", outcome="success", detail=event_type
-        )
-        self.records.emit_event(run, event_type, payload)
 
     def _latest_agent_run(self, task_id: str) -> Run | None:
         """Return the most recent completed agent (non-builtin) run for a task.
@@ -2368,7 +2162,7 @@ class ForemanOrchestrator:
         if evidence is None and role.completion.output.extract_decision:
             evidence = self.build_completion_evidence(task, project)
             task.completion_evidence = evidence
-            self._save_task(task)
+            self.tasks.save(task)
         context = {
             "task_title": task.title,
             "task_description": task.description or "",
@@ -2971,7 +2765,7 @@ class ForemanOrchestrator:
                     task.branch_name = branch
                 else:
                     refused["branch"] = problem
-            self._save_task(task, include_definition=True)
+            self.tasks.save(task, include_definition=True)
             for field_name, reason in refused.items():
                 self.records.emit_event(
                     run,
@@ -3006,7 +2800,7 @@ class ForemanOrchestrator:
                 created_by=f"agent:{role_id}",
                 created_at=event_record.timestamp,
             )
-            self._save_task(created_task)
+            self.tasks.save(created_task)
             self.records.emit_event(
                 run,
                 "engine.task_created",
@@ -3024,7 +2818,7 @@ class ForemanOrchestrator:
             if message:
                 task.status = "blocked"
                 task.blocked_reason = message
-                self._save_task(task)
+                self.tasks.save(task)
                 self.leases.release(task, project)
                 self.records.emit_attention_needed(run, task.id, "task_blocked")
 
@@ -3048,26 +2842,6 @@ class ForemanOrchestrator:
         payload = dict(event_record.payload)
         payload["schema_version"] = event_record.schema_version
         self.records.emit_event(run, event_record.event_type, payload)
-
-    def _emit_sprint_attention(self, project: Project, sprint: Sprint) -> None:
-        """Raise one ``sprint_resolved`` attention turn when a sprint finishes and
-        the engine stops (a supervised/directed handoff, or no further sprints).
-
-        Autonomous runs that auto-advance to the next sprint do not call this.
-        """
-        tasks = self.store.list_tasks(sprint_id=sprint.id)
-        anchor = tasks[0] if tasks else self.records.select_project_system_task(project.id)
-        if anchor is None:
-            return
-        run = self.records.create_system_run(
-            anchor,
-            workflow_step="orchestrator",
-            outcome="success",
-            detail=f"sprint_resolved: {sprint.title}",
-        )
-        # task_id is None: the digest should lead with the sprint handoff, not a
-        # single (already-done) task row.
-        self.records.emit_attention_needed(run, None, "sprint_resolved")
 
 def _failure_type_for_error(payload: Mapping[str, Any]) -> str:
     """Classify an ``agent.error`` payload for ``Run.failure_type``."""
