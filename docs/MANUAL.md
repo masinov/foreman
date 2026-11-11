@@ -1063,7 +1063,7 @@ npm --prefix frontend run dev:full    # backend :8080 + frontend :5173/dashboard
 npm --prefix frontend run dev         # frontend only; proxies /api → :8080
 ```
 
-The backend (`foreman/dashboard_backend.py`) is a thin FastAPI transport over
+The backend (`foreman/dashboard/`) is a thin FastAPI transport over
 the `DashboardService` (`foreman/dashboard_service.py`); the service is the only
 thing that touches the store. A fresh service is constructed per request and
 holds no process handles: everything Run and Pause do survives request
