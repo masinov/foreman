@@ -3745,7 +3745,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
             # The scripted runner yields many events, exercising the heartbeat
             # path. Use the developer role to drive a real native step.
             developer_role = self.roles["developer"]
-            result = orchestrator._execute_native_runner_step(
+            result = orchestrator.agent_steps.execute_native(
                 role=developer_role,
                 project=project,
                 task=task,
@@ -3799,7 +3799,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
             developer_role = self.roles["developer"]
             # Even with many events, the heartbeat must not have been bumped
             # because the interval is zero (disabled).
-            orchestrator._execute_native_runner_step(
+            orchestrator.agent_steps.execute_native(
                 role=developer_role,
                 project=project,
                 task=task,

@@ -394,7 +394,7 @@ class OrchestratorContractTests(unittest.TestCase):
                 ("Implemented, but I hit a blocker with the migration.", "result"),
             )
             orchestrator.agent_runners["claude_code"] = _ScriptedRunner([echoed_early])
-            result = orchestrator._execute_native_runner_step(
+            result = orchestrator.agent_steps.execute_native(
                 role=role, project=project, task=task, workflow_step="develop", prompt="p", session_id=None
             )
             self.assertEqual(result.outcome, "error")
@@ -405,7 +405,7 @@ class OrchestratorContractTests(unittest.TestCase):
                 ("Implemented the feature.\nTASK_COMPLETE", "result"),
             )
             orchestrator.agent_runners["claude_code"] = _ScriptedRunner([ended_properly])
-            result = orchestrator._execute_native_runner_step(
+            result = orchestrator.agent_steps.execute_native(
                 role=role, project=project, task=task, workflow_step="develop", prompt="p", session_id=None
             )
             self.assertEqual(result.outcome, "done")
@@ -429,7 +429,7 @@ class OrchestratorContractTests(unittest.TestCase):
             run = Run(id="r-dev", task_id=task.id, project_id=project.id, role_id="developer", workflow_step="develop", agent_backend="claude_code", status="running")
             store.save_run(run)
             orchestrator.agent_runners["claude_code"] = _ScriptedRunner([duplicated])
-            orchestrator._execute_native_runner_step(
+            orchestrator.agent_steps.execute_native(
                 role=orchestrator.roles["developer"], project=project, task=task, workflow_step="develop",
                 prompt="p", session_id=None,
                 event_recorder=lambda rec: orchestrator.signals.persist_agent_event(run, task, project, "developer", rec),
@@ -447,7 +447,7 @@ class OrchestratorContractTests(unittest.TestCase):
                 yield AgentEvent("agent.completed", payload={"session_id": "s"})
 
             orchestrator.agent_runners["claude_code"] = _ScriptedRunner([reviewer_signals])
-            result = orchestrator._execute_native_runner_step(
+            result = orchestrator.agent_steps.execute_native(
                 role=orchestrator.roles["code_reviewer"], project=project, task=task, workflow_step="review",
                 prompt="p", session_id=None,
                 event_recorder=lambda rec: orchestrator.signals.persist_agent_event(run2, task, project, "code_reviewer", rec),
