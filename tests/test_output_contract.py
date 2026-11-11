@@ -16,7 +16,8 @@ import unittest
 from pathlib import Path
 
 from foreman.models import Project, Run, Sprint, Task
-from foreman.orchestrator import ForemanOrchestrator, _extract_decision_output
+from foreman.engine.output_contract import extract_decision_output
+from foreman.orchestrator import ForemanOrchestrator
 from foreman.roles import RoleLoadError, default_roles_dir, load_role, load_roles
 from foreman.runner import AgentRunConfig, ClaudeCodeRunner
 from foreman.runner.base import AgentEvent
@@ -27,18 +28,18 @@ from foreman.workflows import WorkflowLoadError, default_workflows_dir, load_wor
 
 class DecisionGrammarTests(unittest.TestCase):
     def test_accepts_decision_and_verdict_prefixes(self) -> None:
-        self.assertEqual(_extract_decision_output("Looks fine.\n\n**Decision:** APPROVE"), ("approve", "APPROVE"))
+        self.assertEqual(extract_decision_output("Looks fine.\n\n**Decision:** APPROVE"), ("approve", "APPROVE"))
         self.assertEqual(
-            _extract_decision_output("Verdict — DENY: the migration test is missing"),
+            extract_decision_output("Verdict — DENY: the migration test is missing"),
             ("deny", "the migration test is missing"),
         )
         self.assertEqual(
-            _extract_decision_output("Final decision: STEER - split the change"),
+            extract_decision_output("Final decision: STEER - split the change"),
             ("steer", "split the change"),
         )
 
     def test_multiple_distinct_verdicts_are_an_error_not_a_guess(self) -> None:
-        outcome, detail = _extract_decision_output(
+        outcome, detail = extract_decision_output(
             "DENY: no tests\n\nThe options were:\n- APPROVE\n- DENY: <reason>"
         )
         self.assertEqual(outcome, "error")
@@ -47,20 +48,20 @@ class DecisionGrammarTests(unittest.TestCase):
         self.assertIn("DENY", detail)
 
     def test_placeholder_option_lines_are_ignored(self) -> None:
-        outcome, detail = _extract_decision_output(
+        outcome, detail = extract_decision_output(
             "DENY: no tests\n\nReturn one of:\n- DENY: <reason>\n- STEER: <specific corrective action>"
         )
         self.assertEqual((outcome, detail), ("deny", "no tests"))
 
     def test_verdict_outside_the_role_contract_is_an_error(self) -> None:
-        outcome, detail = _extract_decision_output("STEER: rework it", allowed=("approve", "deny"))
+        outcome, detail = extract_decision_output("STEER: rework it", allowed=("approve", "deny"))
         self.assertEqual(outcome, "error")
         self.assertIn("not valid for this role", detail)
         self.assertIn("APPROVE, DENY", detail)
 
     def test_prose_mentioning_a_verdict_word_is_not_a_verdict(self) -> None:
-        self.assertEqual(_extract_decision_output("I cannot APPROVE this yet.")[0], "error")
-        self.assertEqual(_extract_decision_output("APPROVED by me")[0], "error")
+        self.assertEqual(extract_decision_output("I cannot APPROVE this yet.")[0], "error")
+        self.assertEqual(extract_decision_output("APPROVED by me")[0], "error")
 
 
 class SignalParsingTests(unittest.TestCase):

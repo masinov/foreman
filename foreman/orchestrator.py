@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import json
-import re
 import subprocess
 import time
-from typing import Any, Protocol
+from typing import Any
 from uuid import uuid4
 
 from .builtins import BuiltinEventRecord, BuiltinExecutor
@@ -20,7 +18,39 @@ from .context import (
     context_directory,
     relative_project_path,
 )
-from .errors import EngineCommandInterrupt, ForemanError
+from .engine.errors import (
+    LeaseLostError,
+    OrchestratorError,
+    QuotaPauseError,
+    TaskCancelledError,
+    TaskExecutionError,
+)
+from .engine.limits import (
+    active_run_recovery_timeout_seconds,
+    project_timeout_seconds,
+    resolve_project_settings,
+    run_cost_ceiling,
+)
+from .engine.model_selection import (
+    resolve_step_model,
+    resolve_step_model_selection,
+)
+from .engine.output_contract import (
+    FINAL_MESSAGE_PHASES,
+    contains_completion_marker,
+    decision_option_lines,
+    extract_decision_output,
+    extract_json_block,
+    strip_completion_marker,
+)
+from .engine.results import (
+    AgentEventRecord,
+    AgentExecutionResult,
+    AgentExecutor,
+    HumanGateResumeResult,
+    ProjectRunResult,
+)
+from .errors import EngineCommandInterrupt
 from .git import (
     GitError,
     task_commits_on_default_branch,
@@ -50,7 +80,7 @@ from .runner.base import AgentRunner as NativeAgentRunner
 from .runner.process import EngineShutdown
 from .runner.env import resolve_env
 from .roles import RoleDefinition, default_roles_dir, load_roles
-from .settings import ProjectSettings, SettingsError, settings_of
+from .settings import ProjectSettings
 from .store import ForemanStore
 from .workflows import WorkflowDefinition, WorkflowStep, default_workflows_dir, load_workflows
 from .worktrees import (
@@ -74,132 +104,6 @@ _BRANCH_PREFIXES = {
     "spike": "spike",
     "chore": "chore",
 }
-
-
-class OrchestratorError(ForemanError):
-    """Raised when Foreman cannot execute the requested workflow slice."""
-
-
-class TaskCancelledError(OrchestratorError):
-    """The task was cancelled by an operator while the engine was working on it."""
-
-    def __init__(self, task_id: str) -> None:
-        super().__init__(f"Task {task_id!r} was cancelled; the engine stopped working on it.")
-        self.task_id = task_id
-
-
-class LeaseLostError(OrchestratorError):
-    """Raised when this engine's task lease is renewed and found to be gone.
-
-    Another engine has taken the task over, or the lease expired while the
-    agent was silent. The active agent is stopped and this engine exits
-    without touching the task, which the new holder now owns.
-    """
-
-
-class QuotaPauseError(OrchestratorError):
-    """Raised when a task must pause because the agent backend's quota ran out.
-
-    The task keeps its resume point (``workflow_current_step`` and the carried
-    output) and its ``in_progress`` status, so the next pass resumes it at the
-    same step; nothing about the task itself failed. ``retry_after`` is the
-    backend's reset time when it reported one.
-    """
-
-    def __init__(self, task_id: str, *, retry_after: str | None, detail: str) -> None:
-        super().__init__(f"Task {task_id!r} paused until the backend quota resets: {detail}")
-        self.task_id = task_id
-        self.retry_after = retry_after
-        self.detail = detail
-
-
-class TaskExecutionError(OrchestratorError):
-    """Raised when running one specific task failed.
-
-    Carries the task identifier so a resident engine can isolate the failure:
-    block that one task, raise an attention turn for it, and keep serving the
-    rest of the project instead of exiting. A one-shot ``foreman run`` treats
-    it like any other ``OrchestratorError``.
-    """
-
-    def __init__(self, task_id: str, cause: BaseException) -> None:
-        super().__init__(f"Task {task_id!r} failed: {cause}")
-        self.task_id = task_id
-        self.cause = cause
-
-
-@dataclass(slots=True)
-class AgentEventRecord:
-    """One structured event returned from an agent executor."""
-
-    event_type: str
-    payload: dict[str, Any] = field(default_factory=dict)
-    timestamp: str = field(default_factory=utc_now_text)
-
-
-@dataclass(slots=True)
-class AgentExecutionResult:
-    """Normalized output from one agent workflow step."""
-
-    outcome: str
-    detail: str = ""
-    status: str = "completed"
-    session_id: str | None = None
-    cost_usd: float = 0.0
-    token_count: int = 0
-    token_usage: TokenUsage | None = None
-    duration_ms: int | None = None
-    model: str | None = None
-    events: tuple[AgentEventRecord, ...] = ()
-    events_streamed: bool = False
-    retry_count: int = 0
-    #: ``quota`` | ``preflight`` | ``infrastructure`` | ``agent`` when the run failed.
-    failure_type: str | None = None
-    #: ISO 8601 UTC time after which a quota failure may be retried.
-    retry_after: str | None = None
-
-
-@dataclass(slots=True)
-class ProjectRunResult:
-    """Summary of one orchestrator invocation."""
-
-    project_id: str
-    executed_task_ids: tuple[str, ...]
-    blocked_task_ids: tuple[str, ...]
-    stop_reason: str
-    #: Set with ``stop_reason="quota_exhausted"``: when the backend said it will serve again.
-    retry_after: str | None = None
-    detail: str | None = None
-
-
-@dataclass(slots=True)
-class HumanGateResumeResult:
-    """Summary of one human-gate decision and any resumed execution."""
-
-    task: Task
-    decision: str
-    paused_step: str
-    next_step: str
-    deferred: bool
-    carried_output: str | None = None
-    note: str | None = None
-
-
-class AgentExecutor(Protocol):
-    """Execution protocol for workflow agent steps."""
-
-    def execute(
-        self,
-        *,
-        role: RoleDefinition,
-        project: Project,
-        task: Task,
-        workflow_step: str,
-        prompt: str,
-        session_id: str | None,
-        carried_output: str | None,
-    ) -> AgentExecutionResult:
-        """Execute one agent step and return normalized results."""
 
 
 class ForemanOrchestrator:
@@ -2723,7 +2627,7 @@ class ForemanOrchestrator:
            being heartbeated).
         """
 
-        timeout_seconds = _active_run_recovery_timeout_seconds(project)
+        timeout_seconds = active_run_recovery_timeout_seconds(project)
         if timeout_seconds is None or timeout_seconds <= 0:
             return False
 
@@ -3544,11 +3448,11 @@ class ForemanOrchestrator:
             disallowed_tools=role.agent.tools.disallowed,
             extra_flags=role.agent.flags,
             env=resolved_env,
-            timeout_seconds=_project_timeout_seconds(
+            timeout_seconds=project_timeout_seconds(
                 project,
                 role_timeout_minutes=role.completion.timeout_minutes,
             ),
-            max_cost_usd=_run_cost_ceiling(project, role.completion.max_cost_usd),
+            max_cost_usd=run_cost_ceiling(project, role.completion.max_cost_usd),
         )
         max_retries = resolve_project_settings(project).max_infra_retries
 
@@ -3625,7 +3529,7 @@ class ForemanOrchestrator:
                     message_fragments.append(text)
                 if text:
                     phase = _optional_string(event.payload.get("phase"))
-                    if phase in _FINAL_MESSAGE_PHASES:
+                    if phase in FINAL_MESSAGE_PHASES:
                         final_message = text
                         saw_final_phase = True
                     elif not saw_final_phase:
@@ -3786,17 +3690,17 @@ class ForemanOrchestrator:
         marker = role.completion.marker.strip()
 
         if output_config.extract_decision:
-            return _extract_decision_output(cleaned_text, allowed=role.completion.outcomes)
+            return extract_decision_output(cleaned_text, allowed=role.completion.outcomes)
 
         if marker:
-            if not _contains_completion_marker(cleaned_text, marker):
+            if not contains_completion_marker(cleaned_text, marker):
                 return (ERROR, f"Missing completion marker `{marker}`.")
-            cleaned_text = _strip_completion_marker(cleaned_text, marker)
+            cleaned_text = strip_completion_marker(cleaned_text, marker)
             if not cleaned_text and transcript:
-                cleaned_text = _strip_completion_marker(transcript.strip(), marker)
+                cleaned_text = strip_completion_marker(transcript.strip(), marker)
 
         if output_config.extract_json:
-            json_block = _extract_json_block(cleaned_text)
+            json_block = extract_json_block(cleaned_text)
             return (DONE, json_block or cleaned_text or "Completed without JSON output.")
 
         if output_config.extract_summary or output_config.extract_branch:
@@ -3832,7 +3736,7 @@ class ForemanOrchestrator:
         """Append a minimal corrective instruction for one malformed-output retry."""
 
         if reason == "decision_format":
-            options = "\n".join(_decision_option_lines(role.completion.outcomes))
+            options = "\n".join(decision_option_lines(role.completion.outcomes))
             correction = (
                 "Your previous response did not follow the required final output format.\n"
                 "Do not do more review work.\n"
@@ -4242,112 +4146,6 @@ def _new_id(prefix: str) -> str:
     return f"{prefix}-{uuid4().hex[:12]}"
 
 
-# Complexity → ladder start index when no explicit ladder_start override is set.
-_COMPLEXITY_LADDER_START: dict[str, int] = {"small": 0, "medium": 0, "large": 1}
-
-
-@dataclass(slots=True)
-class ModelSelection:
-    """The model chosen for one agent step plus the rule that chose it."""
-
-    model: str | None
-    source: str  # "override" | "ladder" | "role" | "project_default"
-
-
-def resolve_step_model_selection(
-    *,
-    task: Task,
-    role: RoleDefinition,
-    project: Project,
-    step_id: str,
-    visit_count: int,
-) -> ModelSelection:
-    """Resolve the model for one workflow step, recording the deciding rule.
-
-    Precedence (see review.md Phase 3.3):
-
-    1. a per-task override for this step. The ladder still escalates above an
-       override that itself appears in the role ladder (resume from its index);
-       an override absent from the ladder is pinned for every visit.
-    2. the role ``model_ladder`` indexed by ``ladder_start + visit_count - 1``,
-       where ``ladder_start`` comes from the task override, else a complexity
-       map, else 0.
-    3. the role's single ``model``.
-    4. the project ``default_model`` setting.
-    5. ``None`` (harness default).
-    """
-
-    overrides = task.executor_overrides or {}
-    ladder = tuple(role.agent.model_ladder)
-    step_visit_index = max(visit_count - 1, 0)
-
-    override_model = None
-    models_map = overrides.get("models")
-    if isinstance(models_map, dict):
-        override_model = models_map.get(step_id)
-
-    if override_model:
-        if ladder and override_model in ladder:
-            base_index = ladder.index(override_model)
-            index = min(base_index + step_visit_index, len(ladder) - 1)
-            chosen = ladder[index]
-            source = "override" if index == base_index else "ladder"
-            return ModelSelection(model=chosen, source=source)
-        # Pinned deliberately by the manager; keep it for every visit.
-        return ModelSelection(model=str(override_model), source="override")
-
-    if ladder:
-        ladder_start = overrides.get("ladder_start")
-        if not isinstance(ladder_start, int) or isinstance(ladder_start, bool):
-            ladder_start = _COMPLEXITY_LADDER_START.get(task.complexity or "", 0)
-        index = min(ladder_start + step_visit_index, len(ladder) - 1)
-        index = max(index, 0)
-        return ModelSelection(model=ladder[index], source="ladder")
-
-    if role.agent.model:
-        return ModelSelection(model=role.agent.model, source="role")
-
-    default_model = resolve_project_settings(project).default_model
-    if default_model:
-        return ModelSelection(model=default_model, source="project_default")
-
-    return ModelSelection(model=None, source="project_default")
-
-
-def resolve_step_model(
-    *,
-    task: Task,
-    role: RoleDefinition,
-    project: Project,
-    step_id: str,
-    visit_count: int,
-) -> str | None:
-    """Return only the resolved model id for one step (see ``ModelSelection``)."""
-
-    return resolve_step_model_selection(
-        task=task,
-        role=role,
-        project=project,
-        step_id=step_id,
-        visit_count=visit_count,
-    ).model
-
-
-def resolve_project_settings(project: Project) -> ProjectSettings:
-    """Validate a project's raw settings blob, or fail fast with a clear error.
-
-    An unattended engine must not run a misconfigured project on silent
-    defaults; invalid settings stop the run before any task is touched.
-    """
-
-    try:
-        return settings_of(project)
-    except SettingsError as exc:
-        raise OrchestratorError(
-            f"Project {project.id!r} has invalid settings: {exc}"
-        ) from exc
-
-
 def _optional_string(value: Any) -> str | None:
     if value is None:
         return None
@@ -4371,53 +4169,6 @@ def _coerce_int_value(value: Any, *, default: int | None) -> int | None:
     if isinstance(value, float):
         return int(value)
     return default
-
-
-def _run_cost_ceiling(project: Project, role_max_cost_usd: float) -> float:
-    """Return the cost ceiling for one agent run; 0 means no ceiling.
-
-    The role sets a ceiling and the project's ``runner_max_cost_usd`` may
-    lower it. Neither can raise the other.
-    """
-
-    ceilings = [
-        value
-        for value in (
-            max(float(role_max_cost_usd or 0.0), 0.0),
-            resolve_project_settings(project).runner_max_cost_usd,
-        )
-        if value > 0
-    ]
-    return min(ceilings) if ceilings else 0.0
-
-
-def _project_timeout_seconds(
-    project: Project,
-    *,
-    role_timeout_minutes: int | None = None,
-) -> int:
-    """Return the effective timeout window for native runs and stale-run recovery."""
-
-    setting = resolve_project_settings(project).time_limit_per_run_minutes
-    if setting > 0:
-        return setting * 60
-    if role_timeout_minutes is not None and role_timeout_minutes > 0:
-        return role_timeout_minutes * 60
-    return 0
-
-
-def _active_run_recovery_timeout_seconds(project: Project) -> int:
-    """Return the stale-run ownership window used for crash recovery."""
-
-    setting = resolve_project_settings(project).active_run_recovery_timeout_minutes
-    if setting > 0:
-        return setting * 60
-
-    project_timeout = _project_timeout_seconds(project)
-    default_timeout = 5 * 60
-    if project_timeout <= 0:
-        return default_timeout
-    return min(project_timeout, default_timeout)
 
 
 def _is_lease_live(
@@ -4450,108 +4201,6 @@ def _parse_utc_timestamp(value: str | None) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
-_FINAL_MESSAGE_PHASES = frozenset({"result", "final_answer"})
-_DECISION_PREFIX_RE = re.compile(
-    r"^(?:(?:final\s+)?(?:decision|verdict|result)\s*[:\-\u2013\u2014]\s*)",
-    re.IGNORECASE,
-)
-_DECISION_LINE_RE = re.compile(r"^(APPROVE|DENY|STEER|ESCALATE)(?![A-Z])\s*(.*)$")
-_DECISION_OPTION_TEMPLATES = {
-    "approve": "APPROVE",
-    "deny": "DENY: <reason>",
-    "steer": "STEER: <specific corrective action>",
-    "escalate": "ESCALATE: <why the senior reviewer is needed>",
-}
-
-
-def _decision_option_lines(outcomes: tuple[str, ...]) -> list[str]:
-    lines = [_DECISION_OPTION_TEMPLATES[o] for o in outcomes if o in _DECISION_OPTION_TEMPLATES]
-    return lines or list(_DECISION_OPTION_TEMPLATES.values())[:3]
-
-
-def _parse_decision_line(raw_line: str) -> tuple[str, str] | None:
-    """Return ``(verdict, reason)`` when a line carries a reviewer verdict.
-
-    Accepts the bare word, ``VERDICT: reason``, markdown emphasis, list
-    markers, and a ``Decision:`` / ``Verdict:`` prefix. Lines whose reason is
-    a ``<placeholder>`` are option restatements, not verdicts, and are ignored.
-    """
-
-    line = _normalize_decision_line(raw_line)
-    line = _DECISION_PREFIX_RE.sub("", line)
-    line = line.strip("*_` ").strip()
-    match = _DECISION_LINE_RE.match(line)
-    if match is None:
-        return None
-    verdict = match.group(1).lower()
-    reason = match.group(2).strip()
-    reason = reason.lstrip(":-\u2013\u2014 ").strip().strip("*_`").strip()
-    if reason.startswith("<") and reason.endswith(">"):
-        return None
-    return (verdict, reason)
-
-
-def _extract_decision_output(
-    text: str,
-    *,
-    allowed: tuple[str, ...] | None = None,
-) -> tuple[str, str]:
-    """Extract exactly one reviewer verdict from the final message.
-
-    More than one distinct verdict is an error rather than a guess, and a
-    verdict the role does not declare is an error naming the allowed set;
-    both trigger the one-shot output-contract retry.
-    """
-
-    if not text:
-        return (ERROR, "Reviewer returned no decision.")
-
-    found: list[tuple[str, str]] = []
-    for raw_line in text.splitlines():
-        parsed = _parse_decision_line(raw_line)
-        if parsed is not None:
-            found.append(parsed)
-    if not found:
-        return (ERROR, text)
-
-    verdicts = {verdict for verdict, _ in found}
-    if len(verdicts) > 1:
-        return (
-            ERROR,
-            "Ambiguous decision: found "
-            + ", ".join(sorted(v.upper() for v in verdicts))
-            + ". Return exactly one verdict.",
-        )
-    verdict, reason = found[-1]
-    if allowed and verdict not in allowed:
-        return (
-            ERROR,
-            f"Decision {verdict.upper()} is not valid for this role; expected one of "
-            + ", ".join(o.upper() for o in allowed)
-            + ".",
-        )
-    return (verdict, reason or verdict.upper())
-
-
-def _normalize_decision_line(line: str) -> str:
-    normalized = line.strip()
-    normalized = normalized.strip("`")
-    normalized = normalized.strip()
-    if normalized.startswith(("* ", "- ")):
-        normalized = normalized[2:].strip()
-    normalized = normalized.strip("*").strip()
-    return normalized
-
-
-def _contains_completion_marker(text: str, marker: str) -> bool:
-    return any(_normalize_decision_line(line) == marker for line in text.splitlines())
-
-
-def _strip_completion_marker(text: str, marker: str) -> str:
-    lines = [line for line in text.splitlines() if _normalize_decision_line(line) != marker]
-    return "\n".join(lines).strip()
-
-
 def _is_merge_conflict_feedback(text: str | None) -> bool:
     if not text:
         return False
@@ -4566,9 +4215,3 @@ def _append_feedback_note(existing: str | None, note: str) -> str:
         return note
     return f"{existing}\n\n{note}"
 
-
-def _extract_json_block(text: str) -> str | None:
-    match = re.search(r"```json\s*(.*?)```", text, re.DOTALL | re.IGNORECASE)
-    if match is None:
-        return None
-    return match.group(1).strip() or None
