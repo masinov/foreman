@@ -9,6 +9,14 @@ memory changes rather than versioned product releases.
 
 ### Sprint 57 — structure
 
+- **slice 7, package data and one version** (`chore/package-data`): the
+  role and workflow definitions and the scaffold template moved from the
+  repository root into the package (`foreman/data/roles/`,
+  `foreman/data/workflows/`, `foreman/data/templates/`) and are listed as
+  package data. A Foreman installed from a wheel had none of them and could
+  not load a role; it only worked from a source checkout. The version is
+  stated once, in `foreman/__init__.py`; `pyproject.toml` and the API read
+  it from there.
 - **slice 6b, API handlers, typed bodies, project stream**
   (`refactor/api-handlers-off-loop`):
   - the 37 non-streaming handlers run on the thread pool; they blocked the

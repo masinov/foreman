@@ -27,8 +27,7 @@ None.
 
 ## Tests
 
-`scripts/validate_repo_memory.py`, `tests/test_repo_validation.py`, full
-suite.
+`scripts/validate_repo_memory.py` and the full suite.
 
 ## Acceptance criteria satisfied
 

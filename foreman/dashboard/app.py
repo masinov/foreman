@@ -10,6 +10,8 @@ from pathlib import Path
 import logging
 
 from fastapi import FastAPI, Request
+
+from .. import __version__
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -119,7 +121,7 @@ def create_dashboard_app(
 
     app = FastAPI(
         title="Foreman Dashboard API",
-        version="0.1.0",
+        version=__version__,
         # The generated schema carries no request or response models yet, and
         # these routes sit outside /api, so they would be served without the
         # token. They return with the typed API contract.

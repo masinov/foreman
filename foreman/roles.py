@@ -11,9 +11,9 @@ from typing import Any
 from ._toml import load_toml_file
 from .outcomes import CANONICAL_OUTCOMES
 from .errors import ForemanError
+from .data import ROLES_DIR
 
 _FORMATTER = Formatter()
-_REPO_ROOT = Path(__file__).resolve().parent.parent
 
 SIGNAL_FORMAT_DOC = """Available signals:
 - FOREMAN_SIGNAL: {"type": "task_started", "title": "...", "task_type": "...", "branch": "...", "criteria": "..."}
@@ -111,7 +111,7 @@ class RoleDefinition:
 def default_roles_dir() -> Path:
     """Return the shipped roles directory."""
 
-    return _REPO_ROOT / "roles"
+    return ROLES_DIR
 
 
 def load_role(path: str | Path) -> RoleDefinition:

@@ -9,9 +9,9 @@ import re
 from typing import Any, Literal
 
 from .errors import ForemanError
+from .data import TEMPLATES_DIR
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent
-_TEMPLATES_DIR = _REPO_ROOT / "templates"
+_TEMPLATES_DIR = TEMPLATES_DIR
 DEFAULT_CONTEXT_DIR = ".foreman"
 DEFAULT_DB_FILENAME = ".foreman.db"
 DEFAULT_TEST_COMMAND = "./venv/bin/python -m unittest discover -s tests"

@@ -39,7 +39,7 @@ The integrated pre-release baseline now contains:
 - the product spec and UI mockup,
 - two supervised autonomous entry points in `scripts/`,
 - a runnable `foreman/` package with SQLite-backed models, store, and CLI,
-- shipped declarative `roles/*.toml` and `workflows/*.toml` plus loader and
+- shipped declarative `foreman/data/roles/*.toml` and `foreman/data/workflows/*.toml` plus loader and
   prompt-rendering support,
 - an orchestrator with built-ins for tests, merge, mark-done, human gates, and
   runtime context projection into `.foreman/`,
