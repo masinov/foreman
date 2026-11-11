@@ -1169,6 +1169,39 @@ class EngineWorktreeIsolationTests(unittest.TestCase):
             self.assertTrue((integration / "feature.py").is_file())
             self.assertFalse((repo / "feature.py").exists())
 
+    def test_the_merge_is_backed_by_tests_and_review_of_the_head_commit(self) -> None:
+        repo, db_path = self.workspace()
+        with ForemanStore(db_path) as store:
+            project, task = self.seed(store, repo)
+            orchestrator = ForemanOrchestrator(
+                store,
+                agent_runners={
+                    "claude_code": _ScriptedRunner(
+                        [_developer_commits, _reviewer_approves]
+                    )
+                },
+            )
+
+            orchestrator.run_project(project.id)
+
+            finished = store.get_task(task.id)
+            self.assertEqual(finished.status, "done")
+            evidence = finished.completion_evidence
+            self.assertIsNotNone(evidence)
+            self.assertEqual(evidence.proof_status, "passed")
+            self.assertEqual(evidence.tests_status, "passed")
+            self.assertTrue(evidence.head_sha)
+            self.assertEqual(evidence.tested_sha, evidence.head_sha)
+            self.assertEqual(evidence.review_outcome, "approve")
+            self.assertEqual(evidence.reviewed_sha, evidence.head_sha)
+            recorded = [
+                event
+                for event in store.list_events(task_id=task.id)
+                if event.event_type == "engine.review_recorded"
+            ]
+            self.assertEqual(len(recorded), 1)
+            self.assertEqual(recorded[0].payload["head_sha"], evidence.head_sha)
+
     def test_mark_done_removes_the_worktree_and_forgets_the_path(self) -> None:
         repo, db_path = self.workspace()
         with ForemanStore(db_path) as store:

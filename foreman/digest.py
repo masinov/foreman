@@ -69,8 +69,9 @@ def build_attention_digest(
         evidence = task.completion_evidence
         if evidence is not None:
             lines.append(
-                f"evidence: verdict={evidence.verdict} | proof={evidence.proof_status} "
-                f"| score={evidence.score:.0f}/100 | judged_by={evidence.judged_by}"
+                f"evidence: proof={evidence.proof_status} | tests={evidence.tests_status} "
+                f"| review={evidence.review_outcome or 'none'} "
+                f"| criteria judged by={evidence.judged_by}"
             )
             if evidence.failure_reasons:
                 lines.append("evidence failure reasons:")

@@ -232,20 +232,23 @@ endpoints must be modeled as different roles. See ADR-0010.
 
 ### LLM-judged completion evidence (opt-in)
 
-By default acceptance criteria are judged by a keyword heuristic. Set these
-project settings to use a cheap model instead (any failure falls back to the
-heuristic, so it never blocks the workflow):
+Completion evidence records facts: the branch head, whether the test step
+passed and on which commit, what each reviewer decided and on which commit.
+There is no score. By default nobody machine-checks the acceptance criteria:
+each is reported as "not checked" and an approving code review of the head
+commit is what covers them. Set these project settings to have a cheap model
+judge each criterion as well (a failed call means "not checked", so it never
+blocks the workflow). See ADR-0018.
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `judge_base_url` / `judge_model` | unset | Anthropic-compatible judge endpoint; unset → heuristic |
+| `judge_base_url` / `judge_model` | unset | Anthropic-compatible judge endpoint; unset → criteria not machine-checked |
 | `judge_api_key_env` | unset | host env var holding the judge API key |
 | `judge_max_diff_chars` | 24000 | diff cap fed to the judge |
 | `review_diff_max_chars` | 16000 | diff cap in reviewer prompts |
 | `meta_agent_model` | unset | `--model` for the manager chat session |
 
-`CompletionEvidence.judged_by` records the model (or `heuristic`) and is emitted
-in the `engine.completion_evidence` event.
+`CompletionEvidence.judged_by` records the model, or `none`.
 
 ### Tiered review workflow
 

@@ -4042,12 +4042,36 @@ select.form-input {
   white-space: nowrap;
 }
 
-.evidence-badge.verdict-strong,
-.evidence-badge.verdict-adequate,
 .evidence-badge.proof-passed { color: var(--green); border-color: var(--green); }
-.evidence-badge.verdict-weak,
-.evidence-badge.verdict-insufficient,
 .evidence-badge.proof-failed { color: var(--red); border-color: var(--red); }
+.evidence-badge.proof-pending { color: var(--amber); border-color: var(--amber); }
+.evidence-badge.evidence-head {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  color: var(--text-tertiary);
+}
+
+.evidence-facts {
+  margin: 0 0 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.evidence-fact {
+  display: grid;
+  grid-template-columns: 108px 1fr;
+  gap: 8px;
+  padding-left: 8px;
+  border-left: 2px solid var(--border, #2a3242);
+}
+
+.evidence-fact dt { color: var(--text-tertiary); }
+.evidence-fact dd { margin: 0; overflow-wrap: anywhere; }
+.evidence-fact-ok { border-left-color: var(--green); }
+.evidence-fact-bad { border-left-color: var(--red); }
+.evidence-fact-bad dd { color: var(--red); }
+.evidence-fact-none dd { color: var(--text-secondary, var(--text-tertiary)); }
 
 .evidence-checklist {
   list-style: none;
@@ -4068,13 +4092,20 @@ select.form-input {
 .evidence-item-status { flex: 0 0 auto; width: 14px; text-align: center; }
 .evidence-item.evidence-passed .evidence-item-status { color: var(--green); }
 .evidence-item.evidence-partial .evidence-item-status { color: var(--amber); }
-.evidence-item.evidence-failed .evidence-item-status,
-.evidence-item.evidence-unknown .evidence-item-status { color: var(--red); }
+.evidence-item.evidence-failed .evidence-item-status { color: var(--red); }
+.evidence-item.evidence-unverified .evidence-item-status,
+.evidence-item.evidence-unknown .evidence-item-status { color: var(--text-tertiary); }
 
 .evidence-failures {
   margin-bottom: 6px;
   font-size: 12px;
   color: var(--red);
+}
+
+.evidence-outstanding {
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: var(--amber);
 }
 
 .evidence-diffstat {

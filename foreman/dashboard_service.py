@@ -179,12 +179,18 @@ def _serialize_completion_evidence(evidence: "Any") -> dict[str, Any] | None:
     if evidence is None:
         return None
     return {
-        "verdict": evidence.verdict,
-        "verdict_reasons": list(evidence.verdict_reasons),
         "proof_status": evidence.proof_status,
         "judged_by": evidence.judged_by,
-        "score": evidence.score,
-        "score_breakdown": evidence.score_breakdown,
+        "head_sha": evidence.head_sha,
+        "tests_status": evidence.tests_status,
+        "tested_sha": evidence.tested_sha,
+        "test_exit_code": evidence.test_exit_code,
+        "test_duration_seconds": evidence.test_duration_seconds,
+        "review_outcome": evidence.review_outcome,
+        "reviewed_sha": evidence.reviewed_sha,
+        "security_review_outcome": evidence.security_review_outcome,
+        "security_reviewed_sha": evidence.security_reviewed_sha,
+        "outstanding": list(evidence.outstanding),
         "criteria_count": evidence.criteria_count,
         "criteria_addressed": evidence.criteria_addressed,
         "criteria_partially_addressed": evidence.criteria_partially_addressed,

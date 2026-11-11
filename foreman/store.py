@@ -193,7 +193,9 @@ def _row_to_task(row: sqlite3.Row) -> Task:
     )
     evidence_dict = _load_json_dict(raw_evidence) if raw_evidence else None
     completion_evidence: CompletionEvidence | None = (
-        CompletionEvidence(**evidence_dict) if isinstance(evidence_dict, dict) else None
+        CompletionEvidence.from_mapping(evidence_dict)
+        if isinstance(evidence_dict, dict)
+        else None
     )
     return Task(
         id=row["id"],

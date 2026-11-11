@@ -347,13 +347,7 @@ class BuiltinExecutor:
                     events=(
                         BuiltinEventRecord(
                             event_type="engine.completion_guard",
-                            payload={
-                                "verdict": evidence.verdict,
-                                "score": evidence.score,
-                                "score_breakdown": evidence.score_breakdown,
-                                "changed_files": list(evidence.changed_files),
-                                "reasons": list(evidence.verdict_reasons),
-                            },
+                            payload=_completion_guard_payload(evidence),
                         ),
                     ),
                 )
@@ -489,13 +483,7 @@ class BuiltinExecutor:
                                 events=(
                                     BuiltinEventRecord(
                                         event_type="engine.completion_guard",
-                                        payload={
-                                            "verdict": evidence.verdict,
-                                            "score": evidence.score,
-                                            "score_breakdown": evidence.score_breakdown,
-                                            "changed_files": list(evidence.changed_files),
-                                            "reasons": list(evidence.verdict_reasons),
-                                        },
+                                        payload=_completion_guard_payload(evidence),
                                     ),
                                 ),
                             )
@@ -654,27 +642,24 @@ class BuiltinExecutor:
             return None
 
         if not evidence.changed_files:
-            block_reason = (
-                f"Completion evidence too weak (verdict: {evidence.verdict}). "
-                "Blocking merge because the task branch has no material file changes."
-            )
+            block_reason = "Blocking merge because the task branch has no file changes."
             if not self._active_waiver_applies(store, task, evidence, "no_code_delta"):
                 return block_reason
         if self._changes_are_docs_or_tests_only(evidence.changed_files):
             block_reason = (
-                f"Completion evidence too weak (verdict: {evidence.verdict}). "
                 "Blocking merge because only docs or tests changed for an implementation task."
             )
             if not self._active_waiver_applies(store, task, evidence, "docs_only_impl_task"):
                 return block_reason
         # Gate on proof status - require explicit "passed"
         if evidence.proof_status != "passed":
-            reasons = "; ".join(evidence.failure_reasons) if evidence.failure_reasons else "proof_status is " + evidence.proof_status
+            listed = evidence.failure_reasons or evidence.outstanding
+            reasons = "; ".join(listed) if listed else "proof_status is " + evidence.proof_status
             block_reason = (
                 f"Completion proof not passed. Blocking merge until proof_status is 'passed'. "
                 f"Current: {evidence.proof_status}. Reasons: {reasons}"
             )
-            # Check for applicable waiver (only for proof-related deficiencies, never for tests/score)
+            # A waiver can cover missing or unmet criteria, never tests or review.
             waiver_type = self._waiver_type_for_proof_failure(evidence.failure_reasons)
             if waiver_type:
                 if not self._active_waiver_applies(store, task, evidence, waiver_type):
@@ -701,12 +686,12 @@ class BuiltinExecutor:
 
         Returns a waiver type only if ALL failures are waiveable proof deficiencies
         (missing/incomplete criteria). Never returns a waiver type if any failure
-        involves tests, score, reviewer, or security.
+        involves tests, reviewer, or security.
         """
         non_waivable_markers = (
             "tests failed",
+            "tests ran on",
             "exit code",
-            "evidence score too low",
             "review",
             "security",
         )
@@ -881,6 +866,19 @@ def _bool_setting(project: Project, key: str, *, default: bool) -> bool:
     if isinstance(value, int):
         return bool(value)
     return default
+
+
+def _completion_guard_payload(evidence: CompletionEvidence) -> dict[str, Any]:
+    """Return the facts a blocked merge is recorded with."""
+
+    return {
+        "proof_status": evidence.proof_status,
+        "tests_status": evidence.tests_status,
+        "review_outcome": evidence.review_outcome,
+        "head_sha": evidence.head_sha,
+        "changed_files": list(evidence.changed_files),
+        "reasons": [*evidence.failure_reasons, *evidence.outstanding],
+    }
 
 
 def _safe_head_sha(working_dir: Path) -> str | None:

@@ -92,26 +92,28 @@ class EngineEventTests(unittest.TestCase):
 
     def test_engine_completion_guard(self) -> None:
         evt = engine_completion_guard(
-            verdict="failed",
-            score=30.0,
-            score_breakdown="criteria: 1/3",
+            proof_status="failed",
+            tests_status="failed",
+            review_outcome="",
+            head_sha="abc123",
             changed_files=["src/main.py"],
-            reasons=["Score too low"],
+            reasons=["Tests failed (exit code 1)."],
         )
         self.assertEqual(evt.event_type, "engine.completion_guard")
-        self.assertEqual(evt.payload["verdict"], "failed")
+        self.assertEqual(evt.payload["proof_status"], "failed")
+        self.assertEqual(evt.payload["tests_status"], "failed")
 
     def test_engine_completion_evidence(self) -> None:
         evt = engine_completion_evidence(
             task_id="task-1",
             criteria_count=3,
             criteria_addressed=1,
-            score=33.0,
-            verdict="partial",
             proof_status="failed",
+            tests_status="passed",
+            head_sha="abc123",
             changed_files=["src/main.py"],
             builtin_test_passed=True,
-            failure_reasons=["Score too low"],
+            failure_reasons=["No acceptance criteria defined."],
         )
         self.assertEqual(evt.event_type, "engine.completion_evidence")
         self.assertEqual(evt.payload["proof_status"], "failed")
@@ -122,8 +124,7 @@ class EngineEventTests(unittest.TestCase):
             branch="feat/my-task",
             target="main",
             task_id="task-1",
-            evidence_score=85.0,
-            evidence_verdict="pass",
+            proof_status="passed",
         )
         self.assertEqual(evt.event_type, "engine.supervisor_merge")
         self.assertEqual(evt.payload["branch"], "feat/my-task")

@@ -1,16 +1,14 @@
 """Acceptance-criteria judging for completion evidence.
 
-Two ways to turn a task's acceptance criteria into a pass/partial/fail
-checklist:
+A task's acceptance criteria are checked by a machine only when a project
+configures a judge model (``judge_base_url`` and ``judge_model``):
+``judge_criteria`` then issues one direct HTTP call to an Anthropic-compatible
+Messages endpoint and returns a passed / partial / failed checklist.
 
-1. the zero-config keyword heuristic (``heuristic_checklist``), kept as the
-   default so the engine never depends on a network call, and
-2. an opt-in cheap-model LLM judge (``judge_criteria``) that issues a single
-   direct HTTP call to an Anthropic-compatible Messages endpoint.
-
-The judge is strictly opt-in: when ``judge_base_url`` / ``judge_model`` project
-settings are unset, or on any error, ``judge_criteria`` returns the heuristic
-result so evidence building can never crash the workflow.
+Without a judge, or when the call fails, every criterion is reported as
+``unverified`` and ``judged_by`` is ``"none"``. Nothing here guesses: an
+earlier keyword-overlap heuristic compared the criteria with the developer's
+own summary and called that a pass, which is not a check (ADR-0018).
 """
 
 from __future__ import annotations
@@ -27,69 +25,24 @@ class CriteriaJudgment:
     """The per-criterion checklist plus the judge that produced it."""
 
     checklist: tuple[dict[str, str], ...]  # {criterion, status, evidence}
-    judged_by: str  # model id, or "heuristic"
+    judged_by: str  # model id, or NOT_JUDGED when no judge ran
 
 
-# ---------------------------------------------------------------------------
-# Heuristic fallback (the single owner of the keyword logic)
-# ---------------------------------------------------------------------------
+NOT_JUDGED = "none"
+UNVERIFIED = "unverified"
 
-def _criterion_addressed(
-    criterion: str,
-    output_text: str,
-    changed_files: tuple[str, ...],
-) -> tuple[bool, bool]:
-    """Return (addressed, partially_addressed) for one acceptance criterion.
 
-    A criterion is addressed when the output text or changed files contain
-    substantive references to its key terms. Partial coverage is when only a
-    subset of the relevant terms appear.
-    """
+def unverified_checklist(criteria: list[str]) -> tuple[dict[str, str], ...]:
+    """Return the checklist for criteria no judge looked at."""
 
-    key_terms = [
-        t.strip().rstrip(".,;:!?()[]{}'\"").strip()
-        for t in re.findall(r"\b\w{4,}\b", criterion.lower())
-    ]
-    if not key_terms:
-        return (False, False)
-
-    matching_terms = sum(
-        1
-        for term in key_terms
-        if term in output_text or any(term in f.lower() for f in changed_files)
+    return tuple(
+        {
+            "criterion": criterion,
+            "status": UNVERIFIED,
+            "evidence": "Not checked by a judge model.",
+        }
+        for criterion in criteria
     )
-    coverage_ratio = matching_terms / len(key_terms)
-
-    if coverage_ratio >= 0.7:
-        return (True, False)
-    if coverage_ratio >= 0.3:
-        return (False, True)
-    return (False, False)
-
-
-def heuristic_checklist(
-    criteria: list[str],
-    output_text: str,
-    changed_files: tuple[str, ...],
-) -> tuple[dict[str, str], ...]:
-    """Build the keyword-overlap criteria checklist (zero-config fallback)."""
-
-    checklist: list[dict[str, str]] = []
-    for criterion in criteria:
-        addressed, partial = _criterion_addressed(criterion, output_text, changed_files)
-        if addressed:
-            status = "passed"
-            evidence = "Addressed in agent output or changed files."
-        elif partial:
-            status = "partial"
-            evidence = "Partially addressed — some key terms missing."
-        else:
-            status = "unknown"
-            evidence = "No substantive coverage found in output or changed files."
-        checklist.append(
-            {"criterion": criterion, "status": status, "evidence": evidence}
-        )
-    return tuple(checklist)
 
 
 # ---------------------------------------------------------------------------
@@ -174,26 +127,24 @@ def judge_criteria(
     settings: Mapping[str, Any],
     timeout_seconds: float = 60.0,
 ) -> CriteriaJudgment:
-    """Judge acceptance criteria, preferring the configured LLM, else heuristic.
+    """Judge acceptance criteria with the configured model.
 
-    Falls back to ``heuristic_checklist`` when the judge is not configured or on
-    any HTTP / timeout / parse error, so evidence building never crashes.
+    Returns an all-``unverified`` checklist when the judge is not configured or
+    on any HTTP / timeout / parse error, so evidence building never crashes
+    and never reports a check that did not run.
     """
 
     if not criteria:
-        return CriteriaJudgment(checklist=(), judged_by="heuristic")
+        return CriteriaJudgment(checklist=(), judged_by=NOT_JUDGED)
 
     base_url = str(settings.get("judge_base_url") or "").strip()
     model = str(settings.get("judge_model") or "").strip()
 
-    def _heuristic() -> CriteriaJudgment:
-        return CriteriaJudgment(
-            checklist=heuristic_checklist(criteria, agent_summary, changed_files),
-            judged_by="heuristic",
-        )
+    def _not_judged() -> CriteriaJudgment:
+        return CriteriaJudgment(checklist=unverified_checklist(criteria), judged_by=NOT_JUDGED)
 
     if not base_url or not model:
-        return _heuristic()
+        return _not_judged()
 
     max_diff = settings.get("judge_max_diff_chars", 24000)
     try:
@@ -249,5 +200,5 @@ def judge_criteria(
         text = "".join(text_parts) if text_parts else ""
         checklist = _parse_checklist(text, criteria)
         return CriteriaJudgment(checklist=checklist, judged_by=model)
-    except Exception:  # noqa: BLE001 - any failure must fall back to heuristic
-        return _heuristic()
+    except Exception:  # noqa: BLE001 - any failure means the criteria were not judged
+        return _not_judged()

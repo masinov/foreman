@@ -121,7 +121,7 @@ class ProjectSettings:
     default_model: str = ""
     # Manager (meta-agent) model — see review Phase 2.
     meta_agent_model: str = ""
-    # Criteria judge — opt-in; unset base_url/model falls back to the heuristic.
+    # Criteria judge — opt-in; with base_url/model unset no criterion is judged.
     judge_base_url: str = ""
     judge_model: str = ""
     judge_api_key_env: str = ""

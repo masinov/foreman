@@ -1,4 +1,4 @@
-"""Unit coverage for the opt-in LLM criteria judge and heuristic fallback."""
+"""Unit coverage for the opt-in LLM criteria judge and its not-judged result."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import httpx
 
 from foreman.judge import (
     CriteriaJudgment,
-    heuristic_checklist,
+    unverified_checklist,
     judge_criteria,
     truncate_diff,
 )
@@ -42,8 +42,8 @@ class TruncateDiffTests(unittest.TestCase):
         self.assertTrue(out.endswith("T"))
 
 
-class HeuristicTests(unittest.TestCase):
-    def test_unset_settings_returns_heuristic(self) -> None:
+class NotJudgedTests(unittest.TestCase):
+    def test_unset_settings_judge_nothing(self) -> None:
         result = judge_criteria(
             criteria=CRITERIA,
             diff_text="",
@@ -51,19 +51,17 @@ class HeuristicTests(unittest.TestCase):
             changed_files=(),
             settings={},
         )
-        self.assertEqual(result.judged_by, "heuristic")
+        self.assertEqual(result.judged_by, "none")
+        self.assertEqual(result.checklist, unverified_checklist(CRITERIA))
         self.assertEqual(
-            result.checklist,
-            heuristic_checklist(
-                CRITERIA, "added login button and persisted session token", ()
-            ),
+            {item["status"] for item in result.checklist}, {"unverified"}
         )
 
-    def test_empty_criteria_returns_empty_heuristic(self) -> None:
+    def test_empty_criteria_returns_an_empty_checklist(self) -> None:
         result = judge_criteria(
             criteria=[], diff_text="x", agent_summary="y", settings=JUDGE_SETTINGS
         )
-        self.assertEqual(result, CriteriaJudgment(checklist=(), judged_by="heuristic"))
+        self.assertEqual(result, CriteriaJudgment(checklist=(), judged_by="none"))
 
 
 class LlmJudgeTests(unittest.TestCase):
@@ -101,7 +99,7 @@ class LlmJudgeTests(unittest.TestCase):
         self.assertEqual(result.judged_by, "cheap-judge-1")
         self.assertEqual([c["status"] for c in result.checklist], ["partial", "passed"])
 
-    def test_malformed_output_falls_back_to_heuristic(self) -> None:
+    def test_malformed_output_means_not_judged(self) -> None:
         with mock.patch("httpx.post", return_value=_fake_response("not json at all")):
             result = judge_criteria(
                 criteria=CRITERIA,
@@ -109,7 +107,7 @@ class LlmJudgeTests(unittest.TestCase):
                 agent_summary="summary",
                 settings=JUDGE_SETTINGS,
             )
-        self.assertEqual(result.judged_by, "heuristic")
+        self.assertEqual(result.judged_by, "none")
 
     def test_wrong_item_count_falls_back(self) -> None:
         body = '[{"criterion": "only one", "status": "passed", "evidence": "x"}]'
@@ -120,9 +118,9 @@ class LlmJudgeTests(unittest.TestCase):
                 agent_summary="summary",
                 settings=JUDGE_SETTINGS,
             )
-        self.assertEqual(result.judged_by, "heuristic")
+        self.assertEqual(result.judged_by, "none")
 
-    def test_timeout_falls_back_to_heuristic(self) -> None:
+    def test_timeout_means_not_judged(self) -> None:
         with mock.patch("httpx.post", side_effect=httpx.TimeoutException("slow")):
             result = judge_criteria(
                 criteria=CRITERIA,
@@ -130,9 +128,9 @@ class LlmJudgeTests(unittest.TestCase):
                 agent_summary="summary",
                 settings=JUDGE_SETTINGS,
             )
-        self.assertEqual(result.judged_by, "heuristic")
+        self.assertEqual(result.judged_by, "none")
 
-    def test_http_error_falls_back_to_heuristic(self) -> None:
+    def test_http_error_means_not_judged(self) -> None:
         with mock.patch("httpx.post", return_value=_fake_response("err", status=500)):
             result = judge_criteria(
                 criteria=CRITERIA,
@@ -140,7 +138,7 @@ class LlmJudgeTests(unittest.TestCase):
                 agent_summary="summary",
                 settings=JUDGE_SETTINGS,
             )
-        self.assertEqual(result.judged_by, "heuristic")
+        self.assertEqual(result.judged_by, "none")
 
 
 if __name__ == "__main__":

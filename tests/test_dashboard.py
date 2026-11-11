@@ -1913,7 +1913,7 @@ class DashboardSprintTaskBacklogTests(unittest.TestCase):
         self.assertEqual(data["depends_on_task_ids"], [blocker.id])
 
     def test_get_task_serializes_completion_evidence(self):
-        """GET /api/tasks/{id} surfaces completion evidence (verdict, proof, judge)."""
+        """GET /api/tasks/{id} surfaces completion evidence (proof, tests, review, judge)."""
         from foreman.models import CompletionEvidence
 
         store = ForemanStore(self.db_path)
@@ -1923,14 +1923,18 @@ class DashboardSprintTaskBacklogTests(unittest.TestCase):
             task_id=task.id,
             task_title=task.title,
             acceptance_criteria="c",
-            verdict="weak",
             proof_status="failed",
             judged_by="claude-haiku-4-5-20251001",
-            score=42.0,
+            head_sha="b" * 40,
+            tests_status="stale",
+            tested_sha="a" * 40,
+            test_exit_code=0,
+            review_outcome="approve",
+            reviewed_sha="b" * 40,
             criteria_checklist=(
                 {"criterion": "c", "status": "failed", "evidence": "missing"},
             ),
-            failure_reasons=("Evidence score too low (42/100).",),
+            failure_reasons=("Tests ran on aaaaaaaa; the branch is now at bbbbbbbb.",),
         )
         store.save_task(task)
         store.close()
@@ -1939,11 +1943,21 @@ class DashboardSprintTaskBacklogTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         evidence = response.json()["completion_evidence"]
         self.assertIsNotNone(evidence)
-        self.assertEqual(evidence["verdict"], "weak")
+        self.assertNotIn("verdict", evidence)
+        self.assertNotIn("score", evidence)
+        self.assertEqual(evidence["tests_status"], "stale")
+        self.assertEqual(evidence["tested_sha"], "a" * 40)
+        self.assertEqual(evidence["head_sha"], "b" * 40)
+        self.assertEqual(evidence["review_outcome"], "approve")
+        self.assertEqual(evidence["reviewed_sha"], "b" * 40)
+        self.assertEqual(evidence["outstanding"], [])
         self.assertEqual(evidence["proof_status"], "failed")
         self.assertEqual(evidence["judged_by"], "claude-haiku-4-5-20251001")
         self.assertEqual(len(evidence["criteria_checklist"]), 1)
-        self.assertEqual(evidence["failure_reasons"], ["Evidence score too low (42/100)."])
+        self.assertEqual(
+            evidence["failure_reasons"],
+            ["Tests ran on aaaaaaaa; the branch is now at bbbbbbbb."],
+        )
 
     def test_get_task_completion_evidence_none_when_absent(self):
         """A task with no evidence yet returns completion_evidence: null."""
