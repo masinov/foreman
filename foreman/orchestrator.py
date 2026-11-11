@@ -28,7 +28,7 @@ from .engine.branch_sync import (
     prepare_task_branch_for_step,
     task_working_dir,
 )
-from .engine.evidence import EvidenceBuilder, branch_diff_content
+from .engine.evidence import EvidenceBuilder
 from .engine.gates import blocked_reason_for_unhandled_outcome, gate_policy_decision
 from .engine.leasing import TASK_LEASE_HEARTBEAT_SECONDS, TaskLeases
 from .engine.limits import (
@@ -41,13 +41,9 @@ from .engine.output_contract import (
     contract_retry_reason,
     with_retry_instruction,
 )
-from .engine.prompts import (
-    load_repo_instructions,
-    safe_changed_files,
-    safe_git_status,
-    safe_recent_commits,
-)
+from .engine.prompts import PromptBuilder
 from .engine.records import RunRecords, new_id
+from .engine.task_worktrees import TaskWorktrees
 from .engine.retention import Retention
 from .engine.sprints import SprintFlow
 from .engine.task_writes import TaskWrites
@@ -83,9 +79,6 @@ from .store import ForemanStore
 from .workflows import WorkflowDefinition, WorkflowStep, default_workflows_dir, load_workflows
 from .worktrees import (
     WorktreeError,
-    WorktreeManager,
-    enforce_worktree_limit,
-    task_slug,
 )
 
 _LOGGER = get_logger("orchestrator")
@@ -212,7 +205,13 @@ class ForemanOrchestrator:
             leases=self.leases,
             tasks=self.tasks,
         )
-        self._worktree_managers: dict[str, WorktreeManager] = {}
+        self.task_worktrees = TaskWorktrees(store, records=self.records, tasks=self.tasks)
+        self.prompts = PromptBuilder(
+            store,
+            evidence=self.evidence,
+            tasks=self.tasks,
+            build_evidence=lambda task, project: self.build_completion_evidence(task, project),
+        )
         #: Called with the running task id before every workflow step and on
         #: every silent-agent tick. The resident engine supplies it so an
         #: operator's `pause` or `stop_task` reaches an agent that may run for
@@ -236,126 +235,12 @@ class ForemanOrchestrator:
 
         self.recovery.recover_orphaned_tasks(project_id)
 
-    def worktrees(self, project: Project) -> WorktreeManager:
-        """Return the worktree manager for one project, created once per run."""
-
-        manager = self._worktree_managers.get(project.id)
-        if manager is None or manager.project.repo_path != project.repo_path:
-            manager = WorktreeManager(project)
-            self._worktree_managers[project.id] = manager
-        return manager
-
     def build_completion_evidence(
         self, task: Task, project: Project
     ) -> CompletionEvidence | None:
         """Build completion evidence for one task (see ``engine.evidence``)."""
 
         return self.evidence.build(task, project)
-
-    def _ensure_task_worktree(self, project: Project, task: Task) -> Path | None:
-        """Return the task's own checkout, creating it on the first develop visit.
-
-        Every agent step, every test run, and every branch invariant works in
-        this tree. The operator's checkout is never checked out or merged by
-        the engine, so a person editing it — or a second engine — cannot
-        corrupt a run. Existing in-progress tasks get a worktree here on their
-        next visit; their branch already exists, so the tree is just added.
-        """
-
-        if not task.branch_name:
-            return None
-        manager = self.worktrees(project)
-        if not manager.is_git_repository():
-            return None
-        self._reclaim_worktrees_for(project, task, manager)
-        path = manager.ensure(task)
-        recorded = str(path)
-        if task.worktree_path != recorded:
-            task.worktree_path = recorded
-            self.tasks.save(task)
-        return path
-
-    def _reclaim_worktrees_for(
-        self,
-        project: Project,
-        task: Task,
-        manager: WorktreeManager,
-    ) -> None:
-        """Make room under ``max_live_worktrees`` before this task's tree exists.
-
-        Enforced here rather than after the fact so the cap bounds peak disk
-        use, not just its steady state. A reclaim is invisible to the task that
-        loses its tree — the branch keeps the work and the next visit recreates
-        the checkout — so it is recorded, not raised.
-        """
-
-        try:
-            outcome = enforce_worktree_limit(
-                self.store, project, keep_slug=task_slug(task), manager=manager
-            )
-        except WorktreeError as exc:
-            # Reclaiming is an optimisation; failing it must not stop the task
-            # that was about to run from getting its worktree.
-            self._emit_worktree_event(
-                task,
-                "engine.worktree_reclaim_failed",
-                {"error": str(exc)},
-                detail=f"Could not enforce max_live_worktrees: {exc}",
-            )
-            return
-
-        if outcome.reclaimed:
-            self._emit_worktree_event(
-                task,
-                "engine.worktrees_reclaimed",
-                {
-                    "limit": outcome.limit,
-                    "live_before": outcome.live_before,
-                    "live_after": outcome.live_after,
-                    "reclaimed": [entry.slug for entry in outcome.reclaimed],
-                },
-                detail=(
-                    f"Reclaimed {len(outcome.reclaimed)} worktree(s) to stay under "
-                    f"max_live_worktrees={outcome.limit}."
-                ),
-            )
-        if outcome.over_limit:
-            # Not a failure: the alternative was destroying uncommitted work.
-            self._emit_worktree_event(
-                task,
-                "engine.worktree_limit_exceeded",
-                {
-                    "limit": outcome.limit,
-                    "live_after": outcome.live_after,
-                    "retained_dirty": [
-                        entry.slug for entry in outcome.retained_dirty
-                    ],
-                },
-                detail=(
-                    f"{outcome.live_after} worktrees exceed max_live_worktrees="
-                    f"{outcome.limit}; "
-                    f"{len(outcome.retained_dirty)} hold uncommitted work and were "
-                    f"kept."
-                ),
-            )
-
-    def _emit_worktree_event(
-        self,
-        task: Task,
-        event_type: str,
-        payload: dict[str, Any],
-        *,
-        detail: str,
-    ) -> None:
-        """Record one worktree-lifecycle event against a synthetic system run."""
-
-        run = self.records.create_system_run(
-            task,
-            workflow_step="orchestrator",
-            outcome="success",
-            detail=detail,
-        )
-        self.records.emit_event(run, event_type, payload)
 
     def _poll_commands(self, task_id: str) -> None:
         """Give the resident engine a chance to interrupt this task.
@@ -390,7 +275,7 @@ class ForemanOrchestrator:
             raise OrchestratorError(f"Unknown project {project_id!r}.")
         settings = resolve_project_settings(project)
         workflow = self._load_workflow_for_project(project)
-        self._preflight_worktrees(project)
+        self.task_worktrees.preflight(project)
         if maintenance:
             self.retention.prune_old_history(project, settings=settings)
             self.recovery.recover_orphaned_tasks(project.id)
@@ -734,7 +619,7 @@ class ForemanOrchestrator:
         current_task.branch_name = current_task.branch_name or generate_branch_name(
             current_task
         )
-        self._ensure_task_worktree(project, current_task)
+        self.task_worktrees.ensure(project, current_task)
 
         current_task.status = "in_progress"
         current_task.blocked_reason = None
@@ -925,7 +810,7 @@ class ForemanOrchestrator:
         current_task.branch_name = current_task.branch_name or generate_branch_name(
             current_task
         )
-        self._ensure_task_worktree(project, current_task)
+        self.task_worktrees.ensure(project, current_task)
 
         self.run_workflow_from_step(
             project,
@@ -1073,7 +958,7 @@ class ForemanOrchestrator:
             if step_def.role not in {"_builtin:merge", "_builtin:mark_done"}:
                 if current_task.branch_name:
                     try:
-                        worktree_path = self._ensure_task_worktree(project, current_task)
+                        worktree_path = self.task_worktrees.ensure(project, current_task)
                         if worktree_path is None:
                             raise OrchestratorError(
                                 f"Task branch {current_task.branch_name!r} has no worktree."
@@ -1372,7 +1257,7 @@ class ForemanOrchestrator:
                     carried_output=carried_output,
                     mirror_dirs=context_mirror_dirs(project, current_task),
                 )
-                prompt = self._build_prompt(
+                prompt = self.prompts.build(
                     role,
                     project,
                     current_task,
@@ -1835,37 +1720,7 @@ class ForemanOrchestrator:
         )
         return (APPROVE, detail)
 
-    def _preflight_worktrees(self, project: Project) -> None:
-        """Fail a run at the start when the repository cannot host worktrees.
-
-        Every task runs in a Foreman-owned worktree, so a git that is too old
-        or a worktree root git would try to commit is a project-level problem.
-        Discovering it here, before any task is leased, gives the operator one
-        clear message instead of a task blocked halfway through a step.
-        """
-
-        try:
-            self.worktrees(project).preflight()
-        except WorktreeError as exc:
-            raise OrchestratorError(str(exc)) from exc
-
     # ── Sprint advancement ────────────────────────────────────────────────────
-
-    def _latest_agent_run(self, task_id: str) -> Run | None:
-        """Return the most recent completed agent (non-builtin) run for a task.
-
-        Prompts that quote the "previous output" want the last thing an agent
-        said, not the output of the test or merge built-in that ran after it.
-        """
-
-        candidates = [
-            run
-            for run in self.store.list_runs(task_id=task_id)
-            if not run.role_id.startswith("_builtin:")
-            and run.status == "completed"
-            and run.outcome_detail
-        ]
-        return candidates[-1] if candidates else None
 
     def _load_workflow_for_project(self, project: Project) -> WorkflowDefinition:
         workflow = self.workflows.get(project.workflow_id)
@@ -1874,90 +1729,6 @@ class ForemanOrchestrator:
                 f"Unknown workflow {project.workflow_id!r} for project {project.id!r}."
             )
         return workflow
-
-    def _build_prompt(
-        self,
-        role: RoleDefinition,
-        project: Project,
-        task: Task,
-        carried_output: str | None,
-        *,
-        context_projection: ProjectContextProjection | None = None,
-    ) -> str:
-        latest_run = self._latest_agent_run(task.id)
-        if context_projection is None:
-            context_projection = build_project_context(
-                self.store,
-                project,
-                current_task=task,
-                carried_output=carried_output,
-            )
-        # Reuse cached evidence on the task record to avoid recomputing on
-        # repeated reviewer prompts. Built once at first reviewer render.
-        evidence = task.completion_evidence
-        if evidence is not None and self.evidence.is_stale(evidence, task, project):
-            evidence = None
-            task.completion_evidence = None
-        if evidence is None and role.completion.output.extract_decision:
-            evidence = self.build_completion_evidence(task, project)
-            task.completion_evidence = evidence
-            self.tasks.save(task)
-        context = {
-            "task_title": task.title,
-            "task_description": task.description or "",
-            "task_type": task.task_type,
-            "acceptance_criteria": task.acceptance_criteria or "",
-            "branch_name": task.branch_name or "",
-            "sprint_context": context_projection.context_markdown,
-            "project_status": context_projection.status_markdown,
-            "repo_instructions": load_repo_instructions(project.repo_path),
-            "spec_path": project.spec_path or "",
-            "previous_feedback": carried_output or "",
-            "previous_output": latest_run.outcome_detail if latest_run else "",
-            # Status describes the tree the agent works in; diffs and log come
-            # from refs, which every worktree shares.
-            "git_status": safe_git_status(task_working_dir(project, task)),
-            "changed_files": safe_changed_files(
-                project.repo_path,
-                project.default_branch,
-                task.branch_name,
-            ),
-            "recent_commits": safe_recent_commits(project.repo_path, task.branch_name),
-            "completion_evidence": (
-                str(evidence)
-                if role.completion.output.extract_decision
-                and task.branch_name
-                and evidence is not None
-                else ""
-            ),
-            # Curated diff payload, only for decision roles so they can review
-            # the change without exploring the repo. Other roles get "".
-            "completion_diff": (
-                branch_diff_content(
-                    project.repo_path,
-                    project.default_branch,
-                    task.branch_name,
-                    max_chars=resolve_project_settings(project).review_diff_max_chars,
-                )
-                if role.completion.output.extract_decision and task.branch_name
-                else ""
-            ),
-        }
-        if evidence is not None:
-            context.update({
-                "completion_proof_status": evidence.proof_status,
-                "completion_tests_status": evidence.tests_status,
-                "completion_review_outcome": evidence.review_outcome,
-                "completion_criteria_count": evidence.criteria_count,
-                "completion_criteria_addressed": evidence.criteria_addressed,
-                "completion_criteria_partially_addressed": evidence.criteria_partially_addressed,
-                "completion_changed_files": evidence.changed_files,
-                "completion_branch_diff_stat": evidence.branch_diff_stat,
-                "completion_builtin_test_passed": evidence.builtin_test_passed,
-                "completion_builtin_test_result": evidence.builtin_test_result,
-                "completion_builtin_test_detail": evidence.builtin_test_detail,
-            })
-        return role.render_prompt(context)
 
     def _write_runtime_context(
         self,

@@ -849,7 +849,7 @@ class WorktreeLimitTests(unittest.TestCase):
         arriving = self.seed_task("arriving")
 
         orchestrator = ForemanOrchestrator(self.store)
-        path = orchestrator._ensure_task_worktree(project, arriving)
+        path = orchestrator.task_worktrees.ensure(project, arriving)
 
         self.assertTrue(path.is_dir())
         self.assertFalse(victim_path.exists())

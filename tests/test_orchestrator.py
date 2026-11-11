@@ -1207,10 +1207,10 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 store, roles=self.roles, workflows=self.workflows
             )
             task = store.get_task(task.id)
-            developer_prompt = orchestrator._build_prompt(
+            developer_prompt = orchestrator.prompts.build(
                 self.roles["developer"], project, task, None
             )
-            triage_prompt = orchestrator._build_prompt(
+            triage_prompt = orchestrator.prompts.build(
                 self.roles["triage_reviewer"], project, task, None
             )
 
@@ -5992,7 +5992,7 @@ class EvidenceCachingTests(unittest.TestCase):
                 raise AssertionError("developer prompts must not build completion evidence")
 
             orchestrator.build_completion_evidence = fail_build  # type: ignore[method-assignment]
-            prompt = orchestrator._build_prompt(self.roles["developer"], project, task, None)
+            prompt = orchestrator.prompts.build(self.roles["developer"], project, task, None)
 
             self.assertIn("Implement scheduler queue", prompt)
             self.assertIsNone(task.completion_evidence)
@@ -6082,7 +6082,7 @@ class EvidenceCachingTests(unittest.TestCase):
 
             role = self.roles["code_reviewer"]
             # First call — should build and cache evidence
-            orchestrator._build_prompt(role, project, task, None)
+            orchestrator.prompts.build(role, project, task, None)
             self.assertGreater(call_count[0], 0, "build_completion_evidence should have been called on first _build_prompt")
             self.assertIsNotNone(
                 task.completion_evidence,
@@ -6091,7 +6091,7 @@ class EvidenceCachingTests(unittest.TestCase):
             first_evidence = task.completion_evidence
 
             # Second call — evidence must be reused, not rebuilt
-            orchestrator._build_prompt(role, project, task, None)
+            orchestrator.prompts.build(role, project, task, None)
             self.assertEqual(
                 call_count[0],
                 1,
@@ -6104,7 +6104,7 @@ class EvidenceCachingTests(unittest.TestCase):
             )
 
             # Third call — still no rebuild
-            orchestrator._build_prompt(role, project, task, None)
+            orchestrator.prompts.build(role, project, task, None)
             self.assertEqual(call_count[0], 1)
             self.assertIs(task.completion_evidence, first_evidence)
 
@@ -6172,7 +6172,7 @@ class EvidenceCachingTests(unittest.TestCase):
             orchestrator.build_completion_evidence = spying_build  # type: ignore[method-assignment]
             role = self.roles["code_reviewer"]
 
-            orchestrator._build_prompt(role, project, task, None)
+            orchestrator.prompts.build(role, project, task, None)
             self.assertEqual(call_count[0], 1)
             first_evidence = task.completion_evidence
             self.assertIsNotNone(first_evidence)
@@ -6183,7 +6183,7 @@ class EvidenceCachingTests(unittest.TestCase):
             self.commit_all(repo_path, "feat: extend scheduler stub")
             self.git(repo_path, "checkout", "main")
 
-            orchestrator._build_prompt(role, project, task, None)
+            orchestrator.prompts.build(role, project, task, None)
             self.assertEqual(call_count[0], 2)
             self.assertIsNotNone(task.completion_evidence)
             assert task.completion_evidence is not None
@@ -6260,7 +6260,7 @@ class EvidenceCachingTests(unittest.TestCase):
             # _build_prompt builds evidence on first call and injects fields into
             # context. We verify all 12 are present by checking the evidence
             # object that gets attached to the task after the call.
-            orchestrator._build_prompt(role, project, task, None)
+            orchestrator.prompts.build(role, project, task, None)
 
             self.assertIsNotNone(
                 task.completion_evidence,
@@ -7795,7 +7795,7 @@ class ReviewerPromptHardeningTests(unittest.TestCase):
             store, project, current_task=task, carried_output=carried_output
         )
         reviewer_role = self.roles["code_reviewer"]
-        prompt = orchestrator._build_prompt(
+        prompt = orchestrator.prompts.build(
             reviewer_role,
             project,
             task,
@@ -7907,7 +7907,7 @@ class ReviewerPromptHardeningTests(unittest.TestCase):
                 store, project, current_task=task, carried_output=None
             )
             developer_role = self.roles["developer"]
-            prompt = orchestrator._build_prompt(
+            prompt = orchestrator.prompts.build(
                 developer_role,
                 project,
                 task,
