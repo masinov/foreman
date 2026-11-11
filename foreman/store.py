@@ -527,6 +527,37 @@ class ForemanStore:
             return 0
         return int(row["v"])
 
+    def project_activity_token(self, project_id: str) -> tuple[Any, ...]:
+        """Return a value that changes when a project has something new to do.
+
+        ``data_version`` moves on every commit by any connection: another
+        project's engine, a lock heartbeat, an agent's event stream. An idle
+        engine uses this to tell those apart from a change to its own
+        project's settings, sprints, tasks, commands or queued notifications.
+        """
+
+        row = self._connection.execute(
+            """
+            SELECT
+                (SELECT COALESCE(updated_at, '') || ':' || COALESCE(settings_json, '')
+                   FROM projects WHERE id = :project),
+                (SELECT COALESCE(group_concat(id || '=' || status, ','), '')
+                   FROM (SELECT id, status FROM sprints
+                          WHERE project_id = :project ORDER BY id)),
+                (SELECT COALESCE(group_concat(
+                            id || '=' || status || '@' || COALESCE(workflow_current_step, '')
+                               || '/' || COALESCE(sprint_id, ''), ','), '')
+                   FROM (SELECT id, status, workflow_current_step, sprint_id FROM tasks
+                          WHERE project_id = :project ORDER BY id)),
+                (SELECT COUNT(*) FROM engine_commands
+                  WHERE project_id = :project AND status = 'pending'),
+                (SELECT COUNT(*) FROM notification_deliveries
+                  WHERE project_id = :project AND status = 'pending')
+            """,
+            {"project": project_id},
+        ).fetchone()
+        return tuple(row) if row is not None else ()
+
     def data_version(self) -> int:
         """Return SQLite's ``PRAGMA data_version`` for this connection.
 

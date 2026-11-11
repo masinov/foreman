@@ -285,7 +285,11 @@ foreman engine stop-task <project-id> <task-id>     # stop it and block it
 ```
 
 Each verb queues a row in `engine_commands` and prints the command id; `--by`
-defaults to the OS user name. See
+defaults to the OS user name. A pause stays in force until a `resume`: an
+engine restarted while the project is paused starts paused. A `run-task`
+command is `acknowledged` while it waits and `completed` once its task has
+run. A one-shot `foreman run` also answers these commands while it works; it
+stops for `pause`, `shutdown` and `stop-task` and refuses `run-task`. See
 [§23 Talking to the resident engine](#23-talking-to-the-resident-engine).
 
 ### Human gates & waivers

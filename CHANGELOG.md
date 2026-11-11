@@ -9,6 +9,20 @@ memory changes rather than versioned product releases.
 
 ### Sprint 56 — engine truthfulness
 
+- **slice 10b, resident engine** (`fix/resident-engine-commands`):
+  - a one-shot `foreman run` answers engine commands while it holds the
+    project: `pause`, `shutdown` and `stop_task` stop its step (they sat
+    unread before), and it refuses a `run_task` with the reason;
+  - a pause outlives the engine that applied it: a restarted engine starts
+    paused, so the state every screen reads is the state the engine is in;
+  - a `run_task` stays `acknowledged` until its task has run and is then
+    completed with what happened (it was `completed` on being queued); one
+    accepted by an engine that then stopped is run by the next engine;
+  - an unexpected exception ends `foreman serve` with `stop_reason: crashed`
+    and exit code 1 (the log said exit 0);
+  - an idle engine wakes for a change to its own project's settings,
+    sprints, tasks, commands or queued notifications, not for every commit
+    by any process.
 - **slice 10a, retries and quota** (`fix/retry-and-quota`): after an
   infrastructure failure the retry continues the session the failed attempt
   opened (it replayed the whole prompt before); a session id the backend
