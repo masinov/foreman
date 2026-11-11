@@ -3223,6 +3223,103 @@ class ForemanOrchestratorTests(unittest.TestCase):
             )
             self.assertIn(task.id, result.blocked_task_ids)
 
+    def test_a_commit_on_the_default_branch_during_a_step_does_not_block_the_task(self) -> None:
+        """The operator's branch is theirs: it may move while a task runs."""
+
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+
+            def developer(*, task: Task, prompt: str, carried_output: str | None):
+                # Somebody else lands a commit on main while the agent works.
+                self.git(repo_path, "checkout", "-q", "--detach", "main")
+                self.write_text(repo_path / "operator.txt", "unrelated\n")
+                self.git(repo_path, "add", "operator.txt")
+                self.git(repo_path, "commit", "-q", "-m", "chore: operator commit")
+                self.git(repo_path, "update-ref", "refs/heads/main", "HEAD")
+                tree = self.work_dir(task, repo_path)
+                (tree / "ready.txt").write_text("ok\n")
+                self.commit_all(tree, "feat: implement")
+                return AgentExecutionResult(outcome="error", detail="stop after one step")
+
+            self._run_with_developer(store, project, developer)
+
+            self.assertEqual(
+                [
+                    e
+                    for e in store.list_events(task_id=task.id)
+                    if e.event_type == "engine.branch_violation"
+                ],
+                [],
+            )
+            self.assertNotIn("default branch", store.get_task(task.id).blocked_reason or "")
+
+    def test_task_commits_reaching_the_default_branch_before_the_merge_step_block_the_task(
+        self,
+    ) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+
+            def developer(*, task: Task, prompt: str, carried_output: str | None):
+                tree = self.work_dir(task, repo_path)
+                (tree / "ready.txt").write_text("ok\n")
+                self.commit_all(tree, "feat: unreviewed work")
+                # The agent moves main to its own commit, skipping review.
+                self.git(tree, "update-ref", "refs/heads/main", "HEAD")
+                return AgentExecutionResult(outcome="done", detail="Implemented.")
+
+            orchestrator, executor, _ = self._run_with_developer(store, project, developer)
+
+            stored = store.get_task(task.id)
+            self.assertEqual(stored.status, "blocked")
+            self.assertIn("before the merge step", stored.blocked_reason)
+            self.assertEqual(executor.call_counts.get("code_reviewer", 0), 0)
+            violations = [
+                e for e in store.list_events(task_id=task.id) if e.event_type == "engine.branch_violation"
+            ]
+            self.assertEqual(len(violations), 1)
+            self.assertEqual(len(violations[0].payload["commits"]), 1)
+
+    def test_commits_a_refresh_brought_in_from_the_default_branch_are_not_the_tasks_own(self) -> None:
+        from foreman.git import head_sha, task_commits_on_default_branch
+
+        repo_path, _ = self.create_workspace()
+        self.initialize_repo(repo_path)
+        start = head_sha(str(repo_path), "refs/heads/main")
+        self.git(repo_path, "checkout", "-q", "-b", "feat/x")
+        self.write_text(repo_path / "own.txt", "own\n")
+        self.commit_all(repo_path, "feat: own work")
+        # main moves, then the task branch is refreshed from it
+        self.git(repo_path, "checkout", "-q", "main")
+        self.write_text(repo_path / "other.txt", "other\n")
+        self.commit_all(repo_path, "chore: someone else")
+        refreshed = head_sha(str(repo_path), "refs/heads/main")
+        self.git(repo_path, "checkout", "-q", "feat/x")
+        self.git(repo_path, "merge", "-q", "--no-edit", "main")
+        # main moves again
+        self.git(repo_path, "checkout", "-q", "main")
+        self.write_text(repo_path / "third.txt", "third\n")
+        self.commit_all(repo_path, "chore: and again")
+
+        def leaked() -> tuple[str, ...]:
+            return task_commits_on_default_branch(
+                str(repo_path),
+                task_branch="feat/x",
+                default_branch="main",
+                default_shas_seen=(start, refreshed),
+            )
+
+        self.assertEqual(leaked(), ())
+        self.git(repo_path, "merge", "-q", "--no-edit", "feat/x")
+        self.assertEqual(len(leaked()), 2)  # the task's commit and its refresh merge
+
     def test_stale_run_recovery_does_not_cost_the_engine_its_own_lease(self) -> None:
         """``run_task`` recovers stale runs while holding the lease it just took."""
 

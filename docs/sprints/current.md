@@ -27,7 +27,8 @@ states facts.
 |---|-------|--------|-------------|-------------|
 | 1 | Safe task writes: the engine updates only the columns it owns, never touches a cancelled task, re-reads the task before every step, and stops when it finds the task cancelled or blocked; `signal.blocker` stops the workflow | done | Claude, by hand | `fix/safe-task-writes`: `update_task_engine_state`, `_save_task`, `_adopt_operator_changes`, 3 tests |
 | 2 | Crash-safe steps: try/finally settles every run; the next step is persisted in the same write as the transition; recovery resumes at that step | todo | Claude, by hand | orchestrator, tests |
-| 3 | Worktree check in place of the default-branch assertion; the integration worktree heals an interrupted merge; a task tree on the wrong branch is never force-checked-out while dirty | todo | Claude, by hand | orchestrator, worktrees, git, ADR-0012 amendment |
+| 3 | Default-branch check: a task is blocked only when its own commits are on the default branch before the merge step, not whenever that branch moves | done (awaiting the running engine to finish before merge) | Claude, by hand | `fix/default-branch-check`: `git.task_commits_on_default_branch`, orchestrator, ADR-0012 amendment, 3 tests |
+| 3b | The integration worktree heals an interrupted merge; a task tree on the wrong branch is never force-checked-out while dirty | todo | Claude, by hand | worktrees, git |
 | 4 | Test step truth: real duration, a result line as the run detail, test result tied to the head commit | todo | Foreman | builtins, tests |
 | 5 | Triage attention events go through the notification dispatcher | todo | Foreman | service, notifications, tests |
 | 6 | Manager operating contract lists commands that exist | todo | Foreman | meta_agent, tests |
@@ -65,3 +66,10 @@ The role model refresh was merged after running only `test_roles.py`, and
 broke an assertion in `test_cli.py` on `main` for 40 minutes while Foreman
 tasks were starting from it. Fixed in `5d5528f`. The whole suite runs
 before every merge, including docs-and-config ones.
+
+### Slice 3 notes
+
+Done out of order because it stopped the sprint: the old assertion blocked
+FOR-14 when the test hotfix reached `main` during its develop step, and
+would block anything in flight at every later merge. The developer's work
+was intact on its branch each time; only the resume point was thrown away.
