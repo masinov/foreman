@@ -12,6 +12,7 @@ import unittest
 
 from foreman.engine.output_contract import extract_completion_output, extract_decision_output
 from foreman.models import CompletionEvidence, Event, Project, Run, Sprint, Task
+from foreman.engine.branch_sync import prepare_task_branch_for_step
 from foreman.engine.errors import OrchestratorError
 from foreman.engine.results import AgentEventRecord, AgentExecutionResult
 from foreman.orchestrator import ForemanOrchestrator
@@ -1530,12 +1531,6 @@ class ForemanOrchestratorTests(unittest.TestCase):
             )
             project.settings["completion_guard_enabled"] = False
             store.save_project(project)
-            orchestrator = ForemanOrchestrator(
-                store,
-                roles=self.roles,
-                workflows=self.workflows,
-                agent_executor=ScriptedAgentExecutor({}),
-            )
 
             self.git(repo_path, "checkout", "-b", task.branch_name)
             self.write_text(repo_path / "feature.txt", "task work\n")
@@ -1545,7 +1540,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
             self.write_text(repo_path / "notes.txt", "main moved\n")
             self.commit_all(repo_path, "docs: main moves forward")
 
-            carried_output, sync_event = orchestrator._prepare_task_branch_for_step(
+            carried_output, sync_event = prepare_task_branch_for_step(
                 project=project,
                 task=task,
                 step="develop",
@@ -1578,12 +1573,6 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 repo_path=repo_path,
                 branch_name="feat/task-1",
             )
-            orchestrator = ForemanOrchestrator(
-                store,
-                roles=self.roles,
-                workflows=self.workflows,
-                agent_executor=ScriptedAgentExecutor({}),
-            )
 
             self.git(repo_path, "checkout", "-b", task.branch_name)
             self.write_text(repo_path / "feature.txt", "task work\n")
@@ -1593,7 +1582,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
             self.commit_all(repo_path, "docs: main moves forward")
             self.git(repo_path, "checkout", task.branch_name)
 
-            carried_output, sync_event = orchestrator._prepare_task_branch_for_step(
+            carried_output, sync_event = prepare_task_branch_for_step(
                 project=project,
                 task=task,
                 step="develop",
@@ -1610,7 +1599,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
             self.assertEqual(current_branch(repo_path), "feat/task-1")
 
             # Up to date now: a second visit does nothing and carries nothing.
-            again, again_event = orchestrator._prepare_task_branch_for_step(
+            again, again_event = prepare_task_branch_for_step(
                 project=project,
                 task=task,
                 step="develop",
@@ -1634,12 +1623,6 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 repo_path=repo_path,
                 branch_name="feat/task-1",
             )
-            orchestrator = ForemanOrchestrator(
-                store,
-                roles=self.roles,
-                workflows=self.workflows,
-                agent_executor=ScriptedAgentExecutor({}),
-            )
 
             self.git(repo_path, "checkout", "-b", task.branch_name)
             self.write_text(repo_path / "shared.txt", "task version\n")
@@ -1659,7 +1642,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
             # trip over the unresolved index.
             checkout_branch(repo_path, task.branch_name, create=True, base_branch="main")
 
-            carried_output, sync_event = orchestrator._prepare_task_branch_for_step(
+            carried_output, sync_event = prepare_task_branch_for_step(
                 project=project,
                 task=task,
                 step="develop",
@@ -1690,12 +1673,6 @@ class ForemanOrchestratorTests(unittest.TestCase):
                 repo_path=repo_path,
                 branch_name="feat/task-1",
             )
-            orchestrator = ForemanOrchestrator(
-                store,
-                roles=self.roles,
-                workflows=self.workflows,
-                agent_executor=ScriptedAgentExecutor({}),
-            )
 
             self.git(repo_path, "checkout", "-b", task.branch_name)
             self.write_text(repo_path / "shared.txt", "task version\n")
@@ -1705,7 +1682,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
             self.commit_all(repo_path, "fix: main edit")
             self.git(repo_path, "checkout", task.branch_name)
 
-            carried_output, sync_event = orchestrator._prepare_task_branch_for_step(
+            carried_output, sync_event = prepare_task_branch_for_step(
                 project=project,
                 task=task,
                 step="develop",
