@@ -85,7 +85,7 @@ class AgentSignalPersistenceTests(unittest.TestCase):
                 )
 
                 orchestrator = ForemanOrchestrator(store)
-                orchestrator._persist_agent_event(
+                orchestrator.signals.persist_agent_event(
                     run,
                     task,
                     project,
@@ -123,7 +123,7 @@ class AgentSignalPersistenceTests(unittest.TestCase):
                     getattr(store, f"save_{type(obj).__name__.lower()}")(obj)
 
                 orchestrator = ForemanOrchestrator(store)
-                orchestrator._persist_agent_event(
+                orchestrator.signals.persist_agent_event(
                     run, task, project, "developer",
                     AgentEventRecord(
                         event_type="signal.blocker",
@@ -157,7 +157,7 @@ class AgentSignalPersistenceTests(unittest.TestCase):
                     getattr(store, f"save_{type(obj).__name__.lower()}")(obj)
 
                 orchestrator = ForemanOrchestrator(store)
-                orchestrator._persist_agent_event(
+                orchestrator.signals.persist_agent_event(
                     run, task, project, "architect",
                     AgentEventRecord(
                         event_type="signal.task_created",
@@ -165,7 +165,7 @@ class AgentSignalPersistenceTests(unittest.TestCase):
                         timestamp="2026-06-12T10:00:00Z",
                     ),
                 )
-                orchestrator._persist_agent_event(
+                orchestrator.signals.persist_agent_event(
                     run, task, project, "architect",
                     AgentEventRecord(
                         event_type="signal.task_created",
@@ -3472,7 +3472,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
             self.addCleanup(orchestrator.close)
             self.assertIsNotNone(orchestrator.leases.acquire(task, project))
 
-            orchestrator._recover_stale_running_runs(project, task, [stale_run])
+            orchestrator.recovery.recover_stale_running_runs(project, task, [stale_run])
 
             self.assertEqual(store.get_run(stale_run.id).status, "failed")
             self.assertTrue(orchestrator.leases.renew(task, project))
@@ -3697,7 +3697,7 @@ class ForemanOrchestratorTests(unittest.TestCase):
             )
 
             self.assertFalse(
-                orchestrator._run_is_stale(project, stale_run),
+                orchestrator.recovery.run_is_stale(project, stale_run),
                 "Run with a live lease held by another holder must not be stale.",
             )
 

@@ -28,11 +28,11 @@ from .engine.branch_sync import (
     prepare_task_branch_for_step,
     task_working_dir,
 )
+from .engine.coerce import coerce_float_value, coerce_int_value, optional_string
 from .engine.evidence import EvidenceBuilder, branch_diff_content
 from .engine.gates import blocked_reason_for_unhandled_outcome, gate_policy_decision
 from .engine.leasing import TASK_LEASE_HEARTBEAT_SECONDS, TaskLeases
 from .engine.limits import (
-    active_run_recovery_timeout_seconds,
     project_timeout_seconds,
     resolve_project_settings,
     run_cost_ceiling,
@@ -57,6 +57,9 @@ from .engine.records import RunRecords, new_id
 from .engine.retention import Retention
 from .engine.sprints import SprintFlow
 from .engine.task_writes import TaskWrites
+from .engine.recovery import Recovery
+from .engine.selection import AUTONOMOUS_PLACEHOLDER_TITLE, TaskSelector
+from .engine.signals import SignalHandler
 from .engine.results import (
     AgentEventRecord,
     AgentExecutionResult,
@@ -71,12 +74,11 @@ from .git import (
     task_commits_on_default_branch,
     branch_exists,
     head_sha,
-    run_git,
     worktree_branch,
 )
 from .logs import get_logger
 from .guidance import GUIDANCE_DELIVERED_EVENT, pending_guidance, prompt_with_guidance
-from .models import CompletionEvidence, Event, HumanGateDecision, Lease, Project, Run, TASK_COMPLEXITIES, TASK_TYPES, Task, TokenUsage, utc_now_text
+from .models import CompletionEvidence, Event, HumanGateDecision, Project, Run, Task, TokenUsage, utc_now_text
 from .notifications import NotificationDispatcher
 from .policy import PolicyMatrix, describe_resolution
 from .outcomes import APPROVE, BLOCKED, DENY, ERROR, normalize_agent_outcome, normalize_reviewer_decision
@@ -95,10 +97,6 @@ from .worktrees import (
 )
 
 _LOGGER = get_logger("orchestrator")
-
-#: Title of the task the engine creates in autonomous mode for the agent to
-#: name. A task that still has it was never named by ``signal.task_started``.
-AUTONOMOUS_PLACEHOLDER_TITLE = "[autonomous] new task"
 
 _BRANCH_PREFIXES = {
     "feature": "feat",
@@ -192,6 +190,26 @@ class ForemanOrchestrator:
         self.leases = TaskLeases(
             store, self.holder_id, heartbeat_seconds=self._TASK_LEASE_HEARTBEAT_SECONDS
         )
+        self.recovery = Recovery(
+            store,
+            records=self.records,
+            leases=self.leases,
+            tasks=self.tasks,
+            utc_now=self.utc_now,
+        )
+        self.selector = TaskSelector(
+            store,
+            leases=self.leases,
+            tasks=self.tasks,
+            block_task_for_error=self.block_task_for_error,
+        )
+        self.signals = SignalHandler(
+            store,
+            roles=self.roles,
+            records=self.records,
+            leases=self.leases,
+            tasks=self.tasks,
+        )
         self._worktree_managers: dict[str, WorktreeManager] = {}
         #: Called with the running task id before every workflow step and on
         #: every silent-agent tick. The resident engine supplies it so an
@@ -205,6 +223,16 @@ class ForemanOrchestrator:
         """Stop the background work this orchestrator started."""
 
         self.leases.close()
+
+    def select_next_task(self, project: Project) -> Task | None:
+        """Pick and lease the next runnable task (see ``engine.selection``)."""
+
+        return self.selector.select_next_task(project)
+
+    def recover_orphaned_tasks(self, project_id: str) -> None:
+        """Reset tasks an earlier engine left mid-work (see ``engine.recovery``)."""
+
+        self.recovery.recover_orphaned_tasks(project_id)
 
     def worktrees(self, project: Project) -> WorktreeManager:
         """Return the worktree manager for one project, created once per run."""
@@ -363,7 +391,7 @@ class ForemanOrchestrator:
         self._preflight_worktrees(project)
         if maintenance:
             self.retention.prune_old_history(project, settings=settings)
-            self.recover_orphaned_tasks(project.id)
+            self.recovery.recover_orphaned_tasks(project.id)
 
         executed_task_ids: list[str] = []
         blocked_task_ids: list[str] = []
@@ -396,7 +424,7 @@ class ForemanOrchestrator:
         self.sprints.activate_first_planned(project.id)
         stop_reason = "idle"
         while True:
-            task = self.select_next_task(project)
+            task = self.selector.select_next_task(project)
             if task is not None:
                 try:
                     completed = self._run_task_isolated(project, workflow, task)
@@ -616,116 +644,6 @@ class ForemanOrchestrator:
         )
         return self.records.emit_event(run, event_type, payload)
 
-    def select_next_task(self, project: Project) -> Task | None:
-        """Return the next runnable task for one project."""
-
-        selection_mode = resolve_project_settings(project).task_selection_mode
-        if selection_mode == "autonomous":
-            return self._select_next_task_autonomous(project)
-        if selection_mode != "directed":
-            raise OrchestratorError(
-                f"Task selection mode {selection_mode!r} is not implemented."
-            )
-
-        sprint = self.store.get_active_sprint(project.id)
-        if sprint is None:
-            return None
-        sprint_tasks = self.store.list_tasks(sprint_id=sprint.id)
-        tasks_by_id = {task.id: task for task in sprint_tasks}
-        for task in sprint_tasks:
-            if task.status == "in_progress" and task.workflow_current_step:
-                # For resumption, try to acquire the lease. If the old holder is
-                # still alive (lease not expired), skip this task to avoid stealing
-                # work. If the lease has expired, we take it over.
-                if self.leases.acquire(task, project) is None:
-                    return None  # Another orchestrator holds an active lease.
-                return task
-        if any(
-            task.status == "in_progress" and not task.workflow_current_step
-            for task in sprint_tasks
-        ):
-            return None
-        for task in sprint_tasks:
-            if task.status != "todo":
-                continue
-            cancelled = self._cancelled_dependencies(task, tasks_by_id)
-            if cancelled:
-                # The prerequisite will never be delivered. Running the task
-                # anyway would build on work that does not exist; park it for
-                # a person to re-plan instead.
-                self.block_task_for_error(
-                    task.id,
-                    "Dependency cancelled: "
-                    + ", ".join(cancelled)
-                    + ". Re-plan the task, then `foreman task unblock` it or cancel it.",
-                    attention_trigger="dependency_cancelled",
-                )
-                continue
-            if not self._dependencies_satisfied(task, tasks_by_id):
-                continue
-            # Lease the task before returning it. If denied, another
-            # orchestrator holds it — skip to the next candidate.
-            if self.leases.acquire(task, project) is None:
-                continue
-            return task
-        return None
-
-
-    def _select_next_task_autonomous(self, project: Project) -> Task | None:
-        """Select the next task in autonomous mode.
-
-        Resumes an in-progress task if one exists.  Otherwise creates a new
-        placeholder task for the agent to populate via ``signal.task_started``.
-        Returns ``None`` when there is no active sprint or the autonomous task
-        limit for this sprint has been reached.
-        """
-        sprint = self.store.get_active_sprint(project.id)
-        if sprint is None:
-            return None
-
-        sprint_tasks = self.store.list_tasks(sprint_id=sprint.id)
-
-        # Resume an in-progress task that has a persisted workflow position.
-        for task in sprint_tasks:
-            if task.status == "in_progress" and task.workflow_current_step:
-                # For resumption, try to acquire the lease. If the old holder is
-                # still alive (lease not expired), skip this task to avoid
-                # stealing work. If the lease has expired, we take it over.
-                if self.leases.acquire(task, project) is None:
-                    return None  # Another orchestrator holds an active lease.
-                return task
-        if any(
-            task.status == "in_progress" and not task.workflow_current_step
-            for task in sprint_tasks
-        ):
-            return None
-
-        # Check the per-sprint autonomous task limit.
-        max_tasks = resolve_project_settings(project).max_autonomous_tasks
-        orchestrator_tasks = [t for t in sprint_tasks if t.created_by == "orchestrator"]
-        if len(orchestrator_tasks) >= max_tasks:
-            return None
-
-        # Create a new placeholder task for the agent to populate.
-        placeholder = Task(
-            id=str(uuid4()),
-            sprint_id=sprint.id,
-            project_id=project.id,
-            title=AUTONOMOUS_PLACEHOLDER_TITLE,
-            status="todo",
-            created_by="orchestrator",
-        )
-        self.tasks.save(placeholder)
-        # Acquire lease for the new placeholder immediately.
-        if self.leases.acquire(placeholder, project) is None:
-            # Race: another orchestrator created one first; reload and return it.
-            sprint_tasks = self.store.list_tasks(sprint_id=sprint.id)
-            for task in sprint_tasks:
-                if task.status == "in_progress" and task.workflow_current_step:
-                    return task
-            return None
-        return placeholder
-
     def run_task(
         self,
         project: Project,
@@ -771,10 +689,10 @@ class ForemanOrchestrator:
         active_runs = self.store.list_runs(task_id=current_task.id, status="running")
         if active_runs:
             recoverable_runs = [
-                run for run in active_runs if self._run_is_stale(project, run)
+                run for run in active_runs if self.recovery.run_is_stale(project, run)
             ]
             if recoverable_runs:
-                self._recover_stale_running_runs(project, current_task, recoverable_runs)
+                self.recovery.recover_stale_running_runs(project, current_task, recoverable_runs)
                 current_task = self.store.get_task(task.id) or current_task
                 active_runs = self.store.list_runs(task_id=current_task.id, status="running")
             if active_runs:
@@ -1553,7 +1471,7 @@ class ForemanOrchestrator:
                     session_id=session_id,
                     carried_output=carried_output,
                     model=model_selection.model,
-                    event_recorder=lambda event_record: self._persist_agent_event(
+                    event_recorder=lambda event_record: self.signals.persist_agent_event(
                         run,
                         current_task,
                         project,
@@ -1562,7 +1480,7 @@ class ForemanOrchestrator:
                     ),
                 )
                 if not result.events_streamed:
-                    self._emit_agent_events(run, current_task, project, role.id, result.events)
+                    self.signals.emit_agent_events(run, current_task, project, role.id, result.events)
                 self.records.complete_run(
                     run,
                     status=result.status,
@@ -1632,7 +1550,7 @@ class ForemanOrchestrator:
                         session_id=retry_session_id,
                         carried_output=carried_output,
                         model=model_selection.model,
-                        event_recorder=lambda event_record: self._persist_agent_event(
+                        event_recorder=lambda event_record: self.signals.persist_agent_event(
                             retry_run,
                             current_task,
                             project,
@@ -1641,7 +1559,7 @@ class ForemanOrchestrator:
                         ),
                     )
                     if not retry_result.events_streamed:
-                        self._emit_agent_events(
+                        self.signals.emit_agent_events(
                             retry_run,
                             current_task,
                             project,
@@ -1711,7 +1629,7 @@ class ForemanOrchestrator:
                 and current_task.title == AUTONOMOUS_PLACEHOLDER_TITLE
                 and step_def.role in self.roles
                 and "task_started" in self.roles[step_def.role].signals
-                and not self._autonomous_gap_recorded(current_task)
+                and not self.signals.autonomous_gap_recorded(current_task)
             ):
                 self.records.emit_event(
                     run,
@@ -1929,159 +1847,6 @@ class ForemanOrchestrator:
         except WorktreeError as exc:
             raise OrchestratorError(str(exc)) from exc
 
-    def recover_orphaned_tasks(self, project_id: str) -> None:
-        """Reset orphaned in-progress tasks after a prior engine crash."""
-
-        project = self.store.get_project(project_id)
-        if project is None:
-            return
-        orphaned_tasks = self.store.list_tasks(project_id=project_id, status="in_progress")
-        for task in orphaned_tasks:
-            if task.workflow_current_step is not None:
-                continue
-
-            active_runs = self.store.list_runs(task_id=task.id, status="running")
-            stale_runs = [run for run in active_runs if self._run_is_stale(project, run)]
-            if active_runs and not stale_runs:
-                continue
-
-            if stale_runs:
-                self._recover_stale_running_runs(project, task, stale_runs)
-                continue
-
-            if not active_runs:
-                system_run = self.records.create_system_run(
-                    task,
-                    workflow_step=task.workflow_current_step or "orchestrator",
-                    outcome="error",
-                    detail="Recovered orphaned task without an active run.",
-                )
-                self.records.emit_event(
-                    system_run,
-                    "engine.crash_recovery",
-                    {
-                        "task_id": task.id,
-                        "message": "Reset to todo after orphaned run.",
-                    },
-                )
-
-            task.status = "todo"
-            task.blocked_reason = None
-            task.step_visit_counts = {}
-            self.tasks.save(task)
-
-    def _recover_stale_running_runs(
-        self,
-        project: Project,
-        task: Task,
-        runs: list[Run],
-    ) -> None:
-        """Fail stale running runs and reset task state so the slice can be retried safely."""
-
-        now = utc_now_text()
-
-        # Capture lease metadata for the recovery event.
-        task_lease = self.store.get_active_lease(
-            project_id=project.id,
-            resource_type="task",
-            resource_id=task.id,
-        )
-
-        for run in runs:
-            run.status = "failed"
-            run.outcome = "error"
-            run.outcome_detail = "Recovered stale running run after exceeding the active-run limit."
-            run.completed_at = now
-            self.store.save_run(run)
-            self.records.emit_event(
-                run,
-                "engine.crash_recovery",
-                {
-                    "task_id": task.id,
-                    "lease_id": task_lease.id if task_lease else None,
-                    "holder_id": task_lease.holder_id if task_lease else None,
-                    "fencing_token": task_lease.fencing_token if task_lease else None,
-                    "message": "Marked stale running run as failed.",
-                },
-            )
-
-        # Force-expire any active task lease for the recovered task so the
-        # next orchestrator can acquire it immediately. Without this, a lease
-        # whose `expires_at` is still in the future would block re-acquisition
-        # even after the run is marked failed.
-        # ``run_task`` reaches this holding the lease it has just acquired.
-        # Expiring that one too made the very next renewal fail, so every
-        # resume after a crash cost one wasted agent run. Clear what a dead
-        # engine left, then hold the task again.
-        held_by_us = self.leases.holds(task.id)
-        heartbeating = task.id in self.leases.heartbeats
-        if held_by_us:
-            self.leases.forget(task.id)
-        self.store.expire_resource_leases(
-            project_id=project.id,
-            resource_type="task",
-            resource_id=task.id,
-            force=True,
-        )
-        if held_by_us:
-            token = self.leases.acquire(task, project)
-            if token is None:
-                raise LeaseLostError(
-                    f"Lease on task {task.id!r} could not be re-acquired after stale-run recovery."
-                )
-            if heartbeating:
-                self.leases.start_heartbeat(task, project, token)
-
-        task.status = "todo"
-        task.blocked_reason = None
-        task.workflow_current_step = None
-        task.workflow_carried_output = None
-        task.step_visit_counts = {}
-        self.tasks.save(task)
-
-    def _run_is_stale(self, project: Project, run: Run) -> bool:
-        """Return whether a persisted running run has exceeded its allowed ownership window.
-
-        A run is considered stale when:
-        1. Its configured timeout has elapsed, AND
-        2. The task's active lease is either missing, expired, or held by a
-           holder whose heartbeat is older than the liveness threshold
-           (meaning the original holder is gone and the lease is no longer
-           being heartbeated).
-        """
-
-        timeout_seconds = active_run_recovery_timeout_seconds(project)
-        if timeout_seconds is None or timeout_seconds <= 0:
-            return False
-
-        # Check if the run's timeout has elapsed.
-        reference = self.store.get_latest_event_timestamp(run.id) or run.started_at or run.created_at
-        started = _parse_utc_timestamp(reference)
-        if started is None:
-            return False
-        if (self.utc_now() - started).total_seconds() <= timeout_seconds:
-            return False
-
-        # Timeout has elapsed: expire any past-due leases for this task, then
-        # check the liveness of the remaining lease by its heartbeat timestamp.
-        # A lease whose heartbeat is stale is treated as if its holder is gone.
-        self.store.expire_resource_leases(
-            project_id=project.id,
-            resource_type="task",
-            resource_id=run.task_id,
-        )
-        task_lease = self.store.get_active_lease(
-            project_id=project.id,
-            resource_type="task",
-            resource_id=run.task_id,
-        )
-        if task_lease is not None and task_lease.holder_id != self.holder_id:
-            if _is_lease_live(task_lease, self.utc_now(), self._LEASE_LIVENESS_THRESHOLD_SECONDS):
-                # Another orchestrator is actively heartbeating, so not stale.
-                return False
-
-        return True
-
     # ── Sprint advancement ────────────────────────────────────────────────────
 
     def _latest_agent_run(self, task_id: str) -> Run | None:
@@ -2107,34 +1872,6 @@ class ForemanOrchestrator:
                 f"Unknown workflow {project.workflow_id!r} for project {project.id!r}."
             )
         return workflow
-
-    def _dependencies_satisfied(
-        self,
-        task: Task,
-        tasks_by_id: Mapping[str, Task],
-    ) -> bool:
-        for dependency_id in task.depends_on_task_ids:
-            dependency = tasks_by_id.get(dependency_id) or self.store.get_task(dependency_id)
-            if dependency is None:
-                return False
-            # Only a delivered dependency satisfies. A cancelled one is a
-            # planning decision the dependent task must be re-planned around;
-            # ``_cancelled_dependencies`` turns it into a block with attention.
-            if dependency.status != "done":
-                return False
-        return True
-
-    def _cancelled_dependencies(
-        self,
-        task: Task,
-        tasks_by_id: Mapping[str, Task],
-    ) -> list[str]:
-        cancelled: list[str] = []
-        for dependency_id in task.depends_on_task_ids:
-            dependency = tasks_by_id.get(dependency_id) or self.store.get_task(dependency_id)
-            if dependency is not None and dependency.status == "cancelled":
-                cancelled.append(dependency.id)
-        return cancelled
 
     def _build_prompt(
         self,
@@ -2219,34 +1956,6 @@ class ForemanOrchestrator:
                 "completion_builtin_test_detail": evidence.builtin_test_detail,
             })
         return role.render_prompt(context)
-
-    def _autonomous_gap_recorded(self, task: Task) -> bool:
-        """True when this task's missing task_started was already recorded."""
-
-        return any(
-            event.event_type == "workflow.autonomous_contract_missing"
-            for event in self.store.list_events(task_id=task.id)
-        )
-
-    def _signalled_branch_problem(self, project: Project, branch: str) -> str | None:
-        """Say why a branch an agent reported cannot become the task's branch."""
-
-        if branch == project.default_branch:
-            return (
-                f"{branch!r} is the default branch; a task's work reaches it only "
-                "through the merge step."
-            )
-        try:
-            valid = run_git(
-                project.repo_path, "check-ref-format", "--branch", branch, check=False
-            )
-        except (GitError, OSError) as exc:
-            return f"The branch name {branch!r} could not be checked: {exc}"
-        if valid.returncode != 0:
-            return f"{branch!r} is not a valid branch name."
-        if not branch_exists(project.repo_path, branch):
-            return f"Branch {branch!r} does not exist in the repository."
-        return None
 
     def _write_runtime_context(
         self,
@@ -2529,11 +2238,11 @@ class ForemanOrchestrator:
             if event_recorder is not None:
                 event_recorder(event_record)
             if event.event_type == "agent.message":
-                text = _optional_string(event.payload.get("text"))
+                text = optional_string(event.payload.get("text"))
                 if text and (not message_fragments or message_fragments[-1] != text):
                     message_fragments.append(text)
                 if text:
-                    phase = _optional_string(event.payload.get("phase"))
+                    phase = optional_string(event.payload.get("phase"))
                     if phase in FINAL_MESSAGE_PHASES:
                         final_message = text
                         saw_final_phase = True
@@ -2544,22 +2253,22 @@ class ForemanOrchestrator:
             if event.event_type == "agent.infra_error":
                 # The attempt that just failed was charged for; keep its cost
                 # on the books and start the next attempt's count from zero.
-                aborted_cost_usd += _coerce_float_value(
+                aborted_cost_usd += coerce_float_value(
                     event.payload.get("cost_usd"), default=cost_usd
                 )
                 cost_usd = 0.0
                 token_count = 0
-                dropped = _optional_string(event.payload.get("dropped_session_id"))
+                dropped = optional_string(event.payload.get("dropped_session_id"))
                 if dropped and final_session_id == dropped:
                     final_session_id = None
                 continue
 
             if event.event_type == "agent.cost_update":
-                cost_usd = _coerce_float_value(
+                cost_usd = coerce_float_value(
                     event.payload.get("cumulative_usd"),
                     default=cost_usd,
                 )
-                token_count = _coerce_int_value(
+                token_count = coerce_int_value(
                     event.payload.get("cumulative_tokens"),
                     default=token_count,
                 )
@@ -2567,18 +2276,18 @@ class ForemanOrchestrator:
 
             if event.event_type == "agent.completed":
                 final_session_id = (
-                    _optional_string(event.payload.get("session_id")) or final_session_id
+                    optional_string(event.payload.get("session_id")) or final_session_id
                 )
-                cost_usd = _coerce_float_value(
+                cost_usd = coerce_float_value(
                     event.payload.get("cost_usd"),
                     default=cost_usd,
                 )
-                token_count = _coerce_int_value(
+                token_count = coerce_int_value(
                     event.payload.get("token_count"),
                     default=token_count,
                 )
                 token_usage = TokenUsage.from_mapping(event.payload.get("token_usage")) or token_usage
-                duration_ms = _coerce_int_value(
+                duration_ms = coerce_int_value(
                     event.payload.get("duration_ms"),
                     default=duration_ms,
                 )
@@ -2592,55 +2301,55 @@ class ForemanOrchestrator:
 
             if event.event_type == "agent.session":
                 final_session_id = (
-                    _optional_string(event.payload.get("session_id")) or final_session_id
+                    optional_string(event.payload.get("session_id")) or final_session_id
                 )
                 continue
 
             if event.event_type == "agent.killed":
-                gate_type = _optional_string(event.payload.get("gate_type")) or "gate"
+                gate_type = optional_string(event.payload.get("gate_type")) or "gate"
                 final_status = "timeout" if gate_type == "time" else "killed"
                 outcome = "error"
                 detail = (
-                    _optional_string(event.payload.get("reason"))
+                    optional_string(event.payload.get("reason"))
                     or "Agent run was killed by a gate."
                 )
                 # A backend that stops a run at its budget reports what the
                 # run cost; a kill must not erase that from the books.
                 final_session_id = (
-                    _optional_string(event.payload.get("session_id")) or final_session_id
+                    optional_string(event.payload.get("session_id")) or final_session_id
                 )
-                cost_usd = _coerce_float_value(event.payload.get("cost_usd"), default=cost_usd)
-                token_count = _coerce_int_value(
+                cost_usd = coerce_float_value(event.payload.get("cost_usd"), default=cost_usd)
+                token_count = coerce_int_value(
                     event.payload.get("token_count"), default=token_count
                 )
                 token_usage = TokenUsage.from_mapping(event.payload.get("token_usage")) or token_usage
-                duration_ms = _coerce_int_value(
+                duration_ms = coerce_int_value(
                     event.payload.get("duration_ms"), default=duration_ms
                 )
                 continue
 
             if event.event_type == "agent.error":
                 final_session_id = (
-                    _optional_string(event.payload.get("session_id")) or final_session_id
+                    optional_string(event.payload.get("session_id")) or final_session_id
                 )
-                cost_usd = _coerce_float_value(
+                cost_usd = coerce_float_value(
                     event.payload.get("cost_usd"),
                     default=cost_usd,
                 )
-                token_count = _coerce_int_value(
+                token_count = coerce_int_value(
                     event.payload.get("token_count"),
                     default=token_count,
                 )
                 token_usage = TokenUsage.from_mapping(event.payload.get("token_usage")) or token_usage
-                duration_ms = _coerce_int_value(
+                duration_ms = coerce_int_value(
                     event.payload.get("duration_ms"),
                     default=duration_ms,
                 )
                 final_status = "failed"
                 failure_type = _failure_type_for_error(event.payload)
-                retry_after = _optional_string(event.payload.get("retry_after"))
+                retry_after = optional_string(event.payload.get("retry_after"))
                 detail = (
-                    _optional_string(event.payload.get("error"))
+                    optional_string(event.payload.get("error"))
                     or "\n\n".join(message_fragments)
                     or "Agent execution failed."
                 )
@@ -2673,154 +2382,6 @@ class ForemanOrchestrator:
             failure_type=failure_type,
             retry_after=retry_after,
         )
-
-    def _emit_agent_events(
-        self,
-        run: Run,
-        task: Task,
-        project: Project,
-        role_id: str,
-        events: tuple[AgentEventRecord, ...],
-    ) -> None:
-        for event_record in events:
-            self.records.emit_event(
-                run,
-                event_record.event_type,
-                event_record.payload,
-                role_id=role_id,
-                timestamp=event_record.timestamp,
-            )
-            self._apply_agent_signal(run, task, project, role_id, event_record)
-
-    def _persist_agent_event(
-        self,
-        run: Run,
-        task: Task,
-        project: Project,
-        role_id: str,
-        event_record: AgentEventRecord,
-    ) -> None:
-        """Persist one agent event immediately while a native step is active."""
-
-        self.records.emit_event(
-            run,
-            event_record.event_type,
-            event_record.payload,
-            role_id=role_id,
-            timestamp=event_record.timestamp,
-        )
-        self._apply_agent_signal(run, task, project, role_id, event_record)
-
-    def _apply_agent_signal(
-        self,
-        run: Run,
-        task: Task,
-        project: Project,
-        role_id: str,
-        event_record: AgentEventRecord,
-    ) -> None:
-        payload = event_record.payload
-        if event_record.event_type.startswith("signal.") and event_record.event_type not in {
-            "signal.invalid",
-            "signal.unknown",
-            "signal.rejected",
-        }:
-            signal_name = event_record.event_type.removeprefix("signal.")
-            role = self.roles.get(role_id)
-            if role is not None and signal_name not in role.signals:
-                self.records.emit_event(
-                    run,
-                    "signal.rejected",
-                    {
-                        "signal": signal_name,
-                        "role_id": role_id,
-                        "reason": f"Role {role_id!r} may not emit {signal_name}.",
-                    },
-                    role_id=role_id,
-                )
-                return
-        if event_record.event_type == "signal.task_started":
-            task.title = _optional_string(payload.get("title")) or task.title
-            task.acceptance_criteria = (
-                _optional_string(payload.get("criteria")) or task.acceptance_criteria
-            )
-            # The type and the branch are checked before they are stored: a
-            # type Foreman does not know breaks branch naming and the merge
-            # guard, and the branch decides which worktree later steps use
-            # and what gets merged.
-            refused: dict[str, str] = {}
-            task_type = _optional_string(payload.get("task_type"))
-            if task_type and task_type != task.task_type:
-                if task_type in TASK_TYPES:
-                    task.task_type = task_type
-                else:
-                    refused["task_type"] = (
-                        f"{task_type!r} is not a task type "
-                        f"(expected one of: {', '.join(TASK_TYPES)})."
-                    )
-            branch = _optional_string(payload.get("branch"))
-            if branch and branch != task.branch_name:
-                problem = self._signalled_branch_problem(project, branch)
-                if problem is None:
-                    task.branch_name = branch
-                else:
-                    refused["branch"] = problem
-            self.tasks.save(task, include_definition=True)
-            for field_name, reason in refused.items():
-                self.records.emit_event(
-                    run,
-                    "signal.rejected",
-                    {
-                        "signal": "task_started",
-                        "role_id": role_id,
-                        "field": field_name,
-                        "reason": reason,
-                    },
-                    role_id=role_id,
-                )
-            return
-
-        if event_record.event_type == "signal.task_created":
-            sprint = self.store.get_active_sprint(project.id)
-            if sprint is None:
-                return
-            order_index = self.store.next_task_order_index(sprint.id)
-            raw_complexity = _optional_string(payload.get("complexity"))
-            complexity = raw_complexity if raw_complexity in TASK_COMPLEXITIES else None
-            created_task = Task(
-                id=new_id("task"),
-                sprint_id=sprint.id,
-                project_id=project.id,
-                title=str(payload.get("title", "(agent-created task)")),
-                task_type=str(payload.get("task_type", "feature")),
-                description=_optional_string(payload.get("description")),
-                acceptance_criteria=_optional_string(payload.get("criteria")),
-                complexity=complexity,
-                order_index=order_index,
-                created_by=f"agent:{role_id}",
-                created_at=event_record.timestamp,
-            )
-            self.tasks.save(created_task)
-            self.records.emit_event(
-                run,
-                "engine.task_created",
-                {
-                    "task_id": created_task.id,
-                    "title": created_task.title,
-                    "task_type": created_task.task_type,
-                    "created_by": created_task.created_by,
-                },
-            )
-            return
-
-        if event_record.event_type == "signal.blocker":
-            message = _optional_string(payload.get("message"))
-            if message:
-                task.status = "blocked"
-                task.blocked_reason = message
-                self.tasks.save(task)
-                self.leases.release(task, project)
-                self.records.emit_attention_needed(run, task.id, "task_blocked")
 
     def _emit_builtin_events(
         self,
@@ -2860,59 +2421,4 @@ def generate_branch_name(task: Task) -> str:
 
     prefix = _BRANCH_PREFIXES.get(task.task_type, "feat")
     return f"{prefix}/{task.id}"
-
-
-def _optional_string(value: Any) -> str | None:
-    if value is None:
-        return None
-    text = str(value).strip()
-    return text or None
-
-
-def _coerce_float_value(value: Any, *, default: float) -> float:
-    if isinstance(value, bool):
-        return default
-    if isinstance(value, (int, float)):
-        return float(value)
-    return default
-
-
-def _coerce_int_value(value: Any, *, default: int | None) -> int | None:
-    if isinstance(value, bool):
-        return default
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float):
-        return int(value)
-    return default
-
-
-def _is_lease_live(
-    lease: Lease,
-    utc_now: datetime,
-    liveness_threshold_seconds: float,
-) -> bool:
-    """Return True if the lease's heartbeat is recent enough to trust the holder.
-
-    A lease is considered live when its ``heartbeat_at`` is within
-    ``liveness_threshold_seconds`` of ``utc_now``. Older heartbeats are
-    treated as if the holder is gone so recovery can take over the resource.
-    """
-    heartbeat = _parse_utc_timestamp(lease.heartbeat_at)
-    if heartbeat is None:
-        return False
-    return (utc_now - heartbeat).total_seconds() <= liveness_threshold_seconds
-
-
-def _parse_utc_timestamp(value: str | None) -> datetime | None:
-    if not value:
-        return None
-    normalized = value.replace("Z", "+00:00")
-    try:
-        parsed = datetime.fromisoformat(normalized)
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
 

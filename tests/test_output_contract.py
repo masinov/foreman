@@ -432,7 +432,7 @@ class OrchestratorContractTests(unittest.TestCase):
             orchestrator._execute_native_runner_step(
                 role=orchestrator.roles["developer"], project=project, task=task, workflow_step="develop",
                 prompt="p", session_id=None,
-                event_recorder=lambda rec: orchestrator._persist_agent_event(run, task, project, "developer", rec),
+                event_recorder=lambda rec: orchestrator.signals.persist_agent_event(run, task, project, "developer", rec),
             )
             created = [t for t in store.list_tasks(sprint_id="s1") if t.title == "Follow up"]
             self.assertEqual(len(created), 1)
@@ -450,7 +450,7 @@ class OrchestratorContractTests(unittest.TestCase):
             result = orchestrator._execute_native_runner_step(
                 role=orchestrator.roles["code_reviewer"], project=project, task=task, workflow_step="review",
                 prompt="p", session_id=None,
-                event_recorder=lambda rec: orchestrator._persist_agent_event(run2, task, project, "code_reviewer", rec),
+                event_recorder=lambda rec: orchestrator.signals.persist_agent_event(run2, task, project, "code_reviewer", rec),
             )
             self.assertEqual(result.outcome, "approve")
             self.assertEqual([t for t in store.list_tasks(sprint_id="s1") if t.title == "Sneaky"], [])
