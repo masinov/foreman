@@ -22,7 +22,7 @@ from .context import (
 from .errors import EngineCommandInterrupt, ForemanError
 from .git import (
     GitError,
-    assert_default_branch_unchanged,
+    task_commits_on_default_branch,
     commits_behind,
     merge_in_progress,
     branch_exists,
@@ -1793,6 +1793,7 @@ class ForemanOrchestrator:
             # ── Before every step: enforce branch invariants ─────────────────
             default_branch = project.default_branch
             original_default_sha = head_sha(project.repo_path, f"refs/heads/{default_branch}")
+            refreshed_default_sha: str | None = None
 
             # Verify the task's own worktree exists and sits on the task branch.
             # The operator's checkout is not consulted: what is checked out
@@ -2013,6 +2014,10 @@ class ForemanOrchestrator:
                     task=current_task,
                     step=current_step,
                     carried_output=carried_output,
+                )
+                # What the refresh may just have merged into the task branch.
+                refreshed_default_sha = head_sha(
+                    project.repo_path, f"refs/heads/{default_branch}"
                 )
 
             current_task.workflow_current_step = current_step
@@ -2405,42 +2410,48 @@ class ForemanOrchestrator:
                 {"step": current_step, "outcome": outcome},
             )
 
-            # ── After every step: verify default branch was not mutated.
-            # Merge builtin intentionally changes the default branch — skip check.
-            # If worktree is dirty (e.g. unresolved merge conflicts), skip to avoid
-            # false positives from in-progress recovery workflows.
-            if step_def.role != "_builtin:merge" and is_worktree_clean(
-                self._task_working_dir(project, current_task)
-            ):
-                try:
-                    assert_default_branch_unchanged(
-                        project.repo_path,
-                        default_branch,
-                        original_default_sha,
-                    )
-                except GitError as e:
-                    run = self._create_system_run(
-                        current_task,
-                        workflow_step=current_step,
-                        outcome="blocked",
-                        detail=str(e),
-                    )
-                    self._emit_event(
-                        run,
-                        "engine.branch_violation",
-                        {
-                            "branch": default_branch,
-                            "detail": str(e),
-                        },
-                    )
-                    current_task.status = "blocked"
-                    current_task.blocked_reason = str(e)
-                    current_task.workflow_current_step = None
-                    current_task.workflow_carried_output = None
-                    self._save_task(current_task)
-                    current_step = None
-                    self._release_task_lease(current_task, project)
-                    break
+            # ── After every step: the task's own work must not be on the
+            # default branch before the merge step puts it there. The default
+            # branch itself may move (an operator commits, another task
+            # merges); that is none of this task's business. ADR-0012.
+            leaked_commits: tuple[str, ...] = ()
+            if step_def.role != "_builtin:merge" and current_task.branch_name:
+                leaked_commits = task_commits_on_default_branch(
+                    project.repo_path,
+                    task_branch=current_task.branch_name,
+                    default_branch=default_branch,
+                    default_shas_seen=(original_default_sha, refreshed_default_sha),
+                )
+            if leaked_commits:
+                detail = (
+                    f"{len(leaked_commits)} commit(s) from task branch "
+                    f"{current_task.branch_name!r} are on {default_branch!r} before the "
+                    f"merge step (first: {leaked_commits[0][:12]}). The task's work must "
+                    "reach the default branch only through the workflow's merge."
+                )
+                run = self._create_system_run(
+                    current_task,
+                    workflow_step=current_step,
+                    outcome="blocked",
+                    detail=detail,
+                )
+                self._emit_event(
+                    run,
+                    "engine.branch_violation",
+                    {
+                        "branch": default_branch,
+                        "detail": detail,
+                        "commits": list(leaked_commits[:20]),
+                    },
+                )
+                current_task.status = "blocked"
+                current_task.blocked_reason = detail
+                current_task.workflow_current_step = None
+                current_task.workflow_carried_output = None
+                self._save_task(current_task)
+                current_step = None
+                self._release_task_lease(current_task, project)
+                break
 
             transition = workflow.find_transition(current_step, outcome)
             if transition is None:

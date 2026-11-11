@@ -9,6 +9,10 @@ memory changes rather than versioned product releases.
 
 ### Sprint 56 — engine truthfulness
 
+- **slice 3, default-branch check** (`fix/default-branch-check`): a task is
+  no longer blocked because the default branch moved while it ran (an
+  operator commit, another task's merge). It is blocked only when its own
+  commits are on the default branch before the merge step. ADR-0012 amended.
 - **slice 1, safe task writes** (`fix/safe-task-writes`): the engine no
   longer replaces a task's whole row. `update_task_engine_state` writes
   workflow state only and never a cancelled row; before every step the

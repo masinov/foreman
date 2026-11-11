@@ -290,21 +290,48 @@ def assert_not_on_default_branch(repo_path: str, default_branch: str) -> None:
         )
 
 
-def assert_default_branch_unchanged(
+def task_commits_on_default_branch(
     repo_path: str,
+    *,
+    task_branch: str,
     default_branch: str,
-    original_sha: str | None,
-) -> None:
-    """Raise GitError if the default branch HEAD SHA has changed from original_sha."""
-    if original_sha is None:
-        return
-    current_sha = head_sha(repo_path, f"refs/heads/{default_branch}")
-    if current_sha != original_sha:
-        raise GitError(
-            f"Default branch {default_branch!r} HEAD changed from "
-            f"{original_sha!r} to {current_sha!r}. "
-            f"The default branch must not be mutated during task execution."
-        )
+    default_shas_seen: tuple[str | None, ...],
+) -> tuple[str, ...]:
+    """Return this task's own commits that are already on the default branch.
+
+    The default branch is allowed to move while a task runs: an operator
+    commits to it, another task merges into it. What must not happen is the
+    task's own work reaching it before the merge step, unreviewed.
+
+    A task's own commits are those on its branch that were not on the default
+    branch at any point the engine looked at it (``default_shas_seen``: when
+    the step began and when the engine last refreshed the task branch from
+    it). Commits the refresh brought in from the default branch are therefore
+    not the task's own, and a default branch that merely moved on is not a
+    violation.
+    """
+
+    current = head_sha(repo_path, f"refs/heads/{default_branch}")
+    task_tip = head_sha(repo_path, f"refs/heads/{task_branch}")
+    if current is None or task_tip is None:
+        return ()
+    seen = [sha for sha in default_shas_seen if sha]
+    if not seen or current in seen:
+        return ()
+    exclusions = [f"^{sha}" for sha in seen]
+    own = run_git(repo_path, "rev-list", task_tip, *exclusions, check=False)
+    if own.returncode != 0:
+        return ()
+    own_commits = own.stdout.split()
+    if not own_commits:
+        return ()
+    still_off = run_git(
+        repo_path, "rev-list", task_tip, *exclusions, f"^{current}", check=False
+    )
+    if still_off.returncode != 0:
+        return ()
+    off_default = set(still_off.stdout.split())
+    return tuple(sha for sha in own_commits if sha not in off_default)
 
 
 @dataclass(frozen=True)

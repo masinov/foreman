@@ -290,3 +290,26 @@ concurrency, and does not belong in the general sprint overview.
 - **Bare repository plus per-task worktrees.** Would make the operator's
   checkout just another worktree, which is cleaner in theory, but Foreman does
   not own the repository layout of the projects it works on.
+
+## Amendment, 2026-11-11: the default branch may move while a task runs
+
+The orchestrator used to snapshot the default branch before each step and
+block the task if the branch had moved by the step's end ("The default
+branch must not be mutated during task execution"). That predates
+worktrees, when an agent sharing the operator's checkout could commit to
+the wrong branch. Under this ADR the operator's branch is theirs, and other
+tasks merge into it; the check blocked healthy tasks whenever either
+happened. It did so twice in sprint 56, on a hotfix pushed to `main` and on
+an unrelated merge, each time discarding the task's resume point.
+
+The invariant that matters is narrower: a task's own commits must not be on
+the default branch before the workflow's merge step puts them there. After
+every non-merge step the engine now asks git for the commits on the task
+branch that were not on the default branch when the step began or when the
+engine last refreshed the task branch from it, and blocks the task only if
+any of those is reachable from the default branch
+(`git.task_commits_on_default_branch`). On the git version in use here
+(2.25) an agent can still move a branch another worktree has checked out
+with `git branch -f`, `git push .` or `git update-ref`, so the check keeps
+its purpose.
+
