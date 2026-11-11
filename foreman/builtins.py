@@ -758,24 +758,6 @@ class BuiltinExecutor:
         )
         return ancestor_check.returncode == 0
 
-    def _task_branch_has_committed_delta(self, project: Project, task: Task) -> bool | None:
-        if not task.branch_name:
-            return None
-        result = run_git(
-            project.repo_path,
-            "rev-list",
-            "--right-only",
-            "--count",
-            f"{project.default_branch}...{task.branch_name}",
-            check=False,
-        )
-        if result.returncode != 0:
-            return None
-        try:
-            return int(result.stdout or "0") > 0
-        except ValueError:
-            return None
-
     def _task_has_successful_merge_run(self, task: Task, store: ForemanStore) -> bool:
         return any(
             run.workflow_step == "merge" and run.status == "completed" and run.outcome == "success"

@@ -11,7 +11,6 @@ format.
 from __future__ import annotations
 
 import hashlib
-import hmac
 import secrets
 from typing import Iterable
 
@@ -54,16 +53,6 @@ def hash_token_secret(secret: str) -> str:
     if not cleaned:
         raise ApiTokenError("An API token secret cannot be empty.")
     return hashlib.sha256(cleaned.encode("utf-8")).hexdigest()
-
-
-def secrets_match(presented: str, expected_hash: str) -> bool:
-    """Compare a presented secret against a stored hash in constant time."""
-
-    try:
-        candidate = hash_token_secret(presented)
-    except ApiTokenError:
-        return False
-    return hmac.compare_digest(candidate, expected_hash)
 
 
 def looks_like_api_token(presented: str | None) -> bool:

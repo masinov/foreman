@@ -518,8 +518,11 @@ The following items were implemented as hardening before the 1.0 release:
 - `_builtin:merge` calls `merge_preflight` and gates on `proof_status` before attempting merge
 - the legacy `finalize_supervisor_merge` path was removed in sprint 53; the only completion path is `_builtin:mark_done` + `_builtin:merge`
 
-**Versioned event schema (Item 12)**
-- `foreman/events.py` provides typed event constructors with `schema_version` in every payload
+**Event payloads**
+- Events are emitted by name with a dict payload. A module of typed event
+  constructors (`foreman/events.py`) existed and was never adopted by the
+  engine; it was removed in sprint 56. A typed catalogue belongs with the
+  mutation service planned for Phase 3.
 
 **Cost and time gates (Item 13)**
 - Task-level time gate enforced before each workflow step with `gate.time_exceeded` event

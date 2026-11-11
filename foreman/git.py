@@ -280,16 +280,6 @@ def _looks_like_merge_conflict(detail: str) -> bool:
     )
 
 
-def assert_not_on_default_branch(repo_path: str, default_branch: str) -> None:
-    """Raise GitError if the worktree is currently on the default branch."""
-    current = worktree_branch(repo_path)
-    if current == default_branch:
-        raise GitError(
-            f"Cannot perform this operation while on the default branch "
-            f"({default_branch!r}). Work on a task branch instead."
-        )
-
-
 def task_commits_on_default_branch(
     repo_path: str,
     *,

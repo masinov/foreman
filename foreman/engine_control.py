@@ -98,13 +98,6 @@ class WorkflowGateSteps:
     step_ids: frozenset[str] | None
     gate_step_ids: frozenset[str] = frozenset()
 
-    @property
-    def loaded(self) -> bool:
-        """True when a workflow definition backed this answer."""
-
-        return self.step_ids is not None
-
-
 #: Used when no workflow could be resolved for a project.
 UNKNOWN_WORKFLOW = WorkflowGateSteps(step_ids=None)
 
