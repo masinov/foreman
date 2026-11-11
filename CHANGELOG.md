@@ -9,6 +9,12 @@ memory changes rather than versioned product releases.
 
 ### Sprint 56 — engine truthfulness
 
+- **slice 2, crash-safe steps** (`fix/crash-safe-steps`): a workflow
+  transition records the next step in the same write, so an engine that
+  dies between two steps resumes at the next one instead of restarting the
+  task; an unexpected error inside a step marks its run failed instead of
+  leaving it `running` (which refused the task until the stale-run window
+  passed); built-in steps record how long they took.
 - **slice 3, default-branch check** (`fix/default-branch-check`): a task is
   no longer blocked because the default branch moved while it ran (an
   operator commit, another task's merge). It is blocked only when its own

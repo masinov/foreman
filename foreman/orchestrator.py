@@ -9,6 +9,7 @@ from pathlib import Path
 import json
 import re
 import subprocess
+import time
 from typing import Any, Protocol
 from uuid import uuid4
 
@@ -1739,6 +1740,35 @@ class ForemanOrchestrator:
             # between two writes. Their decision stands: settle what the
             # engine left open and walk away without touching the task.
             return self._abandon_cancelled_task(project, task)
+        except (
+            EngineCommandInterrupt,
+            EngineShutdown,
+            KeyboardInterrupt,
+            LeaseLostError,
+            QuotaPauseError,
+        ):
+            # Each of these settles its own run on the way out.
+            raise
+        except Exception as exc:
+            # Anything else escaped between a run being opened and closed (a
+            # git failure in a built-in, an unknown built-in, a bookkeeping
+            # error). Left ``running``, the run made the task refuse to start
+            # again until the stale-run window passed.
+            self._settle_open_runs(task.id, detail=f"Step failed with an engine error: {exc}")
+            raise
+
+    def _settle_open_runs(self, task_id: str, *, detail: str) -> None:
+        """Mark every run still ``running`` for a task as failed."""
+
+        for run in self.store.list_runs(task_id=task_id, status="running"):
+            self._complete_run(
+                run,
+                status="failed",
+                outcome=ERROR,
+                detail=detail,
+                session_id=self._session_id_from_events(run) or run.session_id,
+                failure_type="infrastructure",
+            )
 
     def _abandon_cancelled_task(self, project: Project, task: Task) -> Task:
         """Close the engine's open work on a task an operator cancelled."""
@@ -2097,6 +2127,7 @@ class ForemanOrchestrator:
                     {"step": current_step, "visit_count": visit_count},
                 )
                 self._emit_policy_resolved(run, project, current_task)
+                builtin_started = time.monotonic()
                 result = self.builtin_executor.execute(
                     step_def.role,
                     project=project,
@@ -2113,6 +2144,9 @@ class ForemanOrchestrator:
                     status="completed",
                     outcome=result.outcome,
                     detail=result.detail,
+                    # A test run or a merge takes real time; recording 0 made
+                    # every built-in step look instantaneous.
+                    duration_ms=int((time.monotonic() - builtin_started) * 1000),
                 )
                 self._emit_builtin_events(run, result.events)
                 # A builtin that blocks (e.g. the merge/mark_done completion
@@ -2503,8 +2537,14 @@ class ForemanOrchestrator:
                         "to_step": transition.to_step,
                     },
                 )
-            current_task.workflow_current_step = None
-            current_task.workflow_carried_output = None
+            # The next step is recorded in the same write that leaves this
+            # one. A crash before that step starts then resumes there; with
+            # the step cleared first, recovery restarted the whole task and
+            # an approval recorded a moment earlier was lost.
+            current_task.workflow_current_step = transition.to_step
+            current_task.workflow_carried_output = (
+                carried_output if transition.to_step is not None else None
+            )
             self._save_task(current_task)
             current_step = transition.to_step
 
