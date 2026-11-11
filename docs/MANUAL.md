@@ -273,6 +273,16 @@ foreman run <project-id> [--task TASK_ID] [--json-logs] [--db DB]
 foreman serve <project-id> [--poll-seconds N] [--once] [--db DB]
 ```
 
+### Output for other programs, and errors
+
+`foreman projects`, `foreman sprint list`, `foreman task list` and
+`foreman engine status` take `--json` and print one JSON document instead of
+text.
+
+A command that fails prints one line starting `foreman:` and exits 1. An
+error that is a bug in Foreman exits 70 and says so; set `FOREMAN_DEBUG=1`
+to get the traceback. An interrupted command exits 130.
+
 ### Steering a resident engine
 
 ```bash
