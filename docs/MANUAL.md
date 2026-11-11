@@ -149,7 +149,7 @@ Four subsystems (preserved from the spec — do not collapse them):
 | **Agent Runner** | `foreman/runner/` | Launch a native `claude`/`codex` process, normalize its stream into `AgentEvent`s, retry on infrastructure errors. |
 | **Role System** | `foreman/roles.py`, `roles/*.toml` | Declarative agent identity: backend, model(s), tools, prompt template, env. |
 | **Workflow Engine** | `foreman/workflows.py`, `workflows/*.toml` | The state machine: steps, outcomes, transitions, gates, fallback. |
-| **Orchestrator** | `foreman/orchestrator.py` | Ties it together: selects tasks, builds prompts, runs steps, resolves transitions, enforces gates, persists everything. |
+| **Orchestrator** | `foreman/orchestrator.py`, `foreman/engine/` | Ties it together: selects tasks, builds prompts, runs steps, resolves transitions, enforces gates, persists everything. |
 
 A single step executes like this:
 
