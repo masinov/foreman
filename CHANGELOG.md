@@ -9,6 +9,12 @@ memory changes rather than versioned product releases.
 
 ### Sprint 56 — engine truthfulness
 
+- **slice 3b, worktree self-heal** (`fix/worktree-self-heal`): the
+  integration worktree aborts a merge a killed engine left half-done instead
+  of refusing every later merge; a task tree found on the wrong branch is
+  moved back only when it has no changes to tracked files, and is otherwise
+  reported and left untouched (the checkout was forced before, which
+  discarded such changes).
 - **slices 4, 5, 6, built through Foreman** (approved at the merge gate and
   merged by the engine):
   - the test step's run detail opens with a result line ("Tests passed in

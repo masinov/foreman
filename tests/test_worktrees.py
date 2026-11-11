@@ -192,6 +192,53 @@ class WorktreeManagerTests(unittest.TestCase):
         self.assertEqual(git(path, "branch", "--show-current").stdout.strip(), "main")
         self.assertEqual(manager.ensure_integration(), path)
 
+    def test_ensure_integration_aborts_a_merge_a_killed_engine_left_behind(self) -> None:
+        repo = self.workspace()
+        manager = WorktreeManager(self.project(repo))
+        path = manager.ensure_integration()
+        git(repo, "checkout", "-b", "feat/other")
+        (repo / "README.md").write_text("# theirs\n", encoding="utf-8")
+        git(repo, "commit", "-am", "feat: theirs")
+        (path / "README.md").write_text("# ours\n", encoding="utf-8")
+        git(path, "commit", "-am", "feat: ours")
+        merge = subprocess.run(
+            ["git", "merge", "--no-ff", "feat/other"], cwd=path, capture_output=True
+        )
+        self.assertNotEqual(merge.returncode, 0)
+        self.assertTrue((path / ".git").exists())
+        self.assertIn("UU", git(path, "status", "--porcelain").stdout)
+
+        self.assertEqual(manager.ensure_integration(), path)
+
+        self.assertEqual(git(path, "status", "--porcelain").stdout.strip(), "")
+        self.assertEqual((path / "README.md").read_text(encoding="utf-8"), "# ours\n")
+
+    def test_a_dirty_tree_on_the_wrong_branch_is_reported_not_overwritten(self) -> None:
+        repo = self.workspace()
+        manager = WorktreeManager(self.project(repo))
+        task = self.task()
+        path = manager.ensure(task)
+        git(path, "checkout", "-b", "feat/strayed")
+        (path / "README.md").write_text("# unsaved work\n", encoding="utf-8")
+
+        with self.assertRaises(WorktreeError) as caught:
+            manager.ensure(task)
+
+        self.assertIn("uncommitted changes", str(caught.exception))
+        self.assertEqual((path / "README.md").read_text(encoding="utf-8"), "# unsaved work\n")
+        self.assertEqual(git(path, "branch", "--show-current").stdout.strip(), "feat/strayed")
+
+    def test_a_clean_tree_on_the_wrong_branch_is_moved_back(self) -> None:
+        repo = self.workspace()
+        manager = WorktreeManager(self.project(repo))
+        task = self.task()
+        path = manager.ensure(task)
+        git(path, "checkout", "-b", "feat/strayed")
+
+        manager.ensure(task)
+
+        self.assertEqual(git(path, "branch", "--show-current").stdout.strip(), "feat/wt-1")
+
     def test_remove_deletes_the_tree_and_the_registration(self) -> None:
         repo = self.workspace()
         manager = WorktreeManager(self.project(repo))

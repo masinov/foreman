@@ -33,7 +33,14 @@ import subprocess
 from typing import TYPE_CHECKING
 
 from .errors import ForemanError
-from .git import GitError, branch_exists, is_worktree_clean, run_git, worktree_branch
+from .git import (
+    GitError,
+    branch_exists,
+    is_worktree_clean,
+    merge_in_progress,
+    run_git,
+    worktree_branch,
+)
 from .models import Project, Task
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -215,8 +222,21 @@ class WorktreeManager:
         Not provisioned with ``worktree_setup_command``: only ``_builtin:merge``
         works here, and it runs git and nothing else. Building an environment
         this tree would never use would cost a full one per project.
+
+        A merge left half-done here is aborted first. Only the engine merges in
+        this tree, and it concludes or aborts every merge it starts, so an
+        unconcluded one is what a killed engine left behind; without this the
+        tree would refuse every later merge until an operator found it.
         """
 
+        path = self.integration_path
+        if self._is_live_worktree(path) and merge_in_progress(path):
+            result = run_git(path, "merge", "--abort", check=False)
+            if result.returncode != 0:
+                raise WorktreeError(
+                    f"The integration worktree {path} holds an interrupted merge that "
+                    f"could not be aborted: {result.stderr or result.stdout}"
+                )
         return self._ensure_at(
             self.integration_path, self.project.default_branch, setup=False
         )
@@ -411,10 +431,25 @@ class WorktreeManager:
         return True
 
     def _checkout(self, path: Path, branch: str) -> None:
+        """Move a tree that is on the wrong branch back to its own.
+
+        Never forced: a forced checkout discards modified files, and a tree on
+        the wrong branch is exactly where an agent may have left work that is
+        committed nowhere. A tree with changes to tracked files is left alone
+        and reported, so a person decides what happens to them.
+        """
+
+        status = run_git(path, "status", "--porcelain", "--untracked-files=no", check=False)
+        if status.returncode != 0 or status.stdout.strip():
+            current = worktree_branch(path) or "a detached commit"
+            raise WorktreeError(
+                f"Worktree {path} is on {current} instead of {branch!r} and has "
+                "uncommitted changes. Commit or discard them there, then run again."
+            )
         if branch_exists(self.repo_path, branch):
-            args = ("checkout", "--force", branch)
+            args = ("checkout", branch)
         else:
-            args = ("checkout", "--force", "-b", branch, self.project.default_branch)
+            args = ("checkout", "-b", branch, self.project.default_branch)
         try:
             run_git(path, *args)
         except GitError as exc:
