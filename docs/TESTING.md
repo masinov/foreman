@@ -124,11 +124,21 @@ The current suite covers:
   behavior
 - `tests/test_context.py` for `.foreman/context.md` and `.foreman/status.md`
   rendering
-- `tests/test_orchestrator.py` for workflow execution, dependency-aware task
-  selection, test failure carry-output, secure workflow approval and denial
-  loops, native runner execution, preflight no-retry behavior, human-gate
-  resume, event-retention startup behavior, retry persistence, and
-  fresh-process native session reuse
+- the engine tests, split by what they cover, all on the fixtures in
+  `tests/engine_support.py` (`RepoTestCase`, `OrchestratorTestCase`, scripted
+  executors and runners):
+  `test_engine_workflow.py` (a task through the shipped workflows),
+  `test_engine_branches.py` (refresh, conflicts, the default branch),
+  `test_engine_gates.py`, `test_engine_agent_step.py` (backends, sessions,
+  retries, heartbeats), `test_engine_recovery.py` (leases, stale runs,
+  crashes), `test_engine_task_control.py` (operator changes, limits,
+  dependencies), `test_engine_signals.py`, `test_engine_selection.py`,
+  `test_engine_model_selection.py`, `test_engine_evidence.py`,
+  `test_engine_completion_guard.py`, `test_engine_prompts.py`,
+  `test_engine_sprints.py`
+- `tests/test_git.py` for the git helpers against real repositories
+- `tests/test_store_concurrency.py` for several connections writing at once
+  (lease races, event writes, task keys, cancel against engine writes)
 - `tests/test_cli.py` for CLI smoke paths, repo-local DB discovery, explicit
   override semantics, secure workflow initialization, live watch tails,
   monitoring command subprocess behavior, and the shipped project, sprint,

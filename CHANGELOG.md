@@ -9,6 +9,14 @@ memory changes rather than versioned product releases.
 
 ### Sprint 57 — structure
 
+- **slice 8, tests along the modules** (`test/split-orchestrator-tests`):
+  `tests/test_orchestrator.py` (8279 lines) is 13 files named for what they
+  cover, on shared fixtures in `tests/engine_support.py`; 31 copies of the
+  same six fixture methods are gone. The same 1110 tests run. New:
+  `tests/test_git.py` (13 tests of the git helpers, which had none of their
+  own) and `tests/test_store_concurrency.py` (5 tests with a connection per
+  thread: a lease raced for by eight engines has one winner, concurrent
+  event writes all land once, tasks created at once get distinct keys).
 - **slice 7, package data and one version** (`chore/package-data`): the
   role and workflow definitions and the scaffold template moved from the
   repository root into the package (`foreman/data/roles/`,
