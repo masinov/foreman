@@ -997,7 +997,7 @@ export default function App({ services, browser }) {
                       </button>
                     </>
                   ) : null}
-                  {currentSprint.status === "done" || currentSprint.status === "cancelled" ? (
+                  {currentSprint.status === "completed" || currentSprint.status === "cancelled" ? (
                     <button
                       className="btn-danger-sm"
                       type="button"

@@ -21,6 +21,7 @@ from foreman.orchestrator import (
 from foreman.git import current_branch
 from foreman.runner.base import AgentEvent, AgentRunConfig, InfrastructureError, PreflightError
 from foreman.roles import default_roles_dir, load_roles
+from foreman.runner.process import EngineShutdown
 from foreman.store import ForemanStore
 from foreman.workflows import (
     WorkflowDefinition,
@@ -3117,6 +3118,297 @@ class ForemanOrchestratorTests(unittest.TestCase):
 
             self.assertTrue(seen.get("during"), "the lease must be heartbeated during a step")
             self.assertEqual(orchestrator._task_lease_heartbeats, {})
+
+    def _run_with_developer(self, store, project, handler):
+        executor = ScriptedAgentExecutor({("developer", 1): handler})
+        orchestrator = ForemanOrchestrator(
+            store, roles=self.roles, workflows=self.workflows, agent_executor=executor
+        )
+        return orchestrator, executor, orchestrator.run_project(project.id)
+
+    def test_a_task_cancelled_mid_step_stays_cancelled_and_is_not_merged(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+
+            def developer(*, task: Task, prompt: str, carried_output: str | None):
+                # The operator cancels from another process while the agent works.
+                with ForemanStore(db_path) as operator:
+                    theirs = operator.get_task(task.id)
+                    theirs.status = "cancelled"
+                    theirs.title = "Renamed by the operator"
+                    operator.save_task(theirs)
+                (self.work_dir(task, repo_path) / "ready.txt").write_text("ok\n")
+                self.commit_all(self.work_dir(task, repo_path), "feat: work nobody wants")
+                return AgentExecutionResult(outcome="done", detail="Implemented.")
+
+            orchestrator, executor, _ = self._run_with_developer(store, project, developer)
+
+            stored = store.get_task(task.id)
+            self.assertEqual(stored.status, "cancelled")
+            self.assertEqual(stored.title, "Renamed by the operator")
+            self.assertEqual(executor.call_counts.get("code_reviewer", 0), 0)
+            steps = [run.workflow_step for run in store.list_runs(task_id=task.id)]
+            self.assertNotIn("merge", steps)
+            self.assertNotIn("done", steps)
+            self.assertEqual(
+                [run.id for run in store.list_runs(task_id=task.id) if run.status == "running"], []
+            )
+            self.assertIsNone(
+                store.get_active_lease(
+                    project_id=project.id, resource_type="task", resource_id=task.id
+                )
+            )
+            self.assertNotIn(
+                "feat: work nobody wants",
+                self.git(repo_path, "log", "--format=%s", "main").stdout,
+            )
+
+    def test_an_operator_edit_made_mid_step_survives_the_engines_next_write(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+
+            def developer(*, task: Task, prompt: str, carried_output: str | None):
+                with ForemanStore(db_path) as operator:
+                    theirs = operator.get_task(task.id)
+                    theirs.title = "Sharper title"
+                    theirs.acceptance_criteria = "Sharper criteria."
+                    theirs.priority = 7
+                    operator.save_task(theirs)
+                return AgentExecutionResult(outcome="error", detail="stop after one step")
+
+            self._run_with_developer(store, project, developer)
+
+            stored = store.get_task(task.id)
+            self.assertEqual(stored.title, "Sharper title")
+            self.assertEqual(stored.acceptance_criteria, "Sharper criteria.")
+            self.assertEqual(stored.priority, 7)
+
+    def test_a_blocker_reported_by_the_agent_stops_the_workflow(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+
+            def developer(*, task: Task, prompt: str, carried_output: str | None):
+                (self.work_dir(task, repo_path) / "ready.txt").write_text("ok\n")
+                self.commit_all(self.work_dir(task, repo_path), "feat: implement")
+                return AgentExecutionResult(
+                    outcome="done",
+                    detail="Implemented, but something is in the way.",
+                    events=(
+                        AgentEventRecord(
+                            event_type="signal.blocker",
+                            payload={"message": "Need credentials for the staging API."},
+                        ),
+                    ),
+                )
+
+            orchestrator, executor, result = self._run_with_developer(store, project, developer)
+
+            stored = store.get_task(task.id)
+            self.assertEqual(stored.status, "blocked")
+            self.assertEqual(stored.blocked_reason, "Need credentials for the staging API.")
+            self.assertEqual(executor.call_counts.get("code_reviewer", 0), 0)
+            self.assertNotIn(
+                "merge", [run.workflow_step for run in store.list_runs(task_id=task.id)]
+            )
+            self.assertIn(task.id, result.blocked_task_ids)
+
+    def test_a_commit_on_the_default_branch_during_a_step_does_not_block_the_task(self) -> None:
+        """The operator's branch is theirs: it may move while a task runs."""
+
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+
+            def developer(*, task: Task, prompt: str, carried_output: str | None):
+                # Somebody else lands a commit on main while the agent works.
+                self.git(repo_path, "checkout", "-q", "--detach", "main")
+                self.write_text(repo_path / "operator.txt", "unrelated\n")
+                self.git(repo_path, "add", "operator.txt")
+                self.git(repo_path, "commit", "-q", "-m", "chore: operator commit")
+                self.git(repo_path, "update-ref", "refs/heads/main", "HEAD")
+                tree = self.work_dir(task, repo_path)
+                (tree / "ready.txt").write_text("ok\n")
+                self.commit_all(tree, "feat: implement")
+                return AgentExecutionResult(outcome="error", detail="stop after one step")
+
+            self._run_with_developer(store, project, developer)
+
+            self.assertEqual(
+                [
+                    e
+                    for e in store.list_events(task_id=task.id)
+                    if e.event_type == "engine.branch_violation"
+                ],
+                [],
+            )
+            self.assertNotIn("default branch", store.get_task(task.id).blocked_reason or "")
+
+    def test_task_commits_reaching_the_default_branch_before_the_merge_step_block_the_task(
+        self,
+    ) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+
+            def developer(*, task: Task, prompt: str, carried_output: str | None):
+                tree = self.work_dir(task, repo_path)
+                (tree / "ready.txt").write_text("ok\n")
+                self.commit_all(tree, "feat: unreviewed work")
+                # The agent moves main to its own commit, skipping review.
+                self.git(tree, "update-ref", "refs/heads/main", "HEAD")
+                return AgentExecutionResult(outcome="done", detail="Implemented.")
+
+            orchestrator, executor, _ = self._run_with_developer(store, project, developer)
+
+            stored = store.get_task(task.id)
+            self.assertEqual(stored.status, "blocked")
+            self.assertIn("before the merge step", stored.blocked_reason)
+            self.assertEqual(executor.call_counts.get("code_reviewer", 0), 0)
+            violations = [
+                e for e in store.list_events(task_id=task.id) if e.event_type == "engine.branch_violation"
+            ]
+            self.assertEqual(len(violations), 1)
+            self.assertEqual(len(violations[0].payload["commits"]), 1)
+
+    def test_commits_a_refresh_brought_in_from_the_default_branch_are_not_the_tasks_own(self) -> None:
+        from foreman.git import head_sha, task_commits_on_default_branch
+
+        repo_path, _ = self.create_workspace()
+        self.initialize_repo(repo_path)
+        start = head_sha(str(repo_path), "refs/heads/main")
+        self.git(repo_path, "checkout", "-q", "-b", "feat/x")
+        self.write_text(repo_path / "own.txt", "own\n")
+        self.commit_all(repo_path, "feat: own work")
+        # main moves, then the task branch is refreshed from it
+        self.git(repo_path, "checkout", "-q", "main")
+        self.write_text(repo_path / "other.txt", "other\n")
+        self.commit_all(repo_path, "chore: someone else")
+        refreshed = head_sha(str(repo_path), "refs/heads/main")
+        self.git(repo_path, "checkout", "-q", "feat/x")
+        self.git(repo_path, "merge", "-q", "--no-edit", "main")
+        # main moves again
+        self.git(repo_path, "checkout", "-q", "main")
+        self.write_text(repo_path / "third.txt", "third\n")
+        self.commit_all(repo_path, "chore: and again")
+
+        def leaked() -> tuple[str, ...]:
+            return task_commits_on_default_branch(
+                str(repo_path),
+                task_branch="feat/x",
+                default_branch="main",
+                default_shas_seen=(start, refreshed),
+            )
+
+        self.assertEqual(leaked(), ())
+        self.git(repo_path, "merge", "-q", "--no-edit", "feat/x")
+        self.assertEqual(len(leaked()), 2)  # the task's commit and its refresh merge
+
+    def test_an_engine_error_inside_a_step_does_not_leave_a_running_run(self) -> None:
+        from unittest import mock
+
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+
+            def developer(*, task: Task, prompt: str, carried_output: str | None):
+                tree = self.work_dir(task, repo_path)
+                (tree / "ready.txt").write_text("ok\n")
+                self.commit_all(tree, "feat: implement")
+                return AgentExecutionResult(outcome="done", detail="Implemented.")
+
+            executor = ScriptedAgentExecutor({("developer", 1): developer})
+            orchestrator = ForemanOrchestrator(
+                store, roles=self.roles, workflows=self.workflows, agent_executor=executor
+            )
+            with mock.patch.object(
+                orchestrator.builtin_executor, "execute", side_effect=ValueError("built-in exploded")
+            ):
+                with self.assertRaises(Exception) as caught:
+                    orchestrator.run_project(project.id)
+            self.assertIn("built-in exploded", str(caught.exception))
+
+            runs = store.list_runs(task_id=task.id)
+            self.assertEqual([run.id for run in runs if run.status == "running"], [])
+            failed = [run for run in runs if run.workflow_step == "test"]
+            self.assertEqual([run.status for run in failed], ["failed"])
+            self.assertIn("built-in exploded", failed[0].outcome_detail)
+
+    def test_a_crash_between_two_steps_resumes_at_the_next_step(self) -> None:
+        from unittest import mock
+
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+
+            def developer(*, task: Task, prompt: str, carried_output: str | None):
+                tree = self.work_dir(task, repo_path)
+                (tree / "ready.txt").write_text("ok\n")
+                self.commit_all(tree, "feat: implement")
+                return AgentExecutionResult(outcome="done", detail="Implemented the loop.")
+
+            def reviewer(*, task: Task, prompt: str, carried_output: str | None):
+                return AgentExecutionResult(outcome="approve", detail="Approved.")
+
+            executor = ScriptedAgentExecutor(
+                {("developer", 1): developer, ("code_reviewer", 1): reviewer}
+            )
+            crashing = ForemanOrchestrator(
+                store, roles=self.roles, workflows=self.workflows, agent_executor=executor
+            )
+            # The engine dies right after develop hands over to test.
+            with mock.patch.object(
+                crashing, "_renew_task_lease", side_effect=EngineShutdown("SIGKILL")
+            ):
+                with self.assertRaises(EngineShutdown):
+                    crashing.run_project(project.id)
+            crashing.release_task(task.id)  # a dead engine's lease expires; skip the wait
+
+            stored = store.get_task(task.id)
+            self.assertEqual(stored.status, "in_progress")
+            self.assertEqual(stored.workflow_current_step, "test")
+
+            restarted = ForemanOrchestrator(
+                store, roles=self.roles, workflows=self.workflows, agent_executor=executor
+            )
+            restarted.run_project(project.id)
+
+            self.assertEqual(executor.call_counts.get("developer", 0), 1)
+            self.assertEqual(executor.call_counts.get("code_reviewer", 0), 1)
+            steps = [
+                run.workflow_step
+                for run in store.list_runs(task_id=task.id)
+                if run.role_id != "_builtin:orchestrator"
+            ]
+            self.assertEqual(steps[:3], ["develop", "test", "review"])
+            test_run = next(
+                run for run in store.list_runs(task_id=task.id) if run.workflow_step == "test"
+            )
+            self.assertIsNotNone(test_run.duration_ms)
+            self.assertGreaterEqual(test_run.duration_ms, 0)
 
     def test_stale_run_recovery_does_not_cost_the_engine_its_own_lease(self) -> None:
         """``run_task`` recovers stale runs while holding the lease it just took."""

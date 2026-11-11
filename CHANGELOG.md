@@ -9,6 +9,27 @@ memory changes rather than versioned product releases.
 
 ### Sprint 56 — engine truthfulness
 
+- **slice 7** (`fix/completed-sprint-delete`): the sprint page offers
+  Delete on a completed sprint; it compared the status with `"done"`, which
+  no sprint ever has.
+- **slice 2, crash-safe steps** (`fix/crash-safe-steps`): a workflow
+  transition records the next step in the same write, so an engine that
+  dies between two steps resumes at the next one instead of restarting the
+  task; an unexpected error inside a step marks its run failed instead of
+  leaving it `running` (which refused the task until the stale-run window
+  passed); built-in steps record how long they took.
+- **slice 3, default-branch check** (`fix/default-branch-check`): a task is
+  no longer blocked because the default branch moved while it ran (an
+  operator commit, another task's merge). It is blocked only when its own
+  commits are on the default branch before the merge step. ADR-0012 amended.
+- **slice 1, safe task writes** (`fix/safe-task-writes`): the engine no
+  longer replaces a task's whole row. `update_task_engine_state` writes
+  workflow state only and never a cancelled row; before every step the
+  engine re-reads the task, adopts an operator's edits, and stops if the
+  task was cancelled or blocked. A task cancelled while a step runs stays
+  cancelled, its open run is settled, and it is not merged. A blocker
+  reported by the agent stops the workflow instead of being overtaken by the
+  completion marker.
 - opened sprint 56 from Phase 2 of the 2026-11-10 finish plan; refreshed
   shipped role model ids (reviewers `claude-sonnet-5-5`, triage
   `claude-haiku-5-5`, architect and frontier reviewer `claude-opus-5-5`)
