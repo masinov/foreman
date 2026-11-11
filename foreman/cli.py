@@ -32,6 +32,7 @@ from .models import Event, EngineCommand, GATE_POLICY_NAMES, NotificationDeliver
 from .orchestrator import ForemanOrchestrator, OrchestratorError
 from .roles import RoleLoadError, default_roles_dir, load_roles
 from .runner.process import EngineShutdown, install_shutdown_handlers
+from .mutations import MutationError, Mutations
 from .serve import DEFAULT_POLL_SECONDS, ResidentEngine, serve_project
 
 #: Exit code of ``foreman run`` when the pass stopped because the agent backend's
@@ -1564,26 +1565,11 @@ def handle_sprint_activate(args: argparse.Namespace) -> int:
         sprint = _resolve_sprint_or_print(store, args.sprint_id)
         if sprint is None:
             return 1
-        if sprint.status in {"completed", "cancelled"}:
-            print(
-                f"Sprint {sprint.id} cannot be activated from status {sprint.status}.",
-                file=sys.stderr,
-            )
+        try:
+            _cli_mutations(store).transition_sprint(sprint, "active")
+        except MutationError as exc:
+            print(str(exc), file=sys.stderr)
             return 1
-
-        active_sprint = store.get_active_sprint(sprint.project_id)
-        if active_sprint is not None and active_sprint.id != sprint.id:
-            print(
-                f"Project {sprint.project_id} already has active sprint {active_sprint.id}.",
-                file=sys.stderr,
-            )
-            return 1
-
-        if sprint.status != "active":
-            sprint.status = "active"
-            sprint.started_at = sprint.started_at or utc_now_text()
-            sprint.completed_at = None
-            store.save_sprint(sprint)
         db_path = store.db_path
         project = store.get_project(sprint.project_id)
 
@@ -1646,29 +1632,11 @@ def handle_sprint_complete(args: argparse.Namespace) -> int:
         sprint = _resolve_sprint_or_print(store, args.sprint_id)
         if sprint is None:
             return 1
-        if sprint.status == "cancelled":
-            print(f"Sprint {sprint.id} is cancelled and cannot be completed.", file=sys.stderr)
+        try:
+            _cli_mutations(store).transition_sprint(sprint, "completed")
+        except MutationError as exc:
+            print(str(exc), file=sys.stderr)
             return 1
-
-        unresolved = [
-            task.id
-            for task in store.list_tasks(sprint_id=sprint.id)
-            if task.status not in {"done", "cancelled"}
-        ]
-        if unresolved:
-            print(
-                "Sprint cannot be completed while unresolved tasks remain: "
-                + ", ".join(unresolved),
-                file=sys.stderr,
-            )
-            return 1
-
-        if sprint.status != "completed":
-            completion_time = utc_now_text()
-            sprint.status = "completed"
-            sprint.started_at = sprint.started_at or completion_time
-            sprint.completed_at = completion_time
-            store.save_sprint(sprint)
         project = store.get_project(sprint.project_id)
         db_path = store.db_path
 
@@ -1985,17 +1953,11 @@ def handle_task_block(args: argparse.Namespace) -> int:
         task = _resolve_task_or_print(store, args.task_id)
         if task is None:
             return 1
-        if task.status in {"done", "cancelled"}:
-            print(
-                f"Task {task.id} cannot be blocked from status {task.status}.",
-                file=sys.stderr,
-            )
+        try:
+            _cli_mutations(store).block_task(task, args.reason)
+        except MutationError as exc:
+            print(str(exc), file=sys.stderr)
             return 1
-
-        task.status = "blocked"
-        task.blocked_reason = args.reason
-        task.completed_at = None
-        store.save_task(task)
         db_path = store.db_path
 
     _print_lines(
@@ -2020,25 +1982,11 @@ def handle_task_unblock(args: argparse.Namespace) -> int:
         task = _resolve_task_or_print(store, args.task_id)
         if task is None:
             return 1
-        if task.status != "blocked":
-            print(f"Task {task.id} is not blocked.", file=sys.stderr)
+        try:
+            _cli_mutations(store).unblock_task(task)
+        except MutationError as exc:
+            print(str(exc), file=sys.stderr)
             return 1
-        project = store.get_project(task.project_id)
-        gates = resolve_gate_steps(project.workflow_id if project is not None else None)
-        if blocked_kind(task, gates) == "gate":
-            print(
-                f"Task {task.id} is paused at a workflow gate; use `foreman approve` or `foreman deny` instead.",
-                file=sys.stderr,
-            )
-            return 1
-
-        task.status = "todo"
-        task.blocked_reason = None
-        task.workflow_current_step = None
-        task.workflow_carried_output = None
-        task.step_visit_counts = {}
-        task.completed_at = None
-        store.save_task(task)
         db_path = store.db_path
 
     _print_lines(
@@ -2063,16 +2011,11 @@ def handle_task_accept(args: argparse.Namespace) -> int:
         task = _resolve_task_or_print(store, args.task_id)
         if task is None:
             return 1
-        if task.status != "triage":
-            print(
-                f"Task {task.id} is not in triage (status: {task.status}); only "
-                "tasks awaiting triage can be accepted.",
-                file=sys.stderr,
-            )
+        try:
+            _cli_mutations(store).accept_task(task)
+        except MutationError as exc:
+            print(str(exc), file=sys.stderr)
             return 1
-
-        task.status = "todo"
-        store.save_task(task)
         db_path = store.db_path
 
     _print_lines(
@@ -2096,35 +2039,14 @@ def handle_task_cancel(args: argparse.Namespace) -> int:
         task = _resolve_task_or_print(store, args.task_id)
         if task is None:
             return 1
-        if task.status == "done":
-            print(f"Task {task.id} is already done and cannot be cancelled.", file=sys.stderr)
+        try:
+            removal = _cli_mutations(store).cancel_task(task)
+        except MutationError as exc:
+            print(str(exc), file=sys.stderr)
             return 1
-        running = store.list_runs(task_id=task.id, status="running")
-        if running and store.get_engine_lock(task.project_id) is not None:
-            # A resident engine is executing this task right now. Cancelling
-            # the row underneath it would be overwritten by the engine's next
-            # save; the engine has to stop the work first.
-            print(
-                f"Task {task.id} has a running agent step ({running[0].id}). Stop it "
-                f"first with `foreman engine stop-task {task.project_id} {task.id}`, "
-                "then cancel.",
-                file=sys.stderr,
-            )
-            return 1
-
-        removed_worktree: str | None = None
-        if task.status != "cancelled":
-            task.status = "cancelled"
-            task.blocked_reason = None
-            task.workflow_current_step = None
-            task.workflow_carried_output = None
-            task.completed_at = utc_now_text()
-            project = store.get_project(task.project_id)
-            if project is not None:
-                removed_worktree, warning = discard_task_worktree(project, task)
-                if warning is not None:
-                    print(warning, file=sys.stderr)
-            store.save_task(task)
+        removed_worktree = removal.removed_worktree
+        if removal.warning is not None:
+            print(removal.warning, file=sys.stderr)
         db_path = store.db_path
 
     _print_lines(
@@ -2138,26 +2060,10 @@ def handle_task_cancel(args: argparse.Namespace) -> int:
     return 0
 
 
-def discard_task_worktree(project: Project, task: Task) -> tuple[str | None, str | None]:
-    """Remove a finished task's worktree. Returns (removed path, warning).
+def _cli_mutations(store: ForemanStore) -> Mutations:
+    """Return the shared mutation service, stamped as the CLI and the OS user."""
 
-    A cancelled or deleted task will never be worked on again, so its checkout
-    is dead weight. Failing to remove it must not fail the operation: the row
-    is what matters, and `foreman worktree prune` can clean up later.
-    """
-
-    recorded = task.worktree_path
-    if not recorded:
-        return None, None
-    try:
-        WorktreeManager(project).remove_path(Path(recorded))
-    except (WorktreeError, OSError) as exc:
-        return None, (
-            f"Warning: could not remove worktree {recorded}: {exc}. "
-            f"Run `foreman worktree prune {project.id}` to clean it up."
-        )
-    task.worktree_path = None
-    return recorded, None
+    return Mutations(store, via="cli", actor=default_command_requester())
 
 
 def handle_token_create(args: argparse.Namespace) -> int:

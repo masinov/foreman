@@ -219,3 +219,20 @@ describe("guidance", () => {
     ).toBe("Guidance read by developer @ develop (2 notes)");
   });
 });
+
+describe("task changes made by a person", () => {
+  it("says what changed, who did it and from where", () => {
+    expect(
+      formatEventSummary({
+        event_type: "human.task_blocked",
+        payload: { by: "alice", via: "cli", reason: "waiting on design" },
+      }),
+    ).toBe("Blocked by alice (cli): waiting on design");
+    expect(
+      formatEventSummary({ event_type: "human.task_cancelled", payload: { via: "dashboard" } }),
+    ).toBe("Cancelled (dashboard)");
+    expect(formatEventSummary({ event_type: "human.task_accepted", payload: {} })).toBe(
+      "Accepted out of triage",
+    );
+  });
+});

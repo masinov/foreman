@@ -238,6 +238,13 @@ export function eventMatchesFilter(event, filterKey) {
   return getEventCategory(event.event_type) === filterKey;
 }
 
+const HUMAN_TASK_CHANGES = {
+  "human.task_accepted": "Accepted out of triage",
+  "human.task_blocked": "Blocked",
+  "human.task_unblocked": "Unblocked",
+  "human.task_cancelled": "Cancelled",
+};
+
 export function formatEventSummary(event) {
   const payload = event.payload || {};
   if (event.event_type === "agent.command") {
@@ -257,6 +264,13 @@ export function formatEventSummary(event) {
     const who = payload.role ? ` by ${payload.role}` : "";
     const where = payload.step ? ` @ ${payload.step}` : "";
     return `Guidance read${who}${where}${count > 1 ? ` (${count} notes)` : ""}`;
+  }
+  if (HUMAN_TASK_CHANGES[event.event_type]) {
+    // Who changed the task and from where, when the change recorded it.
+    const who = payload.by ? ` by ${payload.by}` : "";
+    const via = payload.via ? ` (${payload.via})` : "";
+    const why = payload.reason ? `: ${payload.reason}` : "";
+    return `${HUMAN_TASK_CHANGES[event.event_type]}${who}${via}${why}`;
   }
   if (event.event_type === "human.task_edited") {
     const fields = payload.changed_fields ? Object.keys(payload.changed_fields).join(", ") : "fields";

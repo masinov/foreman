@@ -33,6 +33,7 @@ from .engine_control import (
 )
 from .api_tokens import INTAKE_SCOPE
 from .guidance import guidance_notes
+from .mutations import MutationError, Mutations
 from .models import (
     AUTONOMY_LEVELS,
     ApiToken,
@@ -42,7 +43,6 @@ from .models import (
     Project,
     Run,
     Sprint,
-    SprintStatus,
     Task,
 )
 from .notifications import NotificationDispatcher
@@ -64,14 +64,6 @@ from .worktrees import (
     prune_project_worktrees,
     worktree_root,
 )
-
-_VALID_SPRINT_TRANSITIONS: dict[str, tuple[SprintStatus, ...]] = {
-    "planned": ("active", "cancelled"),
-    "active": ("completed", "cancelled"),
-    "completed": (),
-    "cancelled": (),
-}
-
 
 ACTIVITY_EVENT_LIMIT = 50
 STREAM_BATCH_LIMIT = 100
@@ -1029,30 +1021,10 @@ class DashboardService:
         sprint = self.store.get_sprint(sprint_id)
         if sprint is None:
             raise DashboardNotFoundError(f"Sprint not found: {sprint_id}")
-
-        allowed = _VALID_SPRINT_TRANSITIONS.get(sprint.status, ())
-        if target_status not in allowed:
-            raise DashboardValidationError(
-                f"Cannot transition sprint from '{sprint.status}' to '{target_status}'. "
-                f"Allowed: {list(allowed) or 'none'}."
-            )
-
-        if target_status == "active":
-            existing_active = self.store.get_active_sprint(sprint.project_id)
-            if existing_active is not None and existing_active.id != sprint.id:
-                raise DashboardValidationError(
-                    f"Sprint '{existing_active.title}' is already active. "
-                    "Complete or cancel it before activating another sprint."
-                )
-
-        now = self._now().isoformat()
-        sprint.status = target_status  # type: ignore[assignment]
-        if target_status == "active" and sprint.started_at is None:
-            sprint.started_at = now
-        if target_status in ("completed", "cancelled"):
-            sprint.completed_at = now
-
-        self.store.save_sprint(sprint)
+        try:
+            sprint = self._mutations().transition_sprint(sprint, target_status)
+        except MutationError as exc:
+            raise DashboardValidationError(str(exc)) from exc
         return {
             "id": sprint.id,
             "status": sprint.status,
@@ -1250,34 +1222,20 @@ class DashboardService:
         if sprint is None:
             raise DashboardNotFoundError(f"Sprint not found: {sprint_id}")
         project_id = sprint.project_id
-        self.store.delete_sprint(sprint_id)
+        try:
+            self._mutations().delete_sprint(sprint)
+        except MutationError as exc:
+            raise DashboardValidationError(str(exc)) from exc
         return {"ok": "deleted", "sprint_id": sprint_id, "project_id": project_id}
 
     def accept_task(self, task_id: str) -> dict[str, Any]:
         """Accept one task out of triage and into the runnable queue."""
 
         task = self._require_task(task_id)
-        if task.status != "triage":
-            raise DashboardValidationError(
-                f"Cannot accept a task with status '{task.status}'; only tasks in "
-                "triage can be accepted."
-            )
-        task.status = "todo"
-        self.store.save_task(task)
-        now = self._now()
-        run_id = self._ensure_event_run(task, step="triage", outcome="accepted", now=now)
-        self.store.save_event(
-            Event(
-                id=f"evt-triage-{now.strftime('%Y%m%d%H%M%S%f')}-{task.id[:8]}",
-                run_id=run_id,
-                task_id=task.id,
-                project_id=task.project_id,
-                event_type="human.task_accepted",
-                role_id="human",
-                timestamp=now.isoformat(),
-                payload={"task_key": task.task_key, "from_status": "triage"},
-            )
-        )
+        try:
+            self._mutations().accept_task(task)
+        except MutationError as exc:
+            raise DashboardValidationError(str(exc)) from exc
         return self.get_task(task.id)
 
     def get_project_policy(
@@ -1310,27 +1268,18 @@ class DashboardService:
         """Cancel one task that is not already done or cancelled."""
 
         task = self._require_task(task_id)
-        if task.status in ("done", "cancelled"):
+        if task.status == "cancelled":
             raise DashboardValidationError(
                 f"Cannot cancel a task with status '{task.status}'."
             )
-        running = self.store.list_runs(task_id=task.id, status="running")
-        if running and self.store.get_engine_lock(task.project_id) is not None:
-            raise DashboardValidationError(
-                f"Task {task.id} has a running agent step ({running[0].id}); stop the "
-                "task first, then cancel it."
-            )
-        task.status = "cancelled"
-        task.blocked_reason = None
-        task.workflow_current_step = None
-        task.workflow_carried_output = None
-        task.completed_at = self._now().isoformat()
-        removed = self._discard_task_worktree(task)
-        self.store.save_task(task)
+        try:
+            removal = self._mutations().cancel_task(task)
+        except MutationError as exc:
+            raise DashboardValidationError(str(exc)) from exc
         return {
             "status": "cancelled",
             "task_id": task_id,
-            "removed_worktree": removed,
+            "removed_worktree": removal.removed_worktree,
         }
 
     def delete_task(self, task_id: str) -> dict[str, Any]:
@@ -1338,29 +1287,16 @@ class DashboardService:
 
         task = self._require_task(task_id)
         project_id = task.project_id
-        self._discard_task_worktree(task)
-        self.store.delete_task(task_id)
+        try:
+            self._mutations().delete_task(task)
+        except MutationError as exc:
+            raise DashboardValidationError(str(exc)) from exc
         return {"ok": "deleted", "task_id": task_id, "project_id": project_id}
 
-    def _discard_task_worktree(self, task: Task) -> str | None:
-        """Remove a finished task's worktree; return the path that went away.
+    def _mutations(self) -> Mutations:
+        """Return the shared mutation service, stamped as the dashboard."""
 
-        Best effort by design: the task row is the record that matters, and
-        `foreman worktree prune` exists to sweep up anything left behind.
-        """
-
-        recorded = task.worktree_path
-        if not recorded:
-            return None
-        project = self.store.get_project(task.project_id)
-        if project is None:
-            return None
-        try:
-            WorktreeManager(project).remove_path(Path(recorded))
-        except (WorktreeError, OSError):
-            return None
-        task.worktree_path = None
-        return recorded
+        return Mutations(self.store, via="dashboard", now=self._now)
 
     def list_worktrees(self, project_id: str) -> dict[str, Any]:
         """Return the Foreman-owned worktrees for one project.
