@@ -539,7 +539,7 @@ class BuiltinTranscriptLoggingTests(RepoTestCase):
             from foreman.builtins import BuiltinEventRecord
 
             orchestrator = ForemanOrchestrator(store)
-            orchestrator._persist_builtin_event(
+            orchestrator.runner.persist_builtin_event(
                 run,
                 BuiltinEventRecord(
                     event_type="engine.test_output",
