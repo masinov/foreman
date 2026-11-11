@@ -37,7 +37,7 @@ from .git import (
 )
 from .leases import generate_lease_token
 from .logs import compact_payload, event_log_level, get_logger, log_event
-from .judge import judge_criteria, truncate_diff
+from .judge import NOT_JUDGED, judge_criteria, truncate_diff
 from .models import CompletionEvidence, Event, HumanGateDecision, Lease, Project, Run, Sprint, TASK_COMPLEXITIES, Task, TokenUsage, utc_now_text
 from .task_lease import TaskLeaseHeartbeat
 from .notifications import NotificationDispatcher, resolve_notification_policy
@@ -894,10 +894,13 @@ class ForemanOrchestrator:
     ) -> CompletionEvidence | None:
         """Build structured completion evidence for one task.
 
-        Gathers acceptance-criteria coverage, branch diff stats, agent outputs,
-        and built-in test results to produce a score and verdict that
-        downstream review can use without trusting developer markers or
-        reviewer approval alone.
+        Records facts and nothing derived from them by weighting: which
+        commit is the branch head, whether the test step passed and on which
+        commit, what each reviewer decided and on which commit, and what a
+        judge model said about each acceptance criterion when one is
+        configured. ``proof_status`` is ``passed`` only when the tests passed
+        on the head commit and the criteria were either all passed by a judge
+        or covered by an approving code review of the head commit (ADR-0018).
         """
         runs = self.store.list_runs(task_id=task.id)
 
@@ -956,22 +959,46 @@ class ForemanOrchestrator:
         builtin_test_result = ""
         builtin_test_detail = ""
         test_exit_code: int | None = None
+        tested_sha = ""
+        test_duration_seconds: float | None = None
         for event in sorted(test_events, key=lambda e: e.timestamp):
             payload = event.payload
             if event.event_type == "engine.test_run":
                 builtin_test_result = payload.get("command", "")
                 test_exit_code = payload.get("exit_code")
                 builtin_test_passed = test_exit_code == 0
+                tested_sha = str(payload.get("head_sha") or "")
+                duration = payload.get("duration_seconds")
+                test_duration_seconds = (
+                    float(duration) if isinstance(duration, (int, float)) else None
+                )
             elif event.event_type == "engine.test_output":
                 if payload.get("exit_code") == 0:
                     builtin_test_passed = True
                 builtin_test_detail = payload.get("output", "")
 
+        # A test run on a commit that is no longer the branch head says
+        # nothing about the head. Runs recorded before the commit was captured
+        # carry no SHA and are taken at face value.
+        if not builtin_test_result:
+            tests_status = "not_run"
+        elif tested_sha and head_sha_val and tested_sha != head_sha_val:
+            tests_status = "stale"
+        else:
+            tests_status = "passed" if builtin_test_passed else "failed"
+
         # Reviewer outcomes from completed decision-role runs. Roles declare
-        # whether their verdict is a code review or a security review, so any
+        # whether their decision is a code review or a security review, so any
         # reviewer (triage, frontier, a custom QA role) counts by contract.
         review_outcome = ""
+        reviewed_sha = ""
         security_review_outcome = ""
+        security_reviewed_sha = ""
+        reviewed_sha_by_run = {
+            event.run_id: str(event.payload.get("head_sha") or "")
+            for event in self.store.list_events(task_id=task.id)
+            if event.event_type == "engine.review_recorded"
+        }
         review_kind_by_role = {
             role_id: role.completion.review_kind
             for role_id, role in self.roles.items()
@@ -985,8 +1012,10 @@ class ForemanOrchestrator:
             kind = review_kind_by_role[run.role_id]
             if kind == "code" and not review_outcome:
                 review_outcome = run.outcome or ""
+                reviewed_sha = reviewed_sha_by_run.get(run.id, "")
             if kind == "security" and not security_review_outcome:
                 security_review_outcome = run.outcome or ""
+                security_reviewed_sha = reviewed_sha_by_run.get(run.id, "")
 
         # Criteria coverage
         criteria_count = 0
@@ -996,7 +1025,7 @@ class ForemanOrchestrator:
         criteria_list = [c.strip() for c in criteria_text.split("\n") if c.strip()]
         criteria_count = len(criteria_list)
         criteria_checklist: list[dict[str, str]] = []
-        judged_by = "heuristic"
+        judged_by = NOT_JUDGED
 
         if criteria_list:
             all_output_text = "\n".join(agent_outputs).lower()
@@ -1021,58 +1050,54 @@ class ForemanOrchestrator:
                 1 for item in criteria_checklist if item.get("status") == "partial"
             )
 
-        score, breakdown = self._score_evidence(
-            criteria_count=criteria_count,
-            criteria_addressed=criteria_addressed,
-            criteria_partially_addressed=criteria_partially_addressed,
-            changed_files=changed_files,
-            diff_context_lines=diff_context_lines,
-            builtin_test_passed=builtin_test_passed,
-            builtin_test_result=builtin_test_result,
-            agent_outputs=agent_outputs,
-        )
-        verdict, reasons = self._verdict_from_score(score, criteria_count, criteria_addressed)
-
-        # Derive proof_status and failure_reasons from score, tests, and criteria coverage
-        proof_status = "pending"
+        judged = judged_by != NOT_JUDGED
+        review_approved = review_outcome == "approve"
         failure_reasons: list[str] = []
-        if builtin_test_result and not builtin_test_passed:
-            proof_status = "failed"
+        outstanding: list[str] = []
+
+        if tests_status == "failed":
             failure_reasons.append(f"Tests failed (exit code {test_exit_code}).")
-        review_backed_small_delta = (
-            review_outcome == "approve"
-            and builtin_test_passed
-            and bool(changed_files)
-            and score >= 40
+        elif tests_status == "stale":
+            failure_reasons.append(
+                f"Tests ran on {tested_sha[:8]}; the branch is now at {head_sha_val[:8]}."
+            )
+        elif tests_status == "not_run":
+            outstanding.append("Tests have not run.")
+
+        review_is_stale = bool(
+            review_approved and reviewed_sha and head_sha_val and reviewed_sha != head_sha_val
         )
-        if score < 50 and not review_backed_small_delta:
-            proof_status = "failed"
-            failure_reasons.append(f"Evidence score too low ({score:.0f}/100).")
-        # Require all criteria to be machine-addressed until code review has
-        # explicitly approved the work. The heuristic cannot fully judge
-        # semantic acceptance; after review approval, tests and score remain
-        # hard proof gates while reviewer approval satisfies semantic coverage.
-        if criteria_checklist:
-            not_passed = [
-                c for c in criteria_checklist if c.get("status") != "passed"
-            ]
-            if not_passed and review_outcome != "approve":
-                if proof_status != "failed":
-                    proof_status = "failed"
-                for c in not_passed:
-                    failure_reasons.append(
-                        f"Criterion not fully addressed: {c.get('criterion', '')!r} ({c.get('status')})."
-                    )
+        if review_is_stale:
+            failure_reasons.append(
+                f"Code review approved {reviewed_sha[:8]}; the branch is now at "
+                f"{head_sha_val[:8]}."
+            )
+
+        # An approving code review covers the acceptance criteria. Without one,
+        # only a judge model's "passed" on every criterion does; a criterion no
+        # judge looked at is not counted as met.
+        if criteria_checklist and not review_approved:
+            if judged:
+                for item in criteria_checklist:
+                    if item.get("status") != "passed":
+                        failure_reasons.append(
+                            f"Criterion not fully addressed: {item.get('criterion', '')!r} "
+                            f"({item.get('status')})."
+                        )
+            else:
+                outstanding.append(
+                    "Acceptance criteria were not checked by a judge model and code "
+                    "review has not approved."
+                )
         # Implementation tasks require acceptance criteria
         if task.task_type in {"feature", "fix", "refactor"} and not criteria_checklist:
-            proof_status = "failed"
             failure_reasons.append("No acceptance criteria defined.")
-        sufficient_score = score >= 50 or review_backed_small_delta
-        if proof_status != "failed" and builtin_test_passed and sufficient_score and (
-            not criteria_checklist
-            or all(c.get("status") == "passed" for c in criteria_checklist)
-            or review_outcome == "approve"
-        ):
+
+        if failure_reasons:
+            proof_status = "failed"
+        elif outstanding:
+            proof_status = "pending"
+        else:
             proof_status = "passed"
 
         return CompletionEvidence(
@@ -1089,21 +1114,23 @@ class ForemanOrchestrator:
             builtin_test_result=builtin_test_result,
             builtin_test_passed=builtin_test_passed,
             builtin_test_detail=builtin_test_detail,
-            score=score,
-            score_breakdown=breakdown,
-            verdict=verdict,
-            verdict_reasons=tuple(reasons),
             base_sha=base_sha,
             head_sha=head_sha_val,
             merge_base_sha=merge_base_sha_val,
             commit_count=commit_count,
             test_command=builtin_test_result,
             test_exit_code=test_exit_code,
+            tests_status=tests_status,
+            tested_sha=tested_sha,
+            test_duration_seconds=test_duration_seconds,
             review_outcome=review_outcome,
+            reviewed_sha=reviewed_sha,
             security_review_outcome=security_review_outcome,
+            security_reviewed_sha=security_reviewed_sha,
             criteria_checklist=tuple(criteria_checklist),
             proof_status=proof_status,
             failure_reasons=tuple(failure_reasons),
+            outstanding=tuple(outstanding),
             judged_by=judged_by,
         )
 
@@ -1218,84 +1245,6 @@ class ForemanOrchestrator:
                 return truncate_diff(result.stdout, max_chars)
         return ""
 
-    def _score_evidence(
-        self,
-        *,
-        criteria_count: int,
-        criteria_addressed: int,
-        criteria_partially_addressed: int,
-        changed_files: tuple[str, ...],
-        diff_context_lines: int,
-        builtin_test_passed: bool,
-        builtin_test_result: str,
-        agent_outputs: tuple[str, ...],
-    ) -> tuple[float, str]:
-        """Compute a 0–100 evidence score with a human-readable breakdown."""
-        score = 0.0
-        parts: list[str] = []
-
-        # Criteria coverage: up to 40 points
-        if criteria_count > 0:
-            criteria_score = (criteria_addressed * 40 / criteria_count) + (
-                criteria_partially_addressed * 15 / criteria_count
-            )
-        else:
-            criteria_score = 0.0
-        score += min(criteria_score, 40)
-        parts.append(f"criteria={min(criteria_score, 40):.1f}/40")
-
-        # Code change breadth: up to 20 points
-        file_score = min(len(changed_files) * 5, 20)
-        score += file_score
-        parts.append(f"files={file_score:.1f}/20 ({len(changed_files)} changed)")
-
-        # Diff context: up to 10 points
-        diff_score = min(diff_context_lines * 0.5, 10)
-        score += diff_score
-        parts.append(f"diff={diff_score:.1f}/10 ({diff_context_lines} context lines)")
-
-        # Built-in test: up to 30 points
-        if builtin_test_result:
-            test_score = 30 if builtin_test_passed else 0
-        else:
-            test_score = 0
-        score += test_score
-        parts.append(f"test={test_score:.1f}/30 (passed={builtin_test_passed})")
-
-        breakdown = "; ".join(parts)
-        return (round(score, 2), breakdown)
-
-    def _verdict_from_score(
-        self,
-        score: float,
-        criteria_count: int,
-        criteria_addressed: int,
-    ) -> tuple[str, list[str]]:
-        """Translate a numeric score into a completion verdict with reasons."""
-        reasons: list[str] = []
-
-        if score >= 75 and criteria_addressed >= criteria_count:
-            verdict = "strong"
-            reasons.append("All acceptance criteria addressed with good evidence")
-        elif score >= 60 and criteria_addressed >= max(1, criteria_count // 2):
-            verdict = "adequate"
-            reasons.append("Sufficient evidence of task completion")
-        elif score >= 40:
-            verdict = "weak"
-            reasons.append("Incomplete coverage of acceptance criteria")
-        else:
-            verdict = "insufficient"
-            reasons.append("Insufficient evidence for task completion")
-
-        if criteria_count == 0:
-            reasons.append("No acceptance criteria defined")
-        elif criteria_addressed == 0 and criteria_count > 0:
-            reasons.append("No acceptance criteria were addressed")
-
-        if not reasons:
-            reasons.append("Unable to determine verdict from available evidence")
-
-        return verdict, reasons
 
     def select_next_task(self, project: Project) -> Task | None:
         """Return the next runnable task for one project."""
@@ -2390,6 +2339,19 @@ class ForemanOrchestrator:
                     session_ids[session_key] = result.session_id
                 if role.completion.output.extract_decision:
                     outcome = normalize_reviewer_decision(result.outcome)
+                    # A decision is about the commit the reviewer saw. Record
+                    # it, so evidence can tell an approval of the head commit
+                    # from an approval of an earlier one.
+                    self._emit_event(
+                        run,
+                        "engine.review_recorded",
+                        {
+                            "role": role.id,
+                            "review_kind": role.completion.review_kind,
+                            "outcome": outcome,
+                            "head_sha": self._safe_branch_head(project, current_task),
+                        },
+                    )
                 else:
                     outcome = normalize_agent_outcome(result.outcome)
                 detail = result.detail
@@ -2443,6 +2405,20 @@ class ForemanOrchestrator:
                 "workflow.step_completed",
                 {"step": current_step, "outcome": outcome},
             )
+
+            # Evidence built for the reviewer's prompt predates the review. Now
+            # that a decision exists, record it, so the task shows what was
+            # decided rather than "no review yet" until the merge step.
+            if (
+                current_task.completion_evidence is not None
+                and not step_def.role.startswith("_builtin:")
+                and step_def.role in self.roles
+                and self.roles[step_def.role].completion.output.extract_decision
+            ):
+                current_task.completion_evidence = self.build_completion_evidence(
+                    current_task, project
+                )
+                self._save_task(current_task)
 
             # ── After every step: the task's own work must not be on the
             # default branch before the merge step puts it there. The default
@@ -3111,10 +3087,9 @@ class ForemanOrchestrator:
         }
         if evidence is not None:
             context.update({
-                "completion_verdict": evidence.verdict,
-                "completion_verdict_reasons": evidence.verdict_reasons,
-                "completion_score": evidence.score,
-                "completion_score_breakdown": evidence.score_breakdown,
+                "completion_proof_status": evidence.proof_status,
+                "completion_tests_status": evidence.tests_status,
+                "completion_review_outcome": evidence.review_outcome,
                 "completion_criteria_count": evidence.criteria_count,
                 "completion_criteria_addressed": evidence.criteria_addressed,
                 "completion_criteria_partially_addressed": evidence.criteria_partially_addressed,
@@ -3125,6 +3100,16 @@ class ForemanOrchestrator:
                 "completion_builtin_test_detail": evidence.builtin_test_detail,
             })
         return role.render_prompt(context)
+
+    def _safe_branch_head(self, project: Project, task: Task) -> str:
+        """Return the task branch's head commit, or "" when it cannot be read."""
+
+        if not task.branch_name:
+            return ""
+        try:
+            return head_sha(project.repo_path, f"refs/heads/{task.branch_name}") or ""
+        except (GitError, OSError):
+            return ""
 
     def _completion_evidence_stale(
         self,

@@ -31,9 +31,11 @@ You are reviewing completed development work.
 
 ### Completion Evidence (engine-produced)
 This section is produced by the Foreman engine — not by the developer.
-Use it as a grounded reference for whether the implementation actually
-satisfied the task intent. It is correct to distrust a reviewer approval
-or developer summary that conflicts with weak evidence here.
+It states facts only: the branch head, whether the tests passed and on which
+commit, and whether a judge model checked each acceptance criterion. A
+criterion marked "not checked" has been verified by nobody: checking it is
+your job.
+Distrust a developer summary or an earlier approval that conflicts with it.
 {completion_evidence}
 
 ### Git Status
@@ -56,10 +58,10 @@ Use Read, Glob, and Grep to verify:
 4. The work matches the acceptance criteria
 5. No obvious regressions, leftover debug code, or hardcoded credentials
 6. If an ADR should have been created for a significant decision, flag it
-7. Cross-reference the engine-produced completion evidence above.  When it
-   shows a weak or insufficient verdict, weigh it heavily: a strong reviewer
-   APPROVAL requires strong evidence, not just a plausible summary or an
-   approval from a prior review cycle.
+7. Cross-reference the engine-produced completion evidence above. Do not
+   approve when the tests failed, did not run, or ran on a commit other than
+   the branch head, or on the strength of a plausible summary or an approval
+   from a prior review cycle.
 
 Return exactly one:
 APPROVE

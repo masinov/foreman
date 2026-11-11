@@ -55,8 +55,9 @@ Phases 1 and 2 are queued here in order; sprint 54 opens Phase 1.
 - Pull-request integration (GitHub via `gh`, decided at sprint 54 open):
   push, open PR with evidence, watch checks and approvals, auto-merge or
   wait per policy, mark done on merge; waivers as labels. **Sprint 55.**
-- Facts-based verification: drop the numeric score and verdict ladder, LLM
-  judge on by default, acceptance tests in a protected path.
+- Facts-based verification: the numeric score and verdict ladder are gone
+  (sprint 56 slice 8, ADR-0018). Still open: LLM judge on by default,
+  acceptance tests in a protected path.
 - Login and actor identity; Slack or email on attention events and waiting
   gates.
 - Manager chat hardened: per-user sessions, turn lock, kill on disconnect,

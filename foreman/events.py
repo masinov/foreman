@@ -177,18 +177,20 @@ def engine_test_run(
 
 
 def engine_completion_guard(
-    verdict: str,
-    score: float,
-    score_breakdown: str,
+    proof_status: str,
+    tests_status: str,
+    review_outcome: str,
+    head_sha: str,
     changed_files: list[str],
     reasons: list[str],
 ) -> EventPayload:
     return _build(
         ENGINE_COMPLETION_GUARD,
         {
-            "verdict": verdict,
-            "score": score,
-            "score_breakdown": score_breakdown,
+            "proof_status": proof_status,
+            "tests_status": tests_status,
+            "review_outcome": review_outcome,
+            "head_sha": head_sha,
             "changed_files": changed_files,
             "reasons": reasons,
         },
@@ -199,10 +201,10 @@ def engine_completion_evidence(
     task_id: str,
     criteria_count: int,
     criteria_addressed: int,
-    score: float,
-    verdict: str,
     proof_status: str,
+    tests_status: str,
     *,
+    head_sha: str = "",
     criteria_partially_addressed: int = 0,
     changed_files: list[str] | None = None,
     builtin_test_passed: bool = False,
@@ -217,9 +219,9 @@ def engine_completion_evidence(
             "criteria_partially_addressed": criteria_partially_addressed,
             "changed_files": changed_files or [],
             "builtin_test_passed": builtin_test_passed,
-            "score": score,
-            "verdict": verdict,
             "proof_status": proof_status,
+            "tests_status": tests_status,
+            "head_sha": head_sha,
             "failure_reasons": failure_reasons or [],
         },
     )
@@ -229,8 +231,7 @@ def engine_supervisor_merge(
     branch: str,
     target: str,
     task_id: str,
-    evidence_score: float | None,
-    evidence_verdict: str | None,
+    proof_status: str | None,
 ) -> EventPayload:
     return _build(
         ENGINE_SUPERVISOR_MERGE,
@@ -238,8 +239,7 @@ def engine_supervisor_merge(
             "branch": branch,
             "target": target,
             "task_id": task_id,
-            "evidence_score": evidence_score,
-            "evidence_verdict": evidence_verdict,
+            "proof_status": proof_status,
         },
     )
 

@@ -31,8 +31,11 @@ payload below — you have no repository tools. Decide quickly and conservativel
 {branch_name}
 
 ### Completion Evidence (engine-produced)
-This section is produced by the Foreman engine, not the developer. Use it as a
-grounded reference for whether the change actually satisfies the task.
+This section is produced by the Foreman engine, not the developer.
+It states facts only: the branch head, whether the tests passed and on which
+commit, and whether a judge model checked each acceptance criterion. A
+criterion marked "not checked" has been verified by nobody: checking it is
+your job.
 {completion_evidence}
 
 ### Unified Diff (curated payload)
@@ -41,11 +44,12 @@ grounded reference for whether the change actually satisfies the task.
 ### Instructions
 Return exactly one of:
 - APPROVE — only when the diff clearly satisfies every acceptance criterion and
-  the evidence verdict is strong. Never approve just to avoid escalating.
+  the evidence shows the tests passed on the branch head. Never approve just to
+  avoid escalating.
 - DENY: <reason> — when the change is clearly wrong, incomplete, or unsafe and a
   developer can fix it from your reason without senior input.
-- ESCALATE: <why this needs the senior reviewer> — when the evidence verdict is
-  weak or insufficient, the diff touches security-sensitive or architectural
+- ESCALATE: <why this needs the senior reviewer> — when the evidence reports a
+  failure you cannot explain, the diff touches security-sensitive or architectural
   files, or you are unsure. When in doubt, ESCALATE rather than APPROVE.
 """
 

@@ -35,8 +35,8 @@ class AttentionDigestTests(unittest.TestCase):
         )
         task.completion_evidence = CompletionEvidence(
             task_id="t1", task_title="Build feature", acceptance_criteria="c",
-            verdict="insufficient", proof_status="failed", score=30.0,
-            judged_by="heuristic", failure_reasons=("Tests failed.",),
+            proof_status="failed", tests_status="failed",
+            failure_reasons=("Tests failed.",),
         )
         self.store.save_task(task)
         self.store.save_run(
@@ -56,7 +56,7 @@ class AttentionDigestTests(unittest.TestCase):
         self.assertIn("ATTENTION NEEDED", digest)
         self.assertIn("Trigger: task_blocked", digest)
         self.assertIn("dependency X is missing", digest)
-        self.assertIn("verdict=insufficient", digest)
+        self.assertIn("proof=failed | tests=failed | review=none", digest)
         self.assertIn("Tests failed.", digest)
         self.assertIn("develop=2", digest)
 

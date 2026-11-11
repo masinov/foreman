@@ -9,6 +9,15 @@ memory changes rather than versioned product releases.
 
 ### Sprint 56 — engine truthfulness
 
+- **slice 8, facts-based evidence** (`refactor/facts-based-evidence`,
+  ADR-0018): completion evidence no longer has a score or a verdict. It
+  records whether the tests passed and on which commit, what each reviewer
+  decided and on which commit (new `engine.review_recorded` event), and what
+  a judge model said about each criterion when one is configured. Tests or an
+  approval that are about an older commit than the branch head fail the
+  proof. The keyword-overlap criteria check is deleted: without a judge the
+  criteria are reported as not checked. The task drawer shows these as rows
+  of fact, and the reviewer prompts are reworded to match.
 - **slice 3b, worktree self-heal** (`fix/worktree-self-heal`): the
   integration worktree aborts a merge a killed engine left half-done instead
   of refusing every later merge; a task tree found on the wrong branch is

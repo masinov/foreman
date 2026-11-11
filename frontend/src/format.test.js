@@ -4,6 +4,7 @@ import {
   costUnknownNote,
   deriveEngineState,
   engineState,
+  evidenceFacts,
   eventMatchesFilter,
   formatBlockedKind,
   formatEngineSummary,
@@ -141,5 +142,61 @@ describe("formatTokenUsage", () => {
   it("is empty when nothing was reported", () => {
     expect(formatTokenUsage(null)).toBe("");
     expect(formatTokenUsage({ input: 0, output: 0, cache_read: 0, cache_creation: 0 })).toBe("");
+  });
+});
+
+describe("evidenceFacts", () => {
+  const head = "b".repeat(40);
+
+  it("says what passed and on which commit", () => {
+    const rows = evidenceFacts({
+      head_sha: head,
+      tests_status: "passed",
+      tested_sha: head,
+      test_exit_code: 0,
+      test_duration_seconds: 114.2,
+      review_outcome: "approve",
+      reviewed_sha: head,
+      criteria_count: 2,
+      judged_by: "none",
+    });
+    expect(rows.map((row) => [row.label, row.text, row.tone])).toEqual([
+      ["Tests", "Passed on bbbbbbbb (exit 0, 114s)", "ok"],
+      ["Code review", "Approved bbbbbbbb", "ok"],
+      ["Criteria", "2 listed, not checked by a judge model; code review covers them", "none"],
+    ]);
+  });
+
+  it("flags tests and a review that are about an older commit", () => {
+    const rows = evidenceFacts({
+      head_sha: head,
+      tests_status: "stale",
+      tested_sha: "a".repeat(40),
+      review_outcome: "approve",
+      reviewed_sha: "a".repeat(40),
+      criteria_count: 1,
+      criteria_addressed: 1,
+      judged_by: "judge-model",
+    });
+    expect(rows[0]).toEqual({
+      label: "Tests",
+      text: "Ran on aaaaaaaa, but the branch is now at bbbbbbbb",
+      tone: "bad",
+    });
+    expect(rows[1].text).toBe("Approved aaaaaaaa, but the branch is now at bbbbbbbb");
+    expect(rows[1].tone).toBe("bad");
+    expect(rows[2].text).toBe("1 of 1 passed, judged by judge-model");
+  });
+
+  it("never reports a check that did not run", () => {
+    const rows = evidenceFacts({ criteria_count: 0 });
+    expect(rows.map((row) => row.text)).toEqual(["Not run", "None yet", "None defined"]);
+    expect(rows.every((row) => row.tone === "none")).toBe(true);
+  });
+
+  it("treats evidence saved with the old keyword match as unchecked", () => {
+    const rows = evidenceFacts({ criteria_count: 3, criteria_addressed: 3, judged_by: "heuristic" });
+    expect(rows[2].tone).toBe("none");
+    expect(rows[2].text).toContain("not checked");
   });
 });

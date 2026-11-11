@@ -261,8 +261,8 @@ export function formatEventSummary(event) {
   }
   if (event.event_type === "engine.completion_evidence") {
     const bits = [];
-    if (payload.verdict) bits.push(payload.verdict);
     if (payload.proof_status) bits.push(`proof ${payload.proof_status}`);
+    if (payload.tests_status) bits.push(`tests ${payload.tests_status.replace("_", " ")}`);
     if (payload.judged_by) bits.push(`judged by ${payload.judged_by}`);
     return `Evidence: ${bits.join(" · ") || "built"}`;
   }
@@ -272,7 +272,8 @@ export function formatEventSummary(event) {
     return `Model: ${payload.model || "default"}${why}${where}`;
   }
   if (event.event_type === "engine.completion_guard") {
-    return `Merge guard: ${payload.verdict || payload.error || "blocked"}`;
+    const why = Array.isArray(payload.reasons) && payload.reasons.length > 0 ? payload.reasons[0] : "";
+    return `Merge guard: ${why || payload.error || "blocked"}`;
   }
   if (event.event_type === "gate.cost_exceeded") {
     return `Cost gate: $${payload.actual_usd ?? "?"} ≥ $${payload.limit_usd ?? "?"} (${payload.scope || "task"})`;
@@ -365,6 +366,91 @@ export function formatEngineSummary(status) {
 
 // Why a task is blocked. `gate` waits for a human decision; `engine` is the
 // engine's dead-letter state and needs a fix or an unblock.
+const shortSha = (sha) => (sha ? String(sha).slice(0, 8) : "");
+
+/**
+ * Turn completion evidence into rows of fact: what was checked, on which
+ * commit, and what was not checked at all. Each row is
+ * { label, text, tone } with tone "ok" | "bad" | "none".
+ */
+export function evidenceFacts(evidence) {
+  if (!evidence) return [];
+  const head = shortSha(evidence.head_sha);
+  const rows = [];
+
+  const tested = shortSha(evidence.tested_sha);
+  const exit = evidence.test_exit_code ?? "?";
+  const took =
+    typeof evidence.test_duration_seconds === "number"
+      ? `, ${Math.round(evidence.test_duration_seconds)}s`
+      : "";
+  const on = tested ? ` on ${tested}` : "";
+  const status = evidence.tests_status || (evidence.builtin_test_passed ? "passed" : "not_run");
+  if (status === "passed") {
+    rows.push({ label: "Tests", text: `Passed${on} (exit ${exit}${took})`, tone: "ok" });
+  } else if (status === "failed") {
+    rows.push({ label: "Tests", text: `Failed${on} (exit ${exit}${took})`, tone: "bad" });
+  } else if (status === "stale") {
+    rows.push({
+      label: "Tests",
+      text: `Ran${on}, but the branch is now at ${head || "a newer commit"}`,
+      tone: "bad",
+    });
+  } else {
+    rows.push({ label: "Tests", text: "Not run", tone: "none" });
+  }
+
+  const reviewed = shortSha(evidence.reviewed_sha);
+  if (!evidence.review_outcome) {
+    rows.push({ label: "Code review", text: "None yet", tone: "none" });
+  } else if (evidence.review_outcome === "approve") {
+    const current = !reviewed || !head || reviewed === head;
+    rows.push({
+      label: "Code review",
+      text: current
+        ? `Approved${reviewed ? ` ${reviewed}` : ""}`
+        : `Approved ${reviewed}, but the branch is now at ${head}`,
+      tone: current ? "ok" : "bad",
+    });
+  } else {
+    rows.push({
+      label: "Code review",
+      text: `${evidence.review_outcome}${reviewed ? ` on ${reviewed}` : ""}`,
+      tone: "bad",
+    });
+  }
+
+  if (evidence.security_review_outcome) {
+    const approved = evidence.security_review_outcome === "approve";
+    const sha = shortSha(evidence.security_reviewed_sha);
+    rows.push({
+      label: "Security review",
+      text: `${approved ? "Approved" : evidence.security_review_outcome}${sha ? ` ${sha}` : ""}`,
+      tone: approved ? "ok" : "bad",
+    });
+  }
+
+  const count = evidence.criteria_count || 0;
+  const judge = evidence.judged_by && evidence.judged_by !== "none" ? evidence.judged_by : "";
+  if (count === 0) {
+    rows.push({ label: "Criteria", text: "None defined", tone: "none" });
+  } else if (!judge || judge === "heuristic") {
+    rows.push({
+      label: "Criteria",
+      text: `${count} listed, not checked by a judge model; code review covers them`,
+      tone: "none",
+    });
+  } else {
+    const passed = evidence.criteria_addressed || 0;
+    rows.push({
+      label: "Criteria",
+      text: `${passed} of ${count} passed, judged by ${judge}`,
+      tone: passed === count ? "ok" : "bad",
+    });
+  }
+  return rows;
+}
+
 export function formatBlockedKind(kind) {
   switch (kind) {
     case "gate":

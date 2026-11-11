@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from collections.abc import Mapping
+from dataclasses import dataclass, field, fields
 from datetime import datetime, timezone
 from typing import Any, Literal
 
@@ -391,10 +392,6 @@ class CompletionEvidence:
     builtin_test_result: str = ""
     builtin_test_passed: bool = False
     builtin_test_detail: str = ""
-    score: float = 0.0
-    score_breakdown: str = ""
-    verdict: str = "unknown"
-    verdict_reasons: tuple[str, ...] = ()
     built_at: str = field(default_factory=utc_now_text)
     # Git positional reference
     base_sha: str = ""
@@ -404,28 +401,111 @@ class CompletionEvidence:
     # Structured test record
     test_command: str = ""
     test_exit_code: int | None = None
-    # Review verdicts
+    # passed | failed | not_run | stale. "stale" means the tests ran, but on a
+    # commit that is no longer the head of the task branch.
+    tests_status: str = "not_run"
+    tested_sha: str = ""
+    test_duration_seconds: float | None = None
+    # Review outcomes and the branch head each reviewer looked at.
     review_outcome: str = ""
+    reviewed_sha: str = ""
     security_review_outcome: str = ""
+    security_reviewed_sha: str = ""
     # Criteria checklist: list of {criterion, status, evidence}
-    # status: "passed" | "failed" | "partial" | "unknown"
+    # status: "passed" | "failed" | "partial" from a judge model, or
+    # "unverified" when no judge looked at the criterion.
     criteria_checklist: tuple[dict[str, str], ...] = field(default_factory=tuple)
     # Proof status
     proof_status: str = "pending"
     failure_reasons: tuple[str, ...] = field(default_factory=tuple)
-    # Who judged the criteria checklist: a model id, or "heuristic".
-    judged_by: str = "heuristic"
+    # What has not happened yet (tests not run, review not given). Proof is
+    # "pending" while this is non-empty and nothing has failed.
+    outstanding: tuple[str, ...] = field(default_factory=tuple)
+    # Who judged the criteria checklist: a model id, or "none".
+    judged_by: str = "none"
+
+    @classmethod
+    def from_mapping(cls, data: Mapping[str, Any]) -> "CompletionEvidence":
+        """Build evidence from stored JSON, ignoring fields this version dropped.
+
+        Evidence saved before ADR-0018 carries a numeric score and a verdict;
+        those keys are skipped rather than failing the load of the task.
+        """
+
+        known = {item.name for item in fields(cls)}
+        values = {key: value for key, value in data.items() if key in known}
+        for name in (
+            "changed_files",
+            "agent_outputs",
+            "criteria_checklist",
+            "failure_reasons",
+            "outstanding",
+        ):
+            if name in values and isinstance(values[name], list):
+                values[name] = tuple(values[name])
+        if "tests_status" not in values and values.get("builtin_test_result"):
+            # Older evidence recorded the result without a status or a commit.
+            values["tests_status"] = (
+                "passed" if values.get("builtin_test_passed") else "failed"
+            )
+        return cls(**values)
+
+    def tests_line(self) -> str:
+        """Say what is known about the test run, in one line."""
+
+        if self.tests_status == "not_run":
+            return "Tests: not run"
+        at = f" at {self.tested_sha[:8]}" if self.tested_sha else ""
+        if self.tests_status == "stale":
+            return (
+                f"Tests: ran{at} (exit {self.test_exit_code}), but the branch is now "
+                f"at {self.head_sha[:8]}"
+            )
+        return f"Tests: {self.tests_status}{at} (exit {self.test_exit_code})"
+
+    def review_line(self) -> str:
+        """Say what is known about code review, in one line."""
+
+        if not self.review_outcome:
+            return "Code review: none yet"
+        at = f" at {self.reviewed_sha[:8]}" if self.reviewed_sha else ""
+        return f"Code review: {self.review_outcome}{at}"
+
+    def criteria_line(self) -> str:
+        """Say how many criteria a judge checked, or that none were."""
+
+        if not self.criteria_count:
+            return "Acceptance criteria: none defined"
+        if self.judged_by == "none":
+            return (
+                f"Acceptance criteria: {self.criteria_count}, not checked by a judge model"
+            )
+        partial = (
+            f", {self.criteria_partially_addressed} partial"
+            if self.criteria_partially_addressed
+            else ""
+        )
+        return (
+            f"Acceptance criteria: {self.criteria_addressed} of {self.criteria_count} "
+            f"passed{partial} (judged by {self.judged_by})"
+        )
 
     def __str__(self) -> str:
         parts = [
-            f"Evidence score: {self.score:.1f}/100 ({self.verdict})",
-            f"Criteria: {self.criteria_addressed}/{self.criteria_count} addressed"
-            + (f" + {self.criteria_partially_addressed} partial" if self.criteria_partially_addressed else ""),
-            f"Score breakdown: {self.score_breakdown}" if self.score_breakdown else None,
+            f"Branch head: {self.head_sha[:8]}" if self.head_sha else None,
+            self.tests_line(),
+            self.review_line(),
+            (
+                f"Security review: {self.security_review_outcome}"
+                + (f" at {self.security_reviewed_sha[:8]}" if self.security_reviewed_sha else "")
+                if self.security_review_outcome
+                else None
+            ),
+            self.criteria_line(),
             f"Changed files: {', '.join(self.changed_files)}" if self.changed_files else "Changed files: (none)",
             f"Branch diff: {self.branch_diff_stat}" if self.branch_diff_stat else None,
-            f"Tests: {'PASSED' if self.builtin_test_passed else 'FAILED'}" if self.builtin_test_result else None,
-            f"Verdict reasons: {'; '.join(self.verdict_reasons)}" if self.verdict_reasons else None,
+            f"Failed: {'; '.join(self.failure_reasons)}" if self.failure_reasons else None,
+            f"Outstanding: {'; '.join(self.outstanding)}" if self.outstanding else None,
             f"Criteria text: {self.acceptance_criteria[:300]!r}" if self.acceptance_criteria else None,
         ]
         return "\n".join(p for p in parts if p is not None)

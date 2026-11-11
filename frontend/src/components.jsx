@@ -5,6 +5,7 @@ import {
   deriveEngineState,
   engineState,
   eventMatchesFilter,
+  evidenceFacts,
   formatBlockedKind,
   formatPolicyDecision,
   formatCompactCount,
@@ -1043,28 +1044,65 @@ export function EventList({ events, filterKey, taskIndex, containerRef, onScroll
 
 const TASK_TYPE_OPTIONS = ["feature", "fix", "refactor", "docs", "spike", "chore"];
 
+const EVIDENCE_PROOF_LABEL = {
+  passed: "Ready to merge",
+  failed: "Not ready to merge",
+  pending: "Checks outstanding",
+};
+
+const CRITERION_MARK = { passed: "✓", partial: "~", failed: "✗" };
+const CRITERION_LABEL = {
+  passed: "Passed",
+  partial: "Partly met",
+  failed: "Not met",
+  unverified: "Not checked",
+  unknown: "Not checked",
+};
+
 function CompletionEvidenceSection({ evidence }) {
-  const verdict = evidence.verdict || "unknown";
   const proof = evidence.proof_status || "pending";
+  // Evidence saved before the judge was optional says "heuristic"; that was a
+  // keyword match, not a check, so its marks are not shown as results.
+  const judged = Boolean(evidence.judged_by) && !["none", "heuristic"].includes(evidence.judged_by);
+  const facts = evidenceFacts(evidence);
+  const outstanding = Array.isArray(evidence.outstanding) ? evidence.outstanding : [];
   return (
     <div className="detail-section">
       <div className="detail-section-title">Completion Evidence</div>
       <div className="evidence-badges">
-        <span className={`evidence-badge verdict-${verdict}`}>{verdict}</span>
-        <span className={`evidence-badge proof-${proof}`}>proof: {proof}</span>
-        <span className="evidence-badge evidence-score">{Math.round(evidence.score || 0)}/100</span>
-        <span className="evidence-badge evidence-judge" title="Who judged the criteria">
-          judged by {evidence.judged_by || "heuristic"}
+        <span className={`evidence-badge proof-${proof}`}>
+          {EVIDENCE_PROOF_LABEL[proof] || proof}
         </span>
+        {evidence.head_sha ? (
+          <span className="evidence-badge evidence-head" title="Branch head these facts are about">
+            {String(evidence.head_sha).slice(0, 8)}
+          </span>
+        ) : null}
       </div>
+      <dl className="evidence-facts">
+        {facts.map((fact) => (
+          <div key={fact.label} className={`evidence-fact evidence-fact-${fact.tone}`}>
+            <dt>{fact.label}</dt>
+            <dd>{fact.text}</dd>
+          </div>
+        ))}
+      </dl>
       {Array.isArray(evidence.criteria_checklist) && evidence.criteria_checklist.length > 0 ? (
         <ul className="evidence-checklist">
           {evidence.criteria_checklist.map((item, i) => (
-            <li key={i} className={`evidence-item evidence-${item.status}`}>
-              <span className="evidence-item-status">
-                {item.status === "passed" ? "✓" : item.status === "partial" ? "~" : "✗"}
+            <li
+              key={i}
+              className={`evidence-item evidence-${judged ? item.status : "unverified"}`}
+            >
+              <span
+                className="evidence-item-status"
+                title={judged ? CRITERION_LABEL[item.status] || item.status : "Not checked"}
+              >
+                {judged ? CRITERION_MARK[item.status] || "·" : "·"}
               </span>
-              <span className="evidence-item-text" title={item.evidence || ""}>{item.criterion}</span>
+              <span className="evidence-item-text" title={judged ? item.evidence || "" : ""}>
+                {item.criterion}
+              </span>
             </li>
           ))}
         </ul>
@@ -1073,6 +1111,13 @@ function CompletionEvidenceSection({ evidence }) {
         <div className="evidence-failures">
           {evidence.failure_reasons.map((reason, i) => (
             <div key={i} className="evidence-failure">• {reason}</div>
+          ))}
+        </div>
+      ) : null}
+      {outstanding.length > 0 ? (
+        <div className="evidence-outstanding">
+          {outstanding.map((reason, i) => (
+            <div key={i}>• {reason}</div>
           ))}
         </div>
       ) : null}
