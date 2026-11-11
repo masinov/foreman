@@ -47,7 +47,7 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Mapping, Protocol, Sequence, TYPE_CHECKING
+from typing import Any, Callable, Mapping, Protocol, TYPE_CHECKING
 from uuid import uuid4
 
 from .models import Event, NotificationDelivery, NotificationDestination, Project, Task
@@ -702,12 +702,6 @@ def validate_config(config: Mapping[str, Any] | None) -> dict[str, Any]:
         if name:
             cleaned["secret_env"] = name
     return cleaned
-
-
-def describe_policies() -> Sequence[str]:
-    """The notification policy vocabulary, for help text and API responses."""
-
-    return NOTIFICATION_POLICIES
 
 
 def _iso(moment: datetime) -> str:

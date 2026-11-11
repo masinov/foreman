@@ -38,7 +38,7 @@ states facts.
 | 10a | Infrastructure retries continue the interrupted session and keep its cost; an unknown session id is dropped; quota stops are decided by the rate-limit notice, not by any error mentioning "quota" | done | Claude, by hand | `fix/retry-and-quota`: `runner/base.py`, `runner/claude_code.py`, orchestrator; 7 tests |
 | 10b | Resident engine: `foreman run` answers engine commands; a pause survives a restart; `run_task` is completed when its task has run; an unexpected exception ends `serve` non-zero; idle engines do not wake on unrelated commits | done | Claude, by hand | `fix/resident-engine-commands`: `serve.py`, `cli.py`, `store.project_activity_token`; 11 tests |
 | 10c | Autonomous mode: tasks get a branch and worktree (they ran in the operator's checkout); a missing `task_started` degrades instead of blocking; no in-memory state; no hard-coded role id; reported type and branch validated | done | Claude, by hand | `fix/autonomous-mode`: orchestrator, `context.py`, ADR-0012 amendment; `tests/test_autonomous_mode.py` (6 tests, the first for this mode) |
-| 11 | Enums with CHECK constraints for statuses and outcomes; one settings object passed down; dead code removed | todo | to decide | models, migrations, settings |
+| 11 | The database refuses statuses and types outside the models' vocabulary (migration 20, triggers); one typed settings accessor replaces the scattered raw reads; unused code removed | done | Claude, by hand | `refactor/status-constraints`: `migrations.py`, `settings.settings_of`, orchestrator, builtins, worktrees, context; 4 guard tests. Not done here: Python `Enum` classes for statuses (the `Literal` types and tuples stay); the judge still takes a mapping |
 
 ### Carried from sprint 55
 

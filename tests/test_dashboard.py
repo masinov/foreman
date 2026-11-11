@@ -133,7 +133,7 @@ class DashboardBackendTests(unittest.TestCase):
             project_id=cls.project.id,
             title="Blocked task",
             status="blocked",
-            task_type="bug",
+            task_type="fix",
             order_index=3,
             blocked_reason="Awaiting approval",
             created_at="2026-03-30T11:10:00Z",

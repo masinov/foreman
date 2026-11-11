@@ -50,7 +50,7 @@ from .runner.base import AgentRunner as NativeAgentRunner
 from .runner.process import EngineShutdown
 from .runner.env import resolve_env
 from .roles import RoleDefinition, default_roles_dir, load_roles
-from .settings import ProjectSettings, SettingsError
+from .settings import ProjectSettings, SettingsError, settings_of
 from .store import ForemanStore
 from .workflows import WorkflowDefinition, WorkflowStep, default_workflows_dir, load_workflows
 from .worktrees import (
@@ -1253,7 +1253,7 @@ class ForemanOrchestrator:
     def select_next_task(self, project: Project) -> Task | None:
         """Return the next runnable task for one project."""
 
-        selection_mode = str(project.settings.get("task_selection_mode", "directed"))
+        selection_mode = resolve_project_settings(project).task_selection_mode
         if selection_mode == "autonomous":
             return self._select_next_task_autonomous(project)
         if selection_mode != "directed":
@@ -1304,7 +1304,6 @@ class ForemanOrchestrator:
             return task
         return None
 
-    _MAX_AUTONOMOUS_TASKS_DEFAULT = 5
 
     def _select_next_task_autonomous(self, project: Project) -> Task | None:
         """Select the next task in autonomous mode.
@@ -1336,9 +1335,7 @@ class ForemanOrchestrator:
             return None
 
         # Check the per-sprint autonomous task limit.
-        max_tasks = int(
-            project.settings.get("max_autonomous_tasks", self._MAX_AUTONOMOUS_TASKS_DEFAULT)
-        )
+        max_tasks = resolve_project_settings(project).max_autonomous_tasks
         orchestrator_tasks = [t for t in sprint_tasks if t.created_by == "orchestrator"]
         if len(orchestrator_tasks) >= max_tasks:
             return None
@@ -1833,7 +1830,8 @@ class ForemanOrchestrator:
             current_task.step_visit_counts[current_step] = visit_count
             self._save_task(current_task)
 
-            max_step_visits = _int_setting(project, "max_step_visits", default=5)
+            settings = resolve_project_settings(project)
+            max_step_visits = settings.max_step_visits
             if visit_count > max_step_visits:
                 detail = (
                     f"Step '{current_step}' visited {visit_count} times "
@@ -1861,13 +1859,9 @@ class ForemanOrchestrator:
                 break
 
             task_cost = sum(run.cost_usd for run in self.store.list_runs(task_id=current_task.id))
-            cost_limit = _float_setting(
-                project,
-                "cost_limit_per_task_usd",
-                default=None,
-            )
+            cost_limit = settings.cost_limit_per_task_usd
             # 0 is the documented "off" value, and what the settings screen saves.
-            if cost_limit is not None and cost_limit > 0 and task_cost >= cost_limit:
+            if cost_limit > 0 and task_cost >= cost_limit:
                 detail = f"Task cost ${task_cost:.2f} exceeds limit ${cost_limit:.2f}"
                 run = self._create_system_run(
                     current_task,
@@ -1889,17 +1883,12 @@ class ForemanOrchestrator:
                 self._save_task(current_task)
                 break
 
-            sprint_cost_limit = _float_setting(
-                project,
-                "cost_limit_per_sprint_usd",
-                default=None,
-            )
+            sprint_cost_limit = settings.cost_limit_per_sprint_usd
             sprint_cost = float(
                 self.store.run_totals(sprint_id=current_task.sprint_id)["total_cost_usd"]
             )
             if (
-                sprint_cost_limit is not None
-                and sprint_cost_limit > 0
+                sprint_cost_limit > 0
                 and sprint_cost >= sprint_cost_limit
             ):
                 detail = (
@@ -1930,11 +1919,7 @@ class ForemanOrchestrator:
                 run.duration_ms or 0
                 for run in self.store.list_runs(task_id=current_task.id)
             )
-            time_limit_ms = _int_setting(
-                project,
-                "time_limit_per_task_ms",
-                default=0,
-            )
+            time_limit_ms = settings.time_limit_per_task_ms
             if time_limit_ms > 0 and task_duration_ms >= time_limit_ms:
                 detail = f"Task time {task_duration_ms/1000:.1f}s exceeds limit {time_limit_ms/1000:.1f}s"
                 run = self._create_system_run(
@@ -2355,7 +2340,7 @@ class ForemanOrchestrator:
             # functional). The gap is recorded once, and what is recorded for
             # the task is read from the store, so a restart changes nothing.
             if (
-                str(project.settings.get("task_selection_mode", "directed")) == "autonomous"
+                settings.task_selection_mode == "autonomous"
                 and current_task.created_by == "orchestrator"
                 and current_task.title == AUTONOMOUS_PLACEHOLDER_TITLE
                 and step_def.role in self.roles
@@ -3055,7 +3040,7 @@ class ForemanOrchestrator:
                     project.repo_path,
                     project.default_branch,
                     task.branch_name,
-                    max_chars=_int_setting(project, "review_diff_max_chars", default=16000),
+                    max_chars=resolve_project_settings(project).review_diff_max_chars,
                 )
                 if role.completion.output.extract_decision and task.branch_name
                 else ""
@@ -3565,7 +3550,7 @@ class ForemanOrchestrator:
             ),
             max_cost_usd=_run_cost_ceiling(project, role.completion.max_cost_usd),
         )
-        max_retries = _int_setting(project, "max_infra_retries", default=3)
+        max_retries = resolve_project_settings(project).max_infra_retries
 
         events: list[AgentEventRecord] = []
         message_fragments: list[str] = []
@@ -4322,7 +4307,7 @@ def resolve_step_model_selection(
     if role.agent.model:
         return ModelSelection(model=role.agent.model, source="role")
 
-    default_model = _string_setting(project, "default_model", default="")
+    default_model = resolve_project_settings(project).default_model
     if default_model:
         return ModelSelection(model=default_model, source="project_default")
 
@@ -4356,41 +4341,11 @@ def resolve_project_settings(project: Project) -> ProjectSettings:
     """
 
     try:
-        return ProjectSettings.from_raw(project.settings)
+        return settings_of(project)
     except SettingsError as exc:
         raise OrchestratorError(
             f"Project {project.id!r} has invalid settings: {exc}"
         ) from exc
-
-
-def _string_setting(project: Project, key: str, *, default: str) -> str:
-    value = project.settings.get(key, default)
-    return value if isinstance(value, str) else default
-
-
-def _int_setting(project: Project, key: str, *, default: int) -> int:
-    value = project.settings.get(key, default)
-    if isinstance(value, bool):
-        return default
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float):
-        return int(value)
-    return default
-
-
-def _float_setting(
-    project: Project,
-    key: str,
-    *,
-    default: float | None,
-) -> float | None:
-    value = project.settings.get(key, default)
-    if value is None or isinstance(value, bool):
-        return default
-    if isinstance(value, (int, float)):
-        return float(value)
-    return default
 
 
 def _optional_string(value: Any) -> str | None:
@@ -4429,7 +4384,7 @@ def _run_cost_ceiling(project: Project, role_max_cost_usd: float) -> float:
         value
         for value in (
             max(float(role_max_cost_usd or 0.0), 0.0),
-            max(_float_setting(project, "runner_max_cost_usd", default=None) or 0.0, 0.0),
+            resolve_project_settings(project).runner_max_cost_usd,
         )
         if value > 0
     ]
@@ -4443,13 +4398,9 @@ def _project_timeout_seconds(
 ) -> int:
     """Return the effective timeout window for native runs and stale-run recovery."""
 
-    setting = project.settings.get("time_limit_per_run_minutes")
-    if isinstance(setting, bool):
-        setting = None
-    if isinstance(setting, int) and setting > 0:
+    setting = resolve_project_settings(project).time_limit_per_run_minutes
+    if setting > 0:
         return setting * 60
-    if isinstance(setting, float) and setting > 0:
-        return int(setting * 60)
     if role_timeout_minutes is not None and role_timeout_minutes > 0:
         return role_timeout_minutes * 60
     return 0
@@ -4458,13 +4409,9 @@ def _project_timeout_seconds(
 def _active_run_recovery_timeout_seconds(project: Project) -> int:
     """Return the stale-run ownership window used for crash recovery."""
 
-    setting = project.settings.get("active_run_recovery_timeout_minutes")
-    if isinstance(setting, bool):
-        setting = None
-    if isinstance(setting, int) and setting > 0:
+    setting = resolve_project_settings(project).active_run_recovery_timeout_minutes
+    if setting > 0:
         return setting * 60
-    if isinstance(setting, float) and setting > 0:
-        return int(setting * 60)
 
     project_timeout = _project_timeout_seconds(project)
     default_timeout = 5 * 60

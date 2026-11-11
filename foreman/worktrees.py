@@ -42,6 +42,7 @@ from .git import (
     worktree_branch,
 )
 from .models import Project, Task
+from .settings import ProjectSettings, SettingsError, settings_of
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from .store import ForemanStore
@@ -99,7 +100,7 @@ def worktree_root(project: Project) -> Path:
     another filesystem) or relative to the repository root.
     """
 
-    configured = str(project.settings.get("worktree_root", "") or "").strip()
+    configured = _settings(project).worktree_root.strip()
     raw_path = Path(configured or DEFAULT_WORKTREE_ROOT).expanduser()
     if raw_path.is_absolute():
         return raw_path
@@ -598,20 +599,13 @@ class WorktreeManager:
 def _setup_command(project: Project) -> str:
     """Return the project's ``worktree_setup_command``, if any."""
 
-    return str(project.settings.get("worktree_setup_command", "") or "").strip()
+    return _settings(project).worktree_setup_command.strip()
 
 
 def _setup_timeout(project: Project) -> int:
     """Return the wall-clock cap for ``worktree_setup_command`` in seconds."""
 
-    raw = project.settings.get(
-        "worktree_setup_timeout_seconds", DEFAULT_SETUP_TIMEOUT_SECONDS
-    )
-    try:
-        timeout = int(raw)
-    except (TypeError, ValueError):
-        return DEFAULT_SETUP_TIMEOUT_SECONDS
-    return max(timeout, 0)
+    return _settings(project).worktree_setup_timeout_seconds
 
 
 def _fingerprint(command: str) -> str:
@@ -640,22 +634,21 @@ def _output_tail(stdout: str | None, stderr: str | None) -> str:
 def _link_paths(project: Project) -> tuple[str, ...]:
     """Return the validated ``worktree_link_paths`` setting."""
 
-    raw = project.settings.get("worktree_link_paths") or []
-    if isinstance(raw, str):
-        raw = [raw]
-    names: list[str] = []
-    for value in raw:
-        name = str(value).strip()
-        if not name:
-            continue
-        candidate = Path(name)
-        if candidate.is_absolute() or ".." in candidate.parts:
-            raise WorktreeError(
-                f"worktree_link_paths entry {name!r} must be a relative path inside "
-                "the repository."
-            )
-        names.append(name)
-    return tuple(names)
+    return _settings(project).worktree_link_paths
+
+
+def _settings(project: Project) -> ProjectSettings:
+    """Return the project's typed settings; an invalid one is a worktree error.
+
+    Callers of this module handle ``WorktreeError``, and a setting that
+    cannot be read is the same kind of problem to them as a tree that cannot
+    be made.
+    """
+
+    try:
+        return settings_of(project)
+    except SettingsError as exc:
+        raise WorktreeError(f"Project {project.id!r} has invalid settings: {exc}") from exc
 
 
 def _resolve(path: Path) -> Path:
@@ -688,12 +681,7 @@ class ReclaimOutcome:
 def max_live_worktrees(project: Project) -> int:
     """Return the project's ceiling on live task worktrees. 0 means unlimited."""
 
-    raw = project.settings.get("max_live_worktrees", DEFAULT_MAX_LIVE_WORKTREES)
-    try:
-        limit = int(raw)
-    except (TypeError, ValueError):
-        return DEFAULT_MAX_LIVE_WORKTREES
-    return max(limit, 0)
+    return _settings(project).max_live_worktrees
 
 
 def enforce_worktree_limit(

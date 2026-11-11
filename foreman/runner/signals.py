@@ -104,14 +104,6 @@ def _brace_depth(text: str) -> int:
     return depth
 
 
-def _parse_signal_line(
-    line: str,
-    *,
-    timestamp: str | None,
-) -> AgentEvent | None:
-    return _parse_signal_payload(line[len(SIGNAL_PREFIX) :].strip(), timestamp=timestamp)
-
-
 def _parse_signal_payload(
     payload_text: str,
     *,

@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .models import TASK_TYPES
+from .models import TASK_TYPES, Project
 from .policy import (
     POLICY_DECISIONS,
     POLICY_DEFAULTS,
@@ -58,6 +58,18 @@ def changed_host_level_settings(
 
 class SettingsError(ValueError):
     """Raised when project settings fail validation."""
+
+
+def settings_of(project: Project) -> ProjectSettings:
+    """Return a project's settings, validated and typed.
+
+    This is the one way engine code reads a setting. The raw ``settings``
+    dict on a project is what is stored; reading it directly means repeating
+    the default and the type handling at every call site, and they drift.
+    Raises ``SettingsError`` when a stored value is invalid.
+    """
+
+    return ProjectSettings.from_raw(project.settings or {})
 
 
 @dataclass
@@ -116,7 +128,8 @@ class ProjectSettings:
     triage: str = "human"
     notification: str = "attention"
     policy_rules: dict[str, dict[str, str]] = field(default_factory=dict)
-    runner_max_cost_usd: float = 1000.0
+    # Per-run cost ceiling that can lower a role's; 0 means the role's applies.
+    runner_max_cost_usd: float = 0.0
     runner_permission_mode: str = "auto"
     default_model: str = ""
     # Manager (meta-agent) model — see review Phase 2.
@@ -180,7 +193,7 @@ class ProjectSettings:
             notification=_validate_policy_default(raw, "notification"),
             policy_rules=_validate_policy_rules(raw.get("policy_rules")),
             runner_max_cost_usd=_validate_non_negative_float(
-                raw.get("runner_max_cost_usd"), default=1000.0
+                raw.get("runner_max_cost_usd"), default=0.0
             ),
             runner_permission_mode=str(raw.get("runner_permission_mode", "auto") or "auto"),
             default_model=str(raw.get("default_model") or ""),

@@ -49,7 +49,7 @@ from .scaffold import (
     scaffold_repository,
 )
 from .policy import POLICY_DECISIONS, POLICY_VALUES, PolicyMatrix, is_valid_value
-from .settings import ProjectSettings, SettingsError
+from .settings import ProjectSettings, SettingsError, settings_of
 from .api_tokens import API_TOKEN_SCOPES, ApiTokenError
 from .notifications import (
     ATTENTION,
@@ -1150,7 +1150,7 @@ def handle_init(args: argparse.Namespace) -> int:
             existing.default_branch if existing is not None else DEFAULT_DEFAULT_BRANCH
         )
         test_command = args.test_command or (
-            str(existing.settings.get("test_command", ""))
+            settings_of(existing).test_command
             if existing is not None
             else DEFAULT_TEST_COMMAND
         )
