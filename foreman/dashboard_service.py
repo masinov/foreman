@@ -32,6 +32,7 @@ from .engine_control import (
     spawn_serve,
 )
 from .api_tokens import INTAKE_SCOPE
+from .guidance import guidance_notes
 from .models import (
     AUTONOMY_LEVELS,
     ApiToken,
@@ -912,6 +913,18 @@ class DashboardService:
             "awaiting_human_gate": self._at_human_gate(task, gates),
             "blocked_kind": blocked_kind(task, gates),
             "completion_evidence": _serialize_completion_evidence(task.completion_evidence),
+            "guidance": [
+                {
+                    "event_id": note.event_id,
+                    "text": note.text,
+                    "recorded_at": note.recorded_at,
+                    "delivered": note.delivered,
+                    "delivered_at": note.delivered_at,
+                    "delivered_role": note.delivered_role,
+                    "delivered_step": note.delivered_step,
+                }
+                for note in guidance_notes(self.store.list_events(task_id=task.id))
+            ],
             "source": _serialize_task_source(task),
             "policy": describe_resolution(
                 PolicyMatrix.for_project(project).resolve_task(task)
@@ -1484,7 +1497,12 @@ class DashboardService:
         }
 
     def create_human_message(self, task_id: str, *, text: str) -> dict[str, Any]:
-        """Persist one human guidance message for the selected task."""
+        """Record one guidance note for a task.
+
+        Recording is all this does. The engine puts the note into the prompt
+        of the task's next agent step and marks it delivered then; a finished
+        task has no next step, and the response says so instead of "sent".
+        """
 
         task = self._require_task(task_id)
         normalized_text = text.strip()
@@ -1504,10 +1522,18 @@ class DashboardService:
             payload={"text": normalized_text},
         )
         self.store.save_event(event)
+        will_deliver = task.status not in {"done", "cancelled"}
         return {
-            "status": "sent",
+            "status": "recorded",
             "event_id": event.id,
             "task_id": task_id,
+            "will_deliver": will_deliver,
+            "message": (
+                "Recorded. The next agent step for this task will read it."
+                if will_deliver
+                else f"Recorded in the task's history. The task is {task.status}, "
+                "so no agent step will read it."
+            ),
         }
 
     def _project_workflow_step_ids(self, project_id: str) -> set[str] | None:

@@ -189,9 +189,11 @@ function createMockServices() {
       deferred: true,
     }),
     createHumanMessage: vi.fn().mockResolvedValue({
-      status: "sent",
+      status: "recorded",
       task_id: "task-2",
       event_id: "event-2",
+      will_deliver: true,
+      message: "Recorded. The next agent step for this task will read it.",
     }),
     openSprintStream: vi.fn().mockImplementation((_sprintId, _options, handlers) => {
       streamHandlers.onEvent = handlers.onEvent;
@@ -344,7 +346,7 @@ describe("React dashboard foundation", () => {
     fireEvent.click(await screen.findByText("Build the frontend"));
     const textarea = await screen.findByLabelText("Human guidance");
     fireEvent.change(textarea, { target: { value: "Add a regression test for the stream reconnect path." } });
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add guidance" }));
 
     await waitFor(() => {
       expect(services.createHumanMessage).toHaveBeenCalledWith(
@@ -352,6 +354,10 @@ describe("React dashboard foundation", () => {
         "Add a regression test for the stream reconnect path.",
       );
     });
+    // The page says what happened to the note instead of "sent".
+    expect(
+      await screen.findByText("Recorded. The next agent step for this task will read it."),
+    ).toBeInTheDocument();
   });
 
   it("updates the activity feed when the sprint stream emits a new event", async () => {

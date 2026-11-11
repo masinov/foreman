@@ -37,6 +37,7 @@ from .git import (
 )
 from .leases import generate_lease_token
 from .logs import compact_payload, event_log_level, get_logger, log_event
+from .guidance import GUIDANCE_DELIVERED_EVENT, pending_guidance, prompt_with_guidance
 from .judge import NOT_JUDGED, judge_criteria, truncate_diff
 from .models import CompletionEvidence, Event, HumanGateDecision, Lease, Project, Run, Sprint, TASK_COMPLEXITIES, Task, TokenUsage, utc_now_text
 from .task_lease import TaskLeaseHeartbeat
@@ -2131,6 +2132,11 @@ class ForemanOrchestrator:
                     carried_output,
                     context_projection=context_projection,
                 )
+                # Notes a person wrote for this task since the last agent step
+                # go into this prompt, and are marked delivered once the run
+                # that carries them exists.
+                guidance = pending_guidance(self.store.list_events(task_id=current_task.id))
+                prompt = prompt_with_guidance(prompt, guidance)
                 model_selection = resolve_step_model_selection(
                     task=current_task,
                     role=role,
@@ -2179,6 +2185,16 @@ class ForemanOrchestrator:
                     {"text": prompt},
                     role_id=role.id,
                 )
+                if guidance:
+                    self._emit_event(
+                        run,
+                        GUIDANCE_DELIVERED_EVENT,
+                        {
+                            "message_event_ids": [note.event_id for note in guidance],
+                            "role": role.id,
+                            "step": current_step,
+                        },
+                    )
                 self._emit_event(
                     run,
                     "workflow.step_started",

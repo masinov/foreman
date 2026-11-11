@@ -4102,6 +4102,25 @@ select.form-input {
   color: var(--red);
 }
 
+.guidance-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.guidance-note {
+  padding-left: 8px;
+  border-left: 2px solid var(--amber);
+  font-size: 12px;
+}
+
+.guidance-note.delivered { border-left-color: var(--green); }
+.guidance-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.guidance-state { margin-top: 2px; color: var(--text-tertiary); font-size: 11px; }
+
 .evidence-outstanding {
   margin-bottom: 6px;
   font-size: 12px;

@@ -8,6 +8,7 @@ import {
   eventMatchesFilter,
   formatBlockedKind,
   formatEngineSummary,
+  formatGuidanceState,
   formatEventSummary,
   formatHeartbeatAge,
   formatSelectionMode,
@@ -198,5 +199,23 @@ describe("evidenceFacts", () => {
     const rows = evidenceFacts({ criteria_count: 3, criteria_addressed: 3, judged_by: "heuristic" });
     expect(rows[2].tone).toBe("none");
     expect(rows[2].text).toContain("not checked");
+  });
+});
+
+describe("guidance", () => {
+  it("says whether an agent step has read a note", () => {
+    expect(formatGuidanceState({ delivered: false })).toBe("Waiting for the next agent step");
+    expect(
+      formatGuidanceState({ delivered: true, delivered_role: "developer", delivered_step: "develop" }),
+    ).toBe("Read by developer at develop");
+  });
+
+  it("summarises the delivery event", () => {
+    expect(
+      formatEventSummary({
+        event_type: "human.message_delivered",
+        payload: { message_event_ids: ["a", "b"], role: "developer", step: "develop" },
+      }),
+    ).toBe("Guidance read by developer @ develop (2 notes)");
   });
 });
