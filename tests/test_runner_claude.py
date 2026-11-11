@@ -495,6 +495,35 @@ class ClaudeCodeRunnerTests(unittest.TestCase):
         self.assertIsNone(exc.retry_after)
         self.assertEqual(exc.payload["session_id"], "sess-q2")
 
+    def test_an_error_that_only_mentions_quota_or_rate_limits_is_not_a_quota_stop(self) -> None:
+        for text in (
+            "The GitHub API rate limit was exceeded while fetching the issue.",
+            "Disk quota exceeded writing build/output.bin",
+        ):
+            with self.subTest(text=text):
+                events = self._run_lines(
+                    [json.dumps({"type": "result", "is_error": True, "session_id": "s", "result": text})]
+                )
+                self.assertEqual(events[-1].event_type, "agent.error")
+                self.assertNotIn("quota_exhausted", events[-1].payload)
+
+    def test_an_allowed_rate_limit_notice_overrules_the_error_wording(self) -> None:
+        allowed = {
+            "type": "rate_limit_event",
+            "rate_limit_info": {"status": "allowed", "rateLimitType": "five_hour"},
+        }
+        result = {
+            "type": "result",
+            "is_error": True,
+            "session_id": "s",
+            "result": "The tool said: you've hit your usage limit.",
+        }
+
+        events = self._run_lines([json.dumps(allowed), json.dumps(result)])
+
+        self.assertEqual(events[-1].event_type, "agent.error")
+        self.assertNotIn("quota_exhausted", events[-1].payload)
+
     def test_ordinary_error_results_stay_agent_errors(self) -> None:
         events = self._run_lines(
             [json.dumps({"type": "result", "is_error": True, "session_id": "s", "result": "Tool crashed."})]

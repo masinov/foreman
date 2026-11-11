@@ -3589,6 +3589,7 @@ class ForemanOrchestrator:
         detail = ""
         final_session_id = session_id
         cost_usd = 0.0
+        aborted_cost_usd = 0.0
         token_count = 0
         token_usage: TokenUsage | None = None
         duration_ms: int | None = None
@@ -3656,6 +3657,19 @@ class ForemanOrchestrator:
                         saw_final_phase = True
                     elif not saw_final_phase:
                         final_message = text
+                continue
+
+            if event.event_type == "agent.infra_error":
+                # The attempt that just failed was charged for; keep its cost
+                # on the books and start the next attempt's count from zero.
+                aborted_cost_usd += _coerce_float_value(
+                    event.payload.get("cost_usd"), default=cost_usd
+                )
+                cost_usd = 0.0
+                token_count = 0
+                dropped = _optional_string(event.payload.get("dropped_session_id"))
+                if dropped and final_session_id == dropped:
+                    final_session_id = None
                 continue
 
             if event.event_type == "agent.cost_update":
@@ -3766,7 +3780,7 @@ class ForemanOrchestrator:
             detail=detail,
             status=final_status,
             session_id=final_session_id,
-            cost_usd=cost_usd,
+            cost_usd=cost_usd + aborted_cost_usd,
             token_count=token_count,
             token_usage=token_usage,
             duration_ms=duration_ms,
