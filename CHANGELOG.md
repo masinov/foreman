@@ -9,6 +9,16 @@ memory changes rather than versioned product releases.
 
 ### Sprint 58 — frontend rebuild
 
+- **feat, folders in the Changes tab** (`feat/changes-folder-breadcrumb`),
+  asked for by the owner. From ten changed files up, the list offers the
+  folders directly inside the current one, each with its file count and
+  lines; picking one narrows the list to it and a breadcrumb ("All files /
+  foreman / dashboard") widens it again. The picked file stays picked when
+  the list is narrowed and while a running agent is still committing, and a
+  diff is read again only when the branch's commit moves, not on every event
+  of a running task. On the Activity tab the run's title is the step alone;
+  who ran it is a detail beside it.
+
 - **fix, section titles on a rule; the Changes tab laid out side by side**
   (`fix/section-rules-and-changes-layout`), reported by the owner. A section's
   title sat above its content with nothing joining them. It now sits on a
