@@ -2,6 +2,7 @@ import React, { useState } from "react";
 
 import { useApiClient } from "../../api/ApiProvider";
 import { errorSentence } from "../../api/client";
+import { GATE_RESOLUTIONS, resolveGate } from "../../api/gates";
 import { listNeedsYou, NEEDS_YOU_KINDS } from "../../api/needsYou";
 import { approveTask } from "../../api/tasks";
 import { useDelayedFlag } from "../../api/useResource";
@@ -25,7 +26,11 @@ const KIND_WORDS = {
   [NEEDS_YOU_KINDS.approvePlan]: "Approve plan",
   [NEEDS_YOU_KINDS.approveMerge]: "Approve merge",
   [NEEDS_YOU_KINDS.unblock]: "Unblock",
+  [NEEDS_YOU_KINDS.settleOrder]: "Settle sprint order",
 };
+
+const itemId = (item) => item.gate?.id ?? item.task_id;
+const itemName = (item) => item.task_key || item.task_title || "the sprint order";
 
 const TESTS_WORDS = {
   passed: "tests passed",
@@ -54,7 +59,19 @@ function MergeFacts({ evidence }) {
   );
 }
 
+/** The order a manager proposes for the sprints, and why. */
+function OrderProposal({ gate }) {
+  const order = gate.suggested_order.map((entry) => entry.title || entry.sprint_id).join(" → ");
+  return (
+    <span className="quiet">
+      {order ? `Proposed: ${order}` : "No order proposed"}
+      {gate.suggested_reason ? ` · ${gate.suggested_reason}` : ""}
+    </span>
+  );
+}
+
 function Detail({ item }) {
+  if (item.gate) return <OrderProposal gate={item.gate} />;
   if (item.kind === NEEDS_YOU_KINDS.approveMerge) return <MergeFacts evidence={item.evidence} />;
   return <span className="quiet">{item.sprint_title || ""}</span>;
 }
@@ -79,12 +96,12 @@ export function NeedsYou({ projectId = null, note, empty, onChanged }) {
   const [approvingId, setApprovingId] = useState(null);
   const [notice, setNotice] = useState(null);
 
-  async function approve(item) {
-    setApprovingId(item.task_id);
+  async function decide(item, settle) {
+    setApprovingId(itemId(item));
     setNotice(null);
     try {
-      const result = await approveTask(client, item.task_id);
-      setNotice({ error: false, text: result?.message || `Approved ${item.task_key || item.task_title}.` });
+      const result = await settle();
+      setNotice({ error: false, text: result.text });
       setExpanded(false);
       list.reload();
       onChanged?.();
@@ -94,6 +111,23 @@ export function NeedsYou({ projectId = null, note, empty, onChanged }) {
       setApprovingId(null);
     }
   }
+
+  const approve = (item) =>
+    decide(item, async () => {
+      const result = await approveTask(client, item.task_id);
+      return { text: result?.message || `Approved ${itemName(item)}.` };
+    });
+
+  const settleOrder = (item, resolution) =>
+    decide(item, async () => {
+      await resolveGate(client, item.gate.id, resolution);
+      return {
+        text:
+          resolution === GATE_RESOLUTIONS.accept
+            ? "Sprint order accepted. The sprints now run in the proposed order."
+            : "Sprint order rejected. The sprints keep their order.",
+      };
+    });
 
   function showAll() {
     const missing = (list.total ?? 0) - (list.items?.length ?? 0);
@@ -120,29 +154,60 @@ export function NeedsYou({ projectId = null, note, empty, onChanged }) {
       key: "title",
       header: "Title",
       className: "needs-you__title",
-      render: (item) => (
-        <Link className="row-link" href={paths.task(item.task_id)}>
-          {item.task_title}
-        </Link>
-      ),
+      render: (item) =>
+        item.gate ? (
+          <Link className="row-link" href={paths.sprint(item.sprint_id)}>
+            {item.gate.conflict_description}
+          </Link>
+        ) : (
+          <Link className="row-link" href={paths.task(item.task_id)}>
+            {item.task_title}
+          </Link>
+        ),
     },
     { key: "detail", header: "What was checked", className: "needs-you__checked", render: (item) => <Detail item={item} /> },
     {
       key: "action",
       header: "Action",
       className: "needs-you__action",
-      render: (item) =>
-        item.kind === NEEDS_YOU_KINDS.approveMerge ? (
+      render: (item) => {
+        if (item.gate) {
+          const busy = approvingId === item.gate.id;
+          return (
+            <span className="needs-you__decide">
+              <Button
+                variant="gold-outline"
+                inRow
+                disabled={approvingId !== null}
+                aria-label="Accept the proposed sprint order"
+                onClick={() => settleOrder(item, GATE_RESOLUTIONS.accept)}
+              >
+                {busy ? "Saving…" : "Accept"}
+              </Button>
+              <Button
+                variant="quiet"
+                inRow
+                disabled={approvingId !== null}
+                aria-label="Reject the proposed sprint order"
+                onClick={() => settleOrder(item, GATE_RESOLUTIONS.reject)}
+              >
+                Reject
+              </Button>
+            </span>
+          );
+        }
+        return item.kind === NEEDS_YOU_KINDS.approveMerge ? (
           <Button
             variant="gold-outline"
             inRow
             disabled={approvingId !== null}
-            aria-label={`Approve ${item.task_key || item.task_title}`}
+            aria-label={`Approve ${itemName(item)}`}
             onClick={() => approve(item)}
           >
             {approvingId === item.task_id ? "Approving…" : "Approve"}
           </Button>
-        ) : null,
+        ) : null;
+      },
     },
   ].filter(Boolean);
 
@@ -164,7 +229,7 @@ export function NeedsYou({ projectId = null, note, empty, onChanged }) {
       {items && items.length === 0 ? <p className="empty">{empty}</p> : null}
       {items && items.length > 0 ? (
         <>
-          <Table caption="Needs you" columns={columns} rows={visible} rowKey={(item) => item.task_id} tinted hideHeader />
+          <Table caption="Needs you" columns={columns} rows={visible} rowKey={itemId} tinted hideHeader />
           {total > NEEDS_YOU_CAP ? (
             <Button
               variant="quiet"
