@@ -1,0 +1,89 @@
+/*
+ * Design tokens from docs/design/dashboard-v7/README.md ("Look").
+ * This is the only file in the frontend that may name a colour, a size, a
+ * radius or a line weight. Everything else reads these properties.
+ */
+:root {
+  /* Surfaces */
+  --color-ground: #0c0c0e;
+  --color-bar: #101013;
+  --color-inset: #101013;
+  --color-tinted: #131317;
+  --color-selected: #1b1b20;
+
+  /* Text */
+  --color-text: #dedcd8;
+  --color-text-secondary: #a3a19c;
+  --color-text-quiet: #85837e;
+
+  /* Meaning */
+  --color-gold: #c9a55a;
+  --color-gold-outline: #6d5a2f;
+  --color-green: #6fbf9d;
+  --color-red: #e08a8a;
+  --color-blue: #7fb4d2;
+  --color-on-gold: #0c0c0e;
+
+  /* Lines: three weights of colour, one width */
+  --color-line-structural: #26262b;
+  --color-line-header: #2c2c33;
+  --color-line-row-tinted: #202026;
+  --color-line-row: #18181c;
+  --color-border-control: #34343a;
+  --color-border-input: #2c2c32;
+  --line-width: 1px;
+  --focus-ring-width: 2px;
+
+  /* Type */
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-serif: "Source Serif 4", Georgia, serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --font-size-body: 13px;
+  --font-size-title: 21px;
+  --font-size-mono: 11.5px;
+  --font-size-section: 13px;
+  --font-size-table-header: 11px;
+  --font-size-control: 12px;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-strong: 600;
+  --line-height-body: 1.5;
+  --line-height-tight: 1.25;
+
+  /* Controls */
+  --control-height: 26px;
+  --control-height-row: 24px;
+  --control-padding-inline: 10px;
+  --radius: 3px;
+
+  /* Status */
+  --status-dot-size: 6px;
+
+  /* Layout. Custom properties cannot be read inside a media query, so the
+     one narrow-screen breakpoint (640px) is written in shell.css; this
+     records it. */
+  --breakpoint-narrow: 640px;
+  --page-max-width: 1200px;
+  --page-gutter: 24px;
+  --page-gutter-narrow: 12px;
+  --topbar-height: 44px;
+  --manager-width: 380px;
+  --tab-underline-width: 2px;
+
+  /* Spacing scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+
+  /* Table cells */
+  --cell-padding-block: 9px;
+  --cell-padding-inline: 10px;
+  --placeholder-bar-height: 9px;
+  --placeholder-bar-width: 60%;
+  --column-min-width: 120px;
+  --table-min-width: 720px;
+}

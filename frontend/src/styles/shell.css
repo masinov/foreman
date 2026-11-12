@@ -1,0 +1,108 @@
+/* The frame: top bar, page container, manager side bar slot. */
+.skip-link {
+  position: absolute;
+  left: var(--space-2);
+  top: calc(-1 * var(--topbar-height));
+  padding: var(--space-1) var(--space-2);
+  background: var(--color-selected);
+  border-radius: var(--radius);
+}
+
+.skip-link:focus {
+  top: var(--space-2);
+}
+
+.topbar {
+  background: var(--color-bar);
+  border-bottom: var(--line-width) solid var(--color-line-structural);
+}
+
+.topbar__inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--topbar-height);
+  padding-inline: var(--page-gutter);
+}
+
+.topbar__word {
+  font-weight: var(--font-weight-strong);
+}
+
+.topbar__divider {
+  color: var(--color-text-quiet);
+}
+
+.topbar__right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-left: auto;
+}
+
+.topbar__link {
+  color: var(--color-text-secondary);
+}
+
+.topbar__link[aria-current="page"] {
+  color: var(--color-text);
+}
+
+.breadcrumb__list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.breadcrumb__item + .breadcrumb__item::before {
+  content: "/";
+  margin-right: var(--space-2);
+  color: var(--color-text-quiet);
+}
+
+.breadcrumb__link {
+  color: var(--color-text-secondary);
+}
+
+.breadcrumb__current {
+  color: var(--color-text);
+}
+
+.shell__body {
+  display: flex;
+  align-items: flex-start;
+}
+
+.page {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: var(--page-max-width);
+  margin-inline: auto;
+  padding: var(--space-5) var(--page-gutter) var(--space-7);
+}
+
+.page:focus {
+  outline: none;
+}
+
+/* Filled by the manager slice; closed until then. */
+.manager-slot {
+  flex: 0 0 var(--manager-width);
+  border-left: var(--line-width) solid var(--color-line-structural);
+}
+
+.manager-slot[hidden] {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .topbar__inner,
+  .page {
+    padding-inline: var(--page-gutter-narrow);
+  }
+}

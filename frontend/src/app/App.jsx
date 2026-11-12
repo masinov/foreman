@@ -1,0 +1,43 @@
+import React, { useEffect } from "react";
+
+import { NotFoundPage } from "../pages/status/NotFoundPage";
+import { RebuildingPage } from "../pages/status/RebuildingPage";
+import { BUILT_PAGES } from "./pages";
+import { paths } from "./paths";
+import { Link, useRoute } from "./router";
+import { Shell } from "./Shell";
+
+function TopBarRight({ route }) {
+  if (route.level !== "workspace") return null;
+  const current = route.name === "workspace-settings";
+  return (
+    <Link className="topbar__link" href={paths.workspaceSettings()} aria-current={current ? "page" : undefined}>
+      Workspace settings
+    </Link>
+  );
+}
+
+export function App() {
+  const { route, params } = useRoute();
+
+  useEffect(() => {
+    document.title = `${route.title} · Foreman`;
+  }, [route]);
+
+  let page;
+  if (route.name === "not-found") {
+    page = <NotFoundPage />;
+  } else if (BUILT_PAGES[route.name]) {
+    const Page = BUILT_PAGES[route.name];
+    page = <Page params={params} />;
+  } else {
+    page = <RebuildingPage route={route} params={params} />;
+  }
+
+  return (
+    <Shell topBarRight={<TopBarRight route={route} />}>
+      {/* A new key per address resets page state when the route changes. */}
+      <React.Fragment key={`${route.name}:${JSON.stringify(params)}`}>{page}</React.Fragment>
+    </Shell>
+  );
+}
