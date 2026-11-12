@@ -14,6 +14,15 @@ const ENGINE_VERBS = {
   [MILESTONE_KINDS.engineStopped]: "stopped",
 };
 
+// A finished sprint says how many tasks it merged; a sprint without a count
+// says nothing rather than guess.
+function sprintDetail(milestone) {
+  if (milestone.kind !== MILESTONE_KINDS.sprintFinished) return null;
+  const count = milestone.merged_count;
+  if (count === null || count === undefined) return null;
+  return `${count} ${count === 1 ? "task" : "tasks"} merged`;
+}
+
 /**
  * What a milestone says: `{ kind, text, href }`. `kind` is the one-word
  * group (Sprint, Merge, Engine); `short` drops a sprint title's subtitle.
@@ -27,6 +36,8 @@ export function describeMilestone(milestone, { short = false } = {}) {
       return {
         kind: "Sprint",
         text: `${head} ${verb}${rest && !short ? `: ${rest}` : ""}`,
+        detail: sprintDetail(milestone),
+        mono: false,
         href: milestone.sprint_id ? paths.sprint(milestone.sprint_id) : null,
       };
     }
@@ -35,6 +46,8 @@ export function describeMilestone(milestone, { short = false } = {}) {
       return {
         kind: "Merge",
         text: short || !milestone.task_title ? `${key} merged` : `${key} merged: ${milestone.task_title}`,
+        detail: milestone.sha ? milestone.sha.slice(0, 7) : null,
+        mono: true,
         href: milestone.task_id ? paths.task(milestone.task_id) : null,
       };
     }
@@ -43,6 +56,8 @@ export function describeMilestone(milestone, { short = false } = {}) {
       return {
         kind: "Engine",
         text: `Engine ${verb}${milestone.actor ? ` by ${milestone.actor}` : ""}`,
+        detail: null,
+        mono: false,
         href: null,
       };
     }
@@ -50,13 +65,26 @@ export function describeMilestone(milestone, { short = false } = {}) {
 }
 
 export function MilestoneText({ milestone, short = false }) {
-  const { text, href } = describeMilestone(milestone, { short });
-  return href ? (
+  const { text, href, detail, mono } = describeMilestone(milestone, { short });
+  const label = href ? (
     <Link className="row-link" href={href}>
       {text}
     </Link>
   ) : (
     <span>{text}</span>
+  );
+  if (short || !detail) return label;
+  return (
+    <>
+      {label}{" "}
+      {mono ? (
+        <Mono quiet title="Merge commit">
+          {detail}
+        </Mono>
+      ) : (
+        <span className="milestones__detail">{detail}</span>
+      )}
+    </>
   );
 }
 

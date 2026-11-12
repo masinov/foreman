@@ -372,6 +372,7 @@ class BuiltinExecutor:
                             "branch": task.branch_name,
                             "target": project.default_branch,
                             "worktree": str(integration_path),
+                            "sha": result.sha,
                         },
                     ),
                 ),
