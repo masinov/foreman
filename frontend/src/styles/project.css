@@ -30,7 +30,12 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-2) var(--space-5);
+  gap: var(--space-2);
+}
+
+/* A link dressed as a button keeps the button's colours when pointed at. */
+a.button:hover {
+  color: var(--color-text);
 }
 
 .project__page-link {

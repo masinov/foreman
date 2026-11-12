@@ -44,6 +44,11 @@ describe("the project page head", () => {
     await renderProject(path);
     expect(document.querySelector(".facts")).toHaveTextContent("/srv/foreman · main · development workflow");
     expect(screen.getByRole("link", { name: "Project settings" })).toHaveAttribute("href", "/dashboard/projects/foreman/settings");
+    // Other pages of the project are buttons at the top right, never tabs.
+    const pages = screen.getByRole("navigation", { name: "Project pages" });
+    const backlog = within(pages).getByRole("link", { name: "Backlog 4" });
+    expect(backlog).toHaveAttribute("href", "/dashboard/projects/foreman/backlog");
+    expect(backlog).toHaveClass("button");
 
     expect(within(engineSection()).getByText("Running")).toBeInTheDocument();
     expect(within(engineSection()).getByText(/Working on/)).toHaveTextContent("Working on FOR-13, develop.");
@@ -57,7 +62,6 @@ describe("the project page head", () => {
     const tabs = screen.getByRole("navigation", { name: "Project" });
     expect(within(tabs).getAllByRole("link").map((link) => [link.textContent, link.getAttribute("href")])).toEqual([
       ["Sprints", "/dashboard/projects/foreman"],
-      ["Backlog 4", "/dashboard/projects/foreman/backlog"],
       ["Activity", "/dashboard/projects/foreman/activity"],
     ]);
     expect(within(tabs).getByRole("link", { name: currentTab })).toHaveAttribute("aria-current", "page");
