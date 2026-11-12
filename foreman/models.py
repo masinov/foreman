@@ -323,6 +323,9 @@ class Run:
     model: str | None = None
     session_id: str | None = None
     branch_name: str | None = None
+    # The task branch's head when an agent run finished; None for runs that
+    # have no branch to read (system runs, a branch that no longer exists).
+    commit_sha: str | None = None
     prompt_text: str | None = None
     cost_usd: float = 0.0
     # Fresh input plus output tokens; the cache split is in ``token_usage``.

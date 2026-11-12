@@ -25,6 +25,15 @@ memory changes rather than versioned product releases.
   not find it. It is listed between Sprints and Activity again, with its
   count, and opens the backlog's own page.
 
+- **feat, a run records the commit it left**
+  (`feat/task-record-the-commit-each-run-left-so-task-steps-ca`): design 05
+  shows the Develop step as "Committed b232eb1", but runs carried no commit.
+  Migration 23 adds `runs.commit_sha`; the engine writes the task branch's
+  head when an agent run completes. `GET /tasks/{id}` runs and
+  `GET /tasks/{id}/runs` return `commit_sha`. Overview's Steps say
+  "Committed <sha>" when a step's last run moved the branch, and Activity has a
+  Commit column.
+
 - **fix, the backlog is reached from the project's title row**
   (`fix/backlog-link-in-the-project-title-row`): the owner found the line
   under the sprint queue a strange way to reach it. "Backlog" with its count

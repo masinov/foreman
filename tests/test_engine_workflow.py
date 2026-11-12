@@ -33,6 +33,7 @@ class WorkflowExecutionTests(OrchestratorTestCase):
         with ForemanStore(db_path) as store:
             store.initialize()
             project, _, task = self.seed_project(store, repo_path=repo_path)
+            left_commits: list[str] = []
 
             def developer_handler(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
                 self.assertIsNone(carried_output)
@@ -41,6 +42,9 @@ class WorkflowExecutionTests(OrchestratorTestCase):
                 self.write_text(self.work_dir(task, repo_path) / "feature.txt", "implemented\n")
                 self.write_text(self.work_dir(task, repo_path) / "ready.txt", "ready\n")
                 self.commit_all(self.work_dir(task, repo_path), "feat: implement workflow slice")
+                left_commits.append(
+                    self.git(self.work_dir(task, repo_path), "rev-parse", "HEAD").stdout.strip()
+                )
                 return AgentExecutionResult(
                     outcome="done",
                     detail=(
@@ -97,6 +101,13 @@ class WorkflowExecutionTests(OrchestratorTestCase):
                 [r.outcome for r in agent_runs],
                 ["done", "success", "approve", "approve", "success", "success"],
             )
+            # An agent run records the commit it left on the task branch.
+            develop_run = next(r for r in agent_runs if r.workflow_step == "develop")
+            self.assertEqual(develop_run.commit_sha, left_commits[0])
+            # System runs have no agent to credit with a commit.
+            self.assertTrue(all(
+                r.commit_sha is None for r in runs if r.role_id == "_builtin:orchestrator"
+            ))
 
             event_types = [event.event_type for event in store.list_events(task_id=task.id)]
             self.assertIn("engine.test_run", event_types)

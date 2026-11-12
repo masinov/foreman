@@ -781,4 +781,11 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         ON proposals(turn_id) WHERE turn_id IS NOT NULL;
         """,
     ),
+    (
+        23,
+        "runs: the commit the task branch pointed at when the run finished",
+        """
+        ALTER TABLE runs ADD COLUMN commit_sha TEXT;
+        """,
+    ),
 ]

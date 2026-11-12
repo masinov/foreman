@@ -258,8 +258,22 @@ class TaskReadsCase(unittest.TestCase):
         first = page["runs"][0]
         self.assertEqual((first["step"], first["role_id"], first["model"]), ("develop", "developer", "m"))
         self.assertEqual((first["cost_usd"], first["tokens"], first["duration_ms"]), (0.5, 10, 1000))
+        self.assertIsNone(first["commit_sha"])
         self.assertEqual(self.get("/api/v1/tasks/t/runs?limit=0").status_code, 400)
         self.assertEqual(self.get("/api/v1/tasks/nope/runs").status_code, 404)
+
+    def test_runs_name_the_commit_they_left(self) -> None:
+        self.task()
+        self.add_runs(2)
+        run = self.store.get_run("r1")
+        run.commit_sha = "b232eb1" + "0" * 33
+        self.store.save_run(run)
+        runs = {r["id"]: r for r in self.get("/api/v1/tasks/t/runs").json()["runs"]}
+        self.assertEqual(runs["r1"]["commit_sha"], "b232eb1" + "0" * 33)
+        self.assertIsNone(runs["r0"]["commit_sha"])
+        detail = {r["id"]: r for r in self.get("/api/v1/tasks/t").json()["runs"]}
+        self.assertEqual(detail["r1"]["commit_sha"], "b232eb1" + "0" * 33)
+        self.assertIsNone(detail["r0"]["commit_sha"])
 
     def test_run_output_has_prompt_and_transcript(self) -> None:
         self.task()

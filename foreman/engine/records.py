@@ -179,6 +179,7 @@ class RunRecords:
         duration_ms: int | None = None,
         retry_count: int | None = None,
         failure_type: str | None = None,
+        commit_sha: str | None = None,
     ) -> None:
         run.status = status
         run.outcome = outcome
@@ -195,6 +196,8 @@ class RunRecords:
             run.token_usage = token_usage
         if retry_count is not None:
             run.retry_count = retry_count
+        if commit_sha is not None:
+            run.commit_sha = commit_sha
         run.duration_ms = duration_ms
         run.completed_at = utc_now_text()
         self.store.save_run(run)

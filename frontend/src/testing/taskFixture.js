@@ -12,6 +12,9 @@ export const diffUrl = (path) => `GET /api/v1/tasks/${TASK_ID}/changes/diff?path
 export const outputUrl = (runId) => `GET /api/v1/runs/${runId}/output`;
 export const post = (action) => `POST /api/v1/tasks/${TASK_ID}/${action}`;
 
+export const COMMIT = "b232eb1c0ffee00000000000000000000000000";
+const at = (minute) => on("11-11").replace(":00:00Z", `:0${minute}:00Z`);
+
 export function run(id, step, fields = {}) {
   return {
     id,
@@ -63,9 +66,10 @@ export function taskDetail(fields = {}) {
     },
     totals: { run_count: 4, total_cost_usd: 0.72 },
     runs: [
-      run("run-1", "develop", { outcome: "done", duration_ms: 64000 }),
-      run("run-2", "test", { outcome: "passed", duration_ms: 114200 }),
-      run("run-3", "review", { outcome: "approve", role_id: "code_reviewer" }),
+      run("run-1", "develop", { outcome: "done", duration_ms: 64000, started_at: at(1), commit_sha: COMMIT }),
+      run("run-2", "test", { outcome: "passed", duration_ms: 114200, started_at: at(2) }),
+      // A reviewer leaves the branch where the developer left it.
+      run("run-3", "review", { outcome: "approve", role_id: "code_reviewer", started_at: at(3), commit_sha: COMMIT }),
     ],
     ...fields,
   };
@@ -173,7 +177,7 @@ export function outputPayload(runId, text, fields = {}) {
 }
 
 export function taskRoutes({ task = taskDetail(), checks = checksPayload(), changes = changesPayload(), runs = null } = {}) {
-  const runList = runs ?? [runItem("run-3", "review", { outcome: "approve" }), runItem("run-2", "test", { backend: "builtin", model: null })];
+  const runList = runs ?? [runItem("run-3", "review", { outcome: "approve", commit_sha: COMMIT }), runItem("run-2", "test", { backend: "builtin", model: null })];
   return {
     ...sprintRoutes(),
     [TASK_URL]: task,

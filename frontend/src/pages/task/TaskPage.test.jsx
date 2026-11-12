@@ -326,7 +326,7 @@ describe("Overview", () => {
       .slice(1)
       .map((row) => within(row).getAllByRole("cell").map((cell) => cell.textContent));
     expect(rows).toEqual([
-      ["Develop", "Done in 64 s", "sonnet-5-5", "1"],
+      ["Develop", "Committed b232eb1", "sonnet-5-5", "1"],
       ["Test", "Passed in 114.2 s", "engine", "1"],
       ["Review", "Approved in 7 s", "sonnet-5-5", "1"],
       ["Merge approval", "Waiting for you", "a person", ""],
@@ -626,6 +626,9 @@ describe("Activity", () => {
     expect(rows.map((row) => within(row).getAllByRole("cell")[1].textContent)).toEqual(["Review", "Test"]);
     expect(rows[0]).toHaveTextContent("Approved");
     expect(rows[1]).toHaveTextContent("engine");
+    // The commit the branch was at after each run; none for the engine's test run.
+    expect(rows[0]).toHaveTextContent("b232eb1");
+    expect(within(rows[1]).getAllByRole("cell")[4].textContent).toBe("");
     expect(screen.getByText("4 runs, $0.72. Newest first.")).toBeInTheDocument();
 
     expect(await screen.findByText("Reviewed the change.")).toBeInTheDocument();

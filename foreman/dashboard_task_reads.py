@@ -291,6 +291,7 @@ class TaskReads:
                     backend=run.agent_backend,
                     status=run.status,
                     outcome=run.outcome,
+                    commit_sha=run.commit_sha,
                     started_at=run.started_at,
                     finished_at=run.completed_at,
                     duration_ms=run.duration_ms,

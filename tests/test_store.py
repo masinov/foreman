@@ -1039,6 +1039,26 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class RunCommitTests(unittest.TestCase):
+    def test_a_run_keeps_the_commit_it_left(self) -> None:
+        from foreman.models import Run
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with ForemanStore(Path(tmp) / "foreman.db") as store:
+                store.initialize()
+                store.save_project(Project(id="p", name="P", repo_path=tmp, workflow_id="development"))
+                store.save_sprint(Sprint(id="s", project_id="p", title="S", status="active"))
+                store.save_task(Task(id="t", sprint_id="s", project_id="p", title="T"))
+                run = Run(id="r", task_id="t", project_id="p", role_id="developer",
+                          workflow_step="develop", agent_backend="claude_code", status="running")
+                store.save_run(run)
+                self.assertIsNone(store.get_run("r").commit_sha)
+                run.commit_sha = "b232eb1" + "0" * 33
+                store.save_run(run)
+                self.assertEqual(store.get_run("r").commit_sha, "b232eb1" + "0" * 33)
+                self.assertEqual(store.get_latest_run("t").commit_sha, "b232eb1" + "0" * 33)
+
+
 class TokenUsageTests(unittest.TestCase):
     def test_a_run_keeps_its_token_split_and_totals_sum_it(self) -> None:
         from foreman.models import Run, TokenUsage
@@ -1069,6 +1089,7 @@ class TokenUsageTests(unittest.TestCase):
                         )
                     )
                 self.assertEqual(store.get_run("r0").token_usage.cache_read, 9000)
+                self.assertIsNone(store.get_run("r0").commit_sha)
                 expected = {"input": 15, "output": 600, "cache_read": 10000, "cache_creation": 400}
                 self.assertEqual(store.run_totals(task_id="t")["token_usage"], expected)
                 self.assertEqual(store.task_run_totals(project_id="p")[0]["token_usage"], expected)

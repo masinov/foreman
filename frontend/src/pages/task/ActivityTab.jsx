@@ -8,7 +8,7 @@ import { Disclosure } from "../../ui/Disclosure";
 import { Mono } from "../../ui/Mono";
 import { SectionHeading } from "../../ui/SectionHeading";
 import { Table } from "../../ui/Table";
-import { formatDayTime, formatDuration, formatMoney, humanize, plural } from "../../ui/format";
+import { formatDayTime, formatDuration, formatMoney, humanize, plural, shortSha } from "../../ui/format";
 import { runBy, runResult, runSeconds } from "./taskWords";
 
 // Design README: activity 25 at a time.
@@ -109,6 +109,12 @@ export function ActivityTab({ task, revision }) {
         const result = runResult(run);
         return <span className={`tone-${result.tone}`}>{result.word}</span>;
       },
+    },
+    {
+      key: "commit",
+      header: "Commit",
+      className: "secondary",
+      render: (run) => (run.commit_sha ? <Mono quiet>{shortSha(run.commit_sha)}</Mono> : null),
     },
     { key: "took", header: "Took", className: "task-runs__number", render: (run) => <Mono quiet>{formatDuration(runSeconds(run))}</Mono> },
     {
