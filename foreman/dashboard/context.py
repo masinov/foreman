@@ -124,6 +124,8 @@ class ApiContext:
 
     db_path: str
     manager_enabled: bool
+    #: True when a dashboard token protects the API, so a session is a token holder.
+    auth_required: bool = False
 
     def with_api(self, callback: Callable[[DashboardService], _T]) -> _T:
         """Run ``callback`` with a service over a store opened for this request."""

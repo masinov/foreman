@@ -43,6 +43,7 @@ from .context import (
     presented_token,
 )
 from .routers import (
+    access,
     backlog,
     engine,
     gates,
@@ -56,7 +57,7 @@ from .routers import (
 )
 
 #: Mounted in this order under every API prefix.
-ROUTERS = (projects, intake, backlog, sprints, meta, gates, engine, worktrees, tasks, roles)
+ROUTERS = (projects, intake, backlog, sprints, meta, gates, engine, worktrees, tasks, roles, access)
 
 _LOGGER = logging.getLogger("foreman.dashboard")
 
@@ -298,7 +299,11 @@ def create_dashboard_app(
     async def handle_forbidden(_: Request, exc: DashboardForbiddenError) -> JSONResponse:
         return JSONResponse(_error_body(str(exc), "forbidden"), status_code=403)
 
-    context = ApiContext(db_path=db_path, manager_enabled=bool(manager_enabled))
+    context = ApiContext(
+        db_path=db_path,
+        manager_enabled=bool(manager_enabled),
+        auth_required=bool(auth_token),
+    )
     for prefix in API_PREFIXES:
         for module in ROUTERS:
             app.include_router(module.build_router(context), prefix=prefix)
