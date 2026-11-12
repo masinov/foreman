@@ -406,12 +406,24 @@ class SprintListTests(WorkspaceApiCase):
         self.assertEqual([s["id"] for s in body["sprints"]], ["b"])
         self.assertEqual(body["total"], 3)
 
+    def test_recent_order_puts_the_latest_finished_first(self) -> None:
+        # Finished out of queue order: the later-queued sprint finished first.
+        self.sprint("a", "p1", "Sprint 1: foundations", "completed", order_index=0,
+                    completed_at="2026-02-02T00:00:00Z")
+        self.sprint("b", "p1", "Sprint 2: engine", "completed", order_index=1,
+                    completed_at="2026-01-01T00:00:00Z")
+        self.sprint("f", "p1", "Sprint 0: never stamped", "completed", order_index=5)
+        self.assertEqual(self.ids("?status=completed&order=recent"), ["a", "b", "f"])
+        self.assertEqual(self.ids("?status=completed&order=queue"), ["a", "b", "f"])
+        body = self.get("/api/v1/projects/p1/sprints?status=completed&order=recent&limit=1&offset=1").json()
+        self.assertEqual(([s["id"] for s in body["sprints"]], body["total"]), (["b"], 3))
+
     def test_empty_result(self) -> None:
         body = self.get("/api/v1/projects/p2/sprints?status=planned").json()
         self.assertEqual((body["sprints"], body["total"]), ([], 0))
 
     def test_bad_parameters_are_the_400_envelope(self) -> None:
-        for query in ("status=done", "status=active,bogus", "limit=0", "limit=x", "offset=-1"):
+        for query in ("status=done", "status=active,bogus", "limit=0", "limit=x", "offset=-1", "order=bogus"):
             with self.subTest(query=query):
                 response = self.get(f"/api/v1/projects/p1/sprints?{query}")
                 self.assertEqual(response.status_code, 400)
