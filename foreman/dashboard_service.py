@@ -980,7 +980,6 @@ class DashboardService:
             "task_key": task.task_key,
             "title": task.title,
             "status": task.status,
-            "sprint_id": task.sprint_id,
             # In the backlog: filed, accepted or declined, never run (ADR-0021).
             "in_backlog": sprint is not None and sprint.is_backlog,
             "task_type": task.task_type,
