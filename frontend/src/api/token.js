@@ -17,3 +17,12 @@ export function readDashboardToken(storage = defaultStorage()) {
     return "";
   }
 }
+
+/** Forget the stored dashboard token, so this browser stops presenting it. */
+export function clearDashboardToken(storage = defaultStorage()) {
+  try {
+    storage?.removeItem(TOKEN_STORAGE_KEY);
+  } catch {
+    // Storage that cannot be written cannot hold a token either.
+  }
+}

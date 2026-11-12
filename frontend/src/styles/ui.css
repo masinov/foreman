@@ -482,3 +482,7 @@
   vertical-align: middle;
   overflow-wrap: anywhere;
 }
+
+.dialog--wide {
+  max-width: var(--dialog-width-wide);
+}

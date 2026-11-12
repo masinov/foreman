@@ -59,6 +59,10 @@
   /* Menu, dialog, fields */
   --menu-min-width: 240px;
   --dialog-width: 460px;
+  --dialog-width-wide: 720px;
+  --definitions-workflows-basis: 420px;
+  --definitions-roles-basis: 260px;
+  --label-column-width: 160px;
   --field-multiline-height: 76px;
   --caret-size: 4px;
   --color-backdrop: rgba(12, 12, 14, 0.72);

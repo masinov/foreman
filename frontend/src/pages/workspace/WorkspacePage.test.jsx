@@ -21,6 +21,7 @@ describe("WorkspacePage", () => {
     expect(fetchImpl.calls.map((call) => call.url).sort()).toEqual([
       "/api/v1/milestones?limit=10",
       "/api/v1/needs-you?limit=5&offset=0",
+      "/api/v1/session",
       "/api/v1/workspace",
     ]);
   });

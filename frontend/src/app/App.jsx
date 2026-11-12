@@ -1,4 +1,3 @@
-import { Icon } from "../ui/Icon";
 import React, { useEffect } from "react";
 
 import { getSprint } from "../api/sprints";
@@ -9,11 +8,11 @@ import { EngineMenu } from "../pages/shared/EngineMenu";
 import { NotFoundPage } from "../pages/status/NotFoundPage";
 import { RebuildingPage } from "../pages/status/RebuildingPage";
 import { BUILT_PAGES } from "./pages";
-import { paths } from "./paths";
 import { ManagerPanel } from "../pages/manager/ManagerPanel";
 import { useManagerOpen, useManagerTarget } from "./manager";
 import { ManagerToggle } from "./ManagerToggle";
-import { Link, useRoute } from "./router";
+import { useRoute } from "./router";
+import { UserMenu } from "./UserMenu";
 import { Shell } from "./Shell";
 
 /** The engine of the project a sprint or task belongs to. */
@@ -56,14 +55,7 @@ function TopBarRight({ route, params, manager }) {
       manager
     );
   }
-  if (route.level !== "workspace") return null;
-  const current = route.name === "workspace-settings";
-  return (
-    <Link className="topbar__link" href={paths.workspaceSettings()} aria-current={current ? "page" : undefined}>
-      <Icon name="settings" />
-      Workspace settings
-    </Link>
-  );
+  return null;
 }
 
 function useProjectName(projectId) {
