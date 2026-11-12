@@ -364,7 +364,10 @@ whoever writes. A backlog task is `triage` (filed), `todo` (accepted) or
   naming `via` and `by`. The CLI, the API, intake and agent `task_created`
   signals all file through `file_task`.
 - `foreman/backlog.py`: the one backlog read, shared by
-  `GET /projects/{id}/backlog` and `foreman backlog list --json`.
+  `GET /projects/{id}/backlog` and `foreman backlog list --json`. Each task
+  carries `carried_from` (`{id, title}` of the sprint it was moved back from,
+  from the latest `human.task_unplanned` event, or null), read for the whole
+  page in one statement by `OverviewStore.backlog_unplanned_origins`.
 - `foreman/dashboard/routers/backlog.py`: `GET` and `POST
   /projects/{id}/backlog`, `POST /projects/{id}/backlog/plan`,
   `POST /tasks/{id}/decline`, `POST /tasks/{id}/unplan`.

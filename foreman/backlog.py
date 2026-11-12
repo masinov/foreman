@@ -45,7 +45,11 @@ def backlog_state(task: Task) -> str | None:
     return next((name for name, status in BACKLOG_STATES.items() if status == task.status), None)
 
 
-def serialize_backlog_task(task: Task) -> dict[str, Any]:
+def serialize_backlog_task(
+    task: Task, carried_from: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """One backlog row; ``carried_from`` is the sprint it was moved back from, if any."""
+
     return {
         "id": task.id,
         "task_key": task.task_key,
@@ -60,6 +64,7 @@ def serialize_backlog_task(task: Task) -> dict[str, Any]:
         "created_by": task.created_by,
         "created_at": task.created_at,
         "source": task_source(task),
+        "carried_from": carried_from,
     }
 
 
@@ -77,7 +82,9 @@ def read_backlog(
     ``states`` picks among ``filed``, ``accepted`` and ``declined``; without
     it, declined work is left out. ``total`` counts every match before
     paging, ``counts`` is the whole backlog by state, and ``triage`` says
-    who accepts filed work in this project (``human`` or ``auto``).
+    who accepts filed work in this project (``human`` or ``auto``). Each task's
+    ``carried_from`` is ``{"id", "title"}`` of the sprint it was moved back
+    from, or null when it was never planned.
     """
 
     unknown = sorted(set(states or ()) - set(BACKLOG_STATES))
@@ -94,11 +101,12 @@ def read_backlog(
         offset=offset,
     )
     backlog = store.get_backlog(project.id)
+    origins = store.backlog_unplanned_origins(project.id) if tasks else {}
     return {
         "project_id": project.id,
         "backlog_id": backlog.id if backlog is not None else None,
         "triage": PolicyMatrix.for_project(project).resolve("triage").value,
         "counts": {state: counts[status] for state, status in BACKLOG_STATES.items()},
-        "tasks": [serialize_backlog_task(task) for task in tasks],
+        "tasks": [serialize_backlog_task(task, origins.get(task.id)) for task in tasks],
         "total": total,
     }
