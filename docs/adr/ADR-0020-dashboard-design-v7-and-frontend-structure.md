@@ -75,10 +75,17 @@ on the result: "the base is ready for implementation".
     shows and what its controls call. The built bundle in
     `foreman/dashboard_frontend_dist` is rebuilt and committed by the change
     that alters the source, as CI checks.
-11. During the rebuild the old application stays reachable under
-    `/dashboard/legacy`, so nothing an operator can do today is lost between
-    merges. The last slice of the rebuild removes it and its files. It is a
-    migration seam with a stated end, not a second frontend.
+11. During the rebuild the old application stayed reachable under
+    `/dashboard/legacy`, so nothing an operator could do was lost between
+    merges. **Amended 2026-11-12, by owner decision: the seam was removed
+    that day, not in the rebuild's last slice.** The dashboard is not in
+    production and nobody depends on the old application while the new one is
+    built, so keeping it running was wasted effort. `/dashboard/legacy` is
+    now an unknown address and renders the not-found page. What the old
+    application could do is recorded, with the endpoint and the rebuilt route
+    for each thing, in `docs/design/dashboard-v7/legacy-capabilities.md`;
+    that file is the checklist the remaining slices are measured against.
+    No API endpoint was removed.
 
 ### What the API must add
 
@@ -93,8 +100,8 @@ on the result: "the base is ready for implementation".
 - Agents and people building UI read `docs/design/dashboard-v7/README.md`
   first. `AGENTS.md`, `CLAUDE.md`, `README.md` and `docs/ARCHITECTURE.md`
   point there.
-- The old `App.jsx`, `components.jsx`, `styles.css` and their tests are
-  deleted at the end of the rebuild, not edited.
+- The old `App.jsx`, `components.jsx`, `styles.css` and their tests were
+  deleted, not edited (2026-11-12, decision 11).
 - The backlog changes what the standing "Intake queue" sprint means. That
   decision gets its own ADR with the slice that makes it.
 - A real-browser check is still not possible on the development host

@@ -71,7 +71,7 @@ function isPlainLeftClick(event) {
 /**
  * A real anchor. A plain click inside the rebuilt application is handled
  * without a page load; anything else (new tab, a modifier key, a path outside
- * the application such as /dashboard/legacy) is left to the browser.
+ * the application) is left to the browser.
  */
 export const Link = React.forwardRef(function Link({ href, onClick, target, children, ...rest }, ref) {
   const { browser, navigate } = useRouter();
