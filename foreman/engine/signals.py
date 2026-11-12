@@ -11,11 +11,12 @@ from collections.abc import Mapping
 
 from ..git import GitError, branch_exists, run_git
 from ..models import TASK_COMPLEXITIES, TASK_TYPES, Project, Run, Task
+from ..mutations import Mutations
 from ..roles import RoleDefinition
 from ..store import ForemanStore
 from .coerce import optional_string
 from .leasing import TaskLeases
-from .records import RunRecords, new_id
+from .records import RunRecords
 from .results import AgentEventRecord
 from .task_writes import TaskWrites
 
@@ -173,34 +174,50 @@ class SignalHandler:
             return
 
         if event_record.event_type == "signal.task_created":
-            sprint = self.store.get_active_sprint(project.id)
-            if sprint is None:
-                return
-            order_index = self.store.next_task_order_index(sprint.id)
+            # Follow-up work an agent finds goes to the backlog, filed under
+            # the project's triage policy like any other filed work. It never
+            # joins the sprint the agent is running in (ADR-0021).
             raw_complexity = optional_string(payload.get("complexity"))
             complexity = raw_complexity if raw_complexity in TASK_COMPLEXITIES else None
-            created_task = Task(
-                id=new_id("task"),
-                sprint_id=sprint.id,
-                project_id=project.id,
-                title=str(payload.get("title", "(agent-created task)")),
-                task_type=str(payload.get("task_type", "feature")),
+            task_type = optional_string(payload.get("task_type")) or "feature"
+            if task_type not in TASK_TYPES:
+                self.records.emit_event(
+                    run,
+                    "signal.rejected",
+                    {
+                        "signal": "task_created",
+                        "role_id": role_id,
+                        "field": "task_type",
+                        "reason": (
+                            f"{task_type!r} is not a task type "
+                            f"(expected one of: {', '.join(TASK_TYPES)}); filed as a feature."
+                        ),
+                    },
+                    role_id=role_id,
+                )
+                task_type = "feature"
+            filed = Mutations(
+                self.store, via="engine", actor=f"agent:{role_id}", role=role_id
+            ).file_task(
+                project,
+                title=optional_string(payload.get("title")) or "(agent-created task)",
+                task_type=task_type,
                 description=optional_string(payload.get("description")),
                 acceptance_criteria=optional_string(payload.get("criteria")),
                 complexity=complexity,
-                order_index=order_index,
                 created_by=f"agent:{role_id}",
-                created_at=event_record.timestamp,
+                event_payload={"filed_from_task_id": task.id, "filed_from_run_id": run.id},
             )
-            self.tasks.save(created_task)
             self.records.emit_event(
                 run,
                 "engine.task_created",
                 {
-                    "task_id": created_task.id,
-                    "title": created_task.title,
-                    "task_type": created_task.task_type,
-                    "created_by": created_task.created_by,
+                    "task_id": filed.task.id,
+                    "title": filed.task.title,
+                    "task_type": filed.task.task_type,
+                    "created_by": filed.task.created_by,
+                    "sprint_id": filed.task.sprint_id,
+                    "status": filed.task.status,
                 },
             )
             return

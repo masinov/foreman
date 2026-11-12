@@ -434,8 +434,12 @@ class OrchestratorContractTests(unittest.TestCase):
                 prompt="p", session_id=None,
                 event_recorder=lambda rec: orchestrator.signals.persist_agent_event(run, task, project, "developer", rec),
             )
-            created = [t for t in store.list_tasks(sprint_id="s1") if t.title == "Follow up"]
+            # Agent follow-ups are filed into the backlog (ADR-0021), not the sprint.
+            created = [
+                t for t in store.list_tasks(project_id="p1") if t.title == "Follow up"
+            ]
             self.assertEqual(len(created), 1)
+            self.assertTrue(store.get_sprint(created[0].sprint_id).is_backlog)
 
             run2 = Run(id="r-rev", task_id=task.id, project_id=project.id, role_id="code_reviewer", workflow_step="review", agent_backend="claude_code", status="running")
             store.save_run(run2)
@@ -453,7 +457,9 @@ class OrchestratorContractTests(unittest.TestCase):
                 event_recorder=lambda rec: orchestrator.signals.persist_agent_event(run2, task, project, "code_reviewer", rec),
             )
             self.assertEqual(result.outcome, "approve")
-            self.assertEqual([t for t in store.list_tasks(sprint_id="s1") if t.title == "Sneaky"], [])
+            self.assertEqual(
+                [t for t in store.list_tasks(project_id="p1") if t.title == "Sneaky"], []
+            )
             rejected = [e for e in store.list_events(run_id=run2.id) if e.event_type == "signal.rejected"]
             self.assertEqual(len(rejected), 1)
             self.assertEqual(rejected[0].payload["signal"], "task_created")
