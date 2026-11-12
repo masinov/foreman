@@ -11,7 +11,10 @@ export function SectionHeading({ title, count, note, actions, level = 2, id }) {
       <Heading className="section-heading__title" id={id}>
         {title}
         {count !== undefined && count !== null ? (
-          <span className="section-heading__count"> {count}</span>
+          <>
+            <span className="visually-hidden"> </span>
+            <span className="section-heading__count">{count}</span>
+          </>
         ) : null}
       </Heading>
       {note ? <span className="section-heading__note">{note}</span> : null}

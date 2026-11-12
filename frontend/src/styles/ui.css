@@ -122,9 +122,24 @@
   font-weight: var(--font-weight-strong);
 }
 
+/* A count beside a label is a figure, not another word of the label: it is
+   set a little smaller and a fixed distance apart, on the label's baseline.
+   The distance is a margin, not a space character, so it does not change
+   with the font. */
+.section-heading__count,
+.tabs__count {
+  margin-left: var(--count-gap);
+  font-size: var(--font-size-count);
+  font-weight: var(--font-weight-medium);
+  font-variant-numeric: tabular-nums;
+}
+
 .section-heading__count {
   color: var(--color-gold);
-  font-weight: var(--font-weight-medium);
+}
+
+.tabs__count {
+  color: var(--color-text-quiet);
 }
 
 .section-heading__note {

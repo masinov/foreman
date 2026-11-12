@@ -44,6 +44,8 @@
   --font-size-section: 13px;
   --font-size-table-header: 11px;
   --font-size-control: 12px;
+  --font-size-count: 12px;
+  --count-gap: 6px;
   --font-weight-regular: 400;
   --font-weight-medium: 500;
   --font-weight-strong: 600;

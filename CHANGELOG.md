@@ -9,6 +9,12 @@ memory changes rather than versioned product releases.
 
 ### Sprint 58 — frontend rebuild
 
+- **fix, counts beside labels** (`fix/counts-beside-labels`): reported by the
+  owner as "strangely aligned". "Needs you 0" and "Backlog 0" set the figure
+  at the label's size one space away, so it read as another word of the
+  label. A count is now a slightly smaller figure a fixed distance from its
+  label, on its baseline; the distance is a margin, not a space character.
+
 - **feat, a new task straight into a sprint** (`feat/new-task-in-a-sprint`):
   the owner pointed out that a task could only reach a sprint through the
   backlog. The sprint page has "New task" beside "Add from backlog"; it uses
