@@ -60,14 +60,9 @@ function EmptyQueue({ active, planned }) {
   if (active.length === 0 && planned.length === 0) {
     return <p className="empty">No sprint is active or planned. Foreman has nothing to run until a sprint is planned.</p>;
   }
-  if (planned.length === 0) {
-    return (
-      <p className="empty queue__none">
-        <span className="queue__none-label">Planned</span>
-        None. When the active sprint is finished, Foreman stops until a sprint is planned.
-      </p>
-    );
-  }
+  // An active sprint with nothing planned after it needs no line of its own:
+  // the queue shows one sprint, and that is the whole truth.
+  if (planned.length === 0 && active.length > 0) return null;
   if (active.length === 0) {
     return <p className="empty">No sprint is active. Start runs the first planned sprint.</p>;
   }

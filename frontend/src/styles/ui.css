@@ -164,7 +164,9 @@
 
 /* Table: header line, faint row lines, none above the first or below the last */
 .table-scroll {
-  width: 100%;
+  /* Room on both sides for the row highlight, without moving the content. */
+  margin-inline: calc(-1 * var(--row-bleed));
+  padding-inline: var(--row-bleed);
   overflow-x: auto;
 }
 

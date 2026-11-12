@@ -26,6 +26,29 @@ a,
   background-color: var(--color-row-hover-tinted);
 }
 
+/* The highlight reaches past the row's first and last cell. */
+.table tbody tr:hover td:first-child {
+  box-shadow: calc(-1 * var(--row-bleed)) 0 0 var(--color-row-hover);
+}
+
+.table tbody tr:hover td:last-child {
+  box-shadow: var(--row-bleed) 0 0 var(--color-row-hover);
+}
+
+.table tbody tr:hover td:only-child {
+  box-shadow:
+    calc(-1 * var(--row-bleed)) 0 0 var(--color-row-hover),
+    var(--row-bleed) 0 0 var(--color-row-hover);
+}
+
+.table--tinted tbody tr:hover td:first-child {
+  box-shadow: calc(-1 * var(--row-bleed)) 0 0 var(--color-row-hover-tinted);
+}
+
+.table--tinted tbody tr:hover td:last-child {
+  box-shadow: var(--row-bleed) 0 0 var(--color-row-hover-tinted);
+}
+
 /* Running: the engine's dot breathes. */
 .status--running .status__dot {
   animation: breathe var(--motion-breathe) ease-in-out infinite;

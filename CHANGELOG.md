@@ -9,6 +9,16 @@ memory changes rather than versioned product releases.
 
 ### Sprint 58 — frontend rebuild
 
+- **fix, the sprint list: hover, the empty Planned line, finished sprints**
+  (`fix/sprint-list-hover-empty-planned-finished`), three things the owner
+  reported. A row's highlight now reaches 8px past its first and last cell,
+  so the status dot is not pressed against its edge. The line "Planned: None.
+  When the active sprint is finished..." is gone; with nothing planned the
+  queue shows only the active sprint. Finished sprints say how many there are
+  and how many are shown ("Showing 10 of 53, newest first"), with "Show 10
+  more" and "Show all"; the filter is a shortcut, not the only way to older
+  ones.
+
 - **fix, no flash of an id before a name**
   (`fix/no-flash-of-ids-before-names`): reported by the owner. Opening a
   project showed its id ("foreman") as the title and in the breadcrumb, then
