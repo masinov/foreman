@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 
 import { useApiClient } from "../../api/ApiProvider";
+import { runTaskNext } from "../../api/engine";
 import { blockTask, cancelTask, deleteTask, stopTask, unblockTask } from "../../api/tasks";
 import { Menu } from "../../ui/Menu";
 import { ReasonDialog } from "./ReasonDialog";
@@ -10,6 +11,15 @@ import { ReasonDialog } from "./ReasonDialog";
  * happen in words. `done` is the sentence shown once the API accepted it.
  */
 export const TASK_ACTIONS = {
+  run: {
+    label: "Run next",
+    title: "Run this task next",
+    effect: "The project's engine is asked to run this task before any other. If no engine is running, one is started.",
+    confirm: "Run next",
+    doing: "Asking…",
+    run: (client, task) => runTaskNext(client, task.project_id, task.id),
+    done: "Requested. The task starts when the engine picks the request up.",
+  },
   stop: {
     label: "Stop",
     title: "Stop this task",
@@ -68,6 +78,7 @@ const FINISHED = new Set(["done", "cancelled", "declined"]);
 /** The actions that exist for a task in its state, in menu order. */
 export function actionsFor(task) {
   const names = [];
+  if (task.status === "todo" && !task.in_backlog) names.push("run");
   if (task.status === "in_progress") names.push("stop");
   if (!task.in_backlog && (task.status === "todo" || task.status === "in_progress")) names.push("block");
   if (task.status === "blocked" && task.blocked_kind !== "gate") names.push("unblock");

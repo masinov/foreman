@@ -240,7 +240,7 @@ describe("the More menu", () => {
 
   it.each([
     ["running", { status: "in_progress", workflow_current_step: "develop" }, ["Stop", "Block", "Cancel", "Delete"]],
-    ["queued", { status: "todo" }, ["Block", "Cancel", "Delete"]],
+    ["queued", { status: "todo" }, ["Run next", "Block", "Cancel", "Delete"]],
     ["blocked by the engine", { status: "blocked", blocked_kind: "engine" }, ["Unblock", "Cancel", "Delete"]],
     ["at a gate", {}, ["Cancel", "Delete"]],
     ["in the backlog", { status: "todo", in_backlog: true }, ["Cancel", "Delete"]],
@@ -275,6 +275,17 @@ describe("the More menu", () => {
     const sent = postCalls(fetchImpl, action);
     expect(sent).toHaveLength(2);
     expect(sent[1].body).toEqual(body);
+  });
+
+  it("Run next asks the project's engine to run this task", async () => {
+    const routes = taskRoutes({ task: taskDetail({ status: "todo" }) });
+    const url = "POST /api/v1/projects/foreman/agent/start";
+    routes[url] = { started: true };
+    const { fetchImpl } = await renderTask(BASE, routes);
+    fireEvent.click(within(openMore()).getByRole("menuitem", { name: "Run next" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Run this task next" })).getByRole("button", { name: "Run next" }));
+    expect(await screen.findByText("Requested. The task starts when the engine picks the request up.")).toBeInTheDocument();
+    expect(fetchImpl.calls.filter((call) => `${call.method} ${call.url}` === url)[0].body).toEqual({ task_id: TASK_ID });
   });
 
   it("Block needs a reason before it calls anything", async () => {
