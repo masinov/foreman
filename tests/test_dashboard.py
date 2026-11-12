@@ -481,7 +481,16 @@ class DashboardBackendTests(unittest.TestCase):
         asset_response = self.call_route("/assets/{asset_path:path}", asset_path=match.group("path").replace("/assets/", "", 1))
         self.assertEqual(asset_response.status_code, 200)
         self.assertIn("javascript", asset_response.headers["content-type"])
-        self.assertIn("createRoot", asset_response.body.decode("utf-8"))
+
+        # The entry loads the rebuilt application or the legacy one (under
+        # /dashboard/legacy) as separate chunks; both must be served and mount React.
+        entry = asset_response.body.decode("utf-8")
+        chunks = sorted(set(re.findall(r'assets/((?:mountApp|mountLegacy)-[^"\']+\.js)', entry)))
+        self.assertEqual([name.split("-")[0] for name in chunks], ["mountApp", "mountLegacy"])
+        for name in chunks:
+            chunk = self.call_route("/assets/{asset_path:path}", asset_path=name)
+            self.assertEqual(chunk.status_code, 200)
+            self.assertIn("createRoot", chunk.body.decode("utf-8"))
 
 
 class DashboardApproveDenyIntegrationTests(unittest.TestCase):
