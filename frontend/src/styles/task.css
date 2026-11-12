@@ -418,3 +418,61 @@
   align-items: center;
   gap: var(--space-2) var(--space-3);
 }
+
+/* Changes: where in the tree the list is, and the folders to narrow it to */
+.folder-crumbs {
+  margin-bottom: var(--space-2);
+}
+
+.folder-crumbs__list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--color-text);
+}
+
+.folder-crumbs__item + .folder-crumbs__item::before {
+  content: "/";
+  margin-right: var(--space-2);
+  color: var(--color-text-quiet);
+}
+
+.folder-crumbs__step,
+.folder-pick {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-text-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.folder-crumbs__step:hover,
+.folder-pick:hover {
+  color: var(--color-gold);
+}
+
+.folder-list {
+  margin: 0 0 var(--space-2);
+  padding: 0 0 var(--space-2);
+  border-bottom: var(--line-width) solid var(--color-line-row);
+  list-style: none;
+}
+
+.folder-pick {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-1) var(--row-inset);
+  text-align: left;
+}
+
+.folder-pick__lines {
+  margin-left: auto;
+  white-space: nowrap;
+}

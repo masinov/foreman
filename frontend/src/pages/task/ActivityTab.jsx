@@ -22,7 +22,12 @@ function RunOutput({ run }) {
   const data = output.data;
   return (
     <section className="task-section run-output" aria-labelledby="run-output">
-      <SectionHeading id="run-output" title={`${humanize(run.step)}${by ? `, by ${by}` : ""}`} note={formatDayTime(run.started_at)} />
+      {/* The title is the step. Who ran it and when are details beside it. */}
+      <SectionHeading
+        id="run-output"
+        title={humanize(run.step)}
+        note={[by ? `by ${by}` : null, formatDayTime(run.started_at)].filter(Boolean).join(" · ")}
+      />
       {output.error ? (
         <p className="notice notice--error" role="alert">
           {output.error}

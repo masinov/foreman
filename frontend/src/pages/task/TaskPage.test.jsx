@@ -533,6 +533,54 @@ describe("Changes", () => {
   });
 });
 
+describe("Changes, a long list", () => {
+  const many = [
+    ...["a.py", "b.py", "c.py", "d.py", "e.py", "f.py"].map((name) => `foreman/dashboard/${name}`),
+    ...["g.py", "h.py"].map((name) => `foreman/engine/${name}`),
+    ...["test_a.py", "test_b.py", "test_c.py"].map((name) => `tests/${name}`),
+    "README.md",
+  ].map((path) => ({ path, status: "modified", added: 2, deleted: 1, binary: false, old_path: null }));
+  const routes = () => {
+    const all = taskRoutes({ changes: changesPayload({ files: many, totals: { files: 12, added: 24, deleted: 12 } }) });
+    for (const file of many) all[diffUrl(file.path)] = diffPayload(file.path, BUILTINS_DIFF);
+    return all;
+  };
+
+  it("offers the folders, narrows to one, and widens again from the breadcrumb", async () => {
+    await renderTask(`${BASE}/changes`, routes());
+    const files = await screen.findByRole("table", { name: "Files changed" });
+    expect(within(files).getAllByRole("row")).toHaveLength(13);
+    const folders = screen.getByRole("list", { name: "Folders" });
+    expect(within(folders).getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "foreman8 files+16 −8",
+      "tests3 files+6 −3",
+    ]);
+
+    fireEvent.click(within(folders).getByRole("button", { name: /foreman/ }));
+    expect(within(files).getAllByRole("row")).toHaveLength(9);
+    // Inside a folder, names are shown from that folder down.
+    expect(within(files).getByRole("button", { name: "dashboard/a.py" })).toBeInTheDocument();
+    fireEvent.click(within(screen.getByRole("list", { name: "Folders" })).getByRole("button", { name: /engine/ }));
+    expect(within(files).getAllByRole("row")).toHaveLength(3);
+
+    const crumbs = screen.getByRole("navigation", { name: "Folder" });
+    expect(crumbs).toHaveTextContent("All filesforemanengine");
+    fireEvent.click(within(crumbs).getByRole("button", { name: "foreman" }));
+    expect(within(files).getAllByRole("row")).toHaveLength(9);
+    fireEvent.click(within(crumbs).getByRole("button", { name: "All files" }));
+    expect(within(files).getAllByRole("row")).toHaveLength(13);
+  });
+
+  it("keeps the picked file when the list is narrowed to another folder", async () => {
+    await renderTask(`${BASE}/changes`, routes());
+    const files = await screen.findByRole("table", { name: "Files changed" });
+    fireEvent.click(within(files).getByRole("button", { name: "README.md" }));
+    expect(await screen.findByRole("heading", { name: "README.md" })).toBeInTheDocument();
+    fireEvent.click(within(screen.getByRole("list", { name: "Folders" })).getByRole("button", { name: /tests/ }));
+    expect(screen.getByRole("heading", { name: "README.md" })).toBeInTheDocument();
+  });
+});
+
 describe("Checks", () => {
   it("keeps facts and claims in separate tables, then evidence files", async () => {
     await renderTask(`${BASE}/checks`);
@@ -581,13 +629,15 @@ describe("Activity", () => {
     expect(screen.getByText("4 runs, $0.72. Newest first.")).toBeInTheDocument();
 
     expect(await screen.findByText("Reviewed the change.")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Review, by sonnet-5-5" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Review" })).toBeInTheDocument();
+    expect(document.querySelector("#run-output").parentElement).toHaveTextContent(/by sonnet-5-5/);
     fireEvent.click(screen.getByRole("button", { name: "Show the prompt this run was given" }));
     expect(screen.getByText("The prompt of run-3")).toBeInTheDocument();
 
     fireEvent.click(within(rows[1]).getByRole("button"));
     expect(await screen.findByText("Ran 1221 tests")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Test, by engine" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Test" })).toBeInTheDocument();
+    expect(document.querySelector("#run-output").parentElement).toHaveTextContent(/by engine/);
     expect(within(rows[1]).getByRole("button")).toHaveAttribute("aria-pressed", "true");
     expect(calls(fetchImpl, "GET", outputUrl("run-2").slice(4))).toHaveLength(1);
   });
