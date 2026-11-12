@@ -89,6 +89,9 @@
   --font-logo: "Fraunces", "Source Serif 4", Georgia, serif;
   --logo-size: 18px;
   --logo-tracking: -0.01em;
+  /* The serif sits a little lower in its box than the sans beside it; this
+     lifts it onto the same baseline as the breadcrumb. */
+  --logo-lift: -1px;
 
   /* Icons: one grid, one stroke */
   --icon-size: 14px;
@@ -101,7 +104,7 @@
   --motion-breathe: 1.6s;
   --motion-rise: 4px;
   --motion-slide: 12px;
-  --row-bleed: 8px;
+  --row-inset: 8px;
   --color-row-hover: #111115;
   --color-row-hover-tinted: #18181d;
 

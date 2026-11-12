@@ -9,6 +9,17 @@ memory changes rather than versioned product releases.
 
 ### Sprint 58 — frontend rebuild
 
+- **fix, alignment and one link to the workspace** (`fix/top-bar-baseline`),
+  four things the owner reported. The wordmark sat about a pixel below the
+  breadcrumb; it is lifted onto the same baseline. In the engine row the
+  label, the state and the sentence were at different heights; they share a
+  baseline, and a status dot is inline so it no longer sets the baseline of
+  the word beside it. The row highlight reached past the sides of its table;
+  it stays inside, and the first and last cell of every table keep 8px of
+  room so nothing touches its edge. The switcher's "All projects" entry and
+  the "Workspace" label were second and third links to where the wordmark
+  goes; both are gone, and the workspace page has an empty breadcrumb.
+
 - **fix, the wordmark answers the pointer** (`fix/wordmark-answers-the-pointer`):
   it turns gold on hover and focus, like every other link. An earlier change
   removed that on the engine team's own initiative; the owner had only asked

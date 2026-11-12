@@ -56,16 +56,13 @@ function ProjectSwitcher({ projectId }) {
           ) : null}
         </>
       }
-      items={[
-        { key: "all-projects", label: "All projects", detail: null, href: paths.workspace(), current: false },
-        ...projects.map((entry) => ({
-          key: entry.id,
-          label: entry.name,
-          detail: entry.needs_you > 0 ? entry.needs_you : null,
-          href: paths.project(entry.id),
-          current: entry.id === projectId,
-        })),
-      ]}
+      items={projects.map((entry) => ({
+        key: entry.id,
+        label: entry.name,
+        detail: entry.needs_you > 0 ? entry.needs_you : null,
+        href: paths.project(entry.id),
+        current: entry.id === projectId,
+      }))}
     />
   );
 }
@@ -130,13 +127,12 @@ function TaskParentCrumb({ taskId, level }) {
 }
 
 /**
- * The levels of the current route. Inside a project the breadcrumb starts at
- * the project: the wordmark beside it already goes to the workspace, and the
- * project switcher lists "All projects", so a "Workspace" step would be a
- * third way to the same page.
+ * The levels of the current route, below the workspace. The wordmark beside
+ * the breadcrumb is the one way to the workspace; there is no "Workspace"
+ * step and no "All projects" entry, each of which would be a second link to
+ * the same page. On the workspace page itself the breadcrumb is empty.
  */
 export function crumbsFor(route, params) {
-  const workspace = { key: "workspace", href: paths.workspace(), label: "Workspace" };
   switch (route.level) {
     case "project": {
       if (route.name.startsWith("project-settings")) {
@@ -160,12 +156,12 @@ export function crumbsFor(route, params) {
       ];
     default:
       if (route.name === "workspace-settings") {
-        return [workspace, { key: "settings", href: paths.workspaceSettings(), label: "Settings" }];
+        return [{ key: "settings", href: paths.workspaceSettings(), label: "Workspace settings" }];
       }
       if (route.name === "not-found") {
-        return [workspace, { key: "not-found", href: null, label: "Not found" }];
+        return [{ key: "not-found", href: null, label: "Not found" }];
       }
-      return [workspace];
+      return [];
   }
 }
 
