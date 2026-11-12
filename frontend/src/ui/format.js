@@ -47,3 +47,28 @@ export function splitTitle(title) {
   if (at <= 0) return [text, ""];
   return [text.slice(0, at).trim(), text.slice(at + 1).trim()];
 }
+
+const dayMonthTime = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+const dayMonthYearTime = new Intl.DateTimeFormat("en-GB", {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
+/** "11 Nov, 14:02", with the year when it is not this year's. Empty for no date. */
+export function formatDayTime(timestamp, now = new Date()) {
+  if (!timestamp) return "";
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.getFullYear() === now.getFullYear() ? dayMonthTime.format(date) : dayMonthYearTime.format(date);
+}
+
+/** 28500 -> "28.5K", 1200000 -> "1.2M". */
+export function formatTokens(count) {
+  const value = Number(count) || 0;
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1).replace(/\.0$/, "")}K`;
+  return String(value);
+}

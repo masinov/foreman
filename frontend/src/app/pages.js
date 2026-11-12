@@ -1,4 +1,5 @@
 import { ProjectActivityPage, ProjectBacklogPage, ProjectSprintsPage } from "../pages/project/ProjectPages";
+import { SprintBoardPage, SprintListPage } from "../pages/sprint/SprintPages";
 import { WorkspacePage } from "../pages/workspace/WorkspacePage";
 
 // Routes that have a rebuilt page. Every other route in ROUTES renders the
@@ -8,4 +9,6 @@ export const BUILT_PAGES = {
   project: ProjectSprintsPage,
   "project-backlog": ProjectBacklogPage,
   "project-activity": ProjectActivityPage,
+  sprint: SprintListPage,
+  "sprint-board": SprintBoardPage,
 };
