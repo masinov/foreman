@@ -9,6 +9,11 @@ memory changes rather than versioned product releases.
 
 ### Sprint 58 — frontend rebuild
 
+- **fix, the wordmark answers the pointer** (`fix/wordmark-answers-the-pointer`):
+  it turns gold on hover and focus, like every other link. An earlier change
+  removed that on the engine team's own initiative; the owner had only asked
+  what the link did, and without it the wordmark did not read as clickable.
+
 - **fix, the sprint list: hover, the empty Planned line, finished sprints**
   (`fix/sprint-list-hover-empty-planned-finished`), three things the owner
   reported. A row's highlight now reaches 8px past its first and last cell,
