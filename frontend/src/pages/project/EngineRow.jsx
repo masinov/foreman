@@ -70,19 +70,19 @@ export function EngineRow({ projectId, engine, onChanged }) {
         ) : null}
       </div>
       <div className="engine__controls">
-        <Button disabled={busy || !applies.start} onClick={() => send("start")}>
+        <Button icon="play" disabled={busy || !applies.start} onClick={() => send("start")}>
           {pending === "start" ? "Starting…" : "Start"}
         </Button>
         {paused ? (
-          <Button disabled={busy} onClick={() => send("resume")}>
+          <Button icon="play" disabled={busy} onClick={() => send("resume")}>
             {pending === "resume" ? "Resuming…" : "Resume"}
           </Button>
         ) : (
-          <Button disabled={busy || !applies.pause} onClick={() => send("pause")}>
+          <Button icon="pause" disabled={busy || !applies.pause} onClick={() => send("pause")}>
             {pending === "pause" ? "Pausing…" : "Pause"}
           </Button>
         )}
-        <Button disabled={busy || !applies.stop} onClick={() => send("stop")}>
+        <Button icon="stop" disabled={busy || !applies.stop} onClick={() => send("stop")}>
           {pending === "stop" ? "Stopping…" : "Stop"}
         </Button>
       </div>

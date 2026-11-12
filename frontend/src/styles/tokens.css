@@ -85,6 +85,27 @@
   --block-cursor-height: 14px;
   --tab-underline-width: 2px;
 
+  /* Identity: the wordmark's size, its drawn F (cap height of the letters at
+     that size) and the tracking of the letters. */
+  --logo-size: 17px;
+  --logo-cap-height: 12.4px;
+  --logo-gap: 1px;
+  --logo-tracking: -0.02em;
+
+  /* Icons: one grid, one stroke */
+  --icon-size: 14px;
+  --icon-stroke: 1.4;
+  --icon-gap: 6px;
+
+  /* Motion. Something moves only when something is happening. */
+  --motion-fast: 120ms;
+  --motion-enter: 160ms;
+  --motion-breathe: 1.6s;
+  --motion-rise: 4px;
+  --motion-slide: 12px;
+  --color-row-hover: #111115;
+  --color-row-hover-tinted: #18181d;
+
   /* Spacing scale */
   --space-1: 4px;
   --space-2: 8px;

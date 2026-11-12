@@ -42,7 +42,7 @@ describe("the project page head", () => {
     ["/dashboard/projects/foreman/activity", "Activity"],
   ])("is the same above the tabs at %s", async (path, currentTab) => {
     await renderProject(path);
-    expect(screen.getByText("/srv/foreman · main · development workflow")).toBeInTheDocument();
+    expect(document.querySelector(".facts")).toHaveTextContent("/srv/foreman · main · development workflow");
     expect(screen.getByRole("link", { name: "Project settings" })).toHaveAttribute("href", "/dashboard/projects/foreman/settings");
     expect(within(engineSection()).getByText("Running")).toBeInTheDocument();
     expect(within(engineSection()).getByText(/Working on/)).toHaveTextContent("Working on FOR-13, develop.");

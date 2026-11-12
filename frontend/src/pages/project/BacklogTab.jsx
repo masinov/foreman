@@ -259,7 +259,9 @@ export function BacklogTab({ projectId, revision, onChanged }) {
           onChange={(event) => setFilter(event.target.value)}
           className="backlog__filter"
         />
-        <Button onClick={() => setFiling(true)}>New task</Button>
+        <Button icon="plus" onClick={() => setFiling(true)}>
+          New task
+        </Button>
       </div>
       <Notice notice={notice} />
       {list.error ? (

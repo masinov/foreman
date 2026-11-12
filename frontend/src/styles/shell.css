@@ -26,12 +26,22 @@
   padding-inline: var(--page-gutter);
 }
 
-.topbar__word {
-  font-weight: var(--font-weight-strong);
+/* The wordmark is the way home. It does not light up like a link: it is the
+   one fixed thing in the bar. */
+.topbar__home {
+  display: inline-flex;
+  align-items: center;
+  margin-right: var(--space-3);
+  border-radius: var(--radius);
 }
 
-.topbar__divider {
-  color: var(--color-text-quiet);
+.topbar__home:hover {
+  color: var(--color-text);
+}
+
+.topbar__toggle[aria-pressed="true"] {
+  background: var(--color-selected);
+  color: var(--color-text);
 }
 
 .topbar__right {
@@ -42,6 +52,9 @@
 }
 
 .topbar__link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--icon-gap);
   color: var(--color-text-secondary);
 }
 
