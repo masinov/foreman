@@ -1,14 +1,7 @@
 import React, { useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
 
-const FOCUSABLE = [
-  "a[href]",
-  "button:not([disabled])",
-  "input:not([disabled])",
-  "select:not([disabled])",
-  "textarea:not([disabled])",
-  "[tabindex]:not([tabindex='-1'])",
-].join(",");
+import { FOCUSABLE, wrapTab } from "./focus";
 
 /**
  * A modal dialog. It is labelled by its title, keeps keyboard focus inside
@@ -44,21 +37,7 @@ export function Dialog({ open, title, description, onClose, footer, children, cl
       onCloseRef.current?.();
       return;
     }
-    if (event.key !== "Tab") return;
-    const focusable = Array.from(panelRef.current.querySelectorAll(FOCUSABLE));
-    if (focusable.length === 0) {
-      event.preventDefault();
-      return;
-    }
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (event.shiftKey && (document.activeElement === first || document.activeElement === panelRef.current)) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
+    wrapTab(event, panelRef.current);
   }
 
   return createPortal(

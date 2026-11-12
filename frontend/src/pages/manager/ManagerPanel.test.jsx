@@ -10,6 +10,7 @@ import { sprintRoutes } from "../../testing/sprintFixture";
 import { projectRoutes } from "../../testing/projectFixture";
 import { taskDetail, taskRoutes } from "../../testing/taskFixture";
 import { workspaceRoutes } from "../../testing/workspaceFixture";
+import { QUEUE_URL } from "../../testing/projectFixture";
 
 const readStyles = (name) => readFileSync(join(process.cwd(), "src", "styles", name), "utf8");
 const shellCss = readStyles("shell.css");
@@ -289,5 +290,204 @@ describe("the narrow layout", () => {
     expect(shellCss).toMatch(/\.manager-slot\s*\{[^}]*position: sticky;[^}]*flex: 0 0 var\(--manager-width\)/);
     expect(managerCss).toMatch(/\.manager \.manager__close\s*\{\s*display: none;/);
     expect(managerCss).toMatch(/@media \(max-width: 960px\)\s*\{\s*\.manager \.manager__close\s*\{\s*display: inline-flex;/);
+  });
+});
+
+// ── Proposals (ADR-0022) ─────────────────────────────────────────────────
+
+const PROPOSAL_ID = "prop-1";
+const PROPOSAL_URL = `GET /api/v1/proposals/${PROPOSAL_ID}`;
+const CONFIRM_URL = `POST /api/v1/proposals/${PROPOSAL_ID}/confirm`;
+const DECLINE_URL = `POST /api/v1/proposals/${PROPOSAL_ID}/decline`;
+
+function proposal(fields = {}) {
+  return {
+    id: PROPOSAL_ID,
+    project_id: "foreman",
+    state: "proposed",
+    proposed_by: "manager",
+    reason: "The two fixes touch leasing; the JSON output can wait.",
+    operations: [
+      { kind: "plan_tasks", task_ids: ["task-a", "task-b"], new_sprint: { title: "Sprint 57" } },
+      { kind: "send_back", task_id: "task-merge", guidance: "Report skipped tests too." },
+    ],
+    leaves: ["task-c"],
+    names: {
+      tasks: {
+        "task-a": { key: "FOR-20", title: "Resume a stale agent step in place" },
+        "task-b": { key: "FOR-21", title: "Check the lease fencing token on writes" },
+        "task-c": { key: "FOR-22", title: "JSON output on the remaining read commands" },
+        "task-merge": { key: "FOR-14", title: "Report the test result line" },
+      },
+      sprints: {},
+    },
+    created_at: "2026-11-12T10:00:00Z",
+    decided_by: null,
+    decided_at: null,
+    outcome: null,
+    ...fields,
+  };
+}
+
+function card() {
+  return within(panel()).getByText(/^Proposed change\./).closest(".proposal");
+}
+
+describe("a proposal in the conversation", () => {
+  async function openWith(routes, history) {
+    window.localStorage.setItem("foreman.dashboard.manager.open", "true");
+    const fetchImpl = createFakeFetch(withManager(routes, history));
+    renderApp("/dashboard/projects/foreman", fetchImpl);
+    await within(panel()).findByText(/You are on:/);
+    return fetchImpl;
+  }
+
+  const queueLoads = (fetchImpl) => fetchImpl.calls.filter((call) => `GET ${call.url}` === QUEUE_URL).length;
+
+  it("arrives on the stream as a card saying what will be created, changed and left", async () => {
+    const stream = controlledStream();
+    const fetchImpl = await openWith({ ...projectRoutes(), [PROPOSAL_URL]: proposal() });
+    fetchImpl.routes[MESSAGE] = () => stream.response;
+    fireEvent.change(within(panel()).getByRole("textbox", { name: "Message to the manager" }), { target: { value: "Plan the next sprint." } });
+    fireEvent.click(within(panel()).getByRole("button", { name: "Send" }));
+    await stream.push({ type: "text_delta", text: "The two fixes fit one sprint." });
+    await stream.push({ type: "proposal", proposal_id: PROPOSAL_ID });
+
+    const proposed = await within(panel()).findByText("Proposed change. Nothing happens until you confirm.");
+    const box = within(proposed.closest(".proposal"));
+    const terms = box.getAllByRole("term").map((node) => node.textContent);
+    const what = box.getAllByRole("definition").map((node) => node.textContent);
+    expect(terms).toEqual(["Create", "Plan in", "", "Send back", "Guidance", "Leave"]);
+    expect(what).toEqual([
+      "Sprint 57, planned",
+      "FOR-20 Resume a stale agent step in place",
+      "FOR-21 Check the lease fencing token on writes",
+      "FOR-14 Report the test result line",
+      "Report skipped tests too.",
+      "FOR-22 JSON output on the remaining read commands",
+    ]);
+    expect(box.getByRole("button", { name: "Not now" })).toBeEnabled();
+    expect(box.getByRole("button", { name: "Confirm" })).toHaveClass("button--gold-outline");
+    await stream.push({ type: "done", session_id: "s1" });
+    await stream.end();
+  });
+
+  it("Confirm applies it, says so on the card, and reloads the page's data", async () => {
+    const fetchImpl = await openWith(
+      { ...projectRoutes(), [PROPOSAL_URL]: proposal() },
+      { turns: [turn("t1", "user", "Plan it."), turn("t2", "assistant", "Here it is.", [{ name: "Bash" }, { proposal_id: PROPOSAL_ID }])], has_more: false },
+    );
+    fetchImpl.routes[CONFIRM_URL] = proposal({ state: "confirmed", decided_by: "ada", outcome: { sentence: "Applied 2 operations." } });
+    await within(panel()).findByText("Proposed change. Nothing happens until you confirm.");
+    await waitFor(() => expect(queueLoads(fetchImpl)).toBeGreaterThan(0));
+    const before = queueLoads(fetchImpl);
+
+    fireEvent.click(within(card()).getByRole("button", { name: "Confirm" }));
+
+    expect(await within(panel()).findByText("Confirmed by ada. Applied 2 operations.")).toBeInTheDocument();
+    expect(fetchImpl.calls.filter((call) => call.method === "POST").map((call) => call.url)).toEqual([`/api/v1/proposals/${PROPOSAL_ID}/confirm`]);
+    expect(within(card()).queryByRole("button", { name: "Confirm" })).toBeNull();
+    expect(within(card()).getByText("Proposed change.")).toBeInTheDocument();
+    await waitFor(() => expect(queueLoads(fetchImpl)).toBeGreaterThan(before));
+  });
+
+  it("Not now declines it and says nothing was changed", async () => {
+    const fetchImpl = await openWith(
+      { ...projectRoutes(), [PROPOSAL_URL]: proposal() },
+      { turns: [turn("t2", "assistant", "Here it is.", [{ proposal_id: PROPOSAL_ID }])], has_more: false },
+    );
+    fetchImpl.routes[DECLINE_URL] = proposal({ state: "declined", decided_by: "ada", outcome: { sentence: "Declined. Nothing was changed." } });
+    await within(panel()).findByText("Proposed change. Nothing happens until you confirm.");
+    fireEvent.click(within(card()).getByRole("button", { name: "Not now" }));
+    expect(await within(panel()).findByText("Declined by ada. Nothing was changed.")).toBeInTheDocument();
+    expect(fetchImpl.calls.some((call) => call.url.endsWith("/confirm"))).toBe(false);
+  });
+
+  it("shows a refused confirmation with its sentence", async () => {
+    const fetchImpl = await openWith(
+      { ...projectRoutes(), [PROPOSAL_URL]: proposal() },
+      { turns: [turn("t2", "assistant", "", [{ proposal_id: PROPOSAL_ID }])], has_more: false },
+    );
+    const sentence = "Operation 2 of 2 (send a task back with guidance) was refused: Task task-merge is done, not waiting for a person. Nothing was applied.";
+    fetchImpl.routes[CONFIRM_URL] = proposal({ state: "failed", decided_by: "ada", outcome: { sentence, failed: { index: 1 } } });
+    await within(panel()).findByText("Proposed change. Nothing happens until you confirm.");
+    fireEvent.click(within(card()).getByRole("button", { name: "Confirm" }));
+    expect(await within(panel()).findByText(`Not applied. ${sentence}`)).toHaveClass("proposal__outcome--failed");
+  });
+
+  it("an API refusal is shown on the card and the proposal is read again", async () => {
+    const fetchImpl = await openWith(
+      { ...projectRoutes(), [PROPOSAL_URL]: proposal() },
+      { turns: [turn("t2", "assistant", "", [{ proposal_id: PROPOSAL_ID }])], has_more: false },
+    );
+    fetchImpl.routes[CONFIRM_URL] = reply(400, { error: "Proposal prop-1 is already declined by grace.", code: "invalid_request" });
+    await within(panel()).findByText("Proposed change. Nothing happens until you confirm.");
+    fetchImpl.routes[PROPOSAL_URL] = proposal({ state: "declined", decided_by: "grace" });
+    fireEvent.click(within(card()).getByRole("button", { name: "Confirm" }));
+    expect(await within(panel()).findByRole("alert")).toHaveTextContent("already declined by grace");
+    expect(await within(panel()).findByText("Declined by grace. Nothing was changed.")).toBeInTheDocument();
+  });
+
+  it("a proposal from earlier in the conversation shows its final state", async () => {
+    await openWith(
+      { ...projectRoutes(), [PROPOSAL_URL]: proposal({ state: "confirmed", decided_by: "ada", outcome: { sentence: "Applied 2 operations." } }) },
+      { turns: [turn("t2", "assistant", "Here it is.", [{ proposal_id: PROPOSAL_ID }])], has_more: false },
+    );
+    expect(await within(panel()).findByText("Confirmed by ada. Applied 2 operations.")).toBeInTheDocument();
+    expect(within(card()).queryByRole("button")).toBeNull();
+  });
+});
+
+describe("the overlay at narrow widths", () => {
+  let matches;
+  beforeEach(() => {
+    matches = true;
+    window.matchMedia = vi.fn((query) => ({
+      matches: query === "(max-width: 960px)" && matches,
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }));
+  });
+  afterEach(() => {
+    delete window.matchMedia;
+  });
+
+  async function openFromToggle() {
+    renderApp("/dashboard/projects/foreman", createFakeFetch(withManager(projectRoutes())));
+    const button = toggle();
+    button.focus();
+    fireEvent.click(button);
+    await within(panel()).findByText(/You are on:/);
+    return button;
+  }
+
+  it("takes focus, keeps Tab inside, and Escape closes it and gives focus back", async () => {
+    const button = await openFromToggle();
+    const region = screen.getByRole("dialog", { name: "Manager" });
+    const box = within(region).getByRole("textbox", { name: "Message to the manager" });
+    expect(box).toHaveFocus();
+
+    const close = within(region).getByRole("button", { name: "Close" });
+    const focusable = Array.from(region.querySelectorAll("button:not([disabled]), textarea:not([disabled])"));
+    const last = focusable[focusable.length - 1];
+    last.focus();
+    fireEvent.keyDown(last, { key: "Tab" });
+    expect(close).toHaveFocus();
+    fireEvent.keyDown(close, { key: "Tab", shiftKey: true });
+    expect(last).toHaveFocus();
+
+    fireEvent.keyDown(box, { key: "Escape" });
+    expect(document.querySelector(".manager-slot")).toBeNull();
+    expect(toggle()).toHaveAttribute("aria-pressed", "false");
+    expect(button).toHaveFocus();
+  });
+
+  it("beside the page it is not a dialog and Escape leaves it open", async () => {
+    matches = false;
+    await openFromToggle();
+    expect(screen.queryByRole("dialog", { name: "Manager" })).toBeNull();
+    fireEvent.keyDown(within(panel()).getByRole("textbox", { name: "Message to the manager" }), { key: "Escape" });
+    expect(panel()).toBeInTheDocument();
   });
 });

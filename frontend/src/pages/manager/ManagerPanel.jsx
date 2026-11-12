@@ -2,8 +2,11 @@ import React, { useEffect, useId, useRef, useState } from "react";
 
 import { Button } from "../../ui/Button";
 import { Field } from "../../ui/Field";
+import { wrapTab } from "../../ui/focus";
 import { plural } from "../../ui/format";
 import { ReasonDialog } from "../task/ReasonDialog";
+import { useOverlay } from "../../app/manager";
+import { ProposalCard } from "./ProposalCard";
 import { useConversation } from "./useConversation";
 
 import "../../styles/manager.css";
@@ -27,6 +30,9 @@ function Turn({ turn, onRetry, canRetry }) {
         </p>
       ) : null}
       {turn.tools.length > 0 ? <p className="manager__tools">Ran {toolSummary(turn.tools)}.</p> : null}
+      {(turn.proposals || []).map((proposalId) => (
+        <ProposalCard key={proposalId} proposalId={proposalId} />
+      ))}
       {turn.state === "interrupted" ? <p className="manager__tools">This reply was cut short.</p> : null}
       {turn.state === "failed" ? (
         <p className="manager__failure" role="alert">
@@ -44,12 +50,16 @@ function Turn({ turn, onRetry, canRetry }) {
 
 /**
  * The manager side bar: one conversation per project. Everything the manager
- * says is shown as written; a change it makes is something it did through the
- * CLI, not something this panel can hold back, so nothing here asks to confirm
- * (the endpoints return no structured proposal).
+ * says is shown as written. It cannot change anything itself (ADR-0022): a
+ * change it wants is a proposal, shown as a card the person confirms or not.
+ *
+ * At narrow widths the bar covers the page: focus moves into it, Tab stays
+ * inside it, Escape closes it and focus goes back where it was.
  */
 export function ManagerPanel({ projectId, projectName, page, context, onClose }) {
   const headingId = useId();
+  const root = useRef(null);
+  const overlay = useOverlay();
   const conversation = useConversation(projectId, context);
   const { turns, streaming } = conversation;
   const [draft, setDraft] = useState("");
@@ -73,8 +83,40 @@ export function ManagerPanel({ projectId, projectName, page, context, onClose })
     if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent?.isComposing) submit(event);
   }
 
+  useEffect(() => {
+    if (!overlay) return undefined;
+    const previous = document.activeElement;
+    const target =
+      root.current?.querySelector(".manager__composer textarea:not([disabled])") || root.current?.querySelector(".manager__close");
+    target?.focus();
+    return () => {
+      if (previous && typeof previous.focus === "function" && document.contains(previous)) previous.focus();
+    };
+  }, [overlay]);
+
+  function onPanelKeyDown(event) {
+    // Keys from a dialog opened over the bar reach here through its portal;
+    // the dialog keeps its own focus.
+    if (!overlay || !root.current?.contains(event.target)) return;
+    if (event.key === "Escape") {
+      // A dialog inside the bar handles its own Escape first.
+      if (event.defaultPrevented) return;
+      event.preventDefault();
+      onClose();
+      return;
+    }
+    wrapTab(event, root.current);
+  }
+
   return (
-    <section className="manager" aria-labelledby={headingId}>
+    <section
+      className="manager"
+      aria-labelledby={headingId}
+      aria-modal={overlay ? "true" : undefined}
+      role={overlay ? "dialog" : undefined}
+      ref={root}
+      onKeyDown={onPanelKeyDown}
+    >
       <div className="manager__head">
         <h2 className="manager__title" id={headingId}>
           Manager

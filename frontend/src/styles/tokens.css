@@ -77,6 +77,8 @@
   --page-gutter-narrow: 12px;
   --topbar-height: 44px;
   --manager-width: 380px;
+  /* The verb column of a proposal card in the manager side bar */
+  --proposal-term-width: 62px;
   /* Below this width the manager cannot sit beside the page and becomes an
      overlay. Written in shell.css's media query, recorded here. */
   --breakpoint-manager-overlay: 960px;

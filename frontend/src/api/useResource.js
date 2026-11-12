@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { useApiClient } from "./ApiProvider";
+import { useApiClient, useDataRefresh } from "./ApiProvider";
 import { errorSentence } from "./client";
 
 function keyOf(key) {
@@ -33,10 +33,13 @@ function cacheOf(client) {
  *   and available at once when anything loaded the same key before;
  * - `error` is a sentence from the API's error envelope, or null;
  * - a response that arrives after a newer request was started is ignored;
- * - `reload()` starts a new request for the same key.
+ * - `reload()` starts a new request for the same key, and so does every
+ *   `refresh()` from `useDataRefresh` (after a change the page did not make
+ *   through this resource, such as confirming a manager's proposal).
  */
 export function useResource(key, load, { enabled = true } = {}) {
   const client = useApiClient();
+  const { generation } = useDataRefresh();
   const resourceKey = keyOf(key);
   const loadRef = useRef(load);
   loadRef.current = load;
@@ -84,7 +87,7 @@ export function useResource(key, load, { enabled = true } = {}) {
       );
 
     return () => controller.abort();
-  }, [client, cache, resourceKey, reloads, enabled]);
+  }, [client, cache, resourceKey, reloads, generation, enabled]);
 
   const reload = useCallback(() => setReloads((count) => count + 1), []);
 

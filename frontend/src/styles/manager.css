@@ -128,3 +128,70 @@
   justify-content: space-between;
   gap: var(--space-2);
 }
+
+/* A proposal: what will be created, changed and left, then Not now / Confirm. */
+.proposal {
+  display: flex;
+  flex-direction: column;
+  border: var(--line-width) solid var(--color-border-control);
+  border-radius: var(--radius);
+  background: var(--color-ground);
+}
+
+.proposal__head {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: var(--line-width) solid var(--color-line-row-tinted);
+  font-size: var(--font-size-control);
+  color: var(--color-text-quiet);
+}
+
+.proposal__rows {
+  display: grid;
+  grid-template-columns: var(--proposal-term-width) minmax(0, 1fr);
+  padding: var(--space-1) var(--space-3);
+}
+
+.proposal__term,
+.proposal__what {
+  padding: var(--space-1) 0;
+}
+
+.proposal__term {
+  font-size: var(--font-size-control);
+  color: var(--color-text-quiet);
+}
+
+.proposal__what {
+  overflow-wrap: anywhere;
+}
+
+.proposal__what--quiet {
+  color: var(--color-text-secondary);
+}
+
+.proposal__outcome {
+  padding: var(--space-2) var(--space-3);
+  border-top: var(--line-width) solid var(--color-line-row-tinted);
+  font-size: var(--font-size-control);
+}
+
+.proposal__outcome--applied {
+  color: var(--color-green);
+}
+
+.proposal__outcome--declined {
+  color: var(--color-text-quiet);
+}
+
+.proposal__outcome--failed {
+  color: var(--color-red);
+}
+
+.proposal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-top: var(--line-width) solid var(--color-line-row-tinted);
+}
+

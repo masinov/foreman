@@ -7,7 +7,11 @@ import { useResource } from "../../api/useResource";
 
 const STOPPED_EARLY = "The reply stopped before it was finished.";
 
-/** A stored turn as the panel shows it. `tool_uses` also carries an `interrupted` marker. */
+/**
+ * A stored turn as the panel shows it. `tool_uses` also carries an
+ * `interrupted` marker and, for each proposal made in the turn, its
+ * `proposal_id`.
+ */
 function fromStored(turn) {
   const uses = Array.isArray(turn.tool_uses) ? turn.tool_uses : [];
   return {
@@ -16,6 +20,7 @@ function fromStored(turn) {
     role: turn.role === "user" ? "user" : "assistant",
     text: turn.text || "",
     tools: uses.map((use) => use?.name).filter(Boolean),
+    proposals: uses.map((use) => use?.proposal_id).filter(Boolean),
     state: uses.some((use) => use?.interrupted) ? "interrupted" : "done",
     error: null,
   };
@@ -26,7 +31,8 @@ function fromStored(turn) {
  * reply that grows as it is written, a failure kept with what had arrived so
  * it can be retried, and clearing the conversation.
  *
- * A turn is `{ key, role, text, tools, state, error }`, with `state` one of
+ * A turn is `{ key, role, text, tools, proposals, state, error }`, with
+ * `proposals` the ids of proposals the manager made in it, and `state` one of
  * `done`, `streaming`, `failed` or `interrupted` (a stored reply that was cut
  * short).
  */
@@ -76,8 +82,8 @@ export function useConversation(projectId, context) {
       const replyKey = `reply-${counter.current}`;
       const update = (change) =>
         setTurns((current) => current.map((turn) => (turn.key === replyKey ? { ...turn, ...change(turn) } : turn)));
-      const sent = { key: `sent-${counter.current}`, role: "user", text, tools: [], state: "done", error: null };
-      const reply = { key: replyKey, role: "assistant", text: "", tools: [], state: "streaming", error: null };
+      const sent = { key: `sent-${counter.current}`, role: "user", text, tools: [], proposals: [], state: "done", error: null };
+      const reply = { key: replyKey, role: "assistant", text: "", tools: [], proposals: [], state: "streaming", error: null };
       setTurns((current) => [...current.slice(0, current.length - replacing), sent, reply]);
 
       const abort = new AbortController();
@@ -89,6 +95,8 @@ export function useConversation(projectId, context) {
             update((turn) => ({ text: turn.text + line.text }));
           } else if (line.type === "tool_use" && line.name) {
             update((turn) => ({ tools: [...turn.tools, line.name] }));
+          } else if (line.type === "proposal" && line.proposal_id) {
+            update((turn) => (turn.proposals.includes(line.proposal_id) ? {} : { proposals: [...turn.proposals, line.proposal_id] }));
           } else if (line.type === "error") {
             finished = true;
             update(() => ({ state: "failed", error: errorSentence(new Error(line.message || "The manager could not answer")) }));
