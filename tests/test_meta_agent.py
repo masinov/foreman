@@ -124,6 +124,53 @@ class StateHeaderTests(unittest.TestCase):
         self.assertEqual(header.count("engine.task_blocked"), 5)
         self.assertNotIn("agent.text", header)
 
+    def test_backlog_block_names_filed_and_accepted_capped(self) -> None:
+        backlog = self.store.ensure_backlog("proj-1", created_at="2026-06-12T00:00:00Z")
+        for i in range(7):
+            self.store.save_task(
+                Task(
+                    id=f"filed-{i}",
+                    sprint_id=backlog.id,
+                    project_id="proj-1",
+                    title=f"Filed work {i}",
+                    status="triage",
+                )
+            )
+        self.store.save_task(
+            Task(
+                id="acc-1",
+                sprint_id=backlog.id,
+                project_id="proj-1",
+                title="Accepted work",
+                status="todo",
+            )
+        )
+        self.store.save_task(
+            Task(
+                id="dec-1",
+                sprint_id=backlog.id,
+                project_id="proj-1",
+                title="Declined work",
+                status="declined",
+            )
+        )
+        header = meta_agent.build_state_header(self.store, self.project)
+        self.assertIn("### Backlog", header)
+        self.assertIn("filed=7, accepted=1, declined=1", header)
+        self.assertIn("Filed (showing 5 of 7):", header)
+        self.assertIn("Accepted (showing 1 of 1):", header)
+        self.assertIn("- acc-1 | feature | Accepted work", header)
+        self.assertEqual(header.count("- filed-"), 5)
+        self.assertNotIn("dec-1", header)
+        # The backlog is not a sprint row in the sprint list.
+        sprint_block = header.split("### Backlog")[0]
+        self.assertNotIn(backlog.id, sprint_block)
+
+    def test_backlog_block_empty_when_no_backlog(self) -> None:
+        header = meta_agent.build_state_header(self.store, self.project)
+        self.assertIn("filed=0, accepted=0, declined=0", header)
+        self.assertNotIn("Filed (showing", header)
+
 
 def _subparser_choices(parser: argparse.ArgumentParser) -> dict[str, argparse.ArgumentParser]:
     for action in parser._actions:
@@ -165,6 +212,15 @@ class OperatingContractDriftTests(unittest.TestCase):
                     sub_choices,
                     f"unknown subcommand in contract: {line}",
                 )
+
+    def test_contract_lists_every_backlog_command(self) -> None:
+        project = Project(
+            id="proj-1", name="Demo", repo_path="/tmp/demo", workflow_id="development"
+        )
+        contract = meta_agent.build_operating_contract(project)
+        backlog = _subparser_choices(build_parser())["backlog"]
+        for sub in _subparser_choices(backlog):
+            self.assertIn(f"foreman backlog {sub} ", contract + " ")
 
     def test_contract_uses_corrected_history_and_override_syntax(self) -> None:
         project = Project(
