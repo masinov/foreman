@@ -26,6 +26,18 @@ from .signals import extract_signal_events
 
 _FILE_TOOLS = {"Read", "Write", "Edit", "NotebookEdit"}
 
+#: A step is one headless turn: when the agent's message ends, the process
+#: exits and the step is over. Claude Code moves a command that outlives its
+#: timeout to the background and lets the agent end its turn to "wait" for
+#: it, which in a step means the work is abandoned and the completion marker
+#: never comes. So background commands are off and the default timeout is
+#: long enough for a project's test suite. A role's own ``[agent.env]`` wins.
+HEADLESS_STEP_ENV: dict[str, str] = {
+    "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1",
+    "BASH_DEFAULT_TIMEOUT_MS": "1200000",
+    "BASH_MAX_TIMEOUT_MS": "1800000",
+}
+
 # Raw stream lines are persisted for the transcript, capped so one tool result
 # (a file read, a long test log) cannot write tens of kilobytes per line.
 RAW_LINE_MAX_CHARS = 8000
@@ -112,7 +124,7 @@ class ClaudeCodeRunner(AgentRunner):
         try:
             proc = self._popen_factory(
                 command,
-                **popen_kwargs(cwd=config.working_dir, env=config.env),
+                **popen_kwargs(cwd=config.working_dir, env={**HEADLESS_STEP_ENV, **config.env}),
             )
         except OSError as exc:
             raise PreflightError(
