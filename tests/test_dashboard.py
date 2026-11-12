@@ -2108,6 +2108,21 @@ class DashboardSprintTaskBacklogTests(unittest.TestCase):
         self.assertTrue(board[gated.id]["awaiting_human_gate"])
         self.assertFalse(board[cost_blocked.id]["awaiting_human_gate"])
 
+        # Identity, and which policy the gate is (None off a gate).
+        self.assertEqual(gated_payload["project_id"], project.id)
+        self.assertEqual(gated_payload["sprint_id"], sprint.id)
+        self.assertEqual(board[gated.id]["project_id"], project.id)
+        self.assertEqual(board[gated.id]["sprint_id"], sprint.id)
+        self.assertIn(gated_payload["gate_policy"], ("plan_approval", "merge_approval"))
+        self.assertEqual(board[gated.id]["gate_policy"], gated_payload["gate_policy"])
+        self.assertIsNone(cost_payload["gate_policy"])
+        self.assertIsNone(board[cost_blocked.id]["gate_policy"])
+        sprint_payload = self._request("GET", f"/api/sprints/{sprint.id}").json()
+        self.assertEqual(sprint_payload["project_id"], project.id)
+        listed = self._request("GET", f"/api/projects/{project.id}/sprints").json()
+        rows = listed["sprints"] if isinstance(listed, dict) else listed
+        self.assertEqual(rows[0]["project_id"], project.id)
+
     def test_blocked_kind_separates_gates_from_engine_dead_letters(self):
         """Blocked tasks carry `gate` or `engine`, and the project summary counts both."""
         store = ForemanStore(self.db_path)

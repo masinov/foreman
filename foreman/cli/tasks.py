@@ -201,6 +201,13 @@ def handle_task_add(args: argparse.Namespace) -> int:
                     file=sys.stderr,
                 )
                 return 1
+            if sprint.is_backlog:
+                print(
+                    f"{sprint_id} is the backlog, not a sprint. File work into it with "
+                    f"`foreman backlog add {project.id}`.",
+                    file=sys.stderr,
+                )
+                return 1
         else:
             sprint = select_task_creation_sprint(store, project.id)
             if sprint is None:
@@ -727,7 +734,8 @@ def register_task(subparsers: argparse._SubParsersAction) -> None:
     set_handler(task_unblock, handle_task_unblock, "task unblock")
 
     task_accept = task_commands.add_parser(
-        "accept", help="Accept a task out of triage into the runnable queue."
+        "accept",
+        help="Accept a filed task. In the backlog it then waits to be planned into a sprint.",
     )
     task_accept.add_argument("task_id", help="Task identifier.")
     add_db_option(

@@ -113,6 +113,7 @@ def _row_to_sprint(row: sqlite3.Row) -> Sprint:
         created_at=row["created_at"],
         started_at=row["started_at"],
         completed_at=row["completed_at"],
+        kind=row["kind"] if "kind" in row.keys() else "sprint",
     )
 
 

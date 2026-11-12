@@ -46,6 +46,7 @@ function taskItem(project, sprint, task, detail) {
       id: `task:${task.id}`,
       kind: NEEDS_YOU_KINDS.approval,
       step: task.workflow_current_step || null,
+      policy: task.gate_policy || null,
       evidence: detail?.completion_evidence ?? null,
     };
   }

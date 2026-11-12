@@ -73,7 +73,11 @@ The integrated pre-release baseline now contains:
   system can call to file work — authenticated by named per-project API tokens
   (`foreman token create|list|revoke`, SHA-256 stored, secret shown once),
   idempotent on the caller's `(source.system, source.external_ref)`, and
-  landing unsprinted work in the project's standing intake queue sprint,
+  filing unsprinted work into the project's backlog (`ADR-0021`),
+- a backlog that is not a sprint: work is filed, accepted, then planned into a
+  sprint (`foreman backlog list|add|accept|decline|plan|unplan` and
+  `/api/v1/projects/{id}/backlog`); the engine only runs the active sprint, and
+  tasks agents create are filed there too,
 - a dashboard service layer in `foreman/dashboard_service.py` for project,
   sprint, task, action, and streaming payloads,
 - a FastAPI dashboard backend in `foreman/dashboard/` served by
@@ -126,8 +130,10 @@ authorize every merge, and `policy_rules` to vary that by task type:
 ./venv/bin/foreman config <project-id> --set policy_rules='{"docs": {"merge_approval": "auto"}}'
 ```
 
-Work filed through the intake API waits in the `triage` status until someone
-runs `foreman task accept <task-id>`, unless the `triage` policy says `auto`.
+Work filed through the intake API, by an agent, or with `foreman backlog add`
+lands in the project's backlog. It waits as filed (`triage`) until someone runs
+`foreman backlog accept <task-id>`, unless the `triage` policy says `auto`, and
+it runs only once planned into a sprint with `foreman backlog plan`.
 
 Enabled webhook destinations receive policy-selected events through a durable
 queue. Delivery runs outside task execution, retries transient failures, and

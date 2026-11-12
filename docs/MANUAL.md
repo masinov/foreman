@@ -245,6 +245,32 @@ foreman task unblock <task-id>
 foreman task cancel <task-id>         # also removes the task's worktree
 ```
 
+### Backlog
+
+Work that is filed or accepted and not yet planned into a sprint (ADR-0021).
+The engine never runs it, and it is not listed among sprints. Work flows one
+way: filed, accepted, planned.
+
+```bash
+foreman backlog list <project-id> [--status filed|accepted|declined] \
+    [--query TEXT] [--limit N] [--offset N] [--json]
+foreman backlog add <project-id> --title TITLE [--type TYPE] [--criteria C] \
+    [--description D] [--priority N] [--complexity C] [--accept]
+foreman backlog accept <task-id>      # filed → accepted (same as task accept)
+foreman backlog decline <task-id> [--reason TEXT]
+foreman backlog plan <project-id> <task-id>... --sprint SPRINT_ID
+foreman backlog plan <project-id> <task-id>... --new-sprint TITLE [--goal G]
+foreman backlog unplan <task-id>      # a task that has not started goes back
+```
+
+`add` files under the project's `triage` policy (§14): `human` leaves it filed
+and asks a person, `auto` accepts it. `--accept` files it already accepted.
+Only accepted tasks can be planned, into a planned or active sprint, or into a
+new planned sprint created by the same command; if one task cannot be planned,
+none are. A declined task is kept and shows with `--status declined`. A task an
+agent creates with the `task_created` signal is filed here too, never into the
+sprint it is running in.
+
 `task unblock` refuses a task parked at a human gate (use `foreman approve` or
 `foreman deny` for those) and clears the engine's dead letters — see
 [Dead-letter kinds](#dead-letter-kinds).
@@ -1700,7 +1726,7 @@ curl -sS -X POST http://localhost:8000/api/projects/foreman/intake \
 | `task_type` | no | defaults to `fix` (not `feature`: most work arriving from outside is a problem report) |
 | `priority` · `complexity` | no | integer; `small`/`medium`/`large` |
 | `source` | no | `system`, `external_ref`, `url`, `reporter` — all strings |
-| `sprint_id` | no | omit to use the intake queue |
+| `sprint_id` | no | omit to file into the project's backlog |
 
 The response is the task exactly as `GET /api/tasks/{id}` serializes it, plus
 `created`. **201** with `"created": true` means a new task; **200** with
@@ -1720,27 +1746,23 @@ a second call with a different title does not rename the first.
 ### Where the task lands
 
 With `sprint_id`, the named sprint (it must belong to the project). Without it,
-the project's **intake queue**: a sprint per project, id `<project>-intake`,
-titled "Intake queue", created on first use.
-
-Sprints stay the unit of grouping, so a continuous queue is simply a sprint
-that never completes. The queue is `active` when the project has no active
-sprint and `planned` when one is already running — intake must not displace the
-sprint a team is mid-way through. A `planned` queue activates on the next
-intake once the active sprint finishes, so queued work never strands. To the
-resident engine an active intake queue is an ordinary sprint: it picks up
-`todo` tasks there exactly as it would anywhere else.
+the project's **backlog** (ADR-0021): one per project, id `<project>-backlog`,
+created on first use. The backlog is not a sprint and the engine never runs
+it; work there runs once a person plans it into a sprint (`foreman backlog
+plan`, `POST /api/v1/projects/{id}/backlog/plan`). Databases that had an
+intake queue sprint (`<project>-intake`) had its waiting work moved into the
+backlog by migration 21.
 
 **The `triage` policy decides the arriving status** (§14), resolved for the
 task's type:
 
 - `human` (the default) — the task lands in **`triage`**. The engine never
   selects a `triage` task, and one `engine.attention_needed` turn with trigger
-  `triage` is raised so a person sees it. Accept it with `foreman task accept
-  <task-id>`, `POST /api/tasks/{id}/accept`, or the board's **Accept** button;
-  cancel it with `foreman task cancel`.
-- `auto` — the task lands in `todo` and the engine may pick it up on its next
-  pass, with no person involved.
+  `triage` is raised so a person sees it. Accept it with `foreman backlog accept
+  <task-id>` (or `foreman task accept`), `POST /api/v1/tasks/{id}/accept`, or
+  the board's **Accept** button; decline it with `foreman backlog decline`.
+- `auto` — the task lands accepted (`todo`) in the backlog with no person
+  involved, and waits there until it is planned into a sprint.
 
 ```bash
 # Trust CI to file runnable work, but keep a person on everything else:
@@ -1804,7 +1826,7 @@ See [ADR-0013](adr/ADR-0013-intake-endpoint-and-api-tokens.md) and
 | Intake answers 403 | The token is live but belongs to another project (or lacks `intake`). `foreman token list <project>` shows which project's tokens exist. |
 | A route other than intake answers 403 with "only valid on … /intake" | An `fmn_…` API token was sent to a dashboard route. Use the dashboard token there. |
 | Intake keeps returning 200 and never creates a task | It is idempotent on `(system, external_ref)`: that pair was filed before. Send a new `external_ref`, or omit `source` to force a new task. |
-| Intake tasks are filed but never run | The intake queue is `planned` because another sprint is active. Complete or cancel that sprint — the next intake activates the queue — or activate `<project>-intake` yourself. |
+| Intake tasks are filed but never run | They are in the backlog, which never runs. Accept them if they are filed, then plan them into a sprint: `foreman backlog plan <project> <task-id>... --sprint <sprint-id>`. |
 | `.foreman/worktrees/` keeps growing | Trees of tasks that never reached `mark_done`. Lower `max_live_worktrees`, or run `foreman worktree prune <project>` (or Settings → Task working copies → Remove unused copies) to remove anything done, cancelled, or unclaimed. |
 
 ---

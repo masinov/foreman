@@ -33,6 +33,8 @@ from .engine_control import (
     spawn_serve,
 )
 from .api_tokens import INTAKE_SCOPE
+from .backlog import BACKLOG_PAGE_LIMIT, BacklogQueryError, read_backlog
+from .backlog import task_source as _serialize_task_source
 from .guidance import guidance_notes
 from .mutations import MutationError, Mutations
 from .models import (
@@ -46,7 +48,6 @@ from .models import (
     Sprint,
     Task,
 )
-from .notifications import NotificationDispatcher
 from .orchestrator import ForemanOrchestrator, OrchestratorError
 from .policy import PolicyMatrix, describe_resolution
 from .scaffold import generate_project_id
@@ -81,17 +82,6 @@ DASHBOARD_REQUESTER = "dashboard"
 
 #: How many engine commands the status payload carries.
 ENGINE_COMMAND_LIMIT = 10
-
-#: Suffix of a project's intake queue sprint id, and its title. The queue is a
-#: real sprint (ADR-0013): sprints stay the unit of grouping, and a continuous
-#: queue is simply a sprint that never completes.
-INTAKE_SPRINT_SUFFIX = "-intake"
-INTAKE_SPRINT_TITLE = "Intake queue"
-INTAKE_SPRINT_GOAL = (
-    "Work handed to Foreman by other systems through the intake API. "
-    "This sprint is a standing queue and is not expected to complete."
-)
-
 
 class DashboardServiceError(Exception):
     """Base error for dashboard service failures."""
@@ -196,23 +186,6 @@ def _serialize_completion_evidence(evidence: "Any") -> dict[str, Any] | None:
         "builtin_test_detail": evidence.builtin_test_detail,
         "failure_reasons": list(evidence.failure_reasons),
         "built_at": evidence.built_at,
-    }
-
-
-def _serialize_task_source(task: Task) -> dict[str, Any] | None:
-    """Return where a task came from, or None when a person filed it.
-
-    Absent rather than empty: the drawer renders a Source section only for work
-    that arrived from another system, so tasks created in the UI stay clean.
-    """
-
-    if not any((task.source_system, task.source_ref, task.source_url, task.reporter)):
-        return None
-    return {
-        "system": task.source_system,
-        "external_ref": task.source_ref,
-        "url": task.source_url,
-        "reporter": task.reporter,
     }
 
 
@@ -662,6 +635,7 @@ class DashboardService:
             task_counts = self.store.task_counts(sprint_id=sprint.id)
             entry: dict[str, Any] = {
                 "id": sprint.id,
+                "project_id": sprint.project_id,
                 "title": sprint.title,
                 "goal": sprint.goal,
                 "status": sprint.status,
@@ -725,11 +699,10 @@ class DashboardService:
     def get_sprint(self, sprint_id: str) -> dict[str, Any]:
         """Return one sprint summary payload."""
 
-        sprint = self.store.get_sprint(sprint_id)
-        if sprint is None:
-            raise DashboardNotFoundError(f"Sprint not found: {sprint_id}")
+        sprint = self._require_sprint(sprint_id)
         return {
             "id": sprint.id,
+            "project_id": sprint.project_id,
             "title": sprint.title,
             "goal": sprint.goal,
             "status": sprint.status,
@@ -838,6 +811,8 @@ class DashboardService:
             result.append(
                 {
                     "id": task.id,
+                    "project_id": task.project_id,
+                    "sprint_id": task.sprint_id,
                     "task_key": task.task_key,
                     "title": task.title,
                     "status": task.status,
@@ -849,6 +824,7 @@ class DashboardService:
                     "acceptance_criteria": task.acceptance_criteria,
                     "workflow_current_step": task.workflow_current_step,
                     "awaiting_human_gate": self._at_human_gate(task, gates),
+                    "gate_policy": self._gate_policy(task, gates),
                     "blocked_kind": blocked_kind(task, gates),
                     "complexity": task.complexity,
                     "executor_overrides": task.executor_overrides,
@@ -983,11 +959,16 @@ class DashboardService:
                 }
             )
 
+        sprint = self.store.get_sprint(task.sprint_id)
         return {
             "id": task.id,
+            "project_id": task.project_id,
+            "sprint_id": task.sprint_id,
             "task_key": task.task_key,
             "title": task.title,
             "status": task.status,
+            # In the backlog: filed, accepted or declined, never run (ADR-0021).
+            "in_backlog": sprint is not None and sprint.is_backlog,
             "task_type": task.task_type,
             "description": task.description,
             "priority": task.priority,
@@ -1003,6 +984,7 @@ class DashboardService:
             "complexity": task.complexity,
             "executor_overrides": task.executor_overrides or {},
             "awaiting_human_gate": self._at_human_gate(task, gates),
+            "gate_policy": self._gate_policy(task, gates),
             "blocked_kind": blocked_kind(task, gates),
             "completion_evidence": _serialize_completion_evidence(task.completion_evidence),
             "guidance": [
@@ -1047,9 +1029,7 @@ class DashboardService:
 
         from .models import TASK_COMPLEXITIES, TASK_TYPES
 
-        sprint = self.store.get_sprint(sprint_id)
-        if sprint is None:
-            raise DashboardNotFoundError(f"Sprint not found: {sprint_id}")
+        sprint = self._require_sprint(sprint_id)
         if not title.strip():
             raise DashboardValidationError("Task title is required.")
 
@@ -1228,9 +1208,7 @@ class DashboardService:
     def update_sprint_fields(self, sprint_id: str, *, updates: dict[str, Any]) -> dict[str, Any]:
         """Apply non-lifecycle field updates to one sprint (title, goal)."""
 
-        sprint = self.store.get_sprint(sprint_id)
-        if sprint is None:
-            raise DashboardNotFoundError(f"Sprint not found: {sprint_id}")
+        sprint = self._require_sprint(sprint_id)
 
         allowed_fields = {"title", "goal", "order_index"}
         unknown = set(updates) - allowed_fields
@@ -1329,7 +1307,7 @@ class DashboardService:
         return {"ok": "deleted", "sprint_id": sprint_id, "project_id": project_id}
 
     def accept_task(self, task_id: str) -> dict[str, Any]:
-        """Accept one task out of triage and into the runnable queue."""
+        """Accept one filed task (see ``Mutations.accept_task``)."""
 
         task = self._require_task(task_id)
         try:
@@ -1393,10 +1371,15 @@ class DashboardService:
             raise DashboardValidationError(str(exc)) from exc
         return {"ok": "deleted", "task_id": task_id, "project_id": project_id}
 
-    def _mutations(self) -> Mutations:
-        """Return the shared mutation service, stamped as the dashboard."""
+    def _mutations(self, requested_by: str | None = None) -> Mutations:
+        """Return the shared mutation service, stamped as the dashboard.
 
-        return Mutations(self.store, via="dashboard", now=self._now)
+        ``requested_by`` is who the caller says they are. A shared token is
+        not identity yet, so it is recorded as given and nothing more.
+        """
+
+        actor = (requested_by or "").strip() or None
+        return Mutations(self.store, via="dashboard", actor=actor, now=self._now)
 
     def list_worktrees(self, project_id: str) -> dict[str, Any]:
         """Return the Foreman-owned worktrees for one project.
@@ -1477,6 +1460,19 @@ class DashboardService:
             "task_key": (task.task_key or task.id) if task is not None else None,
             "task_status": task.status if task is not None else None,
         }
+
+    def _require_sprint(self, sprint_id: str) -> Sprint:
+        """Return a sprint; the backlog is not one (ADR-0021) and is not found."""
+
+        sprint = self.store.get_sprint(sprint_id)
+        if sprint is None:
+            raise DashboardNotFoundError(f"Sprint not found: {sprint_id}")
+        if sprint.is_backlog:
+            raise DashboardNotFoundError(
+                f"Sprint not found: {sprint_id} is the project's backlog; "
+                f"use /projects/{sprint.project_id}/backlog."
+            )
+        return sprint
 
     def _require_project(self, project_id: str) -> Project:
         """Return one project or raise the dashboard's not-found error."""
@@ -1593,6 +1589,17 @@ class DashboardService:
         if workflow is None:
             return None
         return {step.id for step in workflow.steps}
+
+    @staticmethod
+    def _gate_policy(task: Task, gates: WorkflowGateSteps) -> str | None:
+        """The policy (``plan_approval`` or ``merge_approval``) of the gate a task waits at.
+
+        ``None`` when the task is not at a human gate, or the gate names no policy.
+        """
+
+        if blocked_kind(task, gates) != "gate":
+            return None
+        return gates.gate_policies.get(task.workflow_current_step or "")
 
     @staticmethod
     def _at_human_gate(task: Task, gates: WorkflowGateSteps) -> bool:
@@ -1854,6 +1861,7 @@ class DashboardService:
                 payload["created"] = False
                 return payload
 
+        sprint: Sprint | None = None
         if sprint_id:
             sprint = self.store.get_sprint(sprint_id)
             if sprint is None:
@@ -1862,120 +1870,176 @@ class DashboardService:
                 raise DashboardValidationError(
                     "Sprint does not belong to this project."
                 )
-        else:
-            sprint = self._ensure_intake_sprint(project)
 
-        task_id = f"task-{_stable_slug(clean_title)}"
-        suffix = 2
-        while self.store.get_task(task_id) is not None:
-            task_id = f"task-{_stable_slug(clean_title)}-{suffix}"
-            suffix += 1
-
-        existing_tasks = self.store.list_tasks(sprint_id=sprint.id)
-        now = self._now()
-        # The triage policy decides whether filed work is runnable on arrival.
-        # `human` parks it in `triage`, where the engine will not pick it up,
-        # until a person accepts it; `auto` sends it straight to the queue.
-        triage_decision = PolicyMatrix.for_project(project).resolve(
-            "triage", task_type=task_type
+        # Without a sprint the work is filed into the backlog (ADR-0021); the
+        # triage policy decides whether it arrives filed or accepted.
+        mutations = Mutations(
+            self.store, via="api", actor=f"api:{token.name}", role="api", now=self._now
         )
-        status = "triage" if triage_decision.value == "human" else "todo"
-        task = Task(
-            id=task_id,
-            sprint_id=sprint.id,
-            project_id=project_id,
-            title=clean_title,
-            status=status,  # type: ignore[arg-type]
-            task_type=task_type,  # type: ignore[arg-type]
-            description=(description or "").strip() or None,
-            acceptance_criteria=(acceptance_criteria or "").strip() or None,
-            complexity=complexity,
-            priority=priority_value,
-            order_index=max((t.order_index for t in existing_tasks), default=-1) + 1,
-            # The audit trail names the token, never the secret.
-            created_by=f"api:{token.name}",
-            source_system=source_fields["system"],
-            source_ref=source_fields["external_ref"],
-            source_url=source_fields["url"],
-            reporter=source_fields["reporter"],
-            created_at=now.isoformat(),
-        )
-        task = self.store.save_task(task)
-
-        run_id = self._ensure_event_run(
-            task,
-            step="intake",
-            outcome="created",
-            now=now,
-            role_id="api",
-            agent_backend="api",
-        )
-        self.store.save_event(
-            Event(
-                id=f"evt-intake-{now.strftime('%Y%m%d%H%M%S%f')}-{task.id[:8]}",
-                run_id=run_id,
-                task_id=task.id,
-                project_id=project_id,
+        try:
+            filed = mutations.file_task(
+                project,
+                title=clean_title,
+                task_type=task_type,
+                description=description,
+                acceptance_criteria=acceptance_criteria,
+                priority=priority_value,
+                complexity=complexity,
+                # The audit trail names the token, never the secret.
+                created_by=f"api:{token.name}",
+                source=source_fields,
+                into=sprint,
                 event_type="intake.task_created",
-                role_id="api",
-                timestamp=now.isoformat(),
-                payload={
-                    "task_key": task.task_key,
-                    "title": task.title,
-                    "task_type": task.task_type,
-                    "sprint_id": sprint.id,
-                    "created_by": task.created_by,
-                    "status": task.status,
-                    "triage": triage_decision.as_dict(),
-                    # The token's identity, never its secret.
+                step="intake",
+                event_payload={
                     "token_id": token.id,
                     "token_name": token.name,
-                    "source": _serialize_task_source(task) or {},
+                    # As the task payload names it: all four, or nothing.
+                    "source": (
+                        {
+                            "system": source_fields["system"],
+                            "external_ref": source_fields["external_ref"],
+                            "url": source_fields["url"],
+                            "reporter": source_fields["reporter"],
+                        }
+                        if any(source_fields.values())
+                        else {}
+                    ),
                 },
             )
-        )
+        except MutationError as exc:
+            raise DashboardValidationError(str(exc)) from exc
 
-        if task.status == "triage":
-            self._emit_task_attention(task, project, trigger="triage", run_id=run_id, now=now)
-
-        payload = self.get_task(task.id)
+        payload = self.get_task(filed.task.id)
         payload["created"] = True
         return payload
 
-    def _emit_task_attention(
-        self,
-        task: Task,
-        project: Project,
-        *,
-        trigger: str,
-        run_id: str,
-        now: datetime,
-    ) -> None:
-        """Raise one attention turn for a task the engine cannot progress."""
+    # ── Backlog (ADR-0021) ────────────────────────────────────────────────────
 
-        notify = (
-            PolicyMatrix.for_project(project)
-            .resolve(
-                "notification",
-                task_type=task.task_type,
-                overrides=task.executor_overrides,
+    def list_backlog(
+        self,
+        project_id: str,
+        *,
+        states: Sequence[str] | None = None,
+        query: str | None = None,
+        limit: int = BACKLOG_PAGE_LIMIT,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """Return one page of the project's backlog (see ``foreman.backlog``)."""
+
+        project = self._require_project(project_id)
+        try:
+            return read_backlog(
+                self.store, project, states=states, query=query, limit=limit, offset=offset
             )
-            .value
-        )
-        event = self.store.save_event(
-            Event(
-                id=f"evt-attention-{now.strftime('%Y%m%d%H%M%S%f')}-{task.id[:8]}",
-                run_id=run_id,
-                task_id=task.id,
-                project_id=project.id,
-                event_type="engine.attention_needed",
-                role_id="api",
-                timestamp=now.isoformat(),
-                payload={"trigger": trigger, "task_id": task.id, "notify": notify},
+        except BacklogQueryError as exc:
+            raise DashboardValidationError(str(exc)) from exc
+
+    def file_backlog_task(
+        self,
+        project_id: str,
+        *,
+        title: str,
+        task_type: str = "feature",
+        description: str | None = None,
+        acceptance_criteria: str | None = None,
+        priority: int = 0,
+        complexity: str | None = None,
+        accept: bool = False,
+        requested_by: str | None = None,
+    ) -> dict[str, Any]:
+        """File one task a person wrote into the backlog."""
+
+        project = self._require_project(project_id)
+        try:
+            filed = self._mutations(requested_by).file_task(
+                project,
+                title=title,
+                task_type=task_type,
+                description=description,
+                acceptance_criteria=acceptance_criteria,
+                priority=priority,
+                complexity=complexity,
+                created_by=(requested_by or "").strip() or "human",
+                accept=accept,
             )
-        )
-        # Queue only; the delivery worker sends. The dispatcher never raises.
-        NotificationDispatcher(self.store).consider(event)
+        except MutationError as exc:
+            raise DashboardValidationError(str(exc)) from exc
+        return self.get_task(filed.task.id)
+
+    def decline_task(
+        self, task_id: str, *, reason: str | None = None, requested_by: str | None = None
+    ) -> dict[str, Any]:
+        """Decline one filed task. It is kept, marked declined, in the backlog."""
+
+        task = self._require_task(task_id)
+        try:
+            self._mutations(requested_by).decline_task(task, reason)
+        except MutationError as exc:
+            raise DashboardValidationError(str(exc)) from exc
+        return self.get_task(task.id)
+
+    def plan_backlog(
+        self,
+        project_id: str,
+        *,
+        task_ids: Sequence[str],
+        sprint_id: str | None = None,
+        new_sprint: dict[str, Any] | None = None,
+        requested_by: str | None = None,
+    ) -> dict[str, Any]:
+        """Plan accepted backlog tasks into a sprint, or into a new planned one."""
+
+        self._require_project(project_id)
+        if not task_ids:
+            raise DashboardValidationError("'task_ids' must name at least one task.")
+        if bool(sprint_id) == bool(new_sprint):
+            raise DashboardValidationError(
+                "Send either 'sprint_id' or 'new_sprint' ({title, goal}), not both."
+            )
+        tasks: list[Task] = []
+        for task_id in task_ids:
+            task = self._require_task(task_id)
+            if task.project_id != project_id:
+                raise DashboardValidationError(
+                    f"Task {task_id} does not belong to this project."
+                )
+            tasks.append(task)
+        sprint: Sprint | None = None
+        if sprint_id:
+            sprint = self.store.get_sprint(sprint_id)
+            if sprint is None or sprint.is_backlog:
+                raise DashboardNotFoundError(f"Sprint not found: {sprint_id}")
+        try:
+            planned = self._mutations(requested_by).plan_tasks(
+                tasks,
+                sprint=sprint,
+                new_sprint_title=(new_sprint or {}).get("title"),
+                new_sprint_goal=(new_sprint or {}).get("goal"),
+            )
+        except MutationError as exc:
+            raise DashboardValidationError(str(exc)) from exc
+        return {
+            "sprint": {
+                "id": planned.sprint.id,
+                "title": planned.sprint.title,
+                "goal": planned.sprint.goal,
+                "status": planned.sprint.status,
+                "order_index": planned.sprint.order_index,
+            },
+            "created_sprint": planned.created_sprint,
+            "task_ids": [task.id for task in planned.tasks],
+        }
+
+    def unplan_task(self, task_id: str, *, requested_by: str | None = None) -> dict[str, Any]:
+        """Move a task that has not started back from its sprint to the backlog."""
+
+        task = self._require_task(task_id)
+        try:
+            self._mutations(requested_by).unplan_task(task)
+        except MutationError as exc:
+            raise DashboardValidationError(str(exc)) from exc
+        return self.get_task(task.id)
 
     @staticmethod
     def _normalize_intake_source(source: dict[str, Any] | None) -> dict[str, str | None]:
@@ -2008,44 +2072,6 @@ class DashboardService:
             # The dashboard renders this as a link.
             raise DashboardValidationError("'source.url' must be an http or https URL.")
         return normalized
-
-    def _ensure_intake_sprint(self, project: Project) -> Sprint:
-        """Return the project's intake queue, creating or reopening it.
-
-        The queue is `<project>-intake`. It is created on first use and is
-        `active` when the project has no active sprint, `planned` when one is
-        already running -- the engine runs exactly one active sprint at a time,
-        and intake must not silently displace the sprint a team is mid-way
-        through. A queue left `planned` (or wrongly completed) is reactivated
-        on the next intake once the project has no active sprint, so queued
-        work does not sit forever behind a sprint that has since finished.
-        """
-
-        sprint_id = f"{project.id}{INTAKE_SPRINT_SUFFIX}"
-        existing = self.store.get_sprint(sprint_id)
-        active = self.store.get_active_sprint(project.id)
-        now = self._now().isoformat()
-
-        if existing is not None:
-            if existing.status != "active" and active is None:
-                existing.status = "active"
-                existing.started_at = existing.started_at or now
-                existing.completed_at = None
-                self.store.save_sprint(existing)
-            return existing
-
-        sprints = self.store.list_sprints(project.id)
-        sprint = Sprint(
-            id=sprint_id,
-            project_id=project.id,
-            title=INTAKE_SPRINT_TITLE,
-            goal=INTAKE_SPRINT_GOAL,
-            status="active" if active is None else "planned",
-            order_index=max((s.order_index for s in sprints), default=-1) + 1,
-            created_at=now,
-            started_at=now if active is None else None,
-        )
-        return self.store.save_sprint(sprint)
 
     # ── Decision gates ────────────────────────────────────────────────────────
 

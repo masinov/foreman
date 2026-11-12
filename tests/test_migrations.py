@@ -437,5 +437,145 @@ class VocabularyGuardTests(unittest.TestCase):
         self.assertEqual(self.store.get_task("t1").title, "renamed")
 
 
+class BacklogMigrationTests(unittest.TestCase):
+    """Migration 21: intake queues become backlogs (ADR-0021)."""
+
+    def setUp(self) -> None:
+        self._temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._temp.cleanup)
+        self.db_path = Path(self._temp.name) / "foreman.db"
+        connection = sqlite3.connect(self.db_path)
+        connection.executescript(_SCHEMA_MIGRATIONS_DDL)
+        for version, description, sql in MIGRATIONS:
+            if version > 20:
+                break
+            connection.executescript(sql)
+            connection.execute(
+                "INSERT INTO schema_migrations (version, description, applied_at)"
+                " VALUES (?, ?, '2026-11-01T00:00:00Z')",
+                (version, description),
+            )
+        now = "2026-11-01T00:00:00Z"
+        for project_id in ("p1", "p2", "p3", "p4"):
+            connection.execute(
+                "INSERT INTO projects (id, name, repo_path, workflow_id, created_at, updated_at)"
+                " VALUES (?, ?, '/tmp', 'development', ?, ?)",
+                (project_id, project_id.upper(), now, now),
+            )
+
+        def sprint(sprint_id: str, project_id: str, status: str, title: str = "Intake queue") -> None:
+            connection.execute(
+                "INSERT INTO sprints (id, project_id, title, status, created_at, started_at)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                (sprint_id, project_id, title, status, now, now if status == "active" else None),
+            )
+
+        def task(task_id: str, sprint_id: str, project_id: str, status: str) -> None:
+            connection.execute(
+                "INSERT INTO tasks (id, sprint_id, project_id, title, status, created_at)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                (task_id, sprint_id, project_id, task_id, status, now),
+            )
+
+        # p1: a planned queue of waiting work, and a cancelled task.
+        sprint("p1-intake", "p1", "planned")
+        task("p1-filed", "p1-intake", "p1", "triage")
+        task("p1-accepted", "p1-intake", "p1", "todo")
+        task("p1-cancelled", "p1-intake", "p1", "cancelled")
+        # p2: a queue the engine was running, with work in flight.
+        sprint("p2-intake", "p2", "active")
+        task("p2-filed", "p2-intake", "p2", "triage")
+        task("p2-running", "p2-intake", "p2", "in_progress")
+        task("p2-done", "p2-intake", "p2", "done")
+        # p3: a queue holding only waiting work; it is emptied and removed.
+        sprint("p3-intake", "p3", "planned")
+        task("p3-filed", "p3-intake", "p3", "triage")
+        # p4: no intake queue at all, and an ordinary sprint.
+        sprint("s4", "p4", "active", title="Sprint 4")
+        task("p4-task", "s4", "p4", "todo")
+        connection.commit()
+        connection.close()
+
+        self.store = ForemanStore(self.db_path)
+        self.addCleanup(self.store.close)
+        self.applied = self.store.initialize()
+
+    def sprint_of(self, task_id: str) -> Sprint:
+        task = self.store.get_task(task_id)
+        assert task is not None
+        sprint = self.store.get_sprint(task.sprint_id)
+        assert sprint is not None
+        return sprint
+
+    def test_the_schema_version_is_bumped_once(self) -> None:
+        self.assertEqual(self.applied, [21])
+        self.assertEqual(self.store.schema_version(), 21)
+        self.assertEqual(MIGRATIONS[-1][0], 21)
+
+    def test_waiting_intake_work_is_in_the_backlog(self) -> None:
+        for task_id, status in (("p1-filed", "triage"), ("p1-accepted", "todo"), ("p2-filed", "triage")):
+            with self.subTest(task=task_id):
+                sprint = self.sprint_of(task_id)
+                self.assertEqual((sprint.kind, sprint.status), ("backlog", "planned"))
+                self.assertEqual(sprint.id, f"{task_id[:2]}-backlog")
+                self.assertEqual(self.store.get_task(task_id).status, status)
+        self.assertEqual(self.store.get_backlog("p1").title, "Backlog")
+
+    def test_started_and_finished_work_keeps_its_sprint(self) -> None:
+        self.assertEqual(self.store.get_task("p1-cancelled").sprint_id, "p1-intake")
+        self.assertEqual(self.store.get_task("p2-running").sprint_id, "p2-intake")
+        self.assertEqual(self.store.get_task("p2-done").sprint_id, "p2-intake")
+        # The running queue keeps running; the one left with only finished work is finished.
+        self.assertEqual(self.store.get_sprint("p2-intake").status, "active")
+        p1_queue = self.store.get_sprint("p1-intake")
+        self.assertEqual(p1_queue.status, "completed")
+        self.assertIsNotNone(p1_queue.completed_at)
+
+    def test_an_emptied_queue_is_removed_and_projects_without_one_get_no_backlog(self) -> None:
+        self.assertIsNone(self.store.get_sprint("p3-intake"))
+        self.assertEqual(self.sprint_of("p3-filed").id, "p3-backlog")
+        self.assertIsNone(self.store.get_backlog("p4"))
+        self.assertEqual(self.store.get_task("p4-task").sprint_id, "s4")
+
+    def test_the_backlog_is_not_listed_or_run_as_a_sprint(self) -> None:
+        self.assertEqual([s.id for s in self.store.list_sprints("p3")], [])
+        self.assertIsNone(self.store.get_active_sprint("p3"))
+        self.assertIsNone(self.store.get_next_planned_sprint("p3"))
+        self.assertEqual(self.store.get_active_sprint("p2").id, "p2-intake")
+
+    def test_replaying_the_migration_changes_nothing(self) -> None:
+        connection = self.store._connection
+        before = connection.execute("SELECT id, sprint_id FROM tasks ORDER BY id").fetchall()
+        sql = MIGRATIONS[-1][2]
+        replay = sql[sql.index("INSERT INTO sprints"):]
+        connection.executescript(replay)
+        after = connection.execute("SELECT id, sprint_id FROM tasks ORDER BY id").fetchall()
+        self.assertEqual([tuple(r) for r in before], [tuple(r) for r in after])
+        self.assertEqual(
+            connection.execute("SELECT COUNT(*) FROM sprints WHERE kind = 'backlog'").fetchone()[0], 3
+        )
+
+    def test_the_database_keeps_a_backlog_planned_and_one_per_project(self) -> None:
+        backlog = self.store.get_backlog("p1")
+        for status in ("active", "completed", "cancelled"):
+            with self.subTest(status=status), self.assertRaises(sqlite3.IntegrityError):
+                with self.store._connection:
+                    self.store._connection.execute(
+                        "UPDATE sprints SET status = ? WHERE id = ?", (status, backlog.id)
+                    )
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.store.save_sprint(
+                Sprint(id="p1-second", project_id="p1", title="B", kind="backlog")
+            )
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.store.save_sprint(Sprint(id="odd", project_id="p1", title="O", kind="pile"))  # type: ignore[arg-type]
+        self.assertEqual(self.store.ensure_backlog("p1", created_at="x").id, backlog.id)
+
+    def test_declined_is_a_task_status_the_database_accepts(self) -> None:
+        with self.store._connection:
+            self.store._connection.execute("UPDATE tasks SET status = 'declined' WHERE id = 'p1-filed'")
+        self.assertEqual(self.store.get_task("p1-filed").status, "declined")
+
+
 if __name__ == "__main__":
     unittest.main()

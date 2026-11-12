@@ -20,6 +20,7 @@ export function workspaceRoutes({ withGateTask = true } = {}) {
           awaiting_human_gate: true,
           blocked_kind: "gate",
           workflow_current_step: "merge_approval",
+          gate_policy: "merge_approval",
           blocked_reason: null,
           source: null,
         },
