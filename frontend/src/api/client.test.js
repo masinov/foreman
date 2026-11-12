@@ -33,6 +33,16 @@ describe("the /api/v1 client", () => {
     expect(error.status).toBe(403);
   });
 
+  it("keeps the field an error is about, when the API names one", async () => {
+    const fetchImpl = createFakeFetch({
+      "PATCH /api/v1/p": reply(400, { error: "Too big", code: "invalid_request", field: "max_step_visits" }),
+      "GET /api/v1/q": reply(400, { error: "Bad", code: "invalid_request" }),
+    });
+    const client = createApiClient({ fetchImpl, tokenProvider: () => "" });
+    expect((await client.patch("/p", {}).catch((caught) => caught)).field).toBe("max_step_visits");
+    expect((await client.get("/q").catch((caught) => caught)).field).toBeNull();
+  });
+
   it("says so when an error has no envelope", async () => {
     const fetchImpl = async () => new Response("<html>bad gateway</html>", { status: 502 });
     const client = createApiClient({ fetchImpl, tokenProvider: () => "" });

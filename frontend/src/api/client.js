@@ -12,11 +12,13 @@ const UNREACHABLE = "The dashboard could not reach Foreman. Check that the serve
  * sentence a person can read.
  */
 export class ApiError extends Error {
-  constructor(message, { code = "http_error", status = 0 } = {}) {
+  constructor(message, { code = "http_error", status = 0, field = null } = {}) {
     super(message);
     this.name = "ApiError";
     this.code = code;
     this.status = status;
+    // The field of the request the error is about, when the API says.
+    this.field = field;
   }
 }
 
@@ -50,6 +52,7 @@ function errorFromResponse(response, payload) {
     return new ApiError(asSentence(payload.error), {
       code: typeof payload.code === "string" ? payload.code : "http_error",
       status: response.status,
+      field: typeof payload.field === "string" ? payload.field : null,
     });
   }
   return new ApiError(`Foreman answered ${response.status} without saying why.`, {
