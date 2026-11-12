@@ -1024,6 +1024,7 @@ class DashboardService:
             "worktree_path": task.worktree_path,
             "assigned_role": task.assigned_role,
             "created_by": task.created_by,
+            "created_at": task.created_at,
             "blocked_reason": task.blocked_reason,
             "acceptance_criteria": task.acceptance_criteria,
             "workflow_current_step": task.workflow_current_step,
@@ -1443,6 +1444,40 @@ class DashboardService:
             "task_id": task_id,
             "removed_worktree": removal.removed_worktree,
         }
+
+    def block_task(
+        self, task_id: str, *, reason: str, requested_by: str | None = None
+    ) -> dict[str, Any]:
+        """Park one task with a reason a person gave (see ``Mutations.block_task``)."""
+
+        task = self._require_task(task_id)
+        normalized = (reason or "").strip()
+        if not normalized:
+            raise DashboardValidationError("Say why the task is blocked.")
+        try:
+            self._mutations(requested_by).block_task(task, normalized)
+        except MutationError as exc:
+            raise DashboardValidationError(str(exc)) from exc
+        return self.get_task(task.id)
+
+    def unblock_task(
+        self, task_id: str, *, note: str | None = None, requested_by: str | None = None
+    ) -> dict[str, Any]:
+        """Return a blocked task to the queue (see ``Mutations.unblock_task``).
+
+        ``note`` is guidance for the next agent step: it is recorded the way
+        ``create_human_message`` records it, after the task is back in the
+        queue, so a refused unblock records nothing.
+        """
+
+        task = self._require_task(task_id)
+        try:
+            self._mutations(requested_by).unblock_task(task)
+        except MutationError as exc:
+            raise DashboardValidationError(str(exc)) from exc
+        if note and note.strip():
+            self.create_human_message(task.id, text=note)
+        return self.get_task(task.id)
 
     def delete_task(self, task_id: str) -> dict[str, Any]:
         """Delete one task, its history, and the worktree it was working in."""
