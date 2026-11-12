@@ -1,11 +1,5 @@
 # Backlog
 
-## Open decision
-
-- **Built frontend bundle out of git** (was sprint 57 slice 9): build it in
-  CI and at install, and replace the freshness check with a build step. Not
-  decided by the owner; the bundle stays committed until it is.
-
 ## Carried engineering items (from sprints 56 and 57)
 
 - `resume_human_gate` and `_run_leased_task` are still on the orchestrator;

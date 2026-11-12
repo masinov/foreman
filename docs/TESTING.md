@@ -24,8 +24,9 @@ repo-memory validation and code-level regression coverage:
   `./venv/bin/pip install -e ".[dev]"`)
 
 CI (`.github/workflows/ci.yml`) runs the suite, ruff, the repo-memory
-validation, the frontend tests and build, and fails when the committed
-bundle under `foreman/dashboard_frontend_dist` does not match the source.
+validation, and the frontend tests and build. The built bundle under
+`foreman/dashboard_frontend_dist` is not in git: the Python job builds it
+before the tests, and the tests that serve it skip when it is absent.
 
 ## Running the suite inside a task worktree
 

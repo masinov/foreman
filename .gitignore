@@ -219,3 +219,7 @@ frontend/.vite/
 .foreman.db
 .foreman.db-wal
 .foreman.db-shm
+
+# The built dashboard bundle. Built by `foreman dashboard`, CI and the test
+# step; never committed (ADR-0020, decision 10).
+foreman/dashboard_frontend_dist/
