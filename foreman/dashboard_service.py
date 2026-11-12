@@ -11,6 +11,7 @@ talks to it like any other resident engine.
 
 from __future__ import annotations
 
+from dataclasses import asdict
 import os
 import re
 import unicodedata
@@ -383,8 +384,26 @@ class DashboardService:
             "spec_path": project.spec_path or "",
             "autonomy_level": project.autonomy_level,
             "settings": dict(project.settings),
+            # Every setting as it applies, defaults filled in: what the engine
+            # reads, so a screen need not repeat the defaults.
+            "effective": self._effective_settings(project),
             # Shown read-only in the dashboard; see HOST_LEVEL_SETTINGS.
             "host_level_settings": sorted(HOST_LEVEL_SETTINGS),
+        }
+
+    @staticmethod
+    def _effective_settings(project: Project) -> dict[str, Any]:
+        """The project's settings with defaults applied, as plain JSON values."""
+
+        try:
+            settings = settings_of(project)
+        except SettingsError as exc:
+            raise DashboardValidationError(
+                f"This project's stored settings are invalid: {exc}"
+            ) from exc
+        return {
+            key: list(value) if isinstance(value, tuple) else value
+            for key, value in asdict(settings).items()
         }
 
     def update_project_settings(

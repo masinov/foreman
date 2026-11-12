@@ -145,5 +145,22 @@ class SettingsFieldErrorTests(WorkflowApiCase):
         self.assertNotIn("field", body)
 
 
+class EffectiveSettingsTests(WorkflowApiCase):
+    def test_settings_carry_every_value_as_it_applies(self) -> None:
+        self.project("p1", max_step_visits=7, merge_approval="human")
+        body = self.call("GET", "/api/v1/projects/p1/settings").json()
+        effective = body["effective"]
+        self.assertEqual(effective["max_step_visits"], 7)
+        self.assertEqual(effective["merge_approval"], "human")
+        # Unset values read as the engine reads them.
+        self.assertEqual(effective["max_autonomous_tasks"], 5)
+        self.assertEqual(effective["triage"], "human")
+        self.assertEqual(effective["worktree_link_paths"], [])
+        self.assertIsNone(effective["event_retention_days"])
+        # What was stored is still reported as stored.
+        self.assertEqual(body["settings"], {"max_step_visits": 7, "merge_approval": "human"})
+        self.assertIn("test_command", body["host_level_settings"])
+
+
 if __name__ == "__main__":
     unittest.main()
