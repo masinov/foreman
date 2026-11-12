@@ -321,6 +321,27 @@ describe("the Sprints tab", () => {
 describe("the Activity tab", () => {
   const sprintKinds = ["sprint_started", "sprint_finished"];
 
+  it("names the merge commit and how many tasks a finished sprint merged", async () => {
+    const routes = projectRoutes();
+    routes[milestonesUrl()] = {
+      milestones: [
+        milestone("sprint_finished", { sprint_id: "sprint-55", sprint_title: "Sprint 55: baseline", merged_count: 3 }),
+        milestone("task_merged", { task_id: "task-m", task_key: "FOR-12", sha: "abc1234def5678" }),
+        milestone("task_merged", { task_id: "task-n", task_key: "FOR-11" }),
+        milestone("sprint_finished", { sprint_id: "sprint-54", sprint_title: "Sprint 54", merged_count: 1 }),
+      ],
+      total: 4,
+    };
+    await renderProject("/dashboard/projects/foreman/activity", routes);
+    const table = await screen.findByRole("table", { name: "Milestones" });
+    expect(within(table).getAllByRole("row").slice(1).map((row) => row.textContent)).toEqual([
+      "11 NovSprintSprint 55 finished: baseline 3 tasks merged",
+      "11 NovMergeFOR-12 merged abc1234",
+      "11 NovMergeFOR-11 merged",
+      "11 NovSprintSprint 54 finished 1 task merged",
+    ]);
+  });
+
   it("shows milestones newest first", async () => {
     await renderProject("/dashboard/projects/foreman/activity");
     const table = await screen.findByRole("table", { name: "Milestones" });

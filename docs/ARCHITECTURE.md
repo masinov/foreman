@@ -405,7 +405,11 @@ bad one is a 400 `invalid_request` envelope (ADR-0019). Paged lists take
   filtered by `kind` (repeatable or comma-separated): `sprint_started`,
   `sprint_finished`, `task_merged`, `engine_started`, `engine_paused`,
   `engine_resumed`, `engine_stopped`. Each has `kind`, `at`, project, sprint
-  and task fields, and `actor`. No table backs them: they are derived from
+  and task fields, and `actor`. A `task_merged` milestone also carries `sha`,
+  the merge commit (the `engine.merge` event records it; merges from before
+  that are null), and a `sprint_finished` one carries `merged_count`, the
+  tasks of that sprint with a merge event; both are null on other kinds. No
+  table backs them: they are derived from
   sprint columns, `engine.merge` events, completed `engine_commands` (the
   actor is `requested_by`) and the engine lock's lease history (a stop names
   its actor when a `shutdown` command completed during that lease). The

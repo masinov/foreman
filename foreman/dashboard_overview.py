@@ -254,4 +254,6 @@ def _serialize_milestone(row: MilestoneRow) -> dict[str, Any]:
         "task_key": row.task_key,
         "task_title": row.task_title,
         "actor": row.actor,
+        "sha": row.sha if row.kind == "task_merged" else None,
+        "merged_count": row.merged_count if row.kind == "sprint_finished" else None,
     }

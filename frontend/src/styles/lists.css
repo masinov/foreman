@@ -36,3 +36,7 @@
   margin-top: var(--space-2);
   padding-inline: 0;
 }
+
+.milestones__detail {
+  color: var(--color-text-quiet);
+}
