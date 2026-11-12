@@ -45,11 +45,15 @@
   gap: var(--space-3) var(--space-6);
 }
 
+/* The question and its facts share a line when they fit, and the facts drop
+   to a second line when they do not (a merge has more of them than an
+   acceptance). */
 .decision__body {
   display: flex;
   flex: 999 1 var(--column-min-width);
-  flex-direction: column;
-  gap: var(--space-1);
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-5);
   min-width: 0;
 }
 
