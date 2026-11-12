@@ -201,6 +201,13 @@ def handle_task_add(args: argparse.Namespace) -> int:
                     file=sys.stderr,
                 )
                 return 1
+            if sprint.is_backlog:
+                print(
+                    f"{sprint_id} is the backlog, not a sprint. File work into it with "
+                    f"`foreman backlog add {project.id}`.",
+                    file=sys.stderr,
+                )
+                return 1
         else:
             sprint = select_task_creation_sprint(store, project.id)
             if sprint is None:
