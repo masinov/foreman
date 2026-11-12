@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 import sys
 from typing import Any, Callable, Sequence
@@ -27,8 +28,12 @@ from ..workflows import WorkflowLoadError, default_workflows_dir, load_workflows
 EXIT_QUOTA_EXHAUSTED = 75
 
 
+#: A database path a parent process hands down to the commands it runs.
+DB_ENV = "FOREMAN_DB"
+
 DB_OPTION_NOTE = (
-    f"Defaults to repo-local `{DEFAULT_DB_FILENAME}` discovery; pass `--db PATH` to override."
+    f"Defaults to ${DB_ENV}, else repo-local `{DEFAULT_DB_FILENAME}` discovery; "
+    "pass `--db PATH` to override."
 )
 
 
@@ -125,6 +130,12 @@ def resolve_db_path(
 
     if repo_path is not None:
         return Path(repo_path).expanduser().resolve() / DEFAULT_DB_FILENAME
+
+    # The database a parent process works on, such as the dashboard that runs
+    # a manager session (ADR-0022), when it is not the repository's own.
+    from_env = (os.environ.get(DB_ENV) or "").strip()
+    if from_env:
+        return Path(from_env).expanduser().resolve()
 
     discovered_db = discover_repo_local_db_path()
     if discovered_db is not None:

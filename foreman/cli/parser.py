@@ -10,6 +10,7 @@ from typing import Sequence
 
 from .. import __version__
 from ..errors import ForemanError
+from ..proposals import manager_session
 from . import (
     backlog,
     catalog,
@@ -19,10 +20,46 @@ from . import (
     monitor,
     notify,
     projects,
+    proposals,
     sprints,
     tasks,
     tokens,
     worktree,
+)
+
+#: What a manager session may run (ADR-0022): commands that only read, and
+#: making a proposal. Everything else changes project state, and a manager
+#: changes it only by proposing. New commands are refused until listed here.
+MANAGER_SESSION_COMMANDS: frozenset[str] = frozenset(
+    {
+        "board",
+        "cost",
+        "history",
+        "status",
+        "transcript",
+        "watch",
+        "projects",
+        "roles",
+        "workflows",
+        "task show",
+        "task list",
+        "sprint list",
+        "backlog list",
+        "worktree list",
+        "notify list",
+        "notify deliveries",
+        "engine status",
+        "token list",
+        "db version",
+        "proposal create",
+        "proposal list",
+        "proposal show",
+    }
+)
+
+MANAGER_REFUSAL = (
+    "Foreman's manager cannot change project state itself. Propose the change: "
+    "`foreman proposal create <project> --json <file or ->`; a person confirms it."
 )
 
 CLI_DESCRIPTION = (
@@ -35,8 +72,6 @@ def build_parser() -> argparse.ArgumentParser:
 
     Each command registers itself; the order here is the order of `--help`.
     """
-
-    """Build the top-level CLI argument parser."""
 
     parser = argparse.ArgumentParser(prog="foreman", description=CLI_DESCRIPTION)
     parser.add_argument(
@@ -52,6 +87,7 @@ def build_parser() -> argparse.ArgumentParser:
     sprints.register_sprint(subparsers)
     tasks.register_task(subparsers)
     backlog.register_backlog(subparsers)
+    proposals.register_proposal(subparsers)
     worktree.register_worktree(subparsers)
     tokens.register_token(subparsers)
     notify.register_notify(subparsers)
@@ -93,6 +129,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     if handler is None:
         parser.print_help()
         return 0
+
+    command_path = getattr(args, "command_path", None)
+    if manager_session() is not None and command_path not in MANAGER_SESSION_COMMANDS:
+        print(f"foreman {command_path}: refused. {MANAGER_REFUSAL}", file=sys.stderr)
+        return 1
 
     try:
         return handler(args)

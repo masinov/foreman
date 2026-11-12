@@ -551,6 +551,37 @@ class Event:
     payload: JsonDict = field(default_factory=dict)
 
 
+#: A manager's proposal (ADR-0022): waiting for a person, or decided.
+PROPOSAL_STATES: tuple[str, ...] = ("proposed", "confirmed", "declined", "failed")
+
+
+@dataclass(slots=True)
+class Proposal:
+    """Changes proposed for one project, applied only when a person confirms.
+
+    ``operations`` is the ordered list of operations (see
+    ``foreman.proposals``); ``leaves`` the task ids it deliberately leaves
+    where they are; ``names`` the titles and keys of what it names, as they
+    were when proposed. ``outcome`` says, once decided, what was applied and,
+    for ``failed``, which operation was refused and why.
+    """
+
+    id: str
+    project_id: str
+    proposed_by: str
+    reason: str
+    operations: list[dict[str, Any]]
+    state: str = "proposed"
+    leaves: list[str] = field(default_factory=list)
+    names: dict[str, Any] = field(default_factory=dict)
+    session_id: str | None = None
+    turn_id: str | None = None
+    created_at: str = field(default_factory=lambda: utc_now_text())
+    decided_by: str | None = None
+    decided_at: str | None = None
+    outcome: dict[str, Any] = field(default_factory=dict)
+
+
 @dataclass(slots=True)
 class ApiToken:
     """A project API token, as persisted -- the secret is never in this record.

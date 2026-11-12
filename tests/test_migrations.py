@@ -9,6 +9,8 @@ from pathlib import Path
 
 from foreman.migrations import MIGRATIONS
 from foreman.models import (
+    PROPOSAL_STATES,
+    Proposal,
     AUTONOMY_LEVELS,
     RUN_STATUSES,
     SPRINT_STATUSES,
@@ -508,9 +510,8 @@ class BacklogMigrationTests(unittest.TestCase):
         return sprint
 
     def test_the_schema_version_is_bumped_once(self) -> None:
-        self.assertEqual(self.applied, [21])
-        self.assertEqual(self.store.schema_version(), 21)
-        self.assertEqual(MIGRATIONS[-1][0], 21)
+        self.assertEqual(self.applied, [version for version, _, _ in MIGRATIONS if version >= 21])
+        self.assertEqual(self.store.schema_version(), MIGRATIONS[-1][0])
 
     def test_waiting_intake_work_is_in_the_backlog(self) -> None:
         for task_id, status in (("p1-filed", "triage"), ("p1-accepted", "todo"), ("p2-filed", "triage")):
@@ -546,7 +547,7 @@ class BacklogMigrationTests(unittest.TestCase):
     def test_replaying_the_migration_changes_nothing(self) -> None:
         connection = self.store._connection
         before = connection.execute("SELECT id, sprint_id FROM tasks ORDER BY id").fetchall()
-        sql = MIGRATIONS[-1][2]
+        sql = next(entry[2] for entry in MIGRATIONS if entry[0] == 21)
         replay = sql[sql.index("INSERT INTO sprints"):]
         connection.executescript(replay)
         after = connection.execute("SELECT id, sprint_id FROM tasks ORDER BY id").fetchall()
@@ -579,3 +580,62 @@ class BacklogMigrationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ProposalMigrationTests(unittest.TestCase):
+    """Migration 22: proposals, the changes the manager proposes (ADR-0022)."""
+
+    def setUp(self) -> None:
+        self._temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._temp.cleanup)
+        self.db_path = Path(self._temp.name) / "foreman.db"
+        store = ForemanStore(self.db_path)
+        store._connection.executescript(_SCHEMA_MIGRATIONS_DDL)
+        store.migrate([m for m in MIGRATIONS if m[0] <= 21])
+        store.save_project(Project(id="p1", name="P", repo_path="/tmp", workflow_id="development"))
+        store.close()
+        self.store = ForemanStore(self.db_path)
+        self.addCleanup(self.store.close)
+
+    def test_an_existing_database_gains_the_table_and_keeps_its_rows(self) -> None:
+        self.assertEqual(self.store.schema_version(), 21)
+        self.assertEqual(self.store.initialize(), [22])
+        self.assertEqual(MIGRATIONS[-1][0], 22)
+        self.assertIsNotNone(self.store.get_project("p1"))
+        columns = {
+            row["name"]
+            for row in self.store._connection.execute("PRAGMA table_info(proposals)").fetchall()
+        }
+        self.assertEqual(
+            columns,
+            {
+                "id", "project_id", "proposed_by", "session_id", "turn_id", "reason",
+                "operations_json", "leaves_json", "names_json", "state", "created_at",
+                "decided_by", "decided_at", "outcome_json",
+            },
+        )
+        self.assertEqual(self.store.initialize(), [])
+
+    def test_a_proposal_round_trips_and_its_state_is_guarded(self) -> None:
+        self.store.initialize()
+        proposal = Proposal(
+            id="prop-1",
+            project_id="p1",
+            proposed_by="manager",
+            reason="Why.",
+            operations=[{"kind": "create_sprint", "title": "S"}],
+            names={"tasks": {}, "sprints": {}},
+        )
+        self.store.save_proposal(proposal)
+        self.assertEqual(self.store.get_proposal("prop-1"), proposal)
+        with self.assertRaises(sqlite3.IntegrityError):
+            with self.store._connection:
+                self.store._connection.execute(
+                    "UPDATE proposals SET state = 'maybe' WHERE id = 'prop-1'"
+                )
+        for state in PROPOSAL_STATES:
+            proposal.state = state
+            self.store.save_proposal(proposal)
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.store.save_proposal(Proposal(id="prop-2", project_id="nope", proposed_by="x", reason="r", operations=[]))
+
