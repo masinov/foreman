@@ -104,7 +104,7 @@ export function ProjectsTable({ projects, placeholder }) {
   if (projects.length === 0) {
     return (
       <p className="empty">
-        No projects yet. A project added from the previous dashboard or the command line appears here.
+        No projects yet. A project added from the command line (foreman init) appears here.
       </p>
     );
   }

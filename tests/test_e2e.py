@@ -16,6 +16,7 @@ required.
 
 from __future__ import annotations
 
+import re
 import socket
 import threading
 import time
@@ -159,10 +160,9 @@ def live_dashboard_url(tmp_path_factory):
 
 @pytest.fixture
 def dashboard_page(page: Page, live_dashboard_url: str) -> Page:
-    """Open the pre-v7 dashboard, kept under /dashboard/legacy (ADR-0020), and return the page."""
-    page.goto(f"{live_dashboard_url}/dashboard/legacy")
-    # Wait for the React app to mount — the page title div is always present.
-    expect(page.locator(".page-title").get_by_text("Projects")).to_be_visible(timeout=10_000)
+    """Open the workspace (ADR-0020) and wait for its projects table."""
+    page.goto(f"{live_dashboard_url}/dashboard")
+    expect(page.get_by_role("link", name="E2E Test Project")).to_be_visible(timeout=10_000)
     return page
 
 
@@ -170,179 +170,50 @@ def dashboard_page(page: Page, live_dashboard_url: str) -> Page:
 # Tests
 # ---------------------------------------------------------------------------
 
-class TestDashboardLoad:
+class TestWorkspace:
 
     def test_project_list_visible(self, dashboard_page: Page) -> None:
-        expect(dashboard_page.get_by_text("E2E Test Project")).to_be_visible()
-
-    def test_foreman_logo_visible(self, dashboard_page: Page) -> None:
-        expect(dashboard_page.get_by_text("FOREMAN")).to_be_visible()
+        expect(dashboard_page.get_by_role("link", name="E2E Test Project")).to_be_visible()
 
     def test_page_title_set(self, dashboard_page: Page) -> None:
-        assert "Foreman" in dashboard_page.title() or dashboard_page.title() != ""
+        expect(dashboard_page).to_have_title("Workspace \u00b7 Foreman")
 
 
 class TestProjectNavigation:
 
-    def test_open_project_shows_sprint_list(self, dashboard_page: Page) -> None:
-        dashboard_page.get_by_role("button", name="Open project E2E Test Project").click()
+    def test_open_project_shows_sprint_queue(self, dashboard_page: Page) -> None:
+        dashboard_page.get_by_role("link", name="E2E Test Project").click()
+        expect(dashboard_page).to_have_url(re.compile(f"/dashboard/projects/{_PROJECT_ID}$"))
         expect(dashboard_page.get_by_text("E2E Sprint One")).to_be_visible()
 
-    def test_sprint_card_navigates_to_board(self, dashboard_page: Page) -> None:
-        dashboard_page.get_by_role("button", name="Open project E2E Test Project").click()
-        dashboard_page.get_by_role("button", name="Open sprint E2E Sprint One").click()
-        # The sprint board shows task status column headers (scoped to .col-title
-        # so we don't collide with the task detail status span).
-        expect(dashboard_page.locator(".col-title", has_text="Todo")).to_be_visible()
-        expect(dashboard_page.locator(".col-title", has_text="In Progress")).to_be_visible()
-        expect(dashboard_page.locator(".col-title", has_text="Blocked")).to_be_visible()
+    def test_task_address_says_the_page_is_not_built_and_names_a_command(
+        self, dashboard_page: Page, live_dashboard_url: str
+    ) -> None:
+        dashboard_page.goto(f"{live_dashboard_url}/dashboard/tasks/{_TASK_TODO_ID}")
+        expect(dashboard_page.get_by_role("heading", name="This page is not built yet")).to_be_visible()
+        expect(dashboard_page.get_by_text(f"foreman approve {_TASK_TODO_ID}")).to_be_visible()
 
-    def test_sprint_board_shows_seeded_tasks(self, dashboard_page: Page) -> None:
-        dashboard_page.get_by_role("button", name="Open project E2E Test Project").click()
-        dashboard_page.get_by_role("button", name="Open sprint E2E Sprint One").click()
-        # Use .card-title to scope to board cards only (detail drawer may be open).
-        expect(dashboard_page.locator(".card-title", has_text="Scaffold the database layer")).to_be_visible()
-        expect(dashboard_page.locator(".card-title", has_text="Build the REST endpoints")).to_be_visible()
-        expect(dashboard_page.locator(".card-title", has_text="Write acceptance tests")).to_be_visible()
-
-
-class TestTaskDetail:
-
-    def _navigate_to_board(self, page: Page) -> None:
-        page.get_by_role("button", name="Open project E2E Test Project").click()
-        page.get_by_role("button", name="Open sprint E2E Sprint One").click()
-        expect(page.locator(".card-title", has_text="Scaffold the database layer")).to_be_visible()
-
-    def test_task_card_opens_detail_drawer(self, dashboard_page: Page) -> None:
-        self._navigate_to_board(dashboard_page)
-        # Detail drawer may already be open; close it first then click a card.
-        close_btn = dashboard_page.get_by_role("button", name="Close task detail")
-        if close_btn.is_visible():
-            close_btn.click()
-        dashboard_page.locator(".card-title", has_text="Scaffold the database layer").click()
-        expect(dashboard_page.get_by_role("complementary", name="Task detail")).to_be_visible()
-
-    def test_task_detail_shows_title(self, dashboard_page: Page) -> None:
-        self._navigate_to_board(dashboard_page)
-        # The in_progress task detail drawer opens automatically — check its title.
-        detail = dashboard_page.get_by_role("complementary", name="Task detail")
-        expect(detail).to_be_visible()
-        expect(detail.locator("h2")).to_be_visible()
-
-    def test_task_detail_shows_acceptance_criteria(self, dashboard_page: Page) -> None:
-        self._navigate_to_board(dashboard_page)
-        dashboard_page.locator(".card-title", has_text="Scaffold the database layer").click()
-        detail = dashboard_page.get_by_role("complementary", name="Task detail")
-        expect(detail.get_by_text("Criteria for: Scaffold the database layer")).to_be_visible()
-
-    def test_task_detail_close_button_dismisses_drawer(self, dashboard_page: Page) -> None:
-        self._navigate_to_board(dashboard_page)
-        # Ensure drawer is open (auto-selected or manually selected).
-        detail = dashboard_page.get_by_role("complementary", name="Task detail")
-        if not detail.is_visible():
-            dashboard_page.locator(".card-title", has_text="Build the REST endpoints").click()
-        expect(detail).to_be_visible()
-        dashboard_page.get_by_role("button", name="Close task detail").click()
-        expect(detail).not_to_be_visible()
-
-
-class TestSettingsPanel:
-
-    def _navigate_to_project(self, page: Page) -> None:
-        page.get_by_role("button", name="Open project E2E Test Project").click()
-        expect(page.get_by_text("E2E Sprint One")).to_be_visible()
-
-    def test_settings_button_opens_panel(self, dashboard_page: Page) -> None:
-        self._navigate_to_project(dashboard_page)
-        dashboard_page.locator("button[title='Settings']").click()
-        expect(dashboard_page.get_by_role("complementary", name="Project settings")).to_be_visible()
-
-    def test_settings_panel_shows_workflow_field(self, dashboard_page: Page) -> None:
-        self._navigate_to_project(dashboard_page)
-        dashboard_page.locator("button[title='Settings']").click()
-        panel = dashboard_page.get_by_role("complementary", name="Project settings")
-        expect(panel.get_by_text("Default workflow")).to_be_visible()
-
-    def _get_merge_input(self, panel):
-        # Settings form labels have no for/id association; find input within the form-group.
-        return panel.locator(".form-group").filter(has_text="Merge target").locator("input")
-
-    def test_settings_change_reveals_save_button(self, dashboard_page: Page) -> None:
-        self._navigate_to_project(dashboard_page)
-        dashboard_page.locator("button[title='Settings']").click()
-        panel = dashboard_page.get_by_role("complementary", name="Project settings")
-        merge_input = self._get_merge_input(panel)
-        merge_input.click(click_count=3)
-        merge_input.type("feat/e2e")
-        expect(panel.get_by_role("button", name="Save settings")).to_be_visible()
-
-    def test_settings_save_persists_and_closes_footer(self, dashboard_page: Page) -> None:
-        self._navigate_to_project(dashboard_page)
-        dashboard_page.locator("button[title='Settings']").click()
-        panel = dashboard_page.get_by_role("complementary", name="Project settings")
-        merge_input = self._get_merge_input(panel)
-        merge_input.click(click_count=3)
-        merge_input.type("feat/e2e-saved")
-        panel.get_by_role("button", name="Save settings").click()
-        # Footer disappears after successful save.
-        expect(panel.get_by_role("button", name="Save settings")).not_to_be_visible()
+    def test_legacy_address_is_not_found(self, dashboard_page: Page, live_dashboard_url: str) -> None:
+        dashboard_page.goto(f"{live_dashboard_url}/dashboard/legacy")
+        expect(dashboard_page.get_by_role("heading", name="Nothing is at this address")).to_be_visible()
 
 
 class TestNewSprint:
 
-    def _navigate_to_project(self, page: Page) -> None:
-        page.get_by_role("button", name="Open project E2E Test Project").click()
+    def _open_project(self, page: Page) -> None:
+        page.get_by_role("link", name="E2E Test Project").click()
         expect(page.get_by_text("E2E Sprint One")).to_be_visible()
 
-    def test_new_sprint_button_opens_modal(self, dashboard_page: Page) -> None:
-        self._navigate_to_project(dashboard_page)
+    def test_new_sprint_button_opens_dialog(self, dashboard_page: Page) -> None:
+        self._open_project(dashboard_page)
         dashboard_page.get_by_role("button", name="New sprint").click()
-        expect(dashboard_page.get_by_role("heading", name="New Sprint")).to_be_visible()
+        expect(dashboard_page.get_by_role("dialog", name="New sprint")).to_be_visible()
 
-    def test_create_sprint_disabled_without_title(self, dashboard_page: Page) -> None:
-        self._navigate_to_project(dashboard_page)
+    def test_create_sprint_appears_in_the_queue(self, dashboard_page: Page) -> None:
+        self._open_project(dashboard_page)
         dashboard_page.get_by_role("button", name="New sprint").click()
-        create_btn = dashboard_page.get_by_role("button", name="Create sprint")
-        expect(create_btn).to_be_disabled()
-
-    def test_create_sprint_submits_and_appears_in_list(self, dashboard_page: Page) -> None:
-        self._navigate_to_project(dashboard_page)
-        dashboard_page.get_by_role("button", name="New sprint").click()
-        dashboard_page.get_by_placeholder("Sprint 5").fill("E2E New Sprint")
-        dashboard_page.get_by_role("button", name="Create sprint").click()
-        # Modal should close and new sprint should appear in the list.
-        expect(dashboard_page.get_by_role("heading", name="New Sprint")).not_to_be_visible()
+        dialog = dashboard_page.get_by_role("dialog", name="New sprint")
+        dialog.get_by_role("textbox", name="Title").fill("E2E New Sprint")
+        dialog.get_by_role("button", name="Create sprint").click()
+        expect(dialog).not_to_be_visible()
         expect(dashboard_page.get_by_text("E2E New Sprint")).to_be_visible()
-
-
-class TestNewTask:
-
-    def _navigate_to_board(self, page: Page) -> None:
-        page.get_by_role("button", name="Open project E2E Test Project").click()
-        page.get_by_role("button", name="Open sprint E2E Sprint One").click()
-        expect(page.locator(".card-title", has_text="Scaffold the database layer")).to_be_visible()
-        # Close the auto-opened detail drawer so the board toolbar is not obscured.
-        close_btn = page.get_by_role("button", name="Close task detail")
-        if close_btn.is_visible():
-            close_btn.click()
-        expect(page.get_by_role("complementary", name="Task detail")).not_to_be_visible()
-
-    def test_new_task_button_opens_modal(self, dashboard_page: Page) -> None:
-        self._navigate_to_board(dashboard_page)
-        dashboard_page.get_by_role("button", name="New task").click()
-        expect(dashboard_page.get_by_role("heading", name="New Task")).to_be_visible()
-
-    def test_create_task_disabled_without_title(self, dashboard_page: Page) -> None:
-        self._navigate_to_board(dashboard_page)
-        dashboard_page.get_by_role("button", name="New task").click()
-        create_btn = dashboard_page.get_by_role("button", name="Create task")
-        expect(create_btn).to_be_disabled()
-
-    def test_create_task_submits_and_appears_on_board(self, dashboard_page: Page) -> None:
-        self._navigate_to_board(dashboard_page)
-        dashboard_page.get_by_role("button", name="New task").click()
-        dashboard_page.get_by_placeholder("Short description of the task").fill("E2E Created Task")
-        dashboard_page.get_by_role("button", name="Create task").click()
-        # Modal closes and new task card appears in the Todo column.
-        expect(dashboard_page.get_by_role("heading", name="New Task")).not_to_be_visible()
-        expect(dashboard_page.locator(".card-title", has_text="E2E Created Task")).to_be_visible()

@@ -25,13 +25,17 @@ describe("App routing and shell", () => {
     expect(document.title).toBe("Workspace · Foreman");
   });
 
-  it("renders the shared being-rebuilt page with a link into the legacy dashboard", async () => {
+  it("renders the shared not-built page naming the commands that do the job, and no link away", async () => {
     renderApp("/dashboard/projects/foreman/settings/workflow", createFakeFetch(workspaceRoutes()));
-    expect(screen.getByRole("heading", { name: "This page is being rebuilt" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Open this in the previous dashboard" })).toHaveAttribute(
-      "href",
-      "/dashboard/legacy/projects/foreman",
-    );
+    expect(screen.getByRole("heading", { name: "This page is not built yet" })).toBeInTheDocument();
+    const commands = screen.getByRole("list", { name: "Commands" });
+    expect(within(commands).getAllByRole("listitem").map((item) => item.textContent)).toEqual([
+      "foreman config foreman",
+      "foreman workflows",
+    ]);
+    const page = document.querySelector(".status-page");
+    expect(within(page).queryAllByRole("link")).toHaveLength(0);
+    expect(page.innerHTML).not.toMatch(/legacy|previous dashboard/i);
     // The breadcrumb is driven by the route and names the project by its name.
     const crumbs = screen.getByRole("navigation", { name: "Breadcrumb" });
     expect(await within(crumbs).findByRole("link", { name: "Foreman" })).toBeInTheDocument();
@@ -63,9 +67,17 @@ describe("App routing and shell", () => {
     expect(await within(crumbs).findByRole("button", { name: "Foreman 2 need you" })).toBeInTheDocument();
   });
 
-  it("links a task to the start of the legacy dashboard, which has no task address", () => {
-    renderApp("/dashboard/tasks/task-merge/checks");
-    expect(screen.getByRole("link", { name: "Open the previous dashboard" })).toHaveAttribute("href", "/dashboard/legacy");
+  it("names the approve command on a task page that is not built yet", () => {
+    renderApp("/dashboard/tasks/task-merge");
+    const commands = screen.getByRole("list", { name: "Commands" });
+    expect(within(commands).getByText("foreman approve task-merge")).toBeInTheDocument();
+    expect(within(commands).getByText("foreman deny task-merge")).toBeInTheDocument();
+  });
+
+  it("renders not-found at the old legacy address", () => {
+    renderApp("/dashboard/legacy");
+    expect(screen.getByRole("heading", { name: "Nothing is at this address" })).toBeInTheDocument();
+    expect(within(document.querySelector(".status-page")).queryAllByRole("link", { name: /dashboard/i })).toHaveLength(0);
   });
 
   it("renders not-found for an unknown path", () => {
@@ -81,7 +93,7 @@ describe("App routing and shell", () => {
 
     fireEvent.click(link);
     expect(window.location.pathname).toBe("/dashboard/tasks/task-merge");
-    expect(screen.getByRole("heading", { name: "This page is being rebuilt" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "This page is not built yet" })).toBeInTheDocument();
 
     await goBack();
     expect(window.location.pathname).toBe("/dashboard");

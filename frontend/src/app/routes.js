@@ -1,119 +1,101 @@
-import { DASHBOARD, legacyPaths, normalizePath } from "./paths";
+import { DASHBOARD, normalizePath } from "./paths";
 
 /**
  * The route table (ADR-0020, decision 6). Each route names its level, which
  * drives the breadcrumb, a title for the browser tab and the "being rebuilt"
- * page, and where the same thing lives in the pre-v7 application.
- * `legacyExact` is false where the pre-v7 application has no address for the
- * same thing (a sprint or task needs its project id, which the address here
- * does not carry), so the link can only go to its start.
+ * page. `cli` (optional) returns the commands from docs/MANUAL.md that do the
+ * same job in a terminal, for the "being rebuilt" page to name until the page
+ * is built.
  *
  * Which routes have a page is decided in pages.js, not here.
  */
 export const ROUTES = [
   {
     name: "workspace",
-    legacyExact: true,
     pattern: "",
     level: "workspace",
     title: "Workspace",
-    legacyHref: () => legacyPaths.workspace(),
   },
   {
     name: "workspace-settings",
-    legacyExact: false,
+    cli: () => ["foreman roles", "foreman workflows"],
     pattern: "/settings",
     level: "workspace",
     title: "Workspace settings",
-    legacyHref: () => legacyPaths.workspace(),
   },
   {
     name: "project",
-    legacyExact: true,
     pattern: "/projects/:projectId",
     level: "project",
     title: "Project, Sprints",
-    legacyHref: ({ projectId }) => legacyPaths.project(projectId),
   },
   {
     name: "project-backlog",
-    legacyExact: true,
     pattern: "/projects/:projectId/backlog",
     level: "project",
     title: "Project, Backlog",
-    legacyHref: ({ projectId }) => legacyPaths.project(projectId),
   },
   {
     name: "project-activity",
-    legacyExact: true,
     pattern: "/projects/:projectId/activity",
     level: "project",
     title: "Project, Activity",
-    legacyHref: ({ projectId }) => legacyPaths.project(projectId),
   },
   {
     name: "project-settings",
-    legacyExact: true,
+    cli: ({ projectId }) => [`foreman config ${projectId}`],
     pattern: "/projects/:projectId/settings",
     level: "project",
     title: "Project settings, General",
-    legacyHref: ({ projectId }) => legacyPaths.project(projectId),
   },
   {
     name: "project-settings-workflow",
-    legacyExact: true,
+    cli: ({ projectId }) => [`foreman config ${projectId}`, "foreman workflows"],
     pattern: "/projects/:projectId/settings/workflow",
     level: "project",
     title: "Project settings, Workflow",
-    legacyHref: ({ projectId }) => legacyPaths.project(projectId),
   },
   {
     name: "sprint",
-    legacyExact: false,
+    cli: ({ sprintId }) => ["foreman board", `foreman watch --sprint ${sprintId}`],
     pattern: "/sprints/:sprintId",
     level: "sprint",
     title: "Sprint, list",
-    legacyHref: () => legacyPaths.workspace(),
   },
   {
     name: "sprint-board",
-    legacyExact: false,
+    cli: () => ["foreman board"],
     pattern: "/sprints/:sprintId/board",
     level: "sprint",
     title: "Sprint, board",
-    legacyHref: () => legacyPaths.workspace(),
   },
   {
     name: "task",
-    legacyExact: false,
+    cli: ({ taskId }) => [`foreman task show ${taskId}`, `foreman approve ${taskId}`, `foreman deny ${taskId}`],
     pattern: "/tasks/:taskId",
     level: "task",
     title: "Task, Overview",
-    legacyHref: () => legacyPaths.workspace(),
   },
   {
     name: "task-changes",
-    legacyExact: false,
+    cli: ({ taskId }) => [`foreman task show ${taskId}`],
     pattern: "/tasks/:taskId/changes",
     level: "task",
     title: "Task, Changes",
-    legacyHref: () => legacyPaths.workspace(),
   },
   {
     name: "task-checks",
-    legacyExact: false,
+    cli: ({ taskId }) => [`foreman task show ${taskId}`],
     pattern: "/tasks/:taskId/checks",
     level: "task",
     title: "Task, Checks",
-    legacyHref: () => legacyPaths.workspace(),
   },
   {
     name: "task-activity",
-    legacyExact: false,
+    cli: ({ taskId }) => [`foreman history ${taskId}`],
     pattern: "/tasks/:taskId/activity",
     level: "task",
     title: "Task, Activity",
-    legacyHref: () => legacyPaths.workspace(),
   },
 ];
 
