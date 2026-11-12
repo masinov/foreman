@@ -114,20 +114,6 @@ export function ProjectLayout({ projectId, children }) {
           label="Project"
           items={[
             { href: paths.project(projectId), label: "Sprints" },
-            {
-              href: paths.projectBacklog(projectId),
-              label: (
-                <>
-                  Backlog
-                  {project ? (
-                    <>
-                      <span className="visually-hidden"> </span>
-                      <span className="tabs__count">{project.backlog}</span>
-                    </>
-                  ) : null}
-                </>
-              ),
-            },
             { href: paths.projectActivity(projectId), label: "Activity" },
           ]}
         />

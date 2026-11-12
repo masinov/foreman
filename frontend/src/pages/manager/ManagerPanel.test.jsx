@@ -124,9 +124,12 @@ describe("You are on", () => {
     expect(await within(panel()).findByText("You are on: Sprints")).toBeInTheDocument();
     expect(await within(panel()).findByText("Foreman")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("link", { name: /^Backlog/ }));
+    fireEvent.click(await screen.findByRole("link", { name: "Backlog" }));
     expect(await within(panel()).findByText("You are on: Backlog")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("link", { name: "Activity" }));
+    // Back to the project from the backlog's breadcrumb, then its Activity tab.
+    const crumbs = screen.getByRole("navigation", { name: "Breadcrumb" });
+    fireEvent.click(await within(crumbs).findByRole("link", { name: /Foreman/ }));
+    fireEvent.click(await screen.findByRole("link", { name: "Activity" }));
     expect(await within(panel()).findByText("You are on: Activity")).toBeInTheDocument();
   });
 });

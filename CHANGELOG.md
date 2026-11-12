@@ -9,6 +9,16 @@ memory changes rather than versioned product releases.
 
 ### Sprint 58 — frontend rebuild
 
+- **feat, the backlog is a page of its own** (`feat/backlog-is-its-own-page`),
+  decided with the owner. It was a tab of the project page and also a step in
+  a task's breadcrumb, and a tab is not a place. It is now a page below the
+  project, the way a sprint is: its own title, breadcrumb "Project / Backlog",
+  no project header above it. The project page has two tabs, Sprints and
+  Activity, and links to the backlog with a line under the sprint queue. The
+  tab name added to the breadcrumb by `fix/breadcrumb-names-the-project-tab`
+  is taken out again: a tab never appears in a breadcrumb. The address
+  `/dashboard/projects/{id}/backlog` is unchanged.
+
 - **fix, the breadcrumb names the project's tab**
   (`fix/breadcrumb-names-the-project-tab`), reported by the owner. A backlog
   task's breadcrumb read "Project / Backlog / task"; clicking "Backlog" went

@@ -132,8 +132,6 @@ function TaskParentCrumb({ taskId, level }) {
  * step and no "All projects" entry, each of which would be a second link to
  * the same page. On the workspace page itself the breadcrumb is empty.
  */
-const PROJECT_TABS = { "project-backlog": "Backlog", "project-activity": "Activity" };
-
 export function crumbsFor(route, params) {
   switch (route.level) {
     case "project": {
@@ -143,13 +141,13 @@ export function crumbsFor(route, params) {
           { key: "settings", href: paths.projectSettings(params.projectId), label: "Settings" },
         ];
       }
-      // A tab other than the first is a place of its own: the breadcrumb names
-      // it, so a link that says "Project / Backlog" lands on a page that says
-      // the same.
-      if (PROJECT_TABS[route.name]) {
+      // The backlog is a place below the project, like a sprint: it has its
+      // own page, so it has its own step. A tab is not a place and never
+      // appears here.
+      if (route.name === "project-backlog") {
         return [
-          { key: "project", custom: <ProjectSwitcher projectId={params.projectId} current={false} /> },
-          { key: "tab", href: null, label: PROJECT_TABS[route.name] },
+          { key: "project", custom: <ProjectLink projectId={params.projectId} /> },
+          { key: "backlog", href: paths.projectBacklog(params.projectId), label: "Backlog" },
         ];
       }
       return [{ key: "project", custom: <ProjectSwitcher projectId={params.projectId} /> }];

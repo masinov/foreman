@@ -50,11 +50,11 @@ describe("App routing and shell", () => {
   });
 
   it("switches project from the breadcrumb, with what waits in each", async () => {
-    renderApp("/dashboard/projects/other/backlog", createFakeFetch(workspaceRoutes()));
+    renderApp("/dashboard/projects/other/activity", createFakeFetch(workspaceRoutes()));
     const crumbs = screen.getByRole("navigation", { name: "Breadcrumb" });
     const switcher = await within(crumbs).findByRole("button", { name: "Other project" });
-    // The Backlog tab is named after the project, as the last step.
-    expect(within(crumbs).getByText("Backlog")).toHaveAttribute("aria-current", "page");
+    // A tab is not a place: the breadcrumb is the project alone.
+    expect(within(crumbs).queryByText("Activity")).toBeNull();
     expect(switcher).toHaveAttribute("aria-haspopup", "menu");
     fireEvent.click(switcher);
     const menu = screen.getByRole("menu", { name: "Projects" });
