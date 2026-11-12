@@ -385,7 +385,7 @@ class SprintListTests(WorkspaceApiCase):
         active = body["sprints"][2]
         self.assertEqual([t["id"] for t in active["tasks"]], ["t"])
         self.assertEqual(
-            set(active), {"id", "title", "goal", "status", "order_index", "started_at",
+            set(active), {"id", "project_id", "title", "goal", "status", "order_index", "started_at",
                           "completed_at", "task_counts", "totals", "tasks"},
         )
 

@@ -23,8 +23,10 @@ const TESTS_WORDS = {
 function kindLabel(item) {
   switch (item.kind) {
     case NEEDS_YOU_KINDS.approval:
-      // The task's human-gate step, by name. The API does not yet say whether
-      // a gate approves a plan or a merge.
+      // The gate's policy says what is being approved; a gate that names no
+      // policy falls back to its step name.
+      if (item.policy === "plan_approval") return "Approve a plan";
+      if (item.policy === "merge_approval") return "Approve a merge";
       return humanize(item.step) || "Approval";
     case NEEDS_YOU_KINDS.unblock:
       return "Unblock";

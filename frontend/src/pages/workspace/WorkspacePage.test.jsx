@@ -25,7 +25,7 @@ describe("WorkspacePage", () => {
     expect(within(needsYou).getByRole("heading", { name: /Needs you\s*2/ })).toBeInTheDocument();
     const approval = within(needsYou).getByText("FOR-14").closest("tr");
     expect(within(approval).getByText("Foreman")).toBeInTheDocument();
-    expect(within(approval).getByText("Merge approval")).toBeInTheDocument();
+    expect(within(approval).getByText("Approve a merge")).toBeInTheDocument();
     expect(within(approval).getByText(/tests passed · review approved/)).toBeInTheDocument();
     expect(within(approval).getByText("b232eb1")).toBeInTheDocument();
     expect(within(approval).getByRole("link", { name: "Make the test step report what happened" })).toHaveAttribute(

@@ -662,6 +662,7 @@ class DashboardService:
             task_counts = self.store.task_counts(sprint_id=sprint.id)
             entry: dict[str, Any] = {
                 "id": sprint.id,
+                "project_id": sprint.project_id,
                 "title": sprint.title,
                 "goal": sprint.goal,
                 "status": sprint.status,
@@ -730,6 +731,7 @@ class DashboardService:
             raise DashboardNotFoundError(f"Sprint not found: {sprint_id}")
         return {
             "id": sprint.id,
+            "project_id": sprint.project_id,
             "title": sprint.title,
             "goal": sprint.goal,
             "status": sprint.status,
@@ -838,6 +840,8 @@ class DashboardService:
             result.append(
                 {
                     "id": task.id,
+                    "project_id": task.project_id,
+                    "sprint_id": task.sprint_id,
                     "task_key": task.task_key,
                     "title": task.title,
                     "status": task.status,
@@ -849,6 +853,7 @@ class DashboardService:
                     "acceptance_criteria": task.acceptance_criteria,
                     "workflow_current_step": task.workflow_current_step,
                     "awaiting_human_gate": self._at_human_gate(task, gates),
+                    "gate_policy": self._gate_policy(task, gates),
                     "blocked_kind": blocked_kind(task, gates),
                     "complexity": task.complexity,
                     "executor_overrides": task.executor_overrides,
@@ -985,6 +990,8 @@ class DashboardService:
 
         return {
             "id": task.id,
+            "project_id": task.project_id,
+            "sprint_id": task.sprint_id,
             "task_key": task.task_key,
             "title": task.title,
             "status": task.status,
@@ -1003,6 +1010,7 @@ class DashboardService:
             "complexity": task.complexity,
             "executor_overrides": task.executor_overrides or {},
             "awaiting_human_gate": self._at_human_gate(task, gates),
+            "gate_policy": self._gate_policy(task, gates),
             "blocked_kind": blocked_kind(task, gates),
             "completion_evidence": _serialize_completion_evidence(task.completion_evidence),
             "guidance": [
@@ -1593,6 +1601,17 @@ class DashboardService:
         if workflow is None:
             return None
         return {step.id for step in workflow.steps}
+
+    @staticmethod
+    def _gate_policy(task: Task, gates: WorkflowGateSteps) -> str | None:
+        """The policy (``plan_approval`` or ``merge_approval``) of the gate a task waits at.
+
+        ``None`` when the task is not at a human gate, or the gate names no policy.
+        """
+
+        if blocked_kind(task, gates) != "gate":
+            return None
+        return gates.gate_policies.get(task.workflow_current_step or "")
 
     @staticmethod
     def _at_human_gate(task: Task, gates: WorkflowGateSteps) -> bool:
