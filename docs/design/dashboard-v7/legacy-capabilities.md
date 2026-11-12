@@ -46,14 +46,14 @@ says so.
 | Run the engine (start, or resume when paused) | `POST /projects/{id}/agent/start` | project page, Engine | built |
 | Pause the engine | `POST /projects/{id}/agent/stop` | project page, Engine | built |
 | Stop the engine and release it (not in the legacy buttons; the CLI has it) | `POST /projects/{id}/engine/commands` | project page, Engine | built |
-| Run one chosen task next | `POST /projects/{id}/agent/start` with `task_id` | task page | slice 8 |
+| Run one chosen task next | `POST /projects/{id}/agent/start` with `task_id` | task page, More ("Run next") | built |
 | See how many tasks sit at a human gate | `GET /projects` | project page, Needs you | built |
 | See the active sprint, its progress and the queue of planned sprints | `GET /projects/{id}/sprints` | `/dashboard/projects/{id}` | built |
 | See finished sprints, with task counts and spend, behind a disclosure | `GET /projects/{id}/sprints` | `/dashboard/projects/{id}` | built |
 | Create a sprint with a title and goal | `POST /projects/{id}/sprints` | `/dashboard/projects/{id}` | built |
 | Create a sprint with its first tasks in one step | `POST /projects/{id}/sprints` (`initial_tasks`) | backlog: plan into a new sprint | built (the design gets there by planning backlog work) |
 | Drag planned sprints into run order | `PATCH /sprints/{id}` (`order_index`) | project page, queue | **no home yet** |
-| Expand a planned sprint in place to edit its goal, add tasks and remove tasks | `PATCH /sprints/{id}`, `GET`/`POST /sprints/{id}/tasks`, `DELETE /tasks/{id}` | sprint page | built for edit and adding work from the backlog; removing a task is slice 8 (Edit, stop, cancel, delete) |
+| Expand a planned sprint in place to edit its goal, add tasks and remove tasks | `PATCH /sprints/{id}`, `GET`/`POST /sprints/{id}/tasks`, `DELETE /tasks/{id}` | sprint page | built for edit and adding work from the backlog; removing a task is built on the task page (More: cancel, delete) |
 | Activate a planned sprint | `PATCH /sprints/{id}` (`status`) | `/dashboard/sprints/{id}` ("Activate sprint") | built |
 | Complete a sprint | `PATCH /sprints/{id}` (`status: completed`) | `/dashboard/sprints/{id}` ("Finish sprint") | built |
 | Cancel a sprint | `PATCH /sprints/{id}` (`status: cancelled`) | none | **no home yet** |
@@ -74,35 +74,36 @@ says so.
 | Add a task to the sprint: title, type, description, acceptance criteria, complexity, dependencies | `POST /sprints/{id}/tasks` | sprint page | built as adding work from the backlog; filing a new task is on the backlog tab (title, description and criteria; type, complexity and dependencies are not in the design) |
 | Run, pause and resume the engine from the sprint | `POST /projects/{id}/agent/start`, `/agent/stop` | sprint page, engine menu | built |
 | Cancel the sprint, delete it | `PATCH`/`DELETE /sprints/{id}` | none | **no home yet** (see Project) |
-| Approve, deny, stop or accept a task from its card | `POST /tasks/{id}/approve`, `/deny`, `/stop`, `/accept` | task page; Needs you; sprint list and board | approve a merge is built (Needs you, sprint list and board); the rest slice 8 |
+| Approve, deny, stop or accept a task from its card | `POST /tasks/{id}/approve`, `/deny`, `/stop`, `/accept` | task page; Needs you; sprint list and board | approve a merge is built (Needs you, sprint list and board); approve, send back (deny), stop and accept are built on the task page |
 | Activity stream for the sprint, newest at the bottom, auto-scroll, load older events | `GET /sprints/{id}/events`, `GET /sprints/{id}/stream` | sprint page, Activity | built for steps and loading earlier; live updates are slice 12 |
 | Filter activity: All, Agent, Workflow, Decisions, Human | `GET /sprints/{id}/events` | sprint page, Activity | **no home yet** (the design shows milestones and steps, no filter) |
 | Live refresh of tasks and events while the page is open | `GET /sprints/{id}/stream` | all pages | slice 12 |
 | A banner naming an attention event (a task parked, evidence failed) with "Ask the manager" | `POST /projects/{id}/meta/supervise` | needs you; manager side bar | slice 9 |
-| Write guidance for the selected task, read by its next agent step | `POST /tasks/{id}/messages` | task page, Overview | slice 8 |
+| Write guidance for the selected task, read by its next agent step | `POST /tasks/{id}/messages` | task page, Overview | built |
 
 ## Task (legacy: the detail drawer)
 
 | Capability | Endpoint | Route | Status |
 |---|---|---|---|
-| See title, description, acceptance criteria, key, type | `GET /tasks/{id}` | `/dashboard/tasks/{id}` | slice 8 |
-| See step, branch, worktree path, role, priority, tokens and split, step visits, complexity, model overrides | `GET /tasks/{id}` | task page, Overview | slice 8 for step, branch, spend and runs; worktree path, priority, token split, step visits and complexity **no home yet** |
+| See title, description, acceptance criteria, key, type | `GET /tasks/{id}` | `/dashboard/tasks/{id}` | built |
+| See step, branch, worktree path, role, priority, tokens and split, step visits, complexity, model overrides | `GET /tasks/{id}` | task page, Overview | built for step, branch, spend and runs; worktree path, priority, token split, step visits and complexity **no home yet** |
 | See dependencies as chips with their titles | `GET /tasks/{id}` | task page, Overview | **no home yet** |
-| See the blocked reason | `GET /tasks/{id}` | task page, the decision | slice 8 |
-| See the human gate and approve it | `POST /tasks/{id}/approve` | task page; Needs you | built in Needs you; task page slice 8 |
-| Send back with a note (deny) | `POST /tasks/{id}/deny` | task page ("Send back") | slice 8 |
-| See completion evidence: pass or fail, the commit it is about, per-criterion status | `GET /tasks/{id}` | `/dashboard/tasks/{id}/checks` | slice 8 |
-| See the policy that applies to the task, per decision, and where it came from (project, task type rule, task override) | `GET /tasks/{id}` | task page, Overview (Who decides) | slice 8 |
-| See where the task came from: system, reference, link, reporter | `GET /tasks/{id}` | task page, Overview ("Filed by") | slice 8 |
-| See guidance already written for the task | `GET /tasks/{id}` | task page, Overview | slice 8 |
-| Edit title, description, acceptance criteria | `PATCH /tasks/{id}` | task page, Edit | slice 8 |
-| Stop a running task | `POST /tasks/{id}/stop` | task page, More | slice 8 |
-| Cancel a task | `POST /tasks/{id}/cancel` | task page, More | slice 8 |
-| Delete a task | `DELETE /tasks/{id}` | task page, More | slice 8 |
-| See the run history: role, step, model, duration, outcome, tokens | `GET /tasks/{id}` | `/dashboard/tasks/{id}/activity` | slice 8 |
+| See the blocked reason | `GET /tasks/{id}` | task page, the decision | built |
+| See the human gate and approve it | `POST /tasks/{id}/approve` | task page; Needs you | built (Needs you and the task page's decision) |
+| Send back with a note (deny) | `POST /tasks/{id}/deny` | task page ("Send back") | built |
+| See completion evidence: pass or fail, the commit it is about, per-criterion status | `GET /tasks/{id}` | `/dashboard/tasks/{id}/checks` | built (facts and claims from `GET /tasks/{id}/checks`) |
+| See the policy that applies to the task, per decision, and where it came from (project, task type rule, task override) | `GET /tasks/{id}` | task page, Overview (Who decides) | built for the gates the workflow has (plan and merge approval) |
+| See where the task came from: system, reference, link, reporter | `GET /tasks/{id}` | task page, Overview ("Filed by") and the decision for filed work | built |
+| See guidance already written for the task | `GET /tasks/{id}` | task page, Overview | built (each note says whether the agent has read it) |
+| Edit title, description, acceptance criteria | `PATCH /tasks/{id}` | task page, Edit | built (and the type) |
+| Stop a running task | `POST /tasks/{id}/stop` | task page, More | built |
+| Cancel a task | `POST /tasks/{id}/cancel` | task page, More | built |
+| Delete a task | `DELETE /tasks/{id}` | task page, More | built |
+| Block a task with a reason, unblock it with optional guidance (not in legacy; the CLI had it) | `POST /tasks/{id}/block`, `/unblock` | task page, More and the decision | built |
+| See the run history: role, step, model, duration, outcome, tokens | `GET /tasks/{id}` | `/dashboard/tasks/{id}/activity` | built from `GET /tasks/{id}/runs` (step, by, result, took, spend; tokens are not shown) with each run's output and prompt |
 | Accept a task filed by another system (triage to todo) | `POST /tasks/{id}/accept` | project page, Backlog | built |
 | Decline filed work (not in legacy; added with the backlog) | `POST /tasks/{id}/decline` | project page, Backlog | built |
-| See changed files and the diff (not in legacy) | `GET /tasks/{id}/changes` | `/dashboard/tasks/{id}/changes` | slice 8 |
+| See changed files and the diff (not in legacy) | `GET /tasks/{id}/changes` | `/dashboard/tasks/{id}/changes` | built |
 
 ## Project settings (legacy: the settings drawer)
 

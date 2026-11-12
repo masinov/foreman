@@ -451,6 +451,14 @@ over `foreman/git.py`, with typed response models in
   characters); `prompt_truncated` and `transcript_truncated` say when a cap
   applied.
 
+Two writes serve the task page's More menu and decision, in
+`foreman/dashboard/routers/tasks.py` over the shared mutation service:
+`POST /tasks/{id}/block` (`reason`, required) parks a task, and
+`POST /tasks/{id}/unblock` (`note`, optional) returns a blocked task to the
+queue and, when a note is given, records it as guidance for the next agent
+step after the unblock succeeded. A task at a workflow gate is refused
+(approve or deny it instead). `GET /tasks/{id}` carries `created_at`.
+
 ### Inspection and dashboard surfaces
 
 Foreman now exposes two first-class observation surfaces:
@@ -511,9 +519,9 @@ The frontend is being rebuilt to `docs/design/dashboard-v7/` in sprint 58.
 | Path | Holds |
 |---|---|
 | `app/` | `main.jsx` (entry), `mountApp.jsx`, `router.jsx` (History API router and `Link`), `routes.js` (the route table), `paths.js` (every address), `Shell.jsx` and `Breadcrumb.jsx`, `pages.js` (which routes have a built page) |
-| `api/` | `client.js` (the `/api/v1` client; errors are `ApiError` from the ADR-0019 envelope; `queryString`), one module per resource (`projects`, `sprints`, `tasks`, `workspace`, `needsYou`, `milestones`, `engine`), `useResource.js` (`{data, error, loading, reload}`, stale responses ignored), `usePagedList.js` (server paging: first page, `loadMore`, `reload`, stale pages ignored) and `ApiProvider.jsx` |
+| `api/` | `client.js` (the `/api/v1` client; errors are `ApiError` from the ADR-0019 envelope; `queryString`; `stream()` follows an SSE stream with the token in the query), one module per resource (`projects`, `sprints`, `tasks`, `workspace`, `needsYou`, `milestones`, `engine`, `backlog`), `useResource.js` (`{data, error, loading, reload}`, stale responses ignored), `usePagedList.js` (server paging: first page, `loadMore`, `reload`, stale pages ignored), `useEventStream.js` (one stream while a path is given) and `ApiProvider.jsx` |
 | `ui/` | primitives: `Button`, `Table`, `Surface`, `StatusDot`, `Tabs`, `SectionHeading`, `Mono`, `Menu`, `Dialog`, `Field`, `Disclosure`, and `format.js` |
-| `pages/` | `workspace/` and `project/` (built: Sprints and Activity tabs over one shared head, `ProjectLayout`), `shared/` (Needs you, the milestone table, shared wording), `status/` (the shared "being rebuilt" page and not-found) |
+| `pages/` | `workspace/`, `project/` (Sprints, Backlog and Activity tabs over one shared head, `ProjectLayout`), `sprint/` (list and board), `task/` (Overview, Changes, Checks and Activity over one shared head and decision, `TaskLayout`; wording in `taskWords.js`, the diff parser in `diff.js`), `shared/` (Needs you, the milestone table, the engine menu, shared wording), `status/` (the shared "being rebuilt" page and not-found) |
 | `styles/` | `tokens.css` (the only place a colour, size, radius or line weight is written), `base.css`, `shell.css`, `ui.css`, and one stylesheet per page area |
 | `testing/` | the fake API used by tests |
 
@@ -534,6 +542,13 @@ count, and the project's `needs-you`; the breadcrumb's project switcher reads
 `GET /workspace` too. Needs you, finished sprints and the Activity tab page on
 the server through `usePagedList`; the sprint queue is one unpaged read of the
 active and planned sprints.
+
+The task page (`pages/task/`) reads `GET /tasks/{id}`, `/checks` and
+`/changes` once for its head and decision, whichever tab is open; Overview
+adds the project's workflow (steps and who decides), Changes one file's diff
+at a time, Activity the paged runs and the selected run's output. While the
+task is `in_progress` it follows `GET /sprints/{id}/stream` and reads itself
+again 300 ms after the last event about the task.
 
 The current implementation debt in this area is explicit:
 
