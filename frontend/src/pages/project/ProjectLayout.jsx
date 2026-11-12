@@ -48,10 +48,24 @@ function TitleRow({ projectId, project }) {
           </Mono>
         ) : null}
       </div>
-      <Link className="project__settings" href={paths.projectSettings(projectId)}>
-        <Icon name="settings" />
-        Project settings
-      </Link>
+      {/* The project's other pages are reached from here: the backlog and
+          the settings each have a page of their own. */}
+      <nav className="project__pages" aria-label="Project pages">
+        <Link className="project__page-link" href={paths.projectBacklog(projectId)}>
+          <Icon name="inbox" />
+          Backlog
+          {project ? (
+            <>
+              <span className="visually-hidden"> </span>
+              <span className="tabs__count">{project.backlog ?? 0}</span>
+            </>
+          ) : null}
+        </Link>
+        <Link className="project__page-link" href={paths.projectSettings(projectId)}>
+          <Icon name="settings" />
+          Project settings
+        </Link>
+      </nav>
     </div>
   );
 }
@@ -114,20 +128,6 @@ export function ProjectLayout({ projectId, children }) {
           label="Project"
           items={[
             { href: paths.project(projectId), label: "Sprints" },
-            {
-              href: paths.projectBacklog(projectId),
-              label: (
-                <>
-                  Backlog
-                  {project ? (
-                    <>
-                      <span className="visually-hidden"> </span>
-                      <span className="tabs__count">{project.backlog}</span>
-                    </>
-                  ) : null}
-                </>
-              ),
-            },
             { href: paths.projectActivity(projectId), label: "Activity" },
           ]}
         />

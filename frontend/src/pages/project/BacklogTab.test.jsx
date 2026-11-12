@@ -35,9 +35,7 @@ describe("the backlog tab", () => {
     const { fetchImpl } = await renderBacklog();
     expect(calls(fetchImpl, "GET", backlogUrl())).toHaveLength(1);
 
-    const tabs = screen.getByRole("navigation", { name: "Project" });
-    expect(within(tabs).getByRole("link", { name: /Backlog/ })).toHaveAttribute("aria-current", "page");
-    expect(document.title).toBe("Project, Backlog · Foreman");
+    expect(screen.queryByRole("navigation", { name: "Project" })).toBeNull();
 
     const filed = filedSection();
     expect(within(filed).getByRole("link", { name: FILED.title })).toHaveAttribute("href", "/dashboard/tasks/task-filed");
@@ -65,12 +63,6 @@ describe("the backlog tab", () => {
     expect(within(filedSection()).getByText(/^Nothing is filed\./)).toBeInTheDocument();
     expect(within(acceptedSection()).getByText(/^Nothing is waiting to be planned\./)).toBeInTheDocument();
     expect(within(acceptedSection()).getByRole("button", { name: "Plan" })).toBeDisabled();
-  });
-
-  it("shows the same count in the tab as the workspace reports", async () => {
-    await renderBacklog();
-    const tabs = screen.getByRole("navigation", { name: "Project" });
-    expect(within(tabs).getByRole("link", { name: "Backlog 4" })).toBeInTheDocument();
   });
 
   it("shows an API failure as a sentence", async () => {
@@ -341,10 +333,14 @@ describe("paging and filtering", () => {
   });
 });
 
-describe("the backlog count", () => {
-  it("is the same number on the tab and in the workspace's backlog column", async () => {
+describe("the backlog page", () => {
+  it("is a page of its own below the project: its own title, its own breadcrumb step, no project tabs", async () => {
     await renderBacklog();
-    const tabs = screen.getByRole("navigation", { name: "Project" });
-    expect(within(tabs).getByRole("link", { name: /Backlog/ })).toHaveTextContent("Backlog 4");
+    expect(screen.getByRole("heading", { level: 1, name: "Backlog" })).toBeInTheDocument();
+    const crumbs = screen.getByRole("navigation", { name: "Breadcrumb" });
+    expect(await within(crumbs).findByRole("link", { name: /Foreman/ })).toHaveAttribute("href", "/dashboard/projects/foreman");
+    expect(within(crumbs).getByText("Backlog")).toHaveAttribute("aria-current", "page");
+    expect(screen.queryByRole("navigation", { name: "Project" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Engine" })).toBeNull();
   });
 });

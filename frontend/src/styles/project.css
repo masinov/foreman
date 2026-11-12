@@ -26,7 +26,14 @@
   min-width: 0;
 }
 
-.project__settings {
+.project__pages {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-5);
+}
+
+.project__page-link {
   display: inline-flex;
   align-items: center;
   gap: var(--icon-gap);
@@ -228,4 +235,17 @@
   flex-wrap: wrap;
   gap: var(--space-2);
   margin-top: var(--space-3);
+}
+
+/* The backlog: a page of its own */
+.backlog-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.backlog-page__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
 }
