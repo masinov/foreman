@@ -67,6 +67,27 @@ export const UNBLOCK_ITEM = {
   since: on("11-10"),
 };
 
+export const ORDER_ITEM = {
+  kind: "settle_order",
+  project_id: "foreman",
+  project_name: "Foreman",
+  sprint_id: "sprint-56",
+  sprint_title: "Sprint 56: engine truthfulness",
+  task_id: null,
+  task_key: null,
+  task_title: null,
+  since: on("11-09"),
+  gate: {
+    id: "gate-1",
+    conflict_description: "Sprint 57 builds on the schema Sprint 56 adds.",
+    suggested_reason: "Schema first.",
+    suggested_order: [
+      { sprint_id: "sprint-56", title: "Sprint 56: engine truthfulness" },
+      { sprint_id: "sprint-57", title: "Sprint 57: panels" },
+    ],
+  },
+};
+
 export function needsYouPage(items) {
   return { items, total: items.length, limit: 5, offset: 0 };
 }

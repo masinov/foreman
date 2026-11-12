@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 
 import { createFakeFetch, renderApp, reply } from "../../testing/fakeApi";
 import {
@@ -12,7 +12,7 @@ import {
   QUEUE_URL,
   sprint,
 } from "../../testing/projectFixture";
-import { engine, milestone, on, UNBLOCK_ITEM, workspacePayload } from "../../testing/workspaceFixture";
+import { engine, milestone, on, ORDER_ITEM, UNBLOCK_ITEM, workspacePayload } from "../../testing/workspaceFixture";
 
 function withEngine(routes, state, task = null) {
   const payload = workspacePayload();
@@ -188,6 +188,41 @@ describe("Needs you on the project page", () => {
     expect(calls(fetchImpl, "POST", "/api/v1/tasks/task-merge/approve")).toHaveLength(1);
     expect(calls(fetchImpl, "GET", PROJECT_NEEDS_YOU_URL.slice(4))).toHaveLength(2);
     expect(within(needsYou).getByRole("status")).toHaveTextContent("Decision recorded.");
+  });
+});
+
+describe("a proposed sprint order", () => {
+  it("is listed with its proposal and settled by accepting or rejecting it", async () => {
+    for (const [name, resolution] of [["Accept", "accepted"], ["Reject", "rejected"]]) {
+      cleanup();
+      const routes = projectRoutes();
+      routes[PROJECT_NEEDS_YOU_URL] = { items: [ORDER_ITEM], total: 1 };
+      routes["PATCH /api/v1/gates/gate-1"] = () => {
+        routes[PROJECT_NEEDS_YOU_URL] = { items: [], total: 0 };
+        return { id: "gate-1", status: resolution };
+      };
+      const { fetchImpl } = await renderProject("/dashboard/projects/foreman", routes);
+      const needsYou = screen.getByRole("region", { name: /Needs you/ });
+      const row = (await within(needsYou).findByText("Settle sprint order")).closest("tr");
+      expect(within(row).getByRole("link", { name: ORDER_ITEM.gate.conflict_description })).toHaveAttribute(
+        "href",
+        "/dashboard/sprints/sprint-56",
+      );
+      expect(
+        within(row).getByText(
+          "Proposed: Sprint 56: engine truthfulness → Sprint 57: panels · Schema first.",
+        ),
+      ).toBeInTheDocument();
+
+      fireEvent.click(within(row).getByRole("button", { name: `${name} the proposed sprint order` }));
+      await waitFor(() => expect(within(needsYou).queryByText("Settle sprint order")).toBeNull());
+      const sent = calls(fetchImpl, "PATCH", "/api/v1/gates/gate-1");
+      expect(sent).toHaveLength(1);
+      expect(sent[0].body).toEqual({ resolution });
+      expect(within(needsYou).getByRole("status")).toHaveTextContent(
+        name === "Accept" ? "Sprint order accepted" : "Sprint order rejected",
+      );
+    }
   });
 });
 

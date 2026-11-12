@@ -9,6 +9,12 @@ memory changes rather than versioned product releases.
 
 ### Sprint 58 — frontend rebuild
 
+- **feat, a proposed sprint order is in Needs you** (`feat/task-b1e9a964d00e`):
+  `GET /needs-you` carries pending decision gates as `settle_order` items,
+  the workspace counts them, and the workspace and project pages show them
+  with Accept and Reject, so `/dashboard/legacy` is no longer needed to
+  settle one.
+
 - **fix, a review sees the whole change** (`fix/review-sees-the-whole-change`):
   the second sprint 58 task (1,310 changed lines) was approved by the
   reviewer in 7 seconds; the diff in its prompt is capped (16,000 characters

@@ -80,10 +80,12 @@ review, human gate, deferred approval, merge). Still true: agents run with full 
   v7 routes say they are being rebuilt, and the old application is at
   `/dashboard/legacy`.
 - The design's Needs you has four kinds: accept filed work, approve a plan,
-  approve a merge, unblock. The needs-you endpoint names them. Pending
-  decision gates (a proposed sprint order) are a fifth kind the design does
-  not show; the rebuilt pages do not list them, and they are settled from
-  `/dashboard/legacy` until a slice gives them a place.
+  approve a merge, unblock. Pending decision gates (a proposed sprint order)
+  are a fifth kind the design does not show. Resolved: the needs-you endpoint
+  carries them as `settle_order`, so they appear in Needs you on the
+  workspace and project pages ("Settle sprint order", with Accept and
+  Reject) and no longer need `/dashboard/legacy`. The design README still
+  names four kinds; revise it when product direction is next edited.
 - Resolved (sprint 58 slice 3, ADR-0021): the design's backlog is a sprint
   row of kind `backlog` that is never listed or run as a sprint; the standing
   "Intake queue" sprint is gone (migration 21 moved its waiting work into the
