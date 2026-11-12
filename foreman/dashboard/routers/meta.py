@@ -26,13 +26,20 @@ def build_router(ctx: ApiContext) -> APIRouter:
 
     @router.post("/projects/{project_id}/meta/message")
     async def meta_message(project_id: str, request: Request) -> StreamingResponse:
-        from ...meta_agent import process_message as meta_process_message
+        from ...meta_agent import (
+            describe_page_context,
+            process_message as meta_process_message,
+        )
 
         ctx.require_manager()
         data = await read_json_body(request)
         message = str(data.get("message", "")).strip()
         if not message:
             raise DashboardValidationError("message cannot be empty.")
+        try:
+            page_context = describe_page_context(data.get("context"))
+        except ValueError as exc:
+            raise DashboardValidationError(str(exc)) from exc
 
         # Validate up front; the streaming generator opens its own store so it
         # can keep state available for the full turn (history + session writes).
@@ -54,6 +61,7 @@ def build_router(ctx: ApiContext) -> APIRouter:
                     message,
                     store=store,
                     project=project,
+                    page_context=page_context,
                 ):
                     yield chunk.encode("utf-8")
 

@@ -3733,6 +3733,16 @@ class DashboardMetaAgentTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 400)
 
+    def test_meta_message_returns_400_for_a_malformed_context(self):
+        """POST /api/projects/{id}/meta/message rejects a context that is not an object."""
+        project = self._seed()
+        response = self._request(
+            "POST",
+            f"/api/projects/{project.id}/meta/message",
+            json={"message": "hello", "context": "Sprints"},
+        )
+        self.assertEqual(response.status_code, 400)
+
     def test_meta_message_returns_404_for_unknown_project(self):
         """POST /api/projects/{id}/meta/message returns 404 for unknown project."""
         response = self._request(
