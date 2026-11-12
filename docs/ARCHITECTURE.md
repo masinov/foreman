@@ -409,6 +409,39 @@ bad one is a 400 `invalid_request` envelope (ADR-0019). Paged lists take
   `offset`, and now also returns `total`. Without parameters it returns every
   sprint as before. The backlog is never among them.
 
+The task page reads (sprint 58) are built by `foreman/dashboard_task_reads.py`
+over `foreman/git.py`, with typed response models in
+`foreman/dashboard/task_models.py`. All are GETs under `/api/v1`.
+
+- `GET /tasks/{id}/changes` returns `files` (`path`, `status` of `added`,
+  `modified`, `deleted` or `renamed`, `added`, `deleted`, `binary`, and
+  `old_path` for a rename), `totals` (`files`, `added`, `deleted`), and the two
+  commits compared: `base` (the commit the branch left the default branch at)
+  and `head` (the branch tip). A task with no branch, or whose branch is gone,
+  returns no files and `empty_reason`.
+- `GET /tasks/{id}/changes/diff?path=...` returns the unified `diff` of one
+  file, capped at `cap_chars` (200,000); a longer diff is cut and `truncated`
+  is true, with `total_chars`. `path` must be exactly one of the changed
+  files from the same comparison, else 400 `invalid_request`. Git runs with a
+  fixed argument list, `--literal-pathspecs` and `--`; request input is never
+  interpolated into a command.
+- `GET /tasks/{id}/checks` returns `facts` (what the engine measured: `tests`
+  with `status`, `exit_code`, `duration_seconds`, `command`, `result_line`,
+  `commit`, `head_sha`; `branch` with `ahead`, `behind` and `state`; `size`),
+  `claims` (what an agent reported: `reviews` with decision, model, duration,
+  commit, summary; `judged_by`; `criteria` with their judged `status`),
+  `proof_status`, `outstanding`, and `evidence_files`, always empty until
+  Phase 5 captures evidence files (item shape: `name`, `path`, `media_type`,
+  `size_bytes`, `run_id`, `captured_at`). It reads recorded events, runs and
+  completion evidence and runs nothing (ADR-0018).
+- `GET /tasks/{id}/runs` pages a task's runs newest first (`limit`, `offset`,
+  `total`): `step`, `role_id`, `model`, `outcome`, `started_at`,
+  `finished_at`, `duration_ms`, `cost_usd`, `tokens`, `token_usage`.
+- `GET /runs/{id}/output` returns the run's `prompt` and `transcript` entries
+  (`at`, `kind`, `stream`, `text`), each capped at `cap_chars` (200,000
+  characters); `prompt_truncated` and `transcript_truncated` say when a cap
+  applied.
+
 ### Inspection and dashboard surfaces
 
 Foreman now exposes two first-class observation surfaces:

@@ -138,6 +138,24 @@ class RunStore(StoreBase):
         rows = self._connection.execute(sql, tuple(params)).fetchall()
         return [_row_to_run(row) for row in rows]
 
+    def list_task_runs_page(
+        self, task_id: str, *, limit: int, offset: int
+    ) -> tuple[list[Run], int]:
+        """Return one page of a task's runs, newest first, and the total count."""
+
+        total = self._connection.execute(
+            "SELECT COUNT(*) FROM runs WHERE task_id = ?", (task_id,)
+        ).fetchone()[0]
+        rows = self._connection.execute(
+            """
+            SELECT * FROM runs WHERE task_id = ?
+            ORDER BY created_at DESC, rowid DESC
+            LIMIT ? OFFSET ?
+            """,
+            (task_id, limit, offset),
+        ).fetchall()
+        return [_row_to_run(row) for row in rows], int(total)
+
     def get_latest_run(self, task_id: str) -> Run | None:
         """Return the most recent run for one task, if it exists."""
 

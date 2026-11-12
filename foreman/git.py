@@ -271,6 +271,167 @@ def recent_commits(
     return result.stdout
 
 
+@dataclass(frozen=True, slots=True)
+class FileChange:
+    """One file a branch changes against its base.
+
+    ``status`` is ``added``, ``modified``, ``deleted`` or ``renamed``;
+    ``old_path`` is set only for a rename. A binary file has no line counts, so
+    ``added`` and ``deleted`` are zero and ``binary`` is true.
+    """
+
+    path: str
+    status: str
+    added: int = 0
+    deleted: int = 0
+    binary: bool = False
+    old_path: str | None = None
+
+
+_STATUS_NAMES = {"A": "added", "M": "modified", "D": "deleted", "R": "renamed", "C": "added", "T": "modified"}
+
+
+def _git_bytes(repo_path: str | Path, args: list[str]) -> tuple[int, bytes]:
+    """Run git with a fixed argument list and return the exit code and raw stdout.
+
+    Nothing goes through a shell, and the output is not stripped, so NUL
+    separated records and diff text keep their exact bytes.
+    """
+
+    result = subprocess.run(
+        ["git", *args],
+        cwd=Path(repo_path),
+        capture_output=True,
+        check=False,
+    )
+    return result.returncode, result.stdout
+
+
+def _decode(data: bytes) -> str:
+    return data.decode("utf-8", errors="replace")
+
+
+def merge_base(repo_path: str | Path, base_branch: str, branch_name: str) -> str | None:
+    """Return the commit where ``branch_name`` left ``base_branch``, if any."""
+
+    result = run_git(repo_path, "merge-base", base_branch, branch_name, check=False)
+    return result.stdout if result.returncode == 0 and result.stdout else None
+
+
+def commits_ahead(repo_path: str | Path, branch_name: str, base_branch: str) -> int:
+    """Return how many commits ``branch_name`` has that ``base_branch`` lacks."""
+
+    return commits_behind(repo_path, base_branch, branch_name)
+
+
+def branch_changes(
+    repo_path: str | Path,
+    *,
+    base_branch: str,
+    branch_name: str,
+) -> list[FileChange]:
+    """Return the files ``branch_name`` changes since it left ``base_branch``.
+
+    This is the comparison a merge would land (``base...branch``). It combines
+    ``--numstat`` (line counts, as completion evidence reads them) with
+    ``--name-status`` (the kind of change), both in ``-z`` form so a path with
+    spaces or a newline is exact. Raises ``GitError`` when git cannot compare.
+    """
+
+    range_arg = f"{base_branch}...{branch_name}"
+    code, numstat = _git_bytes(repo_path, ["diff", "--numstat", "-z", "-M", range_arg, "--"])
+    if code != 0:
+        raise GitError(f"git could not compare {range_arg} in {repo_path}")
+    code, name_status = _git_bytes(repo_path, ["diff", "--name-status", "-z", "-M", range_arg, "--"])
+    if code != 0:
+        raise GitError(f"git could not compare {range_arg} in {repo_path}")
+
+    counts: dict[str, tuple[int, int, bool]] = {}
+    tokens = _decode(numstat).split("\0")
+    i = 0
+    while i < len(tokens):
+        token = tokens[i]
+        i += 1
+        if not token:
+            continue
+        parts = token.split("\t", 2)
+        if len(parts) != 3:
+            continue
+        added, deleted, path = parts
+        if path == "":
+            path = tokens[i + 1] if i + 1 < len(tokens) else ""
+            i += 2
+        binary = added == "-" or deleted == "-"
+        counts[path] = (
+            int(added) if added.isdigit() else 0,
+            int(deleted) if deleted.isdigit() else 0,
+            binary,
+        )
+
+    changes: list[FileChange] = []
+    tokens = _decode(name_status).split("\0")
+    i = 0
+    while i < len(tokens):
+        code_text = tokens[i]
+        i += 1
+        if not code_text:
+            continue
+        kind = code_text[0]
+        if kind in ("R", "C"):
+            old_path = tokens[i] if i < len(tokens) else ""
+            path = tokens[i + 1] if i + 1 < len(tokens) else ""
+            i += 2
+        else:
+            old_path = None
+            path = tokens[i] if i < len(tokens) else ""
+            i += 1
+        if not path:
+            continue
+        added_n, deleted_n, binary = counts.get(path, (0, 0, False))
+        changes.append(
+            FileChange(
+                path=path,
+                status=_STATUS_NAMES.get(kind, "modified") if kind != "C" else "added",
+                added=added_n,
+                deleted=deleted_n,
+                binary=binary,
+                old_path=old_path if kind == "R" else None,
+            )
+        )
+    return changes
+
+
+def file_diff(
+    repo_path: str | Path,
+    *,
+    base_branch: str,
+    branch_name: str,
+    change: FileChange,
+) -> str:
+    """Return the unified diff of one changed file, as text.
+
+    The path is passed as a literal pathspec after ``--`` (never parsed as a
+    glob, a revision or an option); a rename names both paths so git shows it
+    as a rename.
+    """
+
+    paths = [change.path] if change.old_path is None else [change.old_path, change.path]
+    code, output = _git_bytes(
+        repo_path,
+        [
+            "--literal-pathspecs",
+            "diff",
+            "-M",
+            f"{base_branch}...{branch_name}",
+            "--",
+            *paths,
+        ],
+    )
+    if code != 0:
+        raise GitError(f"git could not diff {change.path} in {repo_path}")
+    return _decode(output)
+
+
 def _looks_like_merge_conflict(detail: str) -> bool:
     normalized = detail.lower()
     return (

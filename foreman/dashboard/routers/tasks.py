@@ -4,10 +4,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from ..schemas import GuidanceNote, RequestedBy, TaskDenial, body_as
+from ...dashboard_task_reads import TaskReads
+from ..task_models import FileDiff, RunOutput, TaskChanges, TaskChecks, TaskRuns
 from ..context import (
+    DEFAULT_PAGE_LIMIT,
+    MAX_PAGE_LIMIT,
     ApiContext,
     read_json_body,
 )
@@ -63,5 +67,31 @@ def build_router(ctx: ApiContext) -> APIRouter:
         return with_api(
             lambda api: api.create_human_message(task_id, text=body.text)
         )
+
+    @router.get("/tasks/{task_id}/changes", response_model=TaskChanges)
+    def get_task_changes(task_id: str) -> TaskChanges:
+        return ctx.with_store(lambda store: TaskReads(store).get_changes(task_id))
+
+    @router.get("/tasks/{task_id}/changes/diff", response_model=FileDiff)
+    def get_task_file_diff(task_id: str, path: str = Query(min_length=1)) -> FileDiff:
+        return ctx.with_store(lambda store: TaskReads(store).get_file_diff(task_id, path))
+
+    @router.get("/tasks/{task_id}/checks", response_model=TaskChecks)
+    def get_task_checks(task_id: str) -> TaskChecks:
+        return ctx.with_store(lambda store: TaskReads(store).get_checks(task_id))
+
+    @router.get("/tasks/{task_id}/runs", response_model=TaskRuns)
+    def list_task_runs(
+        task_id: str,
+        limit: int = Query(default=DEFAULT_PAGE_LIMIT, ge=1, le=MAX_PAGE_LIMIT),
+        offset: int = Query(default=0, ge=0),
+    ) -> TaskRuns:
+        return ctx.with_store(
+            lambda store: TaskReads(store).list_runs(task_id, limit=limit, offset=offset)
+        )
+
+    @router.get("/runs/{run_id}/output", response_model=RunOutput)
+    def get_run_output(run_id: str) -> RunOutput:
+        return ctx.with_store(lambda store: TaskReads(store).get_run_output(run_id))
 
     return router
