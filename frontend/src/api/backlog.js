@@ -44,8 +44,9 @@ export function acceptTask(client, taskId, options) {
   return client.post(`/tasks/${segment(taskId)}/accept`, undefined, options);
 }
 
-export function declineTask(client, taskId, options) {
-  return client.post(`/tasks/${segment(taskId)}/decline`, {}, options);
+/** Decline filed work; `reason` (optional) is kept with it. */
+export function declineTask(client, taskId, { reason, ...options } = {}) {
+  return client.post(`/tasks/${segment(taskId)}/decline`, reason ? { reason } : {}, options);
 }
 
 /**

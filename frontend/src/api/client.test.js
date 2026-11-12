@@ -1,5 +1,5 @@
 import { ApiError, createApiClient, errorSentence } from "./client";
-import { createFakeFetch, reply } from "../testing/fakeApi";
+import { createFakeEventSource, createFakeFetch, reply } from "../testing/fakeApi";
 
 describe("the /api/v1 client", () => {
   it("prefixes /api/v1, sends the token and returns the JSON body", async () => {
@@ -53,5 +53,24 @@ describe("the /api/v1 client", () => {
   it("makes any error a sentence", () => {
     expect(errorSentence(new Error("boom"))).toBe("boom.");
     expect(errorSentence(null)).toBe("Something went wrong.");
+  });
+
+  it("follows a stream with the token in the query, and closes it", () => {
+    const EventSource = createFakeEventSource();
+    const client = createApiClient({ fetchImpl: async () => null, eventSourceImpl: EventSource, tokenProvider: () => "s e" });
+    const seen = [];
+    const close = client.stream("/sprints/s1/stream", { onMessage: (data) => seen.push(data) });
+    const [source] = EventSource.sources;
+    expect(source.url).toBe("/api/v1/sprints/s1/stream?token=s%20e");
+    source.emit({ type: "event", event: { id: "e1" } });
+    source.onmessage({ data: "not json" });
+    expect(seen).toEqual([{ type: "event", event: { id: "e1" } }]);
+    close();
+    expect(source.closed).toBe(true);
+  });
+
+  it("opens nothing where there is no EventSource", () => {
+    const client = createApiClient({ fetchImpl: async () => null, eventSourceImpl: undefined, tokenProvider: () => "" });
+    expect(() => client.stream("/x", { onMessage: () => {} })()).not.toThrow();
   });
 });

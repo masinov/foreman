@@ -64,6 +64,7 @@ function errorFromResponse(response, payload) {
  */
 export function createApiClient({
   fetchImpl = globalThis.fetch,
+  eventSourceImpl = globalThis.EventSource,
   tokenProvider = readDashboardToken,
   base = API_BASE,
 } = {}) {
@@ -96,7 +97,32 @@ export function createApiClient({
     return payload;
   }
 
+  /**
+   * Follow a server-sent event stream. `onMessage` gets each message's data,
+   * parsed. An EventSource cannot send headers, so the token goes in the
+   * query, which the API accepts for this. Returns a function that closes the
+   * stream. Where the browser has no EventSource nothing is opened.
+   */
+  function stream(path, { onMessage }) {
+    if (typeof eventSourceImpl !== "function") return () => {};
+    const token = tokenProvider();
+    const separator = path.includes("?") ? "&" : "?";
+    const url = `${base}${path}${token ? `${separator}token=${encodeURIComponent(token)}` : ""}`;
+    const source = new eventSourceImpl(url);
+    source.onmessage = (message) => {
+      let data;
+      try {
+        data = JSON.parse(message.data);
+      } catch {
+        return;
+      }
+      onMessage(data);
+    };
+    return () => source.close();
+  }
+
   return {
+    stream,
     get: (path, options) => request("GET", path, options),
     post: (path, body, options) => request("POST", path, { ...options, body }),
     patch: (path, body, options) => request("PATCH", path, { ...options, body }),

@@ -72,6 +72,23 @@ p {
   color: var(--color-gold);
 }
 
+/* A word in the colour of what it says. The word carries the meaning. */
+.tone-passed {
+  color: var(--color-green);
+}
+
+.tone-failed {
+  color: var(--color-red);
+}
+
+.tone-attention {
+  color: var(--color-gold);
+}
+
+.tone-running {
+  color: var(--color-blue);
+}
+
 /* Empty states say what is true and what happens next. */
 .empty {
   color: var(--color-text-secondary);

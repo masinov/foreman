@@ -75,12 +75,17 @@ function SprintCrumb({ sprintId }) {
  */
 function SprintProjectCrumb({ sprintId }) {
   const { data: sprint } = useResource(["sprint", sprintId], (client, options) => getSprint(client, sprintId, options));
-  const projects = useProjects();
   if (!sprint?.project_id) return null;
-  const project = projects?.find((entry) => entry.id === sprint.project_id);
+  return <ProjectLink projectId={sprint.project_id} />;
+}
+
+/** A link to a project with what waits for a person there. */
+function ProjectLink({ projectId }) {
+  const projects = useProjects();
+  const project = projects?.find((entry) => entry.id === projectId);
   return (
-    <Link className="breadcrumb__link breadcrumb__project" href={paths.project(sprint.project_id)}>
-      <span>{project?.name || sprint.project_id}</span>
+    <Link className="breadcrumb__link breadcrumb__project" href={paths.project(projectId)}>
+      <span>{project?.name || projectId}</span>
       {project?.needs_you > 0 ? (
         <span className="breadcrumb__count">
           {project.needs_you}
@@ -93,6 +98,30 @@ function SprintProjectCrumb({ sprintId }) {
 
 function TaskCrumb({ taskId }) {
   return useLabel(["task", taskId], (client, options) => getTask(client, taskId, options), (t) => t.task_key || t.title, taskId);
+}
+
+/**
+ * The project and the sprint above a task, as links. A task in the backlog
+ * has the project's Backlog where a sprint would be. Until the task says
+ * where it belongs, nothing shows.
+ */
+function TaskParentCrumb({ taskId, level }) {
+  const { data: task } = useResource(["task", taskId], (client, options) => getTask(client, taskId, options));
+  if (!task?.project_id) return null;
+  if (level === "project") return <ProjectLink projectId={task.project_id} />;
+  if (task.in_backlog) {
+    return (
+      <Link className="breadcrumb__link" href={paths.projectBacklog(task.project_id)}>
+        Backlog
+      </Link>
+    );
+  }
+  if (!task.sprint_id) return null;
+  return (
+    <Link className="breadcrumb__link" href={paths.sprint(task.sprint_id)}>
+      <SprintCrumb sprintId={task.sprint_id} />
+    </Link>
+  );
 }
 
 /** The levels of the current route: Workspace / Project / Sprint / Task. */
@@ -116,7 +145,12 @@ export function crumbsFor(route, params) {
         { key: "sprint", href: paths.sprint(params.sprintId), label: <SprintCrumb sprintId={params.sprintId} /> },
       ];
     case "task":
-      return [workspace, { key: "task", href: paths.task(params.taskId), label: <TaskCrumb taskId={params.taskId} /> }];
+      return [
+        workspace,
+        { key: "project", custom: <TaskParentCrumb taskId={params.taskId} level="project" /> },
+        { key: "sprint", custom: <TaskParentCrumb taskId={params.taskId} level="sprint" /> },
+        { key: "task", href: paths.task(params.taskId), label: <TaskCrumb taskId={params.taskId} /> },
+      ];
     default:
       if (route.name === "workspace-settings") {
         return [workspace, { key: "settings", href: paths.workspaceSettings(), label: "Settings" }];

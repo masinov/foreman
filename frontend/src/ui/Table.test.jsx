@@ -40,4 +40,11 @@ describe("Table", () => {
     expect(table.querySelectorAll("tbody tr.table__placeholder")).toHaveLength(3);
     expect(screen.queryByText("Alpha")).toBeNull();
   });
+
+  it("shades the row a person selected", () => {
+    render(<Table caption="Things" columns={columns} rows={rows} selected={(row) => row === rows[1]} />);
+    const bodyRows = screen.getByRole("table", { name: "Things" }).querySelectorAll("tbody tr");
+    expect(bodyRows[0]).not.toHaveClass("table__row--selected");
+    expect(bodyRows[1]).toHaveClass("table__row--selected");
+  });
 });

@@ -1,0 +1,365 @@
+/* The task page: head, the decision, tabs, and what each tab shows. */
+.task {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.task__title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-3) var(--space-5);
+}
+
+.task__title {
+  display: flex;
+  flex: 999 1 var(--table-min-width);
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.task__facts {
+  overflow-wrap: anywhere;
+}
+
+.task__actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.menu__trigger.task__more {
+  height: var(--control-height);
+  padding: 0 var(--control-padding-inline);
+  border: var(--line-width) solid var(--color-border-control);
+  border-radius: var(--radius);
+  font-size: var(--font-size-control);
+}
+
+/* The decision: the one tinted surface on this page. */
+.decision {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3) var(--space-6);
+}
+
+.decision__body {
+  display: flex;
+  flex: 999 1 var(--column-min-width);
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.decision__question {
+  font-size: var(--font-size-section);
+  font-weight: var(--font-weight-strong);
+  color: var(--color-gold);
+  overflow-wrap: anywhere;
+}
+
+.decision__facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-5);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--color-text-secondary);
+}
+
+.decision__actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.task__tabs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.task__tab-size {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-mono);
+  color: var(--color-text-quiet);
+}
+
+.task-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.task-section__foot {
+  font-size: var(--font-size-control);
+  color: var(--color-text-quiet);
+}
+
+.task-section__foot a,
+.task-checks-line__open {
+  color: var(--color-text-secondary);
+}
+
+/* Overview: the main column and the details beside it. */
+.task-overview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-5) var(--space-6);
+}
+
+.task-overview__main {
+  display: flex;
+  flex: 999 1 var(--table-min-width);
+  flex-direction: column;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.task-steps__step {
+  white-space: nowrap;
+}
+
+.task-steps__runs,
+.task-runs__number {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.task-checks-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-5);
+  color: var(--color-text-secondary);
+}
+
+.task-checks-line__open {
+  margin-left: auto;
+  font-size: var(--font-size-control);
+}
+
+.guidance {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.guidance__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+
+.guidance__notes {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.guidance__note {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-block: var(--space-2);
+}
+
+.guidance__note + .guidance__note {
+  border-top: var(--line-width) solid var(--color-line-row);
+}
+
+.guidance__text,
+.task-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.guidance__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  font-size: var(--font-size-control);
+}
+
+.task-details {
+  display: flex;
+  flex: 1 1 var(--manager-width);
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.task-details__list-terms {
+  margin: 0 0 var(--space-3);
+}
+
+.task-details__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 3fr);
+  gap: var(--space-3);
+  padding-block: var(--space-2);
+}
+
+.task-details__row + .task-details__row {
+  border-top: var(--line-width) solid var(--color-line-row);
+}
+
+.task-details__row dt {
+  font-size: var(--font-size-control);
+  color: var(--color-text-quiet);
+}
+
+.task-details__row dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.task-details__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.task-details__branch {
+  overflow-wrap: anywhere;
+}
+
+.task-details .task-text {
+  color: var(--color-text-secondary);
+}
+
+/* Changes and Activity: a list to pick from, and what the pick shows. */
+.task-changes,
+.task-checks,
+.task-activity {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.file-pick {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.file-pick:hover,
+.file-pick[aria-pressed="true"] {
+  color: var(--color-gold);
+}
+
+.task-files__lines {
+  white-space: nowrap;
+}
+
+.diff-scroll {
+  overflow-x: auto;
+  background: var(--color-inset);
+  border-radius: var(--radius);
+}
+
+.diff {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-mono);
+  line-height: var(--line-height-body);
+}
+
+.diff td {
+  padding: 0 var(--space-2);
+  vertical-align: top;
+}
+
+.diff__number {
+  width: 1%;
+  color: var(--color-text-quiet);
+  text-align: right;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.diff__sign {
+  width: 1%;
+  white-space: pre;
+  user-select: none;
+}
+
+.diff__text {
+  white-space: pre;
+}
+
+.diff__line--add .diff__sign,
+.diff__line--add .diff__text {
+  color: var(--color-green);
+}
+
+.diff__line--del .diff__sign,
+.diff__line--del .diff__text {
+  color: var(--color-red);
+}
+
+.diff__line--hunk td,
+.diff__line--note td {
+  color: var(--color-text-quiet);
+}
+
+.task-checks__check {
+  white-space: nowrap;
+}
+
+.task-checks__result {
+  white-space: nowrap;
+}
+
+.task-evidence {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.task-runs__when {
+  white-space: nowrap;
+}
+
+.run-output__entries {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-3);
+  list-style: none;
+  background: var(--color-inset);
+  border-radius: var(--radius);
+  overflow-x: auto;
+}
+
+.run-output__kind {
+  font-size: var(--font-size-table-header);
+  color: var(--color-text-quiet);
+}
+
+.run-output__text {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.run-output__prompt {
+  padding: var(--space-3);
+  background: var(--color-inset);
+  border-radius: var(--radius);
+}

@@ -5,7 +5,9 @@ import React from "react";
  * above the first row or below the last. `tinted` is the variant that sits
  * inside the tinted surface, with its inset row line.
  *
- * `columns` are `{ key, header, render(row), className? }`. While
+ * `columns` are `{ key, header, render(row), className? }`. `selected(row)`
+ * marks the row a person picked (its control says so to assistive
+ * technology; the row is shaded). While
  * `placeholderRows` is a number, that many placeholder rows stand in for the
  * data (callers show them only after 200 ms of loading).
  *
@@ -17,6 +19,7 @@ export function Table({
   columns,
   rows = [],
   rowKey = (row) => row.id,
+  selected = null,
   tinted = false,
   hideHeader = false,
   placeholderRows = null,
@@ -49,7 +52,7 @@ export function Table({
                 </tr>
               ))
             : rows.map((row) => (
-                <tr key={rowKey(row)}>
+                <tr key={rowKey(row)} className={selected?.(row) ? "table__row--selected" : undefined}>
                   {columns.map((column) => (
                     <td key={column.key} className={column.className}>
                       {column.render(row)}
