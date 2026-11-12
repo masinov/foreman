@@ -68,10 +68,16 @@ def _token_matches(request: Request, expected: str) -> bool:
     return hmac.compare_digest(presented.encode("utf-8"), expected.encode("utf-8"))
 
 
-def _error_body(message: str, code: str) -> dict[str, str]:
-    """The one shape of an API error: a sentence for people, a code for programs."""
+def _error_body(message: str, code: str, field: str | None = None) -> dict[str, str]:
+    """The one shape of an API error: a sentence for people, a code for programs.
 
-    return {"error": message, "code": code}
+    ``field`` is added only when the error is about one field of the request.
+    """
+
+    body = {"error": message, "code": code}
+    if field:
+        body["field"] = field
+    return body
 
 
 def _is_intake_path(path: str) -> bool:
@@ -268,7 +274,9 @@ def create_dashboard_app(
 
     @app.exception_handler(DashboardValidationError)
     async def handle_validation(_: Request, exc: DashboardValidationError) -> JSONResponse:
-        return JSONResponse(_error_body(str(exc), "invalid_request"), status_code=400)
+        return JSONResponse(
+            _error_body(str(exc), "invalid_request", exc.field), status_code=400
+        )
 
     @app.exception_handler(DashboardActionError)
     async def handle_action(_: Request, exc: DashboardActionError) -> JSONResponse:
