@@ -73,7 +73,7 @@ function isPlainLeftClick(event) {
  * without a page load; anything else (new tab, a modifier key, a path outside
  * the application such as /dashboard/legacy) is left to the browser.
  */
-export function Link({ href, onClick, target, children, ...rest }) {
+export const Link = React.forwardRef(function Link({ href, onClick, target, children, ...rest }, ref) {
   const { browser, navigate } = useRouter();
 
   function handleClick(event) {
@@ -88,8 +88,8 @@ export function Link({ href, onClick, target, children, ...rest }) {
   }
 
   return (
-    <a href={href} target={target} onClick={handleClick} {...rest}>
+    <a ref={ref} href={href} target={target} onClick={handleClick} {...rest}>
       {children}
     </a>
   );
-}
+});
