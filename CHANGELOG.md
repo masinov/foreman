@@ -9,6 +9,13 @@ memory changes rather than versioned product releases.
 
 ### Sprint 58 — frontend rebuild
 
+- **fix, the breadcrumb names the project's tab**
+  (`fix/breadcrumb-names-the-project-tab`), reported by the owner. A backlog
+  task's breadcrumb read "Project / Backlog / task"; clicking "Backlog" went
+  to the project's Backlog tab, whose breadcrumb read only "Project", so it
+  looked like the wrong page. On the Backlog and Activity tabs the breadcrumb
+  now ends with the tab's name.
+
 - **feat, folders in the Changes tab** (`feat/changes-folder-breadcrumb`),
   asked for by the owner. From ten changed files up, the list offers the
   folders directly inside the current one, each with its file count and
