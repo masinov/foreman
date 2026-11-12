@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Foreman workspace settings</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#dedcd8}a:hover{color:#c9a55a}
+</style>
+</head>
+<body>
+<div style="min-height: 1040px; display: flex; flex-direction: column; background: #0c0c0e; color: #dedcd8; font-family: Inter, system-ui, sans-serif; font-size: 13px; line-height: 1.45">
+<header style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-height: 40px; padding: 0 24px; border-bottom: 1px solid #26262b; background: #101013">
+<a href="01-workspace.html" style="font-family: 'Source Serif 4', serif; font-size: 16px; font-weight: 600; text-decoration: none">Foreman</a>
+<nav aria-label="Where you are" style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; color: #85837e">
+<span aria-hidden="true">/</span>
+<a href="01-workspace.html" style="color: #a3a19c; text-decoration: none">Workspace</a>
+<span aria-hidden="true">/</span>
+<span style="color: #dedcd8">Settings</span>
+</nav>
+<button type="button" aria-haspopup="menu" aria-label="You: who you are signed in as, workspace settings, sign out" style="margin-left: auto; display: flex; align-items: center; gap: 6px; height: 24px; padding: 0 6px; border: 0; border-radius: 3px; background: transparent; color: #a3a19c; font: inherit; font-size: 12px; cursor: pointer">[your name]<svg aria-hidden="true" width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="#85837e" stroke-width="1.3"><path d="M1 2.5l3 3 3-3"></path></svg></button>
+</header>
+<main style="width: 100%; box-sizing: border-box; max-width: 1200px; margin: 0 auto; padding: 22px 24px 40px; display: flex; flex-direction: column; gap: 20px">
+<h1 style="margin: 0; font-family: 'Source Serif 4', serif; font-size: 21px; font-weight: 600">Workspace settings</h1>
+
+<section aria-labelledby="def" style="display: flex; flex-direction: column">
+<div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding-bottom: 6px">
+<h2 id="def" style="margin: 0; font-size: 13px; font-weight: 600">Defaults for projects</h2>
+<span style="font-size: 12px; color: #85837e">Every project starts from these. A project can override any of them in its own repository.</span>
+<div style="margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 6px"><button type="button" style="height: 26px; padding: 0 10px; border: 1px solid #34343a; border-radius: 3px; background: transparent; color: #dedcd8; font: inherit; font-size: 12px; cursor: pointer">New workflow</button><button type="button" style="height: 26px; padding: 0 10px; border: 1px solid #34343a; border-radius: 3px; background: transparent; color: #dedcd8; font: inherit; font-size: 12px; cursor: pointer">New role</button></div>
+</div>
+<div style="display: flex; flex-wrap: wrap; align-items: flex-start; gap: 20px 48px">
+<div style="flex: 3 1 420px; min-width: 0"><div style="overflow-x: auto">
+<table style="width: 100%; min-width: 420px; border-collapse: collapse">
+<thead>
+<tr style="text-align: left; font-size: 11px; color: #85837e; border-bottom: 1px solid #2c2c33"><th scope="col" style="padding: 4px 12px 4px 0px; font-weight: 400; ">Workflow</th><th scope="col" style="padding: 4px 12px 4px 12px; font-weight: 400; width: 160px">Used by</th><th scope="col" style="padding: 4px 0px 4px 12px; font-weight: 400; width: 50px"></th></tr>
+</thead>
+<tbody style="vertical-align: top">
+<tr><td style="padding: 6px 12px 6px 0px; "><span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #dedcd8">development</span></td><td style="padding: 6px 12px 6px 12px; color: #a3a19c">Foreman</td><td style="padding: 6px 0px 6px 12px; text-align: right; width: 50px"><a href="15-workspace-settings.html" style="font-size: 12px; color: #a3a19c">Open</a></td></tr>
+<tr style="border-top: 1px solid #18181c"><td style="padding: 6px 12px 6px 0px; "><span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #dedcd8">development_secure</span></td><td style="padding: 6px 12px 6px 12px; color: #85837e">[projects]</td><td style="padding: 6px 0px 6px 12px; text-align: right; width: 50px"><a href="15-workspace-settings.html" style="font-size: 12px; color: #a3a19c">Open</a></td></tr>
+<tr style="border-top: 1px solid #18181c"><td style="padding: 6px 12px 6px 0px; "><span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #dedcd8">development_tiered</span></td><td style="padding: 6px 12px 6px 12px; color: #85837e">[projects]</td><td style="padding: 6px 0px 6px 12px; text-align: right; width: 50px"><a href="15-workspace-settings.html" style="font-size: 12px; color: #a3a19c">Open</a></td></tr>
+<tr style="border-top: 1px solid #18181c"><td style="padding: 6px 12px 6px 0px; "><span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #dedcd8">development_with_architect</span></td><td style="padding: 6px 12px 6px 12px; color: #85837e">[projects]</td><td style="padding: 6px 0px 6px 12px; text-align: right; width: 50px"><a href="15-workspace-settings.html" style="font-size: 12px; color: #a3a19c">Open</a></td></tr>
+</tbody>
+</table>
+</div></div>
+<div style="flex: 2 1 260px; min-width: 0"><div style="overflow-x: auto">
+<table style="width: 100%; min-width: 260px; border-collapse: collapse">
+<thead>
+<tr style="text-align: left; font-size: 11px; color: #85837e; border-bottom: 1px solid #2c2c33"><th scope="col" style="padding: 4px 12px 4px 0px; font-weight: 400; ">Role</th><th scope="col" style="padding: 4px 0px 4px 12px; font-weight: 400; width: 50px"></th></tr>
+</thead>
+<tbody style="vertical-align: top">
+<tr><td style="padding: 6px 12px 6px 0px; "><span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #dedcd8">architect</span></td><td style="padding: 6px 0px 6px 12px; text-align: right; width: 50px"><a href="15-workspace-settings.html" style="font-size: 12px; color: #a3a19c">Open</a></td></tr>
+<tr style="border-top: 1px solid #18181c"><td style="padding: 6px 12px 6px 0px; "><span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #dedcd8">code_reviewer</span></td><td style="padding: 6px 0px 6px 12px; text-align: right; width: 50px"><a href="15-workspace-settings.html" style="font-size: 12px; color: #a3a19c">Open</a></td></tr>
+<tr style="border-top: 1px solid #18181c"><td style="padding: 6px 12px 6px 0px; "><span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #dedcd8">developer</span></td><td style="padding: 6px 0px 6px 12px; text-align: right; width: 50px"><a href="15-workspace-settings.html" style="font-size: 12px; color: #a3a19c">Open</a></td></tr>
+<tr style="border-top: 1px solid #18181c"><td style="padding: 6px 12px 6px 0px; "><span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #dedcd8">developer_worker</span></td><td style="padding: 6px 0px 6px 12px; text-align: right; width: 50px"><a href="15-workspace-settings.html" style="font-size: 12px; color: #a3a19c">Open</a></td></tr>
+<tr style="border-top: 1px solid #18181c"><td style="padding: 6px 12px 6px 0px; "><span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #dedcd8">frontier_reviewer</span></td><td style="padding: 6px 0px 6px 12px; text-align: right; width: 50px"><a href="15-workspace-settings.html" style="font-size: 12px; color: #a3a19c">Open</a></td></tr>
+<tr style="border-top: 1px solid #18181c"><td style="padding: 6px 12px 6px 0px; "><span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #dedcd8">security_reviewer</span></td><td style="padding: 6px 0px 6px 12px; text-align: right; width: 50px"><a href="15-workspace-settings.html" style="font-size: 12px; color: #a3a19c">Open</a></td></tr>
+<tr style="border-top: 1px solid #18181c"><td style="padding: 6px 12px 6px 0px; "><span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #dedcd8">triage_reviewer</span></td><td style="padding: 6px 0px 6px 12px; text-align: right; width: 50px"><a href="15-workspace-settings.html" style="font-size: 12px; color: #a3a19c">Open</a></td></tr>
+</tbody>
+</table>
+</div></div>
+</div>
+</section>
+
+<section aria-labelledby="acc" style="display: flex; flex-direction: column">
+<div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding-bottom: 6px">
+<h2 id="acc" style="margin: 0; font-size: 13px; font-weight: 600">Access</h2>
+<span style="font-size: 12px; color: #85837e">Who can open this dashboard and act in it.</span>
+<div style="margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 6px"><button type="button" style="height: 26px; padding: 0 10px; border: 1px solid #34343a; border-radius: 3px; background: transparent; color: #dedcd8; font: inherit; font-size: 12px; cursor: pointer">New token</button></div>
+</div>
+<div style="overflow-x: auto">
+<table style="width: 100%; min-width: 520px; border-collapse: collapse">
+<thead>
+<tr style="text-align: left; font-size: 11px; color: #85837e; border-bottom: 1px solid #2c2c33"><th scope="col" style="padding: 4px 12px 4px 0px; font-weight: 400; ">Access token</th><th scope="col" style="padding: 4px 12px 4px 12px; font-weight: 400; width: 120px">Created</th><th scope="col" style="padding: 4px 12px 4px 12px; font-weight: 400; width: 120px">Last used</th><th scope="col" style="padding: 4px 0px 4px 12px; font-weight: 400; width: 70px"></th></tr>
+</thead>
+<tbody style="vertical-align: top">
+<tr><td style="padding: 6px 12px 6px 0px; color: #85837e">[token name]</td><td style="padding: 6px 12px 6px 12px; color: #85837e">[date]</td><td style="padding: 6px 12px 6px 12px; color: #85837e">[date]</td><td style="padding: 6px 0px 6px 12px; text-align: right"><button type="button" style="height: 24px; padding: 0 9px; border: 1px solid #34343a; border-radius: 3px; background: transparent; color: #a3a19c; font: inherit; font-size: 12px; cursor: pointer">Revoke</button></td></tr>
+</tbody>
+</table>
+</div>
+<div style="margin-top: 8px; color: #a3a19c">Identity provider: none configured. <span style="font-size: 12px; color: #85837e">People are identified by the token they use, and that name is recorded on every decision.</span></div>
+</section>
+
+<section aria-labelledby="ntf" style="display: flex; flex-direction: column">
+<div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding-bottom: 6px">
+<h2 id="ntf" style="margin: 0; font-size: 13px; font-weight: 600">Notification channels</h2>
+
+<div style="margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 6px"><button type="button" style="height: 26px; padding: 0 10px; border: 1px solid #34343a; border-radius: 3px; background: transparent; color: #dedcd8; font: inherit; font-size: 12px; cursor: pointer">Add channel</button></div>
+</div>
+<div style="color: #a3a19c">No channels yet. <span style="font-size: 12px; color: #85837e">A channel is where Foreman sends a message; each project chooses what to send.</span></div>
+</section>
+
+<section aria-labelledby="run" style="display: flex; flex-direction: column">
+<div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding-bottom: 6px">
+<h2 id="run" style="margin: 0; font-size: 13px; font-weight: 600">Runners</h2>
+<span style="font-size: 12px; color: #85837e">The programs that run agents.</span>
+
+</div>
+<div style="overflow-x: auto">
+<table style="width: 100%; min-width: 520px; border-collapse: collapse">
+<thead>
+<tr style="text-align: left; font-size: 11px; color: #85837e; border-bottom: 1px solid #2c2c33"><th scope="col" style="padding: 4px 12px 4px 0px; font-weight: 400; width: 140px">Runner</th><th scope="col" style="padding: 4px 12px 4px 12px; font-weight: 400; width: 200px">On this machine</th><th scope="col" style="padding: 4px 0px 4px 12px; font-weight: 400; ">Models it offers</th></tr>
+</thead>
+<tbody style="vertical-align: top">
+<tr><td style="padding: 6px 12px 6px 0px; ">Claude Code</td><td style="padding: 6px 12px 6px 12px; color: #85837e">[found or not found]</td><td style="padding: 6px 0px 6px 12px; color: #85837e">[models]</td></tr>
+<tr style="border-top: 1px solid #18181c"><td style="padding: 6px 12px 6px 0px; ">Codex</td><td style="padding: 6px 12px 6px 12px; color: #85837e">[found or not found]</td><td style="padding: 6px 0px 6px 12px; color: #85837e">[models]</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+
+<section aria-labelledby="mch" style="display: flex; flex-direction: column">
+<div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding-bottom: 6px">
+<h2 id="mch" style="margin: 0; font-size: 13px; font-weight: 600">This machine</h2>
+<span style="font-size: 12px; color: #85837e">Shown here, changed from a terminal.</span>
+
+</div>
+<dl style="margin: 0; display: grid; grid-template-columns: minmax(120px, 160px) 1fr">
+<dt style="padding: 7px 12px 7px 0; font-size: 12px; color: #85837e">Database</dt><dd style="margin: 0; padding: 7px 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px"><span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #a3a19c">[path to the database file]</span></dd>
+<dt style="padding: 7px 12px 7px 0; font-size: 12px; color: #85837e; border-top: 1px solid #18181c">Foreman version</dt><dd style="margin: 0; padding: 7px 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; border-top: 1px solid #18181c"><span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #a3a19c">[version]</span></dd>
+<dt style="padding: 7px 12px 7px 0; font-size: 12px; color: #85837e; border-top: 1px solid #18181c">Dashboard address</dt><dd style="margin: 0; padding: 7px 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; border-top: 1px solid #18181c"><span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #a3a19c">http://localhost:8080</span></dd>
+</dl>
+</section>
+</main>
+</div>
+</body>
+</html>

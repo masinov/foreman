@@ -7,6 +7,16 @@ memory changes rather than versioned product releases.
 
 ## [Unreleased]
 
+### Sprint 58 — frontend rebuild
+
+- **design reference** (`docs/dashboard-design-v7`): `docs/design/dashboard-v7/`
+  is the UI reference (17 screens and a README with the rules), replacing
+  `docs/mockups/foreman-mockup-v6.html`, which is kept as history. ADR-0020
+  records the design and how the frontend is built (layout, routes, data
+  hooks, the temporary `/dashboard/legacy` seam). `AGENTS.md`, `CLAUDE.md`,
+  `README.md`, `docs/ARCHITECTURE.md` and `docs/TESTING.md` point to it.
+  Sprint 57 is archived; its undecided slice 9 is in the backlog.
+
 ### Sprint 57 — structure
 
 - **slice 2c, workflow runner** (`refactor/workflow-runner`): the step loop

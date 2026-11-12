@@ -3,7 +3,7 @@
 Current snapshot only. History up to 2026-09-08 (sprints 1 to 54) is in
 `docs/checkpoints/status-history-through-2026-09-08.md`.
 
-## Where the project is (2026-11-11)
+## Where the project is (2026-11-12)
 
 - Driving document: `docs/reviews/2026-11-10-full-review-and-finish-plan.md`
   (full review of engine, runner, dashboard, frontend and UX, with a six-phase
@@ -11,9 +11,11 @@ Current snapshot only. History up to 2026-09-08 (sprints 1 to 54) is in
 - Phases 0, 1 and 2 are done: sprint 55 (baseline and host safety) and
   sprint 56 (engine truthfulness) are closed and archived under
   `docs/sprints/archive/`.
-- Active sprint: **sprint 57 — structure** (`docs/sprints/current.md`),
-  Phase 3 of the plan: behaviour-preserving reorganisation into engine,
-  store, CLI and API packages.
+- Phase 3 is done: sprint 57 (structure) is closed and archived.
+- Active sprint: **sprint 58 — frontend rebuild** (`docs/sprints/current.md`),
+  Phase 4 of the plan. The dashboard is rebuilt to
+  `docs/design/dashboard-v7/` (ADR-0020), and the slices are run through
+  Foreman itself.
 - `main` is pushed to `origin/main` and CI is green. Work happens on short
   branches from `main`; the operator checkout stays off `main` (the
   `_integration` worktree holds it).
@@ -69,10 +71,14 @@ review, human gate, deferred approval, merge). Still true: agents run with full 
 - Spec §6.4 sprint checkpoints (tag, note, event) are not built.
 - ADR-0007 describes a restricted planner session; the shipped manager chat
   is a full-access Claude Code session.
-- The dashboard has diverged from `docs/mockups/foreman-mockup-v6.html`
-  (project view, settings, policy matrix, triage, manager chat). The mockup
-  is no longer an accurate reference for those screens; a design reference
-  for the frontend rebuild is planned in Phase 4.
+- `AGENTS.md` named `docs/mockups/foreman-mockup-v6.html` as the UI
+  authority. On 2026-11-12 the owner agreed a new design and said it was
+  ready for implementation; `docs/design/dashboard-v7/` is now the UI
+  reference (ADR-0020) and the mockup is kept as history. Until sprint 58
+  finishes, the shipped dashboard matches neither.
+- The design has a backlog that is not a sprint, where the engine has a
+  standing "Intake queue" sprint and a triage status. Sprint 58 slice 3
+  decides the mapping and records it in an ADR.
 
 ## Validation baseline
 

@@ -8,7 +8,7 @@ spec-driven software delivery.
 Foreman is defined first by two repository artifacts:
 
 1. `docs/specs/engine-design-v3.md`
-2. `docs/mockups/foreman-mockup-v6.html`
+2. `docs/design/dashboard-v7/` (start with its `README.md`)
 
 Everything else in this repo exists to help agents turn those two files into a
 working product without losing project memory along the way.
@@ -21,24 +21,25 @@ the source of truth.
 Before making non-trivial changes, read these in order:
 
 1. `docs/specs/engine-design-v3.md`
-2. `docs/mockups/foreman-mockup-v6.html`
+2. `docs/design/dashboard-v7/README.md` and the screens beside it
 3. `docs/STATUS.md`
 4. `docs/sprints/current.md`
 5. `docs/sprints/backlog.md`
 6. relevant ADRs in `docs/adr/`
 7. relevant implementation files and tests
 
-If the spec, mockup, and current code disagree:
+If the spec, the design, and current code disagree:
 
 1. trust the spec for system behavior,
-2. trust the mockup for UI information architecture and interaction intent,
+2. trust the design for UI structure, wording and look (ADR-0020),
 3. document the conflict in `docs/STATUS.md` before changing behavior.
 
-The mockup is a product-behavior and UI-structure reference. It does not, by
-itself, define the implementation stack. Implementation-stack decisions belong
+The design is a product-behavior and UI-structure reference. It does not, by
+itself, define the implementation stack. `docs/mockups/foreman-mockup-v6.html`
+is kept as history and is no longer a reference. Implementation-stack decisions belong
 in ADRs and architecture docs, and once made they must be followed explicitly.
 
-Do not casually edit the spec or mockup. Only change them when the task
+Do not casually edit the spec or the design. Only change them when the task
 explicitly revises product direction.
 
 ## Environment
@@ -121,8 +122,8 @@ Preserve the core product commitments:
 - `.foreman/` is runtime context projection, not committed product state.
 - roles and workflows are declarative TOML, not hard-coded per project.
 - both Claude Code and Codex backends remain first-class targets.
-- the dashboard and sprint/task views should stay aligned to the mockup's
-  hierarchy and affordances.
+- the dashboard should stay aligned to the design's four levels, wording and
+  affordances (`docs/design/dashboard-v7/`).
 - product web UI should live in dedicated frontend code, not as embedded HTML
   strings inside backend modules.
 - backend modules should expose durable API, orchestration, and persistence
@@ -285,7 +286,7 @@ As implementation lands, add and run:
 - unit tests for models, store, and loaders,
 - integration tests for orchestrator and built-ins,
 - runner smoke tests,
-- manual UI validation notes against the mockup.
+- manual UI validation notes against the design.
 
 Work is not done if it only compiles.
 Work is also not done if it lands a user-facing surface through an

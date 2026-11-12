@@ -196,7 +196,7 @@ Runner smoke tests:
 
 UI validation:
 
-- manual checks against `docs/mockups/foreman-mockup-v6.html`
+- manual checks against `docs/design/dashboard-v7/`
 - project dashboard navigation
 - sprint board interactions
 - activity feed behavior and live stream updates

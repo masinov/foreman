@@ -4,7 +4,7 @@
 
 - Status: integrated pre-release baseline
 - Primary source: `docs/specs/engine-design-v3.md`
-- UI reference: `docs/mockups/foreman-mockup-v6.html`
+- UI reference: `docs/design/dashboard-v7/` (ADR-0020)
 - ADRs:
   - `docs/adr/ADR-0001-runner-session-backend-contract.md`
   - `docs/adr/ADR-0002-dashboard-data-access-boundary.md`
