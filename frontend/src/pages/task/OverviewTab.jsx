@@ -15,6 +15,7 @@ import { StatusDot } from "../../ui/StatusDot";
 import { Table } from "../../ui/Table";
 import { formatDay, formatDayTime, formatMoney, humanize, plural } from "../../ui/format";
 import { stageOf } from "../sprint/taskStage";
+import { Overrides } from "./Overrides";
 import { criteriaSummary, filedBy, stepRows, testsWords, whoDecides } from "./taskWords";
 
 function Steps({ task, workflow }) {
@@ -248,6 +249,7 @@ export function OverviewTab({ task, checks, changed }) {
       <div className="task-overview__main">
         <Steps task={task} workflow={workflow} />
         <ChecksSummary task={task} checks={checks} />
+        <Overrides task={task} workflow={workflow.data} onSaved={() => changed(null)} />
         <Guidance task={task} onSaved={() => changed(null)} />
       </div>
       <Details task={task} workflow={workflow} />

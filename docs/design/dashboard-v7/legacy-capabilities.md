@@ -86,7 +86,7 @@ says so.
 | Capability | Endpoint | Route | Status |
 |---|---|---|---|
 | See title, description, acceptance criteria, key, type | `GET /tasks/{id}` | `/dashboard/tasks/{id}` | built |
-| See step, branch, worktree path, role, priority, tokens and split, step visits, complexity, model overrides | `GET /tasks/{id}` | task page, Overview | built for step, branch, spend and runs; worktree path, priority, token split, step visits and complexity **no home yet** |
+| See step, branch, worktree path, role, priority, tokens and split, step visits, complexity, model overrides | `GET /tasks/{id}` | task page, Overview | built for step, branch, spend, runs and model overrides (set and cleared in Overrides for this task); worktree path, priority, token split, step visits and complexity **no home yet** |
 | See dependencies as chips with their titles | `GET /tasks/{id}` | task page, Overview | **no home yet** |
 | See the blocked reason | `GET /tasks/{id}` | task page, the decision | built |
 | See the human gate and approve it | `POST /tasks/{id}/approve` | task page; Needs you | built (Needs you and the task page's decision) |

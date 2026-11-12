@@ -20,6 +20,14 @@ export function updateTask(client, taskId, { title, taskType, description, accep
   );
 }
 
+/**
+ * Replace a task's overrides (who decides, the model for a step). The whole
+ * object is sent; an empty one clears every override.
+ */
+export function setTaskOverrides(client, taskId, executorOverrides, options) {
+  return client.patch(task(taskId), { executor_overrides: executorOverrides }, options);
+}
+
 // The decision a person takes at a human gate (plan or merge approval).
 
 /** Approve the human gate a task is waiting at. */
