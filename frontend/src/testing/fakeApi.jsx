@@ -35,7 +35,34 @@ export function createFakeFetch(routes = {}) {
   };
   fetchImpl.calls = calls;
   fetchImpl.routes = routes;
+  fetchImpl.EventSource = createFakeEventSource();
   return fetchImpl;
+}
+
+/**
+ * An EventSource class that records every stream opened (`.sources`). A test
+ * sends a message with `source.emit(data)`.
+ */
+export function createFakeEventSource() {
+  const sources = [];
+  class FakeEventSource {
+    constructor(url) {
+      this.url = url;
+      this.closed = false;
+      this.onmessage = null;
+      sources.push(this);
+    }
+
+    close() {
+      this.closed = true;
+    }
+
+    emit(data) {
+      this.onmessage?.({ data: JSON.stringify(data) });
+    }
+  }
+  FakeEventSource.sources = sources;
+  return FakeEventSource;
 }
 
 export function reply(status, body) {
@@ -43,7 +70,7 @@ export function reply(status, body) {
 }
 
 export function testClient(fetchImpl) {
-  return createApiClient({ fetchImpl, tokenProvider: () => "" });
+  return createApiClient({ fetchImpl, eventSourceImpl: fetchImpl?.EventSource, tokenProvider: () => "" });
 }
 
 export function renderWithApi(ui, fetchImpl) {

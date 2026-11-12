@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Query
 
-from ..schemas import GuidanceNote, RequestedBy, TaskDenial, body_as
+from ..schemas import GuidanceNote, RequestedBy, TaskBlock, TaskDenial, TaskUnblock, body_as
 from ...dashboard_task_reads import TaskReads
 from ..task_models import FileDiff, RunOutput, TaskChanges, TaskChecks, TaskRuns
 from ..context import (
@@ -41,6 +41,24 @@ def build_router(ctx: ApiContext) -> APIRouter:
     ) -> dict[str, Any]:
         requested_by = body.requested_by or None
         return with_api(lambda api: api.stop_task(task_id, requested_by=requested_by))
+
+    @router.post("/tasks/{task_id}/block")
+    def block_task(task_id: str, body: TaskBlock = Depends(body_as(TaskBlock))) -> dict[str, Any]:
+        return with_api(
+            lambda api: api.block_task(
+                task_id, reason=body.reason, requested_by=body.requested_by
+            )
+        )
+
+    @router.post("/tasks/{task_id}/unblock")
+    def unblock_task(
+        task_id: str, body: TaskUnblock = Depends(body_as(TaskUnblock))
+    ) -> dict[str, Any]:
+        return with_api(
+            lambda api: api.unblock_task(
+                task_id, note=body.note, requested_by=body.requested_by
+            )
+        )
 
     @router.post("/tasks/{task_id}/accept")
     def accept_task(task_id: str) -> dict[str, Any]:

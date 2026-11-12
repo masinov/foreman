@@ -67,11 +67,10 @@ describe("App routing and shell", () => {
     expect(await within(crumbs).findByRole("button", { name: "Foreman 2 need you" })).toBeInTheDocument();
   });
 
-  it("names the approve command on a task page that is not built yet", () => {
-    renderApp("/dashboard/tasks/task-merge");
+  it("names the command that does the job on a page that is not built yet", () => {
+    renderApp("/dashboard/projects/foreman/settings");
     const commands = screen.getByRole("list", { name: "Commands" });
-    expect(within(commands).getByText("foreman approve task-merge")).toBeInTheDocument();
-    expect(within(commands).getByText("foreman deny task-merge")).toBeInTheDocument();
+    expect(within(commands).getByText("foreman config foreman")).toBeInTheDocument();
   });
 
   it("renders not-found at the old legacy address", () => {
@@ -93,7 +92,7 @@ describe("App routing and shell", () => {
 
     fireEvent.click(link);
     expect(window.location.pathname).toBe("/dashboard/tasks/task-merge");
-    expect(screen.getByRole("heading", { name: "This page is not built yet" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "This task could not be shown" })).toBeInTheDocument();
 
     await goBack();
     expect(window.location.pathname).toBe("/dashboard");

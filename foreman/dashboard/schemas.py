@@ -102,6 +102,17 @@ class TaskDenial(_Body):
     note: str | None = None
 
 
+class TaskBlock(_Body):
+    reason: str = ""
+    requested_by: str | None = None
+
+
+class TaskUnblock(_Body):
+    #: Guidance for the next agent step, recorded with the unblock.
+    note: str | None = None
+    requested_by: str | None = None
+
+
 class GuidanceNote(_Body):
     text: str = ""
 
