@@ -69,6 +69,28 @@ function SprintCrumb({ sprintId }) {
   return useLabel(["sprint", sprintId], (client, options) => getSprint(client, sprintId, options), (s) => s.title, sprintId);
 }
 
+/**
+ * The project above a sprint: a link back to it with what waits for a person
+ * there. Until the sprint says which project it belongs to, nothing shows.
+ */
+function SprintProjectCrumb({ sprintId }) {
+  const { data: sprint } = useResource(["sprint", sprintId], (client, options) => getSprint(client, sprintId, options));
+  const projects = useProjects();
+  if (!sprint?.project_id) return null;
+  const project = projects?.find((entry) => entry.id === sprint.project_id);
+  return (
+    <Link className="breadcrumb__link breadcrumb__project" href={paths.project(sprint.project_id)}>
+      <span>{project?.name || sprint.project_id}</span>
+      {project?.needs_you > 0 ? (
+        <span className="breadcrumb__count">
+          {project.needs_you}
+          <span className="visually-hidden"> need you</span>
+        </span>
+      ) : null}
+    </Link>
+  );
+}
+
 function TaskCrumb({ taskId }) {
   return useLabel(["task", taskId], (client, options) => getTask(client, taskId, options), (t) => t.task_key || t.title, taskId);
 }
@@ -88,7 +110,11 @@ export function crumbsFor(route, params) {
       return [workspace, { key: "project", custom: <ProjectSwitcher projectId={params.projectId} /> }];
     }
     case "sprint":
-      return [workspace, { key: "sprint", href: paths.sprint(params.sprintId), label: <SprintCrumb sprintId={params.sprintId} /> }];
+      return [
+        workspace,
+        { key: "project", custom: <SprintProjectCrumb sprintId={params.sprintId} /> },
+        { key: "sprint", href: paths.sprint(params.sprintId), label: <SprintCrumb sprintId={params.sprintId} /> },
+      ];
     case "task":
       return [workspace, { key: "task", href: paths.task(params.taskId), label: <TaskCrumb taskId={params.taskId} /> }];
     default:

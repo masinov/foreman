@@ -194,6 +194,22 @@ def _serialize_completion_evidence(evidence: "Any") -> dict[str, Any] | None:
     }
 
 
+def _serialize_task_checks(evidence: "Any") -> dict[str, Any] | None:
+    """The completion evidence of a task, reduced to what a list row shows.
+
+    ``tests`` and ``review`` are the evidence's own words (``passed``,
+    ``failed``, ``approve``...), empty when that check did not run; ``commit``
+    is the commit the evidence was built at. ``None`` when no evidence exists.
+    """
+    if evidence is None:
+        return None
+    return {
+        "tests": evidence.tests_status or None,
+        "review": evidence.review_outcome or None,
+        "commit": evidence.head_sha or None,
+    }
+
+
 def _serialize_engine_command(command: EngineCommand) -> dict[str, Any]:
     """Serialize one engine command row for the API."""
 
@@ -713,12 +729,22 @@ class DashboardService:
         """Return one sprint summary payload."""
 
         sprint = self._require_sprint(sprint_id)
+        from .engine.limits import resolve_project_settings
+
+        project = self.store.get_project(sprint.project_id)
         return {
             "id": sprint.id,
             "project_id": sprint.project_id,
             "title": sprint.title,
             "goal": sprint.goal,
             "status": sprint.status,
+            "started_at": sprint.started_at,
+            "completed_at": sprint.completed_at,
+            # The project's task selection mode: whether the engine picks its
+            # own tasks instead of running only what was planned.
+            "picks_own_tasks": bool(
+                project and resolve_project_settings(project).task_selection_mode == "autonomous"
+            ),
             "task_counts": self.store.task_counts(sprint_id=sprint.id),
             "totals": self.store.run_totals(sprint_id=sprint.id),
         }
@@ -842,6 +868,7 @@ class DashboardService:
                     "complexity": task.complexity,
                     "executor_overrides": task.executor_overrides,
                     "source": _serialize_task_source(task),
+                    "checks": _serialize_task_checks(task.completion_evidence),
                     "totals": {
                         "total_token_count": metrics.get("total_token_count", 0),
                         "token_usage": metrics.get("token_usage"),
@@ -859,8 +886,12 @@ class DashboardService:
         limit: int = ACTIVITY_EVENT_LIMIT,
         after_event_id: str | None = None,
         before_event_id: str | None = None,
+        event_types: Sequence[str] | None = None,
     ) -> dict[str, Any]:
         """Return the sprint activity batch payload.
+
+        ``event_types`` keeps only those event types (the sprint page asks for
+        ``workflow.step_completed``).
 
         With no cursor: returns the most recent ``limit`` events.
         With ``after_event_id``: returns events newer than that cursor (SSE).
@@ -872,15 +903,19 @@ class DashboardService:
                 sprint_id,
                 after_event_id=after_event_id,
                 limit=limit,
+                event_types=event_types,
             )
         elif before_event_id:
             events = self.store.list_sprint_events(
                 sprint_id,
                 before_event_id=before_event_id,
                 limit=limit,
+                event_types=event_types,
             )
         else:
-            events = self.store.list_recent_sprint_events(sprint_id, limit=limit)
+            events = self.store.list_recent_sprint_events(
+                sprint_id, limit=limit, event_types=event_types
+            )
         return {
             "events": [self._serialize_event(event) for event in events],
             "has_more": len(events) == limit,
@@ -1615,6 +1650,33 @@ class DashboardService:
                 else f"Recorded in the task's history. The task is {task.status}, "
                 "so no agent step will read it."
             ),
+        }
+
+    def get_project_workflow(self, project_id: str) -> dict[str, Any]:
+        """The steps of the project's workflow, in the order the definition lists them."""
+
+        from .roles import RoleLoadError, load_roles
+        from .workflows import WorkflowLoadError, load_workflows
+
+        project = self._require_project(project_id)
+        try:
+            roles = load_roles()
+            workflows = load_workflows(
+                available_role_ids=set(roles),
+                role_outcomes={rid: role.completion.outcomes for rid, role in roles.items()},
+            )
+        except (RoleLoadError, WorkflowLoadError) as exc:
+            raise DashboardValidationError(f"The workflow could not be loaded: {exc}") from exc
+        workflow = workflows.get(project.workflow_id)
+        if workflow is None:
+            raise DashboardNotFoundError(f"Workflow not found: {project.workflow_id}")
+        return {
+            "id": workflow.id,
+            "name": workflow.name,
+            "steps": [
+                {"id": step.id, "role": step.role, "policy": step.policy}
+                for step in workflow.steps
+            ],
         }
 
     def _project_workflow_step_ids(self, project_id: str) -> set[str] | None:

@@ -7,3 +7,8 @@ export function listProjects(client, options) {
 export function getProject(client, projectId, options) {
   return client.get(`/projects/${segment(projectId)}`, options);
 }
+
+/** The steps of the project's workflow, in the order its definition lists them. */
+export function getProjectWorkflow(client, projectId, options) {
+  return client.get(`/projects/${segment(projectId)}/workflow`, options);
+}

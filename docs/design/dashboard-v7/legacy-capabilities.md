@@ -53,9 +53,9 @@ says so.
 | Create a sprint with a title and goal | `POST /projects/{id}/sprints` | `/dashboard/projects/{id}` | built |
 | Create a sprint with its first tasks in one step | `POST /projects/{id}/sprints` (`initial_tasks`) | backlog: plan into a new sprint | built (the design gets there by planning backlog work) |
 | Drag planned sprints into run order | `PATCH /sprints/{id}` (`order_index`) | project page, queue | **no home yet** |
-| Expand a planned sprint in place to edit its goal, add tasks and remove tasks | `PATCH /sprints/{id}`, `GET`/`POST /sprints/{id}/tasks`, `DELETE /tasks/{id}` | sprint page | slice 6 (edit and add tasks); removing a task is slice 8 (Edit, stop, cancel, delete) |
-| Activate a planned sprint | `PATCH /sprints/{id}` (`status`) | none | **no home yet** |
-| Complete a sprint | `PATCH /sprints/{id}` (`status: completed`) | none | **no home yet** |
+| Expand a planned sprint in place to edit its goal, add tasks and remove tasks | `PATCH /sprints/{id}`, `GET`/`POST /sprints/{id}/tasks`, `DELETE /tasks/{id}` | sprint page | built for edit and adding work from the backlog; removing a task is slice 8 (Edit, stop, cancel, delete) |
+| Activate a planned sprint | `PATCH /sprints/{id}` (`status`) | `/dashboard/sprints/{id}` ("Activate sprint") | built |
+| Complete a sprint | `PATCH /sprints/{id}` (`status: completed`) | `/dashboard/sprints/{id}` ("Finish sprint") | built |
 | Cancel a sprint | `PATCH /sprints/{id}` (`status: cancelled`) | none | **no home yet** |
 | Delete a sprint | `DELETE /sprints/{id}` | none | **no home yet** |
 | Resolve a pending decision about sprint order: accept the suggested order, keep the current order, or dismiss, with the conflict and the suggested order shown | `GET /projects/{id}/gates`, `PATCH /gates/{id}` | project page, Needs you | task-b1e9a964d00e (not in the slice table) |
@@ -67,15 +67,15 @@ says so.
 
 | Capability | Endpoint | Route | Status |
 |---|---|---|---|
-| See the sprint's title, goal, status and totals (tokens, runs, cost, with a note when cost is unknown) | `GET /sprints/{id}` | `/dashboard/sprints/{id}` | slice 6 |
-| Edit the sprint's title and goal in place | `PATCH /sprints/{id}` | sprint page | slice 6 |
-| See the tasks on a board with columns Triage, Todo, In Progress, Blocked, Done | `GET /sprints/{id}/tasks` | `/dashboard/sprints/{id}/board` | slice 6 (columns follow the workflow's steps, Queued first and Done last; Triage is now the backlog) |
-| See the tasks as a list | `GET /sprints/{id}/tasks` | `/dashboard/sprints/{id}` | slice 6 |
-| Add a task to the sprint: title, type, description, acceptance criteria, complexity, dependencies | `POST /sprints/{id}/tasks` | sprint page | slice 6 (the rebuilt dialog takes title, description and criteria; type, complexity and dependencies are not in the design) |
-| Run, pause and resume the engine from the sprint | `POST /projects/{id}/agent/start`, `/agent/stop` | top bar | slice 6 |
-| Complete or cancel the sprint, delete it | `PATCH`/`DELETE /sprints/{id}` | none | **no home yet** (see Project) |
-| Approve, deny, stop or accept a task from its card | `POST /tasks/{id}/approve`, `/deny`, `/stop`, `/accept` | task page; Needs you | approve a merge is built; the rest slice 8 |
-| Activity stream for the sprint, newest at the bottom, auto-scroll, load older events | `GET /sprints/{id}/events`, `GET /sprints/{id}/stream` | sprint page, Activity | slice 6 (steps) and slice 12 (live) |
+| See the sprint's title, goal, status and totals (tokens, runs, cost, with a note when cost is unknown) | `GET /sprints/{id}` | `/dashboard/sprints/{id}` | built |
+| Edit the sprint's title and goal in place | `PATCH /sprints/{id}` | sprint page | built (a dialog, not in place) |
+| See the tasks on a board with columns Triage, Todo, In Progress, Blocked, Done | `GET /sprints/{id}/tasks` | `/dashboard/sprints/{id}/board` | built (columns follow the workflow's steps, Queued first and Done last; Triage is now the backlog) |
+| See the tasks as a list | `GET /sprints/{id}/tasks` | `/dashboard/sprints/{id}` | built |
+| Add a task to the sprint: title, type, description, acceptance criteria, complexity, dependencies | `POST /sprints/{id}/tasks` | sprint page | built as adding work from the backlog; filing a new task is on the backlog tab (title, description and criteria; type, complexity and dependencies are not in the design) |
+| Run, pause and resume the engine from the sprint | `POST /projects/{id}/agent/start`, `/agent/stop` | sprint page, engine menu | built |
+| Cancel the sprint, delete it | `PATCH`/`DELETE /sprints/{id}` | none | **no home yet** (see Project) |
+| Approve, deny, stop or accept a task from its card | `POST /tasks/{id}/approve`, `/deny`, `/stop`, `/accept` | task page; Needs you; sprint list and board | approve a merge is built (Needs you, sprint list and board); the rest slice 8 |
+| Activity stream for the sprint, newest at the bottom, auto-scroll, load older events | `GET /sprints/{id}/events`, `GET /sprints/{id}/stream` | sprint page, Activity | built for steps and loading earlier; live updates are slice 12 |
 | Filter activity: All, Agent, Workflow, Decisions, Human | `GET /sprints/{id}/events` | sprint page, Activity | **no home yet** (the design shows milestones and steps, no filter) |
 | Live refresh of tasks and events while the page is open | `GET /sprints/{id}/stream` | all pages | slice 12 |
 | A banner naming an attention event (a task parked, evidence failed) with "Ask the manager" | `POST /projects/{id}/meta/supervise` | needs you; manager side bar | slice 9 |
@@ -140,8 +140,8 @@ it meanwhile (docs/MANUAL.md).
 2. Register a project from the dashboard (`foreman init`).
 3. Drag planned sprints into run order (`foreman sprint` has no reorder
    command; the order is `order_index` on the sprint).
-4. Activate, complete, cancel and delete a sprint (`foreman sprint activate`,
-   `foreman sprint complete`).
+4. Cancel and delete a sprint (`foreman sprint complete` closes one; there is
+   no CLI command for cancel or delete). Activate and finish are built.
 5. A project's token total in the top bar.
 6. Filtering the activity stream by kind.
 7. Task details beyond the design's Overview: worktree path, priority, token

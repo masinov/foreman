@@ -1,0 +1,222 @@
+/* The sprint page: head, summary, tasks as a list or a board, steps. */
+.sprint {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.sprint__title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-3) var(--space-5);
+}
+
+.sprint__title {
+  display: flex;
+  flex: 999 1 var(--table-min-width);
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.sprint__goal {
+  max-width: 80ch;
+  color: var(--color-text-secondary);
+}
+
+.sprint__actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-6);
+}
+
+.summary__item {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.summary__item dt {
+  font-size: var(--font-size-control);
+  color: var(--color-text-quiet);
+}
+
+.summary__attention {
+  color: var(--color-gold);
+}
+
+.sprint__tasks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.sprint__tasks-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+}
+
+.sprint__add {
+  margin-left: auto;
+}
+
+.view-toggle {
+  display: flex;
+  gap: var(--space-3);
+  font-size: var(--font-size-control);
+}
+
+.view-toggle__link {
+  color: var(--color-text-secondary);
+  border-bottom: var(--line-width) solid transparent;
+}
+
+.view-toggle__link--current {
+  color: var(--color-text);
+  border-bottom-color: var(--color-gold);
+}
+
+/* List */
+.task-list {
+  min-width: var(--table-min-width);
+}
+
+.task-list__stage,
+.task-list__key,
+.task-list__checks {
+  white-space: nowrap;
+}
+
+.task-list__number {
+  text-align: right;
+}
+
+.task-list__decision {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.checks__passed {
+  color: var(--color-green);
+}
+
+.checks__failed {
+  color: var(--color-red);
+}
+
+.checks__attention {
+  color: var(--color-gold);
+}
+
+/* Board */
+.board {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-5);
+  overflow-x: auto;
+}
+
+.board__column {
+  display: flex;
+  flex: 1 1 var(--column-min-width);
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: var(--column-min-width);
+}
+
+.board__heading {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding-bottom: var(--space-1);
+  border-bottom: var(--line-width) solid var(--color-line-header);
+  font-size: var(--font-size-control);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-secondary);
+}
+
+.board__count {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-table-header);
+  color: var(--color-text-quiet);
+}
+
+.board__count--attention {
+  color: var(--color-gold);
+}
+
+.board__none {
+  padding-block: var(--space-1);
+  font-size: var(--font-size-control);
+  color: var(--color-text-quiet);
+}
+
+.board-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--cell-padding-block) var(--cell-padding-inline);
+  border-radius: var(--radius);
+  background: var(--color-tinted);
+}
+
+.board-card--done {
+  color: var(--color-text-quiet);
+}
+
+.board-card__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.board-card__checks {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-mono);
+  color: var(--color-text-secondary);
+}
+
+.board-card__approve {
+  align-self: flex-start;
+}
+
+/* Finished steps */
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.steps .table {
+  min-width: var(--table-min-width);
+}
+
+.steps__when,
+.steps__task,
+.steps__step {
+  white-space: nowrap;
+}
+
+/* The dialog's list of accepted work */
+.choice-list {
+  display: flex;
+  flex-direction: column;
+  max-height: var(--menu-min-width);
+  overflow-y: auto;
+  list-style: none;
+}
+
+.choice-list__label {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding-block: var(--space-1);
+}

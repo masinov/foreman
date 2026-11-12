@@ -114,3 +114,29 @@
 .breadcrumb__count {
   color: var(--color-gold);
 }
+
+/* The engine in the top bar below project level */
+.engine-menu {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.engine-menu__trigger {
+  color: var(--color-text-secondary);
+}
+
+.engine-menu__notice--error {
+  color: var(--color-red);
+}
+
+.engine-menu .menu__list {
+  left: auto;
+  right: 0;
+}
+
+.breadcrumb__project {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
