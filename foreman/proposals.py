@@ -386,8 +386,53 @@ def apply_operation(
     return result
 
 
+def _gate_of(project: Project, task: Any) -> dict[str, Any] | None:
+    """Where a task waiting at a human gate goes on approval and on denial.
+
+    None when it is not waiting at one, or the workflow cannot be read: the
+    card then says less, never something made up.
+    """
+
+    if task.status != "blocked" or not task.workflow_current_step:
+        return None
+    from .engine_control import HUMAN_GATE_ROLE
+    from .roles import load_roles
+    from .workflows import load_workflows
+
+    try:
+        roles = load_roles()
+        workflow = load_workflows(
+            available_role_ids=set(roles),
+            role_outcomes={role_id: role.completion.outcomes for role_id, role in roles.items()},
+        ).get(project.workflow_id)
+    except Exception:  # noqa: BLE001 - a broken definition only costs the card its detail
+        return None
+    step = workflow.get_step(task.workflow_current_step) if workflow is not None else None
+    if step is None or step.role != HUMAN_GATE_ROLE:
+        return None
+    approve = workflow.find_transition(step.id, "approve")
+    deny = workflow.find_transition(step.id, "deny")
+    return {
+        "step": step.id,
+        "policy": step.policy,
+        "approve_to": approve.to_step if approve is not None else None,
+        "deny_to": deny.to_step if deny is not None else None,
+    }
+
+
 def _names(store: ForemanStore, project: Project, operations: Sequence[Mapping[str, Any]], leaves: Sequence[str]) -> dict[str, Any]:
-    """Titles and keys of what a proposal names, as they are now."""
+    """Titles and keys of what a proposal names, as they are now.
+
+    A task waiting at a human gate also carries ``gate``: the step, its
+    policy and where approving and denying lead, so the card can say "to
+    Develop".
+    """
+
+    gated = {
+        operation["task_id"]
+        for operation in operations
+        if operation["kind"] in ("send_back", "approve_gate")
+    }
 
     tasks: dict[str, Any] = {}
     sprints: dict[str, Any] = {}
@@ -406,6 +451,9 @@ def _names(store: ForemanStore, project: Project, operations: Sequence[Mapping[s
                 "status": found.status,
                 "sprint_id": found.sprint_id,
             }
+            gate = _gate_of(project, found) if task_id in gated else None
+            if gate is not None:
+                tasks[task_id]["gate"] = gate
             sprint_ids.append(found.sprint_id)
     for sprint_id in sprint_ids:
         found = store.get_sprint(sprint_id)

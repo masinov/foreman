@@ -11,6 +11,9 @@ import { useConversation } from "./useConversation";
 
 import "../../styles/manager.css";
 
+/** How near the end of the thread still counts as at the end, in CSS pixels of scroll. */
+const FOLLOW_SLACK = 24;
+
 /** "Bash, Bash, Read" as "Bash ×2, Read". */
 function toolSummary(tools) {
   const counts = new Map();
@@ -66,10 +69,28 @@ export function ManagerPanel({ projectId, projectName, page, context, onClose })
   const [asking, setAsking] = useState(false);
   const thread = useRef(null);
 
+  // Follow the end of the conversation while the person is at the end of
+  // it: a new turn, a reply as it grows, and a proposal card that loads after
+  // the reply it belongs to. Scrolling up to read stops the following.
+  const following = useRef(true);
   useEffect(() => {
     const node = thread.current;
-    if (node) node.scrollTop = node.scrollHeight;
+    if (node && following.current) node.scrollTop = node.scrollHeight;
   }, [turns]);
+  useEffect(() => {
+    const node = thread.current;
+    if (!node || typeof MutationObserver !== "function") return undefined;
+    const observer = new MutationObserver(() => {
+      if (following.current) node.scrollTop = node.scrollHeight;
+    });
+    observer.observe(node, { childList: true, subtree: true, characterData: true });
+    return () => observer.disconnect();
+  }, []);
+
+  function onThreadScroll() {
+    const node = thread.current;
+    if (node) following.current = node.scrollHeight - node.scrollTop - node.clientHeight <= FOLLOW_SLACK;
+  }
 
   function submit(event) {
     event.preventDefault();
@@ -128,7 +149,7 @@ export function ManagerPanel({ projectId, projectName, page, context, onClose })
         </Button>
       </div>
 
-      <div className="manager__thread" role="log" aria-live="polite" aria-busy={streaming} ref={thread}>
+      <div className="manager__thread" role="log" aria-live="polite" aria-busy={streaming} ref={thread} onScroll={onThreadScroll}>
         {conversation.hasMore ? (
           <div className="manager__older">
             <Button variant="quiet" inRow onClick={conversation.loadOlder} disabled={conversation.loadingOlder}>

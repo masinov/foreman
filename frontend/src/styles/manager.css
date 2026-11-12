@@ -149,6 +149,7 @@
   display: grid;
   margin: 0;
   grid-template-columns: var(--proposal-term-width) minmax(0, 1fr);
+  column-gap: var(--space-2);
   padding: var(--space-1) var(--space-3);
 }
 

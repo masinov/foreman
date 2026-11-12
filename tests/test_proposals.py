@@ -193,6 +193,19 @@ class CreateTests(ProposalCase):
                 {"kind": "accept_task", "task_id": filed.id},
             )
 
+    def test_a_gated_task_names_where_its_decision_leads(self) -> None:
+        self.gate_task("g1")
+        self.task("parked", "blocked", blocked_reason="Parked.")
+        proposal = self.propose(
+            {"kind": "send_back", "task_id": "g1", "guidance": "Again."},
+            {"kind": "send_back", "task_id": "parked", "guidance": "Again."},
+        )
+        self.assertEqual(
+            proposal.names["tasks"]["g1"]["gate"],
+            {"step": "merge_approval", "policy": "merge_approval", "approve_to": "merge", "deny_to": "develop"},
+        )
+        self.assertNotIn("gate", proposal.names["tasks"]["parked"])
+
     def test_the_proposer_and_turn_are_recorded(self) -> None:
         proposal = self.proposals.create(
             self.project,

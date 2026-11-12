@@ -3,7 +3,7 @@ import { proposalHeading, proposalOutcome, proposalRows } from "./proposalWords"
 const names = {
   tasks: {
     t1: { key: "FOR-1", title: "One" },
-    t2: { key: "FOR-2", title: "Two" },
+    t2: { key: "FOR-2", title: "Two", gate: { step: "merge_approval", policy: "merge_approval", approve_to: "merge", deny_to: "develop" } },
   },
   sprints: { s1: { title: "Sprint 1" }, s2: { title: "Sprint 2" } },
 };
@@ -27,10 +27,20 @@ describe("a proposal in words", () => {
     [{ kind: "block_task", task_id: "t1", reason: "Wait." }, [["Block", "FOR-1 One", null, false], ["Why", null, "Wait.", false]]],
     [{ kind: "unblock_task", task_id: "t1" }, [["Unblock", "FOR-1 One", null, false]]],
     [{ kind: "cancel_task", task_id: "t1" }, [["Cancel", "FOR-1 One", null, false]]],
-    [{ kind: "send_back", task_id: "t1", guidance: "More tests." }, [["Send back", "FOR-1 One", null, false], ["Guidance", null, "More tests.", false]]],
-    [{ kind: "approve_gate", task_id: "t1" }, [["Approve", "FOR-1 One", null, false]]],
+    [{ kind: "send_back", task_id: "t1", guidance: "More tests." }, [["Send back", "FOR-1 ", "One", false], ["Guidance", null, "More tests.", false]]],
+    [
+      { kind: "send_back", task_id: "t2", guidance: "More tests." },
+      [["Send back", "FOR-2 ", "to Develop, in place of approving the merge", false], ["Guidance", null, "More tests.", false]],
+    ],
+    [{ kind: "approve_gate", task_id: "t1" }, [["Approve", "FOR-1 ", "One", false]]],
+    [{ kind: "approve_gate", task_id: "t2" }, [["Approve", "FOR-2 ", "the merge", false], ["Then", null, "Merge, when the engine runs", false]]],
   ])("says %j", (operation, expected) => {
     expect(rows([operation])).toEqual(expected);
+  });
+
+  it("names a gate without a policy by its step", () => {
+    const gated = { tasks: { t: { key: "K-1", title: "T", gate: { step: "sign_off", policy: null, approve_to: null, deny_to: "develop" } } } };
+    expect(proposalRows({ operations: [{ kind: "approve_gate", task_id: "t" }], names: gated })).toEqual([{ term: "Approve", task: { key: "K-1", title: "" }, text: "sign off" }]);
   });
 
   it("says what it leaves, quietly, and repeats a verb only once", () => {

@@ -8,6 +8,8 @@
 // in a list of tasks (planned in, left) names the task by its title alone;
 // a row acting on one task leads with its key.
 
+import { humanize } from "../../ui/format";
+
 const TASK_FIELDS = {
   title: "title",
   task_type: "type",
@@ -19,6 +21,18 @@ const TASK_FIELDS = {
 function taskOf(names, taskId) {
   const known = names?.tasks?.[taskId];
   return { key: known?.key || taskId, title: known?.title || "" };
+}
+
+// What a gate decides, by its policy, as the object of "approve".
+const GATE_OBJECTS = { merge_approval: "the merge", plan_approval: "the plan" };
+
+function gateObject(gate) {
+  return GATE_OBJECTS[gate.policy] || humanize(gate.step).toLowerCase();
+}
+
+/** Where a task waiting at a gate goes, from the proposal's names; null when unknown. */
+function gateOf(names, taskId) {
+  return names?.tasks?.[taskId]?.gate || null;
 }
 
 /** A task in a list: its title, or its key when no title is known. */
@@ -80,10 +94,17 @@ function rowsOf(operation, names) {
       return [{ term: "Unblock", task }];
     case "cancel_task":
       return [{ term: "Cancel", task }];
-    case "send_back":
-      return [{ term: "Send back", task }, { term: "Guidance", text: operation.guidance }];
-    case "approve_gate":
-      return [{ term: "Approve", task }];
+    case "send_back": {
+      const gate = gateOf(names, operation.task_id);
+      const where = gate?.deny_to ? `to ${humanize(gate.deny_to)}, in place of approving ${gateObject(gate)}` : "";
+      return [{ term: "Send back", task: { key: task.key, title: "" }, text: where || task.title }, { term: "Guidance", text: operation.guidance }];
+    }
+    case "approve_gate": {
+      const gate = gateOf(names, operation.task_id);
+      const rows = [{ term: "Approve", task: { key: task.key, title: "" }, text: gate ? gateObject(gate) : task.title }];
+      if (gate?.approve_to) rows.push({ term: "Then", text: `${humanize(gate.approve_to)}, when the engine runs` });
+      return rows;
+    }
     default:
       return [{ term: "Change", text: String(operation.kind || "") }];
   }

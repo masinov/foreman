@@ -287,6 +287,8 @@ describe("the conversation", () => {
 describe("the narrow layout", () => {
   it("covers the page below the width where both fit, with a close control shown only there", () => {
     expect(shellCss).toMatch(/@media \(max-width: 960px\)\s*\{\s*\.manager-slot\s*\{[^}]*position: fixed;/);
+    // Stretched between top and bottom, so the composer stays on the screen.
+    expect(shellCss).toMatch(/@media \(max-width: 960px\)\s*\{\s*\.manager-slot\s*\{[^}]*bottom: 0;[^}]*align-self: stretch;/);
     expect(shellCss).toMatch(/\.manager-slot\s*\{[^}]*position: sticky;[^}]*flex: 0 0 var\(--manager-width\)/);
     expect(managerCss).toMatch(/\.manager \.manager__close\s*\{\s*display: none;/);
     expect(managerCss).toMatch(/@media \(max-width: 960px\)\s*\{\s*\.manager \.manager__close\s*\{\s*display: inline-flex;/);
