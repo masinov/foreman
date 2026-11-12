@@ -44,6 +44,9 @@ describe("the project page head", () => {
     await renderProject(path);
     expect(document.querySelector(".facts")).toHaveTextContent("/srv/foreman · main · development workflow");
     expect(screen.getByRole("link", { name: "Project settings" })).toHaveAttribute("href", "/dashboard/projects/foreman/settings");
+    // The backlog is another page of the project, reached from the title row with its count.
+    const pages = screen.getByRole("navigation", { name: "Project pages" });
+    expect(within(pages).getByRole("link", { name: "Backlog 4" })).toHaveAttribute("href", "/dashboard/projects/foreman/backlog");
     expect(within(engineSection()).getByText("Running")).toBeInTheDocument();
     expect(within(engineSection()).getByText(/Working on/)).toHaveTextContent("Working on FOR-13, develop.");
     expect(within(engineSection()).getByRole("link", { name: "FOR-13" })).toHaveAttribute("href", "/dashboard/tasks/task-x");
