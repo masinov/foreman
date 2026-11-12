@@ -54,7 +54,8 @@ describe("App routing and shell", () => {
     expect(switcher).toHaveAttribute("aria-haspopup", "menu");
     fireEvent.click(switcher);
     const menu = screen.getByRole("menu", { name: "Projects" });
-    expect(within(menu).getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Foreman2", "Other project"]);
+    expect(within(menu).getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["All projects", "Foreman2", "Other project"]);
+    expect(within(menu).getByRole("menuitem", { name: "All projects" })).toHaveAttribute("href", "/dashboard");
     expect(within(menu).getByRole("menuitem", { name: "Other project" })).toHaveFocus();
     fireEvent.keyDown(menu, { key: "ArrowUp" });
     const foreman = within(menu).getByRole("menuitem", { name: /Foreman/ });
