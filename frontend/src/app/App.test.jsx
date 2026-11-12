@@ -11,16 +11,15 @@ function goBack() {
 }
 
 describe("App routing and shell", () => {
-  it("renders the workspace with the word, the breadcrumb and a closed manager slot", async () => {
+  it("renders the workspace with the word, the breadcrumb and no manager", async () => {
     renderApp("/dashboard", createFakeFetch(workspaceRoutes()));
     const banner = screen.getByRole("banner");
     expect(within(banner).getByRole("link", { name: "Foreman" })).toHaveAttribute("href", "/dashboard");
     const crumbs = within(banner).getByRole("navigation", { name: "Breadcrumb" });
     expect(within(crumbs).getByText("Workspace")).toHaveAttribute("aria-current", "page");
     expect(within(banner).getByRole("link", { name: "Workspace settings" })).toHaveAttribute("href", "/dashboard/settings");
-    const manager = document.querySelector(".manager-slot");
-    expect(manager).toHaveAttribute("hidden");
-    expect(manager).toBeEmptyDOMElement();
+    expect(document.querySelector(".manager-slot")).toBeNull();
+    expect(within(banner).queryByRole("button", { name: "Manager" })).toBeNull();
     expect(await screen.findByText("FOR-14")).toBeInTheDocument();
     expect(document.title).toBe("Workspace · Foreman");
   });

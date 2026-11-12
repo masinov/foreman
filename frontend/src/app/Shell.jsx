@@ -8,10 +8,10 @@ import { Link } from "./router";
  * The frame every page sits in: the top bar (the word, the breadcrumb, a
  * right-hand slot), the page container, and the manager side bar slot.
  *
- * The manager side bar is a later slice. Its slot is here, empty and
- * closed, so pages do not have to change when it arrives.
+ * The manager side bar takes its own column when `manager` is given and
+ * `managerOpen`; it is outside the page, so it stays put as pages change.
  */
-export function Shell({ topBarRight = null, children }) {
+export function Shell({ topBarRight = null, manager = null, managerOpen = false, children }) {
   return (
     <div className="shell">
       <a className="skip-link" href="#main">
@@ -33,7 +33,11 @@ export function Shell({ topBarRight = null, children }) {
         <main className="page" id="main" tabIndex={-1}>
           {children}
         </main>
-        <aside className="manager-slot" aria-label="Manager" data-open="false" hidden />
+        {manager && managerOpen ? (
+          <aside className="manager-slot" aria-label="Manager" data-open="true">
+            {manager}
+          </aside>
+        ) : null}
       </div>
     </div>
   );

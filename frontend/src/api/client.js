@@ -98,6 +98,64 @@ export function createApiClient({
   }
 
   /**
+   * POST and read the answer as it is written: newline-delimited JSON, one
+   * object per line. An async generator of the parsed lines; a line that is
+   * not JSON is skipped. A refusal before the stream starts throws the API's
+   * error; a stream that breaks part-way throws a sentence.
+   */
+  async function* postLines(path, body, { signal } = {}) {
+    const token = tokenProvider();
+    const headers = { Accept: "application/x-ndjson", "Content-Type": "application/json" };
+    if (token) headers.Authorization = `Bearer ${token}`;
+
+    let response;
+    try {
+      response = await fetchImpl(`${base}${path}`, { method: "POST", headers, body: JSON.stringify(body), signal });
+    } catch (error) {
+      if (error?.name === "AbortError") throw error;
+      throw new ApiError(UNREACHABLE, { code: "network_error", status: 0 });
+    }
+    if (!response.ok) {
+      const { payload } = await readEnvelope(response);
+      throw errorFromResponse(response, payload);
+    }
+    if (!response.body?.getReader) {
+      throw new ApiError(UNREADABLE_RESPONSE, { code: "invalid_response", status: response.status });
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    const parse = (line) => {
+      if (!line.trim()) return [];
+      try {
+        return [JSON.parse(line)];
+      } catch {
+        return [];
+      }
+    };
+    try {
+      while (true) {
+        let chunk;
+        try {
+          chunk = await reader.read();
+        } catch (error) {
+          if (error?.name === "AbortError") throw error;
+          throw new ApiError(UNREACHABLE, { code: "network_error", status: 0 });
+        }
+        if (chunk.done) break;
+        buffer += decoder.decode(chunk.value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop();
+        for (const line of lines) yield* parse(line);
+      }
+      yield* parse(buffer + decoder.decode());
+    } finally {
+      reader.cancel().catch(() => {});
+    }
+  }
+
+  /**
    * Follow a server-sent event stream. `onMessage` gets each message's data,
    * parsed. An EventSource cannot send headers, so the token goes in the
    * query, which the API accepts for this. Returns a function that closes the
@@ -123,6 +181,7 @@ export function createApiClient({
 
   return {
     stream,
+    postLines,
     get: (path, options) => request("GET", path, options),
     post: (path, body, options) => request("POST", path, { ...options, body }),
     patch: (path, body, options) => request("PATCH", path, { ...options, body }),

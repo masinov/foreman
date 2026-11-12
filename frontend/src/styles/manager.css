@@ -1,0 +1,130 @@
+/* The manager side bar's contents: header, thread, composer. */
+.manager {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+}
+
+.manager__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-3) var(--space-4) var(--space-2);
+  border-bottom: var(--line-width) solid var(--color-line-structural);
+}
+
+.manager__title {
+  font-size: var(--font-size-section);
+  font-weight: var(--font-weight-strong);
+}
+
+.manager__project,
+.manager__where {
+  font-size: var(--font-size-control);
+  color: var(--color-text-quiet);
+}
+
+.manager__where {
+  margin-left: auto;
+}
+
+/* Only the overlay needs a way out; beside the page the top bar toggles it. */
+.manager .manager__close {
+  display: none;
+}
+
+@media (max-width: 960px) {
+  .manager .manager__close {
+    display: inline-flex;
+    align-items: center;
+    order: -1;
+    margin-left: auto;
+  }
+
+  .manager__where {
+    margin-left: 0;
+  }
+}
+
+.manager__thread {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-height: 0;
+  padding: var(--space-4);
+  overflow-y: auto;
+}
+
+.manager__turn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.manager__who {
+  font-size: var(--font-size-table-header);
+  color: var(--color-text-quiet);
+}
+
+.manager__text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.manager__turn--assistant .manager__text {
+  color: var(--color-text-secondary);
+}
+
+.manager__cursor {
+  display: inline-block;
+  width: var(--block-cursor-width);
+  height: var(--block-cursor-height);
+  margin-left: var(--space-1);
+  vertical-align: text-bottom;
+  background: var(--color-text-secondary);
+}
+
+.manager__tools,
+.manager__quiet {
+  font-size: var(--font-size-control);
+  color: var(--color-text-quiet);
+}
+
+.manager__failure,
+.manager__error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-red);
+}
+
+.manager__older {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.manager__composer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-top: var(--line-width) solid var(--color-line-structural);
+}
+
+.manager__composer .field__input--multiline {
+  height: auto;
+  resize: none;
+}
+
+.manager__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}

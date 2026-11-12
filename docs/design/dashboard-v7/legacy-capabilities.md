@@ -59,8 +59,8 @@ says so.
 | Cancel a sprint | `PATCH /sprints/{id}` (`status: cancelled`) | none | **no home yet** |
 | Delete a sprint | `DELETE /sprints/{id}` | none | **no home yet** |
 | Resolve a pending decision about sprint order: accept the suggested order, keep the current order, or dismiss, with the conflict and the suggested order shown | `GET /projects/{id}/gates`, `PATCH /gates/{id}` | workspace and project pages, Needs you ("Settle sprint order") | built for accept and reject. Reject keeps the current order, so "keep" and "dismiss" are one action; the API still accepts `dismissed` |
-| Read the manager conversation, send a message, clear the session, load older messages | `POST /projects/{id}/meta/message`, `GET /projects/{id}/meta/history`, `DELETE /projects/{id}/meta/session` | manager side bar | slice 9 |
-| A resizable manager panel, collapsed by default | none | manager side bar | slice 9 (the design's side bar is toggled from the top bar and remembered; resizing is not in the design) |
+| Read the manager conversation, send a message, clear the session, load older messages | `POST /projects/{id}/meta/message`, `GET /projects/{id}/meta/history`, `DELETE /projects/{id}/meta/session` | manager side bar | built |
+| A resizable manager panel, collapsed by default | none | manager side bar | built as the design draws it (toggled from the top bar and remembered); resizing is not in the design, dropped |
 | See the project's token total in the top bar | `GET /projects/{id}` | none | **no home yet** (the pages show spend in dollars, not tokens) |
 
 ## Sprint
