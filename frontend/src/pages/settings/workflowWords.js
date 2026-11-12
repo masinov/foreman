@@ -43,6 +43,11 @@ function sentence(text) {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
+// "it denies", "it steers" reads "it denies or steers": the subject is said once.
+function shareSubject(items) {
+  return items.every((item) => item.startsWith("it ")) ? items.map((item, i) => (i ? item.slice(3) : item)) : items;
+}
+
 function joinOr(items) {
   if (items.length <= 1) return items.join("");
   return `${items.slice(0, -1).join(", ")} or ${items[items.length - 1]}`;
@@ -88,7 +93,7 @@ export function stepRows(workflow, { decidedBy = {}, defaultBranch = "" } = {}) 
 
     const next = order[index + 1];
     const movesOn = forward.length
-      ? joinOr(forward.map((t) => outcomeWords(step.role, t.outcome))) +
+      ? joinOr(shareSubject(forward.map((t) => outcomeWords(step.role, t.outcome)))) +
         (forward.some((t) => t.to !== next) ? ` (goes to ${joinOr([...new Set(forward.map((t) => stepLabel(t.to)))])})` : "")
       : null;
 
@@ -101,7 +106,7 @@ export function stepRows(workflow, { decidedBy = {}, defaultBranch = "" } = {}) 
     }
     const otherwise = [...byTarget.values()].map(
       (entry) =>
-        `${sentence(`if ${joinOr(entry.outcomes)}`)}: back to ${stepLabel(entry.to)}${entry.carry ? ", with its output" : ""}`,
+        `${sentence(`if ${joinOr(shareSubject(entry.outcomes))}`)}: back to ${stepLabel(entry.to)}${entry.carry ? ", with its output" : ""}`,
     );
 
     return {

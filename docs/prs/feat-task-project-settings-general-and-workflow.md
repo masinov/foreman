@@ -76,7 +76,7 @@ derived from the definition the API returns.
 
 ## Screenshots or output examples
 
-- n/a (not opened in a browser; covered by tests against the live API shape).
+- Opened both routes in headless Chrome against the real server and a seeded database: General showed the stored values (merge approval a person, sprint limit 12.5, a `docs` rule, the test command as text) and the Workflow tab showed the steps, requirements and roles of `development`.
 
 ## Acceptance criteria satisfied
 

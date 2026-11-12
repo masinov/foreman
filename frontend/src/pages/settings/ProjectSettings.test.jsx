@@ -296,7 +296,7 @@ describe("Workflow tab", () => {
         "Code Reviewer",
         "agent, claude-sonnet-5-5",
         "it approves",
-        "If it denies or it steers: back to Develop, with its output",
+        "If it denies or steers: back to Develop, with its output",
       ],
       [
         "Merge approval",
