@@ -53,6 +53,10 @@ def build_router(ctx: ApiContext) -> APIRouter:
     def get_project_workflow(project_id: str) -> dict[str, Any]:
         return with_api(lambda api: api.get_project_workflow(project_id))
 
+    @router.get("/workflows")
+    def list_workflows() -> dict[str, Any]:
+        return with_api(lambda api: api.list_workflows())
+
     @router.get("/projects/{project_id}/policy")
     def get_project_policy(project_id: str, task_id: str | None = None) -> dict[str, Any]:
         return with_api(lambda api: api.get_project_policy(project_id, task_id=task_id))

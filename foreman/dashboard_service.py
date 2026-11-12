@@ -11,6 +11,7 @@ talks to it like any other resident engine.
 
 from __future__ import annotations
 
+from dataclasses import asdict
 import os
 import re
 import unicodedata
@@ -56,6 +57,7 @@ from .settings import (
     ProjectSettings,
     SettingsError,
     changed_host_level_settings,
+    settings_of,
 )
 from .store import ForemanStore
 from .store.overview import SPRINT_LIST_ORDERS, SPRINT_LIST_STATUSES
@@ -97,7 +99,15 @@ class DashboardNotFoundError(DashboardServiceError):
 
 
 class DashboardValidationError(DashboardServiceError):
-    """Raised when one dashboard request payload is invalid."""
+    """Raised when one dashboard request payload is invalid.
+
+    ``field`` names the setting or field the message is about, when one is
+    known, so a client can show the message beside it.
+    """
+
+    def __init__(self, message: str = "", *, field: str | None = None) -> None:
+        super().__init__(message)
+        self.field = field
 
 
 class DashboardActionError(DashboardServiceError):
@@ -374,8 +384,26 @@ class DashboardService:
             "spec_path": project.spec_path or "",
             "autonomy_level": project.autonomy_level,
             "settings": dict(project.settings),
+            # Every setting as it applies, defaults filled in: what the engine
+            # reads, so a screen need not repeat the defaults.
+            "effective": self._effective_settings(project),
             # Shown read-only in the dashboard; see HOST_LEVEL_SETTINGS.
             "host_level_settings": sorted(HOST_LEVEL_SETTINGS),
+        }
+
+    @staticmethod
+    def _effective_settings(project: Project) -> dict[str, Any]:
+        """The project's settings with defaults applied, as plain JSON values."""
+
+        try:
+            settings = settings_of(project)
+        except SettingsError as exc:
+            raise DashboardValidationError(
+                f"This project's stored settings are invalid: {exc}"
+            ) from exc
+        return {
+            key: list(value) if isinstance(value, tuple) else value
+            for key, value in asdict(settings).items()
         }
 
     def update_project_settings(
@@ -416,6 +444,13 @@ class DashboardService:
                     if key not in HOST_LEVEL_SETTINGS
                 }
             )
+            # Each key is checked alone first, so the refusal names the setting
+            # it is about and a client can show it beside that field.
+            for key, value in settings_updates.items():
+                try:
+                    ProjectSettings.from_raw({key: value})
+                except SettingsError as exc:
+                    raise DashboardValidationError(str(exc), field=key) from exc
             try:
                 ProjectSettings.from_raw(merged)
             except SettingsError as exc:
@@ -423,7 +458,12 @@ class DashboardService:
             project.settings = merged
 
         if "workflow_id" in updates:
-            project.workflow_id = str(updates["workflow_id"])
+            workflow_id = str(updates["workflow_id"])
+            if workflow_id not in self._workflow_catalogue()[1]:
+                raise DashboardValidationError(
+                    f"There is no workflow {workflow_id!r}.", field="workflow_id"
+                )
+            project.workflow_id = workflow_id
         if "default_branch" in updates:
             project.default_branch = str(updates["default_branch"])
         if "spec_path" in updates:
@@ -1687,13 +1727,12 @@ class DashboardService:
             ),
         }
 
-    def get_project_workflow(self, project_id: str) -> dict[str, Any]:
-        """The steps of the project's workflow, in the order the definition lists them."""
+    def _workflow_catalogue(self) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Every role and every workflow definition, as ``(roles, workflows)``."""
 
         from .roles import RoleLoadError, load_roles
         from .workflows import WorkflowLoadError, load_workflows
 
-        project = self._require_project(project_id)
         try:
             roles = load_roles()
             workflows = load_workflows(
@@ -1702,17 +1741,31 @@ class DashboardService:
             )
         except (RoleLoadError, WorkflowLoadError) as exc:
             raise DashboardValidationError(f"The workflow could not be loaded: {exc}") from exc
+        return roles, workflows
+
+    def get_project_workflow(self, project_id: str) -> dict[str, Any]:
+        """The project's workflow: steps, transitions, roles and what finishing requires."""
+
+        from .dashboard_workflow_reads import describe_workflow
+
+        project = self._require_project(project_id)
+        roles, workflows = self._workflow_catalogue()
         workflow = workflows.get(project.workflow_id)
         if workflow is None:
             raise DashboardNotFoundError(f"Workflow not found: {project.workflow_id}")
         return {
-            "id": workflow.id,
-            "name": workflow.name,
-            "steps": [
-                {"id": step.id, "role": step.role, "policy": step.policy}
-                for step in workflow.steps
-            ],
+            **describe_workflow(workflow, roles),
+            # Whether the engine holds a merge to these requirements.
+            "requirements_enforced": settings_of(project).completion_guard_enabled,
         }
+
+    def list_workflows(self) -> dict[str, Any]:
+        """Every workflow a project can use, each described as a project's is."""
+
+        from .dashboard_workflow_reads import describe_workflow
+
+        roles, workflows = self._workflow_catalogue()
+        return {"workflows": [describe_workflow(wf, roles) for wf in workflows.values()]}
 
     def _project_workflow_step_ids(self, project_id: str) -> set[str] | None:
         """Return the workflow step ids for a project, or ``None`` if unresolved."""

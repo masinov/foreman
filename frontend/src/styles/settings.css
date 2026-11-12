@@ -1,0 +1,134 @@
+/* Project settings: the page, the General form and the Workflow tab. */
+.settings-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.settings-page__title {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.settings-page__tab {
+  padding-top: var(--space-2);
+}
+
+.settings,
+.workflow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.settings-section__rows {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+}
+
+.setting-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: var(--space-1) var(--space-4);
+  align-items: start;
+  padding-block: var(--space-2);
+  border-bottom: var(--line-width) solid var(--color-line-row);
+}
+
+.setting-row:last-child {
+  border-bottom: 0;
+}
+
+.setting-row__label {
+  margin: 0;
+  padding-block: var(--space-1);
+  color: var(--color-text-secondary);
+}
+
+.setting-row__value {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+  margin: 0;
+}
+
+.setting-row__control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  min-width: 0;
+}
+
+.setting-row__input--narrow {
+  width: var(--column-min-width);
+}
+
+.setting-row__hint,
+.setting-row__none {
+  color: var(--color-text-quiet);
+}
+
+.setting-row__error {
+  color: var(--color-red);
+}
+
+.rules {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.rules__none {
+  color: var(--color-text-quiet);
+}
+
+.rules__list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rules__item,
+.rules__add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+
+.settings__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+
+.workflow__line {
+  margin: 0;
+}
+
+.change-workflow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  color: var(--color-text-secondary);
+}
+
+@media (max-width: 640px) {
+  .setting-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

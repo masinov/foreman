@@ -373,6 +373,27 @@ whoever writes. A backlog task is `triage` (filed), `todo` (accepted) or
   `POST /tasks/{id}/decline`, `POST /tasks/{id}/unplan`.
 - `foreman/cli/backlog.py`: `foreman backlog list|add|accept|decline|plan|unplan`.
 
+### Project settings and workflow reads (sprint 58)
+
+The project settings page reads and writes through four routes.
+
+- `GET /projects/{id}/settings` returns `settings` (as stored), `effective`
+  (every setting with its default filled in, the values the engine reads) and
+  `host_level_settings` (the keys the dashboard shows but cannot change,
+  ADR-0017).
+- `PATCH /projects/{id}/settings` takes `{"settings": {...changed keys}}` and
+  `workflow_id`. A refusal about one setting is a 400 `invalid_request` whose
+  envelope also carries `field`, the key it is about (an extra key, so a
+  client that reads only `error` and `code` is unaffected). An unknown
+  `workflow_id` is refused with `field: "workflow_id"`.
+- `GET /projects/{id}/workflow` and `GET /workflows` return a workflow as
+  `foreman/dashboard_workflow_reads.py` describes it: `steps`, `transitions`
+  (with `outcome` and `carry_output`), the `roles` its steps use (name,
+  description, backend, model), `source_path` (the TOML file it was read from)
+  and `requirements`, what finishing needs as facts and claims (ADR-0018),
+  read from the steps: a test step is a fact, a deciding role is a claim.
+  The project's read adds `requirements_enforced` (the completion guard).
+
 ### Views across projects (sprint 58)
 
 Four reads serve the rebuilt dashboard. All sit under `/api/v1` (and the

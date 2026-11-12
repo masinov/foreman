@@ -45,7 +45,17 @@ function TopBarRight({ route, params, manager }) {
       </>
     );
   }
-  if (route.level === "project") return manager;
+  if (route.level === "project") {
+    // Settings are a page of their own, but the engine and manager are still the project's.
+    return route.name.startsWith("project-settings") ? (
+      <>
+        <EngineMenu projectId={params.projectId} />
+        {manager}
+      </>
+    ) : (
+      manager
+    );
+  }
   if (route.level !== "workspace") return null;
   const current = route.name === "workspace-settings";
   return (
