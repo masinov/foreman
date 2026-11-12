@@ -237,5 +237,87 @@ class AutonomousTaskSelectionTests(RepoTestCase):
             orc.select_next_task(project)
 
 
+class BacklogIsNeverRunTests(RepoTestCase):
+    """The engine runs the active sprint only; the backlog is not one (ADR-0021)."""
+
+    def setUp(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.store = ForemanStore(Path(temp.name) / "foreman.db")
+        self.addCleanup(self.store.close)
+        self.store.initialize()
+
+    def _project(self, *, mode: str = "directed", autonomy: str = "supervised") -> Project:
+        project = Project(
+            id="p", name="P", repo_path="/tmp/p", workflow_id="development",
+            autonomy_level=autonomy,  # type: ignore[arg-type]
+            settings={"task_selection_mode": mode},
+        )
+        self.store.save_project(project)
+        return project
+
+    def _backlog_task(self, task_id: str = "accepted", status: str = "todo") -> Task:
+        backlog = self.store.ensure_backlog("p", created_at="2026-11-12T00:00:00Z")
+        task = Task(id=task_id, sprint_id=backlog.id, project_id="p", title=task_id, status=status)  # type: ignore[arg-type]
+        self.store.save_task(task)
+        return task
+
+    def _orchestrator(self) -> ForemanOrchestrator:
+        return ForemanOrchestrator(self.store, roles=self.roles, workflows=self.workflows)
+
+    def test_an_accepted_backlog_task_is_never_selected(self) -> None:
+        project = self._project()
+        self._backlog_task()
+
+        self.assertIsNone(self._orchestrator().select_next_task(project))
+
+        # Even beside an active sprint with nothing left to do.
+        self.store.save_sprint(Sprint(id="s", project_id="p", title="S", status="active"))
+        self.assertIsNone(self._orchestrator().select_next_task(project))
+
+    def test_the_engine_never_activates_the_backlog(self) -> None:
+        self._project()
+        backlog_task = self._backlog_task()
+
+        self.assertIsNone(self._orchestrator().sprints.activate_first_planned("p"))
+
+        self.assertEqual(self.store.get_sprint(backlog_task.sprint_id).status, "planned")
+        self.assertIsNone(self.store.get_active_sprint("p"))
+        self.assertIsNone(self.store.get_next_planned_sprint("p"))
+
+    def test_finishing_the_last_sprint_does_not_advance_into_the_backlog(self) -> None:
+        project = self._project(autonomy="autonomous")
+        self._backlog_task()
+        sprint = Sprint(id="s", project_id="p", title="S", status="active")
+        self.store.save_sprint(sprint)
+        self.store.save_task(Task(id="done", sprint_id="s", project_id="p", title="d", status="done"))
+
+        result = self._orchestrator().sprints.advance(project, self.store.get_sprint("s"))
+
+        self.assertEqual(result, "idle")
+        self.assertIsNone(self.store.get_active_sprint("p"))
+        self.assertEqual(self.store.get_backlog("p").status, "planned")
+
+    def test_autonomous_mode_creates_nothing_in_the_backlog(self) -> None:
+        project = self._project(mode="autonomous")
+        self._backlog_task()
+
+        self.assertIsNone(self._orchestrator().select_next_task(project))
+        self.assertEqual(len(self.store.list_tasks(project_id="p")), 1)
+
+    def test_planning_a_backlog_task_makes_it_selectable(self) -> None:
+        from foreman.mutations import Mutations
+
+        project = self._project()
+        task = self._backlog_task()
+        self.store.save_sprint(Sprint(id="s", project_id="p", title="S", status="active"))
+
+        Mutations(self.store, via="cli").plan_tasks([task], sprint=self.store.get_sprint("s"))
+
+        selected = self._orchestrator().select_next_task(project)
+        self.assertIsNotNone(selected)
+        self.assertEqual(selected.id, task.id)
+
+
 if __name__ == "__main__":
     unittest.main()

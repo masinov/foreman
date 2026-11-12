@@ -88,6 +88,10 @@ not imposed.
 
 ### 4. The intake queue is a sprint
 
+> Superseded by ADR-0021 (2026-11-12): work filed without a `sprint_id` now
+> goes to the project's backlog, which is not a sprint and never runs.
+> Migration 21 moved each intake queue's waiting tasks into it.
+
 When no `sprint_id` is given, the task goes to a per-project sprint with
 `id = "<project>-intake"`, titled "Intake queue", created on first use.
 

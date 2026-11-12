@@ -41,10 +41,21 @@ from .context import (
     DashboardForbiddenError,
     presented_token,
 )
-from .routers import engine, gates, intake, meta, projects, roles, sprints, tasks, worktrees
+from .routers import (
+    backlog,
+    engine,
+    gates,
+    intake,
+    meta,
+    projects,
+    roles,
+    sprints,
+    tasks,
+    worktrees,
+)
 
 #: Mounted in this order under every API prefix.
-ROUTERS = (projects, intake, sprints, meta, gates, engine, worktrees, tasks, roles)
+ROUTERS = (projects, intake, backlog, sprints, meta, gates, engine, worktrees, tasks, roles)
 
 _LOGGER = logging.getLogger("foreman.dashboard")
 

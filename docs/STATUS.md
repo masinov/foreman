@@ -85,9 +85,12 @@ review, human gate, deferred approval, merge). Still true: agents run with full 
   sprint order) are a fifth kind the design does not show; the workspace
   lists them as "Sprint order" and links to the project. The workspace
   endpoint slice settles both.
-- The design has a backlog that is not a sprint, where the engine has a
-  standing "Intake queue" sprint and a triage status. Sprint 58 slice 3
-  decides the mapping and records it in an ADR.
+- Resolved (sprint 58 slice 3, ADR-0021): the design's backlog is a sprint
+  row of kind `backlog` that is never listed or run as a sprint; the standing
+  "Intake queue" sprint is gone (migration 21 moved its waiting work into the
+  backlog). Accepted intake work and agent follow-ups now wait there until a
+  person plans them into a sprint. The rebuilt frontend has no backlog
+  screen yet; it reads `GET /api/v1/projects/{id}/backlog` when it lands.
 
 ## Validation baseline
 

@@ -10,7 +10,20 @@ from typing import Sequence
 
 from .. import __version__
 from ..errors import ForemanError
-from . import catalog, db, engine, gates, monitor, notify, projects, sprints, tasks, tokens, worktree
+from . import (
+    backlog,
+    catalog,
+    db,
+    engine,
+    gates,
+    monitor,
+    notify,
+    projects,
+    sprints,
+    tasks,
+    tokens,
+    worktree,
+)
 
 CLI_DESCRIPTION = (
     "Foreman is an autonomous development engine for spec-driven software delivery."
@@ -38,6 +51,7 @@ def build_parser() -> argparse.ArgumentParser:
     projects.register_project(subparsers)
     sprints.register_sprint(subparsers)
     tasks.register_task(subparsers)
+    backlog.register_backlog(subparsers)
     worktree.register_worktree(subparsers)
     tokens.register_token(subparsers)
     notify.register_notify(subparsers)
