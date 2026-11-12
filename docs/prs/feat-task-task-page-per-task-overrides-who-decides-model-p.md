@@ -20,7 +20,7 @@
   existing PATCH validates steps and values.
 - Affected areas: `frontend/src/pages/task/Overrides.jsx` (new),
   `taskWords.js`, `OverviewTab.jsx`, `api/tasks.js`, `styles/task.css`,
-  rebuilt `foreman/dashboard_frontend_dist`.
+  no committed bundle (it is built, not tracked).
 
 ## Files changed
 
@@ -45,7 +45,7 @@ None.
 ## Acceptance criteria satisfied
 
 Set and clear who-decides and per-step model; Details shows "this task";
-refusals shown; tested; bundle rebuilt.
+refusals shown; tested (the bundle is no longer committed).
 
 ## Follow-ups
 

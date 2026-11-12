@@ -65,6 +65,10 @@ class TokenAuthTests(unittest.TestCase):
         self.assertEqual(query.status_code, 200)
 
     def test_shell_and_assets_load_without_a_token(self) -> None:
+        from foreman.dashboard_runtime import dashboard_assets_present
+
+        if not dashboard_assets_present():
+            self.skipTest("the dashboard frontend is not built (npm --prefix frontend run build)")
         app = create_dashboard_app(str(self.db_path), auth_token="s3cret")
         shell = _request(app, "GET", "/dashboard")
         self.assertEqual(shell.status_code, 200)

@@ -15,6 +15,16 @@ memory changes rather than versioned product releases.
   with Accept and Reject, so `/dashboard/legacy` is no longer needed to
   settle one.
 
+- **built frontend bundle out of git** (`chore/frontend-bundle-out-of-git`),
+  by owner decision: `foreman/dashboard_frontend_dist` is ignored and no
+  longer committed. `foreman dashboard` builds it when it is missing or older
+  than the frontend source (`FOREMAN_DASHBOARD_NO_BUILD=1` turns that off),
+  serves a rebuilt bundle without a restart, and the API starts without it
+  (the shell route answers 503 with how to build). CI builds it in the Python
+  job and drops the freshness check. A release must run
+  `npm --prefix frontend run build` before `python -m build`. Five sprint 58
+  merges had been sent back for conflicts in the committed bundle.
+
 - **fix, a review sees the whole change** (`fix/review-sees-the-whole-change`):
   the second sprint 58 task (1,310 changed lines) was approved by the
   reviewer in 7 seconds; the diff in its prompt is capped (16,000 characters
