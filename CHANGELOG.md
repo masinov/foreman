@@ -9,6 +9,15 @@ memory changes rather than versioned product releases.
 
 ### Sprint 58 — frontend rebuild
 
+- **fix, no flash of an id before a name**
+  (`fix/no-flash-of-ids-before-names`): reported by the owner. Opening a
+  project showed its id ("foreman") as the title and in the breadcrumb, then
+  swapped in its name ("Foreman") when the request returned. Two causes: an
+  id was used as the stand-in for a name not loaded yet, and every page asked
+  again for what the previous page had just loaded. A name now shows as
+  itself or not at all, and `useResource` keeps what each key last loaded
+  (per API client) so a page starts from it and refreshes it.
+
 - **fix, a plain wordmark and one way home**
   (`fix/plain-wordmark-and-one-way-home`): the owner disliked the drawn F and
   did not understand its gold square, and asked what the difference was

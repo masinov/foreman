@@ -26,7 +26,7 @@ function TitleRow({ projectId, project }) {
   return (
     <div className="project__title-row">
       <div className="project__title">
-        <h1 className="page-title">{project?.name ?? projectId}</h1>
+        <h1 className="page-title">{project?.name ?? "\u00a0"}</h1>
         {facts.length ? (
           <Mono quiet className="facts">
             {facts.map((fact, index) => (
