@@ -1,4 +1,4 @@
-import { formatDay, formatMoney, humanize, plural, shortSha, splitTitle } from "./format";
+import { formatDay, formatDuration, formatMoney, humanize, plural, shortSha, splitTitle } from "./format";
 
 describe("format", () => {
   it("formats amounts, identifiers and shas", () => {
@@ -25,5 +25,16 @@ describe("dates and titles", () => {
     expect(splitTitle("Sprint 55: baseline and host safety")).toEqual(["Sprint 55", "baseline and host safety"]);
     expect(splitTitle("Later")).toEqual(["Later", ""]);
     expect(splitTitle(": odd")).toEqual([": odd", ""]);
+  });
+});
+
+describe("formatDuration", () => {
+  it("says seconds to ten minutes, then minutes, then hours", () => {
+    expect(formatDuration(null)).toBe("");
+    expect(formatDuration(7)).toBe("7 s");
+    expect(formatDuration(114.24)).toBe("114.2 s");
+    expect(formatDuration(840)).toBe("14 min");
+    expect(formatDuration(7500)).toBe("2 h 5 min");
+    expect(formatDuration(7200)).toBe("2 h");
   });
 });

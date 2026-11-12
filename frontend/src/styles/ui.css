@@ -206,6 +206,10 @@
   border-top-color: var(--color-line-row-tinted);
 }
 
+.table__row--selected td {
+  background: var(--color-selected);
+}
+
 .table__placeholder-bar {
   display: block;
   width: var(--placeholder-bar-width);
