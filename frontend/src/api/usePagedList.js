@@ -7,16 +7,17 @@ function keyOf(key) {
   return typeof key === "string" ? key : JSON.stringify(key);
 }
 
-const EMPTY = { items: null, total: null, error: null, loading: false, loadingMore: false };
+const EMPTY = { items: null, total: null, meta: null, error: null, loading: false, loadingMore: false };
 
 /**
  * A list that pages on the server.
  *
- * `loadPage(client, { limit, offset, signal })` returns `{ items, total }`.
+ * `loadPage(client, { limit, offset, signal })` returns `{ items, total, meta }`; `meta` is whatever else the page says
+ * (counts, a policy) and is passed through.
  * The first page (`pageSize` items) loads for each `key`; `loadMore(limit)`
  * appends the next `limit` (default `pageSize`) after what is loaded.
  *
- * Returns `{ items, total, error, loading, loadingMore, hasMore, loadMore, reload }`.
+ * Returns `{ items, total, meta, error, loading, loadingMore, hasMore, loadMore, reload }`.
  * A new key or `reload()` starts again from the first page; a response for
  * an older key or an earlier reload is ignored. `error` is a sentence.
  */
@@ -49,7 +50,7 @@ export function usePagedList(key, loadPage, { pageSize, enabled = true }) {
       .then(
         (page) => {
           if (generation.current !== current) return;
-          setState({ key: listKey, ...EMPTY, items: page.items, total: page.total });
+          setState({ key: listKey, ...EMPTY, items: page.items, total: page.total, meta: page.meta ?? null });
         },
         (error) => {
           if (generation.current !== current || error?.name === "AbortError") return;
@@ -79,6 +80,7 @@ export function usePagedList(key, loadPage, { pageSize, enabled = true }) {
               ...previous,
               items: [...(previous.items ?? []), ...page.items],
               total: page.total,
+              meta: page.meta ?? previous.meta,
               loadingMore: false,
             }));
           },
@@ -99,6 +101,7 @@ export function usePagedList(key, loadPage, { pageSize, enabled = true }) {
   return {
     items: current.items,
     total: current.total,
+    meta: current.meta,
     error: current.error,
     loading: current.loading,
     loadingMore: current.loadingMore,
