@@ -1,7 +1,6 @@
 // Addresses of every screen (ADR-0020, decision 6). Build links with these,
 // never by hand.
 export const DASHBOARD = "/dashboard";
-export const LEGACY = `${DASHBOARD}/legacy`;
 
 const enc = (value) => encodeURIComponent(String(value));
 
@@ -21,26 +20,14 @@ export const paths = {
   taskActivity: (taskId) => `${paths.task(taskId)}/activity`,
 };
 
-// The pre-v7 application, kept until the rebuild's last slice removes it.
-export const legacyPaths = {
-  workspace: () => LEGACY,
-  project: (projectId) => `${LEGACY}/projects/${enc(projectId)}`,
-  sprint: (projectId, sprintId) => `${legacyPaths.project(projectId)}/sprints/${enc(sprintId)}`,
-};
-
 export function normalizePath(pathname) {
   if (!pathname || pathname === "/") return "/";
   const trimmed = pathname.replace(/\/+$/, "");
   return trimmed || "/";
 }
 
-export function isLegacyPath(pathname) {
-  const cleaned = normalizePath(pathname);
-  return cleaned === LEGACY || cleaned.startsWith(`${LEGACY}/`);
-}
-
-/** True for a path the rebuilt application routes itself. */
+/** True for a path the application routes itself; anything else is left to the browser. */
 export function isAppPath(pathname) {
   const cleaned = normalizePath(pathname);
-  return (cleaned === DASHBOARD || cleaned.startsWith(`${DASHBOARD}/`)) && !isLegacyPath(cleaned);
+  return cleaned === DASHBOARD || cleaned.startsWith(`${DASHBOARD}/`);
 }

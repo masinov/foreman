@@ -1,5 +1,5 @@
 import { matchRoute, ROUTES } from "./routes";
-import { isAppPath, isLegacyPath, paths } from "./paths";
+import { isAppPath, paths } from "./paths";
 
 describe("route table", () => {
   it.each([
@@ -39,15 +39,23 @@ describe("route table", () => {
     expect(matchRoute(paths.sprintBoard("s")).route.name).toBe("sprint-board");
   });
 
-  it("gives every route a legacy address", () => {
+  it("names the commands for a route without a page, from the manual", () => {
+    const byName = Object.fromEntries(ROUTES.map((route) => [route.name, route]));
+    expect(byName.task.cli({ taskId: "t1" })).toContain("foreman approve t1");
+    expect(byName["sprint-board"].cli({ sprintId: "s1" })).toEqual(["foreman board"]);
+    expect(byName["project-settings"].cli({ projectId: "p1" })).toEqual(["foreman config p1"]);
     for (const route of ROUTES) {
-      expect(isLegacyPath(route.legacyHref({ projectId: "p", sprintId: "s", taskId: "t" }))).toBe(true);
+      for (const command of route.cli?.({ projectId: "p", sprintId: "s", taskId: "t" }) ?? []) {
+        expect(command).toMatch(/^foreman [a-z]/);
+      }
     }
   });
 
-  it("separates the application from the legacy one", () => {
+  it("routes every path under /dashboard itself, and nothing else", () => {
     expect(isAppPath("/dashboard/tasks/t")).toBe(true);
-    expect(isAppPath("/dashboard/legacy/projects/p")).toBe(false);
+    expect(isAppPath("/dashboard/legacy")).toBe(true);
     expect(isAppPath("/api/v1/projects")).toBe(false);
+    expect(matchRoute("/dashboard/legacy").route.name).toBe("not-found");
+    expect(matchRoute("/dashboard/legacy/projects/p").route.name).toBe("not-found");
   });
 });
