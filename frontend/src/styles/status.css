@@ -1,0 +1,19 @@
+/* The shared "being rebuilt" and not-found pages. */
+.status-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-block: var(--space-6);
+}
+
+.status-page__text {
+  color: var(--color-text-secondary);
+}
+
+.status-page__link {
+  color: var(--color-gold);
+}
+
+.status-page__note {
+  color: var(--color-text-quiet);
+}

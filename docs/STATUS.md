@@ -19,7 +19,7 @@ Current snapshot only. History up to 2026-09-08 (sprints 1 to 54) is in
 - `main` is pushed to `origin/main` and CI is green. Work happens on short
   branches from `main`; the operator checkout stays off `main` (the
   `_integration` worktree holds it).
-- Schema version 20. 1064 Python tests, 60 frontend tests.
+- Schema version 20. 1128 Python tests, 134 frontend tests.
 
 ## What sprint 56 changed for an operator
 
@@ -75,7 +75,16 @@ review, human gate, deferred approval, merge). Still true: agents run with full 
   authority. On 2026-11-12 the owner agreed a new design and said it was
   ready for implementation; `docs/design/dashboard-v7/` is now the UI
   reference (ADR-0020) and the mockup is kept as history. Until sprint 58
-  finishes, the shipped dashboard matches neither.
+  finishes, the shipped dashboard is partly rebuilt: `/dashboard` is the v7
+  workspace page, other v7 routes say they are being rebuilt, and the old
+  application is at `/dashboard/legacy`.
+- The design's Needs you has four kinds: accept filed work, approve a plan,
+  approve a merge, unblock. The API does not yet say which policy a task's
+  human gate is (plan or merge), so the workspace names the gate by its
+  workflow step ("Merge approval"). Pending decision gates (a proposed
+  sprint order) are a fifth kind the design does not show; the workspace
+  lists them as "Sprint order" and links to the project. The workspace
+  endpoint slice settles both.
 - The design has a backlog that is not a sprint, where the engine has a
   standing "Intake queue" sprint and a triage status. Sprint 58 slice 3
   decides the mapping and records it in an ADR.

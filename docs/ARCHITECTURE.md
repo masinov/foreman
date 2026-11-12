@@ -440,6 +440,35 @@ The current dashboard baseline includes:
 - approve or deny actions that call the orchestrator to resume workflow
   execution.
 
+### Frontend layout (ADR-0020)
+
+The frontend is being rebuilt to `docs/design/dashboard-v7/` in sprint 58.
+`frontend/src/` is laid out as:
+
+| Path | Holds |
+|---|---|
+| `app/` | `main.jsx` (entry), `mountApp.jsx`, `router.jsx` (History API router and `Link`), `routes.js` (the route table), `paths.js` (every address), `Shell.jsx` and `Breadcrumb.jsx`, `pages.js` (which routes have a built page) |
+| `api/` | `client.js` (the `/api/v1` client; errors are `ApiError` from the ADR-0019 envelope), one module per resource (`projects`, `sprints`, `gates`, `tasks`, `workspace`), `useResource.js` (`{data, error, loading, reload}`, stale responses ignored) and `ApiProvider.jsx` |
+| `ui/` | primitives: `Button`, `Table`, `Surface`, `StatusDot`, `Tabs`, `SectionHeading`, `Mono`, and `format.js` |
+| `pages/` | `workspace/` (built), `status/` (the shared "being rebuilt" page and not-found) |
+| `styles/` | `tokens.css` (the only place a colour, size, radius or line weight is written), `base.css`, `shell.css`, `ui.css`, and one stylesheet per page area |
+| `legacy/` | the pre-v7 application, served at `/dashboard/legacy` until the rebuild's last slice deletes it |
+| `testing/` | the fake API used by tests |
+
+The entry (`app/main.jsx`) loads either the rebuilt application or the
+legacy one by path, each as its own chunk, so the legacy global stylesheet
+never reaches rebuilt pages. Routes without a rebuilt page render one shared
+"This page is being rebuilt" page linking into `/dashboard/legacy`.
+`styles/rules.test.js` fails if a stylesheet other than `tokens.css` names a
+colour or a size, if a component uses an inline style, or if a page or
+primitive calls `fetch`.
+
+The workspace page's data comes from `api/workspace.js`, which composes the
+per-resource endpoints (projects, each project's detail, sprints and pending
+decision gates, the task lists of sprints whose counts show blocked or filed
+work, and the detail of tasks at a human gate). A single workspace endpoint
+replaces that composition in the next API slice without changing the page.
+
 The current implementation debt in this area is explicit:
 
 - the committed built frontend assets must stay synchronized with the source
