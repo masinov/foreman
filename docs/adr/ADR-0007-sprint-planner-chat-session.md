@@ -1,6 +1,6 @@
 # ADR-0007: Sprint Planner Chat Session
 
-- Status: accepted
+- Status: superseded by ADR-0022
 - Date: 2026-04-04
 
 ## Context
