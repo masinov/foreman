@@ -34,9 +34,10 @@ function TitleRow({ projectId, project }) {
 /**
  * Everything above the tabs of a project page, the same on every tab
  * (docs/design/dashboard-v7/02, 09 and 11): title row, engine, Needs you and
- * the tabs. `children(revision)` is the tab; `revision` grows whenever
- * something here changed the project (an engine command, an approval), so
- * the tab can reload what it shows.
+ * the tabs. `children(revision, changed)` is the tab; `revision` grows whenever
+ * something changed the project (an engine command, an approval, or the tab
+ * itself calling `changed()`), so the tab can reload what it shows and the
+ * head and tab counts are read again.
  */
 export function ProjectLayout({ projectId, children }) {
   const workspace = useResource(["workspace"], getWorkspace);
@@ -95,7 +96,7 @@ export function ProjectLayout({ projectId, children }) {
             { href: paths.projectActivity(projectId), label: "Activity" },
           ]}
         />
-        <div className="project__tab">{children(revision)}</div>
+        <div className="project__tab">{children(revision, changed)}</div>
       </div>
     </div>
   );

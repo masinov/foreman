@@ -26,16 +26,15 @@ describe("App routing and shell", () => {
   });
 
   it("renders the shared being-rebuilt page with a link into the legacy dashboard", async () => {
-    renderApp("/dashboard/projects/foreman/backlog", createFakeFetch(workspaceRoutes()));
+    renderApp("/dashboard/projects/foreman/settings/workflow", createFakeFetch(workspaceRoutes()));
     expect(screen.getByRole("heading", { name: "This page is being rebuilt" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Open this in the previous dashboard" })).toHaveAttribute(
       "href",
       "/dashboard/legacy/projects/foreman",
     );
-    // The breadcrumb is driven by the route and names the project by its name,
-    // as a switcher.
+    // The breadcrumb is driven by the route and names the project by its name.
     const crumbs = screen.getByRole("navigation", { name: "Breadcrumb" });
-    expect(await within(crumbs).findByRole("button", { name: /^Foreman/ })).toHaveAttribute("aria-current", "page");
+    expect(await within(crumbs).findByRole("link", { name: "Foreman" })).toBeInTheDocument();
     expect(within(crumbs).getByRole("link", { name: "Workspace" })).toHaveAttribute("href", "/dashboard");
   });
 

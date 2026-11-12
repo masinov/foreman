@@ -146,3 +146,72 @@
   background: var(--color-selected);
   color: var(--color-text);
 }
+
+/* Backlog tab */
+.backlog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.backlog__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.backlog__filter {
+  min-width: var(--menu-min-width);
+}
+
+.backlog__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.backlog__group .table {
+  min-width: var(--table-min-width);
+}
+
+.backlog__plan {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.backlog__plan-label {
+  color: var(--color-text-quiet);
+}
+
+.backlog__plan .field__input {
+  min-width: 0;
+}
+
+.backlog__select {
+  width: var(--space-6);
+}
+
+.backlog__type {
+  white-space: nowrap;
+}
+
+.backlog__by {
+  white-space: nowrap;
+}
+
+.backlog__actions {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.backlog__actions .button + .button {
+  margin-left: var(--space-1);
+}
+
+.checkbox {
+  accent-color: var(--color-gold);
+}

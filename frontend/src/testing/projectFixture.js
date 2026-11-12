@@ -67,3 +67,59 @@ export function projectRoutes({ queue = [ACTIVE, PLANNED], finished = FINISHED, 
     },
   };
 }
+
+// The backlog (ADR-0021): GET /projects/{id}/backlog.
+export function backlogUrl({ q = "", offset = 0 } = {}) {
+  const query = q ? `q=${encodeURIComponent(q)}&` : "";
+  return `GET /api/v1/projects/foreman/backlog?${query}limit=25&offset=${offset}`;
+}
+
+export function backlogTask(id, title, state, fields = {}) {
+  return {
+    id,
+    task_key: null,
+    title,
+    state,
+    status: state === "filed" ? "triage" : "todo",
+    task_type: "fix",
+    priority: 0,
+    complexity: null,
+    description: null,
+    acceptance_criteria: null,
+    created_by: "human",
+    created_at: on("11-09"),
+    source: null,
+    carried_from: null,
+    ...fields,
+  };
+}
+
+export const FILED = backlogTask("task-filed", "Retry the webhook on a timeout", "filed", {
+  created_by: "manager",
+  task_type: "feature",
+});
+export const ACCEPTED = [
+  backlogTask("task-a", "Resume a stale agent step in place", "accepted", {
+    carried_from: { id: "sprint-56", title: "Sprint 56: engine truthfulness" },
+  }),
+  backlogTask("task-b", "Check the lease fencing token on writes", "accepted", {
+    source: { system: "github", external_ref: "42", url: null, reporter: "ada" },
+  }),
+  backlogTask("task-c", "JSON output on the remaining read commands", "accepted", { task_type: "feature" }),
+];
+
+export function backlogPayload(tasks, { triage = "human", total = tasks.length } = {}) {
+  const count = (state) => tasks.filter((task) => task.state === state).length;
+  return {
+    project_id: "foreman",
+    backlog_id: "foreman-backlog",
+    triage,
+    counts: { filed: count("filed"), accepted: count("accepted"), declined: 0 },
+    tasks,
+    total,
+  };
+}
+
+export function backlogRoutes(tasks = [FILED, ...ACCEPTED], options) {
+  return { ...projectRoutes(), [backlogUrl()]: backlogPayload(tasks, options) };
+}

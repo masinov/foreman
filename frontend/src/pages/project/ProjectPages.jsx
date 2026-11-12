@@ -1,6 +1,7 @@
 import React from "react";
 
 import { ActivityTab } from "./ActivityTab";
+import { BacklogTab } from "./BacklogTab";
 import { ProjectLayout } from "./ProjectLayout";
 import { SprintsTab } from "./SprintsTab";
 
@@ -9,6 +10,15 @@ export function ProjectSprintsPage({ params }) {
   return (
     <ProjectLayout projectId={params.projectId}>
       {(revision) => <SprintsTab projectId={params.projectId} revision={revision} />}
+    </ProjectLayout>
+  );
+}
+
+/** /dashboard/projects/{id}/backlog: the Backlog tab. */
+export function ProjectBacklogPage({ params }) {
+  return (
+    <ProjectLayout projectId={params.projectId}>
+      {(revision, changed) => <BacklogTab projectId={params.projectId} revision={revision} onChanged={changed} />}
     </ProjectLayout>
   );
 }
