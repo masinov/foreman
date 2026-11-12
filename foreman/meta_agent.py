@@ -60,6 +60,42 @@ def _truncate(text: str | None, width: int) -> str:
     return value[: max(0, width - 1)].rstrip() + "…"
 
 
+#: How many filed and how many accepted backlog tasks the header names.
+BACKLOG_HEAD_LIMIT = 5
+
+
+def _backlog_section(store: Any, project: Any) -> list[str]:
+    """Return the backlog block: counts, then the head of filed and accepted.
+
+    The backlog is not a sprint (ADR-0021), so ``list_sprints`` never shows
+    it; without this block the manager could not see work waiting for a
+    decision. Declined work is counted but not listed.
+    """
+
+    lines = ["", "### Backlog (not a sprint; unplanned work)"]
+    heads: list[tuple[str, list[Any]]] = []
+    counts: dict[str, int] = {}
+    for label, status in (("filed", "triage"), ("accepted", "todo")):
+        tasks, total, counts = store.page_backlog_tasks(
+            project.id, statuses=[status], limit=BACKLOG_HEAD_LIMIT
+        )
+        heads.append((label, tasks))
+    lines.append(
+        f"filed={counts['triage']}, accepted={counts['todo']}, "
+        f"declined={counts['declined']}"
+    )
+    for label, tasks in heads:
+        total = counts["triage" if label == "filed" else "todo"]
+        if not tasks:
+            continue
+        lines.append(f"{label.capitalize()} (showing {len(tasks)} of {total}):")
+        for task in tasks:
+            lines.append(
+                f"- {task.id} | {task.task_type} | {_truncate(task.title, 60)}"
+            )
+    return lines
+
+
 def build_state_header(store: Any, project: Any) -> str:
     """Return a compact, fixed-format snapshot of current project state.
 
@@ -95,6 +131,8 @@ def build_state_header(store: Any, project: Any) -> str:
             lines.append(
                 f"- [{sprint.status}] {sprint.title} ({sprint.id}) — {count_text}"
             )
+
+    lines += _backlog_section(store, project)
 
     active = store.get_active_sprint(project.id)
     if active is not None:
@@ -163,6 +201,15 @@ def build_operating_contract(project: Any) -> str:
             "",
             "Plan:",
             f"  foreman sprint add {pid} --title ... --goal ...",
+            "",
+            "Backlog (filed and accepted work that is not in a sprint):",
+            f"  foreman backlog list {pid} [--status filed|accepted|declined]",
+            f"  foreman backlog add {pid} --title ... [--type ...] [--criteria ...]",
+            "  foreman backlog accept <task-id>",
+            "  foreman backlog decline <task-id> --reason ...",
+            f"  foreman backlog plan {pid} <task-id>... --sprint <sprint-id>",
+            f"  foreman backlog plan {pid} <task-id>... --new-sprint <title> --goal ...",
+            "  foreman backlog unplan <task-id>",
             "",
             "Promote (create a task):",
             f"  foreman task add {pid} --title ... --type ... --criteria ... \\",
