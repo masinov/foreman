@@ -76,9 +76,11 @@ review, human gate, deferred approval, merge). Still true: agents run with full 
   ready for implementation; `docs/design/dashboard-v7/` is now the UI
   reference (ADR-0020) and the mockup is kept as history. Until sprint 58
   finishes, the shipped dashboard matches neither.
-- The design has a backlog that is not a sprint, where the engine has a
-  standing "Intake queue" sprint and a triage status. Sprint 58 slice 3
-  decides the mapping and records it in an ADR.
+- Resolved (sprint 58 slice 3, ADR-0021): the design's backlog is a sprint
+  row of kind `backlog` that is never listed or run as a sprint; the standing
+  "Intake queue" sprint is gone (migration 21 moved its waiting work into the
+  backlog). Accepted intake work and agent follow-ups now wait there until a
+  person plans them into a sprint.
 
 ## Validation baseline
 

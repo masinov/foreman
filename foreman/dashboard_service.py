@@ -1300,7 +1300,7 @@ class DashboardService:
         return {"ok": "deleted", "sprint_id": sprint_id, "project_id": project_id}
 
     def accept_task(self, task_id: str) -> dict[str, Any]:
-        """Accept one task out of triage and into the runnable queue."""
+        """Accept one filed task (see ``Mutations.accept_task``)."""
 
         task = self._require_task(task_id)
         try:

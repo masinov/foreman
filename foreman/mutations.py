@@ -133,7 +133,11 @@ class Mutations:
     # ── tasks ────────────────────────────────────────────────────────────
 
     def accept_task(self, task: Task) -> Task:
-        """Move a task out of triage into the runnable queue."""
+        """Accept filed work: ``triage`` becomes ``todo``.
+
+        A backlog task stays in the backlog, accepted and not planned; a task
+        filed straight into a sprint joins that sprint's queue.
+        """
 
         if task.status != "triage":
             raise MutationError(
