@@ -8,11 +8,14 @@ import { Link } from "../app/router";
  * click outside close it; choosing an item or Escape returns focus to the
  * button.
  *
+ * `label` names the menu; the button is named by `trigger` (its content) or
+ * `triggerLabel`. Other props go to the button.
+ *
  * `items` are `{ key, label, detail?, href?, onSelect?, current? }`. An item
  * with `href` is a link (it can open in a new tab); otherwise `onSelect`
  * runs. `current` marks the item the person is on.
  */
-export function Menu({ label, trigger, items, className = "", triggerClassName = "" }) {
+export function Menu({ label, trigger, triggerLabel, items, className = "", triggerClassName = "", ...triggerProps }) {
   const [open, setOpen] = useState(false);
   const [focusIndex, setFocusIndex] = useState(0);
   const rootRef = useRef(null);
@@ -102,7 +105,8 @@ export function Menu({ label, trigger, items, className = "", triggerClassName =
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
-        aria-label={label}
+        aria-label={triggerLabel}
+        {...triggerProps}
         onClick={() => (open ? close({ refocus: false }) : openAt(startIndex()))}
         onKeyDown={handleTriggerKeyDown}
       >

@@ -10,8 +10,9 @@ function renderMenu(onSelect = vi.fn()) {
     <RouterProvider browser={window}>
       <p>outside</p>
       <Menu
-        label="Switch project"
+        label="Projects"
         trigger="Beta"
+        triggerLabel="Switch project"
         items={[
           { key: "a", label: "Alpha", detail: 2, href: "/dashboard/projects/a" },
           { key: "b", label: "Beta", detail: 0, href: "/dashboard/projects/b", current: true },
@@ -32,7 +33,7 @@ describe("Menu", () => {
 
     fireEvent.click(trigger);
     expect(trigger).toHaveAttribute("aria-expanded", "true");
-    const menu = screen.getByRole("menu", { name: "Switch project" });
+    const menu = screen.getByRole("menu", { name: "Projects" });
     expect(trigger).toHaveAttribute("aria-controls", menu.id);
     expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Alpha2", "Beta0", "Gamma"]);
     expect(screen.getByRole("menuitem", { name: /Beta/ })).toHaveFocus();
