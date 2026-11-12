@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Sequence
 from typing import Any
 
 from ..models import (
@@ -159,8 +160,11 @@ class EventStore(StoreBase):
         after_event_id: str | None = None,
         before_event_id: str | None = None,
         limit: int | None = None,
+        event_types: Sequence[str] | None = None,
     ) -> list[Event]:
         """List sprint-scoped events in display order.
+
+        ``event_types`` keeps only events of those types.
 
         Pass ``after_event_id`` to fetch events newer than a known cursor
         (used by the SSE stream to deliver incremental updates).
@@ -169,6 +173,10 @@ class EventStore(StoreBase):
         """
 
         params: list[Any] = [sprint_id]
+        type_clause = ""
+        if event_types:
+            type_clause = f" AND e.event_type IN ({', '.join('?' for _ in event_types)})"
+            params.extend(event_types)
 
         if after_event_id is not None:
             marker = self._get_event_cursor_marker(after_event_id)
@@ -178,7 +186,7 @@ class EventStore(StoreBase):
                 SELECT e.*
                 FROM events e
                 INNER JOIN tasks t ON t.id = e.task_id
-                WHERE t.sprint_id = ?
+                WHERE t.sprint_id = ?{types}
                 AND (
                     e.timestamp > ?
                     OR (e.timestamp = ? AND e.rowid > ?)
@@ -189,7 +197,7 @@ class EventStore(StoreBase):
             if limit is not None:
                 sql += " LIMIT ?"
                 params.append(limit)
-            rows = self._connection.execute(sql, tuple(params)).fetchall()
+            rows = self._connection.execute(sql.replace('{types}', type_clause), tuple(params)).fetchall()
             return [_row_to_event(row) for row in rows]
 
         if before_event_id is not None:
@@ -200,7 +208,7 @@ class EventStore(StoreBase):
                 SELECT e.*
                 FROM events e
                 INNER JOIN tasks t ON t.id = e.task_id
-                WHERE t.sprint_id = ?
+                WHERE t.sprint_id = ?{types}
                 AND (
                     e.timestamp < ?
                     OR (e.timestamp = ? AND e.rowid < ?)
@@ -211,7 +219,7 @@ class EventStore(StoreBase):
             if limit is not None:
                 sql += " LIMIT ?"
                 params.append(limit)
-            rows = self._connection.execute(sql, tuple(params)).fetchall()
+            rows = self._connection.execute(sql.replace('{types}', type_clause), tuple(params)).fetchall()
             events = [_row_to_event(row) for row in rows]
             events.reverse()
             return events
@@ -221,31 +229,39 @@ class EventStore(StoreBase):
             SELECT e.*
             FROM events e
             INNER JOIN tasks t ON t.id = e.task_id
-            WHERE t.sprint_id = ?
+            WHERE t.sprint_id = ?{types}
             ORDER BY e.timestamp ASC, e.rowid ASC
         """
         if limit is not None:
             sql += " LIMIT ?"
             params.append(limit)
-        rows = self._connection.execute(sql, tuple(params)).fetchall()
+        rows = self._connection.execute(sql.replace('{types}', type_clause), tuple(params)).fetchall()
         return [_row_to_event(row) for row in rows]
 
-    def list_recent_sprint_events(self, sprint_id: str, *, limit: int = 50) -> list[Event]:
+    def list_recent_sprint_events(
+        self, sprint_id: str, *, limit: int = 50, event_types: Sequence[str] | None = None
+    ) -> list[Event]:
         """Return the most recent sprint events while preserving display order."""
 
         if limit <= 0:
             return []
 
+        type_clause = ""
+        params: list[Any] = [sprint_id]
+        if event_types:
+            type_clause = f" AND e.event_type IN ({', '.join('?' for _ in event_types)})"
+            params.extend(event_types)
+        params.append(limit)
         rows = self._connection.execute(
-            """
+            f"""
             SELECT e.*
             FROM events e
             INNER JOIN tasks t ON t.id = e.task_id
-            WHERE t.sprint_id = ?
+            WHERE t.sprint_id = ?{type_clause}
             ORDER BY e.timestamp DESC, e.rowid DESC
             LIMIT ?
             """,
-            (sprint_id, limit),
+            tuple(params),
         ).fetchall()
         events = [_row_to_event(row) for row in rows]
         events.reverse()

@@ -37,3 +37,29 @@ export function listSprintTasks(client, sprintId, options) {
     .get(`/sprints/${segment(sprintId)}/tasks`, options)
     .then((payload) => payload?.tasks ?? []);
 }
+
+/** Change a sprint's title and goal. */
+export function updateSprint(client, sprintId, { title, goal }, options) {
+  return client.patch(`/sprints/${segment(sprintId)}`, { title, goal: goal || null }, options);
+}
+
+/** Move a sprint to `active` (activate it) or `completed` (finish it). */
+export function transitionSprint(client, sprintId, status, options) {
+  return client.patch(`/sprints/${segment(sprintId)}`, { status }, options);
+}
+
+/** The event type the engine records each time a workflow step finishes. */
+export const STEP_FINISHED = "workflow.step_completed";
+
+/**
+ * Events of one sprint, newest first, as `{ events, hasMore }`. `types`
+ * keeps only those event types; `before` is the id of the oldest event
+ * already shown, so the next call returns older ones.
+ */
+export function listSprintEvents(client, sprintId, { types = [], limit, before, ...options } = {}) {
+  const query = queryString({ type: types, limit, before });
+  return client.get(`/sprints/${segment(sprintId)}/events${query}`, options).then((payload) => ({
+    events: [...(payload?.events ?? [])].reverse(),
+    hasMore: Boolean(payload?.has_more),
+  }));
+}

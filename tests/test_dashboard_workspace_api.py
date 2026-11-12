@@ -497,5 +497,64 @@ class SprintListTests(WorkspaceApiCase):
                 self.assertEqual(response.json()["code"], "invalid_request")
 
 
+class SprintPageReadTests(WorkspaceApiCase):
+    """What the sprint page reads that no earlier slice needed."""
+
+    def test_sprint_names_when_it_started_and_whether_foreman_picks_tasks(self) -> None:
+        self.project("p1")
+        self.sprint("s1", "p1", "One", "active", started_at="2026-11-11T09:00:00Z")
+        body = self.get("/api/v1/sprints/s1").json()
+        self.assertEqual(body["started_at"], "2026-11-11T09:00:00Z")
+        self.assertIsNone(body["completed_at"])
+        self.assertFalse(body["picks_own_tasks"])
+
+        project = self.store.get_project("p1")
+        project.settings = {"task_selection_mode": "autonomous"}
+        self.store.save_project(project)
+        self.assertTrue(self.get("/api/v1/sprints/s1").json()["picks_own_tasks"])
+
+    def test_sprint_tasks_carry_checks_from_completion_evidence(self) -> None:
+        self.project("p1")
+        self.sprint("s1", "p1", "One", "active")
+        evidence = CompletionEvidence(
+            task_id="a", task_title="Task a", acceptance_criteria="",
+            tests_status="passed", head_sha="abc123", review_outcome="approve",
+        )
+        self.task("a", "s1", "p1", "blocked", completion_evidence=evidence)
+        self.task("b", "s1", "p1", "todo")
+        tasks = {t["id"]: t for t in self.get("/api/v1/sprints/s1/tasks").json()["tasks"]}
+        self.assertEqual(
+            tasks["a"]["checks"], {"tests": "passed", "review": "approve", "commit": "abc123"}
+        )
+        self.assertIsNone(tasks["b"]["checks"])
+
+    def test_sprint_events_filter_by_type(self) -> None:
+        self.project("p1")
+        self.sprint("s1", "p1", "One", "active")
+        self.task("a", "s1", "p1", "in_progress")
+        self.event("e1", "a", "p1", "agent.message", "2026-01-01T00:00:01Z")
+        self.event("e2", "a", "p1", "workflow.step_completed", "2026-01-01T00:00:02Z")
+        self.event("e3", "a", "p1", "agent.message", "2026-01-01T00:00:03Z")
+        self.event("e4", "a", "p1", "workflow.step_completed", "2026-01-01T00:00:04Z")
+        body = self.get("/api/v1/sprints/s1/events?type=workflow.step_completed&limit=1").json()
+        self.assertEqual([e["id"] for e in body["events"]], ["e4"])
+        self.assertTrue(body["has_more"])
+        older = self.get(
+            "/api/v1/sprints/s1/events?type=workflow.step_completed&limit=5&before=e4"
+        ).json()
+        self.assertEqual([e["id"] for e in older["events"]], ["e2"])
+        everything = self.get("/api/v1/sprints/s1/events?limit=10").json()
+        self.assertEqual(len(everything["events"]), 4)
+
+    def test_project_workflow_lists_its_steps(self) -> None:
+        self.project("p1")
+        body = self.get("/api/v1/projects/p1/workflow").json()
+        self.assertEqual(body["id"], "development")
+        ids = [step["id"] for step in body["steps"]]
+        self.assertIn("develop", ids)
+        self.assertEqual(ids[-1], body["steps"][-1]["id"])
+        self.assertEqual(self.get("/api/v1/projects/nope/workflow").status_code, 404)
+
+
 if __name__ == "__main__":
     unittest.main()

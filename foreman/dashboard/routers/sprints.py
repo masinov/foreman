@@ -93,7 +93,9 @@ def build_router(ctx: ApiContext) -> APIRouter:
         limit: str = str(ACTIVITY_EVENT_LIMIT),
         after: str | None = None,
         before: str | None = None,
+        type: list[str] = Query(default=[]),
     ) -> dict[str, Any]:
+        event_types = split_values(type)
         try:
             parsed_limit = int(limit)
         except ValueError as exc:
@@ -107,6 +109,7 @@ def build_router(ctx: ApiContext) -> APIRouter:
                 limit=parsed_limit,
                 after_event_id=after,
                 before_event_id=before,
+                event_types=event_types or None,
             )
         )
 
