@@ -194,6 +194,7 @@ def _row_to_run(row: sqlite3.Row) -> Run:
         model=row["model"],
         session_id=row["session_id"],
         branch_name=row["branch_name"],
+        commit_sha=row["commit_sha"],
         prompt_text=row["prompt_text"],
         cost_usd=row["cost_usd"],
         token_count=row["token_count"],

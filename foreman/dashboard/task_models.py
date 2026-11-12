@@ -162,6 +162,7 @@ class RunItem(BaseModel):
     backend: str
     status: str
     outcome: str | None = None
+    commit_sha: str | None = None
     started_at: str | None = None
     finished_at: str | None = None
     duration_ms: int | None = None

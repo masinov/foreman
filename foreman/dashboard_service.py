@@ -1039,6 +1039,7 @@ class DashboardService:
                     "model": run.model,
                     "session_id": run.session_id,
                     "branch_name": run.branch_name,
+                    "commit_sha": run.commit_sha,
                 }
             )
 

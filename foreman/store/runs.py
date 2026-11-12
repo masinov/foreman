@@ -34,8 +34,9 @@ class RunStore(StoreBase):
                     outcome_detail, agent_backend, model, session_id, branch_name,
                     prompt_text, cost_usd, token_count, duration_ms, retry_count,
                     failure_type, started_at, completed_at, created_at,
-                    input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
+                    commit_sha
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     task_id = excluded.task_id,
                     project_id = excluded.project_id,
@@ -60,7 +61,8 @@ class RunStore(StoreBase):
                     input_tokens = excluded.input_tokens,
                     output_tokens = excluded.output_tokens,
                     cache_read_tokens = excluded.cache_read_tokens,
-                    cache_creation_tokens = excluded.cache_creation_tokens
+                    cache_creation_tokens = excluded.cache_creation_tokens,
+                    commit_sha = excluded.commit_sha
                 """,
                 (
                     run.id,
@@ -88,6 +90,7 @@ class RunStore(StoreBase):
                     run.token_usage.output,
                     run.token_usage.cache_read,
                     run.token_usage.cache_creation,
+                    run.commit_sha,
                 ),
             )
 

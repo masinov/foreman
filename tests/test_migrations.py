@@ -599,8 +599,10 @@ class ProposalMigrationTests(unittest.TestCase):
 
     def test_an_existing_database_gains_the_table_and_keeps_its_rows(self) -> None:
         self.assertEqual(self.store.schema_version(), 21)
-        self.assertEqual(self.store.initialize(), [22])
-        self.assertEqual(MIGRATIONS[-1][0], 22)
+        # Later migrations apply after this one; it is the first to run.
+        applied = self.store.initialize()
+        self.assertEqual(applied[0], 22)
+        self.assertEqual(applied, [v for v, _, _ in MIGRATIONS if v >= 22])
         self.assertIsNotNone(self.store.get_project("p1"))
         columns = {
             row["name"]

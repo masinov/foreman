@@ -160,7 +160,13 @@ export function stepRows(task, workflow) {
     } else if (last) {
       const { tone, word } = runResult(last);
       const took = formatDuration(runSeconds(last));
-      result = { tone, word: took && word ? `${word} in ${took}` : word };
+      // A run records the branch head it finished at; it "committed" only
+      // when that head is not the one the run before it left.
+      const before = runs.filter((run) => run.commit_sha && runTime(run) < runTime(last)).pop();
+      const committed = last.commit_sha && last.commit_sha !== before?.commit_sha ? shortSha(last.commit_sha) : "";
+      result = committed
+        ? { tone, word: `Committed ${committed}` }
+        : { tone, word: took && word ? `${word} in ${took}` : word };
     } else {
       result = { tone: "idle", word: "Not reached" };
     }

@@ -412,6 +412,16 @@ class WorkflowRunner:
             task.workflow_carried_output = None
         self.tasks.save(task)
 
+    def _branch_commit(self, project: Project, task: Task) -> str | None:
+        """The commit the task's branch points at now, or None if it has none."""
+
+        if not task.branch_name:
+            return None
+        try:
+            return head_sha(project.repo_path, f"refs/heads/{task.branch_name}")
+        except GitError:
+            return None
+
     def _task_worktree_problem(self, project: Project, task: Task) -> str | None:
         """Say why a task's worktree cannot host a step, or None when it can.
 
@@ -795,6 +805,7 @@ class WorkflowRunner:
             duration_ms=result.duration_ms,
             retry_count=result.retry_count,
             failure_type=result.failure_type,
+            commit_sha=self._branch_commit(project, task),
         )
         retry_reason = (
             None
@@ -880,6 +891,7 @@ class WorkflowRunner:
                 duration_ms=retry_result.duration_ms,
                 retry_count=retry_result.retry_count,
                 failure_type=retry_result.failure_type,
+                commit_sha=self._branch_commit(project, task),
             )
             run = retry_run
             result = retry_result
