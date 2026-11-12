@@ -110,6 +110,12 @@
   --color-row-hover: #111115;
   --color-row-hover-tinted: #18181d;
 
+  /* Task changes: the file list beside the diff */
+  --changes-files-width: 300px;
+  --changes-files-max-width: 400px;
+  --changes-diff-min-width: 520px;
+  --changes-list-offset: 140px;
+
   /* Spacing scale */
   --space-1: 4px;
   --space-2: 8px;

@@ -9,6 +9,16 @@ memory changes rather than versioned product releases.
 
 ### Sprint 58 — frontend rebuild
 
+- **fix, section titles on a rule; the Changes tab laid out side by side**
+  (`fix/section-rules-and-changes-layout`), reported by the owner. A section's
+  title sat above its content with nothing joining them. It now sits on a
+  rule that spans the section; column headers moved to the faint row line so
+  the two do not compete; a heading above a tinted surface has no rule. On
+  the task page the Changes tab label lost its figures; inside, the heading
+  is "Files" with the count and the totals, and the file list sits beside the
+  picked file's diff in its own scrolling column, where before the diff
+  appeared under the whole list.
+
 - **fix, counts beside labels** (`fix/counts-beside-labels`): reported by the
   owner as "strangely aligned". "Needs you 0" and "Backlog 0" set the figure
   at the label's size one space away, so it read as another word of the

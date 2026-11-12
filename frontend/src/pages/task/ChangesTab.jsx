@@ -7,7 +7,6 @@ import { SectionHeading } from "../../ui/SectionHeading";
 import { Table } from "../../ui/Table";
 import { shortSha } from "../../ui/format";
 import { parseDiff } from "./diff";
-import { sizeWords } from "./taskWords";
 
 const STATUS_WORDS = { added: "added", deleted: "deleted", renamed: "renamed", modified: "" };
 
@@ -118,24 +117,37 @@ export function ChangesTab({ task, changes, revision }) {
 
   return (
     <div className="task-changes">
-      <section className="task-section" aria-labelledby="task-files">
+      <section className="task-section task-changes__files" aria-labelledby="task-files">
         <SectionHeading
           id="task-files"
-          title={sizeWords(data.totals)}
+          title="Files"
+          count={data.files.length}
           note={
-            <>
-              {head && base ? (
-                <>
-                  <Mono>{head}</Mono> against {base}.{" "}
-                </>
-              ) : null}
-              Measured by the engine from git.
-            </>
+            <Mono>
+              <span className="tone-passed">+{data.totals?.added ?? 0}</span>{" "}
+              <span className="tone-failed">−{data.totals?.deleted ?? 0}</span>
+            </Mono>
           }
         />
-        <Table caption="Files changed" columns={columns} rows={data.files} rowKey={(file) => file.path} selected={(file) => file === selected} />
+        {head && base ? (
+          <p className="quiet task-changes__compared">
+            <Mono>{head}</Mono> compared with {base}
+          </p>
+        ) : null}
+        <div className="task-changes__list">
+          <Table
+            caption="Files changed"
+            columns={columns}
+            rows={data.files}
+            rowKey={(file) => file.path}
+            selected={(file) => file === selected}
+            hideHeader
+          />
+        </div>
       </section>
-      <FileDiff key={selected.path} taskId={task.id} file={selected} revision={revision} />
+      <div className="task-changes__diff">
+        <FileDiff key={selected.path} taskId={task.id} file={selected} revision={revision} />
+      </div>
     </div>
   );
 }

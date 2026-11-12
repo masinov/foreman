@@ -235,12 +235,43 @@
 }
 
 /* Changes and Activity: a list to pick from, and what the pick shows. */
-.task-changes,
 .task-checks,
 .task-activity {
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
+}
+
+/* Changes: the files on the left, the picked file's diff beside them. The
+   list keeps to the height of the window and scrolls on its own, so picking
+   a file never means scrolling past the list to reach its diff. */
+.task-changes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-5);
+}
+
+.task-changes__files {
+  position: sticky;
+  top: var(--space-4);
+  flex: 1 1 var(--changes-files-width);
+  max-width: var(--changes-files-max-width);
+  min-width: 0;
+}
+
+.task-changes__compared {
+  margin-bottom: var(--space-2);
+}
+
+.task-changes__list {
+  max-height: calc(100vh - var(--changes-list-offset));
+  overflow-y: auto;
+}
+
+.task-changes__diff {
+  flex: 999 1 var(--changes-diff-min-width);
+  min-width: 0;
 }
 
 .file-pick {
