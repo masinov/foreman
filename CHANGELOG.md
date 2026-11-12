@@ -13,7 +13,8 @@ memory changes rather than versioned product releases.
   (`fix/needs-you-heading-outside-surface`): reported by the owner. The
   heading was inside the tinted surface with the rows, which the design
   rejects: the surface holds only what there is to act on. With nothing to
-  act on there is now no surface, only the sentence. Checked in a headless
+  act on the surface stays and holds the sentence that says so (a first
+  version removed it; the owner asked why, and it was put back). Checked in a headless
   Chrome screenshot, the first time a page of the rebuild was looked at.
 
 - **feat, a proposed sprint order is in Needs you** (`feat/task-b1e9a964d00e`):

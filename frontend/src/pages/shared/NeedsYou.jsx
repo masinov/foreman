@@ -225,15 +225,19 @@ export function NeedsYou({ projectId = null, note, empty, onChanged }) {
           {list.error}
         </p>
       ) : null}
-      {/* The heading stays outside: the tinted surface holds only what there is
-          to act on (design README, "One tinted surface means act here"). With
-          nothing to act on there is no surface, only the sentence. */}
+      {/* The heading stays outside the tinted surface; the surface is always
+          there, so the section looks the same whether or not something is
+          waiting. Empty, it holds the sentence that says so. */}
       {placeholder ? (
         <Surface className="needs-you__surface">
           <Table caption="Needs you" columns={columns} tinted hideHeader placeholderRows={3} />
         </Surface>
       ) : null}
-      {items && items.length === 0 ? <p className="empty needs-you__empty">{empty}</p> : null}
+      {items && items.length === 0 ? (
+        <Surface className="needs-you__surface needs-you__surface--empty">
+          <p className="empty">{empty}</p>
+        </Surface>
+      ) : null}
       {items && items.length > 0 ? (
         <Surface className="needs-you__surface">
           <Table caption="Needs you" columns={columns} rows={visible} rowKey={itemId} tinted hideHeader />
