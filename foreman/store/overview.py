@@ -290,6 +290,34 @@ class OverviewStore(StoreBase):
         rows = self._connection.execute(sql, tuple(page_params)).fetchall()
         return [_row_to_task(row) for row in rows], total, counts
 
+    def backlog_unplanned_origins(self, project_id: str) -> dict[str, dict[str, Any]]:
+        """Return, by task id, the sprint each backlog task was last moved back from.
+
+        One statement for the whole backlog, however many tasks it holds: the
+        latest ``human.task_unplanned`` audit event of every task now in the
+        project's backlog. A task that was never planned has no entry.
+        """
+
+        rows = self._connection.execute(
+            """
+            SELECT e.task_id AS task_id,
+                   json_extract(e.payload_json, '$.from_sprint_id') AS sprint_id,
+                   json_extract(e.payload_json, '$.from_sprint_title') AS sprint_title
+            FROM events e
+            JOIN tasks t ON t.id = e.task_id
+            JOIN sprints b ON b.id = t.sprint_id
+            WHERE b.project_id = ? AND b.kind = 'backlog'
+              AND e.event_type = 'human.task_unplanned'
+            ORDER BY e.timestamp ASC, e.rowid ASC
+            """,
+            (project_id,),
+        ).fetchall()
+        origins: dict[str, dict[str, Any]] = {}
+        for row in rows:  # ascending, so the latest event for a task wins
+            if row["sprint_id"]:
+                origins[row["task_id"]] = {"id": row["sprint_id"], "title": row["sprint_title"]}
+        return origins
+
     # ── what is waiting for a person ──────────────────────────────────────
 
     def list_tasks_awaiting_person(

@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import io
 import json
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -186,6 +187,61 @@ class BacklogApiTests(BacklogCase):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertTrue(response.json()["in_backlog"])
 
+    def test_moved_back_work_names_its_sprint_and_never_planned_work_does_not(self) -> None:
+        moved = Task(id="moved", sprint_id="s2", project_id="p1", title="Moved")
+        self.store.save_task(moved)
+        Mutations(self.store, via="cli").unplan_task(moved)
+        fresh = self.file("Fresh")
+
+        tasks = {
+            t["id"]: t
+            for t in self.request("GET", "/api/v1/projects/p1/backlog").json()["tasks"]
+        }
+
+        self.assertEqual(tasks["moved"]["carried_from"], {"id": "s2", "title": "Sprint 2"})
+        self.assertIsNone(tasks[fresh.id]["carried_from"])
+
+    def test_the_latest_move_back_wins(self) -> None:
+        task = Task(id="again", sprint_id="s1", project_id="p1", title="Again")
+        self.store.save_task(task)
+        mutations = Mutations(self.store, via="cli")
+        mutations.plan_tasks([mutations.unplan_task(task)], sprint=self.store.get_sprint("s2"))
+        mutations.unplan_task(self.store.get_task(task.id))
+
+        (entry,) = self.request("GET", "/api/v1/projects/p1/backlog").json()["tasks"]
+
+        self.assertEqual(entry["carried_from"]["id"], "s2")
+
+    def test_the_query_count_does_not_grow_with_tasks(self) -> None:
+        def count() -> int:
+            statements: list[str] = []
+            original = sqlite3.connect
+
+            def traced(*args, **kwargs):
+                connection = original(*args, **kwargs)
+                connection.set_trace_callback(statements.append)
+                return connection
+
+            sqlite3.connect = traced
+            try:
+                self.assertEqual(
+                    self.request("GET", "/api/v1/projects/p1/backlog").status_code, 200
+                )
+            finally:
+                sqlite3.connect = original
+            return len([s for s in statements if s.lstrip().upper().startswith(("SELECT", "WITH"))])
+
+        def add(n: int, prefix: str) -> None:
+            for i in range(n):
+                task = Task(id=f"{prefix}{i}", sprint_id="s2", project_id="p1", title="T")
+                self.store.save_task(task)
+                Mutations(self.store, via="cli").unplan_task(task)
+
+        add(1, "a")
+        few = count()
+        add(8, "b")
+        self.assertEqual(count(), few)
+
     def test_sprint_endpoints_do_not_list_or_serve_the_backlog(self) -> None:
         self.file("Waiting")
 
@@ -284,6 +340,19 @@ class BacklogCliTests(BacklogCase):
         code, _, err = self.run_cli("sprint", "activate", "p1-backlog")
         self.assertEqual(code, 1)
         self.assertEqual(self.store.get_task(filed.id).status, "triage")
+
+    def test_list_json_carries_where_moved_back_work_came_from(self) -> None:
+        moved = Task(id="moved", sprint_id="s2", project_id="p1", title="Moved")
+        self.store.save_task(moved)
+        self.assertEqual(self.run_cli("backlog", "unplan", "moved")[0], 0)
+        fresh = self.file("Fresh")
+
+        code, out, _ = self.run_cli("backlog", "list", "p1", "--json")
+
+        self.assertEqual(code, 0)
+        tasks = {t["id"]: t for t in json.loads(out)["tasks"]}
+        self.assertEqual(tasks["moved"]["carried_from"], {"id": "s2", "title": "Sprint 2"})
+        self.assertIsNone(tasks[fresh.id]["carried_from"])
 
     def test_sprint_list_does_not_show_the_backlog(self) -> None:
         self.file("Waiting")
