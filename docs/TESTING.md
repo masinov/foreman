@@ -106,8 +106,6 @@ The current suite covers:
   default and allowlisted origins, manager routes forbidden when disabled,
   the bounded events page, the bind security policy and its CLI flags, and
   repository path validation on project creation
-- `frontend/src/legacy/api.test.js` for the bearer header, the stream URL token,
-  `UnauthorizedError`, and token storage
 - `tests/test_roles.py` and `tests/test_workflows.py` for shipped declarative
   configuration loading and validation
 - `tests/test_runner_env.py` for role `[agent.env]` value resolution and
@@ -153,17 +151,15 @@ The current suite covers:
   FastAPI HTTP routes, built frontend shell delivery, frontend-dev redirect
   behavior, task detail data, human message persistence, incremental
   sprint-event stream payloads, and approve or deny integration behavior
-- `frontend/src/legacy/App.test.jsx` for the pre-v7 dashboard (served at
-  `/dashboard/legacy` until sprint 58 removes it): navigation, message
-  submission, and stream-driven activity updates; `legacy/routing.test.js`
-  for its base path
 - `frontend/src/api/` tests for the `/api/v1` client and its error envelope,
   `useResource` (stale responses ignored, errors as sentences, reload, the
   200 ms placeholder delay), and the workspace loader against fake API
   answers
 - `frontend/src/app/` tests for the route table (every ADR-0020 route,
-  not-found) and the shell: route-driven breadcrumb, the being-rebuilt page
-  and its legacy link, anchors, in-app navigation and back
+  not-found, and the terminal commands a route without a page names) and the
+  shell: route-driven breadcrumb, the not-built page naming those commands
+  and linking nowhere, `/dashboard/legacy` rendering not-found, anchors,
+  in-app navigation and back
 - `frontend/src/ui/` one test file per primitive
 - `frontend/src/pages/workspace/WorkspacePage.test.jsx` for rows from API
   data, the empty Needs you, Approve calling the approve endpoint and

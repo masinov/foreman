@@ -515,13 +515,14 @@ The frontend is being rebuilt to `docs/design/dashboard-v7/` in sprint 58.
 | `ui/` | primitives: `Button`, `Table`, `Surface`, `StatusDot`, `Tabs`, `SectionHeading`, `Mono`, `Menu`, `Dialog`, `Field`, `Disclosure`, and `format.js` |
 | `pages/` | `workspace/` and `project/` (built: Sprints and Activity tabs over one shared head, `ProjectLayout`), `shared/` (Needs you, the milestone table, shared wording), `status/` (the shared "being rebuilt" page and not-found) |
 | `styles/` | `tokens.css` (the only place a colour, size, radius or line weight is written), `base.css`, `shell.css`, `ui.css`, and one stylesheet per page area |
-| `legacy/` | the pre-v7 application, served at `/dashboard/legacy` until the rebuild's last slice deletes it |
 | `testing/` | the fake API used by tests |
 
-The entry (`app/main.jsx`) loads either the rebuilt application or the
-legacy one by path, each as its own chunk, so the legacy global stylesheet
-never reaches rebuilt pages. Routes without a rebuilt page render one shared
-"This page is being rebuilt" page linking into `/dashboard/legacy`.
+The entry (`app/main.jsx`) mounts the one application. Routes without a
+rebuilt page render one shared "This page is not built yet" page that links
+nowhere and names the terminal commands (from `docs/MANUAL.md`, listed as
+`cli` on the route) that do the same job. The pre-v7 application was removed
+on 2026-11-12; what it could do is recorded in
+`docs/design/dashboard-v7/legacy-capabilities.md`.
 `styles/rules.test.js` fails if a stylesheet other than `tokens.css` names a
 colour or a size, if a component uses an inline style, or if a page or
 primitive calls `fetch`.
