@@ -495,7 +495,8 @@ The current dashboard baseline includes:
   streaming contracts in `foreman/dashboard_service.py`,
 - FastAPI route delivery in `foreman/dashboard/`,
 - a dedicated React and Vite frontend source workspace in `frontend/`,
-- built frontend assets in `foreman/dashboard_frontend_dist/`,
+- built frontend assets in `foreman/dashboard_frontend_dist/` (not in git;
+  built by `foreman dashboard`, CI and the test step),
 - Vite dev-mode `/api` proxying plus a combined local dashboard dev launcher
   in `scripts/dashboard_dev.py`,
 - project overview and multi-project switching,

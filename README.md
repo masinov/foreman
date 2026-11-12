@@ -86,7 +86,8 @@ The integrated pre-release baseline now contains:
   queue-oriented sprint management, task detail, activity feed, human message
   input, decision-gate handling, project switching, a per-project meta-agent
   panel, and live sprint activity updates,
-- built dashboard assets in `foreman/dashboard_frontend_dist/` served by the
+- dashboard assets built into `foreman/dashboard_frontend_dist/` (not in git;
+  `foreman dashboard` builds them when missing or stale) and served by the
   FastAPI backend,
 - `foreman/dashboard_runtime.py` as the dashboard runtime entrypoint and
   frontend asset guard plus dev-mode launch support,

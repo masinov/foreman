@@ -20,8 +20,9 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from ..dashboard_runtime import (
     DASHBOARD_ASSETS_DIR,
     DASHBOARD_INDEX_PATH,
+    MISSING_BUNDLE_MESSAGE,
     build_frontend_dev_redirect_url,
-    ensure_dashboard_assets,
+    dashboard_assets_present,
     normalize_frontend_dev_url,
 )
 from ..api_tokens import looks_like_api_token
@@ -113,8 +114,10 @@ def create_dashboard_app(
     ``Host`` header unchecked.
     """
 
+    # The API does not depend on the bundle: it is built, not committed
+    # (ADR-0020), so the app starts without it and the shell route says so.
     if frontend_mode == "dist":
-        ensure_dashboard_assets()
+        pass
     elif frontend_mode == "dev":
         if frontend_dev_url is None:
             raise RuntimeError("Frontend dev mode requires a frontend dev URL.")
@@ -292,11 +295,6 @@ def create_dashboard_app(
         for module in ROUTERS:
             app.include_router(module.build_router(context), prefix=prefix)
 
-    dashboard_html = (
-        DASHBOARD_INDEX_PATH.read_text(encoding="utf-8")
-        if frontend_mode == "dist"
-        else None
-    )
 
     def _resolve_asset_path(asset_path: str) -> Path | None:
         candidate = (DASHBOARD_ASSETS_DIR / asset_path).resolve()
@@ -336,7 +334,13 @@ def create_dashboard_app(
             return RedirectResponse(
                 url=build_frontend_dev_redirect_url(frontend_dev_url, route_path)
             )
-        return HTMLResponse(dashboard_html)
+        # Read per request, so a rebuilt bundle is served without a restart.
+        if not dashboard_assets_present():
+            return HTMLResponse(
+                f"<!doctype html><title>Foreman</title><p>{MISSING_BUNDLE_MESSAGE}</p>",
+                status_code=503,
+            )
+        return HTMLResponse(DASHBOARD_INDEX_PATH.read_text(encoding="utf-8"))
 
     return app
 
