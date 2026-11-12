@@ -39,7 +39,6 @@
 - `frontend/src/pages/manager/*`, `frontend/src/app/{App,Shell,manager,ManagerToggle}.*`,
   `frontend/src/api/{client,manager}.js`, `frontend/src/styles/{manager,shell,tokens}.css`,
   `frontend/src/testing/fakeApi.jsx` (a handler may return a raw `Response`).
-- `foreman/dashboard_frontend_dist/` rebuilt.
 - `docs/ARCHITECTURE.md`, `docs/design/dashboard-v7/legacy-capabilities.md`.
 
 ## Migrations
@@ -67,7 +66,7 @@
   stream with the cursor, Enter and Shift+Enter, an error event, a refused
   request and a stream that stops early each offering Retry, clearing after a
   confirmation, and the overlay rules in CSS.
-- `npm --prefix frontend run build`, bundle committed.
+- `npm --prefix frontend run build` succeeds (the bundle is no longer committed, ADR-0020 decision 10).
 - `./venv/bin/python -m unittest discover -s tests`: 1248 run, OK (1 skipped).
 
 ## Screenshots or output examples
@@ -84,7 +83,7 @@
 - "You are on" follows the route. Tested.
 - Narrow-width overlay is in CSS; the Close control is a button, so it is
   reachable by keyboard.
-- Frontend tests pass, bundle rebuilt and committed, Python suite passes, this
+- Frontend tests pass, build succeeds, Python suite passes, this
   file exists with the proposal gap named below.
 
 ## Follow-ups

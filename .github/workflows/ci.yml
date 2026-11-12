@@ -23,6 +23,16 @@ jobs:
           # which needs setuptools in the environment (absent from 3.12 venvs).
           ./venv/bin/pip install setuptools wheel
           ./venv/bin/pip install -e ".[dev]"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Build the dashboard frontend
+        # The bundle is not in git; the tests that serve it need it built.
+        run: |
+          npm --prefix frontend ci
+          npm --prefix frontend run build
       - name: Lint
         run: ./venv/bin/ruff check foreman tests scripts
       - name: Repository memory
@@ -49,5 +59,3 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
-      - name: Committed bundle matches the source
-        run: git diff --exit-code -- ../foreman/dashboard_frontend_dist

@@ -72,9 +72,15 @@ on the result: "the base is ready for implementation".
    state and an accessible name. Motion is off under
    `prefers-reduced-motion`.
 10. Each page lands with tests (Vitest and Testing Library) for what it
-    shows and what its controls call. The built bundle in
-    `foreman/dashboard_frontend_dist` is rebuilt and committed by the change
-    that alters the source, as CI checks.
+    shows and what its controls call. **Amended 2026-11-12, by owner
+    decision: the built bundle is not in git.** While it was committed, every
+    frontend change rebuilt it under new file names, so any two frontend
+    branches open at once conflicted; in sprint 58 five merges were sent back
+    for that alone. `foreman/dashboard_frontend_dist` is ignored. `foreman
+    dashboard` builds it when it is missing or older than the source, CI and
+    the project's test step build it, a release builds it before packaging,
+    and the API starts without it (the shell route answers 503 and says how
+    to build).
 11. During the rebuild the old application stayed reachable under
     `/dashboard/legacy`, so nothing an operator could do was lost between
     merges. **Amended 2026-11-12, by owner decision: the seam was removed
