@@ -57,6 +57,9 @@ Read it if you need to understand the broader product direction.
 - Create ADRs in docs/adr/ for meaningful architectural decisions
 - Create or update docs/ARCHITECTURE.md and docs/ROADMAP.md when your
   work changes the codebase structure or project direction
+- Your step ends when your message ends. Run every command in the
+  foreground and wait for its result; never end a message while something
+  you started is still running.
 - When the task is fully complete, run the test suite yourself to confirm
   all tests pass. The engine may also run tests independently after review.
   Write a structured completion summary and end your message with:

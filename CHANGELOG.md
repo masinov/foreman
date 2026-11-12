@@ -9,6 +9,16 @@ memory changes rather than versioned product releases.
 
 ### Sprint 58 — frontend rebuild
 
+- **fix, a step cannot leave work in the background**
+  (`fix/agent-steps-wait-in-foreground`): the first sprint 58 task was
+  blocked with its work done. The agent's test run outlived Claude Code's
+  120 s command timeout, was moved to the background, and the agent ended
+  its turn to wait for it, which ends a headless step. The Claude Code
+  runner now starts every step with background commands off and a 20 minute
+  default command timeout (`HEADLESS_STEP_ENV`; a role's `[agent.env]`
+  overrides it), and the developer prompts say a step ends when the message
+  ends.
+
 - **design reference** (`docs/dashboard-design-v7`): `docs/design/dashboard-v7/`
   is the UI reference (17 screens and a README with the rules), replacing
   `docs/mockups/foreman-mockup-v6.html`, which is kept as history. ADR-0020

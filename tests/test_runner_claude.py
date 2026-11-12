@@ -156,8 +156,9 @@ class ClaudeCodeRunnerTests(unittest.TestCase):
         self.assertIsInstance(env, dict)
         self.assertEqual(env["ANTHROPIC_BASE_URL"], "https://api.minimax.io/anthropic")
         self.assertEqual(env["ANTHROPIC_AUTH_TOKEN"], "test-token")
+        self.assertEqual(env["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"], "1")
 
-    def test_run_omits_environment_kwarg_when_unconfigured(self) -> None:
+    def test_a_step_cannot_leave_work_in_the_background(self) -> None:
         temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(temp_dir.cleanup)
         repo_path = Path(temp_dir.name)
@@ -184,7 +185,25 @@ class ClaudeCodeRunnerTests(unittest.TestCase):
 
         list(runner.run(config))
 
-        self.assertNotIn("env", popen.calls[0][1])
+        env = popen.calls[0][1]["env"]
+        self.assertEqual(env["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"], "1")
+        self.assertGreaterEqual(int(env["BASH_DEFAULT_TIMEOUT_MS"]), 600_000)
+        self.assertGreaterEqual(int(env["BASH_MAX_TIMEOUT_MS"]), int(env["BASH_DEFAULT_TIMEOUT_MS"]))
+
+    def test_a_role_can_override_the_headless_step_environment(self) -> None:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        config = self.create_config(Path(temp_dir.name))
+        config.env["BASH_DEFAULT_TIMEOUT_MS"] = "5000"
+        process = _FakeProcess(
+            lines=[json.dumps({"type": "result", "is_error": False, "session_id": "s", "result": "TASK_COMPLETE"}) + "\n"]
+        )
+        popen = _PopenRecorder(process)
+        runner = ClaudeCodeRunner(popen_factory=popen, clock=lambda: 0.0, which=lambda _: "/usr/bin/claude")
+
+        list(runner.run(config))
+
+        self.assertEqual(popen.calls[0][1]["env"]["BASH_DEFAULT_TIMEOUT_MS"], "5000")
 
     def test_run_maps_stream_json_events_and_strips_signal_lines_from_messages(self) -> None:
         temp_dir = tempfile.TemporaryDirectory()
