@@ -468,10 +468,13 @@ class DashboardBackendTests(unittest.TestCase):
         human_events = [e for e in events if e.event_type == "human.message"]
         self.assertEqual(len(human_events), 1)
         self.assertEqual(human_events[0].payload["text"], "Please add more tests")
-        self.assertEqual(
+        # Recorded through the mutation service: the step, the clock's stamp
+        # and the task, made unique by a random part.
+        self.assertRegex(
             human_events[0].id,
-            "evt-20260330140000123456-task-2",
+            r"^evt-message-20260330140000123456-[0-9a-f]{8}-task-2$",
         )
+        self.assertEqual(human_events[0].payload["via"], "dashboard")
 
     def test_fastapi_dashboard_assets_route_returns_built_bundle(self):
         """FastAPI serves the built JavaScript bundle referenced by the React shell."""

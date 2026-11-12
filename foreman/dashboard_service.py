@@ -49,7 +49,6 @@ from .models import (
     Sprint,
     Task,
 )
-from .orchestrator import ForemanOrchestrator, OrchestratorError
 from .policy import PolicyMatrix, describe_resolution
 from .scaffold import generate_project_id
 from .settings import (
@@ -807,24 +806,12 @@ class DashboardService:
 
         from .models import TASK_COMPLEXITIES, TASK_TYPES
 
-        sprints = self.store.list_sprints(project_id)
-        sprint_id = f"sprint-{_stable_slug(title)}"
-        suffix = 2
-        while self.store.get_sprint(sprint_id) is not None:
-            sprint_id = f"sprint-{_stable_slug(title)}-{suffix}"
-            suffix += 1
-
-        now = self._now().isoformat()
-        sprint = Sprint(
-            id=sprint_id,
-            project_id=project_id,
-            title=title.strip(),
-            goal=goal.strip() if goal else None,
-            status="planned",
-            order_index=max((s.order_index for s in sprints), default=-1) + 1,
-            created_at=now,
-        )
-        self.store.save_sprint(sprint)
+        try:
+            sprint = self._mutations().create_sprint(project, title=title, goal=goal)
+        except MutationError as exc:
+            raise DashboardValidationError(str(exc)) from exc
+        sprint_id = sprint.id
+        now = sprint.created_at
 
         created_tasks = []
         for i, task_data in enumerate(initial_tasks or []):
@@ -1209,88 +1196,19 @@ class DashboardService:
         can account for it on its next run.
         """
 
-        from .models import TASK_TYPES, validate_executor_overrides
-
         task = self._require_task(task_id)
-        allowed_fields = {
-            "title",
-            "task_type",
-            "acceptance_criteria",
-            "description",
-            "priority",
-            "executor_overrides",
-        }
-        unknown = set(updates) - allowed_fields
-        if unknown:
-            raise DashboardValidationError(f"Unknown task fields: {sorted(unknown)}")
-
-        changed: dict[str, Any] = {}
-
-        if "title" in updates:
-            value = str(updates["title"]).strip()
-            if not value:
-                raise DashboardValidationError("Task title cannot be empty.")
-            if value != task.title:
-                changed["title"] = value
-            task.title = value
-        if "task_type" in updates:
-            value = str(updates["task_type"])
-            if value not in TASK_TYPES:
-                raise DashboardValidationError(
-                    f"Unsupported task type: {value}. Expected one of: {', '.join(TASK_TYPES)}."
-                )
-            if value != task.task_type:
-                changed["task_type"] = value
-            task.task_type = value  # type: ignore[assignment]
-        if "acceptance_criteria" in updates:
-            value = updates["acceptance_criteria"]
-            normalised = str(value).strip() if value else None
-            if normalised != task.acceptance_criteria:
-                changed["acceptance_criteria"] = normalised
-            task.acceptance_criteria = normalised
-        if "description" in updates:
-            value = updates["description"]
-            normalised = str(value).strip() if value is not None else None
-            if normalised != task.description:
-                changed["description"] = normalised
-            task.description = normalised
-        if "priority" in updates:
-            try:
-                int_value = int(updates["priority"])
-            except (TypeError, ValueError) as exc:
-                raise DashboardValidationError("Priority must be an integer.") from exc
-            if int_value != task.priority:
-                changed["priority"] = int_value
-            task.priority = int_value
-        if "executor_overrides" in updates:
-            try:
-                normalized = validate_executor_overrides(
-                    updates["executor_overrides"],
-                    valid_steps=self._project_workflow_step_ids(task.project_id),
-                )
-            except ValueError as exc:
-                raise DashboardValidationError(str(exc)) from exc
-            if normalized != (task.executor_overrides or {}):
-                changed["executor_overrides"] = normalized
-            task.executor_overrides = normalized
-
-        self.store.save_task(task)
-
-        if changed and task.status in {"in_progress", "blocked"}:
-            now = self._now()
-            now_text = now.isoformat()
-            run_id = self._ensure_event_run(task, step="edit", outcome="edit", now=now)
-            event = Event(
-                id=f"evt-{now.strftime('%Y%m%d%H%M%S%f')}-edit-{task_id[:8]}",
-                run_id=run_id,
-                task_id=task_id,
-                project_id=task.project_id,
-                event_type="human.task_edited",
-                timestamp=now_text,
-                role_id="human",
-                payload={"changed_fields": changed},
+        try:
+            self._mutations().edit_task(
+                task,
+                updates,
+                valid_steps=(
+                    self._project_workflow_step_ids(task.project_id)
+                    if "executor_overrides" in updates
+                    else None
+                ),
             )
-            self.store.save_event(event)
+        except MutationError as exc:
+            raise DashboardValidationError(str(exc)) from exc
 
         return self.get_task(task_id)
 
@@ -1298,26 +1216,10 @@ class DashboardService:
         """Apply non-lifecycle field updates to one sprint (title, goal)."""
 
         sprint = self._require_sprint(sprint_id)
-
-        allowed_fields = {"title", "goal", "order_index"}
-        unknown = set(updates) - allowed_fields
-        if unknown:
-            raise DashboardValidationError(f"Unknown sprint fields: {sorted(unknown)}")
-        if not updates:
-            raise DashboardValidationError("No fields provided for update.")
-
-        if "title" in updates:
-            value = str(updates["title"]).strip()
-            if not value:
-                raise DashboardValidationError("Sprint title cannot be empty.")
-            sprint.title = value
-        if "goal" in updates:
-            value = updates["goal"]
-            sprint.goal = str(value).strip() if value else None
-        if "order_index" in updates:
-            sprint.order_index = int(updates["order_index"])
-
-        self.store.save_sprint(sprint)
+        try:
+            sprint = self._mutations().edit_sprint(sprint, updates)
+        except MutationError as exc:
+            raise DashboardValidationError(str(exc)) from exc
         return {
             "id": sprint.id,
             "title": sprint.title,
@@ -1663,12 +1565,9 @@ class DashboardService:
         """
 
         task = self._require_task(task_id)
-        orchestrator = ForemanOrchestrator(self.store)
         try:
-            result = orchestrator.resume_human_gate(
-                task_id, outcome=outcome, note=note, defer=True
-            )
-        except OrchestratorError as exc:
+            result = self._mutations().decide_gate(task, outcome, note)
+        except MutationError as exc:
             raise DashboardActionError(f"Failed to {outcome}: {exc}") from exc
         resident = self.store.get_engine_lock(task.project_id) is not None
         return {
@@ -1696,23 +1595,12 @@ class DashboardService:
         """
 
         task = self._require_task(task_id)
-        normalized_text = text.strip()
-        if not normalized_text:
+        if not text.strip():
             raise DashboardValidationError("Message text required")
-
-        now = self._now()
-        run_id = self._ensure_event_run(task, step="message", outcome="message", now=now)
-        event = Event(
-            id=f"evt-{now.strftime('%Y%m%d%H%M%S%f')}-{task_id[:8]}",
-            run_id=run_id,
-            task_id=task_id,
-            project_id=task.project_id,
-            event_type="human.message",
-            timestamp=now.isoformat(),
-            role_id="human",
-            payload={"text": normalized_text},
-        )
-        self.store.save_event(event)
+        try:
+            event = self._mutations().record_guidance(task, text)
+        except MutationError as exc:
+            raise DashboardValidationError(str(exc)) from exc
         will_deliver = task.status not in {"done", "cancelled"}
         return {
             "status": "recorded",
@@ -1931,45 +1819,6 @@ class DashboardService:
             "blocked_gate": counts["gate"],
             "blocked_engine": counts["engine"],
         }
-
-    def _ensure_event_run(
-        self,
-        task: Task,
-        *,
-        step: str,
-        outcome: str,
-        now: datetime | None = None,
-        role_id: str = "human",
-        agent_backend: str = "dashboard",
-    ) -> str:
-        """Return a real run id for dashboard-authored task events.
-
-        ``role_id`` and ``agent_backend`` name the author of the synthetic run,
-        so an event filed by the intake API is distinguishable from one a
-        person clicked.
-        """
-
-        runs = self.store.list_runs(task_id=task.id)
-        if runs:
-            return runs[-1].id
-
-        timestamp = now or self._now()
-        timestamp_text = timestamp.isoformat()
-        synthetic_run = Run(
-            id=f"run-{step}-{timestamp.strftime('%Y%m%d%H%M%S%f')}-{task.id[:8]}",
-            task_id=task.id,
-            project_id=task.project_id,
-            role_id=role_id,
-            workflow_step=step,
-            agent_backend=agent_backend,
-            status="completed",
-            outcome=outcome,
-            started_at=timestamp_text,
-            completed_at=timestamp_text,
-            created_at=timestamp_text,
-        )
-        self.store.save_run(synthetic_run)
-        return synthetic_run.id
 
     # ── Intake ────────────────────────────────────────────────────────────────
 
