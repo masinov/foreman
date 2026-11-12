@@ -213,7 +213,7 @@ export function NeedsYou({ projectId = null, note, empty, onChanged }) {
 
   const headingId = projectId ? `needs-you-${projectId}` : "needs-you-title";
   return (
-    <Surface as="section" className="needs-you" aria-labelledby={headingId}>
+    <section className="needs-you" aria-labelledby={headingId}>
       <SectionHeading id={headingId} title="Needs you" count={total} note={note} />
       {notice ? (
         <p className={notice.error ? "notice notice--error" : "notice"} role={notice.error ? "alert" : "status"}>
@@ -225,10 +225,21 @@ export function NeedsYou({ projectId = null, note, empty, onChanged }) {
           {list.error}
         </p>
       ) : null}
-      {placeholder ? <Table caption="Needs you" columns={columns} tinted hideHeader placeholderRows={3} /> : null}
-      {items && items.length === 0 ? <p className="empty">{empty}</p> : null}
+      {/* The heading stays outside the tinted surface; the surface is always
+          there, so the section looks the same whether or not something is
+          waiting. Empty, it holds the sentence that says so. */}
+      {placeholder ? (
+        <Surface className="needs-you__surface">
+          <Table caption="Needs you" columns={columns} tinted hideHeader placeholderRows={3} />
+        </Surface>
+      ) : null}
+      {items && items.length === 0 ? (
+        <Surface className="needs-you__surface needs-you__surface--empty">
+          <p className="empty">{empty}</p>
+        </Surface>
+      ) : null}
       {items && items.length > 0 ? (
-        <>
+        <Surface className="needs-you__surface">
           <Table caption="Needs you" columns={columns} rows={visible} rowKey={itemId} tinted hideHeader />
           {total > NEEDS_YOU_CAP ? (
             <Button
@@ -240,8 +251,8 @@ export function NeedsYou({ projectId = null, note, empty, onChanged }) {
               {expanded ? "Show fewer" : `Show all ${total}`}
             </Button>
           ) : null}
-        </>
+        </Surface>
       ) : null}
-    </Surface>
+    </section>
   );
 }
