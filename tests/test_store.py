@@ -162,6 +162,7 @@ class ForemanStoreTests(unittest.TestCase):
                     "blocked": 0,
                     "done": 0,
                     "cancelled": 0,
+                    "declined": 0,
                 },
             )
 
@@ -883,6 +884,7 @@ class ForemanStoreTests(unittest.TestCase):
                     "blocked": 0,
                     "done": 0,
                     "cancelled": 0,
+                    "declined": 0,
                 },
             )
             self.assertEqual(

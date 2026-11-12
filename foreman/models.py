@@ -15,7 +15,10 @@ ProjectMethodology = Literal["development"]
 AutonomyLevel = Literal["directed", "supervised", "autonomous"]
 GateStatus = Literal["pending", "accepted", "rejected", "dismissed"]
 SprintStatus = Literal["planned", "active", "completed", "cancelled"]
-TaskStatus = Literal["triage", "todo", "in_progress", "blocked", "done", "cancelled"]
+SprintKind = Literal["sprint", "backlog"]
+TaskStatus = Literal[
+    "triage", "todo", "in_progress", "blocked", "done", "cancelled", "declined"
+]
 TaskType = Literal["feature", "fix", "refactor", "docs", "spike", "chore"]
 RunStatus = Literal["pending", "running", "completed", "failed", "killed", "timeout"]
 
@@ -24,6 +27,14 @@ SPRINT_STATUSES: tuple[SprintStatus, ...] = (
     "active",
     "completed",
     "cancelled",
+)
+#: A sprint row is either a sprint or the project's backlog (ADR-0021). The
+#: backlog is never listed, counted, activated or run as a sprint.
+SPRINT_KINDS: tuple[SprintKind, ...] = ("sprint", "backlog")
+BACKLOG_TITLE = "Backlog"
+BACKLOG_GOAL = (
+    "Work that is filed or accepted and not yet planned into a sprint. "
+    "The engine never runs it."
 )
 TASK_STATUSES: tuple[TaskStatus, ...] = (
     # Work another system filed that a person has not yet accepted. The engine
@@ -34,7 +45,16 @@ TASK_STATUSES: tuple[TaskStatus, ...] = (
     "blocked",
     "done",
     "cancelled",
+    # Filed work a person declined. It stays in the backlog, kept for the
+    # record, and is never planned or run (ADR-0021).
+    "declined",
 )
+#: A backlog task's state as the API and the CLI name it, by task status.
+BACKLOG_STATES: dict[str, str] = {
+    "filed": "triage",
+    "accepted": "todo",
+    "declined": "declined",
+}
 TASK_TYPES: tuple[TaskType, ...] = (
     "feature",
     "fix",
@@ -188,6 +208,12 @@ class Sprint:
     created_at: str = field(default_factory=utc_now_text)
     started_at: str | None = None
     completed_at: str | None = None
+    #: ``backlog`` for the project's one backlog (ADR-0021).
+    kind: SprintKind = "sprint"
+
+    @property
+    def is_backlog(self) -> bool:
+        return self.kind == "backlog"
 
 
 @dataclass(slots=True)
