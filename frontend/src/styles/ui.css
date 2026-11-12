@@ -472,15 +472,13 @@
 
 /* Facts: a mono line of labelled values, each with its icon */
 .facts {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-1) var(--space-2);
+  white-space: pre-wrap;
 }
 
 .facts__item {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
+  vertical-align: middle;
   overflow-wrap: anywhere;
 }

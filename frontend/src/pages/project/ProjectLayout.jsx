@@ -30,11 +30,13 @@ function TitleRow({ projectId, project }) {
         {facts.length ? (
           <Mono quiet className="facts">
             {facts.map((fact, index) => (
-              <span className="facts__item" key={fact.text}>
-                {index > 0 ? <span aria-hidden="true">· </span> : null}
-                {fact.icon ? <Icon name={fact.icon} /> : null}
-                {fact.text}
-              </span>
+              <React.Fragment key={fact.text}>
+                {index > 0 ? " · " : null}
+                <span className="facts__item">
+                  {fact.icon ? <Icon name={fact.icon} /> : null}
+                  {fact.text}
+                </span>
+              </React.Fragment>
             ))}
           </Mono>
         ) : null}
