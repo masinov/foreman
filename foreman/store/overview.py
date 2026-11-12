@@ -12,9 +12,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Sequence
 
-from ..models import Sprint, Task, TASK_STATUSES
+from ..models import DecisionGate, Sprint, Task, TASK_STATUSES
 from .base import ENGINE_RESOURCE_TYPE, StoreBase
-from .rows import _row_to_sprint, _row_to_task
+from .rows import _row_to_gate, _row_to_sprint, _row_to_task
 
 #: Every kind of milestone, in the order the API documents them.
 MILESTONE_KINDS: tuple[str, ...] = (
@@ -373,6 +373,18 @@ class OverviewStore(StoreBase):
             (_row_to_task(row), str(row["waiting_since"]))
             for row in self._connection.execute(sql, params).fetchall()
         ]
+
+    def list_pending_decision_gates(
+        self, *, project_id: str | None = None
+    ) -> list[DecisionGate]:
+        """Return every decision gate (a proposed sprint order) nobody settled."""
+
+        sql = "SELECT * FROM decision_gates WHERE status = 'pending'"
+        params: tuple[Any, ...] = ()
+        if project_id is not None:
+            sql += " AND project_id = ?"
+            params = (project_id,)
+        return [_row_to_gate(row) for row in self._connection.execute(sql, params).fetchall()]
 
     # ── milestones ────────────────────────────────────────────────────────
 

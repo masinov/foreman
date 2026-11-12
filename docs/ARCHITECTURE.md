@@ -398,7 +398,12 @@ bad one is a 400 `invalid_request` envelope (ADR-0019). Paged lists take
   `evidence` object (`tests_status`, `tested_sha`, `review_outcome`,
   `reviewed_sha`, `head_sha`, `proof_status`; ADR-0018) or null. A gate whose
   policy is `plan_approval` is `approve_plan`; every other human gate is
-  `approve_merge`. `since` is the end of the task's last run (what parked it),
+  `approve_merge`. A pending decision gate (a proposed sprint order) is a
+  fifth kind, `settle_order`: it has no task (`task_id`, `task_key` and
+  `task_title` are null) and carries `gate` (`id`, `conflict_description`,
+  `suggested_reason`, `suggested_order` as `{sprint_id, title}`); `since` is
+  when it was raised and the page settles it with `PATCH /gates/{id}`
+  (`accepted` or `rejected`). It counts in the workspace's `needs_you`. `since` is the end of the task's last run (what parked it),
   or its creation for filed work never run. A constant number of queries
   whatever the number of projects or tasks.
 - `GET /milestones` and `GET /projects/{id}/milestones` return `milestones`
@@ -499,7 +504,8 @@ The current dashboard baseline includes:
   streaming contracts in `foreman/dashboard_service.py`,
 - FastAPI route delivery in `foreman/dashboard/`,
 - a dedicated React and Vite frontend source workspace in `frontend/`,
-- built frontend assets in `foreman/dashboard_frontend_dist/`,
+- built frontend assets in `foreman/dashboard_frontend_dist/` (not in git;
+  built by `foreman dashboard`, CI and the test step),
 - Vite dev-mode `/api` proxying plus a combined local dashboard dev launcher
   in `scripts/dashboard_dev.py`,
 - project overview and multi-project switching,

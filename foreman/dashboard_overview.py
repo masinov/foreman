@@ -22,7 +22,7 @@ from .engine_control import (
     describe_engine,
     resolve_gate_steps,
 )
-from .models import Project, Task
+from .models import DecisionGate, Project, Task
 from .store import ForemanStore
 from .store.overview import MILESTONE_KINDS, MilestoneRow
 
@@ -32,12 +32,16 @@ __all__ = [
     "WorkspaceReader",
 ]
 
-#: What a person can be asked for, in the order the API documents them.
+#: What a person can be asked for, in the order the API documents them. The
+#: first four are the design's kinds, each about a task. ``settle_order`` is a
+#: proposed sprint order (a decision gate): it is about a project's sprints, so
+#: it has no task, and is settled by accepting or rejecting the proposal.
 NEEDS_YOU_KINDS: tuple[str, ...] = (
     "accept_filed_work",
     "approve_plan",
     "approve_merge",
     "unblock",
+    "settle_order",
 )
 
 #: The gate policy that asks for a plan to be approved. Every other human gate
@@ -48,8 +52,12 @@ PLAN_APPROVAL_POLICY = "plan_approval"
 @dataclass(frozen=True, slots=True)
 class _Attention:
     kind: str
-    task: Task
+    project_id: str
+    sprint_id: str
     since: str
+    key: str
+    task: Task | None = None
+    gate: DecisionGate | None = None
 
 
 class WorkspaceReader:
@@ -69,9 +77,14 @@ class WorkspaceReader:
 
         projects = {p.id: p for p in self.store.list_projects()}
         items = self._attention(projects, project_id)
-        items.sort(key=lambda item: (item.since, item.task.id), reverse=True)
+        items.sort(key=lambda item: (item.since, item.key), reverse=True)
         page = items[offset : offset + limit]
-        sprints = self._sprint_titles({item.task.sprint_id for item in page})
+        wanted: set[str] = set()
+        for item in page:
+            wanted.add(item.sprint_id)
+            if item.gate is not None:
+                wanted.update(item.gate.suggested_order)
+        sprints = self._sprint_titles(wanted)
         return {
             "items": [
                 self._serialize_attention(item, projects, sprints) for item in page
@@ -90,7 +103,7 @@ class WorkspaceReader:
             if project is None:
                 continue
             if task.status == "triage":
-                found.append(_Attention("accept_filed_work", task, since))
+                found.append(_attention("accept_filed_work", task, since))
                 continue
             gates = self._gate_steps(project)
             if blocked_kind(task, gates) == "gate":
@@ -98,7 +111,16 @@ class WorkspaceReader:
                 kind = "approve_plan" if policy == PLAN_APPROVAL_POLICY else "approve_merge"
             else:
                 kind = "unblock"
-            found.append(_Attention(kind, task, since))
+            found.append(_attention(kind, task, since))
+        for gate in self.store.list_pending_decision_gates(project_id=project_id):
+            if gate.project_id not in projects:
+                continue
+            found.append(
+                _Attention(
+                    "settle_order", gate.project_id, gate.sprint_id, gate.raised_at,
+                    gate.id, gate=gate,
+                )
+            )
         return found
 
     def _serialize_attention(
@@ -110,16 +132,27 @@ class WorkspaceReader:
         task = item.task
         entry: dict[str, Any] = {
             "kind": item.kind,
-            "project_id": task.project_id,
-            "project_name": projects[task.project_id].name,
-            "sprint_id": task.sprint_id,
-            "sprint_title": sprint_titles.get(task.sprint_id),
-            "task_id": task.id,
-            "task_key": task.task_key,
-            "task_title": task.title,
+            "project_id": item.project_id,
+            "project_name": projects[item.project_id].name,
+            "sprint_id": item.sprint_id,
+            "sprint_title": sprint_titles.get(item.sprint_id),
+            "task_id": task.id if task else None,
+            "task_key": task.task_key if task else None,
+            "task_title": task.title if task else None,
             "since": item.since,
         }
-        if item.kind == "approve_merge":
+        gate = item.gate
+        if gate is not None:
+            entry["gate"] = {
+                "id": gate.id,
+                "conflict_description": gate.conflict_description,
+                "suggested_reason": gate.suggested_reason,
+                "suggested_order": [
+                    {"sprint_id": sprint_id, "title": sprint_titles.get(sprint_id)}
+                    for sprint_id in gate.suggested_order
+                ],
+            }
+        if item.kind == "approve_merge" and task is not None:
             entry["evidence"] = _merge_facts(task)
         return entry
 
@@ -162,12 +195,8 @@ class WorkspaceReader:
         needs_by_project: dict[str, int] = {}
         needs_by_sprint: dict[str, int] = {}
         for item in self._attention(by_id, None):
-            needs_by_project[item.task.project_id] = (
-                needs_by_project.get(item.task.project_id, 0) + 1
-            )
-            needs_by_sprint[item.task.sprint_id] = (
-                needs_by_sprint.get(item.task.sprint_id, 0) + 1
-            )
+            needs_by_project[item.project_id] = needs_by_project.get(item.project_id, 0) + 1
+            needs_by_sprint[item.sprint_id] = needs_by_sprint.get(item.sprint_id, 0) + 1
 
         entries = []
         for project in projects:
@@ -224,6 +253,10 @@ class WorkspaceReader:
 
     def _sprint_titles(self, sprint_ids: set[str]) -> dict[str, str]:
         return self.store.sprint_titles(sorted(sprint_ids))
+
+
+def _attention(kind: str, task: Task, since: str) -> _Attention:
+    return _Attention(kind, task.project_id, task.sprint_id, since, task.id, task=task)
 
 
 def _merge_facts(task: Task) -> dict[str, Any] | None:

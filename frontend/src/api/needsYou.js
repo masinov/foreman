@@ -9,6 +9,8 @@ export const NEEDS_YOU_KINDS = {
   approvePlan: "approve_plan",
   approveMerge: "approve_merge",
   unblock: "unblock",
+  // Not a task: a proposed sprint order, settled by accepting or rejecting it.
+  settleOrder: "settle_order",
 };
 
 /** One page as `{ items, total }`. Without `projectId`, every project. */

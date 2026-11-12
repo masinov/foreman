@@ -84,3 +84,14 @@ Confirm:
 4. `CHANGELOG.md` is updated
 5. open risks are documented
 6. a checkpoint note exists if the milestone matters long-term
+
+## Building a release
+
+The dashboard bundle is not in git (ADR-0020, decision 10). Build it before
+packaging, or the package ships without a dashboard:
+
+```
+npm --prefix frontend ci
+npm --prefix frontend run build
+./venv/bin/python -m build
+```

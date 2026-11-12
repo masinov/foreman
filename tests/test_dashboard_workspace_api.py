@@ -11,7 +11,7 @@ import unittest
 import httpx
 
 from foreman.dashboard.app import create_dashboard_app
-from foreman.models import CompletionEvidence, Event, Project, Run, Sprint, Task
+from foreman.models import CompletionEvidence, DecisionGate, Event, Project, Run, Sprint, Task
 from foreman.store import ForemanStore
 
 ENGINE = "engine"
@@ -179,6 +179,71 @@ class NeedsYouTests(WorkspaceApiCase):
         small = self.count_queries("/api/v1/needs-you")
         for i in range(30):
             self.task(f"more-{i}", "s1", "p1", "triage")
+        self.assertEqual(self.count_queries("/api/v1/needs-you"), small)
+
+
+class SprintOrderNeedsYouTests(WorkspaceApiCase):
+    """A proposed sprint order is the fifth thing that waits for a person."""
+
+    def seed(self) -> None:
+        self.seed_attention()
+        self.sprint("s1b", "p1", "Sprint 1b")
+        self.store.save_decision_gate(DecisionGate(
+            id="gate-1", project_id="p1", sprint_id="s1",
+            conflict_description="Sprint 1b needs the schema from Sprint 1.",
+            suggested_order=["s1", "s1b"], suggested_reason="Schema first.",
+            raised_at="2026-01-01T00:00:05Z",
+        ))
+        self.store.save_decision_gate(DecisionGate(
+            id="gate-old", project_id="p1", sprint_id="s1", conflict_description="Old.",
+            status="rejected", raised_at="2026-01-01T00:00:06Z",
+        ))
+
+    def test_a_pending_gate_is_listed_with_its_proposal(self) -> None:
+        self.seed()
+        body = self.get("/api/v1/projects/p1/needs-you").json()
+        self.assertEqual(body["total"], 3)
+        item = body["items"][0]
+        self.assertEqual((item["kind"], item["task_id"], item["task_title"]), ("settle_order", None, None))
+        self.assertEqual((item["project_id"], item["sprint_id"], item["sprint_title"], item["since"]),
+                         ("p1", "s1", "Sprint 1", "2026-01-01T00:00:05Z"))
+        self.assertEqual(item["gate"], {
+            "id": "gate-1",
+            "conflict_description": "Sprint 1b needs the schema from Sprint 1.",
+            "suggested_reason": "Schema first.",
+            "suggested_order": [{"sprint_id": "s1", "title": "Sprint 1"},
+                                {"sprint_id": "s1b", "title": "Sprint 1b"}],
+        })
+        self.assertEqual(self.get("/api/v1/needs-you").json()["total"], 5)
+
+    def test_it_counts_on_the_workspace(self) -> None:
+        self.seed()
+        p1 = next(p for p in self.get("/api/v1/workspace").json()["projects"] if p["id"] == "p1")
+        self.assertEqual(p1["needs_you"], 3)  # filed work, a merge, and the gate
+        self.assertEqual(p1["active_sprint"]["needs_you"], 3)
+
+    def test_settling_it_removes_it(self) -> None:
+        self.seed()
+
+        async def patch():
+            transport = httpx.ASGITransport(app=self.app, raise_app_exceptions=False)
+            async with httpx.AsyncClient(transport=transport, base_url="http://localhost") as client:
+                return await client.patch("/api/v1/gates/gate-1", json={"resolution": "accepted"})
+
+        self.assertEqual(asyncio.run(patch()).status_code, 200)
+        body = self.get("/api/v1/projects/p1/needs-you").json()
+        self.assertEqual(body["total"], 2)
+        self.assertNotIn("settle_order", [i["kind"] for i in body["items"]])
+        self.assertEqual(self.store.get_sprint("s1b").order_index, 1)
+
+    def test_the_query_count_does_not_grow_with_gates(self) -> None:
+        self.seed()
+        small = self.count_queries("/api/v1/needs-you")
+        for i in range(20):
+            self.store.save_decision_gate(DecisionGate(
+                id=f"g{i}", project_id="p1", sprint_id="s1", conflict_description="c",
+                suggested_order=["s1", "s1b"],
+            ))
         self.assertEqual(self.count_queries("/api/v1/needs-you"), small)
 
 
