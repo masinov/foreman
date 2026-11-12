@@ -244,11 +244,11 @@ describe("the Sprints tab", () => {
     expect(calls(fetchImpl, "GET", QUEUE_URL.slice(4))).toHaveLength(1);
   });
 
-  it("says Foreman stops when the active sprint finishes if nothing is planned", async () => {
+  it("shows only the active sprint when nothing is planned, with no placeholder line", async () => {
     await renderProject("/dashboard/projects/foreman", projectRoutes({ queue: [ACTIVE] }));
-    expect(
-      await screen.findByText("None. When the active sprint is finished, Foreman stops until a sprint is planned."),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: ACTIVE.title })).toBeInTheDocument();
+    expect(screen.queryByText(/Foreman stops until a sprint is planned/)).toBeNull();
+    expect(screen.queryByText("Planned")).toBeNull();
   });
 
   it("caps planned sprints at five with a way to see the rest", async () => {
@@ -267,7 +267,7 @@ describe("the Sprints tab", () => {
     const { fetchImpl } = await renderProject("/dashboard/projects/foreman", routes);
 
     const line = await screen.findByRole("button", { name: /^Finished sprints 12/ });
-    expect(line).toHaveTextContent("Finished sprints 12, latest: Sprint 55, 28 Oct");
+    expect(line).toHaveTextContent("Finished sprints 12 · latest: Sprint 55, 28 Oct");
     expect(line).toHaveAttribute("aria-expanded", "false");
     expect(calls(fetchImpl, "GET", finishedUrl().slice(4))).toHaveLength(0);
 
@@ -276,11 +276,12 @@ describe("the Sprints tab", () => {
     expect(within(table).getAllByRole("row")).toHaveLength(11);
     expect(within(table).getByRole("link", { name: FINISHED[0].title })).toHaveAttribute("href", "/dashboard/sprints/sprint-55");
     expect(within(table).getAllByRole("row")[1]).toHaveTextContent("1 done28 Oct$0.55");
-    expect(screen.getByText("The 10 most recent, newest first")).toBeInTheDocument();
+    expect(screen.getByText("Showing 10 of 12, newest first")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Show 10 more" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show 2 more" }));
     await waitFor(() => expect(within(table).getAllByRole("row")).toHaveLength(13));
-    expect(screen.queryByRole("button", { name: "Show 10 more" })).toBeNull();
+    expect(screen.getByText("Showing all 12, newest first")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Show .* more/ })).toBeNull();
     expect(calls(fetchImpl, "GET", finishedUrl({ offset: 10 }).slice(4))).toHaveLength(1);
 
     const filter = screen.getByRole("searchbox", { name: "Filter finished sprints" });
