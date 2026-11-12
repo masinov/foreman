@@ -69,8 +69,14 @@ review, human gate, deferred approval, merge). Still true: agents run with full 
   worktree in both modes (ADR-0012, amended 2026-11-11); the agent names the
   task, not the place it works in.
 - Spec §6.4 sprint checkpoints (tag, note, event) are not built.
-- ADR-0007 describes a restricted planner session; the shipped manager chat
-  is a full-access Claude Code session.
+- ADR-0007 described a restricted planner session that was never built; the
+  manager chat was a full-access Claude Code session that changed project
+  state itself, against the design's "it proposes changes; nothing happens
+  until the person confirms". ADR-0022 (2026-11-13) supersedes ADR-0007: the
+  manager proposes (`foreman proposal create`), a person confirms in the side
+  bar or with `foreman proposal confirm`, and the CLI refuses every other
+  state change inside a manager session. The session still has a shell, so
+  this is enforced at the CLI boundary, not sandboxed.
 - `AGENTS.md` named `docs/mockups/foreman-mockup-v6.html` as the UI
   authority. On 2026-11-12 the owner agreed a new design and said it was
   ready for implementation; `docs/design/dashboard-v7/` is now the UI

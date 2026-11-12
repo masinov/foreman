@@ -2,6 +2,7 @@ import { queryString } from "./client";
 import { pauseEngine, resumeEngine, startEngine, stopEngine } from "./engine";
 import { listMilestones, MILESTONE_FILTERS } from "./milestones";
 import { listNeedsYou } from "./needsYou";
+import { confirmProposal, declineProposal, getProposal, listProposals } from "./proposals";
 import { createSprint, listProjectSprints } from "./sprints";
 import { getWorkspace } from "./workspace";
 import { createFakeFetch, testClient } from "../testing/fakeApi";
@@ -16,6 +17,21 @@ describe("queryString", () => {
 });
 
 describe("resource modules", () => {
+  it("read, list, confirm and decline proposals", async () => {
+    const fetchImpl = createFakeFetch({
+      "GET /api/v1/proposals/prop%201": { id: "prop 1", state: "proposed" },
+      "GET /api/v1/projects/p/proposals?state=proposed&state=failed&limit=5": { proposals: [], total: 0 },
+      "POST /api/v1/proposals/prop-1/confirm": { id: "prop-1", state: "confirmed" },
+      "POST /api/v1/proposals/prop-1/decline": { id: "prop-1", state: "declined" },
+    });
+    const client = testClient(fetchImpl);
+    expect((await getProposal(client, "prop 1")).state).toBe("proposed");
+    expect(await listProposals(client, "p", { state: ["proposed", "failed"], limit: 5 })).toEqual({ proposals: [], total: 0 });
+    expect((await confirmProposal(client, "prop-1")).state).toBe("confirmed");
+    expect((await declineProposal(client, "prop-1")).state).toBe("declined");
+    expect(fetchImpl.calls.filter((call) => call.method === "POST").map((call) => call.body)).toEqual([{}, {}]);
+  });
+
   it("read the workspace, needs you and milestones", async () => {
     const fetchImpl = createFakeFetch({
       "GET /api/v1/workspace": { projects: [{ id: "p" }] },

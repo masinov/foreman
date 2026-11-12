@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { getSprint } from "../api/sprints";
 import { getTask } from "../api/tasks";
@@ -92,4 +92,33 @@ export function useManagerTarget(route, params) {
   if (sprintId) context.sprint_id = sprintId;
   if (taskId) context.task_id = taskId;
   return { hasManager, projectId, page, context };
+}
+
+/**
+ * Below this width the manager side bar covers the page instead of sitting
+ * beside it (shell.css; a media query cannot read a custom property, so
+ * tokens.css records the breakpoint and this repeats it).
+ */
+export const OVERLAY_QUERY = "(max-width: 960px)";
+
+function overlayMatches() {
+  try {
+    return Boolean(globalThis.matchMedia?.(OVERLAY_QUERY).matches);
+  } catch {
+    return false;
+  }
+}
+
+/** True while the side bar covers the page, kept current as the window changes. */
+export function useOverlay() {
+  const [overlay, setOverlay] = useState(overlayMatches);
+  useEffect(() => {
+    const list = globalThis.matchMedia?.(OVERLAY_QUERY);
+    if (!list?.addEventListener) return undefined;
+    const update = () => setOverlay(list.matches);
+    update();
+    list.addEventListener("change", update);
+    return () => list.removeEventListener("change", update);
+  }, []);
+  return overlay;
 }

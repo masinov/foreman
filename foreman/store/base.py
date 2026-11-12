@@ -5,9 +5,10 @@ from __future__ import annotations
 import functools
 import sqlite3
 import time
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Sequence, TypeVar
+from typing import Any, Callable, Iterator, Sequence, TypeVar
 
 from ..errors import ForemanError
 from ..migrations import MIGRATIONS
@@ -104,6 +105,40 @@ def retried_on_lock(method: Callable[..., _T]) -> Callable[..., _T]:
     return wrapper
 
 
+class _Connection:
+    """The store's SQLite connection, able to hold one transaction open.
+
+    Store methods write inside ``with self._connection:``, which commits when
+    the block ends. Outside ``StoreBase.atomic`` that is what happens. Inside
+    it, those blocks join the open transaction instead: nothing commits until
+    ``atomic`` does, and an error anywhere rolls all of it back. Everything
+    else is the ``sqlite3.Connection``.
+    """
+
+    __slots__ = ("_raw", "_atomic")
+
+    def __init__(self, raw: sqlite3.Connection) -> None:
+        object.__setattr__(self, "_raw", raw)
+        object.__setattr__(self, "_atomic", False)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._raw, name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        setattr(self._raw, name, value)
+
+    def __enter__(self) -> sqlite3.Connection:
+        if self._atomic:
+            return self._raw
+        return self._raw.__enter__()
+
+    def __exit__(self, *exc_info: object) -> bool:
+        if self._atomic:
+            # The enclosing atomic block commits or rolls back.
+            return False
+        return bool(self._raw.__exit__(*exc_info))
+
+
 class StoreBase:
     """One SQLite connection, with safe writes and schema migrations."""
 
@@ -133,7 +168,9 @@ class StoreBase:
             self.db_path = str(path)
         self._busy_timeout_seconds = float(busy_timeout_seconds)
         self._write_retries = max(0, int(write_retries))
-        self._connection = sqlite3.connect(self.db_path, timeout=self._busy_timeout_seconds)
+        self._connection: Any = _Connection(
+            sqlite3.connect(self.db_path, timeout=self._busy_timeout_seconds)
+        )
         self._connection.row_factory = sqlite3.Row
         self._connection.execute("PRAGMA foreign_keys = ON")
         if self.db_path != ":memory:":
@@ -170,6 +207,37 @@ class StoreBase:
                 return operation(self._connection)
 
         return _retry_when_locked(transaction, self._write_retries)
+
+    @contextmanager
+    def atomic(self, *, commit: bool = True) -> Iterator[None]:
+        """Hold one write transaction open across several store calls.
+
+        Every store write inside the block joins one ``BEGIN IMMEDIATE``
+        transaction, so the block commits whole or not at all. An exception
+        rolls it back and propagates. With ``commit=False`` it is always
+        rolled back: a dry run that sees its own writes and leaves nothing.
+        Blocks do not nest.
+        """
+
+        connection = self._connection
+        if connection._atomic:
+            raise RuntimeError("atomic() blocks do not nest.")
+        if connection.in_transaction:
+            connection.commit()
+        _retry_when_locked(lambda: connection.execute("BEGIN IMMEDIATE"), self._write_retries)
+        object.__setattr__(connection, "_atomic", True)
+        try:
+            yield
+        except BaseException:
+            connection.rollback()
+            raise
+        else:
+            if commit:
+                connection.commit()
+            else:
+                connection.rollback()
+        finally:
+            object.__setattr__(connection, "_atomic", False)
 
     def __enter__(self: _S) -> _S:
         return self

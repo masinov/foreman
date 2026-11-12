@@ -64,7 +64,7 @@ class DashboardApiShapeTests(unittest.TestCase):
         ]
 
         self.assertEqual(API_PREFIXES, ("/api/v1", "/api"))
-        self.assertEqual(len(ROUTERS), 10)
+        self.assertEqual(len(ROUTERS), 11)
         self.assertEqual(len(routes), len(set(routes)), "a route is defined twice")
         self.assertGreater(len(routes), 35)
         # No route carries a prefix of its own; the application adds it.

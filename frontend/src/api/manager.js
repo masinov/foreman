@@ -4,6 +4,7 @@ import { segment } from "./client";
 // a message streams its reply as lines of `{type, ...}`:
 //   text_delta {text}   a piece of the reply, in order
 //   tool_use   {name}   the manager ran something
+//   proposal   {proposal_id}   the manager proposed a change (ADR-0022)
 //   done       {session_id}
 //   error      {message}   the turn stopped; what arrived is kept
 

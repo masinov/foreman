@@ -19,7 +19,7 @@ Filename format:
 | ADR-0004 | Dashboard Backend Framework | accepted |
 | ADR-0005 | Schema Migration Strategy | accepted |
 | ADR-0006 | Sprint Autonomy Levels And Agent Decision Gates | accepted |
-| ADR-0007 | Sprint Planner Chat Session | accepted |
+| ADR-0007 | Sprint Planner Chat Session | superseded by ADR-0022 |
 | ADR-0008 | Completion Truth Contract | accepted |
 | ADR-0009 | Multi-Model Endpoints Via Role Env | accepted |
 | ADR-0010 | Tiered Review And LLM-Judged Evidence | accepted |
@@ -34,3 +34,4 @@ Filename format:
 | ADR-0019 | The Dashboard API Is Versioned And Has One Error Shape | accepted |
 | ADR-0020 | Dashboard Design v7 Is The UI Reference, And How The Frontend Is Built | accepted |
 | ADR-0021 | The Backlog Is A Place, Not A Sprint | accepted |
+| ADR-0022 | The Manager Proposes, A Person Confirms | accepted |

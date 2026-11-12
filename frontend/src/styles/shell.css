@@ -129,6 +129,9 @@
     z-index: var(--layer-overlay);
     width: min(100%, var(--manager-width));
     height: auto;
+    /* Browsers apply align-self to a fixed box in a flex row: flex-start
+       would size it to its content and push the composer off the screen. */
+    align-self: stretch;
   }
 }
 

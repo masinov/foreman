@@ -593,8 +593,41 @@ is kept in `localStorage` (`app/manager.js`). The project comes from the route
 as newline-delimited JSON through `client.postLines`, with the page as
 `context` (`page`, `sprint_id`, `task_id`). The server puts that into the
 turn's prompt (`meta_agent.describe_page_context`) and does not store it. The
-stream has no structured proposal, only text, `tool_use`, `done` and `error`,
-so the panel shows the reply as text and has no confirm step.
+stream carries text, `tool_use`, `proposal`, `done` and `error`. A
+`proposal` line (or a `proposal_id` stored in a turn's `tool_uses`) renders
+`ProposalCard`: what will be created, changed and left
+(`pages/manager/proposalWords.js`), with Not now and Confirm, which call
+`POST /proposals/{id}/decline|confirm`, show the outcome on the card, and call
+`refresh()` from `useDataRefresh` (`api/ApiProvider.jsx`) so every loaded
+resource loads again. Below 960px the bar covers the page as a modal region:
+it takes focus, `ui/focus.js` keeps Tab inside, Escape closes it.
+
+### Proposals (ADR-0022)
+
+The manager proposes; a person confirms. A proposal (`proposals` table,
+migration 22, `ProposalStore`) is an ordered list of operations from a fixed
+vocabulary, each one operation of `Mutations`, with a reason, the tasks it
+leaves, and the names of what it names as they were.
+
+- `foreman/proposals.py`: the vocabulary (`OPERATION_KINDS`),
+  `normalize_operations` (shape), `apply_operation` (one operation through
+  `Mutations`), and `Proposals.create|confirm|decline`. Creating applies the
+  operations inside `store.atomic(commit=False)`, a dry run that sees its own
+  writes and leaves nothing; confirming applies them inside `store.atomic()`
+  with the confirming person as actor and `proposal_id` on every audit event,
+  and marks the proposal `failed` (nothing applied) when one is refused.
+  Worktree removal for a cancelled task is deferred until after the commit.
+- `foreman/store/base.py`: `atomic()` holds one `BEGIN IMMEDIATE`
+  transaction; the store's `with self._connection:` blocks join it instead of
+  committing (`_Connection`).
+- `foreman/dashboard/routers/proposals.py`: `GET /projects/{id}/proposals`,
+  `GET /proposals/{id}`, `POST /proposals/{id}/confirm|decline`.
+- `foreman/cli/proposals.py`: `foreman proposal create|list|show|confirm|decline`.
+- `foreman/cli/parser.py`: inside a manager session
+  (`FOREMAN_MANAGER_SESSION`, set by `meta_agent` for its Claude Code
+  process) only `MANAGER_SESSION_COMMANDS` run; everything else is refused
+  with a sentence saying to propose. `FOREMAN_DB` points the session's
+  commands at the dashboard's database.
 
 The current implementation debt in this area is explicit:
 

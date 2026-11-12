@@ -1,8 +1,10 @@
 """Changes a person makes to tasks and sprints, in one place.
 
-The CLI and the dashboard both let a person accept, block, unblock, cancel
-and delete tasks, move sprints through their lifecycle, and file, decline,
-plan and unplan backlog work (ADR-0021). They used to
+The CLI and the dashboard both let a person accept, edit, block, unblock,
+cancel and delete tasks, write guidance and decide gates, create, edit and
+move sprints through their lifecycle, and file, decline, plan and unplan
+backlog work (ADR-0021). Confirming a manager's proposal (ADR-0022) applies
+the same operations. They used to
 carry their own copies of the rules, which had drifted apart, and only some
 dashboard actions left a trace. ``Mutations`` is the single implementation:
 it checks the change is allowed, refuses what a running engine is in the
@@ -35,6 +37,7 @@ from .models import (
     Sprint,
     SprintStatus,
     Task,
+    validate_executor_overrides,
 )
 from .notifications import NotificationDispatcher
 from .policy import PolicyDecision, PolicyMatrix
@@ -58,6 +61,24 @@ PLANNABLE_SPRINT_STATUSES: tuple[SprintStatus, ...] = ("planned", "active")
 #: Task statuses that mean "not started": the only ones that may go back to
 #: the backlog from a sprint.
 _NOT_STARTED_STATUSES: tuple[str, ...] = ("triage", "todo")
+
+#: Task fields a person may edit, and the statuses whose edits an agent must
+#: hear about (they are recorded as ``human.task_edited``).
+TASK_EDIT_FIELDS: tuple[str, ...] = (
+    "title",
+    "task_type",
+    "acceptance_criteria",
+    "description",
+    "priority",
+    "executor_overrides",
+)
+_EDIT_AUDITED_STATUSES = frozenset({"in_progress", "blocked"})
+
+#: Sprint fields a person may edit outside its lifecycle.
+SPRINT_EDIT_FIELDS: tuple[str, ...] = ("title", "goal", "order_index")
+
+#: Gate decisions, as the workflow names them.
+GATE_OUTCOMES: tuple[str, ...] = ("approve", "deny")
 
 
 def slug_id(prefix: str, title: str, exists: Callable[[str], object | None]) -> str:
@@ -97,6 +118,16 @@ class FiledTask:
 
 
 @dataclass(frozen=True)
+class GateDecision:
+    """A gate decision recorded, and the step the task now waits at."""
+
+    task: Task
+    outcome: str
+    next_step: str | None
+    deferred: bool
+
+
+@dataclass(frozen=True)
 class PlannedTasks:
     """Tasks planned into a sprint, and whether the sprint was created for them."""
 
@@ -113,6 +144,15 @@ class Mutations:
     every audit event. ``role`` is the role recorded on the event and on the
     run it hangs from: ``"human"`` for a person, ``"api"`` for another
     system, an agent's role for work an agent files.
+
+    ``proposal_id`` is set while a confirmed proposal is applied (ADR-0022):
+    every audit event names it, and edits and gate decisions, which are
+    otherwise recorded elsewhere or not at all, get an event of their own.
+
+    ``defer_side_effects`` keeps work outside the database (removing a
+    cancelled task's worktree) out of the write: it is queued on
+    ``deferred`` for the caller to run once the transaction has committed,
+    or to drop.
     """
 
     def __init__(
@@ -123,11 +163,16 @@ class Mutations:
         actor: str | None = None,
         role: str = "human",
         now: Callable[[], datetime] | None = None,
+        proposal_id: str | None = None,
+        defer_side_effects: bool = False,
     ) -> None:
         self.store = store
         self.via = via
         self.actor = actor
         self.role = role
+        self.proposal_id = proposal_id
+        self.defer_side_effects = defer_side_effects
+        self.deferred: list[Callable[[], str | None]] = []
         self._now = now or (lambda: datetime.now(timezone.utc))
 
     # ── tasks ────────────────────────────────────────────────────────────
@@ -222,6 +267,143 @@ class Mutations:
         removed, warning = self._discard_worktree(task)
         self.store.delete_task(task.id)
         return TaskRemoval(task=task, removed_worktree=removed, warning=warning)
+
+    def edit_task(
+        self,
+        task: Task,
+        changes: Mapping[str, Any],
+        *,
+        valid_steps: set[str] | None = None,
+    ) -> dict[str, Any]:
+        """Change a task's fields; return the fields that changed, new values.
+
+        ``changes`` names fields of ``TASK_EDIT_FIELDS``. An edit to a task an
+        agent is working on (in progress or blocked) is recorded as
+        ``human.task_edited`` so the next step can account for it; so is any
+        edit made through a proposal. ``valid_steps`` are the workflow's step
+        ids, for checking per-step overrides.
+        """
+
+        unknown = sorted(set(changes) - set(TASK_EDIT_FIELDS))
+        if unknown:
+            raise MutationError(f"Unknown task fields: {unknown}")
+        changed: dict[str, Any] = {}
+        if "title" in changes:
+            value = str(changes["title"] or "").strip()
+            if not value:
+                raise MutationError("Task title cannot be empty.")
+            if value != task.title:
+                changed["title"] = value
+            task.title = value
+        if "task_type" in changes:
+            value = str(changes["task_type"])
+            if value not in TASK_TYPES:
+                raise MutationError(
+                    f"Unsupported task type: {value}. Expected one of: {', '.join(TASK_TYPES)}."
+                )
+            if value != task.task_type:
+                changed["task_type"] = value
+            task.task_type = value  # type: ignore[assignment]
+        if "acceptance_criteria" in changes:
+            value = changes["acceptance_criteria"]
+            normalised = str(value).strip() if value else None
+            if normalised != task.acceptance_criteria:
+                changed["acceptance_criteria"] = normalised
+            task.acceptance_criteria = normalised
+        if "description" in changes:
+            value = changes["description"]
+            normalised = str(value).strip() if value is not None else None
+            if normalised != task.description:
+                changed["description"] = normalised
+            task.description = normalised
+        if "priority" in changes:
+            try:
+                priority = int(changes["priority"])
+            except (TypeError, ValueError) as exc:
+                raise MutationError("Priority must be an integer.") from exc
+            if priority != task.priority:
+                changed["priority"] = priority
+            task.priority = priority
+        if "executor_overrides" in changes:
+            try:
+                overrides = validate_executor_overrides(
+                    changes["executor_overrides"], valid_steps=valid_steps
+                )
+            except ValueError as exc:
+                raise MutationError(str(exc)) from exc
+            if overrides != (task.executor_overrides or {}):
+                changed["executor_overrides"] = overrides
+            task.executor_overrides = overrides
+        self.store.save_task(task)
+        if changed and (task.status in _EDIT_AUDITED_STATUSES or self.proposal_id):
+            self._audit(task, "human.task_edited", step="edit", changed_fields=changed)
+        return changed
+
+    def record_guidance(self, task: Task, text: str) -> Event:
+        """Record a guidance note the task's next agent step reads (``human.message``)."""
+
+        clean = (text or "").strip()
+        if not clean:
+            raise MutationError("Guidance text is required.")
+        return self._audit(task, "human.message", step="message", text=clean)
+
+    def decide_gate(self, task: Task, outcome: str, note: str | None = None) -> GateDecision:
+        """Approve or deny a task waiting at a human gate of its workflow.
+
+        The decision is recorded and the task left at the step it leads to,
+        for the project's engine to run (ADR-0011); nothing runs here.
+        """
+
+        from .orchestrator import ForemanOrchestrator, OrchestratorError
+
+        if outcome not in GATE_OUTCOMES:
+            raise MutationError(f"Unknown gate decision: {outcome}.")
+        clean_note = (note or "").strip() or None
+        try:
+            result = ForemanOrchestrator(self.store).resume_human_gate(
+                task.id, outcome=outcome, note=clean_note, defer=True
+            )
+        except OrchestratorError as exc:
+            raise MutationError(str(exc)) from exc
+        decided = self.store.get_task(task.id) or task
+        if self.proposal_id:
+            # The gate's own records (workflow.resumed, the decision row) have
+            # no place for the proposal; this event names it.
+            self._audit(
+                decided,
+                "human.gate_decided",
+                step="gate",
+                decision=outcome,
+                note=clean_note,
+                next_step=result.next_step,
+            )
+        return GateDecision(
+            task=decided, outcome=outcome, next_step=result.next_step, deferred=result.deferred
+        )
+
+    def send_back(self, task: Task, guidance: str) -> Task:
+        """Send a task that waits for a person back to work, with guidance.
+
+        At a human gate it is the workflow's denial, carrying the guidance to
+        the step a refusal leads to. A blocked task goes back to the queue
+        (``unblock_task``) and the guidance is recorded for its next step.
+        """
+
+        clean = (guidance or "").strip()
+        if not clean:
+            raise MutationError("Say what should change: guidance is required to send a task back.")
+        if task.status != "blocked":
+            raise MutationError(
+                f"Task {task.id} is {task.status}, not waiting for a person; only a task "
+                "waiting at a gate or blocked can be sent back."
+            )
+        project = self.store.get_project(task.project_id)
+        gates = resolve_gate_steps(project.workflow_id if project is not None else None)
+        if blocked_kind(task, gates) == "gate":
+            return self.decide_gate(task, "deny", clean).task
+        unblocked = self.unblock_task(task)
+        self.record_guidance(unblocked, clean)
+        return unblocked
 
     # ── the backlog (ADR-0021) ───────────────────────────────────────────
 
@@ -529,6 +711,51 @@ class Mutations:
         self.store.save_sprint(sprint)
         return sprint
 
+    def create_sprint(self, project: Project, *, title: str, goal: str | None = None) -> Sprint:
+        """Create a planned sprint at the end of the project's queue."""
+
+        clean = (title or "").strip()
+        if not clean:
+            raise MutationError("Sprint title is required.")
+        existing = self.store.list_sprints(project.id)
+        sprint = Sprint(
+            id=slug_id("sprint", clean, self.store.get_sprint),
+            project_id=project.id,
+            title=clean,
+            goal=(goal or "").strip() or None,
+            status="planned",
+            order_index=max((s.order_index for s in existing), default=-1) + 1,
+            created_at=self._now().isoformat(),
+        )
+        self.store.save_sprint(sprint)
+        return sprint
+
+    def edit_sprint(self, sprint: Sprint, changes: Mapping[str, Any]) -> Sprint:
+        """Change a sprint's title, goal or place in the queue (``SPRINT_EDIT_FIELDS``)."""
+
+        if sprint.is_backlog:
+            raise MutationError("The backlog is not a sprint and cannot be edited.")
+        unknown = sorted(set(changes) - set(SPRINT_EDIT_FIELDS))
+        if unknown:
+            raise MutationError(f"Unknown sprint fields: {unknown}")
+        if not changes:
+            raise MutationError("No fields provided for update.")
+        if "title" in changes:
+            value = str(changes["title"] or "").strip()
+            if not value:
+                raise MutationError("Sprint title cannot be empty.")
+            sprint.title = value
+        if "goal" in changes:
+            value = changes["goal"]
+            sprint.goal = str(value).strip() or None if value else None
+        if "order_index" in changes:
+            try:
+                sprint.order_index = int(changes["order_index"])
+            except (TypeError, ValueError) as exc:
+                raise MutationError("order_index must be an integer.") from exc
+        self.store.save_sprint(sprint)
+        return sprint
+
     def delete_sprint(self, sprint: Sprint) -> None:
         """Delete a sprint with its tasks, runs and events."""
 
@@ -610,15 +837,28 @@ class Mutations:
         project = self.store.get_project(task.project_id)
         if project is None:
             return None, None
+        if self.defer_side_effects:
+            self.deferred.append(lambda: self._remove_worktree(project, recorded))
+            task.worktree_path = None
+            return recorded, None
+        warning = self._remove_worktree(project, recorded)
+        if warning is not None:
+            return None, warning
+        task.worktree_path = None
+        return recorded, None
+
+    @staticmethod
+    def _remove_worktree(project: Project, recorded: str) -> str | None:
+        """Remove one worktree; return a warning when that failed."""
+
         try:
             WorktreeManager(project).remove_path(Path(recorded))
         except (WorktreeError, OSError) as exc:
-            return None, (
+            return (
                 f"Warning: could not remove worktree {recorded}: {exc}. "
                 f"Run `foreman worktree prune {project.id}` to clean it up."
             )
-        task.worktree_path = None
-        return recorded, None
+        return None
 
     def _audit(self, task: Task, event_type: str, *, step: str, **payload: object) -> Event:
         """Record who changed a task, on a run that names the surface."""
@@ -660,6 +900,7 @@ class Mutations:
                 "task_key": task.task_key,
                 "via": self.via,
                 "by": self.actor,
+                **({"proposal_id": self.proposal_id} if self.proposal_id else {}),
                 **{key: value for key, value in payload.items() if value is not None},
             },
         )

@@ -752,4 +752,33 @@ MIGRATIONS: list[tuple[int, str, str]] = [
           );
         """,
     ),
+    (
+        22,
+        "proposals: changes the manager proposes and a person confirms (ADR-0022)",
+        """
+        CREATE TABLE IF NOT EXISTS proposals (
+            id              TEXT PRIMARY KEY,
+            project_id      TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            proposed_by     TEXT NOT NULL,
+            session_id      TEXT,
+            turn_id         TEXT,
+            reason          TEXT NOT NULL,
+            operations_json TEXT NOT NULL,
+            leaves_json     TEXT NOT NULL DEFAULT '[]',
+            names_json      TEXT NOT NULL DEFAULT '{}',
+            state           TEXT NOT NULL DEFAULT 'proposed'
+                CHECK (state IN ('proposed', 'confirmed', 'declined', 'failed')),
+            created_at      TEXT NOT NULL,
+            decided_by      TEXT,
+            decided_at      TEXT,
+            outcome_json    TEXT NOT NULL DEFAULT '{}'
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_proposals_project
+        ON proposals(project_id, created_at);
+
+        CREATE INDEX IF NOT EXISTS idx_proposals_turn
+        ON proposals(turn_id) WHERE turn_id IS NOT NULL;
+        """,
+    ),
 ]

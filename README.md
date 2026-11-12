@@ -271,9 +271,10 @@ When a task blocks, hits the loop limit, or its evidence fails, the engine emits
 one `engine.attention_needed` event. The dashboard (or an operator) can call
 `POST /api/projects/{id}/meta/supervise` with `{ "event_id": ... }` to run one
 supervision turn through the persisted manager session; the turn is flagged
-`origin="supervision"` and replayed events are rejected with 409. In `directed`
-projects the supervise prompt forbids state-mutating commands and asks for a
-recommendation only.
+`origin="supervision"` and replayed events are rejected with 409. The manager
+never changes state itself (ADR-0022): it proposes with
+`foreman proposal create`, and a person confirms in the side bar or with
+`foreman proposal confirm <id>`.
 
 ## Event retention
 
