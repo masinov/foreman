@@ -56,7 +56,8 @@ describe("the task page header", () => {
       `${BASE}/activity`,
     ]);
     expect(within(tabs).getByRole("link", { current: "page" })).toHaveAttribute("href", path);
-    expect(within(tabs).getByRole("link", { name: /Changes/ })).toHaveTextContent("Changes +118 −7");
+    // The tab is only its name; the figures are inside it.
+    expect(within(tabs).getByRole("link", { name: /Changes/ })).toHaveTextContent(/^Changes$/);
   });
 
   it("puts the project, the sprint and the task key in the breadcrumb", async () => {
@@ -478,8 +479,11 @@ describe("Overrides for this task", () => {
 describe("Changes", () => {
   it("lists the files and shows the first file's diff, marked by sign as well as colour", async () => {
     const { fetchImpl } = await renderTask(`${BASE}/changes`);
-    expect(await screen.findByRole("heading", { name: "3 files, +118 −7" })).toBeInTheDocument();
-    expect(screen.getByText(/against main\. Measured by the engine from git\./)).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /^Files\s*3$/ })).toBeInTheDocument();
+    expect(screen.getByText(/compared with main/)).toBeInTheDocument();
+    // The files sit beside the diff, in their own scrolling list.
+    expect(document.querySelector(".task-changes__files .task-changes__list table")).not.toBeNull();
+    expect(document.querySelector(".task-changes__diff")).not.toBeNull();
     const files = screen.getByRole("table", { name: "Files changed" });
     const picks = within(files).getAllByRole("button");
     expect(picks.map((button) => button.getAttribute("aria-pressed"))).toEqual(["true", "false", "false"]);

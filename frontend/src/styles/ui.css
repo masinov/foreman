@@ -115,6 +115,13 @@
   align-items: baseline;
   gap: var(--space-2);
   margin-bottom: var(--space-2);
+  padding-bottom: var(--space-2);
+  border-bottom: var(--line-width) solid var(--color-line-structural);
+}
+
+.section-heading--plain {
+  padding-bottom: 0;
+  border-bottom: 0;
 }
 
 .section-heading__title {
@@ -190,9 +197,11 @@
   border-collapse: collapse;
 }
 
+/* Column headers are quiet and sit on the faint row line: the stronger rule
+   belongs to the section's title above them. */
 .table th {
   padding: var(--space-1) var(--cell-padding-inline) var(--space-2);
-  border-bottom: var(--line-width) solid var(--color-line-header);
+  border-bottom: var(--line-width) solid var(--color-line-row);
   color: var(--color-text-quiet);
   font-size: var(--font-size-table-header);
   font-weight: var(--font-weight-regular);

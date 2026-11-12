@@ -214,7 +214,7 @@ export function NeedsYou({ projectId = null, note, empty, onChanged }) {
   const headingId = projectId ? `needs-you-${projectId}` : "needs-you-title";
   return (
     <section className="needs-you" aria-labelledby={headingId}>
-      <SectionHeading id={headingId} title="Needs you" count={total} note={note} />
+      <SectionHeading id={headingId} title="Needs you" count={total} note={note} plain />
       {notice ? (
         <p className={notice.error ? "notice notice--error" : "notice"} role={notice.error ? "alert" : "status"}>
           {notice.text}
