@@ -1,0 +1,3 @@
+# Built output: reviewed as source, not as a diff. `git diff` reports these as
+# changed without printing them, so a review prompt is not filled with a bundle.
+foreman/dashboard_frontend_dist/** -diff linguist-generated
