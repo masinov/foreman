@@ -311,6 +311,36 @@ class ProcessMessagePersistenceTests(unittest.TestCase):
             self.assertEqual(turns[1]["tool_uses"], [{"name": "Bash", "input": {"cmd": "ls"}}])
             self.assertEqual(store.get_meta_session("proj-1"), "sess-1")
 
+    def test_page_context_reaches_the_prompt_but_not_the_transcript(self) -> None:
+        captured: dict = {}
+        meta_agent._run_claude = self._fake_run(
+            [{"type": "text_delta", "text": "ok"}], captured=captured
+        )
+        context = meta_agent.describe_page_context(
+            {"page": "FOR-14", "task_id": "task-14", "ignored": "x"}
+        )
+        with self._open() as store:
+            project = store.get_project("proj-1")
+            _drain(
+                meta_agent.process_message(
+                    "proj-1", "what is this?", store=store, project=project,
+                    page_context=context,
+                )
+            )
+        self.assertIn("the page: FOR-14; task id: task-14", captured["prompt"])
+        self.assertNotIn("ignored", captured["prompt"])
+        with self._open() as store:
+            turns, _ = store.list_meta_turns("proj-1")
+            self.assertEqual(turns[0]["text"], "what is this?")
+
+    def test_describe_page_context_validates(self) -> None:
+        self.assertIsNone(meta_agent.describe_page_context(None))
+        self.assertIsNone(meta_agent.describe_page_context({"page": "  "}))
+        with self.assertRaises(ValueError):
+            meta_agent.describe_page_context("Sprints")
+        with self.assertRaises(ValueError):
+            meta_agent.describe_page_context({"page": 3})
+
     def test_second_turn_resumes_session_without_contract(self) -> None:
         with self._open() as store:
             store.save_meta_session("proj-1", "sess-existing")

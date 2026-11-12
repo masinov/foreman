@@ -558,7 +558,22 @@ The task page (`pages/task/`) reads `GET /tasks/{id}`, `/checks` and
 adds the project's workflow (steps and who decides), Changes one file's diff
 at a time, Activity the paged runs and the selected run's output. While the
 task is `in_progress` it follows `GET /sprints/{id}/stream` and reads itself
-again 300 ms after the last event about the task.
+again 300 ms after the last event about the task. Overview also holds
+"Overrides for this task": one `PATCH /tasks/{id}` with the whole
+`executor_overrides` (who decides at the workflow's gates, a model per agent
+step), keeping the keys the page does not edit.
+
+The manager side bar (`pages/manager/`) belongs to the shell, not to a page:
+`App` keeps it outside the keyed page, so an open conversation and a reply
+being written survive moving between project, sprint and task. Open or closed
+is kept in `localStorage` (`app/manager.js`). The project comes from the route
+(`/projects/:id`) or from the sprint or task being shown. History is
+`GET /projects/{id}/meta/history`; a message is `POST .../meta/message`, read
+as newline-delimited JSON through `client.postLines`, with the page as
+`context` (`page`, `sprint_id`, `task_id`). The server puts that into the
+turn's prompt (`meta_agent.describe_page_context`) and does not store it. The
+stream has no structured proposal, only text, `tool_use`, `done` and `error`,
+so the panel shows the reply as text and has no confirm step.
 
 The current implementation debt in this area is explicit:
 

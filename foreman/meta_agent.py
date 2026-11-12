@@ -41,6 +41,42 @@ def get_history(
     return store.list_meta_turns(project_id, limit=limit, before_id=before_id)
 
 
+_CONTEXT_FIELDS = (
+    ("page", "the page"),
+    ("sprint_id", "sprint id"),
+    ("task_id", "task id"),
+)
+_CONTEXT_MAX_LENGTH = 200
+
+
+def describe_page_context(context: Any) -> str | None:
+    """Return one line saying where in the dashboard the person is, or None.
+
+    ``context`` is the optional object a client sends with a message:
+    ``{"page": "Sprints", "sprint_id": "...", "task_id": "..."}``. Unknown keys
+    are ignored and values are clipped, so the line stays short and is never
+    free-form instructions. Raises ``ValueError`` for a value that is not an
+    object of strings.
+    """
+    if context is None:
+        return None
+    if not isinstance(context, dict):
+        raise ValueError("context must be an object.")
+    parts: list[str] = []
+    for key, label in _CONTEXT_FIELDS:
+        value = context.get(key)
+        if value is None:
+            continue
+        if not isinstance(value, str):
+            raise ValueError(f"context.{key} must be a string.")
+        value = " ".join(value.split())[:_CONTEXT_MAX_LENGTH]
+        if value:
+            parts.append(f"{label}: {value}")
+    if not parts:
+        return None
+    return "The person is looking at the dashboard (" + "; ".join(parts) + ")."
+
+
 def clear_session(store: Any, project_id: str) -> None:
     """Delete the persisted session row and all turns for one project."""
     store.clear_meta_session(project_id)
@@ -355,6 +391,7 @@ async def process_message(
     executable: str = "claude",
     origin: str = "chat",
     consumed_event_id: str | None = None,
+    page_context: str | None = None,
 ) -> AsyncIterator[str]:
     """Stream NDJSON events for one user message turn, persisting both turns.
 
@@ -367,6 +404,10 @@ async def process_message(
     ``consumed_event_id`` records, in the user turn metadata, the
     ``engine.attention_needed`` event that triggered a supervision turn so it
     cannot be replayed.
+
+    ``page_context`` is a line from :func:`describe_page_context`. It goes into
+    this turn's prompt after the state header and is not stored with the turn,
+    so the transcript keeps only what the person wrote.
     """
 
     backend = (project.settings or {}).get("meta_agent_backend", "claude")
@@ -406,6 +447,8 @@ async def process_message(
     parts = [state_header, "---"]
     if is_first_turn:
         parts += [build_operating_contract(project), "---"]
+    if page_context:
+        parts.append(page_context)
     parts.append(message)
     prompt = "\n\n".join(parts)
 

@@ -295,3 +295,63 @@ export function filedBy(task) {
   if (!task.created_by) return "";
   return task.created_by === "human" ? "a person" : humanize(task.created_by).toLowerCase();
 }
+
+// ── Overrides for this task ──────────────────────────────────────────────
+
+const GATE_CHOICES = [
+  { value: "human", word: "A person decides" },
+  { value: "auto", word: "Foreman decides" },
+];
+
+/** The two answers a gate override can take, as `[{ value, word }]`. */
+export const gateChoices = () => GATE_CHOICES;
+
+/** The human gates of a workflow that name a policy, as `[{ id, policy, label }]`. */
+export function overrideGates(workflow) {
+  return (workflow?.steps ?? [])
+    .filter((step) => step.role === HUMAN_GATE && GATE_WORDS[step.policy])
+    .filter((step, index, all) => all.findIndex((other) => other.policy === step.policy) === index)
+    .map((step) => ({ id: step.id, policy: step.policy, label: humanize(step.policy) }));
+}
+
+/** The agent steps of a workflow, which a model can be chosen for, as `[{ id, label }]`. */
+export function overrideSteps(workflow) {
+  return (workflow?.steps ?? [])
+    .filter((step) => !String(step.role).startsWith(BUILTIN))
+    .map((step) => ({ id: step.id, label: humanize(step.id) }));
+}
+
+/** What the task overrides for a gate now: `"human"`, `"auto"` or `""` for nothing. */
+export function currentGateOverride(task, policy) {
+  const overrides = task.executor_overrides ?? {};
+  return overrides.policy?.[policy] ?? overrides.gates?.[policy] ?? "";
+}
+
+/**
+ * The `executor_overrides` object to send: what the task has now, with the
+ * given gates (`{ policy: "human" | "auto" | "" }`) and step models
+ * (`{ step: "model" | "" }`) set, or removed when empty. Everything else the
+ * task carries (a ladder start, other decisions) is kept as it is.
+ */
+export function applyOverrides(current, { gates = {}, models = {} }) {
+  const next = { ...(current ?? {}) };
+  const policy = { ...(next.policy ?? {}) };
+  const older = { ...(next.gates ?? {}) };
+  for (const [name, value] of Object.entries(gates)) {
+    // `policy` wins over the older `gates`, so a change is written to one place.
+    delete older[name];
+    if (value) policy[name] = value;
+    else delete policy[name];
+  }
+  const modelMap = { ...(next.models ?? {}) };
+  for (const [step, value] of Object.entries(models)) {
+    const model = String(value ?? "").trim();
+    if (model) modelMap[step] = model;
+    else delete modelMap[step];
+  }
+  for (const [key, value] of [["policy", policy], ["gates", older], ["models", modelMap]]) {
+    if (Object.keys(value).length) next[key] = value;
+    else delete next[key];
+  }
+  return next;
+}

@@ -30,6 +30,7 @@ export function createFakeFetch(routes = {}) {
     }
     let answer = routes[key];
     if (typeof answer === "function") answer = await answer({ method, url, init });
+    if (answer instanceof Response) return answer;
     if (answer && answer.__reply) return jsonResponse(answer.status, answer.body);
     return jsonResponse(200, answer);
   };

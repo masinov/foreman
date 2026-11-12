@@ -77,6 +77,12 @@
   --page-gutter-narrow: 12px;
   --topbar-height: 44px;
   --manager-width: 380px;
+  /* Below this width the manager cannot sit beside the page and becomes an
+     overlay. Written in shell.css's media query, recorded here. */
+  --breakpoint-manager-overlay: 960px;
+  --layer-overlay: 15;
+  --block-cursor-width: 7px;
+  --block-cursor-height: 14px;
   --tab-underline-width: 2px;
 
   /* Spacing scale */

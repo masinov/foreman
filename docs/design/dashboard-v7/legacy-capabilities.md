@@ -59,8 +59,8 @@ says so.
 | Cancel a sprint | `PATCH /sprints/{id}` (`status: cancelled`) | none | **no home yet** |
 | Delete a sprint | `DELETE /sprints/{id}` | none | **no home yet** |
 | Resolve a pending decision about sprint order: accept the suggested order, keep the current order, or dismiss, with the conflict and the suggested order shown | `GET /projects/{id}/gates`, `PATCH /gates/{id}` | workspace and project pages, Needs you ("Settle sprint order") | built for accept and reject. Reject keeps the current order, so "keep" and "dismiss" are one action; the API still accepts `dismissed` |
-| Read the manager conversation, send a message, clear the session, load older messages | `POST /projects/{id}/meta/message`, `GET /projects/{id}/meta/history`, `DELETE /projects/{id}/meta/session` | manager side bar | slice 9 |
-| A resizable manager panel, collapsed by default | none | manager side bar | slice 9 (the design's side bar is toggled from the top bar and remembered; resizing is not in the design) |
+| Read the manager conversation, send a message, clear the session, load older messages | `POST /projects/{id}/meta/message`, `GET /projects/{id}/meta/history`, `DELETE /projects/{id}/meta/session` | manager side bar | built |
+| A resizable manager panel, collapsed by default | none | manager side bar | built as the design draws it (toggled from the top bar and remembered); resizing is not in the design, dropped |
 | See the project's token total in the top bar | `GET /projects/{id}` | none | **no home yet** (the pages show spend in dollars, not tokens) |
 
 ## Sprint
@@ -86,7 +86,7 @@ says so.
 | Capability | Endpoint | Route | Status |
 |---|---|---|---|
 | See title, description, acceptance criteria, key, type | `GET /tasks/{id}` | `/dashboard/tasks/{id}` | built |
-| See step, branch, worktree path, role, priority, tokens and split, step visits, complexity, model overrides | `GET /tasks/{id}` | task page, Overview | built for step, branch, spend and runs; worktree path, priority, token split, step visits and complexity **no home yet** |
+| See step, branch, worktree path, role, priority, tokens and split, step visits, complexity, model overrides | `GET /tasks/{id}` | task page, Overview | built for step, branch, spend, runs and model overrides (set and cleared in Overrides for this task); worktree path, priority, token split, step visits and complexity **no home yet** |
 | See dependencies as chips with their titles | `GET /tasks/{id}` | task page, Overview | **no home yet** |
 | See the blocked reason | `GET /tasks/{id}` | task page, the decision | built |
 | See the human gate and approve it | `POST /tasks/{id}/approve` | task page; Needs you | built (Needs you and the task page's decision) |
