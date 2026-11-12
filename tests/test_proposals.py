@@ -667,3 +667,11 @@ class ManagerSessionTests(ProposalCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DecidedByTests(ProposalCase):
+    def test_a_decision_without_a_known_person_names_the_surface_not_a_person(self) -> None:
+        proposal = self.propose({"kind": "create_sprint", "title": "Sprint 3"})
+        decided = Proposals(self.store, via="dashboard").decline(proposal.id)
+        self.assertIsNone(decided.decided_by)
+        self.assertEqual(decided.outcome["via"], "dashboard")

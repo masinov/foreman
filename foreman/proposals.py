@@ -553,7 +553,9 @@ class Proposals:
 
     def _decide(self, proposal: Proposal, state: str, outcome: dict[str, Any]) -> None:
         proposal.state = state
-        proposal.decided_by = self.actor or self.via
+        # Who, when known; the dashboard has no identity yet, and the surface
+        # is not a person, so it is kept apart in the outcome.
+        proposal.decided_by = self.actor
         proposal.decided_at = self._now().isoformat()
         proposal.outcome = {"via": self.via, **outcome}
         self.store.save_proposal(proposal)

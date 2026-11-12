@@ -360,12 +360,13 @@ describe("a proposal in the conversation", () => {
     expect(terms).toEqual(["Create", "Plan in", "", "Send back", "Guidance", "Leave"]);
     expect(what).toEqual([
       "Sprint 57, planned",
-      "FOR-20 Resume a stale agent step in place",
-      "FOR-21 Check the lease fencing token on writes",
+      "Resume a stale agent step in place",
+      "Check the lease fencing token on writes",
       "FOR-14 Report the test result line",
       "Report skipped tests too.",
-      "FOR-22 JSON output on the remaining read commands",
+      "JSON output on the remaining read commands",
     ]);
+    expect(box.getAllByRole("definition").at(-1)).toHaveClass("proposal__what--quiet");
     expect(box.getByRole("button", { name: "Not now" })).toBeEnabled();
     expect(box.getByRole("button", { name: "Confirm" })).toHaveClass("button--gold-outline");
     await stream.push({ type: "done", session_id: "s1" });

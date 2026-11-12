@@ -21,7 +21,7 @@ describe("a proposal in words", () => {
     [{ kind: "file_task", title: "New" }, [["File", null, "New, in the backlog", false]]],
     [{ kind: "accept_task", task_id: "t1" }, [["Accept", "FOR-1 One", null, false]]],
     [{ kind: "decline_task", task_id: "t1", reason: "No." }, [["Decline", "FOR-1 One", null, false], ["Why", null, "No.", false]]],
-    [{ kind: "plan_tasks", task_ids: ["t1", "t2"], sprint_id: "s2" }, [["Into", null, "Sprint 2", false], ["Plan in", "FOR-1 One", null, false], ["", "FOR-2 Two", null, false]]],
+    [{ kind: "plan_tasks", task_ids: ["t1", "t2"], sprint_id: "s2" }, [["Into", null, "Sprint 2", false], ["Plan in", null, "One", false], ["", null, "Two", false]]],
     [{ kind: "unplan_task", task_id: "t1" }, [["Move back", "FOR-1 One", "to the backlog", false]]],
     [{ kind: "edit_task", task_id: "t1", title: "Uno", priority: 1 }, [["Change", "FOR-1 One", "its title and priority", false], ["Title", null, "Uno", false]]],
     [{ kind: "block_task", task_id: "t1", reason: "Wait." }, [["Block", "FOR-1 One", null, false], ["Why", null, "Wait.", false]]],
@@ -37,12 +37,13 @@ describe("a proposal in words", () => {
     expect(rows([{ kind: "cancel_task", task_id: "t1" }, { kind: "cancel_task", task_id: "t2" }], ["t1"])).toEqual([
       ["Cancel", "FOR-1 One", null, false],
       ["", "FOR-2 Two", null, false],
-      ["Leave", "FOR-1 One", null, true],
+      ["Leave", null, "One", true],
     ]);
   });
 
   it("falls back to the id when a task was not named", () => {
     expect(proposalRows({ operations: [{ kind: "accept_task", task_id: "ghost" }], names: {} })[0].task).toEqual({ key: "ghost", title: "" });
+    expect(proposalRows({ operations: [], leaves: ["ghost"], names: {} })[0].task).toEqual({ key: "ghost", title: "" });
   });
 
   it("heads and closes by state", () => {

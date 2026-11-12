@@ -41,7 +41,7 @@ Table `proposals` (migration 22), one row per proposal, for one project:
 | `names_json` | titles and keys of every task and sprint named, as they were when proposed |
 | `state` | `proposed`, `confirmed`, `declined` or `failed` (a CHECK constraint) |
 | `created_at` | when |
-| `decided_by`, `decided_at` | who confirmed or declined it, and when |
+| `decided_by`, `decided_at` | who confirmed or declined it (null when the surface knows no person yet), and when |
 | `outcome_json` | after a decision: what was applied, and for `failed` which operation was refused and why |
 
 Only a `proposed` proposal can be confirmed or declined. Nothing else changes a
@@ -109,6 +109,9 @@ every store write inside it joins instead of committing on its own.
   and skipped after a rollback or a dry run. Notifications are only queued
   (ADR-0015), so they commit or roll back with the rest.
 - **Declining** records who declined and when; nothing else changes.
+- The surface a decision came through (`cli`, `dashboard`) is recorded in
+  `outcome.via`, apart from who, which the dashboard can only say once it
+  has a signed-in person (it sends `requested_by` when it does).
 
 ### 4. The manager session cannot change state itself
 

@@ -4,7 +4,9 @@
 //
 // A row is `{ term, task?, text?, quiet? }`: `task` is `{ key, title }` from
 // the proposal's `names` (as they were when it was proposed), `text` the
-// words, `quiet` for what is said in a secondary colour (what is left).
+// words, `quiet` for what is said in a secondary colour (what is left). A row
+// in a list of tasks (planned in, left) names the task by its title alone;
+// a row acting on one task leads with its key.
 
 const TASK_FIELDS = {
   title: "title",
@@ -17,6 +19,12 @@ const TASK_FIELDS = {
 function taskOf(names, taskId) {
   const known = names?.tasks?.[taskId];
   return { key: known?.key || taskId, title: known?.title || "" };
+}
+
+/** A task in a list: its title, or its key when no title is known. */
+function listed(names, taskId) {
+  const task = taskOf(names, taskId);
+  return task.title ? { text: task.title } : { task };
 }
 
 function sprintTitle(names, sprintId) {
@@ -55,7 +63,7 @@ function rowsOf(operation, names) {
       const rows = [];
       if (operation.new_sprint) rows.push({ term: "Create", text: `${operation.new_sprint.title}, planned` });
       else rows.push({ term: "Into", text: sprintTitle(names, operation.sprint_id) });
-      for (const taskId of operation.task_ids || []) rows.push({ term: "Plan in", task: taskOf(names, taskId) });
+      for (const taskId of operation.task_ids || []) rows.push({ term: "Plan in", ...listed(names, taskId) });
       return rows;
     }
     case "unplan_task":
@@ -85,7 +93,7 @@ function rowsOf(operation, names) {
 export function proposalRows(proposal) {
   const rows = [];
   for (const operation of proposal?.operations || []) rows.push(...rowsOf(operation, proposal.names));
-  for (const taskId of proposal?.leaves || []) rows.push({ term: "Leave", task: taskOf(proposal.names, taskId), quiet: true });
+  for (const taskId of proposal?.leaves || []) rows.push({ term: "Leave", ...listed(proposal.names, taskId), quiet: true });
   return rows.map((row, index) => ({ ...row, term: index > 0 && rows[index - 1].term === row.term ? "" : row.term }));
 }
 
