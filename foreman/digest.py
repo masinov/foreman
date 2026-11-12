@@ -96,17 +96,15 @@ def build_attention_digest(
         lines += [
             "This project is in DIRECTED mode: you may NOT run state-mutating",
             "`foreman` commands. Recommend a course of action in prose; the human",
-            "will execute it.",
+            "will execute it, or confirm it if you propose it.",
         ]
-    else:
-        lines += [
-            "You may act through the `foreman` CLI per your operating contract:",
-            "- inspect: foreman board / task show / history / cost / sprint list",
-            "- plan: foreman sprint add ...",
-            "- promote: foreman task add ... --sprint ... --depends-on ...",
-            "- assign: foreman task override <task-id> --step ... --model ...",
-            "- steer: foreman approve/deny --note, foreman task block/unblock/cancel",
-            "Never edit `.foreman/`, never merge manually, never run `foreman run`.",
-        ]
+    lines += [
+        "You change nothing yourself; a person confirms every change (ADR-0022).",
+        "- inspect: foreman board / task show / history / cost / sprint list / backlog list",
+        f"- propose: foreman proposal create {project.id} --json - (the operations in",
+        "  your operating contract: plan, file, accept, block, unblock, cancel,",
+        "  send back with guidance, approve a gate, and the rest)",
+        "Every other state-changing command is refused in this session.",
+    ]
 
     return "\n".join(lines)

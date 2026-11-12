@@ -3816,7 +3816,7 @@ class DashboardMetaAgentTests(unittest.TestCase):
         # Fake the Claude subprocess so no real CLI is needed.
         captured = {}
 
-        async def _fake_run(session_id, prompt, *, repo_path, executable, model):
+        async def _fake_run(session_id, prompt, *, repo_path, executable, model, env=None):
             captured["prompt"] = prompt
             yield {"type": "text_delta", "text": "ack"}
             yield {"type": "session", "session_id": "sess-sup"}
