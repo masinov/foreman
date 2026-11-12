@@ -32,7 +32,6 @@ const COLUMNS = [
         <Link className="row-link row-link--strong" href={paths.sprint(sprint.id)}>
           {sprint.title}
         </Link>
-        {sprint.goal ? <span className="secondary">{sprint.goal}</span> : null}
       </div>
     ),
   },

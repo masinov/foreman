@@ -71,6 +71,16 @@ describe("the project page head", () => {
 });
 
 describe("the engine row", () => {
+  it("says the active sprint has no tasks when the engine runs with nothing to pick up", async () => {
+    const routes = projectRoutes();
+    const payload = workspacePayload();
+    payload.projects[0].engine = engine("running", null);
+    payload.projects[0].active_sprint.task_counts = { triage: 0, todo: 0, in_progress: 0, blocked: 0, done: 0, cancelled: 0 };
+    routes["GET /api/v1/workspace"] = payload;
+    await renderProject("/dashboard/projects/foreman", routes);
+    expect(within(engineSection()).getByText(/the active sprint has no tasks/)).toBeInTheDocument();
+  });
+
   it("offers Pause and Stop while running, and sends them to the engine endpoints", async () => {
     const routes = projectRoutes();
     routes["POST /api/v1/projects/foreman/agent/stop"] = { command: { command: "pause", status: "pending" } };
@@ -227,14 +237,15 @@ describe("a proposed sprint order", () => {
 });
 
 describe("the Sprints tab", () => {
-  it("shows the queue only: active first, then planned, with goal, counts, dates and spend", async () => {
+  it("shows the queue only: active first, then planned, one line each with counts, dates and spend", async () => {
     const { fetchImpl } = await renderProject();
     const queue = await screen.findByRole("table", { name: "Sprint queue" });
     const rows = within(queue).getAllByRole("row").slice(1);
     expect(rows).toHaveLength(2);
     expect(within(rows[0]).getByText("Active")).toBeInTheDocument();
     expect(within(rows[0]).getByRole("link", { name: ACTIVE.title })).toHaveAttribute("href", "/dashboard/sprints/sprint-56");
-    expect(within(rows[0]).getByText(ACTIVE.goal)).toBeInTheDocument();
+    // The goal is on the sprint's own page, not under the title in the list.
+    expect(within(rows[0]).queryByText(ACTIVE.goal)).toBeNull();
     expect(within(rows[0]).getByText("3 need you · 1 done")).toBeInTheDocument();
     expect(within(rows[0]).getByText("since 11 Nov")).toBeInTheDocument();
     expect(within(rows[0]).getByText("$1.31")).toBeInTheDocument();

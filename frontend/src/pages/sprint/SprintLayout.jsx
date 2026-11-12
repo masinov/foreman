@@ -11,6 +11,7 @@ import { Link } from "../../app/router";
 import { Button } from "../../ui/Button";
 import { SectionHeading } from "../../ui/SectionHeading";
 import { plural } from "../../ui/format";
+import { NewTaskDialog } from "../project/NewTaskDialog";
 import { AddFromBacklogDialog } from "./AddFromBacklogDialog";
 import { SprintActivity } from "./SprintActivity";
 import { SprintHead } from "./SprintHead";
@@ -61,6 +62,7 @@ export function SprintLayout({ sprintId, view }) {
   );
   const [revision, setRevision] = useState(0);
   const [adding, setAdding] = useState(false);
+  const [writing, setWriting] = useState(false);
   const [approving, setApproving] = useState(false);
   const [notice, setNotice] = useState(null);
 
@@ -117,9 +119,12 @@ export function SprintLayout({ sprintId, view }) {
             </span>
           ) : null}
           {open ? (
-            <Button className="sprint__add" onClick={() => setAdding(true)}>
-              Add from backlog
-            </Button>
+            <div className="sprint__add">
+              <Button onClick={() => setAdding(true)}>Add from backlog</Button>
+              <Button icon="plus" onClick={() => setWriting(true)}>
+                New task
+              </Button>
+            </div>
           ) : null}
         </div>
         {notice ? (
@@ -150,6 +155,17 @@ export function SprintLayout({ sprintId, view }) {
         ) : null}
       </section>
       <SprintActivity sprintId={sprintId} tasks={taskList} revision={revision} />
+      <NewTaskDialog
+        projectId={projectId}
+        sprint={current}
+        open={writing}
+        onClose={() => setWriting(false)}
+        onFiled={(task) => {
+          setWriting(false);
+          setNotice({ error: false, text: `${task?.task_key || "The task"} added to ${current.title}.` });
+          changed();
+        }}
+      />
       <AddFromBacklogDialog
         open={adding}
         projectId={projectId}

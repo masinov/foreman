@@ -9,6 +9,16 @@ memory changes rather than versioned product releases.
 
 ### Sprint 58 — frontend rebuild
 
+- **feat, a new task straight into a sprint** (`feat/new-task-in-a-sprint`):
+  the owner pointed out that a task could only reach a sprint through the
+  backlog. The sprint page has "New task" beside "Add from backlog"; it uses
+  the existing `POST /sprints/{id}/tasks`. A person writing a task into a
+  sprint has decided it is wanted and where it goes; work filed by agents and
+  other systems still lands in the backlog (ADR-0021). With it: sprint rows in
+  the project's list are one line (the goal is on the sprint page); the New
+  sprint dialog no longer asks for "the sprint number" and says the sprint
+  starts empty; the engine row says when the active sprint has no tasks.
+
 - **fix, alignment and one link to the workspace** (`fix/top-bar-baseline`),
   four things the owner reported. The wordmark sat about a pixel below the
   breadcrumb; it is lifted onto the same baseline. In the engine row the
