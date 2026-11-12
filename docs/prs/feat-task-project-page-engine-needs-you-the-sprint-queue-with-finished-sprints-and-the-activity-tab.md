@@ -92,8 +92,11 @@
   depends on projects only), but a shared cache would halve it.
 - The engine row shows the engine's state as last read. After a command it
   reloads once; it does not follow the engine until the live-updates slice.
-- A planned "Intake queue" sprint shows in the queue. That is true today
-  (Start can activate it); the backlog slice changes what it is.
+- Merged with main after the backlog slice (ADR-0021). The sprint list now
+  excludes the backlog row (`kind = 'backlog'`), so the queue and finished
+  sprints never show it; `order=recent` sits on top of that filter. The
+  Backlog tab's count is the workspace payload's `backlog`, which main now
+  counts from the backlog row.
 - No new dependency.
 
 ## Tests
