@@ -646,4 +646,110 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         END;
         """,
     ),
+    (
+        21,
+        "the backlog: a sprint row of kind 'backlog', the declined status, intake queues become backlogs",
+        """
+        -- ADR-0021. Every existing row is a sprint. A backlog is one row per
+        -- project that is never listed, counted, activated or run as a sprint.
+        ALTER TABLE sprints ADD COLUMN kind TEXT NOT NULL DEFAULT 'sprint';
+
+        CREATE TRIGGER IF NOT EXISTS sprints_kind_insert_guard
+        BEFORE INSERT ON sprints
+        WHEN NEW.kind NOT IN ('sprint', 'backlog')
+        BEGIN
+            SELECT RAISE(ABORT, 'invalid sprints.kind');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS sprints_kind_update_guard
+        BEFORE UPDATE OF kind ON sprints
+        WHEN NEW.kind NOT IN ('sprint', 'backlog')
+        BEGIN
+            SELECT RAISE(ABORT, 'invalid sprints.kind');
+        END;
+
+        -- A backlog never becomes active, so the engine can never run it,
+        -- whoever writes the row. Its stored status is always 'planned'.
+        CREATE TRIGGER IF NOT EXISTS sprints_backlog_status_insert_guard
+        BEFORE INSERT ON sprints
+        WHEN NEW.kind = 'backlog' AND NEW.status != 'planned'
+        BEGIN
+            SELECT RAISE(ABORT, 'a backlog cannot be active, completed or cancelled');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS sprints_backlog_status_update_guard
+        BEFORE UPDATE OF status, kind ON sprints
+        WHEN NEW.kind = 'backlog' AND NEW.status != 'planned'
+        BEGIN
+            SELECT RAISE(ABORT, 'a backlog cannot be active, completed or cancelled');
+        END;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_sprints_backlog_project
+        ON sprints(project_id) WHERE kind = 'backlog';
+
+        -- `declined` joins the task status vocabulary (migration 20).
+        DROP TRIGGER IF EXISTS tasks_status_insert_guard;
+        CREATE TRIGGER tasks_status_insert_guard
+        BEFORE INSERT ON tasks
+        WHEN NEW.status NOT IN
+            ('triage', 'todo', 'in_progress', 'blocked', 'done', 'cancelled', 'declined')
+        BEGIN
+            SELECT RAISE(ABORT, 'invalid tasks.status');
+        END;
+
+        DROP TRIGGER IF EXISTS tasks_status_update_guard;
+        CREATE TRIGGER tasks_status_update_guard
+        BEFORE UPDATE OF status ON tasks
+        WHEN NEW.status NOT IN
+            ('triage', 'todo', 'in_progress', 'blocked', 'done', 'cancelled', 'declined')
+        BEGIN
+            SELECT RAISE(ABORT, 'invalid tasks.status');
+        END;
+
+        -- Each intake queue (ADR-0013, `<project>-intake`) becomes the
+        -- project's backlog. Its waiting work, filed (`triage`) or accepted
+        -- (`todo`), moves to a new `<project>-backlog` row. Work the queue
+        -- already started or finished stays where it is, history intact.
+        INSERT INTO sprints (id, project_id, title, goal, status, order_index, created_at, kind)
+        SELECT p.id || '-backlog', p.id, 'Backlog',
+               'Work that is filed or accepted and not yet planned into a sprint. '
+               || 'The engine never runs it.',
+               'planned', 0, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), 'backlog'
+        FROM projects p
+        WHERE EXISTS (SELECT 1 FROM sprints q WHERE q.id = p.id || '-intake')
+          AND NOT EXISTS (SELECT 1 FROM sprints b WHERE b.project_id = p.id AND b.kind = 'backlog')
+          AND NOT EXISTS (SELECT 1 FROM sprints c WHERE c.id = p.id || '-backlog');
+
+        UPDATE tasks
+        SET sprint_id = (
+            SELECT b.id FROM sprints b
+            WHERE b.project_id = tasks.project_id AND b.kind = 'backlog'
+        )
+        WHERE sprint_id = project_id || '-intake'
+          AND status IN ('triage', 'todo')
+          AND EXISTS (
+            SELECT 1 FROM sprints b
+            WHERE b.project_id = tasks.project_id AND b.kind = 'backlog'
+          );
+
+        DELETE FROM sprints
+        WHERE id = project_id || '-intake'
+          AND kind = 'sprint'
+          AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.sprint_id = sprints.id)
+          AND NOT EXISTS (SELECT 1 FROM decision_gates g WHERE g.sprint_id = sprints.id);
+
+        -- A queue left holding only finished work is finished too; one still
+        -- running keeps running until the engine completes it.
+        UPDATE sprints
+        SET status = 'completed',
+            completed_at = COALESCE(completed_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        WHERE id = project_id || '-intake'
+          AND kind = 'sprint'
+          AND status = 'planned'
+          AND NOT EXISTS (
+            SELECT 1 FROM tasks t
+            WHERE t.sprint_id = sprints.id AND t.status NOT IN ('done', 'cancelled')
+          );
+        """,
+    ),
 ]

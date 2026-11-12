@@ -33,3 +33,4 @@ Filename format:
 | ADR-0018 | Completion Evidence Is Facts, Not A Score | accepted |
 | ADR-0019 | The Dashboard API Is Versioned And Has One Error Shape | accepted |
 | ADR-0020 | Dashboard Design v7 Is The UI Reference, And How The Frontend Is Built | accepted |
+| ADR-0021 | The Backlog Is A Place, Not A Sprint | accepted |

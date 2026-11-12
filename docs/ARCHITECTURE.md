@@ -343,11 +343,32 @@ tracker, a chat bot, a CI job (ADR-0013).
 Two shapes are worth preserving. **Intake is idempotent on the caller's own
 key** `(project, source.system, source.external_ref)`, because the caller is
 what retries; Foreman-generated keys would force callers to store Foreman
-state. And **the intake queue is a sprint** (`<project>-intake`, created on
-first use): sprints stay the unit of grouping, a continuous queue is a sprint
-that never completes, and no consumer — task selection, the board, the digest,
-the context projection — needs a code path for a task that belongs to no
-sprint.
+state. Work filed without a sprint goes to the project's **backlog**
+(ADR-0021, which replaced the standing intake queue sprint of ADR-0013).
+
+### The backlog (ADR-0021)
+
+Work flows one way: filed, accepted, planned into a sprint. The backlog is
+a row in `sprints` with `kind = 'backlog'`, one per project (`<project>-backlog`,
+created on first filing), so `tasks.sprint_id` stays `NOT NULL` and no reader
+of tasks needs a path for orphans. Every sprint read in `SprintStore` and
+`OverviewStore` filters `kind = 'sprint'`, so the backlog is never listed,
+counted, activated or advanced into, and a trigger keeps it `planned`
+whoever writes. A backlog task is `triage` (filed), `todo` (accepted) or
+`declined`.
+
+- `foreman/mutations.py`: `file_task` (triage policy decides filed or
+  accepted, one attention turn when filed), `accept_task`, `decline_task`,
+  `plan_tasks` (into a planned or active sprint, or a new planned sprint, all
+  or none in one transaction), `unplan_task`. Each writes an audit event
+  naming `via` and `by`. The CLI, the API, intake and agent `task_created`
+  signals all file through `file_task`.
+- `foreman/backlog.py`: the one backlog read, shared by
+  `GET /projects/{id}/backlog` and `foreman backlog list --json`.
+- `foreman/dashboard/routers/backlog.py`: `GET` and `POST
+  /projects/{id}/backlog`, `POST /projects/{id}/backlog/plan`,
+  `POST /tasks/{id}/decline`, `POST /tasks/{id}/unplan`.
+- `foreman/cli/backlog.py`: `foreman backlog list|add|accept|decline|plan|unplan`.
 
 ### Views across projects (sprint 58)
 
@@ -364,7 +385,7 @@ bad one is a 400 `invalid_request` envelope (ADR-0019). Paged lists take
   `running`, `paused` or `not_running`, plus `task_id`, `task_key`,
   `task_title`, `step` of the task in flight), `active_sprint` (`id`,
   `title`, `task_counts` by status, `needs_you`, `spend_usd`, or null),
-  `needs_you`, `backlog` (triage and todo tasks in the intake queue sprint),
+  `needs_you`, `backlog` (filed and accepted tasks in the backlog),
   and `latest_milestone` (or null). Its query count depends on the number of
   projects, never on sprints or tasks.
 - `GET /needs-you` and `GET /projects/{id}/needs-you` return `items`, newest
@@ -385,14 +406,14 @@ bad one is a 400 `invalid_request` envelope (ADR-0019). Paged lists take
   sprint columns, `engine.merge` events, completed `engine_commands` (the
   actor is `requested_by`) and the engine lock's lease history (a stop names
   its actor when a `shutdown` command completed during that lease). The
-  standing intake queue's start and finish are not milestones.
+  backlog is not a sprint and has no milestones.
 - `GET /projects/{id}/sprints` accepts `status` (`active`, `planned`,
   `completed`; repeatable or comma-separated), `q` (case-insensitive part of
   the title, which carries the sprint number, or of the id), `limit` and
   `offset`, and now also returns `total`. `order` is `queue` (the default,
   the order sprints run in) or `recent` (latest finished first, then latest
   started; the project page's finished-sprints list). Without parameters it
-  returns every sprint as before.
+  returns every sprint as before. The backlog is never among them.
 
 ### Inspection and dashboard surfaces
 

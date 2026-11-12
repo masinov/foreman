@@ -84,11 +84,12 @@ review, human gate, deferred approval, merge). Still true: agents run with full 
   decision gates (a proposed sprint order) are a fifth kind the design does
   not show; the rebuilt pages do not list them, and they are settled from
   `/dashboard/legacy` until a slice gives them a place.
-- The design has a backlog that is not a sprint, where the engine has a
-  standing "Intake queue" sprint and a triage status. Sprint 58 slice 3
-  decides the mapping and records it in an ADR. Until it lands, a planned
-  intake queue sprint shows in the project page's sprint queue, which is
-  true today: Start activates the first planned sprint, and that can be it.
+- Resolved (sprint 58 slice 3, ADR-0021): the design's backlog is a sprint
+  row of kind `backlog` that is never listed or run as a sprint; the standing
+  "Intake queue" sprint is gone (migration 21 moved its waiting work into the
+  backlog). Accepted intake work and agent follow-ups now wait there until a
+  person plans them into a sprint. The rebuilt frontend has no backlog
+  screen yet; it reads `GET /api/v1/projects/{id}/backlog` when it lands.
 
 ## Validation baseline
 
