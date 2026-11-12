@@ -131,6 +131,12 @@ class ApiContext:
         with open_store(self.db_path) as store:
             return callback(DashboardService(store))
 
+    def with_store(self, callback: Callable[[ForemanStore], _T]) -> _T:
+        """Run ``callback`` with a store opened for this request."""
+
+        with open_store(self.db_path) as store:
+            return callback(store)
+
     def require_manager(self) -> None:
         """Refuse a manager-chat route when the manager is disabled."""
 

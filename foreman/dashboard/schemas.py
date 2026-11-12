@@ -57,8 +57,45 @@ class RequestedBy(_Body):
     requested_by: str | None = None
 
 
+class EngineCommandBody(RequestedBy):
+    command: str = ""
+
+
 class AgentStart(RequestedBy):
     task_id: str | None = None
+
+
+class BacklogFile(_Body):
+    """A task a person files into the backlog (ADR-0021)."""
+
+    title: str = ""
+    task_type: str = "feature"
+    description: str | None = None
+    acceptance_criteria: str | None = None
+    priority: int = 0
+    complexity: str | None = None
+    #: File it already accepted: the person filing it is the one deciding.
+    accept: bool = False
+    requested_by: str | None = None
+
+
+class TaskDecline(_Body):
+    reason: str | None = None
+    requested_by: str | None = None
+
+
+class NewSprint(_Body):
+    title: str = ""
+    goal: str | None = None
+
+
+class BacklogPlan(_Body):
+    """Accepted backlog tasks, and the sprint, existing or new, to plan them into."""
+
+    task_ids: list[str] = []
+    sprint_id: str | None = None
+    new_sprint: NewSprint | None = None
+    requested_by: str | None = None
 
 
 class TaskDenial(_Body):

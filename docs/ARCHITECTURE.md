@@ -254,7 +254,11 @@ engine the same way every other surface does (ADR-0002 amendment):
 - `GET /api/projects/{id}/agent/status` returns the engine view above,
 - Run enqueues `resume` (plus `run_task` for a task-scoped start), Pause
   enqueues `pause`, and a task Stop enqueues `stop_task`,
-- `GET /api/projects/{id}/engine/commands` exposes the command log,
+- `GET /api/projects/{id}/engine/commands` exposes the command log, and
+  `POST` to it queues `pause`, `resume` or `shutdown` for a resident engine
+  (the project page's Stop is `shutdown`). It refuses with a 400 sentence
+  when no engine is resident: a `shutdown` queued for nobody would be the
+  first thing the next engine read, and it would exit at once,
 - when no engine is resident there is nobody to send `resume` to, so the
   service spawns a detached `foreman serve` through its injected spawner —
   the single-machine bootstrap, and the only place the dashboard starts a
@@ -339,11 +343,32 @@ tracker, a chat bot, a CI job (ADR-0013).
 Two shapes are worth preserving. **Intake is idempotent on the caller's own
 key** `(project, source.system, source.external_ref)`, because the caller is
 what retries; Foreman-generated keys would force callers to store Foreman
-state. And **the intake queue is a sprint** (`<project>-intake`, created on
-first use): sprints stay the unit of grouping, a continuous queue is a sprint
-that never completes, and no consumer — task selection, the board, the digest,
-the context projection — needs a code path for a task that belongs to no
-sprint.
+state. Work filed without a sprint goes to the project's **backlog**
+(ADR-0021, which replaced the standing intake queue sprint of ADR-0013).
+
+### The backlog (ADR-0021)
+
+Work flows one way: filed, accepted, planned into a sprint. The backlog is
+a row in `sprints` with `kind = 'backlog'`, one per project (`<project>-backlog`,
+created on first filing), so `tasks.sprint_id` stays `NOT NULL` and no reader
+of tasks needs a path for orphans. Every sprint read in `SprintStore` and
+`OverviewStore` filters `kind = 'sprint'`, so the backlog is never listed,
+counted, activated or advanced into, and a trigger keeps it `planned`
+whoever writes. A backlog task is `triage` (filed), `todo` (accepted) or
+`declined`.
+
+- `foreman/mutations.py`: `file_task` (triage policy decides filed or
+  accepted, one attention turn when filed), `accept_task`, `decline_task`,
+  `plan_tasks` (into a planned or active sprint, or a new planned sprint, all
+  or none in one transaction), `unplan_task`. Each writes an audit event
+  naming `via` and `by`. The CLI, the API, intake and agent `task_created`
+  signals all file through `file_task`.
+- `foreman/backlog.py`: the one backlog read, shared by
+  `GET /projects/{id}/backlog` and `foreman backlog list --json`.
+- `foreman/dashboard/routers/backlog.py`: `GET` and `POST
+  /projects/{id}/backlog`, `POST /projects/{id}/backlog/plan`,
+  `POST /tasks/{id}/decline`, `POST /tasks/{id}/unplan`.
+- `foreman/cli/backlog.py`: `foreman backlog list|add|accept|decline|plan|unplan`.
 
 ### Views across projects (sprint 58)
 
@@ -360,7 +385,7 @@ bad one is a 400 `invalid_request` envelope (ADR-0019). Paged lists take
   `running`, `paused` or `not_running`, plus `task_id`, `task_key`,
   `task_title`, `step` of the task in flight), `active_sprint` (`id`,
   `title`, `task_counts` by status, `needs_you`, `spend_usd`, or null),
-  `needs_you`, `backlog` (triage and todo tasks in the intake queue sprint),
+  `needs_you`, `backlog` (filed and accepted tasks in the backlog),
   and `latest_milestone` (or null). Its query count depends on the number of
   projects, never on sprints or tasks.
 - `GET /needs-you` and `GET /projects/{id}/needs-you` return `items`, newest
@@ -381,12 +406,47 @@ bad one is a 400 `invalid_request` envelope (ADR-0019). Paged lists take
   sprint columns, `engine.merge` events, completed `engine_commands` (the
   actor is `requested_by`) and the engine lock's lease history (a stop names
   its actor when a `shutdown` command completed during that lease). The
-  standing intake queue's start and finish are not milestones.
+  backlog is not a sprint and has no milestones.
 - `GET /projects/{id}/sprints` accepts `status` (`active`, `planned`,
   `completed`; repeatable or comma-separated), `q` (case-insensitive part of
   the title, which carries the sprint number, or of the id), `limit` and
-  `offset`, and now also returns `total`. Without parameters it returns every
-  sprint as before.
+  `offset`, and now also returns `total`. `order` is `queue` (the default,
+  the order sprints run in) or `recent` (latest finished first, then latest
+  started; the project page's finished-sprints list). Without parameters it
+  returns every sprint as before. The backlog is never among them.
+
+The task page reads (sprint 58) are built by `foreman/dashboard_task_reads.py`
+over `foreman/git.py`, with typed response models in
+`foreman/dashboard/task_models.py`. All are GETs under `/api/v1`.
+
+- `GET /tasks/{id}/changes` returns `files` (`path`, `status` of `added`,
+  `modified`, `deleted` or `renamed`, `added`, `deleted`, `binary`, and
+  `old_path` for a rename), `totals` (`files`, `added`, `deleted`), and the two
+  commits compared: `base` (the commit the branch left the default branch at)
+  and `head` (the branch tip). A task with no branch, or whose branch is gone,
+  returns no files and `empty_reason`.
+- `GET /tasks/{id}/changes/diff?path=...` returns the unified `diff` of one
+  file, capped at `cap_chars` (200,000); a longer diff is cut and `truncated`
+  is true, with `total_chars`. `path` must be exactly one of the changed
+  files from the same comparison, else 400 `invalid_request`. Git runs with a
+  fixed argument list, `--literal-pathspecs` and `--`; request input is never
+  interpolated into a command.
+- `GET /tasks/{id}/checks` returns `facts` (what the engine measured: `tests`
+  with `status`, `exit_code`, `duration_seconds`, `command`, `result_line`,
+  `commit`, `head_sha`; `branch` with `ahead`, `behind` and `state`; `size`),
+  `claims` (what an agent reported: `reviews` with decision, model, duration,
+  commit, summary; `judged_by`; `criteria` with their judged `status`),
+  `proof_status`, `outstanding`, and `evidence_files`, always empty until
+  Phase 5 captures evidence files (item shape: `name`, `path`, `media_type`,
+  `size_bytes`, `run_id`, `captured_at`). It reads recorded events, runs and
+  completion evidence and runs nothing (ADR-0018).
+- `GET /tasks/{id}/runs` pages a task's runs newest first (`limit`, `offset`,
+  `total`): `step`, `role_id`, `model`, `outcome`, `started_at`,
+  `finished_at`, `duration_ms`, `cost_usd`, `tokens`, `token_usage`.
+- `GET /runs/{id}/output` returns the run's `prompt` and `transcript` entries
+  (`at`, `kind`, `stream`, `text`), each capped at `cap_chars` (200,000
+  characters); `prompt_truncated` and `transcript_truncated` say when a cap
+  applied.
 
 ### Inspection and dashboard surfaces
 
@@ -448,9 +508,9 @@ The frontend is being rebuilt to `docs/design/dashboard-v7/` in sprint 58.
 | Path | Holds |
 |---|---|
 | `app/` | `main.jsx` (entry), `mountApp.jsx`, `router.jsx` (History API router and `Link`), `routes.js` (the route table), `paths.js` (every address), `Shell.jsx` and `Breadcrumb.jsx`, `pages.js` (which routes have a built page) |
-| `api/` | `client.js` (the `/api/v1` client; errors are `ApiError` from the ADR-0019 envelope), one module per resource (`projects`, `sprints`, `gates`, `tasks`, `workspace`), `useResource.js` (`{data, error, loading, reload}`, stale responses ignored) and `ApiProvider.jsx` |
-| `ui/` | primitives: `Button`, `Table`, `Surface`, `StatusDot`, `Tabs`, `SectionHeading`, `Mono`, and `format.js` |
-| `pages/` | `workspace/` (built), `status/` (the shared "being rebuilt" page and not-found) |
+| `api/` | `client.js` (the `/api/v1` client; errors are `ApiError` from the ADR-0019 envelope; `queryString`), one module per resource (`projects`, `sprints`, `tasks`, `workspace`, `needsYou`, `milestones`, `engine`), `useResource.js` (`{data, error, loading, reload}`, stale responses ignored), `usePagedList.js` (server paging: first page, `loadMore`, `reload`, stale pages ignored) and `ApiProvider.jsx` |
+| `ui/` | primitives: `Button`, `Table`, `Surface`, `StatusDot`, `Tabs`, `SectionHeading`, `Mono`, `Menu`, `Dialog`, `Field`, `Disclosure`, and `format.js` |
+| `pages/` | `workspace/` and `project/` (built: Sprints and Activity tabs over one shared head, `ProjectLayout`), `shared/` (Needs you, the milestone table, shared wording), `status/` (the shared "being rebuilt" page and not-found) |
 | `styles/` | `tokens.css` (the only place a colour, size, radius or line weight is written), `base.css`, `shell.css`, `ui.css`, and one stylesheet per page area |
 | `legacy/` | the pre-v7 application, served at `/dashboard/legacy` until the rebuild's last slice deletes it |
 | `testing/` | the fake API used by tests |
@@ -463,11 +523,13 @@ never reaches rebuilt pages. Routes without a rebuilt page render one shared
 colour or a size, if a component uses an inline style, or if a page or
 primitive calls `fetch`.
 
-The workspace page's data comes from `api/workspace.js`, which composes the
-per-resource endpoints (projects, each project's detail, sprints and pending
-decision gates, the task lists of sprints whose counts show blocked or filed
-work, and the detail of tasks at a human gate). A single workspace endpoint
-replaces that composition in the next API slice without changing the page.
+The workspace page reads `GET /workspace`, `GET /needs-you` and
+`GET /milestones`. The project page's head (title row, engine, Needs you,
+tabs) reads `GET /workspace` for the project, its engine state and backlog
+count, and the project's `needs-you`; the breadcrumb's project switcher reads
+`GET /workspace` too. Needs you, finished sprints and the Activity tab page on
+the server through `usePagedList`; the sprint queue is one unpaged read of the
+active and planned sprints.
 
 The current implementation debt in this area is explicit:
 

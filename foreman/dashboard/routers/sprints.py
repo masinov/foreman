@@ -36,11 +36,17 @@ def build_router(ctx: ApiContext) -> APIRouter:
         q: str | None = None,
         limit: int | None = Query(default=None, ge=1, le=MAX_PAGE_LIMIT),
         offset: int = Query(default=0, ge=0),
+        order: str = "queue",
     ) -> dict[str, Any]:
         statuses = split_values(status)
         return with_api(
             lambda api: api.list_project_sprints(
-                project_id, statuses=statuses, query=q, limit=limit, offset=offset
+                project_id,
+                statuses=statuses,
+                query=q,
+                limit=limit,
+                offset=offset,
+                order=order,
             )
         )
 

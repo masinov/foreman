@@ -16,10 +16,6 @@ from ..models import Sprint, Task, TASK_STATUSES
 from .base import ENGINE_RESOURCE_TYPE, StoreBase
 from .rows import _row_to_sprint, _row_to_task
 
-#: Suffix of a project's intake queue sprint id. Duplicated from
-#: ``foreman.dashboard_service`` on purpose: the store sits below the service.
-INTAKE_SPRINT_SUFFIX = "-intake"
-
 #: Every kind of milestone, in the order the API documents them.
 MILESTONE_KINDS: tuple[str, ...] = (
     "sprint_started",
@@ -34,6 +30,17 @@ MILESTONE_KINDS: tuple[str, ...] = (
 #: Statuses a sprint can be listed by.
 SPRINT_LIST_STATUSES: tuple[str, ...] = ("active", "planned", "completed")
 
+#: Orders a sprint list can come in. ``queue`` is the order the sprints run
+#: in; ``recent`` puts the most recently finished first, then the most
+#: recently started, then the rest newest-queued first.
+SPRINT_LIST_ORDERS: dict[str, str] = {
+    "queue": "order_index ASC, created_at ASC, id ASC",
+    "recent": (
+        "completed_at IS NULL, completed_at DESC, started_at IS NULL, "
+        "started_at DESC, order_index DESC, id DESC"
+    ),
+}
+
 #: A moment as a number, so ``...Z`` and ``...+00:00`` timestamps (both are
 #: stored) order against each other, which plain text comparison does not.
 _INSTANT = "julianday({column})"
@@ -42,8 +49,7 @@ _INSTANT = "julianday({column})"
 # the merge event, completed engine commands, and the engine lock's lease
 # history. Nothing is stored for the feed itself.
 #
-# A standing intake queue is a sprint that never ends (ADR-0013), so neither
-# its start nor its finish is a milestone.
+# The backlog is not a sprint (ADR-0021), so it has no start or finish.
 #
 # An engine stop is the end of an engine lease, released or expired. When a
 # `shutdown` command completed during that lease, the command names who asked.
@@ -51,12 +57,12 @@ _MILESTONES_SQL = f"""
     SELECT 'sprint_started' AS kind, s.started_at AS at, s.project_id AS project_id,
            s.id AS sprint_id, NULL AS task_id, NULL AS actor, s.id AS ref
     FROM sprints s
-    WHERE s.started_at IS NOT NULL AND s.id NOT LIKE '%{INTAKE_SPRINT_SUFFIX}'
+    WHERE s.started_at IS NOT NULL AND s.kind = 'sprint'
     UNION ALL
     SELECT 'sprint_finished', s.completed_at, s.project_id, s.id, NULL, NULL, s.id
     FROM sprints s
     WHERE s.status = 'completed' AND s.completed_at IS NOT NULL
-      AND s.id NOT LIKE '%{INTAKE_SPRINT_SUFFIX}'
+      AND s.kind = 'sprint'
     UNION ALL
     SELECT 'task_merged', e.timestamp, e.project_id, t.sprint_id, e.task_id, NULL, e.id
     FROM events e JOIN tasks t ON t.id = e.task_id
@@ -118,10 +124,11 @@ class OverviewStore(StoreBase):
         rows = self._connection.execute(
             """
             SELECT s.* FROM sprints s
-            WHERE s.status = 'active'
+            WHERE s.status = 'active' AND s.kind = 'sprint'
               AND s.id = (
                 SELECT a.id FROM sprints a
                 WHERE a.project_id = s.project_id AND a.status = 'active'
+                  AND a.kind = 'sprint'
                 ORDER BY a.started_at DESC, a.created_at DESC, a.id DESC
                 LIMIT 1
               )
@@ -148,14 +155,19 @@ class OverviewStore(StoreBase):
         query: str | None = None,
         limit: int | None = None,
         offset: int = 0,
+        order: str = "queue",
     ) -> tuple[list[Sprint], int]:
         """Return one page of a project's sprints and how many match in all.
 
-        Sprints keep their queue order. ``query`` matches, ignoring case, a
-        part of the title (the sprint number is part of the title) or of the id.
+        Sprints keep their queue order unless ``order`` is ``recent`` (see
+        :data:`SPRINT_LIST_ORDERS`). ``query`` matches, ignoring case, a part
+        of the title (the sprint number is part of the title) or of the id.
         """
 
-        filters = ["project_id = ?"]
+        if order not in SPRINT_LIST_ORDERS:
+            raise ValueError(f"Unknown sprint order: {order}")
+
+        filters = ["project_id = ?", "kind = 'sprint'"]
         params: list[Any] = [project_id]
         if statuses:
             filters.append(f"status IN ({', '.join('?' for _ in statuses)})")
@@ -172,7 +184,7 @@ class OverviewStore(StoreBase):
         )
         sql = (
             f"SELECT * FROM sprints WHERE {where} "
-            "ORDER BY order_index ASC, created_at ASC, id ASC"
+            f"ORDER BY {SPRINT_LIST_ORDERS[order]}"
         )
         page_params = list(params)
         if limit is not None:
@@ -223,22 +235,76 @@ class OverviewStore(StoreBase):
         return spend
 
     def backlog_counts(self) -> dict[str, int]:
-        """Count the work waiting in each project's intake queue, by project id.
+        """Count the work waiting in each project's backlog, by project id.
 
-        Waiting means filed and not started: ``triage`` (not yet accepted) and
-        ``todo`` (accepted, not yet picked up).
+        Waiting means filed (``triage``) or accepted (``todo``) and not yet
+        planned into a sprint; declined work is not waiting.
         """
 
         rows = self._connection.execute(
-            f"""
+            """
             SELECT t.project_id AS project_id, COUNT(*) AS value
-            FROM tasks t
-            WHERE t.sprint_id = t.project_id || '{INTAKE_SPRINT_SUFFIX}'
-              AND t.status IN ('triage', 'todo')
+            FROM tasks t JOIN sprints b ON b.id = t.sprint_id
+            WHERE b.kind = 'backlog' AND t.status IN ('triage', 'todo')
             GROUP BY t.project_id
             """
         ).fetchall()
         return {row["project_id"]: int(row["value"]) for row in rows}
+
+    def page_backlog_tasks(
+        self,
+        project_id: str,
+        *,
+        statuses: Sequence[str],
+        query: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> tuple[list[Task], int, dict[str, int]]:
+        """Return one page of a project's backlog, the match total, and counts.
+
+        Filed (``triage``) first, then accepted (``todo``), then declined;
+        within each, in priority and queue order like every task list.
+        ``query`` matches, ignoring case, part of the title, the key or the
+        id. The counts are per status over the whole backlog, unfiltered.
+        """
+
+        base = (
+            "FROM tasks t JOIN sprints b ON b.id = t.sprint_id "
+            "WHERE b.project_id = ? AND b.kind = 'backlog'"
+        )
+        counts = {status: 0 for status in ("triage", "todo", "declined")}
+        for row in self._connection.execute(
+            f"SELECT t.status AS status, COUNT(*) AS n {base} GROUP BY t.status",
+            (project_id,),
+        ).fetchall():
+            if row["status"] in counts:
+                counts[row["status"]] = int(row["n"])
+
+        if not statuses:
+            return [], 0, counts
+        where = base + f" AND t.status IN ({', '.join('?' for _ in statuses)})"
+        params: list[Any] = [project_id, *statuses]
+        if query:
+            escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            where += (
+                " AND (t.title LIKE ? ESCAPE '\\' OR t.task_key LIKE ? ESCAPE '\\'"
+                " OR t.id LIKE ? ESCAPE '\\')"
+            )
+            params.extend([f"%{escaped}%"] * 3)
+        total = int(
+            self._connection.execute(f"SELECT COUNT(*) AS n {where}", tuple(params)).fetchone()["n"]
+        )
+        sql = (
+            f"SELECT t.* {where} ORDER BY "
+            "CASE t.status WHEN 'triage' THEN 0 WHEN 'todo' THEN 1 ELSE 2 END, "
+            "t.priority ASC, t.order_index ASC, t.created_at ASC, t.id ASC"
+        )
+        page_params = list(params)
+        if limit is not None:
+            sql += " LIMIT ? OFFSET ?"
+            page_params.extend([max(0, int(limit)), max(0, int(offset))])
+        rows = self._connection.execute(sql, tuple(page_params)).fetchall()
+        return [_row_to_task(row) for row in rows], total, counts
 
     # ── what is waiting for a person ──────────────────────────────────────
 

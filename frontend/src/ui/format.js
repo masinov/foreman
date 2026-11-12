@@ -25,3 +25,25 @@ export function shortSha(sha) {
 export function plural(count, one, many = `${one}s`) {
   return `${count} ${count === 1 ? one : many}`;
 }
+
+const dayMonth = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short" });
+const dayMonthYear = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric" });
+
+/** "11 Nov", with the year when it is not this year's. Empty for no date. */
+export function formatDay(timestamp, now = new Date()) {
+  if (!timestamp) return "";
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.getFullYear() === now.getFullYear() ? dayMonth.format(date) : dayMonthYear.format(date);
+}
+
+/**
+ * Split a sprint title at its first colon: "Sprint 55: baseline" gives
+ * `["Sprint 55", "baseline"]`. A title without one gives `[title, ""]`.
+ */
+export function splitTitle(title) {
+  const text = String(title ?? "");
+  const at = text.indexOf(":");
+  if (at <= 0) return [text, ""];
+  return [text.slice(0, at).trim(), text.slice(at + 1).trim()];
+}

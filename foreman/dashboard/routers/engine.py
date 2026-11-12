@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends
 from ...dashboard_service import (
     ENGINE_COMMAND_LIMIT,
 )
-from ..schemas import AgentStart, RequestedBy, body_as
+from ..schemas import AgentStart, EngineCommandBody, RequestedBy, body_as
 from ..context import (
     ApiContext,
 )
@@ -52,6 +52,17 @@ def build_router(ctx: ApiContext) -> APIRouter:
     ) -> dict[str, Any]:
         return with_api(
             lambda api: api.list_engine_commands(project_id, limit=limit, status=status)
+        )
+
+    @router.post("/projects/{project_id}/engine/commands")
+    def send_engine_command(
+        project_id: str, body: EngineCommandBody = Depends(body_as(EngineCommandBody))
+    ) -> dict[str, Any]:
+        requested_by = body.requested_by or None
+        return with_api(
+            lambda api: api.send_engine_command(
+                project_id, command=body.command.strip(), requested_by=requested_by
+            )
         )
 
     return router

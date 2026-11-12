@@ -312,28 +312,34 @@ class IntakeServiceTests(unittest.TestCase):
 
         self.assertEqual(len(self.store.list_tasks(project_id="project-1")), 2)
 
-    def test_the_intake_queue_is_created_active_when_no_sprint_is_running(self) -> None:
+    # ADR-0021 replaced the standing intake queue sprint with the backlog. The
+    # three tests that pinned the queue's activation rules now pin the rule
+    # that replaced them: filed work goes to the backlog, which never runs.
+
+    def test_filed_work_goes_to_the_backlog_which_is_not_a_sprint(self) -> None:
         result = self.file()
 
-        sprint = self.store.get_sprint("project-1-intake")
-        assert sprint is not None
-        self.assertEqual(sprint.status, "active")
-        self.assertEqual(sprint.title, "Intake queue")
-        self.assertIsNotNone(sprint.started_at)
-        self.assertEqual(self.store.get_task(result["id"]).sprint_id, sprint.id)
+        backlog = self.store.get_backlog("project-1")
+        assert backlog is not None
+        self.assertEqual(self.store.get_task(result["id"]).sprint_id, backlog.id)
+        self.assertEqual((backlog.kind, backlog.status), ("backlog", "planned"))
+        self.assertIsNone(backlog.started_at)
+        self.assertEqual(self.store.list_sprints("project-1"), [])
+        self.assertIsNone(self.store.get_active_sprint("project-1"))
+        self.assertIsNone(self.store.get_sprint("project-1-intake"))
 
-    def test_the_queue_is_planned_while_another_sprint_is_active(self) -> None:
+    def test_filing_leaves_the_active_sprint_alone(self) -> None:
         self.store.save_sprint(
             Sprint(id="sprint-1", project_id="project-1", title="S", status="active")
         )
 
-        self.file()
+        result = self.file()
 
-        sprint = self.store.get_sprint("project-1-intake")
-        assert sprint is not None
-        self.assertEqual(sprint.status, "planned")
+        self.assertEqual(self.store.get_active_sprint("project-1").id, "sprint-1")
+        self.assertEqual(self.store.list_tasks(sprint_id="sprint-1"), [])
+        self.assertTrue(self.store.get_sprint(self.store.get_task(result["id"]).sprint_id).is_backlog)
 
-    def test_a_planned_queue_activates_once_the_active_sprint_finishes(self) -> None:
+    def test_the_backlog_never_activates_when_the_active_sprint_finishes(self) -> None:
         self.store.save_sprint(
             Sprint(id="sprint-1", project_id="project-1", title="S", status="active")
         )
@@ -342,9 +348,10 @@ class IntakeServiceTests(unittest.TestCase):
 
         self.file(source={"system": "pagerduty", "external_ref": "INC-99"})
 
-        sprint = self.store.get_sprint("project-1-intake")
-        assert sprint is not None
-        self.assertEqual(sprint.status, "active")
+        backlog = self.store.get_backlog("project-1")
+        self.assertEqual(backlog.status, "planned")
+        self.assertIsNone(self.store.get_active_sprint("project-1"))
+        self.assertEqual(len(self.store.list_tasks(sprint_id=backlog.id)), 2)
 
     def test_an_explicit_sprint_is_used_instead_of_the_queue(self) -> None:
         self.store.save_sprint(

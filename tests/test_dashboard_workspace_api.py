@@ -188,7 +188,9 @@ class MilestoneTests(WorkspaceApiCase):
         self.sprint("s1", "p1", "Sprint 1", "completed",
                     started_at="2026-01-01T00:00:00+00:00", completed_at="2026-01-03T00:00:00+00:00")
         self.sprint("s2", "p1", "Sprint 2", "active", started_at="2026-01-04T00:00:00Z")
-        self.sprint("p1-intake", "p1", "Intake queue", "planned", started_at="2026-01-01T00:00:00Z")
+        # The backlog is not a sprint (ADR-0021): it never starts or finishes.
+        self.sprint("p1-backlog", "p1", "Backlog", "planned", kind="backlog",
+                    started_at="2026-01-01T00:00:00Z")
         self.sprint("s3", "p2", "Sprint 3", "active", started_at="2026-01-02T12:00:00Z")
         self.task("t1", "s1", "p1", "done")
         self.event("merge-1", "t1", "p1", "engine.merge", "2026-01-02T00:00:00Z")
@@ -236,8 +238,8 @@ class MilestoneTests(WorkspaceApiCase):
                          ("t1", "s1", "Sprint 1"))
         self.assertTrue(merged["task_key"])
         self.assertEqual(body["milestones"][4]["sprint_title"], "Sprint 2")
-        # The standing intake queue and an engine's rejected command are not milestones.
-        self.assertNotIn("Intake queue", {m["sprint_title"] for m in body["milestones"]})
+        # The backlog and an engine's rejected command are not milestones.
+        self.assertNotIn("Backlog", {m["sprint_title"] for m in body["milestones"]})
 
     def test_all_projects_orders_across_them(self) -> None:
         self.seed()
@@ -306,10 +308,10 @@ class WorkspaceTests(WorkspaceApiCase):
 
     def test_populated(self) -> None:
         self.seed_attention()
-        self.sprint("p1-intake", "p1", "Intake queue", "planned")
-        self.task("q1", "p1-intake", "p1", "triage")
-        self.task("q2", "p1-intake", "p1", "todo")
-        self.task("q3", "p1-intake", "p1", "done")
+        self.sprint("p1-backlog", "p1", "Backlog", "planned", kind="backlog")
+        self.task("q1", "p1-backlog", "p1", "triage")
+        self.task("q2", "p1-backlog", "p1", "todo")
+        self.task("q3", "p1-backlog", "p1", "declined")
         self.add_run("r-cost-1", "done", "p1", cost=1.25)
         self.add_run("r-cost-2", "merge", "p1", cost=0.5)
         self.add_run("r-cost-3", "q3", "p1", cost=9.0)
@@ -330,7 +332,7 @@ class WorkspaceTests(WorkspaceApiCase):
         self.assertEqual(p1["active_sprint"]["task_counts"]["triage"], 1)
         self.assertEqual(p1["active_sprint"]["needs_you"], 2)
         self.assertAlmostEqual(p1["active_sprint"]["spend_usd"], 1.75)
-        self.assertEqual((p1["needs_you"], p1["backlog"]), (3, 2))  # the queue's triage task counts too
+        self.assertEqual((p1["needs_you"], p1["backlog"]), (3, 2))  # the backlog's filed task counts too
         self.assertEqual(p2["engine"]["state"], "not_running")
         self.assertEqual((p2["needs_you"], p2["backlog"]), (2, 0))
 
@@ -385,7 +387,7 @@ class SprintListTests(WorkspaceApiCase):
         active = body["sprints"][2]
         self.assertEqual([t["id"] for t in active["tasks"]], ["t"])
         self.assertEqual(
-            set(active), {"id", "title", "goal", "status", "order_index", "started_at",
+            set(active), {"id", "project_id", "title", "goal", "status", "order_index", "started_at",
                           "completed_at", "task_counts", "totals", "tasks"},
         )
 
@@ -406,12 +408,24 @@ class SprintListTests(WorkspaceApiCase):
         self.assertEqual([s["id"] for s in body["sprints"]], ["b"])
         self.assertEqual(body["total"], 3)
 
+    def test_recent_order_puts_the_latest_finished_first(self) -> None:
+        # Finished out of queue order: the later-queued sprint finished first.
+        self.sprint("a", "p1", "Sprint 1: foundations", "completed", order_index=0,
+                    completed_at="2026-02-02T00:00:00Z")
+        self.sprint("b", "p1", "Sprint 2: engine", "completed", order_index=1,
+                    completed_at="2026-01-01T00:00:00Z")
+        self.sprint("f", "p1", "Sprint 0: never stamped", "completed", order_index=5)
+        self.assertEqual(self.ids("?status=completed&order=recent"), ["a", "b", "f"])
+        self.assertEqual(self.ids("?status=completed&order=queue"), ["a", "b", "f"])
+        body = self.get("/api/v1/projects/p1/sprints?status=completed&order=recent&limit=1&offset=1").json()
+        self.assertEqual(([s["id"] for s in body["sprints"]], body["total"]), (["b"], 3))
+
     def test_empty_result(self) -> None:
         body = self.get("/api/v1/projects/p2/sprints?status=planned").json()
         self.assertEqual((body["sprints"], body["total"]), ([], 0))
 
     def test_bad_parameters_are_the_400_envelope(self) -> None:
-        for query in ("status=done", "status=active,bogus", "limit=0", "limit=x", "offset=-1"):
+        for query in ("status=done", "status=active,bogus", "limit=0", "limit=x", "offset=-1", "order=bogus"):
             with self.subTest(query=query):
                 response = self.get(f"/api/v1/projects/p1/sprints?{query}")
                 self.assertEqual(response.status_code, 400)

@@ -1,4 +1,4 @@
-import { formatMoney, humanize, plural, shortSha } from "./format";
+import { formatDay, formatMoney, humanize, plural, shortSha, splitTitle } from "./format";
 
 describe("format", () => {
   it("formats amounts, identifiers and shas", () => {
@@ -9,5 +9,21 @@ describe("format", () => {
     expect(shortSha("b232eb1aa0")).toBe("b232eb1");
     expect(plural(1, "task")).toBe("1 task");
     expect(plural(2, "task")).toBe("2 tasks");
+  });
+});
+
+describe("dates and titles", () => {
+  it("formats a day, with the year only when it is another year", () => {
+    const now = new Date("2026-11-12T12:00:00Z");
+    expect(formatDay("2026-11-11T12:00:00Z", now)).toBe("11 Nov");
+    expect(formatDay("2025-03-02T12:00:00Z", now)).toBe("2 Mar 2025");
+    expect(formatDay(null, now)).toBe("");
+    expect(formatDay("not a date", now)).toBe("");
+  });
+
+  it("splits a sprint title at its first colon", () => {
+    expect(splitTitle("Sprint 55: baseline and host safety")).toEqual(["Sprint 55", "baseline and host safety"]);
+    expect(splitTitle("Later")).toEqual(["Later", ""]);
+    expect(splitTitle(": odd")).toEqual([": odd", ""]);
   });
 });

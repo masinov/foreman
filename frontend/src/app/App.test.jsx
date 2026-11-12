@@ -32,9 +32,10 @@ describe("App routing and shell", () => {
       "href",
       "/dashboard/legacy/projects/foreman",
     );
-    // The breadcrumb is driven by the route and names the project by its name.
+    // The breadcrumb is driven by the route and names the project by its name,
+    // as a switcher.
     const crumbs = screen.getByRole("navigation", { name: "Breadcrumb" });
-    expect(await within(crumbs).findByText("Foreman")).toHaveAttribute("aria-current", "page");
+    expect(await within(crumbs).findByRole("button", { name: /^Foreman/ })).toHaveAttribute("aria-current", "page");
     expect(within(crumbs).getByRole("link", { name: "Workspace" })).toHaveAttribute("href", "/dashboard");
   });
 
@@ -43,6 +44,24 @@ describe("App routing and shell", () => {
     const crumbs = screen.getByRole("navigation", { name: "Breadcrumb" });
     expect(await within(crumbs).findByRole("link", { name: "Foreman" })).toHaveAttribute("href", "/dashboard/projects/foreman");
     expect(within(crumbs).getByText("Settings")).toHaveAttribute("aria-current", "page");
+  });
+
+  it("switches project from the breadcrumb, with what waits in each", async () => {
+    renderApp("/dashboard/projects/other/backlog", createFakeFetch(workspaceRoutes()));
+    const crumbs = screen.getByRole("navigation", { name: "Breadcrumb" });
+    const switcher = await within(crumbs).findByRole("button", { name: "Other project" });
+    expect(switcher).toHaveAttribute("aria-haspopup", "menu");
+    fireEvent.click(switcher);
+    const menu = screen.getByRole("menu", { name: "Projects" });
+    expect(within(menu).getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Foreman2", "Other project"]);
+    expect(within(menu).getByRole("menuitem", { name: "Other project" })).toHaveFocus();
+    fireEvent.keyDown(menu, { key: "ArrowUp" });
+    const foreman = within(menu).getByRole("menuitem", { name: /Foreman/ });
+    expect(foreman).toHaveFocus();
+    expect(foreman).toHaveAttribute("href", "/dashboard/projects/foreman");
+    fireEvent.click(foreman);
+    expect(window.location.pathname).toBe("/dashboard/projects/foreman");
+    expect(await within(crumbs).findByRole("button", { name: "Foreman 2 need you" })).toBeInTheDocument();
   });
 
   it("links a task to the start of the legacy dashboard, which has no task address", () => {

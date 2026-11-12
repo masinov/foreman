@@ -1,9 +1,10 @@
 import React from "react";
 
-import { getProject } from "../api/projects";
 import { getSprint } from "../api/sprints";
 import { getTask } from "../api/tasks";
 import { useResource } from "../api/useResource";
+import { getWorkspace } from "../api/workspace";
+import { Menu } from "../ui/Menu";
 import { paths } from "./paths";
 import { Link, useRoute } from "./router";
 
@@ -12,8 +13,56 @@ function useLabel(key, load, pick, fallback) {
   return (data && pick(data)) || fallback;
 }
 
+function useProjects() {
+  const { data } = useResource(["workspace"], getWorkspace);
+  return data ? data.projects : null;
+}
+
 function ProjectCrumb({ projectId }) {
-  return useLabel(["project", projectId], (client, options) => getProject(client, projectId, options), (p) => p.name, projectId);
+  const projects = useProjects();
+  return projects?.find((project) => project.id === projectId)?.name || projectId;
+}
+
+/**
+ * The project in the breadcrumb, as a switcher: a menu of every project with
+ * what waits for a person in each, going to the chosen project.
+ */
+function ProjectSwitcher({ projectId }) {
+  const projects = useProjects();
+  const project = projects?.find((entry) => entry.id === projectId);
+  const name = project?.name || projectId;
+  if (!projects || projects.length === 0) {
+    return (
+      <span className="breadcrumb__current" aria-current="page">
+        {name}
+      </span>
+    );
+  }
+  return (
+    <Menu
+      label="Projects"
+      triggerClassName="breadcrumb__current breadcrumb__switcher"
+      aria-current="page"
+      trigger={
+        <>
+          <span>{name}</span>
+          {project?.needs_you > 0 ? (
+            <span className="breadcrumb__count">
+              {project.needs_you}
+              <span className="visually-hidden"> need you</span>
+            </span>
+          ) : null}
+        </>
+      }
+      items={projects.map((entry) => ({
+        key: entry.id,
+        label: entry.name,
+        detail: entry.needs_you > 0 ? entry.needs_you : null,
+        href: paths.project(entry.id),
+        current: entry.id === projectId,
+      }))}
+    />
+  );
 }
 
 function SprintCrumb({ sprintId }) {
@@ -29,14 +78,14 @@ export function crumbsFor(route, params) {
   const workspace = { key: "workspace", href: paths.workspace(), label: "Workspace" };
   switch (route.level) {
     case "project": {
-      const crumbs = [
-        workspace,
-        { key: "project", href: paths.project(params.projectId), label: <ProjectCrumb projectId={params.projectId} /> },
-      ];
       if (route.name.startsWith("project-settings")) {
-        crumbs.push({ key: "settings", href: paths.projectSettings(params.projectId), label: "Settings" });
+        return [
+          workspace,
+          { key: "project", href: paths.project(params.projectId), label: <ProjectCrumb projectId={params.projectId} /> },
+          { key: "settings", href: paths.projectSettings(params.projectId), label: "Settings" },
+        ];
       }
-      return crumbs;
+      return [workspace, { key: "project", custom: <ProjectSwitcher projectId={params.projectId} /> }];
     }
     case "sprint":
       return [workspace, { key: "sprint", href: paths.sprint(params.sprintId), label: <SprintCrumb sprintId={params.sprintId} /> }];
@@ -63,7 +112,9 @@ export function Breadcrumb() {
           const last = index === crumbs.length - 1;
           return (
             <li key={crumb.key} className="breadcrumb__item">
-              {last || !crumb.href ? (
+              {crumb.custom ? (
+                crumb.custom
+              ) : last || !crumb.href ? (
                 <span className="breadcrumb__current" aria-current={last ? "page" : undefined}>
                   {crumb.label}
                 </span>

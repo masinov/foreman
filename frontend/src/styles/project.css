@@ -1,0 +1,148 @@
+/* The project page: the head shared by its tabs, and the tabs. */
+.project {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.project__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.project__title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.project__title {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.project__settings {
+  color: var(--color-text-secondary);
+}
+
+.project__tab {
+  padding-top: var(--space-4);
+}
+
+.tabs__count {
+  color: var(--color-text-quiet);
+}
+
+/* Engine */
+.engine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+}
+
+.engine__label {
+  font-size: var(--font-size-section);
+  font-weight: var(--font-weight-strong);
+}
+
+.engine__state {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+  min-width: 0;
+}
+
+.engine__sentence {
+  color: var(--color-text-secondary);
+}
+
+.engine__controls {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.engine__notice {
+  flex-basis: 100%;
+  padding-block: 0;
+}
+
+/* Sprints tab */
+.sprints-tab {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.queue__heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.queue__state,
+.queue__tasks,
+.queue__dates {
+  white-space: nowrap;
+}
+
+.queue__number {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.queue__none {
+  display: flex;
+  gap: var(--space-4);
+}
+
+.queue__none-label {
+  color: var(--color-text-quiet);
+}
+
+.queue .table,
+.finished .table {
+  min-width: var(--table-min-width);
+}
+
+.finished {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.finished__filter {
+  max-width: var(--menu-min-width);
+}
+
+.finished__count {
+  color: var(--color-text);
+}
+
+/* Activity tab */
+.activity {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.filter-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.filter-group__option[aria-pressed="true"] {
+  background: var(--color-selected);
+  color: var(--color-text);
+}
