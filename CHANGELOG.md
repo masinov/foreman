@@ -9,6 +9,11 @@ memory changes rather than versioned product releases.
 
 ### Sprint 58 — frontend rebuild
 
+- **fix, the task decision is one line when it fits**
+  (`fix/decision-on-one-line-when-it-fits`): the owner asked why "Accept this
+  task?" took two lines for two short facts. The question and its facts now
+  share a line and wrap only when the facts are long, as for a merge.
+
 - **fix, Backlog is back in the row under the project header**
   (`fix/backlog-in-the-project-navigation`): in the title row the owner could
   not find it. It is listed between Sprints and Activity again, with its
