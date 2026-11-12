@@ -9,6 +9,14 @@ memory changes rather than versioned product releases.
 
 ### Sprint 58 — frontend rebuild
 
+- **fix, a review sees the whole change** (`fix/review-sees-the-whole-change`):
+  the second sprint 58 task (1,310 changed lines) was approved by the
+  reviewer in 7 seconds; the diff in its prompt is capped (16,000 characters
+  by default) and nothing told it the rest was missing. Reviewer prompts now
+  say that a truncated diff means reading the changed files in full first,
+  and the built frontend bundle is marked `-diff` in `.gitattributes` so it
+  does not use up the cap.
+
 - **fix, a step cannot leave work in the background**
   (`fix/agent-steps-wait-in-foreground`): the first sprint 58 task was
   blocked with its work done. The agent's test run outlived Claude Code's
