@@ -9,6 +9,12 @@ memory changes rather than versioned product releases.
 
 ### Sprint 58 — frontend rebuild
 
+- **fix, Backlog is a button, not a tab** (`fix/backlog-is-a-button-not-a-tab`):
+  listed between two tabs it was a link to another page that looked like a
+  tab. Tabs change what the project page shows (Sprints, Activity); other
+  pages of the project (Backlog, Project settings) are buttons at the top
+  right of the title row, where a page's actions are.
+
 - **fix, the task decision is one line when it fits**
   (`fix/decision-on-one-line-when-it-fits`): the owner asked why "Accept this
   task?" took two lines for two short facts. The question and its facts now
