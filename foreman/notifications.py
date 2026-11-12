@@ -704,6 +704,45 @@ def validate_config(config: Mapping[str, Any] | None) -> dict[str, Any]:
     return cleaned
 
 
+def add_destination(
+    store: "ForemanStore",
+    project_id: str,
+    *,
+    name: str | None,
+    url: str | None,
+    kind: str | None = None,
+    headers: Mapping[str, Any] | None = None,
+    secret_env: str | None = None,
+) -> NotificationDestination:
+    """Validate and save one destination: the one path the CLI and the dashboard share.
+
+    Raises :class:`NotificationError` for a missing name, a name the project
+    already uses, or an invalid kind, address or option.
+    """
+
+    cleaned_name = (name or "").strip()
+    if not cleaned_name:
+        raise NotificationError("A notification destination needs a name.")
+    if store.find_notification_destination(project_id, cleaned_name) is not None:
+        raise NotificationError(
+            f"Project {project_id} already has a destination named {cleaned_name!r}. "
+            "Remove it first, or choose another name."
+        )
+    resolved_kind = validate_destination_kind(kind)
+    target = validate_target(resolved_kind, url)
+    config = validate_config({"headers": headers, "secret_env": secret_env})
+    return store.save_notification_destination(
+        NotificationDestination(
+            id=f"dst-{uuid4().hex[:12]}",
+            project_id=project_id,
+            name=cleaned_name,
+            kind=resolved_kind,
+            target=target,
+            config=config,
+        )
+    )
+
+
 def _iso(moment: datetime) -> str:
     """Format a moment the way every other timestamp in the store is stored.
 

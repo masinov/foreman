@@ -1,0 +1,101 @@
+/* Workspace settings: five sections on one page. */
+.workspace-settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.settings-block {
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-block__aside {
+  color: var(--color-text-quiet);
+  font-size: var(--font-size-control);
+}
+
+.settings-block__line {
+  margin: var(--space-2) 0 0;
+  color: var(--color-text-secondary);
+}
+
+.settings-block__revoked {
+  color: var(--color-text-quiet);
+}
+
+.settings-block__action {
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* Workflows beside roles, wrapping to one column when there is no room. */
+.definitions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-4) var(--space-7);
+}
+
+.definitions__workflows {
+  flex: 3 1 var(--definitions-workflows-basis);
+  min-width: 0;
+}
+
+.definitions__roles {
+  flex: 2 1 var(--definitions-roles-basis);
+  min-width: 0;
+}
+
+.machine {
+  margin: 0;
+}
+
+.scopes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.scopes__option {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.secret {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.secret__value {
+  align-self: stretch;
+  padding: var(--space-2);
+  border: var(--line-width) solid var(--color-border-input);
+  border-radius: var(--radius);
+  background: var(--color-inset);
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.copy {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.copy__status {
+  color: var(--color-text-quiet);
+}
+
+/* Read-only values: a narrow label column, as the design draws it. */
+.machine .setting-row {
+  grid-template-columns: minmax(0, var(--label-column-width)) minmax(0, 1fr);
+  padding-block: var(--space-1);
+}

@@ -4,6 +4,7 @@ import { Breadcrumb } from "./Breadcrumb";
 import { paths } from "./paths";
 import { Logo } from "../ui/Logo";
 import { Link } from "./router";
+import { UserMenu } from "./UserMenu";
 
 /**
  * The frame every page sits in: the top bar (the word, the breadcrumb, a
@@ -24,7 +25,10 @@ export function Shell({ topBarRight = null, manager = null, managerOpen = false,
             <Logo />
           </Link>
           <Breadcrumb />
-          <div className="topbar__right">{topBarRight}</div>
+          <div className="topbar__right">
+            {topBarRight}
+            <UserMenu />
+          </div>
         </div>
       </header>
       <div className="shell__body">

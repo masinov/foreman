@@ -145,9 +145,18 @@ export const RECENT = [
   milestone("engine_paused", { at: on("11-09"), project_id: "other", project_name: "Other project", actor: "ana" }),
 ];
 
+/** What the server reports for a session with no authentication configured. */
+export const LOCAL_SESSION = {
+  authentication: "none",
+  name: "Local operator",
+  can_sign_out: false,
+  identity_provider: null,
+};
+
 export function workspaceRoutes({ withGateTask = true } = {}) {
   const items = withGateTask ? [MERGE_ITEM, UNBLOCK_ITEM] : [];
   return {
+    "GET /api/v1/session": LOCAL_SESSION,
     "GET /api/v1/workspace": workspacePayload({ withGateTask }),
     "GET /api/v1/needs-you?limit=5&offset=0": needsYouPage(items),
     "GET /api/v1/milestones?limit=10": { milestones: RECENT, total: RECENT.length, limit: 10, offset: 0 },

@@ -146,3 +146,15 @@ def body_as(model: type[_M]):
             raise DashboardValidationError(f"'{field}': {first['msg']}.") from exc
 
     return dependency
+
+
+class TokenCreate(_Body):
+    name: str = ""
+    scopes: list[str] = []
+
+
+class ChannelCreate(_Body):
+    name: str = ""
+    url: str = ""
+    kind: str | None = None
+    secret_env: str | None = None

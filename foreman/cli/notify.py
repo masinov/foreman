@@ -13,12 +13,10 @@ from ..notifications import (
     DESTINATION_KINDS,
     NotificationError,
     TransportError,
+    add_destination,
     build_payload,
     build_transport,
     resolve_notification_policy,
-    validate_config,
-    validate_destination_kind,
-    validate_target,
 )
 from ..store import ForemanStore
 
@@ -44,39 +42,20 @@ def handle_notify_add(args: argparse.Namespace) -> int:
         project = resolve_project_or_print(store, args.project_id)
         if project is None:
             return 1
-        name = (args.name or "").strip()
-        if not name:
-            print("A notification destination needs a name.", file=sys.stderr)
-            return 1
-        if store.find_notification_destination(project.id, name) is not None:
-            print(
-                f"Project {project.id} already has a destination named {name!r}. "
-                "Remove it first, or choose another name.",
-                file=sys.stderr,
-            )
-            return 1
         try:
-            kind = validate_destination_kind(args.kind)
-            target = validate_target(kind, args.url)
-            config = validate_config(
-                {
-                    "headers": _parse_header_arguments(args.header),
-                    "secret_env": args.secret_env,
-                }
+            destination = add_destination(
+                store,
+                project.id,
+                name=args.name,
+                url=args.url,
+                kind=args.kind,
+                headers=_parse_header_arguments(args.header),
+                secret_env=args.secret_env,
             )
         except (NotificationError, ValueError) as exc:
             print(str(exc), file=sys.stderr)
             return 1
-        destination = store.save_notification_destination(
-            NotificationDestination(
-                id=f"dst-{uuid4().hex[:12]}",
-                project_id=project.id,
-                name=name,
-                kind=kind,
-                target=target,
-                config=config,
-            )
-        )
+        config = destination.config
         policy = resolve_notification_policy(project)
 
     print_lines(

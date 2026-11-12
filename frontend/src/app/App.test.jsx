@@ -1,4 +1,7 @@
-import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+
+import { ROUTES } from "./routes";
+import { RebuildingPage } from "../pages/status/RebuildingPage";
 
 import { createFakeFetch, renderApp } from "../testing/fakeApi";
 import { workspaceRoutes } from "../testing/workspaceFixture";
@@ -19,27 +22,26 @@ describe("App routing and shell", () => {
     const crumbs = within(banner).getByRole("navigation", { name: "Breadcrumb" });
     // The wordmark is the one link to the workspace; the breadcrumb is empty here.
     expect(within(crumbs).queryAllByRole("listitem")).toHaveLength(0);
-    expect(within(banner).getByRole("link", { name: "Workspace settings" })).toHaveAttribute("href", "/dashboard/settings");
+    expect(await within(banner).findByRole("button", { name: /^You: Local operator/ })).toBeInTheDocument();
     expect(document.querySelector(".manager-slot")).toBeNull();
     expect(within(banner).queryByRole("button", { name: "Manager" })).toBeNull();
     expect(await screen.findByText("FOR-14")).toBeInTheDocument();
     expect(document.title).toBe("Workspace · Foreman");
   });
 
-  it("renders the shared not-built page naming the commands that do the job, and no link away", async () => {
-    renderApp("/dashboard/settings", createFakeFetch(workspaceRoutes()));
+  it("renders the shared not-built page naming the commands that do the job, and no link away", () => {
+    const route = ROUTES.find((entry) => entry.name === "task");
+    render(<RebuildingPage route={route} params={{ taskId: "t1" }} />);
     expect(screen.getByRole("heading", { name: "This page is not built yet" })).toBeInTheDocument();
     const commands = screen.getByRole("list", { name: "Commands" });
     expect(within(commands).getAllByRole("listitem").map((item) => item.textContent)).toEqual([
-      "foreman roles",
-      "foreman workflows",
+      "foreman task show t1",
+      "foreman approve t1",
+      "foreman deny t1",
     ]);
     const page = document.querySelector(".status-page");
     expect(within(page).queryAllByRole("link")).toHaveLength(0);
     expect(page.innerHTML).not.toMatch(/legacy|previous dashboard/i);
-    const crumbs = screen.getByRole("navigation", { name: "Breadcrumb" });
-    expect(within(crumbs).queryByRole("link")).toBeNull();
-    expect(within(crumbs).getByText("Workspace settings")).toHaveAttribute("aria-current", "page");
   });
 
   it("puts project settings below the project in the breadcrumb", async () => {
@@ -67,12 +69,6 @@ describe("App routing and shell", () => {
     fireEvent.click(foreman);
     expect(window.location.pathname).toBe("/dashboard/projects/foreman");
     expect(await within(crumbs).findByRole("button", { name: "Foreman 2 need you" })).toBeInTheDocument();
-  });
-
-  it("names the command that does the job on a page that is not built yet", () => {
-    renderApp("/dashboard/settings");
-    const commands = screen.getByRole("list", { name: "Commands" });
-    expect(within(commands).getByText("foreman roles")).toBeInTheDocument();
   });
 
   it("renders not-found at the old legacy address", () => {

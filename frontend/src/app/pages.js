@@ -2,12 +2,14 @@ import { ProjectActivityPage, ProjectBacklogPage, ProjectSprintsPage } from "../
 import { ProjectSettingsGeneralPage, ProjectSettingsWorkflowPage } from "../pages/settings/SettingsPages";
 import { SprintBoardPage, SprintListPage } from "../pages/sprint/SprintPages";
 import { TaskActivityPage, TaskChangesPage, TaskChecksPage, TaskOverviewPage } from "../pages/task/TaskPages";
+import { WorkspaceSettingsPage } from "../pages/workspaceSettings/WorkspaceSettingsPage";
 import { WorkspacePage } from "../pages/workspace/WorkspacePage";
 
 // Routes that have a rebuilt page. Every other route in ROUTES renders the
 // shared "being rebuilt" page until its slice lands.
 export const BUILT_PAGES = {
   workspace: WorkspacePage,
+  "workspace-settings": WorkspaceSettingsPage,
   project: ProjectSprintsPage,
   "project-backlog": ProjectBacklogPage,
   "project-activity": ProjectActivityPage,

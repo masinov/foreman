@@ -180,3 +180,18 @@
   border-color: var(--color-gold-outline);
   color: var(--color-gold);
 }
+
+/* The user menu is the last thing in the bar; its list opens leftwards so it
+   stays on the screen. */
+.user-menu__trigger {
+  height: var(--control-height-row);
+  padding-inline: var(--space-2);
+  border-radius: var(--radius);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-control);
+}
+
+.user-menu .menu__list {
+  left: auto;
+  right: 0;
+}
