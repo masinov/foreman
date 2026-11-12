@@ -174,6 +174,20 @@ created_by, created_at, source) and `total`.
 - The whole Python suite and ruff pass. No frontend file changes. This
   file exists.
 
+## Merge with main (frontend foundation)
+
+- `main` gained the frontend foundation (sprint 58 slice 1). The only
+  conflict was in `docs/STATUS.md`, in the "conflicts" list. Both sides were
+  kept: main's notes on the partly rebuilt dashboard and the Needs you kinds,
+  and this branch's "Resolved (ADR-0021)" entry in place of the open backlog
+  question. The entry now also says the rebuilt frontend has no backlog
+  screen yet.
+- No code conflicted. The new frontend reads `task_counts` and the
+  workspace payload by key, so the additive `declined` count does not affect
+  it. After the merge, the Python suite (1206 tests), ruff, and
+  `npm --prefix frontend test` (134 tests, including the committed-bundle
+  check) all pass. No frontend file is changed by this branch.
+
 ## Follow-ups
 
 - The design's "Filed by" column shows "carried from sprint N" for work

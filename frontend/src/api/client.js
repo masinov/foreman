@@ -1,0 +1,110 @@
+import { readDashboardToken } from "./token";
+
+// Every request goes to the versioned API (ADR-0019).
+export const API_BASE = "/api/v1";
+
+const UNREADABLE_RESPONSE = "Foreman answered with something the dashboard could not read.";
+const UNREACHABLE = "The dashboard could not reach Foreman. Check that the server is running.";
+
+/**
+ * An error from the API, carrying the one envelope ADR-0019 defines:
+ * `{"error": "<a sentence>", "code": "<kind>"}`. `message` is always a
+ * sentence a person can read.
+ */
+export class ApiError extends Error {
+  constructor(message, { code = "http_error", status = 0 } = {}) {
+    super(message);
+    this.name = "ApiError";
+    this.code = code;
+    this.status = status;
+  }
+}
+
+function asSentence(text) {
+  const trimmed = String(text).trim();
+  if (!trimmed) return trimmed;
+  return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+}
+
+/** Turn anything thrown while loading into a sentence for the page. */
+export function errorSentence(error) {
+  if (error instanceof ApiError) return error.message;
+  if (error && typeof error.message === "string" && error.message) {
+    return asSentence(error.message);
+  }
+  return "Something went wrong.";
+}
+
+async function readEnvelope(response) {
+  const text = await response.text();
+  if (!text) return { ok: true, payload: null };
+  try {
+    return { ok: true, payload: JSON.parse(text) };
+  } catch {
+    return { ok: false, payload: null };
+  }
+}
+
+function errorFromResponse(response, payload) {
+  if (payload && typeof payload === "object" && typeof payload.error === "string") {
+    return new ApiError(asSentence(payload.error), {
+      code: typeof payload.code === "string" ? payload.code : "http_error",
+      status: response.status,
+    });
+  }
+  return new ApiError(`Foreman answered ${response.status} without saying why.`, {
+    code: "http_error",
+    status: response.status,
+  });
+}
+
+/**
+ * The one way the rebuilt frontend talks to the server. Pages never call
+ * `fetch`; they call a resource module, which calls this.
+ */
+export function createApiClient({
+  fetchImpl = globalThis.fetch,
+  tokenProvider = readDashboardToken,
+  base = API_BASE,
+} = {}) {
+  if (typeof fetchImpl !== "function") {
+    throw new Error("A fetch implementation is required.");
+  }
+
+  async function request(method, path, { body, signal } = {}) {
+    const token = tokenProvider();
+    const headers = { Accept: "application/json" };
+    if (body !== undefined) headers["Content-Type"] = "application/json";
+    if (token) headers.Authorization = `Bearer ${token}`;
+
+    let response;
+    try {
+      response = await fetchImpl(`${base}${path}`, {
+        method,
+        headers,
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+        signal,
+      });
+    } catch (error) {
+      if (error?.name === "AbortError") throw error;
+      throw new ApiError(UNREACHABLE, { code: "network_error", status: 0 });
+    }
+
+    const { ok, payload } = await readEnvelope(response);
+    if (!response.ok) throw errorFromResponse(response, payload);
+    if (!ok) throw new ApiError(UNREADABLE_RESPONSE, { code: "invalid_response", status: response.status });
+    return payload;
+  }
+
+  return {
+    get: (path, options) => request("GET", path, options),
+    post: (path, body, options) => request("POST", path, { ...options, body }),
+    patch: (path, body, options) => request("PATCH", path, { ...options, body }),
+    delete: (path, options) => request("DELETE", path, options),
+  };
+}
+
+/** Encode one path segment. */
+export function segment(value) {
+  return encodeURIComponent(String(value));
+}

@@ -1,0 +1,97 @@
+/* Page-wide defaults for the rebuilt dashboard. Values come from tokens.css. */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--color-ground);
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  background: var(--color-ground);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--color-gold);
+}
+
+:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-gold);
+  outline-offset: var(--focus-ring-width);
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+.page-title {
+  font-family: var(--font-serif);
+  font-size: var(--font-size-title);
+  font-weight: var(--font-weight-strong);
+  line-height: var(--line-height-tight);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: var(--line-width);
+  height: var(--line-width);
+  margin: calc(-1 * var(--line-width));
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.quiet {
+  color: var(--color-text-quiet);
+}
+
+.secondary {
+  color: var(--color-text-secondary);
+}
+
+.attention {
+  color: var(--color-gold);
+}
+
+/* Empty states say what is true and what happens next. */
+.empty {
+  color: var(--color-text-secondary);
+  padding-block: var(--space-2);
+}
+
+.notice {
+  color: var(--color-text-secondary);
+  padding-block: var(--space-2);
+}
+
+.notice--error {
+  color: var(--color-red);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

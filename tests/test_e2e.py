@@ -159,8 +159,8 @@ def live_dashboard_url(tmp_path_factory):
 
 @pytest.fixture
 def dashboard_page(page: Page, live_dashboard_url: str) -> Page:
-    """Navigate to the dashboard root and return the ready Playwright page."""
-    page.goto(f"{live_dashboard_url}/dashboard")
+    """Open the pre-v7 dashboard, kept under /dashboard/legacy (ADR-0020), and return the page."""
+    page.goto(f"{live_dashboard_url}/dashboard/legacy")
     # Wait for the React app to mount — the page title div is always present.
     expect(page.locator(".page-title").get_by_text("Projects")).to_be_visible(timeout=10_000)
     return page

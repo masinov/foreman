@@ -256,7 +256,7 @@ function createMockServices() {
 
 describe("React dashboard foundation", () => {
   beforeEach(() => {
-    window.history.replaceState({}, "", "/dashboard");
+    window.history.replaceState({}, "", "/dashboard/legacy");
   });
 
   it("renders the project overview and navigates to the sprint list", async () => {
@@ -276,7 +276,7 @@ describe("React dashboard foundation", () => {
 
   it("keeps Manager folded until opened and preserves its draft across folding", async () => {
     const { services } = createMockServices();
-    window.history.replaceState({}, "", "/dashboard/projects/proj-1");
+    window.history.replaceState({}, "", "/dashboard/legacy/projects/proj-1");
     render(<App services={services} browser={window} />);
 
     const managerTab = await screen.findByRole("button", { name: "Manager", exact: true });
@@ -307,7 +307,7 @@ describe("React dashboard foundation", () => {
 
   it("loads working-copy maintenance only inside project settings", async () => {
     const { services } = createMockServices();
-    window.history.replaceState({}, "", "/dashboard/projects/proj-1");
+    window.history.replaceState({}, "", "/dashboard/legacy/projects/proj-1");
     render(<App services={services} browser={window} />);
     await screen.findByText("React foundation");
     expect(services.listWorktrees).not.toHaveBeenCalled();
@@ -323,7 +323,7 @@ describe("React dashboard foundation", () => {
 
   it("offers Delete on a completed sprint and not on an active one", async () => {
     const { services } = createMockServices();
-    window.history.replaceState({}, "", "/dashboard/projects/proj-1/sprints/sprint-1");
+    window.history.replaceState({}, "", "/dashboard/legacy/projects/proj-1/sprints/sprint-1");
     const { unmount } = render(<App services={services} browser={window} />);
     await screen.findByText("Build the frontend");
     expect(screen.queryByTitle("Delete sprint")).not.toBeInTheDocument();
@@ -338,7 +338,7 @@ describe("React dashboard foundation", () => {
 
   it("sends human guidance through the selected task context", async () => {
     const { services } = createMockServices();
-    window.history.replaceState({}, "", "/dashboard/projects/proj-1/sprints/sprint-1");
+    window.history.replaceState({}, "", "/dashboard/legacy/projects/proj-1/sprints/sprint-1");
 
     render(<App services={services} browser={window} />);
 
@@ -362,7 +362,7 @@ describe("React dashboard foundation", () => {
 
   it("updates the activity feed when the sprint stream emits a new event", async () => {
     const { services, emitEvent } = createMockServices();
-    window.history.replaceState({}, "", "/dashboard/projects/proj-1/sprints/sprint-1");
+    window.history.replaceState({}, "", "/dashboard/legacy/projects/proj-1/sprints/sprint-1");
 
     render(<App services={services} browser={window} />);
 
@@ -389,7 +389,7 @@ describe("React dashboard foundation", () => {
 
   it("surfaces a supervision banner for attention_needed and asks the manager", async () => {
     const { services, emitEvent } = createMockServices();
-    window.history.replaceState({}, "", "/dashboard/projects/proj-1/sprints/sprint-1");
+    window.history.replaceState({}, "", "/dashboard/legacy/projects/proj-1/sprints/sprint-1");
 
     render(<App services={services} browser={window} />);
     expect(await screen.findByText("Building the new dashboard shell.")).toBeInTheDocument();
@@ -423,7 +423,7 @@ describe("React dashboard foundation", () => {
 
   it("shows the resident engine in the sprint header and pauses it", async () => {
     const { services } = createMockServices();
-    window.history.replaceState({}, "", "/dashboard/projects/proj-1/sprints/sprint-1");
+    window.history.replaceState({}, "", "/dashboard/legacy/projects/proj-1/sprints/sprint-1");
 
     render(<App services={services} browser={window} />);
 
@@ -448,7 +448,7 @@ describe("React dashboard foundation", () => {
       current_task: null,
       commands: [],
     });
-    window.history.replaceState({}, "", "/dashboard/projects/proj-1/sprints/sprint-1");
+    window.history.replaceState({}, "", "/dashboard/legacy/projects/proj-1/sprints/sprint-1");
 
     render(<App services={services} browser={window} />);
 
@@ -462,7 +462,7 @@ describe("React dashboard foundation", () => {
 
   it("badges blocked tasks with the kind of block on the board", async () => {
     const { services } = createMockServices();
-    window.history.replaceState({}, "", "/dashboard/projects/proj-1/sprints/sprint-1");
+    window.history.replaceState({}, "", "/dashboard/legacy/projects/proj-1/sprints/sprint-1");
 
     render(<App services={services} browser={window} />);
 
@@ -473,7 +473,7 @@ describe("React dashboard foundation", () => {
 
   it("hides the triage column until filed work is waiting there", async () => {
     const { services } = createMockServices();
-    window.history.replaceState({}, "", "/dashboard/projects/proj-1/sprints/sprint-1");
+    window.history.replaceState({}, "", "/dashboard/legacy/projects/proj-1/sprints/sprint-1");
 
     render(<App services={services} browser={window} />);
 
@@ -499,7 +499,7 @@ describe("React dashboard foundation", () => {
       ],
     });
     services.acceptTask = vi.fn().mockResolvedValue({ id: "task-9", status: "todo" });
-    window.history.replaceState({}, "", "/dashboard/projects/proj-1/sprints/sprint-1");
+    window.history.replaceState({}, "", "/dashboard/legacy/projects/proj-1/sprints/sprint-1");
 
     render(<App services={services} browser={window} />);
 
