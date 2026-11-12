@@ -9,6 +9,11 @@ memory changes rather than versioned product releases.
 
 ### Sprint 58 — frontend rebuild
 
+- **fix, Backlog is back in the row under the project header**
+  (`fix/backlog-in-the-project-navigation`): in the title row the owner could
+  not find it. It is listed between Sprints and Activity again, with its
+  count, and opens the backlog's own page.
+
 - **fix, the backlog is reached from the project's title row**
   (`fix/backlog-link-in-the-project-title-row`): the owner found the line
   under the sprint queue a strange way to reach it. "Backlog" with its count
