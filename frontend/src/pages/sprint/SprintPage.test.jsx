@@ -249,6 +249,34 @@ describe("edit and the state action", () => {
   });
 });
 
+describe("new task in the sprint", () => {
+  it("writes a task straight into this sprint and reloads", async () => {
+    const routes = sprintRoutes();
+    routes["POST /api/v1/sprints/sprint-56/tasks"] = { id: "task-new", task_key: "FOR-99", title: "Tighten the retry" };
+    const { fetchImpl } = await renderSprint("/dashboard/sprints/sprint-56", routes);
+    fireEvent.click(screen.getByRole("button", { name: "New task" }));
+    const dialog = await screen.findByRole("dialog", { name: "New task" });
+    expect(dialog).toHaveTextContent("It goes straight into Sprint 56: engine truthfulness and runs with it.");
+    fireEvent.change(within(dialog).getByLabelText(/Title/), { target: { value: "Tighten the retry" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: /^(Create|File|Add)/ }));
+    await waitFor(() =>
+      expect(calls(fetchImpl, "POST", "/api/v1/sprints/sprint-56/tasks")[0].body).toMatchObject({
+        title: "Tighten the retry",
+      }),
+    );
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.getByRole("status")).toHaveTextContent("FOR-99 added to Sprint 56: engine truthfulness.");
+    expect(calls(fetchImpl, "POST", "/api/v1/projects/foreman/backlog")).toHaveLength(0);
+  });
+
+  it("is not offered on a finished sprint", async () => {
+    const routes = sprintRoutes();
+    routes[SPRINT_URL] = sprintPayload({ status: "completed", completed_at: "2026-11-11T10:00:00Z" });
+    await renderSprint("/dashboard/sprints/sprint-56", routes);
+    expect(screen.queryByRole("button", { name: "New task" })).toBeNull();
+  });
+});
+
 describe("add from backlog", () => {
   const accepted = [
     backlogTask("task-a", "Resume a stale agent step in place", "accepted"),

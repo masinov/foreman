@@ -63,3 +63,20 @@ export function listSprintEvents(client, sprintId, { types = [], limit, before, 
     hasMore: Boolean(payload?.has_more),
   }));
 }
+
+/**
+ * Write a new task straight into a sprint. A person doing this has decided
+ * both that the work is wanted and where it goes, so it skips the backlog.
+ */
+export function createSprintTask(client, sprintId, { title, taskType, description, acceptanceCriteria }, options) {
+  return client.post(
+    `/sprints/${segment(sprintId)}/tasks`,
+    {
+      title,
+      task_type: taskType,
+      description: description || null,
+      acceptance_criteria: acceptanceCriteria || null,
+    },
+    options,
+  );
+}
