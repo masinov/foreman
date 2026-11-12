@@ -27,6 +27,9 @@
 }
 
 .project__settings {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--icon-gap);
   color: var(--color-text-secondary);
 }
 

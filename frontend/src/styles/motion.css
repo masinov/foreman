@@ -1,0 +1,91 @@
+/* Motion. Something moves only when something is happening: a control
+   answers the pointer, a list row shows where you are, a running engine
+   breathes, a menu or dialog arrives. Durations and distances are tokens.
+   All of it is off for anyone who asks for reduced motion. */
+
+a,
+.button,
+.tabs__link,
+.menu__item,
+.field__input {
+  transition:
+    color var(--motion-fast) ease,
+    background-color var(--motion-fast) ease,
+    border-color var(--motion-fast) ease;
+}
+
+.table tbody td {
+  transition: background-color var(--motion-fast) ease;
+}
+
+.table tbody tr:hover td {
+  background-color: var(--color-row-hover);
+}
+
+.table--tinted tbody tr:hover td {
+  background-color: var(--color-row-hover-tinted);
+}
+
+/* Running: the engine's dot and the wordmark's square breathe. */
+.status--running .status__dot,
+.logo--running .logo__task {
+  animation: breathe var(--motion-breathe) ease-in-out infinite;
+}
+
+/* Arriving: menus and dialogs rise into place, the manager slides in. */
+.menu__list,
+.dialog {
+  animation: rise var(--motion-enter) ease-out;
+}
+
+.dialog-backdrop {
+  animation: appear var(--motion-enter) ease-out;
+}
+
+.manager-slot {
+  animation: slide-in var(--motion-enter) ease-out;
+}
+
+.disclosure__marker {
+  transition: transform var(--motion-fast) ease;
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@keyframes appear {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(var(--motion-rise));
+  }
+}
+
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(var(--motion-slide));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

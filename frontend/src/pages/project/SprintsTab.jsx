@@ -108,7 +108,9 @@ export function SprintsTab({ projectId, revision }) {
             Sprint queue
           </h2>
           <p className="quiet">Active, then planned in the order they will run</p>
-          <Button onClick={() => setCreating(true)}>New sprint</Button>
+          <Button icon="plus" onClick={() => setCreating(true)}>
+            New sprint
+          </Button>
         </div>
         {notice ? (
           <p className="notice" role="status">

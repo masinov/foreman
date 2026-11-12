@@ -10,6 +10,7 @@ import "../styles/tokens.css";
 import "../styles/base.css";
 import "../styles/shell.css";
 import "../styles/ui.css";
+import "../styles/motion.css";
 
 export function mountApp(container, browser = window) {
   createRoot(container).render(

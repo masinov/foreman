@@ -2,6 +2,7 @@ import React from "react";
 
 import { Breadcrumb } from "./Breadcrumb";
 import { paths } from "./paths";
+import { Logo } from "../ui/Logo";
 import { Link } from "./router";
 
 /**
@@ -19,12 +20,9 @@ export function Shell({ topBarRight = null, manager = null, managerOpen = false,
       </a>
       <header className="topbar">
         <div className="topbar__inner">
-          <Link className="topbar__word" href={paths.workspace()}>
-            Foreman
+          <Link className="topbar__home" href={paths.workspace()} aria-label="Foreman" title="Workspace: all projects">
+            <Logo />
           </Link>
-          <span className="topbar__divider" aria-hidden="true">
-            /
-          </span>
           <Breadcrumb />
           <div className="topbar__right">{topBarRight}</div>
         </div>

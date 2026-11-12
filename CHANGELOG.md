@@ -9,6 +9,17 @@ memory changes rather than versioned product releases.
 
 ### Sprint 58 — frontend rebuild
 
+- **feat, a wordmark, icons and motion** (`feat/identity-icons-motion`): asked
+  for by the owner and not delivered until now. The top-left word is a drawn
+  wordmark (an F cut to the weight of the letters, with one gold square) that
+  goes to the workspace and no longer lights up like a link. `ui/Icon` is a
+  small set on one grid, used on Workspace settings, Project settings, the
+  Manager toggle (now a quiet toggle), the engine's Start, Pause and Stop,
+  New sprint, New task, and the project's location and branch.
+  `styles/motion.css`: controls and rows answer the pointer, the running
+  engine's dot breathes, menus and dialogs rise in, the manager slides in;
+  all off under reduced motion. A favicon.
+
 - **fix, the Needs you heading sits above its surface**
   (`fix/needs-you-heading-outside-surface`): reported by the owner. The
   heading was inside the tinted surface with the rows, which the design

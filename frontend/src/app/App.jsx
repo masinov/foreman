@@ -1,3 +1,4 @@
+import { Icon } from "../ui/Icon";
 import React, { useEffect } from "react";
 
 import { getSprint } from "../api/sprints";
@@ -49,6 +50,7 @@ function TopBarRight({ route, params, manager }) {
   const current = route.name === "workspace-settings";
   return (
     <Link className="topbar__link" href={paths.workspaceSettings()} aria-current={current ? "page" : undefined}>
+      <Icon name="settings" />
       Workspace settings
     </Link>
   );

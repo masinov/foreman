@@ -4,6 +4,7 @@ import { useResource } from "../../api/useResource";
 import { getWorkspace } from "../../api/workspace";
 import { paths } from "../../app/paths";
 import { Link } from "../../app/router";
+import { Icon } from "../../ui/Icon";
 import { Mono } from "../../ui/Mono";
 import { Tabs } from "../../ui/Tabs";
 import { NeedsYou } from "../shared/NeedsYou";
@@ -13,18 +14,35 @@ import "../../styles/lists.css";
 import "../../styles/project.css";
 
 function TitleRow({ projectId, project }) {
+  // Where the project lives, which branch it lands on, how it works: each
+  // with the icon that says which is which.
   const facts = project
-    ? [project.repo_path, project.default_branch, project.workflow_id ? `${project.workflow_id} workflow` : null]
-        .filter(Boolean)
-        .join(" · ")
-    : "";
+    ? [
+        project.repo_path ? { icon: "folder", text: project.repo_path } : null,
+        project.default_branch ? { icon: "branch", text: project.default_branch } : null,
+        project.workflow_id ? { icon: null, text: `${project.workflow_id} workflow` } : null,
+      ].filter(Boolean)
+    : [];
   return (
     <div className="project__title-row">
       <div className="project__title">
         <h1 className="page-title">{project?.name ?? projectId}</h1>
-        {facts ? <Mono quiet>{facts}</Mono> : null}
+        {facts.length ? (
+          <Mono quiet className="facts">
+            {facts.map((fact, index) => (
+              <React.Fragment key={fact.text}>
+                {index > 0 ? " · " : null}
+                <span className="facts__item">
+                  {fact.icon ? <Icon name={fact.icon} /> : null}
+                  {fact.text}
+                </span>
+              </React.Fragment>
+            ))}
+          </Mono>
+        ) : null}
       </div>
       <Link className="project__settings" href={paths.projectSettings(projectId)}>
+        <Icon name="settings" />
         Project settings
       </Link>
     </div>
