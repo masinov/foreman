@@ -30,6 +30,17 @@ MILESTONE_KINDS: tuple[str, ...] = (
 #: Statuses a sprint can be listed by.
 SPRINT_LIST_STATUSES: tuple[str, ...] = ("active", "planned", "completed")
 
+#: Orders a sprint list can come in. ``queue`` is the order the sprints run
+#: in; ``recent`` puts the most recently finished first, then the most
+#: recently started, then the rest newest-queued first.
+SPRINT_LIST_ORDERS: dict[str, str] = {
+    "queue": "order_index ASC, created_at ASC, id ASC",
+    "recent": (
+        "completed_at IS NULL, completed_at DESC, started_at IS NULL, "
+        "started_at DESC, order_index DESC, id DESC"
+    ),
+}
+
 #: A moment as a number, so ``...Z`` and ``...+00:00`` timestamps (both are
 #: stored) order against each other, which plain text comparison does not.
 _INSTANT = "julianday({column})"
@@ -144,12 +155,17 @@ class OverviewStore(StoreBase):
         query: str | None = None,
         limit: int | None = None,
         offset: int = 0,
+        order: str = "queue",
     ) -> tuple[list[Sprint], int]:
         """Return one page of a project's sprints and how many match in all.
 
-        Sprints keep their queue order. ``query`` matches, ignoring case, a
-        part of the title (the sprint number is part of the title) or of the id.
+        Sprints keep their queue order unless ``order`` is ``recent`` (see
+        :data:`SPRINT_LIST_ORDERS`). ``query`` matches, ignoring case, a part
+        of the title (the sprint number is part of the title) or of the id.
         """
+
+        if order not in SPRINT_LIST_ORDERS:
+            raise ValueError(f"Unknown sprint order: {order}")
 
         filters = ["project_id = ?", "kind = 'sprint'"]
         params: list[Any] = [project_id]
@@ -168,7 +184,7 @@ class OverviewStore(StoreBase):
         )
         sql = (
             f"SELECT * FROM sprints WHERE {where} "
-            "ORDER BY order_index ASC, created_at ASC, id ASC"
+            f"ORDER BY {SPRINT_LIST_ORDERS[order]}"
         )
         page_params = list(params)
         if limit is not None:

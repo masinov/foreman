@@ -75,16 +75,15 @@ review, human gate, deferred approval, merge). Still true: agents run with full 
   authority. On 2026-11-12 the owner agreed a new design and said it was
   ready for implementation; `docs/design/dashboard-v7/` is now the UI
   reference (ADR-0020) and the mockup is kept as history. Until sprint 58
-  finishes, the shipped dashboard is partly rebuilt: `/dashboard` is the v7
-  workspace page, other v7 routes say they are being rebuilt, and the old
-  application is at `/dashboard/legacy`.
+  finishes, the shipped dashboard is partly rebuilt: `/dashboard` (the
+  workspace) and the project page's Sprints and Activity tabs are v7, other
+  v7 routes say they are being rebuilt, and the old application is at
+  `/dashboard/legacy`.
 - The design's Needs you has four kinds: accept filed work, approve a plan,
-  approve a merge, unblock. The API does not yet say which policy a task's
-  human gate is (plan or merge), so the workspace names the gate by its
-  workflow step ("Merge approval"). Pending decision gates (a proposed
-  sprint order) are a fifth kind the design does not show; the workspace
-  lists them as "Sprint order" and links to the project. The workspace
-  endpoint slice settles both.
+  approve a merge, unblock. The needs-you endpoint names them. Pending
+  decision gates (a proposed sprint order) are a fifth kind the design does
+  not show; the rebuilt pages do not list them, and they are settled from
+  `/dashboard/legacy` until a slice gives them a place.
 - Resolved (sprint 58 slice 3, ADR-0021): the design's backlog is a sprint
   row of kind `backlog` that is never listed or run as a sprint; the standing
   "Intake queue" sprint is gone (migration 21 moved its waiting work into the

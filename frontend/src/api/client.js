@@ -108,3 +108,20 @@ export function createApiClient({
 export function segment(value) {
   return encodeURIComponent(String(value));
 }
+
+/**
+ * Build `?a=1&kind=x&kind=y` from an object. Arrays repeat their key; null,
+ * undefined and empty strings are left out. Returns "" when nothing is left.
+ */
+export function queryString(params = {}) {
+  const search = new URLSearchParams();
+  for (const [name, value] of Object.entries(params)) {
+    const values = Array.isArray(value) ? value : [value];
+    for (const item of values) {
+      if (item === null || item === undefined || item === "") continue;
+      search.append(name, String(item));
+    }
+  }
+  const text = search.toString();
+  return text ? `?${text}` : "";
+}

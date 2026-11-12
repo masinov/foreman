@@ -5,33 +5,12 @@ import { Link } from "../../app/router";
 import { Mono } from "../../ui/Mono";
 import { StatusDot } from "../../ui/StatusDot";
 import { Table } from "../../ui/Table";
-import { formatMoney, humanize } from "../../ui/format";
-
-const ENGINE_WORDS = {
-  resident: { tone: "running", word: "Running" },
-  paused: { tone: "idle", word: "Paused" },
-  stopped: { tone: "idle", word: "Not running" },
-};
-
-// The order a person reads a sprint in: what is moving, what is stuck, what
-// is waiting, what is finished.
-const COUNT_WORDS = [
-  ["in_progress", "in progress"],
-  ["blocked", "blocked"],
-  ["todo", "to do"],
-  ["triage", "filed"],
-  ["done", "done"],
-];
-
-export function describeTaskCounts(counts) {
-  const parts = COUNT_WORDS.filter(([status]) => (counts?.[status] || 0) > 0).map(
-    ([status, word]) => `${counts[status]} ${word}`,
-  );
-  return parts.length ? parts.join(" · ") : "no tasks";
-}
+import { formatDay, formatMoney, humanize } from "../../ui/format";
+import { MilestoneText } from "../shared/milestones";
+import { describeTaskCounts, engineWords } from "../shared/words";
 
 function ProjectCell({ project }) {
-  const location = [project.repoPath, project.defaultBranch].filter(Boolean).join(" · ");
+  const location = [project.repo_path, project.default_branch].filter(Boolean).join(" · ");
   return (
     <div className="cell-stack">
       <Link className="row-link row-link--strong" href={paths.project(project.id)}>
@@ -43,15 +22,14 @@ function ProjectCell({ project }) {
 }
 
 function EngineCell({ engine }) {
-  const state = ENGINE_WORDS[engine?.state] ?? ENGINE_WORDS.stopped;
-  const task = engine?.current_task;
+  const { tone, word } = engineWords(engine?.state);
   return (
     <div className="cell-stack">
-      <StatusDot tone={state.tone}>{state.word}</StatusDot>
-      {task ? (
+      <StatusDot tone={tone}>{word}</StatusDot>
+      {engine?.task_id ? (
         <span className="quiet">
-          <Mono quiet>{task.task_key || task.title}</Mono>
-          {task.workflow_current_step ? `, ${humanize(task.workflow_current_step).toLowerCase()}` : ""}
+          <Mono quiet>{engine.task_key || engine.task_title}</Mono>
+          {engine.step ? `, ${humanize(engine.step).toLowerCase()}` : ""}
         </span>
       ) : (
         <span className="quiet">working on nothing</span>
@@ -60,15 +38,12 @@ function EngineCell({ engine }) {
   );
 }
 
-function SprintCell({ project }) {
-  const sprint = project.activeSprint;
+function SprintCell({ sprint }) {
   if (!sprint) {
     return (
       <div className="cell-stack">
         <span>None</span>
-        <span className="quiet">
-          {project.plannedSprints > 0 ? `${project.plannedSprints} planned` : "nothing planned"}
-        </span>
+        <span className="quiet">nothing active</span>
       </div>
     );
   }
@@ -77,7 +52,17 @@ function SprintCell({ project }) {
       <Link className="row-link" href={paths.sprint(sprint.id)}>
         {sprint.title}
       </Link>
-      <span className="quiet">{describeTaskCounts(sprint.taskCounts)}</span>
+      <span className="quiet">{describeTaskCounts(sprint.task_counts)}</span>
+    </div>
+  );
+}
+
+function LastChangeCell({ milestone }) {
+  if (!milestone) return <span className="quiet">nothing yet</span>;
+  return (
+    <div className="cell-stack">
+      <MilestoneText milestone={milestone} short />
+      <span className="quiet">{formatDay(milestone.at)}</span>
     </div>
   );
 }
@@ -85,19 +70,30 @@ function SprintCell({ project }) {
 const COLUMNS = [
   { key: "project", header: "Project, location, branch", className: "projects__project", render: (p) => <ProjectCell project={p} /> },
   { key: "engine", header: "Engine", className: "projects__engine", render: (p) => <EngineCell engine={p.engine} /> },
-  { key: "sprint", header: "Active sprint", className: "projects__sprint", render: (p) => <SprintCell project={p} /> },
+  { key: "sprint", header: "Active sprint", className: "projects__sprint", render: (p) => <SprintCell sprint={p.active_sprint} /> },
   {
     key: "needs-you",
     header: "Needs you",
     className: "projects__number",
-    render: (p) => <span className={p.needsYouCount > 0 ? "attention" : "quiet"}>{p.needsYouCount}</span>,
+    render: (p) => <span className={p.needs_you > 0 ? "attention" : "quiet"}>{p.needs_you}</span>,
+  },
+  {
+    key: "backlog",
+    header: "Backlog",
+    className: "projects__number",
+    render: (p) => (
+      <Link className="row-link" href={paths.projectBacklog(p.id)} aria-label={`${p.name} backlog, ${p.backlog}`}>
+        {p.backlog}
+      </Link>
+    ),
   },
   {
     key: "spend",
     header: "Sprint spend",
     className: "projects__number",
-    render: (p) => (p.activeSprint ? <Mono>{formatMoney(p.activeSprint.costUsd)}</Mono> : null),
+    render: (p) => (p.active_sprint ? <Mono>{formatMoney(p.active_sprint.spend_usd)}</Mono> : null),
   },
+  { key: "last", header: "Last change", className: "projects__last", render: (p) => <LastChangeCell milestone={p.latest_milestone} /> },
 ];
 
 export function ProjectsTable({ projects, placeholder }) {

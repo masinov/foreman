@@ -58,7 +58,7 @@ from .settings import (
     changed_host_level_settings,
 )
 from .store import ForemanStore
-from .store.overview import SPRINT_LIST_STATUSES
+from .store.overview import SPRINT_LIST_ORDERS, SPRINT_LIST_STATUSES
 from .worktrees import (
     WorktreeEntry,
     WorktreeError,
@@ -82,6 +82,11 @@ DASHBOARD_REQUESTER = "dashboard"
 
 #: How many engine commands the status payload carries.
 ENGINE_COMMAND_LIMIT = 10
+
+#: Engine commands a person sends to a running engine from the project page.
+#: ``run_task`` and ``stop_task`` name a task and have their own routes.
+ENGINE_STEERING_COMMANDS: tuple[str, ...] = ("pause", "resume", "shutdown")
+
 
 class DashboardServiceError(Exception):
     """Base error for dashboard service failures."""
@@ -607,6 +612,7 @@ class DashboardService:
         query: str | None = None,
         limit: int | None = None,
         offset: int = 0,
+        order: str = "queue",
     ) -> dict[str, Any]:
         """Return sprint summaries for one project.
 
@@ -614,8 +620,14 @@ class DashboardService:
         ``statuses`` keeps only sprints in those states, ``query`` only those
         whose title (which carries the sprint number) or id contains it, and
         ``limit``/``offset`` select a page. ``total`` counts every sprint that
-        matches, before paging.
+        matches, before paging. ``order`` is ``queue`` (the order they run in)
+        or ``recent`` (most recently finished first, for finished sprints).
         """
+
+        if order not in SPRINT_LIST_ORDERS:
+            raise DashboardValidationError(
+                f"order: unknown {order}; expected {', '.join(SPRINT_LIST_ORDERS)}."
+            )
 
         unknown = sorted(set(statuses or ()) - set(SPRINT_LIST_STATUSES))
         if unknown:
@@ -629,6 +641,7 @@ class DashboardService:
             query=(query or "").strip() or None,
             limit=limit,
             offset=offset,
+            order=order,
         )
         result = []
         for sprint in sprints:
@@ -1260,6 +1273,42 @@ class DashboardService:
             "resident": self.store.get_engine_lock(project_id) is not None,
             "requested_by": who,
             "command": _serialize_engine_command(command),
+        }
+
+    def send_engine_command(
+        self, project_id: str, *, command: str, requested_by: str | None = None
+    ) -> dict[str, Any]:
+        """Queue a ``pause``, ``resume`` or ``shutdown`` for a running engine.
+
+        These steer an engine that is already running, so they are refused
+        when none is: a ``shutdown`` queued for nobody would be the first
+        thing the next engine to start reads, and it would stop at once.
+        Starting an engine that is not running is ``start_agent``'s job.
+        """
+
+        if self.store.get_project(project_id) is None:
+            raise DashboardNotFoundError(f"Project not found: {project_id}")
+        if command not in ENGINE_STEERING_COMMANDS:
+            raise DashboardValidationError(
+                f"command: unknown {command or '(none)'}; expected "
+                f"{', '.join(ENGINE_STEERING_COMMANDS)}."
+            )
+        if self.store.get_engine_lock(project_id) is None:
+            raise DashboardValidationError(
+                f"The engine for {project_id} is not running, so there is nothing to "
+                f"{'stop' if command == 'shutdown' else command}."
+            )
+        who = self._requester(requested_by)
+        queued = self.store.enqueue_engine_command(
+            project_id=project_id,
+            command=command,
+            requested_by=who,
+        )
+        return {
+            "project_id": project_id,
+            "resident": True,
+            "requested_by": who,
+            "command": _serialize_engine_command(queued),
         }
 
     def stop_task(self, task_id: str, *, requested_by: str | None = None) -> dict[str, Any]:

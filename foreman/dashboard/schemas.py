@@ -57,6 +57,10 @@ class RequestedBy(_Body):
     requested_by: str | None = None
 
 
+class EngineCommandBody(RequestedBy):
+    command: str = ""
+
+
 class AgentStart(RequestedBy):
     task_id: str | None = None
 

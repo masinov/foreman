@@ -1,0 +1,38 @@
+/* Lists shared by the workspace and project pages: Needs you, milestones. */
+.needs-you__project {
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.needs-you__kind {
+  color: var(--color-gold);
+  white-space: nowrap;
+}
+
+.needs-you__key {
+  white-space: nowrap;
+}
+
+.needs-you__action {
+  text-align: right;
+}
+
+.needs-you__more {
+  margin-top: var(--space-2);
+  padding-inline: 0;
+}
+
+.milestones__when,
+.milestones__project,
+.milestones__kind {
+  white-space: nowrap;
+}
+
+.milestones__kind {
+  color: var(--color-text-secondary);
+}
+
+.list-more {
+  margin-top: var(--space-2);
+  padding-inline: 0;
+}
