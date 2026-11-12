@@ -213,7 +213,7 @@ export function NeedsYou({ projectId = null, note, empty, onChanged }) {
 
   const headingId = projectId ? `needs-you-${projectId}` : "needs-you-title";
   return (
-    <Surface as="section" className="needs-you" aria-labelledby={headingId}>
+    <section className="needs-you" aria-labelledby={headingId}>
       <SectionHeading id={headingId} title="Needs you" count={total} note={note} />
       {notice ? (
         <p className={notice.error ? "notice notice--error" : "notice"} role={notice.error ? "alert" : "status"}>
@@ -225,10 +225,17 @@ export function NeedsYou({ projectId = null, note, empty, onChanged }) {
           {list.error}
         </p>
       ) : null}
-      {placeholder ? <Table caption="Needs you" columns={columns} tinted hideHeader placeholderRows={3} /> : null}
-      {items && items.length === 0 ? <p className="empty">{empty}</p> : null}
+      {/* The heading stays outside: the tinted surface holds only what there is
+          to act on (design README, "One tinted surface means act here"). With
+          nothing to act on there is no surface, only the sentence. */}
+      {placeholder ? (
+        <Surface className="needs-you__surface">
+          <Table caption="Needs you" columns={columns} tinted hideHeader placeholderRows={3} />
+        </Surface>
+      ) : null}
+      {items && items.length === 0 ? <p className="empty needs-you__empty">{empty}</p> : null}
       {items && items.length > 0 ? (
-        <>
+        <Surface className="needs-you__surface">
           <Table caption="Needs you" columns={columns} rows={visible} rowKey={itemId} tinted hideHeader />
           {total > NEEDS_YOU_CAP ? (
             <Button
@@ -240,8 +247,8 @@ export function NeedsYou({ projectId = null, note, empty, onChanged }) {
               {expanded ? "Show fewer" : `Show all ${total}`}
             </Button>
           ) : null}
-        </>
+        </Surface>
       ) : null}
-    </Surface>
+    </section>
   );
 }
