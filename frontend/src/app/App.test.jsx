@@ -17,7 +17,8 @@ describe("App routing and shell", () => {
     const banner = screen.getByRole("banner");
     expect(within(banner).getByRole("link", { name: "Foreman" })).toHaveAttribute("href", "/dashboard");
     const crumbs = within(banner).getByRole("navigation", { name: "Breadcrumb" });
-    expect(within(crumbs).getByText("Workspace")).toHaveAttribute("aria-current", "page");
+    // The wordmark is the one link to the workspace; the breadcrumb is empty here.
+    expect(within(crumbs).queryAllByRole("listitem")).toHaveLength(0);
     expect(within(banner).getByRole("link", { name: "Workspace settings" })).toHaveAttribute("href", "/dashboard/settings");
     expect(document.querySelector(".manager-slot")).toBeNull();
     expect(within(banner).queryByRole("button", { name: "Manager" })).toBeNull();
@@ -37,7 +38,8 @@ describe("App routing and shell", () => {
     expect(within(page).queryAllByRole("link")).toHaveLength(0);
     expect(page.innerHTML).not.toMatch(/legacy|previous dashboard/i);
     const crumbs = screen.getByRole("navigation", { name: "Breadcrumb" });
-    expect(within(crumbs).getByRole("link", { name: "Workspace" })).toHaveAttribute("href", "/dashboard");
+    expect(within(crumbs).queryByRole("link")).toBeNull();
+    expect(within(crumbs).getByText("Workspace settings")).toHaveAttribute("aria-current", "page");
   });
 
   it("puts project settings below the project in the breadcrumb", async () => {
@@ -54,8 +56,7 @@ describe("App routing and shell", () => {
     expect(switcher).toHaveAttribute("aria-haspopup", "menu");
     fireEvent.click(switcher);
     const menu = screen.getByRole("menu", { name: "Projects" });
-    expect(within(menu).getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["All projects", "Foreman2", "Other project"]);
-    expect(within(menu).getByRole("menuitem", { name: "All projects" })).toHaveAttribute("href", "/dashboard");
+    expect(within(menu).getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Foreman2", "Other project"]);
     expect(within(menu).getByRole("menuitem", { name: "Other project" })).toHaveFocus();
     fireEvent.keyDown(menu, { key: "ArrowUp" });
     const foreman = within(menu).getByRole("menuitem", { name: /Foreman/ });

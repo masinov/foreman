@@ -76,14 +76,16 @@
 }
 
 /* Status dot */
+/* Inline, not a flex box: a flex box takes its baseline from its first item,
+   the dot, and would sit lower than the text beside it. */
 .status {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
+  white-space: nowrap;
 }
 
 .status__dot {
-  flex: none;
+  display: inline-block;
+  margin-right: var(--space-2);
+  vertical-align: middle;
   width: var(--status-dot-size);
   height: var(--status-dot-size);
   border-radius: 50%;
@@ -164,9 +166,7 @@
 
 /* Table: header line, faint row lines, none above the first or below the last */
 .table-scroll {
-  /* Room on both sides for the row highlight, without moving the content. */
-  margin-inline: calc(-1 * var(--row-bleed));
-  padding-inline: var(--row-bleed);
+  width: 100%;
   overflow-x: auto;
 }
 
@@ -190,14 +190,17 @@
   vertical-align: top;
 }
 
+/* The first and last cell keep a little room, so that when a row is
+   highlighted nothing in it touches the highlight's edge, and the highlight
+   never leaves the table. */
 .table th:first-child,
 .table td:first-child {
-  padding-left: 0;
+  padding-left: var(--row-inset);
 }
 
 .table th:last-child,
 .table td:last-child {
-  padding-right: 0;
+  padding-right: var(--row-inset);
 }
 
 .table tbody tr + tr td {
@@ -454,6 +457,8 @@
   font-weight: var(--font-weight-strong);
   letter-spacing: var(--logo-tracking);
   line-height: 1;
+  position: relative;
+  top: var(--logo-lift);
 }
 
 /* Facts: a mono line of labelled values, each with its icon */
