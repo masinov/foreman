@@ -115,7 +115,12 @@ export function TaskLayout({ taskId, children }) {
               label: (
                 <>
                   Changes
-                  {size ? <span className="tabs__count task__tab-size"> {size}</span> : null}
+                  {size ? (
+                    <>
+                      <span className="visually-hidden"> </span>
+                      <span className="tabs__count task__tab-size">{size}</span>
+                    </>
+                  ) : null}
                 </>
               ),
             },

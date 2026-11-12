@@ -119,7 +119,12 @@ export function ProjectLayout({ projectId, children }) {
               label: (
                 <>
                   Backlog
-                  {project ? <span className="tabs__count"> {project.backlog}</span> : null}
+                  {project ? (
+                    <>
+                      <span className="visually-hidden"> </span>
+                      <span className="tabs__count">{project.backlog}</span>
+                    </>
+                  ) : null}
                 </>
               ),
             },
