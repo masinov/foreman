@@ -85,12 +85,10 @@
   --block-cursor-height: 14px;
   --tab-underline-width: 2px;
 
-  /* Identity: the wordmark's size, its drawn F (cap height of the letters at
-     that size) and the tracking of the letters. */
-  --logo-size: 17px;
-  --logo-cap-height: 12.4px;
-  --logo-gap: 1px;
-  --logo-tracking: -0.02em;
+  /* Identity: the wordmark is the name set in its own typeface. */
+  --font-logo: "Fraunces", "Source Serif 4", Georgia, serif;
+  --logo-size: 18px;
+  --logo-tracking: -0.01em;
 
   /* Icons: one grid, one stroke */
   --icon-size: 14px;

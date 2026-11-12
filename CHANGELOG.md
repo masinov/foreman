@@ -9,6 +9,14 @@ memory changes rather than versioned product releases.
 
 ### Sprint 58 — frontend rebuild
 
+- **fix, a plain wordmark and one way home**
+  (`fix/plain-wordmark-and-one-way-home`): the owner disliked the drawn F and
+  did not understand its gold square, and asked what the difference was
+  between clicking the wordmark and clicking "Workspace" (none). The wordmark
+  is now only the name, set in Fraunces. Inside a project the breadcrumb
+  starts at the project; the wordmark goes to the workspace and the project
+  switcher lists "All projects". The favicon lost its square too.
+
 - **feat, a wordmark, icons and motion** (`feat/identity-icons-motion`): asked
   for by the owner and not delivered until now. The top-left word is a drawn
   wordmark (an F cut to the weight of the letters, with one gold square) that

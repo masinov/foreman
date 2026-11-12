@@ -26,9 +26,8 @@ a,
   background-color: var(--color-row-hover-tinted);
 }
 
-/* Running: the engine's dot and the wordmark's square breathe. */
-.status--running .status__dot,
-.logo--running .logo__task {
+/* Running: the engine's dot breathes. */
+.status--running .status__dot {
   animation: breathe var(--motion-breathe) ease-in-out infinite;
 }
 

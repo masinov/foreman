@@ -54,13 +54,16 @@ function ProjectSwitcher({ projectId }) {
           ) : null}
         </>
       }
-      items={projects.map((entry) => ({
-        key: entry.id,
-        label: entry.name,
-        detail: entry.needs_you > 0 ? entry.needs_you : null,
-        href: paths.project(entry.id),
-        current: entry.id === projectId,
-      }))}
+      items={[
+        { key: "all-projects", label: "All projects", detail: null, href: paths.workspace(), current: false },
+        ...projects.map((entry) => ({
+          key: entry.id,
+          label: entry.name,
+          detail: entry.needs_you > 0 ? entry.needs_you : null,
+          href: paths.project(entry.id),
+          current: entry.id === projectId,
+        })),
+      ]}
     />
   );
 }
@@ -124,29 +127,31 @@ function TaskParentCrumb({ taskId, level }) {
   );
 }
 
-/** The levels of the current route: Workspace / Project / Sprint / Task. */
+/**
+ * The levels of the current route. Inside a project the breadcrumb starts at
+ * the project: the wordmark beside it already goes to the workspace, and the
+ * project switcher lists "All projects", so a "Workspace" step would be a
+ * third way to the same page.
+ */
 export function crumbsFor(route, params) {
   const workspace = { key: "workspace", href: paths.workspace(), label: "Workspace" };
   switch (route.level) {
     case "project": {
       if (route.name.startsWith("project-settings")) {
         return [
-          workspace,
           { key: "project", href: paths.project(params.projectId), label: <ProjectCrumb projectId={params.projectId} /> },
           { key: "settings", href: paths.projectSettings(params.projectId), label: "Settings" },
         ];
       }
-      return [workspace, { key: "project", custom: <ProjectSwitcher projectId={params.projectId} /> }];
+      return [{ key: "project", custom: <ProjectSwitcher projectId={params.projectId} /> }];
     }
     case "sprint":
       return [
-        workspace,
         { key: "project", custom: <SprintProjectCrumb sprintId={params.sprintId} /> },
         { key: "sprint", href: paths.sprint(params.sprintId), label: <SprintCrumb sprintId={params.sprintId} /> },
       ];
     case "task":
       return [
-        workspace,
         { key: "project", custom: <TaskParentCrumb taskId={params.taskId} level="project" /> },
         { key: "sprint", custom: <TaskParentCrumb taskId={params.taskId} level="sprint" /> },
         { key: "task", href: paths.task(params.taskId), label: <TaskCrumb taskId={params.taskId} /> },

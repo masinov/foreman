@@ -444,30 +444,14 @@
   margin-right: var(--icon-gap);
 }
 
-/* Logo: a drawn F and the rest of the word */
+/* Logo: the name, in its own typeface */
 .logo {
-  display: inline-flex;
-  align-items: baseline;
-  gap: var(--logo-gap);
   color: var(--color-text);
-  font-family: var(--font-sans);
+  font-family: var(--font-logo);
   font-size: var(--logo-size);
   font-weight: var(--font-weight-strong);
   letter-spacing: var(--logo-tracking);
   line-height: 1;
-}
-
-.logo__f {
-  flex: none;
-  height: var(--logo-cap-height);
-}
-
-.logo__letter {
-  fill: currentColor;
-}
-
-.logo__task {
-  fill: var(--color-gold);
 }
 
 /* Facts: a mono line of labelled values, each with its icon */
