@@ -56,7 +56,6 @@ describe("the project page head", () => {
     const tabs = screen.getByRole("navigation", { name: "Project" });
     expect(within(tabs).getAllByRole("link").map((link) => [link.textContent, link.getAttribute("href")])).toEqual([
       ["Sprints", "/dashboard/projects/foreman"],
-      ["Backlog 4", "/dashboard/projects/foreman/backlog"],
       ["Activity", "/dashboard/projects/foreman/activity"],
     ]);
     expect(within(tabs).getByRole("link", { name: currentTab })).toHaveAttribute("aria-current", "page");

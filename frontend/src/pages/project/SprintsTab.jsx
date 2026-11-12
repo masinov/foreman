@@ -2,13 +2,14 @@ import React, { useEffect, useState } from "react";
 
 import { listProjectSprints, SPRINT_STATUSES } from "../../api/sprints";
 import { useDelayedFlag, useResource } from "../../api/useResource";
+import { getWorkspace } from "../../api/workspace";
 import { paths } from "../../app/paths";
 import { Link } from "../../app/router";
 import { Button } from "../../ui/Button";
 import { Mono } from "../../ui/Mono";
 import { StatusDot } from "../../ui/StatusDot";
 import { Table } from "../../ui/Table";
-import { formatDay, formatMoney } from "../../ui/format";
+import { formatDay, formatMoney, plural } from "../../ui/format";
 import { describeTaskCounts } from "../shared/words";
 import { FinishedSprints } from "./FinishedSprints";
 import { NewSprintDialog } from "./NewSprintDialog";
@@ -72,6 +73,27 @@ function EmptyQueue({ active, planned }) {
  * The Sprints tab: the queue only, the active sprint then the planned ones
  * in the order they will run; finished sprints are a closed line below.
  */
+/**
+ * Below the queue: the backlog, where work waits before it is in any sprint.
+ * It is a page of its own, linked here the way a sprint is.
+ */
+function BacklogLine({ projectId }) {
+  const workspace = useResource(["workspace"], getWorkspace);
+  const project = workspace.data?.projects.find((entry) => entry.id === projectId);
+  if (!project) return null;
+  const count = project.backlog ?? 0;
+  return (
+    <p className="queue__backlog">
+      <Link className="row-link row-link--strong" href={paths.projectBacklog(projectId)}>
+        Backlog
+      </Link>
+      <span className="secondary">
+        {count === 0 ? "Nothing is waiting outside a sprint." : `${plural(count, "task")} in no sprint yet.`}
+      </span>
+    </p>
+  );
+}
+
 export function SprintsTab({ projectId, revision }) {
   const queue = useResource(["sprint-queue", projectId], (client, options) =>
     listProjectSprints(client, projectId, {
@@ -127,6 +149,7 @@ export function SprintsTab({ projectId, revision }) {
           </Button>
         ) : null}
       </section>
+      <BacklogLine projectId={projectId} />
       <FinishedSprints projectId={projectId} revision={revision} />
       <NewSprintDialog
         projectId={projectId}

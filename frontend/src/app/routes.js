@@ -33,7 +33,7 @@ export const ROUTES = [
     name: "project-backlog",
     pattern: "/projects/:projectId/backlog",
     level: "project",
-    title: "Project, Backlog",
+    title: "Backlog",
   },
   {
     name: "project-activity",
