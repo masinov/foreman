@@ -403,6 +403,78 @@ describe("Overview", () => {
   });
 });
 
+describe("Overrides for this task", () => {
+  const PATCH = `/api/v1/tasks/${TASK_ID}`;
+
+  async function overrides(task = taskDetail(), routes = taskRoutes({ task })) {
+    routes[`PATCH ${PATCH}`] = routes[`PATCH ${PATCH}`] ?? { ok: true };
+    const utils = await renderTask(BASE, routes);
+    const section = (await screen.findByRole("heading", { name: "Overrides for this task" })).closest("section");
+    await within(section).findByLabelText("Who decides merge approval");
+    return { ...utils, section };
+  }
+
+  it("offers who decides for the workflow's gates and a model for each agent step", async () => {
+    const { section } = await overrides();
+    expect(within(section).queryByLabelText(/plan approval/i)).toBeNull();
+    expect(within(section).getByLabelText("Who decides merge approval")).toHaveValue("");
+    expect(within(section).getByLabelText("Model for develop")).toHaveValue("");
+    expect(within(section).getByLabelText("Model for review")).toBeInTheDocument();
+    expect(within(section).queryByLabelText("Model for test")).toBeNull();
+  });
+
+  it("sets who decides and a step's model with one PATCH, keeping what else the task carries", async () => {
+    const task = taskDetail({ executor_overrides: { ladder_start: 1, policy: { notification: "all" } } });
+    const { section, fetchImpl } = await overrides(task);
+    fireEvent.change(within(section).getByLabelText("Who decides merge approval"), { target: { value: "auto" } });
+    fireEvent.change(within(section).getByLabelText("Model for develop"), { target: { value: " opus-5-5 " } });
+    fireEvent.click(within(section).getByRole("button", { name: "Save overrides" }));
+    await waitFor(() => expect(calls(fetchImpl, "PATCH", PATCH)).toHaveLength(1));
+    expect(calls(fetchImpl, "PATCH", PATCH)[0].body).toEqual({
+      executor_overrides: {
+        ladder_start: 1,
+        policy: { notification: "all", merge_approval: "auto" },
+        models: { develop: "opus-5-5" },
+      },
+    });
+    await waitFor(() => expect(taskReads(fetchImpl)).toBeGreaterThan(1));
+    expect(await within(section).findByRole("status")).toHaveTextContent("Saved.");
+  });
+
+  it("clears what was set, in the older gates form too", async () => {
+    const task = taskDetail({
+      executor_overrides: { gates: { merge_approval: "human" }, models: { develop: "opus-5-5" } },
+    });
+    const { section, fetchImpl } = await overrides(task);
+    expect(within(section).getByLabelText("Who decides merge approval")).toHaveValue("human");
+    expect(within(section).getByLabelText("Model for develop")).toHaveValue("opus-5-5");
+    fireEvent.change(within(section).getByLabelText("Who decides merge approval"), { target: { value: "" } });
+    fireEvent.change(within(section).getByLabelText("Model for develop"), { target: { value: "" } });
+    fireEvent.click(within(section).getByRole("button", { name: "Save overrides" }));
+    await waitFor(() => expect(calls(fetchImpl, "PATCH", PATCH)).toHaveLength(1));
+    expect(calls(fetchImpl, "PATCH", PATCH)[0].body).toEqual({ executor_overrides: {} });
+  });
+
+  it("shows the refusal as the API's sentence", async () => {
+    const routes = taskRoutes();
+    routes[`PATCH ${PATCH}`] = reply(400, { error: "Unknown workflow step 'develop' in executor_overrides.models.", code: "validation_error" });
+    const { section } = await overrides(taskDetail(), routes);
+    fireEvent.change(within(section).getByLabelText("Model for develop"), { target: { value: "x" } });
+    fireEvent.click(within(section).getByRole("button", { name: "Save overrides" }));
+    expect(await within(section).findByRole("alert")).toHaveTextContent("Unknown workflow step 'develop' in executor_overrides.models.");
+  });
+
+  it("names this task as the source in Details once the task says so", async () => {
+    const task = taskDetail({
+      executor_overrides: { policy: { merge_approval: "auto" } },
+      policy: { ...taskDetail().policy, merge_approval: { value: "auto", source: "task_override" } },
+    });
+    await overrides(task);
+    const details = await screen.findByRole("complementary", { name: "Details" });
+    await waitFor(() => expect(details).toHaveTextContent("Foreman approves merges (this task)"));
+  });
+});
+
 describe("Changes", () => {
   it("lists the files and shows the first file's diff, marked by sign as well as colour", async () => {
     const { fetchImpl } = await renderTask(`${BASE}/changes`);

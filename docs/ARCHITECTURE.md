@@ -554,7 +554,10 @@ The task page (`pages/task/`) reads `GET /tasks/{id}`, `/checks` and
 adds the project's workflow (steps and who decides), Changes one file's diff
 at a time, Activity the paged runs and the selected run's output. While the
 task is `in_progress` it follows `GET /sprints/{id}/stream` and reads itself
-again 300 ms after the last event about the task.
+again 300 ms after the last event about the task. Overview also holds
+"Overrides for this task": one `PATCH /tasks/{id}` with the whole
+`executor_overrides` (who decides at the workflow's gates, a model per agent
+step), keeping the keys the page does not edit.
 
 The manager side bar (`pages/manager/`) belongs to the shell, not to a page:
 `App` keeps it outside the keyed page, so an open conversation and a reply
