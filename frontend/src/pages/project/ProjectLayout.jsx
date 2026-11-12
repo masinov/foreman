@@ -48,24 +48,10 @@ function TitleRow({ projectId, project }) {
           </Mono>
         ) : null}
       </div>
-      {/* The project's other pages are reached from here: the backlog and
-          the settings each have a page of their own. */}
-      <nav className="project__pages" aria-label="Project pages">
-        <Link className="project__page-link" href={paths.projectBacklog(projectId)}>
-          <Icon name="inbox" />
-          Backlog
-          {project ? (
-            <>
-              <span className="visually-hidden"> </span>
-              <span className="tabs__count">{project.backlog ?? 0}</span>
-            </>
-          ) : null}
-        </Link>
-        <Link className="project__page-link" href={paths.projectSettings(projectId)}>
-          <Icon name="settings" />
-          Project settings
-        </Link>
-      </nav>
+      <Link className="project__page-link" href={paths.projectSettings(projectId)}>
+        <Icon name="settings" />
+        Project settings
+      </Link>
     </div>
   );
 }
@@ -128,6 +114,23 @@ export function ProjectLayout({ projectId, children }) {
           label="Project"
           items={[
             { href: paths.project(projectId), label: "Sprints" },
+            // The backlog is a page of its own (it has its own title and
+            // breadcrumb step). It is listed here because this row is where
+            // a person looks for the parts of a project.
+            {
+              href: paths.projectBacklog(projectId),
+              label: (
+                <>
+                  Backlog
+                  {project ? (
+                    <>
+                      <span className="visually-hidden"> </span>
+                      <span className="tabs__count">{project.backlog ?? 0}</span>
+                    </>
+                  ) : null}
+                </>
+              ),
+            },
             { href: paths.projectActivity(projectId), label: "Activity" },
           ]}
         />
