@@ -89,7 +89,6 @@ export function TaskLayout({ taskId, children }) {
   }
 
   const current = task.data;
-  const size = changeSize(changes.data);
 
   function deleted() {
     navigate(current.in_backlog ? paths.projectBacklog(current.project_id) : paths.sprint(current.sprint_id));
@@ -112,12 +111,7 @@ export function TaskLayout({ taskId, children }) {
             { href: paths.task(taskId), label: "Overview" },
             {
               href: paths.taskChanges(taskId),
-              label: (
-                <>
-                  Changes
-                  {size ? <span className="tabs__count task__tab-size"> {size}</span> : null}
-                </>
-              ),
+              label: "Changes",
             },
             { href: paths.taskChecks(taskId), label: "Checks" },
             { href: paths.taskActivity(taskId), label: "Activity" },

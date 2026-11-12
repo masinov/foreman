@@ -55,26 +55,31 @@ _INSTANT = "julianday({column})"
 # `shutdown` command completed during that lease, the command names who asked.
 _MILESTONES_SQL = f"""
     SELECT 'sprint_started' AS kind, s.started_at AS at, s.project_id AS project_id,
-           s.id AS sprint_id, NULL AS task_id, NULL AS actor, s.id AS ref
+           s.id AS sprint_id, NULL AS task_id, NULL AS actor, s.id AS ref,
+           NULL AS sha, NULL AS merged_count
     FROM sprints s
     WHERE s.started_at IS NOT NULL AND s.kind = 'sprint'
     UNION ALL
-    SELECT 'sprint_finished', s.completed_at, s.project_id, s.id, NULL, NULL, s.id
+    SELECT 'sprint_finished', s.completed_at, s.project_id, s.id, NULL, NULL, s.id,
+           NULL,
+           (SELECT COUNT(DISTINCT e.task_id) FROM events e JOIN tasks t ON t.id = e.task_id
+             WHERE t.sprint_id = s.id AND e.event_type = 'engine.merge')
     FROM sprints s
     WHERE s.status = 'completed' AND s.completed_at IS NOT NULL
       AND s.kind = 'sprint'
     UNION ALL
-    SELECT 'task_merged', e.timestamp, e.project_id, t.sprint_id, e.task_id, NULL, e.id
+    SELECT 'task_merged', e.timestamp, e.project_id, t.sprint_id, e.task_id, NULL, e.id,
+           json_extract(e.payload_json, '$.sha'), NULL
     FROM events e JOIN tasks t ON t.id = e.task_id
     WHERE e.event_type = 'engine.merge'
     UNION ALL
     SELECT CASE c.command WHEN 'pause' THEN 'engine_paused' ELSE 'engine_resumed' END,
            COALESCE(c.completed_at, c.requested_at), c.project_id, NULL, NULL,
-           c.requested_by, c.id
+           c.requested_by, c.id, NULL, NULL
     FROM engine_commands c
     WHERE c.status = 'completed' AND c.command IN ('pause', 'resume')
     UNION ALL
-    SELECT 'engine_started', l.acquired_at, l.project_id, NULL, NULL, NULL, l.id
+    SELECT 'engine_started', l.acquired_at, l.project_id, NULL, NULL, NULL, l.id, NULL, NULL
     FROM leases l
     WHERE l.resource_type = '{ENGINE_RESOURCE_TYPE}'
     UNION ALL
@@ -88,7 +93,7 @@ _MILESTONES_SQL = f"""
                AND c.completed_at BETWEEN l.acquired_at
                    AND COALESCE(l.released_at, l.expires_at)
              ORDER BY c.completed_at DESC LIMIT 1),
-           l.id
+           l.id, NULL, NULL
     FROM leases l
     WHERE l.resource_type = '{ENGINE_RESOURCE_TYPE}' AND l.status IN ('released', 'expired')
 """
@@ -108,6 +113,10 @@ class MilestoneRow:
     task_key: str | None
     task_title: str | None
     actor: str | None
+    #: The merge commit, on a merge recorded since the engine began naming it.
+    sha: str | None = None
+    #: How many tasks a finished sprint merged.
+    merged_count: int | None = None
 
 
 class OverviewStore(StoreBase):
@@ -417,6 +426,7 @@ class OverviewStore(StoreBase):
               FROM m
             )
             SELECT ranked.kind, ranked.at, ranked.project_id, ranked.actor,
+                   ranked.sha, ranked.merged_count,
                    p.name AS project_name,
                    s.id AS sprint_id, s.title AS sprint_title,
                    t.id AS task_id, t.task_key AS task_key, t.title AS task_title
@@ -447,7 +457,7 @@ class OverviewStore(StoreBase):
     def _milestone_select(where: str) -> str:
         return f"""
             WITH m AS ({_MILESTONES_SQL})
-            SELECT m.kind, m.at, m.project_id, m.actor, m.ref,
+            SELECT m.kind, m.at, m.project_id, m.actor, m.ref, m.sha, m.merged_count,
                    p.name AS project_name,
                    s.id AS sprint_id, s.title AS sprint_title,
                    t.id AS task_id, t.task_key AS task_key, t.title AS task_title
@@ -471,4 +481,6 @@ def _row_to_milestone(row: Any) -> MilestoneRow:
         task_key=row["task_key"],
         task_title=row["task_title"],
         actor=row["actor"],
+        sha=row["sha"],
+        merged_count=row["merged_count"],
     )

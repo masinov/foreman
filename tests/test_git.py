@@ -108,6 +108,7 @@ class GitHelperTests(unittest.TestCase):
 
         self.assertTrue(result.success, result.detail)
         self.assertFalse(result.conflict)
+        self.assertEqual(result.sha, self.git("rev-parse", "HEAD").strip())
         self.assertEqual(current_branch(self.repo), "main")
         self.assertTrue((self.repo / "feature.py").is_file())
         self.assertIn("Merge branch 'feat/a'", self.git("log", "-1", "--format=%s"))

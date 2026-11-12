@@ -42,10 +42,13 @@
 }
 
 /* Engine */
+/* The label, the state and the sentence are text of different sizes and
+   faces on one line: they share a baseline. The buttons are boxes and centre
+   on the line. */
 .engine {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: baseline;
   gap: var(--space-2) var(--space-4);
 }
 
@@ -69,6 +72,7 @@
 
 .engine__controls {
   display: flex;
+  align-self: center;
   gap: var(--space-2);
 }
 
@@ -217,4 +221,11 @@
 
 .checkbox {
   accent-color: var(--color-gold);
+}
+
+.finished__more {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
 }

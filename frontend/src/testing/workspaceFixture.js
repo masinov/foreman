@@ -31,6 +31,8 @@ export function milestone(kind, fields = {}) {
     task_key: null,
     task_title: null,
     actor: null,
+    sha: null,
+    merged_count: null,
     ...fields,
   };
 }

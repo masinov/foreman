@@ -3,13 +3,18 @@ import React, { useEffect, useState } from "react";
 import { useApiClient } from "../../api/ApiProvider";
 import { errorSentence } from "../../api/client";
 import { fileBacklogTask, TASK_TYPES } from "../../api/backlog";
+import { createSprintTask } from "../../api/sprints";
 import { Button } from "../../ui/Button";
 import { Dialog } from "../../ui/Dialog";
 import { Field } from "../../ui/Field";
 import { humanize } from "../../ui/format";
 
-/** File a task into the backlog. The project's triage policy decides if it is accepted. */
-export function NewTaskDialog({ projectId, open, onClose, onFiled }) {
+/**
+ * Write a new task. Without `sprint` it is filed into the backlog, where the
+ * project's triage policy decides if it is accepted. With `sprint` it goes
+ * straight into that sprint.
+ */
+export function NewTaskDialog({ projectId, sprint = null, open, onClose, onFiled }) {
   const client = useApiClient();
   const [title, setTitle] = useState("");
   const [taskType, setTaskType] = useState(TASK_TYPES[0]);
@@ -38,12 +43,15 @@ export function NewTaskDialog({ projectId, open, onClose, onFiled }) {
     setSaving(true);
     setError(null);
     try {
-      const task = await fileBacklogTask(client, projectId, {
+      const fields = {
         title: title.trim(),
         taskType,
         description: description.trim(),
         acceptanceCriteria: criteria.trim(),
-      });
+      };
+      const task = sprint
+        ? await createSprintTask(client, sprint.id, fields)
+        : await fileBacklogTask(client, projectId, fields);
       onFiled(task);
     } catch (caught) {
       setError(errorSentence(caught));
@@ -56,7 +64,11 @@ export function NewTaskDialog({ projectId, open, onClose, onFiled }) {
     <Dialog
       open={open}
       title="New task"
-      description="It goes to the backlog. It is planned into a sprint from there."
+      description={
+        sprint
+          ? `It goes straight into ${sprint.title} and runs with it.`
+          : "It goes to the backlog. It is planned into a sprint from there."
+      }
       onClose={onClose}
     >
       <form className="dialog__body" onSubmit={submit} noValidate>
@@ -110,7 +122,7 @@ export function NewTaskDialog({ projectId, open, onClose, onFiled }) {
         <div className="dialog__footer">
           <Button onClick={onClose}>Cancel</Button>
           <Button type="submit" disabled={saving}>
-            {saving ? "Filing…" : "File task"}
+            {saving ? (sprint ? "Adding…" : "Filing…") : sprint ? "Add task" : "File task"}
           </Button>
         </div>
       </form>

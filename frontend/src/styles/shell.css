@@ -26,8 +26,8 @@
   padding-inline: var(--page-gutter);
 }
 
-/* The wordmark is the way home. It does not light up like a link: it is the
-   one fixed thing in the bar. */
+/* The wordmark is the way home, and answers the pointer like every other
+   link so that it reads as one. */
 .topbar__home {
   display: inline-flex;
   align-items: center;
@@ -35,8 +35,9 @@
   border-radius: var(--radius);
 }
 
-.topbar__home:hover {
-  color: var(--color-text);
+.topbar__home:hover .logo,
+.topbar__home:focus-visible .logo {
+  color: var(--color-gold);
 }
 
 .topbar__toggle[aria-pressed="true"] {

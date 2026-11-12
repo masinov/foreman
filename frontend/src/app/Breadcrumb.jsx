@@ -8,9 +8,11 @@ import { Menu } from "../ui/Menu";
 import { paths } from "./paths";
 import { Link, useRoute } from "./router";
 
-function useLabel(key, load, pick, fallback) {
+// A crumb shows a name or nothing. An id standing in for a name flashes on
+// screen and then changes, which reads as a glitch.
+function useLabel(key, load, pick) {
   const { data } = useResource(key, load, { enabled: Boolean(key[1]) });
-  return (data && pick(data)) || fallback;
+  return (data && pick(data)) || "";
 }
 
 function useProjects() {
@@ -20,7 +22,7 @@ function useProjects() {
 
 function ProjectCrumb({ projectId }) {
   const projects = useProjects();
-  return projects?.find((project) => project.id === projectId)?.name || projectId;
+  return projects?.find((project) => project.id === projectId)?.name || "";
 }
 
 /**
@@ -30,7 +32,7 @@ function ProjectCrumb({ projectId }) {
 function ProjectSwitcher({ projectId }) {
   const projects = useProjects();
   const project = projects?.find((entry) => entry.id === projectId);
-  const name = project?.name || projectId;
+  const name = project?.name || "";
   if (!projects || projects.length === 0) {
     return (
       <span className="breadcrumb__current" aria-current="page">
@@ -66,7 +68,7 @@ function ProjectSwitcher({ projectId }) {
 }
 
 function SprintCrumb({ sprintId }) {
-  return useLabel(["sprint", sprintId], (client, options) => getSprint(client, sprintId, options), (s) => s.title, sprintId);
+  return useLabel(["sprint", sprintId], (client, options) => getSprint(client, sprintId, options), (s) => s.title);
 }
 
 /**
@@ -85,7 +87,7 @@ function ProjectLink({ projectId }) {
   const project = projects?.find((entry) => entry.id === projectId);
   return (
     <Link className="breadcrumb__link breadcrumb__project" href={paths.project(projectId)}>
-      <span>{project?.name || projectId}</span>
+      <span>{project?.name || ""}</span>
       {project?.needs_you > 0 ? (
         <span className="breadcrumb__count">
           {project.needs_you}
@@ -97,7 +99,7 @@ function ProjectLink({ projectId }) {
 }
 
 function TaskCrumb({ taskId }) {
-  return useLabel(["task", taskId], (client, options) => getTask(client, taskId, options), (t) => t.task_key || t.title, taskId);
+  return useLabel(["task", taskId], (client, options) => getTask(client, taskId, options), (t) => t.task_key || t.title);
 }
 
 /**
@@ -124,41 +126,42 @@ function TaskParentCrumb({ taskId, level }) {
   );
 }
 
-/** The levels of the current route: Workspace / Project / Sprint / Task. */
+/**
+ * The levels of the current route, below the workspace. The wordmark beside
+ * the breadcrumb is the one way to the workspace; there is no "Workspace"
+ * step and no "All projects" entry, each of which would be a second link to
+ * the same page. On the workspace page itself the breadcrumb is empty.
+ */
 export function crumbsFor(route, params) {
-  const workspace = { key: "workspace", href: paths.workspace(), label: "Workspace" };
   switch (route.level) {
     case "project": {
       if (route.name.startsWith("project-settings")) {
         return [
-          workspace,
           { key: "project", href: paths.project(params.projectId), label: <ProjectCrumb projectId={params.projectId} /> },
           { key: "settings", href: paths.projectSettings(params.projectId), label: "Settings" },
         ];
       }
-      return [workspace, { key: "project", custom: <ProjectSwitcher projectId={params.projectId} /> }];
+      return [{ key: "project", custom: <ProjectSwitcher projectId={params.projectId} /> }];
     }
     case "sprint":
       return [
-        workspace,
         { key: "project", custom: <SprintProjectCrumb sprintId={params.sprintId} /> },
         { key: "sprint", href: paths.sprint(params.sprintId), label: <SprintCrumb sprintId={params.sprintId} /> },
       ];
     case "task":
       return [
-        workspace,
         { key: "project", custom: <TaskParentCrumb taskId={params.taskId} level="project" /> },
         { key: "sprint", custom: <TaskParentCrumb taskId={params.taskId} level="sprint" /> },
         { key: "task", href: paths.task(params.taskId), label: <TaskCrumb taskId={params.taskId} /> },
       ];
     default:
       if (route.name === "workspace-settings") {
-        return [workspace, { key: "settings", href: paths.workspaceSettings(), label: "Settings" }];
+        return [{ key: "settings", href: paths.workspaceSettings(), label: "Workspace settings" }];
       }
       if (route.name === "not-found") {
-        return [workspace, { key: "not-found", href: null, label: "Not found" }];
+        return [{ key: "not-found", href: null, label: "Not found" }];
       }
-      return [workspace];
+      return [];
   }
 }
 

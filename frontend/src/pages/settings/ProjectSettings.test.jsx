@@ -27,7 +27,7 @@ describe("the page around project settings", () => {
   it("is a page of its own: breadcrumb, two tabs, no engine row and no Needs you", async () => {
     await renderGeneral();
     const crumbs = screen.getByRole("navigation", { name: "Breadcrumb" });
-    expect(within(crumbs).getByRole("link", { name: "Workspace" })).toHaveAttribute("href", "/dashboard");
+    expect(within(crumbs).queryByRole("link", { name: "Workspace" })).toBeNull();
     expect(await within(crumbs).findByRole("link", { name: "Foreman" })).toHaveAttribute(
       "href",
       "/dashboard/projects/foreman",

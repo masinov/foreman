@@ -43,6 +43,10 @@
   padding-inline: 0;
 }
 
+.milestones__detail {
+  color: var(--color-text-quiet);
+}
+
 /* Needs you: the surface holds only the rows; the heading sits above it. */
 .needs-you__surface {
   padding: var(--space-1) var(--space-4);

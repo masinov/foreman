@@ -76,14 +76,16 @@
 }
 
 /* Status dot */
+/* Inline, not a flex box: a flex box takes its baseline from its first item,
+   the dot, and would sit lower than the text beside it. */
 .status {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
+  white-space: nowrap;
 }
 
 .status__dot {
-  flex: none;
+  display: inline-block;
+  margin-right: var(--space-2);
+  vertical-align: middle;
   width: var(--status-dot-size);
   height: var(--status-dot-size);
   border-radius: 50%;
@@ -113,6 +115,13 @@
   align-items: baseline;
   gap: var(--space-2);
   margin-bottom: var(--space-2);
+  padding-bottom: var(--space-2);
+  border-bottom: var(--line-width) solid var(--color-line-structural);
+}
+
+.section-heading--plain {
+  padding-bottom: 0;
+  border-bottom: 0;
 }
 
 .section-heading__title {
@@ -120,9 +129,24 @@
   font-weight: var(--font-weight-strong);
 }
 
+/* A count beside a label is a figure, not another word of the label: it is
+   set a little smaller and a fixed distance apart, on the label's baseline.
+   The distance is a margin, not a space character, so it does not change
+   with the font. */
+.section-heading__count,
+.tabs__count {
+  margin-left: var(--count-gap);
+  font-size: var(--font-size-count);
+  font-weight: var(--font-weight-medium);
+  font-variant-numeric: tabular-nums;
+}
+
 .section-heading__count {
   color: var(--color-gold);
-  font-weight: var(--font-weight-medium);
+}
+
+.tabs__count {
+  color: var(--color-text-quiet);
 }
 
 .section-heading__note {
@@ -173,9 +197,11 @@
   border-collapse: collapse;
 }
 
+/* Column headers are quiet and sit on the faint row line: the stronger rule
+   belongs to the section's title above them. */
 .table th {
   padding: var(--space-1) var(--cell-padding-inline) var(--space-2);
-  border-bottom: var(--line-width) solid var(--color-line-header);
+  border-bottom: var(--line-width) solid var(--color-line-row);
   color: var(--color-text-quiet);
   font-size: var(--font-size-table-header);
   font-weight: var(--font-weight-regular);
@@ -188,14 +214,17 @@
   vertical-align: top;
 }
 
+/* The first and last cell keep a little room, so that when a row is
+   highlighted nothing in it touches the highlight's edge, and the highlight
+   never leaves the table. */
 .table th:first-child,
 .table td:first-child {
-  padding-left: 0;
+  padding-left: var(--row-inset);
 }
 
 .table th:last-child,
 .table td:last-child {
-  padding-right: 0;
+  padding-right: var(--row-inset);
 }
 
 .table tbody tr + tr td {
@@ -444,30 +473,16 @@
   margin-right: var(--icon-gap);
 }
 
-/* Logo: a drawn F and the rest of the word */
+/* Logo: the name, in its own typeface */
 .logo {
-  display: inline-flex;
-  align-items: baseline;
-  gap: var(--logo-gap);
   color: var(--color-text);
-  font-family: var(--font-sans);
+  font-family: var(--font-logo);
   font-size: var(--logo-size);
   font-weight: var(--font-weight-strong);
   letter-spacing: var(--logo-tracking);
   line-height: 1;
-}
-
-.logo__f {
-  flex: none;
-  height: var(--logo-cap-height);
-}
-
-.logo__letter {
-  fill: currentColor;
-}
-
-.logo__task {
-  fill: var(--color-gold);
+  position: relative;
+  top: var(--logo-lift);
 }
 
 /* Facts: a mono line of labelled values, each with its icon */

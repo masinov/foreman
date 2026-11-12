@@ -20,7 +20,8 @@ describe("App routing and shell", () => {
     const banner = screen.getByRole("banner");
     expect(within(banner).getByRole("link", { name: "Foreman" })).toHaveAttribute("href", "/dashboard");
     const crumbs = within(banner).getByRole("navigation", { name: "Breadcrumb" });
-    expect(within(crumbs).getByText("Workspace")).toHaveAttribute("aria-current", "page");
+    // The wordmark is the one link to the workspace; the breadcrumb is empty here.
+    expect(within(crumbs).queryAllByRole("listitem")).toHaveLength(0);
     expect(await within(banner).findByRole("button", { name: /^You: Local operator/ })).toBeInTheDocument();
     expect(document.querySelector(".manager-slot")).toBeNull();
     expect(within(banner).queryByRole("button", { name: "Manager" })).toBeNull();

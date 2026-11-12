@@ -13,6 +13,13 @@ import { EngineRow } from "./EngineRow";
 import "../../styles/lists.css";
 import "../../styles/project.css";
 
+/** True when the project has an active sprint with no tasks in it at all. */
+function activeSprintIsEmpty(project) {
+  const counts = project?.active_sprint?.task_counts;
+  if (!counts) return false;
+  return Object.values(counts).reduce((sum, value) => sum + (Number(value) || 0), 0) === 0;
+}
+
 function TitleRow({ projectId, project }) {
   // Where the project lives, which branch it lands on, how it works: each
   // with the icon that says which is which.
@@ -26,7 +33,7 @@ function TitleRow({ projectId, project }) {
   return (
     <div className="project__title-row">
       <div className="project__title">
-        <h1 className="page-title">{project?.name ?? projectId}</h1>
+        <h1 className="page-title">{project?.name ?? "\u00a0"}</h1>
         {facts.length ? (
           <Mono quiet className="facts">
             {facts.map((fact, index) => (
@@ -90,7 +97,12 @@ export function ProjectLayout({ projectId, children }) {
             {workspace.error}
           </p>
         ) : null}
-        <EngineRow projectId={projectId} engine={project?.engine ?? null} onChanged={changed} />
+        <EngineRow
+          projectId={projectId}
+          engine={project?.engine ?? null}
+          emptySprint={activeSprintIsEmpty(project)}
+          onChanged={changed}
+        />
       </div>
       <NeedsYou
         projectId={projectId}
@@ -107,7 +119,12 @@ export function ProjectLayout({ projectId, children }) {
               label: (
                 <>
                   Backlog
-                  {project ? <span className="tabs__count"> {project.backlog}</span> : null}
+                  {project ? (
+                    <>
+                      <span className="visually-hidden"> </span>
+                      <span className="tabs__count">{project.backlog}</span>
+                    </>
+                  ) : null}
                 </>
               ),
             },

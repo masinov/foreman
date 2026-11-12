@@ -44,6 +44,8 @@
   --font-size-section: 13px;
   --font-size-table-header: 11px;
   --font-size-control: 12px;
+  --font-size-count: 12px;
+  --count-gap: 6px;
   --font-weight-regular: 400;
   --font-weight-medium: 500;
   --font-weight-strong: 600;
@@ -89,12 +91,13 @@
   --block-cursor-height: 14px;
   --tab-underline-width: 2px;
 
-  /* Identity: the wordmark's size, its drawn F (cap height of the letters at
-     that size) and the tracking of the letters. */
-  --logo-size: 17px;
-  --logo-cap-height: 12.4px;
-  --logo-gap: 1px;
-  --logo-tracking: -0.02em;
+  /* Identity: the wordmark is the name set in its own typeface. */
+  --font-logo: "Fraunces", "Source Serif 4", Georgia, serif;
+  --logo-size: 18px;
+  --logo-tracking: -0.01em;
+  /* The serif sits a little lower in its box than the sans beside it; this
+     lifts it onto the same baseline as the breadcrumb. */
+  --logo-lift: -1px;
 
   /* Icons: one grid, one stroke */
   --icon-size: 14px;
@@ -107,8 +110,15 @@
   --motion-breathe: 1.6s;
   --motion-rise: 4px;
   --motion-slide: 12px;
+  --row-inset: 8px;
   --color-row-hover: #111115;
   --color-row-hover-tinted: #18181d;
+
+  /* Task changes: the file list beside the diff */
+  --changes-files-width: 300px;
+  --changes-files-max-width: 400px;
+  --changes-diff-min-width: 520px;
+  --changes-list-offset: 140px;
 
   /* Spacing scale */
   --space-1: 4px;

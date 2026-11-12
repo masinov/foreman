@@ -30,6 +30,8 @@ class GitMergeResult:
     success: bool
     detail: str
     conflict: bool = False
+    #: The commit the target branch points at after a successful merge.
+    sha: str | None = None
 
 
 def run_git(repo_path: str | Path, *args: str, check: bool = True) -> GitCommandResult:
@@ -146,7 +148,9 @@ def merge_branch(
     )
     if result.returncode == 0:
         detail = result.stdout or f"Merged {source_branch} into {target_branch}."
-        return GitMergeResult(success=True, detail=detail)
+        head = run_git(repo_path, "rev-parse", "HEAD", check=False)
+        sha = head.stdout.strip() if head.returncode == 0 else ""
+        return GitMergeResult(success=True, detail=detail, sha=sha or None)
 
     run_git(repo_path, "merge", "--abort", check=False)
     detail = result.stderr or result.stdout or "git merge failed"

@@ -46,13 +46,13 @@ export function NewSprintDialog({ projectId, open, onClose, onCreated }) {
     <Dialog
       open={open}
       title="New sprint"
-      description="It is planned last in the queue and runs after the sprints before it."
+      description="It joins the end of the queue and starts empty. Add tasks on its page, new or from the backlog."
       onClose={onClose}
     >
       <form className="dialog__body" onSubmit={submit} noValidate>
         <Field
           label="Title"
-          hint="The sprint number and what it is for."
+          hint="A short name for this batch of work."
           value={title}
           onChange={(event) => {
             setTitle(event.target.value);
@@ -64,7 +64,7 @@ export function NewSprintDialog({ projectId, open, onClose, onCreated }) {
         />
         <Field
           label="Goal"
-          hint="Optional. What is true when it is finished."
+          hint="Optional. What should be true when it is finished. Agents working in the sprint are told it."
           multiline
           value={goal}
           onChange={(event) => setGoal(event.target.value)}

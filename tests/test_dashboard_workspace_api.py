@@ -58,12 +58,13 @@ class WorkspaceApiCase(unittest.TestCase):
                 created_at=completed_at or "2026-01-01T00:00:00Z")
         )
 
-    def event(self, eid: str, tid: str, pid: str, etype: str, stamp: str) -> None:
+    def event(self, eid: str, tid: str, pid: str, etype: str, stamp: str,
+              payload: dict | None = None) -> None:
         rid = f"run-{eid}"
         self.add_run(rid, tid, pid, completed_at=stamp)
         self.store.save_event(
             Event(id=eid, run_id=rid, task_id=tid, project_id=pid, event_type=etype,
-                  timestamp=stamp, payload={})
+                  timestamp=stamp, payload=payload or {})
         )
 
     def seed_attention(self) -> None:
@@ -258,7 +259,8 @@ class MilestoneTests(WorkspaceApiCase):
                     started_at="2026-01-01T00:00:00Z")
         self.sprint("s3", "p2", "Sprint 3", "active", started_at="2026-01-02T12:00:00Z")
         self.task("t1", "s1", "p1", "done")
-        self.event("merge-1", "t1", "p1", "engine.merge", "2026-01-02T00:00:00Z")
+        self.event("merge-1", "t1", "p1", "engine.merge", "2026-01-02T00:00:00Z",
+                   {"sha": "abc1234def5678"})
         self.event("noise", "t1", "p1", "engine.test_run", "2026-01-02T01:00:00Z")
         self.store.enqueue_engine_command(project_id="p1", command="pause", requested_by="ana", command_id="c-pause")
         self.store.mark_engine_command("c-pause", "completed")
@@ -305,6 +307,21 @@ class MilestoneTests(WorkspaceApiCase):
         self.assertEqual(body["milestones"][4]["sprint_title"], "Sprint 2")
         # The backlog and an engine's rejected command are not milestones.
         self.assertNotIn("Backlog", {m["sprint_title"] for m in body["milestones"]})
+
+    def test_merge_names_its_commit_and_a_finished_sprint_its_merged_count(self) -> None:
+        self.seed()
+        # A merge recorded before the engine named the commit has none.
+        self.task("t2", "s1", "p1", "done")
+        self.event("merge-2", "t2", "p1", "engine.merge", "2026-01-02T06:00:00Z")
+        self.task("t3", "s1", "p1", "cancelled")
+        body = self.get("/api/v1/projects/p1/milestones").json()
+        merges = {m["task_id"]: m for m in body["milestones"] if m["kind"] == "task_merged"}
+        self.assertEqual(merges["t1"]["sha"], "abc1234def5678")
+        self.assertIsNone(merges["t2"]["sha"])
+        by_kind = {m["kind"]: m for m in body["milestones"] if m["kind"] != "task_merged"}
+        self.assertEqual(by_kind["sprint_finished"]["merged_count"], 2)
+        self.assertIsNone(by_kind["sprint_finished"]["sha"])
+        self.assertIsNone(by_kind["sprint_started"]["merged_count"])
 
     def test_all_projects_orders_across_them(self) -> None:
         self.seed()

@@ -15,6 +15,14 @@ import { describeTaskCounts } from "../shared/words";
 
 // Design README: finished sprints 10 at a time.
 export const FINISHED_PAGE = 10;
+// The most one request may ask for.
+const MAX_PAGE = 200;
+
+function shownLine(shown, total, q) {
+  const what = q ? ` matching “${q}”` : "";
+  if (shown >= total) return `Showing all ${total}${what}, newest first`;
+  return `Showing ${shown} of ${total}${what}, newest first`;
+}
 
 function finished(projectId, options) {
   return { statuses: [SPRINT_STATUSES.completed], order: "recent", ...options };
@@ -54,12 +62,12 @@ function FinishedList({ projectId }) {
         label="Filter finished sprints"
         hideLabel
         type="search"
-        placeholder="Filter finished sprints"
+        placeholder="Filter by number or title"
         value={filter}
         onChange={(event) => setFilter(event.target.value)}
         className="finished__filter"
       />
-      <p className="quiet">{q ? `Matching “${q}”, newest first` : "The 10 most recent, newest first"}</p>
+      {list.items && list.total > 0 ? <p className="quiet">{shownLine(list.items.length, list.total, q)}</p> : null}
       {list.error ? (
         <p className="notice notice--error" role="alert">
           {list.error}
@@ -68,9 +76,21 @@ function FinishedList({ projectId }) {
       {list.items && list.items.length === 0 ? <p className="empty">No finished sprint matches “{q}”.</p> : null}
       {list.items && list.items.length > 0 ? <Table caption="Finished sprints" columns={COLUMNS} rows={list.items} /> : null}
       {list.hasMore ? (
-        <Button variant="quiet" className="list-more" disabled={list.loadingMore} onClick={() => list.loadMore()}>
-          Show 10 more
-        </Button>
+        <div className="finished__more">
+          <Button className="list-more" disabled={list.loadingMore} onClick={() => list.loadMore()}>
+            Show {Math.min(FINISHED_PAGE, list.total - list.items.length)} more
+          </Button>
+          {list.total - list.items.length > FINISHED_PAGE ? (
+            <Button
+              variant="quiet"
+              className="list-more"
+              disabled={list.loadingMore}
+              onClick={() => list.loadMore(Math.min(list.total - list.items.length, MAX_PAGE))}
+            >
+              Show all {list.total}
+            </Button>
+          ) : null}
+        </div>
       ) : null}
     </div>
   );
@@ -108,7 +128,8 @@ export function FinishedSprints({ projectId, revision }) {
         <>
           Finished sprints <span className="finished__count">{total}</span>
           <span className="quiet">
-            , latest: {splitTitle(newest.title)[0]}
+            {" · latest: "}
+            {splitTitle(newest.title)[0]}
             {when ? `, ${when}` : ""}
           </span>
         </>

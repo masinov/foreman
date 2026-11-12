@@ -16,15 +16,15 @@ async function openPage(routes = accessRoutes()) {
 }
 
 describe("Workspace settings", () => {
-  it("renders the five sections from the server and puts Workspace / Settings in the breadcrumb", async () => {
+  it("renders the five sections from the server and names itself in the breadcrumb", async () => {
     await openPage();
     expect(screen.getByRole("heading", { name: "Workspace settings", level: 1 })).toBeInTheDocument();
     expect(
       screen.getAllByRole("heading", { level: 2 }).map((heading) => heading.textContent),
     ).toEqual(["Defaults for projects", "Access", "Notification channels", "Runners", "This machine"]);
     const crumbs = screen.getByRole("navigation", { name: "Breadcrumb" });
-    expect(within(crumbs).getByRole("link", { name: "Workspace" })).toHaveAttribute("href", "/dashboard");
-    expect(within(crumbs).getByText("Settings")).toHaveAttribute("aria-current", "page");
+    // The wordmark is the way to the workspace; the breadcrumb names this page.
+    expect(within(crumbs).getByText("Workspace settings")).toHaveAttribute("aria-current", "page");
     expect(document.title).toBe("Workspace settings · Foreman");
   });
 

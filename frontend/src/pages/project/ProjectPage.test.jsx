@@ -71,6 +71,16 @@ describe("the project page head", () => {
 });
 
 describe("the engine row", () => {
+  it("says the active sprint has no tasks when the engine runs with nothing to pick up", async () => {
+    const routes = projectRoutes();
+    const payload = workspacePayload();
+    payload.projects[0].engine = engine("running", null);
+    payload.projects[0].active_sprint.task_counts = { triage: 0, todo: 0, in_progress: 0, blocked: 0, done: 0, cancelled: 0 };
+    routes["GET /api/v1/workspace"] = payload;
+    await renderProject("/dashboard/projects/foreman", routes);
+    expect(within(engineSection()).getByText(/the active sprint has no tasks/)).toBeInTheDocument();
+  });
+
   it("offers Pause and Stop while running, and sends them to the engine endpoints", async () => {
     const routes = projectRoutes();
     routes["POST /api/v1/projects/foreman/agent/stop"] = { command: { command: "pause", status: "pending" } };
@@ -227,14 +237,15 @@ describe("a proposed sprint order", () => {
 });
 
 describe("the Sprints tab", () => {
-  it("shows the queue only: active first, then planned, with goal, counts, dates and spend", async () => {
+  it("shows the queue only: active first, then planned, one line each with counts, dates and spend", async () => {
     const { fetchImpl } = await renderProject();
     const queue = await screen.findByRole("table", { name: "Sprint queue" });
     const rows = within(queue).getAllByRole("row").slice(1);
     expect(rows).toHaveLength(2);
     expect(within(rows[0]).getByText("Active")).toBeInTheDocument();
     expect(within(rows[0]).getByRole("link", { name: ACTIVE.title })).toHaveAttribute("href", "/dashboard/sprints/sprint-56");
-    expect(within(rows[0]).getByText(ACTIVE.goal)).toBeInTheDocument();
+    // The goal is on the sprint's own page, not under the title in the list.
+    expect(within(rows[0]).queryByText(ACTIVE.goal)).toBeNull();
     expect(within(rows[0]).getByText("3 need you · 1 done")).toBeInTheDocument();
     expect(within(rows[0]).getByText("since 11 Nov")).toBeInTheDocument();
     expect(within(rows[0]).getByText("$1.31")).toBeInTheDocument();
@@ -244,11 +255,11 @@ describe("the Sprints tab", () => {
     expect(calls(fetchImpl, "GET", QUEUE_URL.slice(4))).toHaveLength(1);
   });
 
-  it("says Foreman stops when the active sprint finishes if nothing is planned", async () => {
+  it("shows only the active sprint when nothing is planned, with no placeholder line", async () => {
     await renderProject("/dashboard/projects/foreman", projectRoutes({ queue: [ACTIVE] }));
-    expect(
-      await screen.findByText("None. When the active sprint is finished, Foreman stops until a sprint is planned."),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: ACTIVE.title })).toBeInTheDocument();
+    expect(screen.queryByText(/Foreman stops until a sprint is planned/)).toBeNull();
+    expect(screen.queryByText("Planned")).toBeNull();
   });
 
   it("caps planned sprints at five with a way to see the rest", async () => {
@@ -267,7 +278,7 @@ describe("the Sprints tab", () => {
     const { fetchImpl } = await renderProject("/dashboard/projects/foreman", routes);
 
     const line = await screen.findByRole("button", { name: /^Finished sprints 12/ });
-    expect(line).toHaveTextContent("Finished sprints 12, latest: Sprint 55, 28 Oct");
+    expect(line).toHaveTextContent("Finished sprints 12 · latest: Sprint 55, 28 Oct");
     expect(line).toHaveAttribute("aria-expanded", "false");
     expect(calls(fetchImpl, "GET", finishedUrl().slice(4))).toHaveLength(0);
 
@@ -276,11 +287,12 @@ describe("the Sprints tab", () => {
     expect(within(table).getAllByRole("row")).toHaveLength(11);
     expect(within(table).getByRole("link", { name: FINISHED[0].title })).toHaveAttribute("href", "/dashboard/sprints/sprint-55");
     expect(within(table).getAllByRole("row")[1]).toHaveTextContent("1 done28 Oct$0.55");
-    expect(screen.getByText("The 10 most recent, newest first")).toBeInTheDocument();
+    expect(screen.getByText("Showing 10 of 12, newest first")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Show 10 more" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show 2 more" }));
     await waitFor(() => expect(within(table).getAllByRole("row")).toHaveLength(13));
-    expect(screen.queryByRole("button", { name: "Show 10 more" })).toBeNull();
+    expect(screen.getByText("Showing all 12, newest first")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Show .* more/ })).toBeNull();
     expect(calls(fetchImpl, "GET", finishedUrl({ offset: 10 }).slice(4))).toHaveLength(1);
 
     const filter = screen.getByRole("searchbox", { name: "Filter finished sprints" });
@@ -355,6 +367,27 @@ describe("the Sprints tab", () => {
 
 describe("the Activity tab", () => {
   const sprintKinds = ["sprint_started", "sprint_finished"];
+
+  it("names the merge commit and how many tasks a finished sprint merged", async () => {
+    const routes = projectRoutes();
+    routes[milestonesUrl()] = {
+      milestones: [
+        milestone("sprint_finished", { sprint_id: "sprint-55", sprint_title: "Sprint 55: baseline", merged_count: 3 }),
+        milestone("task_merged", { task_id: "task-m", task_key: "FOR-12", sha: "abc1234def5678" }),
+        milestone("task_merged", { task_id: "task-n", task_key: "FOR-11" }),
+        milestone("sprint_finished", { sprint_id: "sprint-54", sprint_title: "Sprint 54", merged_count: 1 }),
+      ],
+      total: 4,
+    };
+    await renderProject("/dashboard/projects/foreman/activity", routes);
+    const table = await screen.findByRole("table", { name: "Milestones" });
+    expect(within(table).getAllByRole("row").slice(1).map((row) => row.textContent)).toEqual([
+      "11 NovSprintSprint 55 finished: baseline 3 tasks merged",
+      "11 NovMergeFOR-12 merged abc1234",
+      "11 NovMergeFOR-11 merged",
+      "11 NovSprintSprint 54 finished 1 task merged",
+    ]);
+  });
 
   it("shows milestones newest first", async () => {
     await renderProject("/dashboard/projects/foreman/activity");

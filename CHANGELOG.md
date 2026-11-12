@@ -9,6 +9,85 @@ memory changes rather than versioned product releases.
 
 ### Sprint 58 — frontend rebuild
 
+- **feat, folders in the Changes tab** (`feat/changes-folder-breadcrumb`),
+  asked for by the owner. From ten changed files up, the list offers the
+  folders directly inside the current one, each with its file count and
+  lines; picking one narrows the list to it and a breadcrumb ("All files /
+  foreman / dashboard") widens it again. The picked file stays picked when
+  the list is narrowed and while a running agent is still committing, and a
+  diff is read again only when the branch's commit moves, not on every event
+  of a running task. On the Activity tab the run's title is the step alone;
+  who ran it is a detail beside it.
+
+- **fix, section titles on a rule; the Changes tab laid out side by side**
+  (`fix/section-rules-and-changes-layout`), reported by the owner. A section's
+  title sat above its content with nothing joining them. It now sits on a
+  rule that spans the section; column headers moved to the faint row line so
+  the two do not compete; a heading above a tinted surface has no rule. On
+  the task page the Changes tab label lost its figures; inside, the heading
+  is "Files" with the count and the totals, and the file list sits beside the
+  picked file's diff in its own scrolling column, where before the diff
+  appeared under the whole list.
+
+- **fix, counts beside labels** (`fix/counts-beside-labels`): reported by the
+  owner as "strangely aligned". "Needs you 0" and "Backlog 0" set the figure
+  at the label's size one space away, so it read as another word of the
+  label. A count is now a slightly smaller figure a fixed distance from its
+  label, on its baseline; the distance is a margin, not a space character.
+
+- **feat, a new task straight into a sprint** (`feat/new-task-in-a-sprint`):
+  the owner pointed out that a task could only reach a sprint through the
+  backlog. The sprint page has "New task" beside "Add from backlog"; it uses
+  the existing `POST /sprints/{id}/tasks`. A person writing a task into a
+  sprint has decided it is wanted and where it goes; work filed by agents and
+  other systems still lands in the backlog (ADR-0021). With it: sprint rows in
+  the project's list are one line (the goal is on the sprint page); the New
+  sprint dialog no longer asks for "the sprint number" and says the sprint
+  starts empty; the engine row says when the active sprint has no tasks.
+
+- **fix, alignment and one link to the workspace** (`fix/top-bar-baseline`),
+  four things the owner reported. The wordmark sat about a pixel below the
+  breadcrumb; it is lifted onto the same baseline. In the engine row the
+  label, the state and the sentence were at different heights; they share a
+  baseline, and a status dot is inline so it no longer sets the baseline of
+  the word beside it. The row highlight reached past the sides of its table;
+  it stays inside, and the first and last cell of every table keep 8px of
+  room so nothing touches its edge. The switcher's "All projects" entry and
+  the "Workspace" label were second and third links to where the wordmark
+  goes; both are gone, and the workspace page has an empty breadcrumb.
+
+- **fix, the wordmark answers the pointer** (`fix/wordmark-answers-the-pointer`):
+  it turns gold on hover and focus, like every other link. An earlier change
+  removed that on the engine team's own initiative; the owner had only asked
+  what the link did, and without it the wordmark did not read as clickable.
+
+- **fix, the sprint list: hover, the empty Planned line, finished sprints**
+  (`fix/sprint-list-hover-empty-planned-finished`), three things the owner
+  reported. A row's highlight now reaches 8px past its first and last cell,
+  so the status dot is not pressed against its edge. The line "Planned: None.
+  When the active sprint is finished..." is gone; with nothing planned the
+  queue shows only the active sprint. Finished sprints say how many there are
+  and how many are shown ("Showing 10 of 53, newest first"), with "Show 10
+  more" and "Show all"; the filter is a shortcut, not the only way to older
+  ones.
+
+- **fix, no flash of an id before a name**
+  (`fix/no-flash-of-ids-before-names`): reported by the owner. Opening a
+  project showed its id ("foreman") as the title and in the breadcrumb, then
+  swapped in its name ("Foreman") when the request returned. Two causes: an
+  id was used as the stand-in for a name not loaded yet, and every page asked
+  again for what the previous page had just loaded. A name now shows as
+  itself or not at all, and `useResource` keeps what each key last loaded
+  (per API client) so a page starts from it and refreshes it.
+
+- **fix, a plain wordmark and one way home**
+  (`fix/plain-wordmark-and-one-way-home`): the owner disliked the drawn F and
+  did not understand its gold square, and asked what the difference was
+  between clicking the wordmark and clicking "Workspace" (none). The wordmark
+  is now only the name, set in Fraunces. Inside a project the breadcrumb
+  starts at the project; the wordmark goes to the workspace and the project
+  switcher lists "All projects". The favicon lost its square too.
+
 - **feat, a wordmark, icons and motion** (`feat/identity-icons-motion`): asked
   for by the owner and not delivered until now. The top-left word is a drawn
   wordmark (an F cut to the weight of the letters, with one gold square) that

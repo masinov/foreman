@@ -42,6 +42,41 @@ function KeyedProbe({ load }) {
 }
 
 describe("useResource", () => {
+  it("starts from what the same key loaded before, and still refreshes it", async () => {
+    const second = deferred();
+    const loads = [() => Promise.resolve("first"), () => second.promise];
+    function Remount() {
+      const [shown, setShown] = useState(true);
+      const [generation, setGeneration] = useState(0);
+      return (
+        <>
+          <button
+            type="button"
+            onClick={() => {
+              setShown(false);
+              setGeneration((value) => value + 1);
+              setShown(true);
+            }}
+          >
+            remount
+          </button>
+          {shown ? <Probe key={generation} resourceKey={["thing", "x"]} load={() => loads.shift()()} /> : null}
+        </>
+      );
+    }
+    renderWithApi(<Remount />, createFakeFetch({}));
+    await waitFor(() => expect(screen.getByTestId("data")).toHaveTextContent("first"));
+
+    fireEvent.click(screen.getByRole("button", { name: "remount" }));
+    // The new mount shows the known value at once, while it loads again.
+    expect(screen.getByTestId("data")).toHaveTextContent("first");
+    expect(screen.getByTestId("loading")).toHaveTextContent("loading");
+
+    await act(async () => second.resolve("second"));
+    expect(screen.getByTestId("data")).toHaveTextContent("second");
+    expect(screen.getByTestId("loading")).toHaveTextContent("idle");
+  });
+
   it("returns data and stops loading", async () => {
     renderWithApi(<Probe resourceKey="x" load={async () => "hello"} />, createFakeFetch());
     expect(screen.getByTestId("loading")).toHaveTextContent("loading");
