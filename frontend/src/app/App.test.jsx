@@ -53,6 +53,8 @@ describe("App routing and shell", () => {
     renderApp("/dashboard/projects/other/backlog", createFakeFetch(workspaceRoutes()));
     const crumbs = screen.getByRole("navigation", { name: "Breadcrumb" });
     const switcher = await within(crumbs).findByRole("button", { name: "Other project" });
+    // The Backlog tab is named after the project, as the last step.
+    expect(within(crumbs).getByText("Backlog")).toHaveAttribute("aria-current", "page");
     expect(switcher).toHaveAttribute("aria-haspopup", "menu");
     fireEvent.click(switcher);
     const menu = screen.getByRole("menu", { name: "Projects" });
