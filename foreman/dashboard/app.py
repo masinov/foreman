@@ -50,6 +50,7 @@ from .routers import (
     intake,
     meta,
     projects,
+    proposals,
     roles,
     sprints,
     tasks,
@@ -57,7 +58,20 @@ from .routers import (
 )
 
 #: Mounted in this order under every API prefix.
-ROUTERS = (projects, intake, backlog, sprints, meta, gates, engine, worktrees, tasks, roles, access)
+ROUTERS = (
+    projects,
+    intake,
+    backlog,
+    proposals,
+    sprints,
+    meta,
+    gates,
+    engine,
+    worktrees,
+    tasks,
+    roles,
+    access,
+)
 
 _LOGGER = logging.getLogger("foreman.dashboard")
 

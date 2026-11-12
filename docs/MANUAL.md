@@ -812,10 +812,11 @@ interactively, promotes plans into tasks, and assigns them to cheaper workers.
   sprint's task table (id, status, type, title, model override, truncated
   blocked reason), pending gates, and the last few noteworthy events. It states
   explicitly: *trust this over your memory of earlier turns.*
-- The first turn of a session injects the **operating contract**: the exact
-  `foreman` CLI verbs the manager may use (inspect / plan / promote / assign /
-  steer) and the hard rules (never edit `.foreman/`, never merge manually, never
-  run `foreman run` itself).
+- The first turn of a session injects the **operating contract**: the read
+  commands, the proposal format, and the hard rules. The manager changes
+  nothing itself (ADR-0022): it proposes with `foreman proposal create`, and a
+  person confirms. Inside its session (`FOREMAN_MANAGER_SESSION` is set) every
+  other state-changing `foreman` command is refused.
 - The user turn is persisted *before* the model is invoked; the assistant turn
   is persisted in a `finally` path (flagged `interrupted` on crash) so a turn is
   never silently dropped.
@@ -841,9 +842,31 @@ supervision turn through the persisted session:
 
 - the turn is flagged `origin="supervision"`,
 - the consumed `event_id` is recorded; a replayed event is rejected with **409**,
-- in **`directed`** projects the digest forbids state-mutating commands and asks
-  for a recommendation only; in `supervised`/`autonomous` the manager may act
-  per the contract.
+- in every project the digest asks the manager to answer or propose; in
+  **`directed`** projects it also says it may not run state-mutating commands.
+
+### Proposals: the manager proposes, a person confirms
+
+A proposal is a reason and an ordered list of operations: `create_sprint`,
+`edit_sprint`, `activate_sprint`, `finish_sprint`, `file_task`, `accept_task`,
+`decline_task`, `plan_tasks`, `unplan_task`, `edit_task`, `block_task`,
+`unblock_task`, `cancel_task`, `send_back`, `approve_gate` (ADR-0022 lists the
+fields).
+
+```bash
+foreman proposal create <project> --json proposal.json   # or --json - for stdin
+foreman proposal list <project> [--state proposed,failed] [--json]
+foreman proposal show <proposal-id>
+foreman proposal confirm <proposal-id>     # applies it, whole or not at all
+foreman proposal decline <proposal-id>
+```
+
+`create` checks every operation in order against the project as it is now and
+stores nothing if one is refused, saying which and why. `confirm` applies them
+in order in one transaction, as you; if one is refused because the project
+moved on, nothing is applied and the proposal is marked `failed` with the
+reason. In the dashboard a proposal appears as a card in the manager side bar
+with **Not now** and **Confirm**.
 
 Auto-invocation policy (poll-and-call vs. a human button) is a frontend/ops
 concern — the backend only provides the endpoint.
@@ -1152,10 +1175,11 @@ export FOREMAN_DASHBOARD_TOKEN="$(openssl rand -hex 24)"
   browser's local storage.
 - A non-loopback bind **without** a token is refused. Pass
   `--allow-insecure-network` only on a network you trust.
-- The **manager chat** runs a full-access agent session on the server. It is
+- The **manager chat** runs an agent session with a shell on the server. It is
   enabled on loopback binds and disabled elsewhere (its routes answer **403**)
   unless you pass `--allow-remote-manager`, in which case every token holder
-  can run that agent.
+  can run that agent. Its `foreman` commands cannot change project state
+  (ADR-0022), but the shell itself is not sandboxed.
 - Cross-origin browser calls are refused with **403**, not only left without
   CORS headers: a request whose `Origin` is not the dashboard's own is
   rejected, and so is a write the browser labels cross-site. The shipped
@@ -1210,6 +1234,8 @@ which token filed each task.
 | `POST /api/projects/{id}/meta/message` | one manager chat turn (NDJSON stream) |
 | `GET /api/projects/{id}/meta/history` | paginated chat history (`limit`/`before`/`has_more`) |
 | `DELETE /api/projects/{id}/meta/session` | clear the manager session |
+| `GET /api/projects/{id}/proposals` | the manager's proposals, newest first (`state`, `limit`, `offset`) |
+| `GET /api/proposals/{id}` · `POST /api/proposals/{id}/confirm\|decline` | read, apply or decline one proposal |
 | `POST /api/projects/{id}/meta/supervise` | run one supervision turn from an attention event |
 | `GET/POST /api/projects/{id}/gates` · `PATCH /api/gates/{id}` | human gates |
 | `GET /api/roles` · `PATCH /api/roles/{id}` | role inspection / edit |
@@ -1310,6 +1336,7 @@ Recent migrations:
 | 15 | `engine_commands` + `(project_id, status, requested_at)` index (the control channel to a resident engine) |
 | 16 | `tasks.worktree_path` (the Foreman-owned checkout a task runs in) |
 | 17 | `api_tokens` + unique `token_hash` index; `tasks.source_system`/`source_ref`/`source_url`/`reporter` + `(project_id, source_system, source_ref)` index (intake, §25) |
+| 22 | `proposals` + `(project_id, created_at)` and `turn_id` indexes (the manager's proposals, ADR-0022) |
 
 ---
 

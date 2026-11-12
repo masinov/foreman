@@ -73,7 +73,8 @@ class AttentionDigestTests(unittest.TestCase):
         digest = build_attention_digest(
             self.store, project, trigger="task_blocked", task_id="t1"
         )
-        self.assertIn("foreman task override", digest)
+        self.assertIn("foreman proposal create", digest)
+        self.assertNotIn("foreman task override", digest)
         self.assertNotIn("DIRECTED mode", digest)
 
     def test_missing_task_is_tolerated(self) -> None:

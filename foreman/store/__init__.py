@@ -15,6 +15,7 @@ connection and write helper in ``base``:
 - ``commands``: ``EngineCommandStore``
 - ``tokens``: ``ApiTokenStore``
 - ``notifications``: ``NotificationStore``
+- ``proposals``: ``ProposalStore``, the manager's proposals (ADR-0022)
 - ``overview``: ``OverviewStore``, the grouped cross-project reads
 """
 
@@ -29,6 +30,7 @@ from .meta import MetaSessionStore
 from .notifications import NotificationStore
 from .overview import OverviewStore
 from .projects import ProjectStore
+from .proposals import ProposalStore
 from .runs import RunStore
 from .sprints import SprintStore
 from .tasks import TaskStore
@@ -48,6 +50,7 @@ class ForemanStore(
     EngineCommandStore,
     ApiTokenStore,
     NotificationStore,
+    ProposalStore,
     OverviewStore,
 ):
     """Persist and query Foreman entities in SQLite."""

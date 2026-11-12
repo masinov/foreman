@@ -29,13 +29,13 @@ function ProjectCrumb({ projectId }) {
  * The project in the breadcrumb, as a switcher: a menu of every project with
  * what waits for a person in each, going to the chosen project.
  */
-function ProjectSwitcher({ projectId }) {
+function ProjectSwitcher({ projectId, current = true }) {
   const projects = useProjects();
   const project = projects?.find((entry) => entry.id === projectId);
   const name = project?.name || "";
   if (!projects || projects.length === 0) {
     return (
-      <span className="breadcrumb__current" aria-current="page">
+      <span className="breadcrumb__current" aria-current={current ? "page" : undefined}>
         {name}
       </span>
     );
@@ -44,7 +44,7 @@ function ProjectSwitcher({ projectId }) {
     <Menu
       label="Projects"
       triggerClassName="breadcrumb__current breadcrumb__switcher"
-      aria-current="page"
+      aria-current={current ? "page" : undefined}
       trigger={
         <>
           <span>{name}</span>
@@ -132,6 +132,8 @@ function TaskParentCrumb({ taskId, level }) {
  * step and no "All projects" entry, each of which would be a second link to
  * the same page. On the workspace page itself the breadcrumb is empty.
  */
+const PROJECT_TABS = { "project-backlog": "Backlog", "project-activity": "Activity" };
+
 export function crumbsFor(route, params) {
   switch (route.level) {
     case "project": {
@@ -139,6 +141,15 @@ export function crumbsFor(route, params) {
         return [
           { key: "project", href: paths.project(params.projectId), label: <ProjectCrumb projectId={params.projectId} /> },
           { key: "settings", href: paths.projectSettings(params.projectId), label: "Settings" },
+        ];
+      }
+      // A tab other than the first is a place of its own: the breadcrumb names
+      // it, so a link that says "Project / Backlog" lands on a page that says
+      // the same.
+      if (PROJECT_TABS[route.name]) {
+        return [
+          { key: "project", custom: <ProjectSwitcher projectId={params.projectId} current={false} /> },
+          { key: "tab", href: null, label: PROJECT_TABS[route.name] },
         ];
       }
       return [{ key: "project", custom: <ProjectSwitcher projectId={params.projectId} /> }];

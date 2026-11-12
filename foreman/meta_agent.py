@@ -10,9 +10,15 @@ the manager always reasons about current world state instead of stale memory.
 The first turn of a session also injects an explicit operating contract that
 enumerates exactly what the manager may do through the ``foreman`` CLI.
 
+The manager proposes; a person confirms (ADR-0022). Its Claude Code process
+runs with ``FOREMAN_MANAGER_SESSION`` and ``FOREMAN_MANAGER_TURN`` set, and the
+CLI refuses every command that changes project state from inside it except
+``foreman proposal create``.
+
 NDJSON event types emitted by process_message():
   {"type": "text_delta", "text": "..."}       — streaming text fragment
   {"type": "tool_use",   "name": "..."}       — tool invocation seen
+  {"type": "proposal",   "proposal_id": "..."} — a proposal made in this turn
   {"type": "done",       "session_id": "..."}  — turn completed
   {"type": "error",      "message": "..."}     — error, turn aborted
 """
@@ -21,9 +27,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import shutil
 from collections.abc import AsyncIterator
 from typing import Any
+
+from .proposals import MANAGER_SESSION_ENV, MANAGER_TURN_ENV, OPERATION_KINDS
 
 
 # ---------------------------------------------------------------------------
@@ -215,65 +224,72 @@ def build_state_header(store: Any, project: Any) -> str:
 # ---------------------------------------------------------------------------
 
 def build_operating_contract(project: Any) -> str:
-    """Return the explicit manager operating contract for a fresh session."""
+    """Return the explicit manager operating contract for a fresh session.
+
+    The manager reads anything and changes nothing itself: every change is a
+    proposal a person confirms (ADR-0022). The CLI enforces it; this says it.
+    """
 
     pid = project.id
+    kinds = ", ".join(OPERATION_KINDS)
     return "\n".join(
         [
             "## OPERATING CONTRACT",
-            "You are the manager seat for the Foreman engine. You plan and steer",
-            "work through the `foreman` CLI. You operate in the project repository",
+            "You are the manager seat for the Foreman engine. You read the project",
+            "and propose changes; a person confirms them. Nothing you propose",
+            "happens until they do. You operate in the project repository",
             f"at {project.repo_path}.",
             "",
-            "Inspect:",
+            "Read (these work; read the repository freely too):",
             f"  foreman board {pid}",
+            f"  foreman status {pid}",
             "  foreman task show <task-id>",
+            f"  foreman task list {pid}",
             "  foreman history <task-id>",
+            "  foreman transcript <task-id>",
             f"  foreman cost {pid}",
             f"  foreman sprint list {pid}",
+            f"  foreman backlog list {pid} [--status filed|accepted|declined]",
             f"  foreman worktree list {pid}",
             f"  foreman notify list {pid}",
             f"  foreman notify deliveries {pid} [--status pending|delivered|failed]",
-            "",
-            "Plan:",
-            f"  foreman sprint add {pid} --title ... --goal ...",
-            "",
-            "Backlog (filed and accepted work that is not in a sprint):",
-            f"  foreman backlog list {pid} [--status filed|accepted|declined]",
-            f"  foreman backlog add {pid} --title ... [--type ...] [--criteria ...]",
-            "  foreman backlog accept <task-id>",
-            "  foreman backlog decline <task-id> --reason ...",
-            f"  foreman backlog plan {pid} <task-id>... --sprint <sprint-id>",
-            f"  foreman backlog plan {pid} <task-id>... --new-sprint <title> --goal ...",
-            "  foreman backlog unplan <task-id>",
-            "",
-            "Promote (create a task):",
-            f"  foreman task add {pid} --title ... --type ... --criteria ... \\",
-            "      --description ... --sprint <sprint-id> --depends-on <task-id,...>",
-            "",
-            "Assign (per-task model override; Phase 3):",
-            "  foreman task override <task-id> --step <step>=<model> [--ladder-start N]",
-            "",
-            "Steer:",
-            "  foreman approve <task-id> --note ...",
-            "  foreman deny <task-id> --note ...",
-            "  foreman task accept <task-id>",
-            "  foreman task block <task-id> --reason ...",
-            "  foreman task unblock <task-id>",
-            "  foreman task cancel <task-id>",
-            "",
-            "Engine (resident engine for this project):",
             f"  foreman engine status {pid}",
-            f"  foreman engine pause {pid}",
-            f"  foreman engine resume {pid}",
-            f"  foreman engine run-task {pid} <task-id>",
-            f"  foreman engine stop-task {pid} <task-id>",
+            f"  foreman proposal list {pid}",
+            "  foreman proposal show <proposal-id>",
+            "",
+            "Change (only this way):",
+            f"  foreman proposal create {pid} --json - <<'EOF'",
+            '  {"reason": "<one paragraph: why>",',
+            '   "operations": [<operation>, ...],',
+            '   "leaves": [<task-id the plan deliberately leaves where it is>, ...]}',
+            "  EOF",
+            "",
+            f"Operation kinds: {kinds}.",
+            "  create_sprint {title, goal?}",
+            "  edit_sprint {sprint_id, title?, goal?}",
+            "  activate_sprint {sprint_id} | finish_sprint {sprint_id}",
+            "  file_task {title, task_type?, description?, acceptance_criteria?,",
+            "             priority?, complexity?, accept?}  (into the backlog)",
+            "  accept_task {task_id} | decline_task {task_id, reason?}",
+            "  plan_tasks {task_ids, sprint_id} or {task_ids, new_sprint: {title, goal?}}",
+            "  unplan_task {task_id}",
+            "  edit_task {task_id, title?, task_type?, description?,",
+            "             acceptance_criteria?, priority?}",
+            "  block_task {task_id, reason} | unblock_task {task_id}",
+            "  cancel_task {task_id}",
+            "  send_back {task_id, guidance}  (a task waiting at a gate, or blocked)",
+            "  approve_gate {task_id}",
+            "",
+            "The command checks every operation against the project as it is now,",
+            "in order, and stores nothing if one is refused; it prints why. Fix the",
+            "proposal and create it again. Once stored, the person sees it beside",
+            "your reply with Confirm and Not now. Say in your reply what it does;",
+            "do not claim a change has happened.",
             "",
             "Hard rules:",
-            "- Never edit anything under `.foreman/` (tool-managed runtime state).",
-            "- Never merge branches manually.",
-            "- Never run `foreman run` yourself; the human or supervision loop",
-            "  triggers engine runs.",
+            "- Every other `foreman` command that changes state is refused in this",
+            "  session. Do not try to work around that: no direct database writes,",
+            "  no edits under `.foreman/`, no manual merges, no `foreman run`.",
             "- Always re-read the FOREMAN STATE header above before acting; it is",
             "  the source of truth and overrides your memory.",
         ]
@@ -291,8 +307,13 @@ async def _run_claude(
     repo_path: str,
     executable: str,
     model: str | None,
+    env: dict[str, str] | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
-    """Invoke Claude Code and yield structured event dicts."""
+    """Invoke Claude Code and yield structured event dicts.
+
+    ``env`` is added to this process's environment for the session: it marks
+    the process as a manager session (ADR-0022).
+    """
 
     cmd = [
         executable,
@@ -313,6 +334,7 @@ async def _run_claude(
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=repo_path,
+            env={**os.environ, **(env or {})},
         )
     except (OSError, FileNotFoundError) as exc:
         yield {"type": "error", "message": f"Failed to start Claude Code: {exc}"}
@@ -382,6 +404,21 @@ async def _run_claude(
 # Public entry point
 # ---------------------------------------------------------------------------
 
+def manager_session_env(project_id: str, turn_id: str, db_path: str | None) -> dict[str, str]:
+    """The environment that marks a Claude Code process as a manager session.
+
+    The CLI refuses state changes when ``FOREMAN_MANAGER_SESSION`` is set
+    (ADR-0022); ``FOREMAN_MANAGER_TURN`` ties a proposal to the turn it was
+    made in; ``FOREMAN_DB`` points the manager's commands at the database
+    this dashboard uses.
+    """
+
+    env = {MANAGER_SESSION_ENV: project_id, MANAGER_TURN_ENV: turn_id}
+    if db_path and db_path != ":memory:":
+        env["FOREMAN_DB"] = str(db_path)
+    return env
+
+
 async def process_message(
     project_id: str,
     message: str,
@@ -435,7 +472,7 @@ async def process_message(
     user_tool_uses: list[dict[str, Any]] = []
     if consumed_event_id:
         user_tool_uses.append({"consumed_event_id": consumed_event_id})
-    store.append_meta_turn(
+    user_turn_id = store.append_meta_turn(
         project_id,
         role="user",
         text=message,
@@ -458,6 +495,20 @@ async def process_message(
     tool_uses: list[dict[str, Any]] = []
     interrupted = False
     new_session_id = session_id
+    session_env = manager_session_env(project_id, user_turn_id, getattr(store, "db_path", None))
+    announced: set[str] = set()
+
+    def new_proposals() -> list[str]:
+        """Proposals made in this turn and not announced yet, oldest first."""
+        fresh = [
+            proposal.id
+            for proposal in store.list_turn_proposals(user_turn_id)
+            if proposal.id not in announced
+        ]
+        for proposal_id in fresh:
+            announced.add(proposal_id)
+            tool_uses.append({"proposal_id": proposal_id})
+        return fresh
 
     try:
         async for event in _run_claude(
@@ -466,6 +517,7 @@ async def process_message(
             repo_path=project.repo_path,
             executable=executable,
             model=model,
+            env=session_env,
         ):
             etype = event["type"]
             if etype == "text_delta":
@@ -479,6 +531,10 @@ async def process_message(
             elif etype == "error":
                 interrupted = True
                 yield json.dumps({"type": "error", "message": event["message"]}) + "\n"
+            for proposal_id in new_proposals():
+                yield json.dumps({"type": "proposal", "proposal_id": proposal_id}) + "\n"
+        for proposal_id in new_proposals():
+            yield json.dumps({"type": "proposal", "proposal_id": proposal_id}) + "\n"
     except (asyncio.CancelledError, GeneratorExit):
         interrupted = True
         raise
@@ -488,6 +544,12 @@ async def process_message(
     finally:
         if new_session_id and new_session_id != session_id:
             store.save_meta_session(project_id, new_session_id)
+        # A proposal stored just before the stream broke still belongs to
+        # this turn's record, so the conversation shows it again.
+        try:
+            new_proposals()
+        except Exception:  # noqa: BLE001 - never lose the turn over this read
+            pass
         persisted_tool_uses = list(tool_uses)
         if interrupted:
             persisted_tool_uses.append({"interrupted": True})

@@ -12,6 +12,8 @@ import argparse
 
 from foreman import meta_agent
 from foreman.cli import build_parser
+from foreman.cli.parser import MANAGER_SESSION_COMMANDS
+from foreman.proposals import MANAGER, OPERATION_KINDS, Proposals
 from foreman.models import Project, Sprint, Task, Event
 from foreman.store import ForemanStore
 
@@ -195,7 +197,7 @@ class OperatingContractDriftTests(unittest.TestCase):
             for line in contract.splitlines()
             if line.strip().startswith("foreman ")
         ]
-        self.assertGreater(len(command_lines), 20)
+        self.assertGreater(len(command_lines), 15)
 
         top_level = _subparser_choices(build_parser())
         for line in command_lines:
@@ -213,16 +215,28 @@ class OperatingContractDriftTests(unittest.TestCase):
                     f"unknown subcommand in contract: {line}",
                 )
 
-    def test_contract_lists_every_backlog_command(self) -> None:
+    def test_contract_lists_only_commands_a_manager_session_may_run(self) -> None:
+        """ADR-0022: the contract offers reads and `proposal create`, nothing that would be refused."""
+
         project = Project(
             id="proj-1", name="Demo", repo_path="/tmp/demo", workflow_id="development"
         )
         contract = meta_agent.build_operating_contract(project)
-        backlog = _subparser_choices(build_parser())["backlog"]
-        for sub in _subparser_choices(backlog):
-            self.assertIn(f"foreman backlog {sub} ", contract + " ")
+        top_level = _subparser_choices(build_parser())
+        for line in contract.splitlines():
+            tokens = line.strip().split()
+            if len(tokens) < 2 or tokens[0] != "foreman":
+                continue
+            path = tokens[1]
+            if _subparser_choices(top_level[path]):
+                path = f"{path} {tokens[2]}"
+            self.assertIn(path, MANAGER_SESSION_COMMANDS, line)
+        self.assertIn("foreman proposal create proj-1 --json -", contract)
+        self.assertIn("nothing you propose", contract.lower().replace("\n", " "))
+        for kind in OPERATION_KINDS:
+            self.assertIn(kind, contract)
 
-    def test_contract_uses_corrected_history_and_override_syntax(self) -> None:
+    def test_contract_uses_corrected_history_syntax(self) -> None:
         project = Project(
             id="proj-1",
             name="Demo",
@@ -233,7 +247,6 @@ class OperatingContractDriftTests(unittest.TestCase):
         self.assertNotIn("foreman history proj-1", contract)
         self.assertIn("foreman history <task-id>", contract)
         self.assertNotIn("--model", contract)
-        self.assertIn("foreman task override <task-id> --step <step>=<model>", contract)
 
 
 class ProcessMessagePersistenceTests(unittest.TestCase):
@@ -267,12 +280,17 @@ class ProcessMessagePersistenceTests(unittest.TestCase):
         return store
 
     def _fake_run(self, events, *, captured=None):
-        async def _run_claude(session_id, prompt, *, repo_path, executable, model):
+        async def _run_claude(session_id, prompt, *, repo_path, executable, model, env=None):
             if captured is not None:
                 captured["session_id"] = session_id
                 captured["prompt"] = prompt
                 captured["model"] = model
+                captured["env"] = env
             for event in events:
+                if callable(event):
+                    event = event(env)
+                    if event is None:
+                        continue
                 yield event
 
         return _run_claude
@@ -402,3 +420,91 @@ class ProcessMessagePersistenceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ManagerProposalStreamTests(ProcessMessagePersistenceTests):
+    """ADR-0022: the session is marked, and a proposal made in a turn is announced."""
+
+    def _propose(self, env):
+        """What `foreman proposal create` does inside the session, from its environment."""
+
+        with self._open() as store:
+            project = store.get_project("proj-1")
+            store.save_sprint(
+                Sprint(id="s1", project_id="proj-1", title="Sprint 1", status="planned")
+            )
+            proposal = Proposals(store, via="cli").create(
+                project,
+                reason="Start the planned sprint.",
+                operations=[{"kind": "activate_sprint", "sprint_id": "s1"}],
+                proposed_by=MANAGER,
+                turn_id=env["FOREMAN_MANAGER_TURN"],
+            )
+        self.proposal_id = proposal.id
+        return {"type": "tool_use", "name": "Bash", "input": {}}
+
+    def test_the_session_is_marked_and_the_proposal_is_announced_and_kept(self) -> None:
+        captured: dict = {}
+        meta_agent._run_claude = self._fake_run(
+            [
+                {"type": "text_delta", "text": "I propose starting it."},
+                self._propose,
+                {"type": "session", "session_id": "sess-1"},
+            ],
+            captured=captured,
+        )
+        with self._open() as store:
+            project = store.get_project("proj-1")
+            events = _drain(
+                meta_agent.process_message("proj-1", "start it", store=store, project=project)
+            )
+            turns, _ = store.list_meta_turns("proj-1")
+            proposal = store.get_proposal(self.proposal_id)
+
+        env = captured["env"]
+        self.assertEqual(env["FOREMAN_MANAGER_SESSION"], "proj-1")
+        self.assertEqual(env["FOREMAN_MANAGER_TURN"], turns[0]["id"])
+        self.assertEqual(env["FOREMAN_DB"], str(self.db_path))
+        parsed = events
+        self.assertIn({"type": "proposal", "proposal_id": self.proposal_id}, parsed)
+        self.assertEqual(
+            [event["type"] for event in parsed], ["text_delta", "tool_use", "proposal", "done"]
+        )
+        self.assertIn({"proposal_id": self.proposal_id}, turns[1]["tool_uses"])
+        self.assertEqual(proposal.state, "proposed")
+        self.assertEqual(proposal.turn_id, turns[0]["id"])
+
+    def test_a_turn_without_a_proposal_announces_none(self) -> None:
+        meta_agent._run_claude = self._fake_run([{"type": "text_delta", "text": "Nothing to change."}])
+        with self._open() as store:
+            project = store.get_project("proj-1")
+            events = _drain(meta_agent.process_message("proj-1", "hi", store=store, project=project))
+        self.assertNotIn("proposal", [event["type"] for event in events])
+
+    def test_the_real_runner_passes_the_marks_to_the_process(self) -> None:
+        """`_run_claude` hands its env to the Claude Code process it starts."""
+
+        script = Path(self.tmp.name) / "fake-claude"
+        script.write_text(
+            "#!/bin/sh\ncat >/dev/null\n"
+            'printf \'{"type":"assistant","message":{"content":[{"type":"text","text":"%s"}]}}\\n\' '
+            '"$FOREMAN_MANAGER_SESSION/$FOREMAN_MANAGER_TURN"\n'
+        )
+        script.chmod(0o755)
+
+        async def run():
+            out = []
+            async for event in self._orig_run(
+                None,
+                "prompt",
+                repo_path=self.tmp.name,
+                executable=str(script),
+                model=None,
+                env={"FOREMAN_MANAGER_SESSION": "proj-1", "FOREMAN_MANAGER_TURN": "turn-1"},
+            ):
+                out.append(event)
+            return out
+
+        events = asyncio.run(run())
+        self.assertEqual(events, [{"type": "text_delta", "text": "proj-1/turn-1"}])
+
