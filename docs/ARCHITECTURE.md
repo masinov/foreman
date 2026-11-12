@@ -254,7 +254,11 @@ engine the same way every other surface does (ADR-0002 amendment):
 - `GET /api/projects/{id}/agent/status` returns the engine view above,
 - Run enqueues `resume` (plus `run_task` for a task-scoped start), Pause
   enqueues `pause`, and a task Stop enqueues `stop_task`,
-- `GET /api/projects/{id}/engine/commands` exposes the command log,
+- `GET /api/projects/{id}/engine/commands` exposes the command log, and
+  `POST` to it queues `pause`, `resume` or `shutdown` for a resident engine
+  (the project page's Stop is `shutdown`). It refuses with a 400 sentence
+  when no engine is resident: a `shutdown` queued for nobody would be the
+  first thing the next engine read, and it would exit at once,
 - when no engine is resident there is nobody to send `resume` to, so the
   service spawns a detached `foreman serve` through its injected spawner —
   the single-machine bootstrap, and the only place the dashboard starts a
@@ -385,8 +389,10 @@ bad one is a 400 `invalid_request` envelope (ADR-0019). Paged lists take
 - `GET /projects/{id}/sprints` accepts `status` (`active`, `planned`,
   `completed`; repeatable or comma-separated), `q` (case-insensitive part of
   the title, which carries the sprint number, or of the id), `limit` and
-  `offset`, and now also returns `total`. Without parameters it returns every
-  sprint as before.
+  `offset`, and now also returns `total`. `order` is `queue` (the default,
+  the order sprints run in) or `recent` (latest finished first, then latest
+  started; the project page's finished-sprints list). Without parameters it
+  returns every sprint as before.
 
 ### Inspection and dashboard surfaces
 
@@ -448,9 +454,9 @@ The frontend is being rebuilt to `docs/design/dashboard-v7/` in sprint 58.
 | Path | Holds |
 |---|---|
 | `app/` | `main.jsx` (entry), `mountApp.jsx`, `router.jsx` (History API router and `Link`), `routes.js` (the route table), `paths.js` (every address), `Shell.jsx` and `Breadcrumb.jsx`, `pages.js` (which routes have a built page) |
-| `api/` | `client.js` (the `/api/v1` client; errors are `ApiError` from the ADR-0019 envelope), one module per resource (`projects`, `sprints`, `gates`, `tasks`, `workspace`), `useResource.js` (`{data, error, loading, reload}`, stale responses ignored) and `ApiProvider.jsx` |
-| `ui/` | primitives: `Button`, `Table`, `Surface`, `StatusDot`, `Tabs`, `SectionHeading`, `Mono`, and `format.js` |
-| `pages/` | `workspace/` (built), `status/` (the shared "being rebuilt" page and not-found) |
+| `api/` | `client.js` (the `/api/v1` client; errors are `ApiError` from the ADR-0019 envelope; `queryString`), one module per resource (`projects`, `sprints`, `tasks`, `workspace`, `needsYou`, `milestones`, `engine`), `useResource.js` (`{data, error, loading, reload}`, stale responses ignored), `usePagedList.js` (server paging: first page, `loadMore`, `reload`, stale pages ignored) and `ApiProvider.jsx` |
+| `ui/` | primitives: `Button`, `Table`, `Surface`, `StatusDot`, `Tabs`, `SectionHeading`, `Mono`, `Menu`, `Dialog`, `Field`, `Disclosure`, and `format.js` |
+| `pages/` | `workspace/` and `project/` (built: Sprints and Activity tabs over one shared head, `ProjectLayout`), `shared/` (Needs you, the milestone table, shared wording), `status/` (the shared "being rebuilt" page and not-found) |
 | `styles/` | `tokens.css` (the only place a colour, size, radius or line weight is written), `base.css`, `shell.css`, `ui.css`, and one stylesheet per page area |
 | `legacy/` | the pre-v7 application, served at `/dashboard/legacy` until the rebuild's last slice deletes it |
 | `testing/` | the fake API used by tests |
@@ -463,11 +469,13 @@ never reaches rebuilt pages. Routes without a rebuilt page render one shared
 colour or a size, if a component uses an inline style, or if a page or
 primitive calls `fetch`.
 
-The workspace page's data comes from `api/workspace.js`, which composes the
-per-resource endpoints (projects, each project's detail, sprints and pending
-decision gates, the task lists of sprints whose counts show blocked or filed
-work, and the detail of tasks at a human gate). A single workspace endpoint
-replaces that composition in the next API slice without changing the page.
+The workspace page reads `GET /workspace`, `GET /needs-you` and
+`GET /milestones`. The project page's head (title row, engine, Needs you,
+tabs) reads `GET /workspace` for the project, its engine state and backlog
+count, and the project's `needs-you`; the breadcrumb's project switcher reads
+`GET /workspace` too. Needs you, finished sprints and the Activity tab page on
+the server through `usePagedList`; the sprint queue is one unpaged read of the
+active and planned sprints.
 
 The current implementation debt in this area is explicit:
 
