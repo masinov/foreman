@@ -106,7 +106,7 @@ The current suite covers:
   default and allowlisted origins, manager routes forbidden when disabled,
   the bounded events page, the bind security policy and its CLI flags, and
   repository path validation on project creation
-- `frontend/src/api.test.js` for the bearer header, the stream URL token,
+- `frontend/src/legacy/api.test.js` for the bearer header, the stream URL token,
   `UnauthorizedError`, and token storage
 - `tests/test_roles.py` and `tests/test_workflows.py` for shipped declarative
   configuration loading and validation
@@ -153,8 +153,23 @@ The current suite covers:
   FastAPI HTTP routes, built frontend shell delivery, frontend-dev redirect
   behavior, task detail data, human message persistence, incremental
   sprint-event stream payloads, and approve or deny integration behavior
-- `frontend/src/App.test.jsx` for React dashboard navigation, message
-  submission, and stream-driven activity updates
+- `frontend/src/legacy/App.test.jsx` for the pre-v7 dashboard (served at
+  `/dashboard/legacy` until sprint 58 removes it): navigation, message
+  submission, and stream-driven activity updates; `legacy/routing.test.js`
+  for its base path
+- `frontend/src/api/` tests for the `/api/v1` client and its error envelope,
+  `useResource` (stale responses ignored, errors as sentences, reload, the
+  200 ms placeholder delay), and the workspace loader against fake API
+  answers
+- `frontend/src/app/` tests for the route table (every ADR-0020 route,
+  not-found) and the shell: route-driven breadcrumb, the being-rebuilt page
+  and its legacy link, anchors, in-app navigation and back
+- `frontend/src/ui/` one test file per primitive
+- `frontend/src/pages/workspace/WorkspacePage.test.jsx` for rows from API
+  data, the empty Needs you, Approve calling the approve endpoint and
+  reloading, an API error shown, placeholders after 200 ms, and the cap of 5
+- `frontend/src/styles/rules.test.js` for the design rules: no colour or size
+  outside `tokens.css`, no inline styles, no `fetch` in pages or primitives
 
 ## Expected testing layers
 
