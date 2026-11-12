@@ -78,6 +78,21 @@ class DashboardForbiddenError(Exception):
 
 MAX_EVENTS_PAGE_LIMIT = 500
 
+#: The most items one page of a list route returns, and what it returns when
+#: the caller does not say.
+MAX_PAGE_LIMIT = 200
+DEFAULT_PAGE_LIMIT = 50
+
+
+def split_values(values: list[str]) -> list[str]:
+    """Flatten a query parameter given as repeats, as commas, or both.
+
+    ``?status=active&status=planned`` and ``?status=active,planned`` are the
+    same request. Blank pieces are dropped and order is kept.
+    """
+
+    return [piece for value in values for piece in (p.strip() for p in value.split(",")) if piece]
+
 
 TOKEN_HEADER = "X-Foreman-Token"
 
