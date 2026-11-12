@@ -345,6 +345,49 @@ that never completes, and no consumer — task selection, the board, the digest,
 the context projection — needs a code path for a task that belongs to no
 sprint.
 
+### Views across projects (sprint 58)
+
+Four reads serve the rebuilt dashboard. All sit under `/api/v1` (and the
+`/api` alias), live in `foreman/dashboard/routers/projects.py` and
+`sprints.py`, and are built by `foreman/dashboard_overview.py` from the
+grouped reads in `foreman/store/overview.py`. Query parameters are typed; a
+bad one is a 400 `invalid_request` envelope (ADR-0019). Paged lists take
+`limit` (1 to 200, default 50) and `offset` (0 or more) and answer with
+`total`, `limit` and `offset`.
+
+- `GET /workspace` returns `{"projects": [...]}`; each has `id`, `name`,
+  `repo_path`, `default_branch`, `workflow_id`, `engine` (`state` is
+  `running`, `paused` or `not_running`, plus `task_id`, `task_key`,
+  `task_title`, `step` of the task in flight), `active_sprint` (`id`,
+  `title`, `task_counts` by status, `needs_you`, `spend_usd`, or null),
+  `needs_you`, `backlog` (triage and todo tasks in the intake queue sprint),
+  and `latest_milestone` (or null). Its query count depends on the number of
+  projects, never on sprints or tasks.
+- `GET /needs-you` and `GET /projects/{id}/needs-you` return `items`, newest
+  first: `kind` (`accept_filed_work`, `approve_plan`, `approve_merge`,
+  `unblock`), `project_id`, `project_name`, `sprint_id`, `sprint_title`,
+  `task_id`, `task_key`, `task_title`, `since`, and for `approve_merge` an
+  `evidence` object (`tests_status`, `tested_sha`, `review_outcome`,
+  `reviewed_sha`, `head_sha`, `proof_status`; ADR-0018) or null. A gate whose
+  policy is `plan_approval` is `approve_plan`; every other human gate is
+  `approve_merge`. `since` is the end of the task's last run (what parked it),
+  or its creation for filed work never run. A constant number of queries
+  whatever the number of projects or tasks.
+- `GET /milestones` and `GET /projects/{id}/milestones` return `milestones`
+  filtered by `kind` (repeatable or comma-separated): `sprint_started`,
+  `sprint_finished`, `task_merged`, `engine_started`, `engine_paused`,
+  `engine_resumed`, `engine_stopped`. Each has `kind`, `at`, project, sprint
+  and task fields, and `actor`. No table backs them: they are derived from
+  sprint columns, `engine.merge` events, completed `engine_commands` (the
+  actor is `requested_by`) and the engine lock's lease history (a stop names
+  its actor when a `shutdown` command completed during that lease). The
+  standing intake queue's start and finish are not milestones.
+- `GET /projects/{id}/sprints` accepts `status` (`active`, `planned`,
+  `completed`; repeatable or comma-separated), `q` (case-insensitive part of
+  the title, which carries the sprint number, or of the id), `limit` and
+  `offset`, and now also returns `total`. Without parameters it returns every
+  sprint as before.
+
 ### Inspection and dashboard surfaces
 
 Foreman now exposes two first-class observation surfaces:

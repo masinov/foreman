@@ -30,7 +30,7 @@ import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Iterable, Sequence
+from typing import Callable, Iterable, Mapping, Sequence
 
 from .context import context_directory
 from .models import EngineCommand, EngineLockView, Project, Task
@@ -97,6 +97,9 @@ class WorkflowGateSteps:
 
     step_ids: frozenset[str] | None
     gate_step_ids: frozenset[str] = frozenset()
+    #: Each gate step's policy name (``plan_approval``, ``merge_approval``), or
+    #: ``None`` for a gate that always waits for a person.
+    gate_policies: Mapping[str, str | None] = field(default_factory=dict)
 
 #: Used when no workflow could be resolved for a project.
 UNKNOWN_WORKFLOW = WorkflowGateSteps(step_ids=None)
@@ -134,6 +137,11 @@ def resolve_gate_steps(workflow_id: str | None) -> WorkflowGateSteps:
         gate_step_ids=frozenset(
             step.id for step in workflow.steps if step.role == HUMAN_GATE_ROLE
         ),
+        gate_policies={
+            step.id: step.policy
+            for step in workflow.steps
+            if step.role == HUMAN_GATE_ROLE
+        },
     )
 
 

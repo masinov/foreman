@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
 
 from ...dashboard_service import (
@@ -16,6 +16,8 @@ from ..streaming import event_stream_response
 from ..schemas import SprintCreate, TaskCreate, body_as
 from ..context import (
     MAX_EVENTS_PAGE_LIMIT,
+    MAX_PAGE_LIMIT,
+    split_values,
     ApiContext,
     read_json_body,
 )
@@ -28,8 +30,19 @@ def build_router(ctx: ApiContext) -> APIRouter:
     with_api = ctx.with_api
 
     @router.get("/projects/{project_id}/sprints")
-    def list_project_sprints(project_id: str) -> dict[str, Any]:
-        return with_api(lambda api: api.list_project_sprints(project_id))
+    def list_project_sprints(
+        project_id: str,
+        status: list[str] = Query(default=[]),
+        q: str | None = None,
+        limit: int | None = Query(default=None, ge=1, le=MAX_PAGE_LIMIT),
+        offset: int = Query(default=0, ge=0),
+    ) -> dict[str, Any]:
+        statuses = split_values(status)
+        return with_api(
+            lambda api: api.list_project_sprints(
+                project_id, statuses=statuses, query=q, limit=limit, offset=offset
+            )
+        )
 
     @router.post("/projects/{project_id}/sprints")
     def create_sprint(

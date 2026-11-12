@@ -16,9 +16,10 @@ import re
 import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Sequence
 from urllib.parse import urlsplit
 
+from .dashboard_overview import MILESTONE_KINDS, WorkspaceReader
 from .engine_control import (
     EngineStateView,
     ServeSpawner,
@@ -56,6 +57,7 @@ from .settings import (
     changed_host_level_settings,
 )
 from .store import ForemanStore
+from .store.overview import SPRINT_LIST_STATUSES
 from .worktrees import (
     WorktreeEntry,
     WorktreeError,
@@ -624,11 +626,39 @@ class DashboardService:
             "commands": [_serialize_engine_command(command) for command in commands],
         }
 
-    def list_project_sprints(self, project_id: str) -> dict[str, Any]:
-        """Return sprint summaries for one project."""
+    def list_project_sprints(
+        self,
+        project_id: str,
+        *,
+        statuses: Sequence[str] | None = None,
+        query: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """Return sprint summaries for one project.
 
+        Without arguments every sprint is returned, as it always was.
+        ``statuses`` keeps only sprints in those states, ``query`` only those
+        whose title (which carries the sprint number) or id contains it, and
+        ``limit``/``offset`` select a page. ``total`` counts every sprint that
+        matches, before paging.
+        """
+
+        unknown = sorted(set(statuses or ()) - set(SPRINT_LIST_STATUSES))
+        if unknown:
+            raise DashboardValidationError(
+                f"status: unknown {', '.join(unknown)}; expected "
+                f"{', '.join(SPRINT_LIST_STATUSES)}."
+            )
+        sprints, total = self.store.page_project_sprints(
+            project_id,
+            statuses=statuses,
+            query=(query or "").strip() or None,
+            limit=limit,
+            offset=offset,
+        )
         result = []
-        for sprint in self.store.list_sprints(project_id):
+        for sprint in sprints:
             task_counts = self.store.task_counts(sprint_id=sprint.id)
             entry: dict[str, Any] = {
                 "id": sprint.id,
@@ -650,7 +680,47 @@ class DashboardService:
                     for t in self.store.list_tasks(sprint_id=sprint.id)
                 ]
             result.append(entry)
-        return {"sprints": result}
+        return {"sprints": result, "total": total}
+
+    def get_workspace(self) -> dict[str, Any]:
+        """Return every project's card for the workspace page."""
+
+        return WorkspaceReader(self.store, now=self._now()).workspace()
+
+    def list_needs_you(
+        self, *, project_id: str | None = None, limit: int = 50, offset: int = 0
+    ) -> dict[str, Any]:
+        """Return what is waiting for a person, newest first, across projects or in one."""
+
+        if project_id is not None:
+            self._require_project(project_id)
+        return WorkspaceReader(self.store, now=self._now()).needs_you(
+            project_id=project_id, limit=limit, offset=offset
+        )
+
+    def list_milestones(
+        self,
+        *,
+        project_id: str | None = None,
+        kinds: Sequence[str] | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """Return milestones, newest first, across projects or in one."""
+
+        if project_id is not None:
+            self._require_project(project_id)
+        unknown = sorted(set(kinds or ()) - set(MILESTONE_KINDS))
+        if unknown:
+            raise DashboardValidationError(
+                f"kind: unknown {', '.join(unknown)}; expected {', '.join(MILESTONE_KINDS)}."
+            )
+        return WorkspaceReader(self.store, now=self._now()).milestones(
+            project_id=project_id,
+            kinds=list(kinds) if kinds else None,
+            limit=limit,
+            offset=offset,
+        )
 
     def get_sprint(self, sprint_id: str) -> dict[str, Any]:
         """Return one sprint summary payload."""
