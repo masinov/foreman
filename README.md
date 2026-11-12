@@ -8,7 +8,7 @@ This repository is still the bootstrap memory for that product. The only
 authoritative product inputs are:
 
 - `docs/specs/engine-design-v3.md`
-- `docs/mockups/foreman-mockup-v6.html`
+- `docs/design/dashboard-v7/`
 
 Everything else in the repo exists to turn those two artifacts into a working
 runtime without losing project memory along the way.

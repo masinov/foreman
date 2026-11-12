@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Foreman screen map</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#1f1f1f}a:hover{color:#555}
+</style>
+</head>
+<body>
+<div style="min-height: 1040px; background: #fbfbfa; color: #1f1f1f; font-family: Inter, system-ui, sans-serif; font-size: 13px; line-height: 1.5">
+<main style="max-width: 1320px; margin: 0 auto; padding: 32px 32px 48px; display: flex; flex-direction: column; gap: 28px">
+
+<div style="display: flex; flex-direction: column; gap: 4px">
+<h1 style="margin: 0; font-size: 18px; font-weight: 600">Screen map</h1>
+<p style="margin: 0; max-width: 90ch; color: #555">Structure only. Four levels, each with one page. You are always at exactly one of them, and the breadcrumb says which: Workspace / Project / Sprint / Task.</p>
+</div>
+
+<div style="overflow-x: auto">
+<table style="width: 100%; min-width: 1000px; border-collapse: collapse; table-layout: fixed">
+<thead>
+<tr style="text-align: left; font-size: 11px; color: #6b6b6b">
+<th scope="col" style="width: 120px; padding: 0 12px 6px 0; font-weight: 500"></th>
+<th scope="col" style="padding: 0 16px 6px; font-weight: 500; border-left: 1px solid #dcdcd8">1 Workspace</th>
+<th scope="col" style="padding: 0 16px 6px; font-weight: 500; border-left: 1px solid #dcdcd8">2 Project</th>
+<th scope="col" style="padding: 0 16px 6px; font-weight: 500; border-left: 1px solid #dcdcd8">3 Sprint</th>
+<th scope="col" style="padding: 0 16px 6px; font-weight: 500; border-left: 1px solid #dcdcd8">4 Task</th>
+</tr>
+</thead>
+<tbody style="vertical-align: top">
+<tr style="border-top: 1px solid #dcdcd8">
+<th scope="row" style="padding: 12px 12px 12px 0; text-align: left; font-weight: 600">What it is</th>
+<td style="padding: 12px 16px; border-left: 1px solid #dcdcd8">This installation. The only place that spans projects.</td>
+<td style="padding: 12px 16px; border-left: 1px solid #dcdcd8">One repository being worked on. The unit you run, pause and configure.</td>
+<td style="padding: 12px 16px; border-left: 1px solid #dcdcd8">A batch of tasks with a goal. One is active per project.</td>
+<td style="padding: 12px 16px; border-left: 1px solid #dcdcd8">One piece of work on its own branch.</td>
+</tr>
+<tr style="border-top: 1px solid #dcdcd8">
+<th scope="row" style="padding: 12px 12px 12px 0; text-align: left; font-weight: 600">The page shows</th>
+<td style="padding: 12px 16px; border-left: 1px solid #dcdcd8"><ul style="margin: 0; padding-left: 16px"><li>Needs you, across projects, each item naming its project</li><li>Projects: engine state, active sprint, open counts</li></ul></td>
+<td style="padding: 12px 16px; border-left: 1px solid #dcdcd8"><ul style="margin: 0; padding-left: 16px"><li>Engine: state, current task, start, pause, stop</li><li>Needs you, in this project</li><li>Tabs: Sprints, Backlog, Activity</li><li>Backlog: filed work, unaccepted first, then accepted and waiting to be planned</li><li>Project settings: a separate page reached from the title row, not a tab. General, and Workflow (the stages, the role at each, and the evidence a task needs to finish)</li><li>Activity: milestones only</li></ul></td>
+<td style="padding: 12px 16px; border-left: 1px solid #dcdcd8"><ul style="margin: 0; padding-left: 16px"><li>Goal and totals</li><li>Tasks, as a list or a board</li><li>Activity: milestones plus each step</li></ul></td>
+<td style="padding: 12px 16px; border-left: 1px solid #dcdcd8"><ul style="margin: 0; padding-left: 16px"><li>The pending decision, if any, with its facts</li><li>Tabs: Overview, Changes, Checks, Activity</li><li>Checks holds tests, review, criteria, and evidence files (screenshots, recordings)</li></ul></td>
+</tr>
+<tr style="border-top: 1px solid #dcdcd8">
+<th scope="row" style="padding: 12px 12px 12px 0; text-align: left; font-weight: 600">You can</th>
+<td style="padding: 12px 16px; border-left: 1px solid #dcdcd8"><ul style="margin: 0; padding-left: 16px"><li>Decide an item without leaving</li><li>Add a project</li></ul></td>
+<td style="padding: 12px 16px; border-left: 1px solid #dcdcd8"><ul style="margin: 0; padding-left: 16px"><li>Control the engine</li><li>Create, order, activate, close sprints</li><li>Accept filed work and plan it into a sprint</li><li>Change who decides, limits, models, notifications</li><li>Open the manager</li></ul></td>
+<td style="padding: 12px 16px; border-left: 1px solid #dcdcd8"><ul style="margin: 0; padding-left: 16px"><li>Add, reorder, block, cancel tasks</li><li>Switch list and board</li><li>Open the manager</li></ul></td>
+<td style="padding: 12px 16px; border-left: 1px solid #dcdcd8"><ul style="margin: 0; padding-left: 16px"><li>Approve or send back</li><li>Write guidance for the next agent step</li><li>Edit, stop, cancel, delete</li><li>Open the manager</li></ul></td>
+</tr>
+<tr style="border-top: 1px solid #dcdcd8">
+<th scope="row" style="padding: 12px 12px 12px 0; text-align: left; font-weight: 600">Goes down to</th>
+<td style="padding: 12px 16px; border-left: 1px solid #dcdcd8">A project. An item in Needs you goes straight to its task.</td>
+<td style="padding: 12px 16px; border-left: 1px solid #dcdcd8">A sprint. An item in Needs you goes straight to its task.</td>
+<td style="padding: 12px 16px; border-left: 1px solid #dcdcd8">A task.</td>
+<td style="padding: 12px 16px; border-left: 1px solid #dcdcd8; color: #6b6b6b">Nothing below.</td>
+</tr>
+<tr style="border-top: 1px solid #dcdcd8; border-bottom: 1px solid #dcdcd8">
+<th scope="row" style="padding: 12px 12px 12px 0; text-align: left; font-weight: 600">Settings here</th>
+<td style="padding: 12px 16px; border-left: 1px solid #dcdcd8">Its own page: default roles and workflows, access tokens and identity, notification channels, runners, and this machine's values.</td>
+<td style="padding: 12px 16px; border-left: 1px solid #dcdcd8">Who decides, limits, models, notifications, intake tokens. Its own roles and workflows where it overrides the defaults, read from the default branch. Machine-level values are shown, changed from a terminal.</td>
+<td style="padding: 12px 16px; border-left: 1px solid #dcdcd8">Whether Foreman picks its own tasks in this sprint.</td>
+<td style="padding: 12px 16px; border-left: 1px solid #dcdcd8">Overrides for this task: who decides, which model for a step.</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px 40px">
+
+<section aria-labelledby="notscreens" style="display: flex; flex-direction: column; gap: 6px">
+<h2 id="notscreens" style="margin: 0; font-size: 13px; font-weight: 600">Not screens</h2>
+<dl style="margin: 0; display: flex; flex-direction: column; gap: 8px">
+<div><dt style="font-weight: 500">Manager</dt><dd style="margin: 0; color: #555">The project's assistant. One conversation per project. A side bar on the right of the project, sprint and task pages, toggled from the top bar and remembered. It knows which page you are on. It proposes actions and you confirm them. It does not exist at workspace level.</dd></div>
+<div><dt style="font-weight: 500">Engine</dt><dd style="margin: 0; color: #555">One per project. Its state is in the project header on every page inside that project, and in the project's row on the workspace page.</dd></div>
+<div><dt style="font-weight: 500">Project switcher</dt><dd style="margin: 0; color: #555">The first breadcrumb segment lists your projects, each with its count of items needing you.</dd></div>
+</dl>
+</section>
+
+<section aria-labelledby="needs" style="display: flex; flex-direction: column; gap: 6px">
+<h2 id="needs" style="margin: 0; font-size: 13px; font-weight: 600">Needs you: one list, four kinds of item</h2>
+<ul style="margin: 0; padding-left: 16px; color: #555; display: flex; flex-direction: column; gap: 3px">
+<li><span style="color: #1f1f1f">Accept filed work.</span> A system, an agent or a person filed a task into the backlog; it cannot be planned until accepted.</li>
+<li><span style="color: #1f1f1f">Approve a plan.</span> Before development starts.</li>
+<li><span style="color: #1f1f1f">Approve a merge.</span> After tests and review.</li>
+<li><span style="color: #1f1f1f">Unblock.</span> The engine parked a task and says why.</li>
+</ul>
+<p style="margin: 0; color: #555">Which of the first three ever reach you is the project's "who decides" setting. The same list appears at workspace level (all projects) and project level (that project).</p>
+</section>
+
+<section aria-labelledby="open" style="display: flex; flex-direction: column; gap: 6px">
+<h2 id="open" style="margin: 0; font-size: 13px; font-weight: 600">Decided on 12 Nov</h2>
+<ul style="margin: 0; padding-left: 16px; color: #555; display: flex; flex-direction: column; gap: 3px">
+<li><span style="color: #1f1f1f">One flow for work:</span> filed, accepted, planned into a sprint. The engine runs only the active sprint. A task an agent creates goes to the backlog, not into the running sprint.</li>
+<li><span style="color: #1f1f1f">Projects override roles and workflows.</span> A workflow states what finishing requires, including evidence.</li>
+<li><span style="color: #1f1f1f">Activity is one stream at three depths:</span> project (milestones), sprint (steps), task (everything).</li>
+</ul>
+</section>
+
+</div>
+
+</main>
+</div>
+</body>
+</html>

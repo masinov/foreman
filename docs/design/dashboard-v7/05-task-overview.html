@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Foreman task</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#dedcd8}a:hover{color:#c9a55a}
+</style>
+</head>
+<body>
+<div style="min-height: 940px; display: flex; flex-direction: column; background: #0c0c0e; color: #dedcd8; font-family: Inter, system-ui, sans-serif; font-size: 13px; line-height: 1.45">
+<header style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-height: 40px; padding: 0 24px; border-bottom: 1px solid #26262b; background: #101013">
+<a href="01-workspace.html" style="font-family: 'Source Serif 4', serif; font-size: 16px; font-weight: 600; text-decoration: none">Foreman</a>
+<nav aria-label="Where you are" style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; color: #85837e">
+<span aria-hidden="true">/</span>
+<a href="01-workspace.html" style="color: #a3a19c; text-decoration: none">Workspace</a>
+<span aria-hidden="true">/</span>
+<a href="02-project-sprints.html" style="display: flex; align-items: center; gap: 6px; color: #a3a19c; text-decoration: none">Foreman <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #c9a55a">3</span></a>
+<span aria-hidden="true">/</span>
+<a href="04-sprint-list.html" style="color: #a3a19c; text-decoration: none">Sprint 56</a>
+<span aria-hidden="true">/</span>
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #dedcd8">FOR-14</span>
+</nav>
+<div style="margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px">
+<button type="button" aria-haspopup="menu" aria-label="Engine: not running. Start, pause or stop" style="display: flex; align-items: center; gap: 6px; height: 24px; padding: 0 8px; border: 0; border-radius: 3px; background: transparent; color: #a3a19c; font: inherit; font-size: 12px; cursor: pointer"><span aria-hidden="true" style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #5f5d59"></span>Engine not running<svg aria-hidden="true" width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="#85837e" stroke-width="1.3"><path d="M1 2.5l3 3 3-3"></path></svg></button>
+<button type="button" aria-pressed="true" style="display: flex; align-items: center; gap: 7px; height: 24px; padding: 0 8px; border: 0; border-radius: 3px; background: #1b1b20; color: #dedcd8; font: inherit; font-size: 12px; cursor: pointer"><svg aria-hidden="true" width="12" height="10" viewBox="0 0 12 10" fill="none" stroke="#a3a19c" stroke-width="1.2"><rect x="0.6" y="0.6" width="10.8" height="8.8" rx="1"></rect><path d="M7.5 0.6v8.8"></path></svg>Manager</button>
+<button type="button" aria-haspopup="menu" aria-label="You: who you are signed in as, workspace settings, sign out" style="display: flex; align-items: center; gap: 6px; height: 24px; padding: 0 6px; border: 0; border-radius: 3px; background: transparent; color: #a3a19c; font: inherit; font-size: 12px; cursor: pointer">[your name]<svg aria-hidden="true" width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="#85837e" stroke-width="1.3"><path d="M1 2.5l3 3 3-3"></path></svg></button>
+</div>
+</header>
+<div style="flex: 1; display: flex; flex-wrap: wrap; align-items: stretch">
+<main style="flex: 999 1 640px; min-width: 0; padding: 22px 24px 40px; display: flex; flex-direction: column; gap: 20px">
+<div style="display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px 24px">
+<div style="flex: 999 1 420px; min-width: 0; display: flex; flex-direction: column; gap: 3px">
+<h1 style="margin: 0; font-family: 'Source Serif 4', serif; font-size: 21px; font-weight: 600">Make the test step report what happened: duration, result line, commit</h1>
+<div style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #85837e; overflow-wrap: anywhere">FOR-14 · fix · foreman/for-14 · b232eb1 · +118 −7</div>
+</div>
+<div style="display: flex; gap: 6px">
+<button type="button" style="height: 26px; padding: 0 10px; border: 1px solid #34343a; border-radius: 3px; background: transparent; color: #dedcd8; font: inherit; font-size: 12px; cursor: pointer">Edit</button>
+<button type="button" aria-haspopup="menu" style="height: 26px; padding: 0 10px; border: 1px solid #34343a; border-radius: 3px; background: transparent; color: #dedcd8; font: inherit; font-size: 12px; cursor: pointer">More</button>
+</div>
+</div>
+
+<section aria-labelledby="decision" style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px 28px; padding: 11px 14px; border-radius: 4px; background: #131317">
+<div style="flex: 999 1 460px; min-width: 0; display: flex; flex-direction: column; gap: 4px">
+<h2 id="decision" style="margin: 0; font-size: 13px; font-weight: 600; color: #c9a55a">Approve the merge into main?</h2>
+<div style="display: flex; flex-wrap: wrap; gap: 2px 20px; color: #a3a19c">
+<span><span style="color: #6fbf9d">Tests passed</span> in 114.2 s at <span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px">b232eb1</span></span>
+<span><span style="color: #6fbf9d">Review approved</span> by sonnet-5-5, same commit</span>
+<span>Branch is up to date with main</span>
+</div>
+</div>
+<div style="display: flex; gap: 6px">
+<button type="button" style="height: 26px; padding: 0 10px; border: 1px solid #34343a; border-radius: 3px; background: transparent; color: #dedcd8; font: inherit; font-size: 12px; cursor: pointer">Send back</button>
+<button type="button" style="height: 26px; padding: 0 12px; border: 1px solid #c9a55a; border-radius: 3px; background: #c9a55a; color: #17140c; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer">Approve merge</button>
+</div>
+</section>
+
+<div role="tablist" aria-label="Task" style="display: flex; flex-wrap: wrap; gap: 20px; border-bottom: 1px solid #26262b">
+<a href="05-task-overview.html" role="tab" aria-selected="true" style="display: flex; align-items: center; height: 30px; border-bottom: 1px solid #c9a55a; text-decoration: none">Overview</a>
+<a href="12-task-changes.html" role="tab" aria-selected="false" style="display: flex; align-items: center; gap: 5px; height: 30px; border-bottom: 1px solid transparent; color: #a3a19c; text-decoration: none">Changes <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #85837e">+118 −7</span></a>
+<a href="13-task-checks.html" role="tab" aria-selected="false" style="display: flex; align-items: center; height: 30px; border-bottom: 1px solid transparent; color: #a3a19c; text-decoration: none">Checks</a>
+<a href="14-task-activity.html" role="tab" aria-selected="false" style="display: flex; align-items: center; height: 30px; border-bottom: 1px solid transparent; color: #a3a19c; text-decoration: none">Activity</a>
+</div>
+
+<div style="display: flex; flex-wrap: wrap; align-items: flex-start; gap: 24px 40px">
+
+<div style="flex: 999 1 480px; min-width: 0; display: flex; flex-direction: column; gap: 22px">
+
+<section aria-labelledby="steps" style="display: flex; flex-direction: column">
+<h2 id="steps" style="margin: 0; padding-bottom: 6px; font-size: 13px; font-weight: 600">Steps</h2>
+<div style="overflow-x: auto">
+<table style="width: 100%; min-width: 440px; border-collapse: collapse">
+<thead>
+<tr style="text-align: left; font-size: 11px; color: #85837e; border-bottom: 1px solid #2c2c33">
+<th scope="col" style="padding: 4px 12px 4px 0; font-weight: 400; width: 90px">Step</th>
+<th scope="col" style="padding: 4px 12px; font-weight: 400">Result</th>
+<th scope="col" style="padding: 4px 12px; font-weight: 400">By</th>
+<th scope="col" style="padding: 4px 0 4px 12px; font-weight: 400; text-align: right">Runs</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="padding: 7px 12px 7px 0">Develop</td>
+<td style="padding: 7px 12px; color: #a3a19c">Committed <span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px">b232eb1</span></td>
+<td style="padding: 7px 12px; color: #a3a19c">sonnet-5-5</td>
+<td style="padding: 7px 0 7px 12px; text-align: right; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #85837e">[n]</td>
+</tr>
+<tr style="border-top: 1px solid #18181c">
+<td style="padding: 7px 12px 7px 0">Test</td>
+<td style="padding: 7px 12px; color: #a3a19c"><span style="color: #6fbf9d">Passed</span> in 114.2 s</td>
+<td style="padding: 7px 12px; color: #a3a19c">engine</td>
+<td style="padding: 7px 0 7px 12px; text-align: right; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #85837e">[n]</td>
+</tr>
+<tr style="border-top: 1px solid #18181c">
+<td style="padding: 7px 12px 7px 0">Review</td>
+<td style="padding: 7px 12px; color: #a3a19c"><span style="color: #6fbf9d">Approved</span> in 7 s</td>
+<td style="padding: 7px 12px; color: #a3a19c">sonnet-5-5</td>
+<td style="padding: 7px 0 7px 12px; text-align: right; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #85837e">[n]</td>
+</tr>
+<tr style="border-top: 1px solid #18181c">
+<td style="padding: 7px 12px 7px 0">Merge</td>
+<td style="padding: 7px 12px; color: #c9a55a">Waiting for you</td>
+<td style="padding: 7px 12px; color: #a3a19c">engine</td>
+<td style="padding: 7px 0 7px 12px"></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div style="padding-top: 6px; font-size: 12px; color: #85837e">12 runs in all. Every run and its output is under Activity.</div>
+</section>
+
+<section aria-labelledby="checksum" style="display: flex; flex-direction: column">
+<h2 id="checksum" style="margin: 0; padding-bottom: 6px; font-size: 13px; font-weight: 600">Checks</h2>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 20px; color: #a3a19c">
+<span>[n] of [n] acceptance criteria marked met by the reviewer</span>
+<span>No evidence files required by this workflow</span>
+<a href="13-task-checks.html" style="margin-left: auto; font-size: 12px; color: #a3a19c">Open Checks</a>
+</div>
+</section>
+
+<section aria-labelledby="guidance" style="display: flex; flex-direction: column; gap: 6px">
+<div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px">
+<h2 id="guidance" style="margin: 0; font-size: 13px; font-weight: 600"><label for="guide">Guidance for the next agent step</label></h2>
+<span style="font-size: 12px; color: #85837e">Read by the agent if you send the task back.</span>
+</div>
+<textarea id="guide" rows="3" placeholder="Nothing written" style="box-sizing: border-box; width: 100%; padding: 7px 9px; border: 1px solid #2c2c32; border-radius: 3px; background: #101013; color: #dedcd8; font: inherit; resize: vertical"></textarea>
+</section>
+
+</div>
+
+<aside aria-labelledby="details" style="flex: 1 1 240px; min-width: 0; display: flex; flex-direction: column">
+<h2 id="details" style="margin: 0; padding-bottom: 6px; font-size: 13px; font-weight: 600">Details</h2>
+<dl style="margin: 0; display: grid; grid-template-columns: 90px 1fr">
+<dt style="padding: 7px 0; font-size: 12px; color: #85837e">Stage</dt><dd style="margin: 0; padding: 7px 0; color: #c9a55a">Waiting for merge approval</dd>
+<dt style="padding: 7px 0; border-top: 1px solid #18181c; font-size: 12px; color: #85837e">Sprint</dt><dd style="margin: 0; padding: 7px 0; border-top: 1px solid #18181c"><a href="04-sprint-list.html" style="text-decoration: none">Sprint 56</a></dd>
+<dt style="padding: 7px 0; border-top: 1px solid #18181c; font-size: 12px; color: #85837e">Workflow</dt><dd style="margin: 0; padding: 7px 0; border-top: 1px solid #18181c">development</dd>
+<dt style="padding: 7px 0; border-top: 1px solid #18181c; font-size: 12px; color: #85837e">Who decides</dt><dd style="margin: 0; padding: 7px 0; border-top: 1px solid #18181c">A person approves merges <span style="color: #85837e">(project setting)</span></dd>
+<dt style="padding: 7px 0; border-top: 1px solid #18181c; font-size: 12px; color: #85837e">Branch</dt><dd style="margin: 0; padding: 7px 0; border-top: 1px solid #18181c; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; overflow-wrap: anywhere">foreman/for-14</dd>
+<dt style="padding: 7px 0; border-top: 1px solid #18181c; font-size: 12px; color: #85837e">Spend</dt><dd style="margin: 0; padding: 7px 0; border-top: 1px solid #18181c; font-family: 'JetBrains Mono', monospace; font-size: 11.5px">$0.72 · 12 runs</dd>
+<dt style="padding: 7px 0; border-top: 1px solid #18181c; font-size: 12px; color: #85837e">Filed by</dt><dd style="margin: 0; padding: 7px 0; border-top: 1px solid #18181c; color: #85837e">[who filed it, when]</dd>
+</dl>
+<h2 style="margin: 18px 0 0; padding-bottom: 6px; font-size: 13px; font-weight: 600">Description</h2>
+<p style="margin: 0; color: #85837e">[The task description as filed]</p>
+</aside>
+
+</div>
+</main>
+<aside aria-labelledby="mgr" style="flex: 1 1 380px; max-width: 420px; min-width: 0; display: flex; flex-direction: column; border-left: 1px solid #26262b; background: #101013">
+<div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; padding: 12px 16px 10px; border-bottom: 1px solid #26262b">
+<h2 id="mgr" style="margin: 0; font-size: 13px; font-weight: 600">Manager</h2>
+<span style="font-size: 12px; color: #85837e">Foreman project</span>
+<span style="margin-left: auto; font-size: 12px; color: #85837e">You are on: FOR-14</span>
+</div>
+<div style="flex: 1; padding: 16px; display: flex; flex-direction: column; gap: 16px">
+<div style="font-size: 12px; color: #85837e">Earlier in this conversation: a proposal for Sprint 57, not confirmed.</div>
+
+<div style="display: flex; flex-direction: column; gap: 2px">
+<div style="font-size: 11px; color: #85837e">You</div>
+<p style="margin: 0">Send this one back. The result line should also say how many tests were skipped.</p>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 6px">
+<div style="font-size: 11px; color: #85837e">Manager</div>
+<div style="display: flex; flex-direction: column; border: 1px solid #34343a; border-radius: 3px; background: #0c0c0e">
+<div style="padding: 8px 12px; border-bottom: 1px solid #1c1c21; font-size: 12px; color: #85837e">Proposed change. Nothing happens until you confirm.</div>
+<dl style="margin: 0; padding: 4px 12px; display: grid; grid-template-columns: 70px 1fr">
+<dt style="padding: 5px 0; font-size: 12px; color: #85837e">Send back</dt><dd style="margin: 0; padding: 5px 0"><span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px">FOR-14</span> to Develop, in place of approving the merge</dd>
+<dt style="padding: 5px 0; font-size: 12px; color: #85837e">Guidance</dt><dd style="margin: 0; padding: 5px 0">Include the number of skipped tests in the reported result line.</dd>
+<dt style="padding: 5px 0; font-size: 12px; color: #85837e">Then</dt><dd style="margin: 0; padding: 5px 0; color: #a3a19c">Tests and review run again. Nothing runs until the engine is started.</dd>
+</dl>
+<div style="display: flex; justify-content: flex-end; gap: 6px; padding: 8px 12px; border-top: 1px solid #1c1c21">
+<button type="button" style="height: 24px; padding: 0 9px; border: 1px solid #34343a; border-radius: 3px; background: transparent; color: #a3a19c; font: inherit; font-size: 12px; cursor: pointer">Not now</button>
+<button type="button" style="height: 24px; padding: 0 9px; border: 1px solid #6d5a2f; border-radius: 3px; background: transparent; color: #c9a55a; font: inherit; font-size: 12px; cursor: pointer">Confirm</button>
+</div>
+</div>
+</div>
+</div>
+<form style="display: flex; flex-direction: column; gap: 6px; padding: 12px 16px; border-top: 1px solid #26262b">
+<label for="msg" style="position: absolute; left: -9999px">Message to the manager</label>
+<textarea id="msg" rows="2" placeholder="Ask about this task, or ask for a change" style="box-sizing: border-box; width: 100%; padding: 7px 9px; border: 1px solid #2c2c32; border-radius: 3px; background: #0c0c0e; color: #dedcd8; font: inherit; resize: none"></textarea>
+<div style="display: flex; justify-content: flex-end">
+<button type="submit" style="height: 26px; padding: 0 10px; border: 1px solid #34343a; border-radius: 3px; background: transparent; color: #dedcd8; font: inherit; font-size: 12px; cursor: pointer">Send</button>
+</div>
+</form>
+</aside>
+</div>
+</div>
+</body>
+</html>

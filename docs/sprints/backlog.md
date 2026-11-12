@@ -1,5 +1,22 @@
 # Backlog
 
+## Open decision
+
+- **Built frontend bundle out of git** (was sprint 57 slice 9): build it in
+  CI and at install, and replace the freshness check with a build step. Not
+  decided by the owner; the bundle stays committed until it is.
+
+## Carried engineering items (from sprints 56 and 57)
+
+- `resume_human_gate` and `_run_leased_task` are still on the orchestrator;
+  the agent step's corrective retry repeats its first attempt.
+- The lease fencing token is unchecked on writes.
+- A stale `running` agent run is reset to the entry step, not resumed in
+  place.
+- `--json` on the remaining read commands; response models on the API.
+- Python `Enum` classes for statuses.
+- No real-browser check of the dashboard on the development host.
+
 ## Finish plan — `docs/reviews/2026-11-10-full-review-and-finish-plan.md`
 
 The 2026-11-10 review is the forward roadmap and supersedes the ordering of

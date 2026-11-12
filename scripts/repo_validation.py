@@ -28,6 +28,7 @@ REQUIRED_FILES = (
     Path("docs/prs/TEMPLATE.md"),
     Path("docs/specs/engine-design-v3.md"),
     Path("docs/mockups/foreman-mockup-v6.html"),
+    Path("docs/design/dashboard-v7/README.md"),
     Path("foreman/__init__.py"),
     Path("foreman/__main__.py"),
     Path("foreman/cli/__init__.py"),

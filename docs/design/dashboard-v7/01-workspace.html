@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Foreman workspace</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#dedcd8}a:hover{color:#c9a55a}
+</style>
+</head>
+<body>
+<div style="min-height: 700px; background: #0c0c0e; color: #dedcd8; font-family: Inter, system-ui, sans-serif; font-size: 13px; line-height: 1.45">
+
+<header style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-height: 40px; padding: 0 24px; border-bottom: 1px solid #26262b; background: #101013">
+<a href="01-workspace.html" style="font-family: 'Source Serif 4', serif; font-size: 16px; font-weight: 600; text-decoration: none">Foreman</a>
+<nav aria-label="Where you are" style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; color: #85837e">
+<span aria-hidden="true">/</span>
+<span style="color: #dedcd8">Workspace</span>
+</nav>
+<div style="margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px">
+<a href="15-workspace-settings.html" style="font-size: 12px; color: #a3a19c; text-decoration: none">Workspace settings</a>
+<button type="button" aria-haspopup="menu" aria-label="You: who you are signed in as, workspace settings, sign out" style="display: flex; align-items: center; gap: 6px; height: 24px; padding: 0 6px; border: 0; border-radius: 3px; background: transparent; color: #a3a19c; font: inherit; font-size: 12px; cursor: pointer">[your name]<svg aria-hidden="true" width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="#85837e" stroke-width="1.3"><path d="M1 2.5l3 3 3-3"></path></svg></button>
+</div>
+</header>
+
+<main style="max-width: 1200px; margin: 0 auto; padding: 22px 24px 40px; display: flex; flex-direction: column; gap: 24px">
+
+<section aria-labelledby="needs" style="display: flex; flex-direction: column">
+<div style="display: flex; align-items: baseline; gap: 8px; padding-bottom: 8px">
+<h1 id="needs" style="margin: 0; font-size: 13px; font-weight: 600">Needs you</h1>
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #c9a55a">3</span>
+<span style="font-size: 12px; color: #85837e">across all projects</span>
+</div>
+<div style="overflow-x: auto; padding: 3px 14px; border-radius: 4px; background: #131317">
+<table style="width: 100%; min-width: 820px; border-collapse: collapse">
+<tbody>
+<tr>
+<td style="padding: 8px 12px 8px 0; width: 100px; color: #a3a19c; white-space: nowrap">Foreman</td>
+<td style="padding: 8px 12px; width: 110px; color: #c9a55a; white-space: nowrap">Approve merge</td>
+<td style="padding: 8px 12px; width: 56px; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #85837e">FOR-14</td>
+<td style="padding: 8px 12px"><a href="05-task-overview.html" style="text-decoration: none">Make the test step report what happened: duration, result line, commit</a></td>
+<td style="padding: 8px 12px; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #a3a19c; white-space: nowrap"><span style="color: #6fbf9d">tests</span> · <span style="color: #6fbf9d">review</span> · b232eb1</td>
+<td style="padding: 8px 0 8px 12px; text-align: right; white-space: nowrap"><button type="button" style="height: 24px; padding: 0 9px; border: 1px solid #6d5a2f; border-radius: 3px; background: transparent; color: #c9a55a; font: inherit; font-size: 12px; cursor: pointer">Approve</button></td>
+</tr>
+<tr style="border-top: 1px solid #202026">
+<td style="padding: 8px 12px 8px 0; color: #a3a19c; white-space: nowrap">Foreman</td>
+<td style="padding: 8px 12px; color: #c9a55a; white-space: nowrap">Approve merge</td>
+<td style="padding: 8px 12px; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #85837e">FOR-15</td>
+<td style="padding: 8px 12px"><a href="05-task-overview.html" style="text-decoration: none">Send triage attention events through the notification dispatcher</a></td>
+<td style="padding: 8px 12px; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #a3a19c; white-space: nowrap"><span style="color: #6fbf9d">tests</span> · <span style="color: #6fbf9d">review</span> · 7218b79</td>
+<td style="padding: 8px 0 8px 12px; text-align: right; white-space: nowrap"><button type="button" style="height: 24px; padding: 0 9px; border: 1px solid #6d5a2f; border-radius: 3px; background: transparent; color: #c9a55a; font: inherit; font-size: 12px; cursor: pointer">Approve</button></td>
+</tr>
+<tr style="border-top: 1px solid #202026">
+<td style="padding: 8px 12px 8px 0; color: #a3a19c; white-space: nowrap">Foreman</td>
+<td style="padding: 8px 12px; color: #c9a55a; white-space: nowrap">Approve merge</td>
+<td style="padding: 8px 12px; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #85837e">FOR-16</td>
+<td style="padding: 8px 12px"><a href="05-task-overview.html" style="text-decoration: none">Make the manager operating contract list commands that exist</a></td>
+<td style="padding: 8px 12px; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #a3a19c; white-space: nowrap"><span style="color: #6fbf9d">tests</span> · <span style="color: #6fbf9d">review</span> · c1df17d</td>
+<td style="padding: 8px 0 8px 12px; text-align: right; white-space: nowrap"><button type="button" style="height: 24px; padding: 0 9px; border: 1px solid #6d5a2f; border-radius: 3px; background: transparent; color: #c9a55a; font: inherit; font-size: 12px; cursor: pointer">Approve</button></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+
+<section aria-labelledby="projects" style="display: flex; flex-direction: column">
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 6px">
+<h2 id="projects" style="margin: 0; font-size: 13px; font-weight: 600">Projects</h2>
+<button type="button" style="height: 26px; padding: 0 10px; border: 1px solid #34343a; border-radius: 3px; background: transparent; color: #dedcd8; font: inherit; font-size: 12px; cursor: pointer">Add project</button>
+</div>
+<div style="overflow-x: auto">
+<table style="width: 100%; min-width: 980px; border-collapse: collapse">
+<thead>
+<tr style="text-align: left; font-size: 11px; color: #85837e; border-bottom: 1px solid #2c2c33">
+<th scope="col" style="padding: 4px 12px 4px 0; font-weight: 400">Project, location, branch</th>
+<th scope="col" style="padding: 4px 12px; font-weight: 400">Engine</th>
+<th scope="col" style="padding: 4px 12px; font-weight: 400">Active sprint</th>
+<th scope="col" style="padding: 4px 12px; font-weight: 400; text-align: right">Needs you</th>
+<th scope="col" style="padding: 4px 12px; font-weight: 400; text-align: right">Backlog</th>
+<th scope="col" style="padding: 4px 12px; font-weight: 400; text-align: right">Sprint spend</th>
+<th scope="col" style="padding: 4px 0 4px 12px; font-weight: 400">Last change</th>
+</tr>
+</thead>
+<tbody style="vertical-align: top">
+<tr>
+<td style="padding: 8px 12px 8px 0"><a href="02-project-sprints.html" style="text-decoration: none">Foreman</a><div style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #85837e; overflow-wrap: anywhere">/mnt/nvme/src/masis/projects/foreman · main</div></td>
+<td style="padding: 8px 12px; white-space: nowrap"><span aria-hidden="true" style="display: inline-block; width: 6px; height: 6px; margin-right: 7px; border-radius: 50%; background: #5f5d59"></span><span style="color: #a3a19c">Not running</span><div style="font-size: 12px; color: #85837e">working on nothing</div></td>
+<td style="padding: 8px 12px"><a href="04-sprint-list.html" style="text-decoration: none">56: engine truthfulness</a><div style="font-size: 12px; color: #a3a19c"><span style="color: #c9a55a">3 need you</span> · 1 done</div></td>
+<td style="padding: 8px 12px; text-align: right; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #c9a55a">3</td>
+<td style="padding: 8px 12px; text-align: right; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #a3a19c">4</td>
+<td style="padding: 8px 12px; text-align: right; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #a3a19c">$1.31</td>
+<td style="padding: 8px 0 8px 12px; color: #a3a19c">Sprint 56 started<div style="font-size: 12px; color: #85837e">11 Nov</div></td>
+</tr>
+<tr style="border-top: 1px solid #18181c">
+<td style="padding: 8px 12px 8px 0; color: #85837e">[Your second project]<div style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px">[repository path] · [default branch]</div></td>
+<td style="padding: 8px 12px; white-space: nowrap"><span aria-hidden="true" style="display: inline-block; width: 6px; height: 6px; margin-right: 7px; border-radius: 50%; background: #7fb4d2"></span><span style="color: #a3a19c">Running</span><div style="font-size: 12px; color: #85837e">[task key, step]</div></td>
+<td style="padding: 8px 12px; color: #85837e">[sprint]<div style="font-size: 12px">[task counts]</div></td>
+<td style="padding: 8px 12px; text-align: right; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #85837e">0</td>
+<td style="padding: 8px 12px; text-align: right; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #85837e">[n]</td>
+<td style="padding: 8px 12px; text-align: right; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #85837e">[$]</td>
+<td style="padding: 8px 0 8px 12px; color: #85837e">[milestone]<div style="font-size: 12px">[when]</div></td>
+</tr>
+<tr style="border-top: 1px solid #18181c">
+<td style="padding: 8px 12px 8px 0; color: #85837e">[Your third project]<div style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px">[repository path] · [default branch]</div></td>
+<td style="padding: 8px 12px; white-space: nowrap"><span aria-hidden="true" style="display: inline-block; width: 6px; height: 6px; margin-right: 7px; border-radius: 50%; background: #c9a55a"></span><span style="color: #a3a19c">Paused</span><div style="font-size: 12px; color: #85837e">[task key, step]</div></td>
+<td style="padding: 8px 12px; color: #85837e">[sprint]<div style="font-size: 12px">[task counts]</div></td>
+<td style="padding: 8px 12px; text-align: right; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #85837e">0</td>
+<td style="padding: 8px 12px; text-align: right; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #85837e">[n]</td>
+<td style="padding: 8px 12px; text-align: right; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #85837e">[$]</td>
+<td style="padding: 8px 0 8px 12px; color: #85837e">[milestone]<div style="font-size: 12px">[when]</div></td>
+</tr>
+<tr style="border-top: 1px solid #18181c">
+<td style="padding: 8px 12px 8px 0; color: #85837e">[Your fourth project]<div style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px">[repository path] · [default branch]</div></td>
+<td style="padding: 8px 12px; white-space: nowrap"><span aria-hidden="true" style="display: inline-block; width: 6px; height: 6px; margin-right: 7px; border-radius: 50%; background: #5f5d59"></span><span style="color: #a3a19c">Not running</span><div style="font-size: 12px; color: #85837e">working on nothing</div></td>
+<td style="padding: 8px 12px; color: #85837e">None<div style="font-size: 12px">nothing planned</div></td>
+<td style="padding: 8px 12px; text-align: right; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #85837e">0</td>
+<td style="padding: 8px 12px; text-align: right; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #85837e">[n]</td>
+<td style="padding: 8px 12px; text-align: right; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #85837e"></td>
+<td style="padding: 8px 0 8px 12px; color: #85837e">[milestone]<div style="font-size: 12px">[when]</div></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+
+<section aria-labelledby="recent" style="display: flex; flex-direction: column">
+<div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding-bottom: 6px">
+<h2 id="recent" style="margin: 0; font-size: 13px; font-weight: 600">Recent</h2>
+<span style="font-size: 12px; color: #85837e">Milestones only: sprints started and finished, tasks merged, engines stopped on a limit.</span>
+</div>
+<div style="overflow-x: auto">
+<table style="width: 100%; min-width: 620px; border-collapse: collapse">
+<tbody>
+<tr>
+<td style="padding: 6px 12px 6px 0; width: 70px; color: #85837e; white-space: nowrap">11 Nov</td>
+<td style="padding: 6px 12px; width: 100px; color: #a3a19c">Foreman</td>
+<td style="padding: 6px 0 6px 12px">Sprint 56 started</td>
+</tr>
+<tr style="border-top: 1px solid #18181c">
+<td style="padding: 6px 12px 6px 0; color: #85837e; white-space: nowrap">10 Nov</td>
+<td style="padding: 6px 12px; color: #a3a19c">Foreman</td>
+<td style="padding: 6px 0 6px 12px">Sprint 55 finished, 1 task merged</td>
+</tr>
+<tr style="border-top: 1px solid #18181c">
+<td style="padding: 6px 12px 6px 0; color: #85837e; white-space: nowrap">[when]</td>
+<td style="padding: 6px 12px; color: #85837e">[project]</td>
+<td style="padding: 6px 0 6px 12px; color: #85837e">[milestone in another project]</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+
+</main>
+</div>
+</body>
+</html>

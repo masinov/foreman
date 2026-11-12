@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Foreman project settings</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#dedcd8}a:hover{color:#c9a55a}
+</style>
+</head>
+<body>
+<div style="min-height: 1160px; display: flex; flex-direction: column; background: #0c0c0e; color: #dedcd8; font-family: Inter, system-ui, sans-serif; font-size: 13px; line-height: 1.45">
+<header style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-height: 40px; padding: 0 24px; border-bottom: 1px solid #26262b; background: #101013">
+<a href="01-workspace.html" style="font-family: 'Source Serif 4', serif; font-size: 16px; font-weight: 600; text-decoration: none">Foreman</a>
+<nav aria-label="Where you are" style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; color: #85837e">
+<span aria-hidden="true">/</span>
+<a href="01-workspace.html" style="color: #a3a19c; text-decoration: none">Workspace</a>
+<span aria-hidden="true">/</span>
+<a href="02-project-sprints.html" style="display: flex; align-items: center; gap: 6px; color: #a3a19c; text-decoration: none">Foreman <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #c9a55a">3</span></a>
+<span aria-hidden="true">/</span>
+<span style="color: #dedcd8">Settings</span>
+</nav>
+<div style="margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px">
+<button type="button" aria-haspopup="menu" aria-label="Engine: not running. Start, pause or stop" style="display: flex; align-items: center; gap: 6px; height: 24px; padding: 0 8px; border: 0; border-radius: 3px; background: transparent; color: #a3a19c; font: inherit; font-size: 12px; cursor: pointer"><span aria-hidden="true" style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #5f5d59"></span>Engine not running<svg aria-hidden="true" width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="#85837e" stroke-width="1.3"><path d="M1 2.5l3 3 3-3"></path></svg></button>
+<button type="button" aria-pressed="false" style="display: flex; align-items: center; gap: 7px; height: 24px; padding: 0 8px; border: 0; border-radius: 3px; background: transparent; color: #a3a19c; font: inherit; font-size: 12px; cursor: pointer"><svg aria-hidden="true" width="12" height="10" viewBox="0 0 12 10" fill="none" stroke="#a3a19c" stroke-width="1.2"><rect x="0.6" y="0.6" width="10.8" height="8.8" rx="1"></rect><path d="M7.5 0.6v8.8"></path></svg>Manager</button>
+<button type="button" aria-haspopup="menu" aria-label="You: who you are signed in as, workspace settings, sign out" style="display: flex; align-items: center; gap: 6px; height: 24px; padding: 0 6px; border: 0; border-radius: 3px; background: transparent; color: #a3a19c; font: inherit; font-size: 12px; cursor: pointer">[your name]<svg aria-hidden="true" width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="#85837e" stroke-width="1.3"><path d="M1 2.5l3 3 3-3"></path></svg></button>
+</div>
+</header>
+<main style="width: 100%; box-sizing: border-box; max-width: 1200px; margin: 0 auto; padding: 22px 24px 40px; display: flex; flex-direction: column; gap: 20px">
+<div style="display: flex; flex-direction: column; gap: 3px">
+<h1 style="margin: 0; font-family: 'Source Serif 4', serif; font-size: 21px; font-weight: 600">Project settings</h1>
+<div style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #85837e; overflow-wrap: anywhere">Foreman · /mnt/nvme/src/masis/projects/foreman</div>
+</div>
+
+<div role="tablist" aria-label="Project settings" style="display: flex; flex-wrap: wrap; gap: 20px; border-bottom: 1px solid #26262b">
+<a href="10-project-settings-general.html" role="tab" aria-selected="true" style="display: flex; align-items: center; gap: 5px; height: 30px; border-bottom: 1px solid #c9a55a; text-decoration: none">General</a>
+<a href="08-project-settings-workflow.html" role="tab" aria-selected="false" style="display: flex; align-items: center; gap: 5px; height: 30px; border-bottom: 1px solid transparent; color: #a3a19c; text-decoration: none">Workflow</a>
+</div>
+
+<section aria-labelledby="who" style="display: flex; flex-direction: column">
+<div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding-bottom: 6px">
+<h2 id="who" style="margin: 0; font-size: 13px; font-weight: 600">Who decides</h2>
+<span style="font-size: 12px; color: #85837e">Which decisions come to a person. Everything else in Needs you follows from this.</span>
+
+</div>
+<dl style="margin: 0; display: grid; grid-template-columns: minmax(120px, 220px) 1fr">
+<dt style="padding: 7px 12px 7px 0; font-size: 12px; color: #85837e">Accept filed work</dt><dd style="margin: 0; padding: 7px 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px"><select style="height: 26px; box-sizing: border-box; padding: 0 8px; border: 1px solid #2c2c32; border-radius: 3px; background: #101013; color: #dedcd8; font: inherit; font-size: 12px; padding: 0 6px"><option>A person</option><option>Foreman</option></select><span style="font-size: 12px; color: #85837e">Work filed by another system or an agent</span></dd>
+<dt style="padding: 7px 12px 7px 0; font-size: 12px; color: #85837e; border-top: 1px solid #18181c">Approve plans</dt><dd style="margin: 0; padding: 7px 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; border-top: 1px solid #18181c"><select style="height: 26px; box-sizing: border-box; padding: 0 8px; border: 1px solid #2c2c32; border-radius: 3px; background: #101013; color: #dedcd8; font: inherit; font-size: 12px; padding: 0 6px"><option>A person</option><option>Foreman</option></select><span style="font-size: 12px; color: #85837e">Before development starts</span></dd>
+<dt style="padding: 7px 12px 7px 0; font-size: 12px; color: #85837e; border-top: 1px solid #18181c">Approve merges</dt><dd style="margin: 0; padding: 7px 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; border-top: 1px solid #18181c"><select style="height: 26px; box-sizing: border-box; padding: 0 8px; border: 1px solid #2c2c32; border-radius: 3px; background: #101013; color: #dedcd8; font: inherit; font-size: 12px; padding: 0 6px"><option>A person</option><option>Foreman</option></select><span style="font-size: 12px; color: #85837e">After tests and review</span></dd>
+<dt style="padding: 7px 12px 7px 0; font-size: 12px; color: #85837e; border-top: 1px solid #18181c">Exceptions</dt><dd style="margin: 0; padding: 7px 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; border-top: 1px solid #18181c"><span style="font-size: 12px; color: #85837e">None. A rule can send one kind of task to a different decider.</span><button type="button" style="height: 26px; padding: 0 10px; border: 1px solid #34343a; border-radius: 3px; background: transparent; color: #dedcd8; font: inherit; font-size: 12px; cursor: pointer">Add rule</button></dd>
+</dl>
+</section>
+
+<section aria-labelledby="pick" style="display: flex; flex-direction: column">
+<div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding-bottom: 6px">
+<h2 id="pick" style="margin: 0; font-size: 13px; font-weight: 600">Task picking</h2>
+
+
+</div>
+<dl style="margin: 0; display: grid; grid-template-columns: minmax(120px, 220px) 1fr">
+<dt style="padding: 7px 12px 7px 0; font-size: 12px; color: #85837e">Foreman picks its own tasks</dt><dd style="margin: 0; padding: 7px 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px"><select style="height: 26px; box-sizing: border-box; padding: 0 8px; border: 1px solid #2c2c32; border-radius: 3px; background: #101013; color: #dedcd8; font: inherit; font-size: 12px; padding: 0 6px"><option>Off</option><option>On</option></select><span style="font-size: 12px; color: #85837e">Off: it runs only the tasks planned into the active sprint</span></dd>
+<dt style="padding: 7px 12px 7px 0; font-size: 12px; color: #85837e; border-top: 1px solid #18181c">At most, per sprint</dt><dd style="margin: 0; padding: 7px 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; border-top: 1px solid #18181c"><input type="text" value="5" style="height: 26px; box-sizing: border-box; padding: 0 8px; border: 1px solid #2c2c32; border-radius: 3px; background: #101013; color: #dedcd8; font: inherit; font-size: 12px; width: 50px"><span style="font-size: 12px; color: #85837e">tasks it may add on its own</span></dd>
+</dl>
+</section>
+
+<section aria-labelledby="lim" style="display: flex; flex-direction: column">
+<div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding-bottom: 6px">
+<h2 id="lim" style="margin: 0; font-size: 13px; font-weight: 600">Limits</h2>
+<span style="font-size: 12px; color: #85837e">When one is reached the engine stops and says which.</span>
+
+</div>
+<dl style="margin: 0; display: grid; grid-template-columns: minmax(120px, 220px) 1fr">
+<dt style="padding: 7px 12px 7px 0; font-size: 12px; color: #85837e">Spend per task</dt><dd style="margin: 0; padding: 7px 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px"><input type="text" value="" style="height: 26px; box-sizing: border-box; padding: 0 8px; border: 1px solid #2c2c32; border-radius: 3px; background: #101013; color: #dedcd8; font: inherit; font-size: 12px; width: 70px"><span style="font-size: 12px; color: #85837e">USD. Empty: no limit</span></dd>
+<dt style="padding: 7px 12px 7px 0; font-size: 12px; color: #85837e; border-top: 1px solid #18181c">Spend per sprint</dt><dd style="margin: 0; padding: 7px 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; border-top: 1px solid #18181c"><input type="text" value="" style="height: 26px; box-sizing: border-box; padding: 0 8px; border: 1px solid #2c2c32; border-radius: 3px; background: #101013; color: #dedcd8; font: inherit; font-size: 12px; width: 70px"><span style="font-size: 12px; color: #85837e">USD. Empty: no limit</span></dd>
+<dt style="padding: 7px 12px 7px 0; font-size: 12px; color: #85837e; border-top: 1px solid #18181c">Time per task</dt><dd style="margin: 0; padding: 7px 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; border-top: 1px solid #18181c"><input type="text" value="" style="height: 26px; box-sizing: border-box; padding: 0 8px; border: 1px solid #2c2c32; border-radius: 3px; background: #101013; color: #dedcd8; font: inherit; font-size: 12px; width: 70px"><span style="font-size: 12px; color: #85837e">minutes. Empty: no limit</span></dd>
+<dt style="padding: 7px 12px 7px 0; font-size: 12px; color: #85837e; border-top: 1px solid #18181c">Attempts at one step</dt><dd style="margin: 0; padding: 7px 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; border-top: 1px solid #18181c"><input type="text" value="5" style="height: 26px; box-sizing: border-box; padding: 0 8px; border: 1px solid #2c2c32; border-radius: 3px; background: #101013; color: #dedcd8; font: inherit; font-size: 12px; width: 50px"><span style="font-size: 12px; color: #85837e">then the task is parked and appears in Needs you</span></dd>
+<dt style="padding: 7px 12px 7px 0; font-size: 12px; color: #85837e; border-top: 1px solid #18181c">Tasks in progress at once</dt><dd style="margin: 0; padding: 7px 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; border-top: 1px solid #18181c"><input type="text" value="4" style="height: 26px; box-sizing: border-box; padding: 0 8px; border: 1px solid #2c2c32; border-radius: 3px; background: #101013; color: #dedcd8; font: inherit; font-size: 12px; width: 50px"><span style="font-size: 12px; color: #85837e">each has its own working copy</span></dd>
+</dl>
+</section>
+
+<section aria-labelledby="mod" style="display: flex; flex-direction: column">
+<div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding-bottom: 6px">
+<h2 id="mod" style="margin: 0; font-size: 13px; font-weight: 600">Models</h2>
+
+
+</div>
+<dl style="margin: 0; display: grid; grid-template-columns: minmax(120px, 220px) 1fr">
+<dt style="padding: 7px 12px 7px 0; font-size: 12px; color: #85837e">Default model</dt><dd style="margin: 0; padding: 7px 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px"><select style="height: 26px; box-sizing: border-box; padding: 0 8px; border: 1px solid #2c2c32; border-radius: 3px; background: #101013; color: #dedcd8; font: inherit; font-size: 12px; padding: 0 6px"><option>[the runner's default]</option></select><span style="font-size: 12px; color: #85837e">A role can name its own</span></dd>
+<dt style="padding: 7px 12px 7px 0; font-size: 12px; color: #85837e; border-top: 1px solid #18181c">Manager model</dt><dd style="margin: 0; padding: 7px 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; border-top: 1px solid #18181c"><select style="height: 26px; box-sizing: border-box; padding: 0 8px; border: 1px solid #2c2c32; border-radius: 3px; background: #101013; color: #dedcd8; font: inherit; font-size: 12px; padding: 0 6px"><option>[the runner's default]</option></select></dd>
+</dl>
+</section>
+
+<section aria-labelledby="tst" style="display: flex; flex-direction: column">
+<div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding-bottom: 6px">
+<h2 id="tst" style="margin: 0; font-size: 13px; font-weight: 600">Tests</h2>
+
+
+</div>
+<dl style="margin: 0; display: grid; grid-template-columns: minmax(120px, 220px) 1fr">
+<dt style="padding: 7px 12px 7px 0; font-size: 12px; color: #85837e">Test command</dt><dd style="margin: 0; padding: 7px 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px"><input type="text" value="[the project's test command]" style="height: 26px; box-sizing: border-box; padding: 0 8px; border: 1px solid #2c2c32; border-radius: 3px; background: #101013; color: #dedcd8; font: inherit; font-size: 12px; width: 320px; font-family: 'JetBrains Mono', monospace; font-size: 11.5px"></dd>
+<dt style="padding: 7px 12px 7px 0; font-size: 12px; color: #85837e; border-top: 1px solid #18181c">Give up after</dt><dd style="margin: 0; padding: 7px 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; border-top: 1px solid #18181c"><input type="text" value="30" style="height: 26px; box-sizing: border-box; padding: 0 8px; border: 1px solid #2c2c32; border-radius: 3px; background: #101013; color: #dedcd8; font: inherit; font-size: 12px; width: 50px"><span style="font-size: 12px; color: #85837e">minutes</span></dd>
+</dl>
+</section>
+
+<section aria-labelledby="ntf" style="display: flex; flex-direction: column">
+<div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding-bottom: 6px">
+<h2 id="ntf" style="margin: 0; font-size: 13px; font-weight: 600">Notifications and history</h2>
+
+
+</div>
+<dl style="margin: 0; display: grid; grid-template-columns: minmax(120px, 220px) 1fr">
+<dt style="padding: 7px 12px 7px 0; font-size: 12px; color: #85837e">Tell me</dt><dd style="margin: 0; padding: 7px 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px"><select style="height: 26px; box-sizing: border-box; padding: 0 8px; border: 1px solid #2c2c32; border-radius: 3px; background: #101013; color: #dedcd8; font: inherit; font-size: 12px; padding: 0 6px"><option>When something needs me</option><option>About everything</option><option>Never</option></select><span style="font-size: 12px; color: #85837e">Channels are set up in workspace settings</span></dd>
+<dt style="padding: 7px 12px 7px 0; font-size: 12px; color: #85837e; border-top: 1px solid #18181c">Keep history</dt><dd style="margin: 0; padding: 7px 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; border-top: 1px solid #18181c"><select style="height: 26px; box-sizing: border-box; padding: 0 8px; border: 1px solid #2c2c32; border-radius: 3px; background: #101013; color: #dedcd8; font: inherit; font-size: 12px; padding: 0 6px"><option>Forever</option><option>[n] days</option></select><span style="font-size: 12px; color: #85837e">events, runs and prompts</span></dd>
+</dl>
+</section>
+
+<section aria-labelledby="mch" style="display: flex; flex-direction: column">
+<div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding-bottom: 6px">
+<h2 id="mch" style="margin: 0; font-size: 13px; font-weight: 600">This machine</h2>
+<span style="font-size: 12px; color: #85837e">Shown here, changed from a terminal.</span>
+
+</div>
+<dl style="margin: 0; display: grid; grid-template-columns: minmax(120px, 220px) 1fr">
+<dt style="padding: 7px 12px 7px 0; font-size: 12px; color: #85837e">Working copies</dt><dd style="margin: 0; padding: 7px 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px"><span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #a3a19c">[worktree root on this machine]</span></dd>
+<dt style="padding: 7px 12px 7px 0; font-size: 12px; color: #85837e; border-top: 1px solid #18181c">Set up a working copy with</dt><dd style="margin: 0; padding: 7px 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; border-top: 1px solid #18181c"><span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #a3a19c">[setup command]</span></dd>
+</dl>
+</section>
+
+<div style="display: flex; gap: 6px"><button type="button" style="height: 26px; padding: 0 10px; border: 1px solid #34343a; border-radius: 3px; background: transparent; color: #dedcd8; font: inherit; font-size: 12px; cursor: pointer">Save changes</button><button type="button" style="height: 24px; padding: 0 9px; border: 1px solid #34343a; border-radius: 3px; background: transparent; color: #a3a19c; font: inherit; font-size: 12px; cursor: pointer; height: 26px">Discard</button></div>
+</main>
+</div>
+</body>
+</html>
