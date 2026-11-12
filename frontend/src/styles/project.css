@@ -26,7 +26,14 @@
   min-width: 0;
 }
 
-.project__settings {
+.project__pages {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-5);
+}
+
+.project__page-link {
   display: inline-flex;
   align-items: center;
   gap: var(--icon-gap);
@@ -230,16 +237,7 @@
   margin-top: var(--space-3);
 }
 
-/* The backlog: a line under the sprint queue, and a page of its own */
-.queue__backlog {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--row-inset);
-  border-top: var(--line-width) solid var(--color-line-row);
-}
-
+/* The backlog: a page of its own */
 .backlog-page {
   display: flex;
   flex-direction: column;
