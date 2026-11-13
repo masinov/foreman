@@ -576,3 +576,33 @@ select.field__input {
   color: var(--color-text-secondary);
   font-size: var(--font-size-control);
 }
+
+/* A menu opened from a bordered button ("More"), beside other buttons */
+.menu__trigger.menu__trigger--button {
+  height: var(--control-height);
+  padding: 0 var(--control-padding-inline);
+  border: var(--line-width) solid var(--color-border-control);
+  border-radius: var(--radius);
+  font-size: var(--font-size-control);
+  font-weight: var(--font-weight-medium);
+}
+
+.menu__trigger.menu__trigger--button:hover {
+  background: var(--color-selected);
+  color: var(--color-text);
+}
+
+/* A button that is only an icon; its name is its aria-label. */
+.button--icon {
+  width: var(--control-height-row);
+  padding-inline: 0;
+}
+
+.button--icon .icon {
+  margin-right: 0;
+}
+
+/* A control that cannot be used here is fainter than one that can. */
+.button--icon:disabled {
+  color: var(--color-border-control);
+}

@@ -1,11 +1,15 @@
-import React from "react";
+import React, { useState } from "react";
 
 import { listMilestones } from "../../api/milestones";
 import { useDelayedFlag, useResource } from "../../api/useResource";
 import { getWorkspace } from "../../api/workspace";
+import { paths } from "../../app/paths";
+import { useNavigate } from "../../app/router";
+import { Button } from "../../ui/Button";
 import { SectionHeading } from "../../ui/SectionHeading";
 import { MilestoneTable } from "../shared/milestones";
 import { NeedsYou } from "../shared/NeedsYou";
+import { AddProjectDialog } from "./AddProjectDialog";
 import { ProjectsTable } from "./ProjectsTable";
 
 import "../../styles/lists.css";
@@ -26,6 +30,8 @@ export function WorkspacePage() {
   );
   const placeholder = useDelayedFlag(workspace.loading && !workspace.data);
   const recentPlaceholder = useDelayedFlag(recent.loading && !recent.data);
+  const [adding, setAdding] = useState(false);
+  const navigate = useNavigate();
 
   return (
     <div className="workspace">
@@ -36,7 +42,15 @@ export function WorkspacePage() {
         onChanged={workspace.reload}
       />
       <section className="workspace__section" aria-labelledby="projects-title">
-        <SectionHeading id="projects-title" title="Projects" />
+        <SectionHeading
+          id="projects-title"
+          title="Projects"
+          actions={
+            <Button icon="plus" onClick={() => setAdding(true)}>
+              Add project
+            </Button>
+          }
+        />
         {workspace.error ? (
           <p className="notice notice--error" role="alert">
             {workspace.error}
@@ -63,6 +77,15 @@ export function WorkspacePage() {
           <MilestoneTable caption="Recent milestones" items={recent.data.items} showProject />
         ) : null}
       </section>
+      <AddProjectDialog
+        open={adding}
+        onClose={() => setAdding(false)}
+        onAdded={(project) => {
+          setAdding(false);
+          workspace.reload();
+          if (project?.id) navigate(paths.project(project.id));
+        }}
+      />
     </div>
   );
 }

@@ -2,11 +2,15 @@ import React, { useState } from "react";
 
 import { useApiClient } from "../../api/ApiProvider";
 import { errorSentence } from "../../api/client";
-import { SPRINT_STATUSES, transitionSprint } from "../../api/sprints";
+import { deleteSprint, SPRINT_STATUSES, transitionSprint } from "../../api/sprints";
+import { paths } from "../../app/paths";
+import { useNavigate } from "../../app/router";
 import { Button } from "../../ui/Button";
+import { Menu } from "../../ui/Menu";
 import { Mono } from "../../ui/Mono";
 import { formatDay, formatMoney, formatTokens } from "../../ui/format";
 import { TaskCounts } from "../shared/TaskCounts";
+import { ReasonDialog } from "../shared/ReasonDialog";
 import { EditSprintDialog } from "./EditSprintDialog";
 
 // The one state change that applies to a sprint now.
@@ -14,6 +18,35 @@ const STATE_ACTIONS = {
   [SPRINT_STATUSES.planned]: { label: "Activate sprint", doing: "Activating…", target: SPRINT_STATUSES.active },
   [SPRINT_STATUSES.active]: { label: "Finish sprint", doing: "Finishing…", target: SPRINT_STATUSES.completed },
 };
+
+/**
+ * What More offers, each with what will happen in words. Cancel exists while
+ * a sprint is planned or active; delete always.
+ */
+export const SPRINT_ACTIONS = {
+  cancel: {
+    label: "Cancel sprint",
+    title: "Cancel this sprint",
+    effect:
+      "The sprint is closed as cancelled and nothing in it runs again. Its tasks and their history stay. It cannot be reopened.",
+    confirm: "Cancel sprint",
+    doing: "Cancelling…",
+    run: (client, sprint) => transitionSprint(client, sprint.id, SPRINT_STATUSES.cancelled),
+  },
+  delete: {
+    label: "Delete sprint",
+    title: "Delete this sprint",
+    effect: "The sprint, its tasks, their runs and their history are deleted. This cannot be undone.",
+    confirm: "Delete sprint",
+    doing: "Deleting…",
+    run: (client, sprint) => deleteSprint(client, sprint.id),
+  },
+};
+
+export function sprintActionsFor(sprint) {
+  const open = sprint.status === SPRINT_STATUSES.planned || sprint.status === SPRINT_STATUSES.active;
+  return open ? ["cancel", "delete"] : ["delete"];
+}
 
 function stateSentence(sprint) {
   const started = formatDay(sprint.started_at);
@@ -42,6 +75,9 @@ export function SprintHead({ sprint, onChanged }) {
   const [pending, setPending] = useState(false);
   const [refusal, setRefusal] = useState(null);
   const action = STATE_ACTIONS[sprint.status] ?? null;
+  const navigate = useNavigate();
+  const [chosen, setChosen] = useState(null);
+  const more = chosen ? SPRINT_ACTIONS[chosen] : null;
 
   async function changeState() {
     setPending(true);
@@ -71,8 +107,35 @@ export function SprintHead({ sprint, onChanged }) {
               {pending ? action.doing : action.label}
             </Button>
           ) : null}
+          <Menu
+            label="Sprint actions"
+            trigger="More"
+            className="sprint__more"
+            triggerClassName="menu__trigger--button"
+            items={sprintActionsFor(sprint).map((name) => ({
+              key: name,
+              label: SPRINT_ACTIONS[name].label,
+              onSelect: () => setChosen(name),
+            }))}
+          />
         </div>
       </div>
+      <ReasonDialog
+        open={Boolean(more)}
+        title={more?.title}
+        effect={more?.effect}
+        confirm={more?.confirm}
+        doing={more?.doing}
+        run={() => more.run(client, sprint)}
+        onClose={() => setChosen(null)}
+        onDone={() => {
+          const name = chosen;
+          setChosen(null);
+          // A deleted sprint has no page; go to the project it was in.
+          if (name === "delete") navigate(paths.project(sprint.project_id));
+          else onChanged();
+        }}
+      />
       {refusal ? (
         <p className="notice notice--error" role="alert">
           {refusal}

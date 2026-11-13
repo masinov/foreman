@@ -35,7 +35,7 @@ says so.
 | See a project's token total (sprint, else all time) | `GET /projects` | `/dashboard` | built as sprint spend in dollars |
 | See a project's task selection mode and workflow name on its card | `GET /projects` | project settings | slice 10 |
 | Open a project | none | `/dashboard/projects/{id}` | built |
-| Register a project: name, repository path, workflow | `POST /projects` | `/dashboard` (design: "Add a project") | **no home yet** |
+| Register a project: name, repository path, workflow | `POST /projects` | `/dashboard`, Projects ("Add project") | built |
 | Switch project from the breadcrumb, each with its engine state | `GET /projects` | breadcrumb | built (switcher with counts of items needing you is in the design; the breadcrumb lists projects) |
 
 ## Project (legacy: the sprint queue)
@@ -52,12 +52,12 @@ says so.
 | See finished sprints, with task counts and spend, behind a disclosure | `GET /projects/{id}/sprints` | `/dashboard/projects/{id}` | built |
 | Create a sprint with a title and goal | `POST /projects/{id}/sprints` | `/dashboard/projects/{id}` | built |
 | Create a sprint with its first tasks in one step | `POST /projects/{id}/sprints` (`initial_tasks`) | backlog: plan into a new sprint | built (the design gets there by planning backlog work) |
-| Drag planned sprints into run order | `PATCH /sprints/{id}` (`order_index`) | project page, queue | **no home yet** |
+| Drag planned sprints into run order | `POST /sprints/{id}/move` | project page, queue (Order: earlier, later) | built as two buttons per planned sprint, not dragging; the move is one transaction on the server |
 | Expand a planned sprint in place to edit its goal, add tasks and remove tasks | `PATCH /sprints/{id}`, `GET`/`POST /sprints/{id}/tasks`, `DELETE /tasks/{id}` | sprint page | built for edit and adding work from the backlog; removing a task is built on the task page (More: cancel, delete) |
 | Activate a planned sprint | `PATCH /sprints/{id}` (`status`) | `/dashboard/sprints/{id}` ("Activate sprint") | built |
 | Complete a sprint | `PATCH /sprints/{id}` (`status: completed`) | `/dashboard/sprints/{id}` ("Finish sprint") | built |
-| Cancel a sprint | `PATCH /sprints/{id}` (`status: cancelled`) | none | **no home yet** |
-| Delete a sprint | `DELETE /sprints/{id}` | none | **no home yet** |
+| Cancel a sprint | `PATCH /sprints/{id}` (`status: cancelled`) | sprint page, More | built |
+| Delete a sprint | `DELETE /sprints/{id}` | sprint page, More | built |
 | Resolve a pending decision about sprint order: accept the suggested order, keep the current order, or dismiss, with the conflict and the suggested order shown | `GET /projects/{id}/gates`, `PATCH /gates/{id}` | workspace and project pages, Needs you ("Settle sprint order") | built for accept and reject. Reject keeps the current order, so "keep" and "dismiss" are one action; the API still accepts `dismissed` |
 | Read the manager conversation, send a message, clear the session, load older messages | `POST /projects/{id}/meta/message`, `GET /projects/{id}/meta/history`, `DELETE /projects/{id}/meta/session` | manager side bar | built |
 | A resizable manager panel, collapsed by default | none | manager side bar | built as the design draws it (toggled from the top bar and remembered); resizing is not in the design, dropped |
@@ -73,7 +73,7 @@ says so.
 | See the tasks as a list | `GET /sprints/{id}/tasks` | `/dashboard/sprints/{id}` | built |
 | Add a task to the sprint: title, type, description, acceptance criteria, complexity, dependencies | `POST /sprints/{id}/tasks` | sprint page | built as adding work from the backlog; filing a new task is on the backlog tab (title, description and criteria; type, complexity and dependencies are not in the design) |
 | Run, pause and resume the engine from the sprint | `POST /projects/{id}/agent/start`, `/agent/stop` | sprint page, engine menu | built |
-| Cancel the sprint, delete it | `PATCH`/`DELETE /sprints/{id}` | none | **no home yet** (see Project) |
+| Cancel the sprint, delete it | `PATCH`/`DELETE /sprints/{id}` | sprint page, More | built |
 | Approve, deny, stop or accept a task from its card | `POST /tasks/{id}/approve`, `/deny`, `/stop`, `/accept` | task page; Needs you; sprint list and board | approve a merge is built (Needs you, sprint list and board); approve, send back (deny), stop and accept are built on the task page |
 | Activity stream for the sprint, newest at the bottom, auto-scroll, load older events | `GET /sprints/{id}/events`, `GET /sprints/{id}/stream` | sprint page, Activity | built for steps and loading earlier; live updates are slice 12 |
 | Filter activity: All, Agent, Workflow, Decisions, Human | `GET /sprints/{id}/events` | sprint page, Activity | **no home yet** (the design shows milestones and steps, no filter) |
@@ -138,11 +138,10 @@ it is dropped and why. The CLI command, where there is one, is the way to do
 it meanwhile (docs/MANUAL.md).
 
 1. The access-token prompt on a 401 response.
-2. Register a project from the dashboard (`foreman init`).
-3. Drag planned sprints into run order (`foreman sprint` has no reorder
-   command; the order is `order_index` on the sprint).
-4. Cancel and delete a sprint (`foreman sprint complete` closes one; there is
-   no CLI command for cancel or delete). Activate and finish are built.
+2. Built: register a project from the dashboard (workspace, "Add project").
+3. Built: planned sprints are moved earlier or later from the project's
+   queue (`POST /sprints/{id}/move`).
+4. Built: cancel and delete a sprint (sprint page, More).
 5. A project's token total in the top bar.
 6. Filtering the activity stream by kind.
 7. Task details beyond the design's Overview: worktree path, priority, token

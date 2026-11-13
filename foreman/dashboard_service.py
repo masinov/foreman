@@ -1329,6 +1329,19 @@ class DashboardService:
             "command": _serialize_engine_command(command),
         }
 
+    def move_sprint(self, sprint_id: str, *, direction: str) -> dict[str, Any]:
+        """Move a planned sprint one place up or down the queue; return the planned order."""
+
+        sprint = self._require_sprint(sprint_id)
+        try:
+            sprint = self._mutations().move_sprint(sprint, direction)
+        except MutationError as exc:
+            raise DashboardValidationError(str(exc)) from exc
+        planned = [
+            entry.id for entry in self.store.list_sprints(sprint.project_id) if entry.status == "planned"
+        ]
+        return {"id": sprint.id, "order_index": sprint.order_index, "planned_order": planned}
+
     def delete_sprint(self, sprint_id: str) -> dict[str, Any]:
         """Delete a sprint and all its tasks, runs, and events."""
 

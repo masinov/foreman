@@ -4,7 +4,7 @@ import { useApiClient } from "../../api/ApiProvider";
 import { runTaskNext } from "../../api/engine";
 import { blockTask, cancelTask, deleteTask, stopTask, unblockTask } from "../../api/tasks";
 import { Menu } from "../../ui/Menu";
-import { ReasonDialog } from "./ReasonDialog";
+import { ReasonDialog } from "../shared/ReasonDialog";
 
 /**
  * What a person can do to a task from the More menu, each with what will
@@ -101,7 +101,7 @@ export function TaskActions({ task, onDone }) {
       <Menu
         label="Task actions"
         trigger="More"
-        triggerClassName="task__more"
+        triggerClassName="menu__trigger--button"
         items={actionsFor(task).map((name) => ({
           key: name,
           label: TASK_ACTIONS[name].label,

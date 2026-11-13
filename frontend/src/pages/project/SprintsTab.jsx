@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react";
 
-import { listProjectSprints, SPRINT_STATUSES } from "../../api/sprints";
+import { useApiClient } from "../../api/ApiProvider";
+import { errorSentence } from "../../api/client";
+import { listProjectSprints, moveSprint, SPRINT_STATUSES } from "../../api/sprints";
 import { useDelayedFlag, useResource } from "../../api/useResource";
 import { paths } from "../../app/paths";
 import { Link } from "../../app/router";
@@ -95,6 +97,64 @@ export function SprintsTab({ projectId, revision }) {
   const planned = sprints.filter((sprint) => sprint.status === SPRINT_STATUSES.planned);
   const shownPlanned = allPlanned ? planned : planned.slice(0, PLANNED_CAP);
 
+  const client = useApiClient();
+  const [moving, setMoving] = useState(false);
+  const [moveError, setMoveError] = useState(null);
+  async function move(sprint, direction) {
+    setMoving(true);
+    setMoveError(null);
+    setNotice(null);
+    try {
+      await moveSprint(client, sprint.id, direction);
+      reload();
+    } catch (error) {
+      setMoveError(errorSentence(error));
+    } finally {
+      setMoving(false);
+    }
+  }
+  // The order of planned sprints is the order they will run in, and a person
+  // can change it. With one planned sprint there is nothing to reorder.
+  const columns =
+    planned.length > 1
+      ? [
+          ...COLUMNS,
+          {
+            key: "order",
+            header: "Order",
+            className: "queue__order",
+            render: (sprint) => {
+              const index = planned.findIndex((entry) => entry.id === sprint.id);
+              if (index < 0) return null;
+              return (
+                <span className="queue__move">
+                  <Button
+                    variant="quiet"
+                    inRow
+                    icon="up"
+                    className="button--icon"
+                    disabled={moving || index === 0}
+                    aria-label={`Move ${sprint.title} earlier`}
+                    title="Run earlier"
+                    onClick={() => move(sprint, "up")}
+                  />
+                  <Button
+                    variant="quiet"
+                    inRow
+                    icon="down"
+                    className="button--icon"
+                    disabled={moving || index === planned.length - 1}
+                    aria-label={`Move ${sprint.title} later`}
+                    title="Run later"
+                    onClick={() => move(sprint, "down")}
+                  />
+                </span>
+              );
+            },
+          },
+        ]
+      : COLUMNS;
+
   return (
     <div className="sprints-tab">
       <section className="queue" aria-labelledby="queue-title">
@@ -118,9 +178,14 @@ export function SprintsTab({ projectId, revision }) {
             {queue.error}
           </p>
         ) : null}
+        {moveError ? (
+          <p className="notice notice--error" role="alert">
+            {moveError}
+          </p>
+        ) : null}
         {placeholder ? <Table caption="Sprint queue" columns={COLUMNS} placeholderRows={2} /> : null}
         {queue.data && sprints.length > 0 ? (
-          <Table caption="Sprint queue" columns={COLUMNS} rows={[...active, ...shownPlanned]} />
+          <Table caption="Sprint queue" columns={columns} rows={[...active, ...shownPlanned]} />
         ) : null}
         {queue.data ? <EmptyQueue active={active} planned={planned} /> : null}
         {planned.length > PLANNED_CAP ? (

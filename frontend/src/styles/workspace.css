@@ -21,3 +21,7 @@
 .workspace .table:not(.milestones) {
   min-width: var(--table-min-width);
 }
+
+.workspace .section-heading {
+  align-items: center;
+}

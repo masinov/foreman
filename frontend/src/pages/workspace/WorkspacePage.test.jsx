@@ -178,3 +178,44 @@ describe("WorkspacePage", () => {
     expect(screen.queryByText("FOR-106")).toBeNull();
   });
 });
+
+describe("adding a project", () => {
+  it("registers a repository and opens the new project", async () => {
+    const routes = workspaceRoutes();
+    routes["GET /api/v1/workflows"] = { workflows: [{ id: "development", name: "Standard Development" }, { id: "light", name: "Light" }] };
+    routes["POST /api/v1/projects"] = { id: "shop", name: "Shop", repo_path: "/srv/shop", workflow_id: "light" };
+    const fetchImpl = createFakeFetch(routes);
+    renderApp("/dashboard", fetchImpl);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Add project" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add a project" });
+    // Nothing is sent until both the name and the folder are given.
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add project" }));
+    expect(within(dialog).getByText("A project needs a name.")).toBeInTheDocument();
+    expect(within(dialog).getByText("Say where the repository is.")).toBeInTheDocument();
+    expect(fetchImpl.calls.some((call) => call.method === "POST")).toBe(false);
+
+    fireEvent.change(within(dialog).getByLabelText(/^Name/), { target: { value: " Shop " } });
+    fireEvent.change(within(dialog).getByLabelText(/^Repository folder/), { target: { value: "/srv/shop" } });
+    await within(dialog).findByRole("option", { name: "Light" });
+    fireEvent.change(within(dialog).getByLabelText("Workflow"), { target: { value: "light" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add project" }));
+
+    await waitFor(() => expect(window.location.pathname).toBe("/dashboard/projects/shop"));
+    const sent = fetchImpl.calls.find((call) => call.method === "POST" && call.url === "/api/v1/projects");
+    expect(sent.body).toEqual({ name: "Shop", repo_path: "/srv/shop", workflow_id: "light" });
+  });
+
+  it("keeps the dialog open with the API's sentence when the folder is refused", async () => {
+    const routes = workspaceRoutes();
+    routes["GET /api/v1/workflows"] = { workflows: [{ id: "development", name: "Standard Development" }] };
+    routes["POST /api/v1/projects"] = reply(400, { error: "Repo path does not exist: /nowhere", code: "invalid_request" });
+    renderApp("/dashboard", createFakeFetch(routes));
+    fireEvent.click(await screen.findByRole("button", { name: "Add project" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add a project" });
+    fireEvent.change(within(dialog).getByLabelText(/^Name/), { target: { value: "Shop" } });
+    fireEvent.change(within(dialog).getByLabelText(/^Repository folder/), { target: { value: "/nowhere" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add project" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("Repo path does not exist: /nowhere");
+  });
+});

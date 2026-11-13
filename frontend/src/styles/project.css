@@ -251,3 +251,20 @@ a.button:hover {
   flex-direction: column;
   gap: var(--space-1);
 }
+
+.table th.queue__order,
+.table td.queue__order {
+  width: var(--column-min-width);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.table td.queue__order {
+  padding-block: var(--space-1);
+  vertical-align: middle;
+}
+
+.queue__move {
+  display: inline-flex;
+  gap: var(--space-1);
+}

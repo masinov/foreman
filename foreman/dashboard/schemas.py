@@ -36,6 +36,10 @@ class ProjectCreate(_Body):
     workflow_id: str = "development"
 
 
+class SprintMove(_Body):
+    direction: str = ""
+
+
 class SprintCreate(_Body):
     title: str = ""
     goal: str | None = None
