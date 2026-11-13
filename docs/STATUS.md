@@ -16,7 +16,7 @@ Current snapshot only. History up to 2026-09-08 (sprints 1 to 54) is in
   `docs/design/dashboard-v7/` (ADR-0020). Every page of the design exists,
   and everything the old dashboard could do has a place or is dropped on
   purpose (`docs/design/dashboard-v7/legacy-capabilities.md`). What remains
-  of the sprint is ESLint and the closing checkpoint.
+  of the sprint is the closing checkpoint.
 - Nineteen tasks of the sprint were run by Foreman itself. On
   2026-11-13 the owner asked for the engine to be stopped and the rest done
   by hand; it has been since. What the engine did well and badly is in
@@ -115,7 +115,7 @@ review, human gate, deferred approval, merge). Still true: agents run with full 
 ## Validation baseline
 
 - `./venv/bin/python -m unittest discover -s tests` (1334 tests)
-- `npm --prefix frontend test` (356 tests) and `npm --prefix frontend run build`
+- `npm --prefix frontend run lint`, `npm --prefix frontend test` (356 tests) and `npm --prefix frontend run build`
 - `ruff check foreman tests scripts` (pyflakes and syntax rules)
 - `./venv/bin/python scripts/validate_repo_memory.py`
 - CI runs all of the above; its Python job builds the frontend first, since

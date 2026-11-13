@@ -40,7 +40,6 @@ None is fixed. Each is a candidate for the next engine sprint.
 - FOR-42: restrict the manager session's tools to the read surface.
 - FOR-43: the proposal card's "Then" row for a send-back, and a summary line
   for earlier proposals.
-- ESLint with a `lint` script and a CI step.
 
 ## Finish plan — `docs/reviews/2026-11-10-full-review-and-finish-plan.md`
 

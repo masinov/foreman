@@ -11,8 +11,6 @@ import {
   stepEvent,
   TASKS,
   taskPayload,
-  WORKFLOW,
-  WORKFLOW_URL,
 } from "../../testing/sprintFixture";
 import { engine, workspacePayload } from "../../testing/workspaceFixture";
 

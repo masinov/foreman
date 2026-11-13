@@ -57,7 +57,6 @@ function GeneralForm({ projectId, settings, onSaved }) {
   // The draft starts over only when the values read are different, never
   // because the same values arrived again, so typing is not wiped.
   const read = JSON.stringify(toDraft(sourceOf(settings)));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const initial = useMemo(() => JSON.parse(read), [read]);
   const [draft, setDraft] = useState(initial);
   const [errors, setErrors] = useState({});
