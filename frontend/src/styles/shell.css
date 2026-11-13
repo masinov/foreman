@@ -236,3 +236,23 @@
   left: auto;
   right: 0;
 }
+
+/* Sign in: one short column */
+.sign-in {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: var(--dialog-width);
+  padding-top: var(--space-5);
+}
+
+.sign-in__text {
+  color: var(--color-text-secondary);
+}
+
+.sign-in__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-top: var(--space-2);
+}

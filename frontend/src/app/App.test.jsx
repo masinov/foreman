@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { ROUTES } from "./routes";
 import { RebuildingPage } from "../pages/status/RebuildingPage";
 
-import { createFakeFetch, renderApp } from "../testing/fakeApi";
+import { createFakeFetch, renderApp, reply } from "../testing/fakeApi";
 import { workspaceRoutes } from "../testing/workspaceFixture";
 import { settingsRoutes } from "../testing/settingsFixture";
 
@@ -110,5 +110,44 @@ describe("App routing and shell", () => {
     link.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0, ctrlKey: true }));
     expect(preventedByApp).toBe(false);
     expect(window.location.pathname).toBe("/dashboard/settings");
+  });
+});
+
+describe("signing in", () => {
+  const refusal = () => reply(401, { error: "Unauthorized: a dashboard token is required.", code: "unauthorized" });
+
+  afterEach(() => window.localStorage.clear());
+
+  it("asks for the access token when the server wants one, tries it, keeps it and shows the dashboard", async () => {
+    const routes = workspaceRoutes();
+    const open = { ...routes };
+    for (const key of Object.keys(routes)) routes[key] = refusal;
+    const fetchImpl = createFakeFetch(routes);
+    renderApp("/dashboard", fetchImpl);
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Sign in" })).toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "Breadcrumb" })).toBeNull();
+
+    // An empty answer and a wrong token each say so; nothing is kept.
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    expect(screen.getByText("Paste the access token.")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(/^Access token/), { target: { value: "wrong" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    expect(await screen.findByText("The server did not accept that token.")).toBeInTheDocument();
+    expect(window.localStorage.getItem("foreman.dashboard.token")).toBeNull();
+
+    // The right one is presented as a bearer token, then kept.
+    Object.assign(routes, open);
+    fireEvent.change(screen.getByLabelText(/^Access token/), { target: { value: " s3cret " } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    expect(await screen.findByRole("region", { name: /Needs you/ })).toBeInTheDocument();
+    expect(window.localStorage.getItem("foreman.dashboard.token")).toBe("s3cret");
+    expect(fetchImpl.headers.some((headers) => headers.Authorization === "Bearer s3cret")).toBe(true);
+  });
+
+  it("does not ask when the server wants no token", async () => {
+    renderApp("/dashboard", createFakeFetch(workspaceRoutes()));
+    await screen.findByRole("region", { name: /Needs you/ });
+    expect(screen.queryByRole("heading", { name: "Sign in" })).toBeNull();
   });
 });

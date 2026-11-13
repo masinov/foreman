@@ -141,10 +141,11 @@ describe("WorkspacePage", () => {
 
   it("shows an API error as a sentence", async () => {
     const routes = workspaceRoutes();
-    routes["GET /api/v1/workspace"] = reply(401, { error: "Unauthorized: a dashboard token is required.", code: "unauthorized" });
+    // (A 401 is not shown in the page: it brings up the sign-in page. See App.test.)
+    routes["GET /api/v1/workspace"] = reply(500, { error: "The database is locked", code: "internal_error" });
     renderApp("/dashboard", createFakeFetch(routes));
     expect(await within(await screen.findByRole("region", { name: "Projects" })).findByRole("alert")).toHaveTextContent(
-      "Unauthorized: a dashboard token is required.",
+      "The database is locked.",
     );
   });
 
