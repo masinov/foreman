@@ -96,10 +96,27 @@ describe("the list", () => {
     expect(row).toHaveTextContent("tests · review · b232eb1");
     expect(within(row).getByText("12")).toBeInTheDocument();
     expect(within(row).getByText("$0.72")).toBeInTheDocument();
-    expect(within(screen.getByText("FOR-13").closest("tr")).getByText("Running, test")).toBeInTheDocument();
+    // The fixture's engine is on another task, so FOR-13 is not running.
+    expect(await within(screen.getByText("FOR-13").closest("tr")).findByText("Stopped at test")).toBeInTheDocument();
     expect(within(screen.getByText("FOR-17").closest("tr")).getByText("Queued")).toBeInTheDocument();
     expect(within(screen.getByText("FOR-10").closest("tr")).getByText("Done")).toBeInTheDocument();
     expect(within(screen.getByText("FOR-17").closest("tr")).getByText("Not checked yet")).toBeInTheDocument();
+  });
+
+  it("says a task is running only while the engine is on it", async () => {
+    const expectStage = async (state, task, words) => {
+      const routes = sprintRoutes();
+      const workspace = workspacePayload();
+      workspace.projects[0].engine = engine(state, task);
+      routes["GET /api/v1/workspace"] = workspace;
+      const view = await renderSprint("/dashboard/sprints/sprint-56", routes);
+      expect(await within(screen.getByText("FOR-13").closest("tr")).findByText(words)).toBeInTheDocument();
+      view.unmount();
+    };
+    const onIt = { id: "t-run", task_key: "FOR-13", title: "x", step: "test" };
+    await expectStage("running", onIt, "Running, test");
+    await expectStage("paused", onIt, "Paused at test");
+    await expectStage("not_running", null, "Stopped at test");
   });
 
   it("offers Approve only where a merge approval waits, and approving reloads", async () => {
