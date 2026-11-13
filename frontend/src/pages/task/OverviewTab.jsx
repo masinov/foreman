@@ -235,7 +235,7 @@ function MoreDetails({ task }) {
       term: "Tokens",
       value: (
         <Mono>
-          {`${formatTokens(usage.input)} in · ${formatTokens(usage.output)} out · ${formatTokens(usage.cache_read)} read from cache`}
+          {`${formatTokens(usage.input)} in · ${formatTokens(usage.output)} out · ${formatTokens(usage.cache_read)} cached`}
         </Mono>
       ),
     },
