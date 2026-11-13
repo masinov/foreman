@@ -28,7 +28,7 @@ describe("the page around project settings", () => {
     await renderGeneral();
     const crumbs = screen.getByRole("navigation", { name: "Breadcrumb" });
     expect(within(crumbs).queryByRole("link", { name: "Workspace" })).toBeNull();
-    expect(await within(crumbs).findByRole("link", { name: "Foreman" })).toHaveAttribute(
+    expect(await within(crumbs).findByRole("link", { name: /^Foreman/ })).toHaveAttribute(
       "href",
       "/dashboard/projects/foreman",
     );

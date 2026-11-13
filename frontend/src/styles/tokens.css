@@ -137,5 +137,10 @@
   --placeholder-bar-height: 9px;
   --placeholder-bar-width: 60%;
   --column-min-width: 120px;
+  --board-column-width: 220px;
+  --board-column-empty-width: 88px;
+  --settings-label-width: 240px;
+  --checks-check-width: 160px;
+  --checks-result-width: 220px;
   --table-min-width: 720px;
 }

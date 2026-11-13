@@ -277,6 +277,7 @@ export function BacklogTab({ projectId, revision, onChanged }) {
             id="backlog-filed"
             title="Filed, not accepted"
             count={counts.filed ?? 0}
+            attention
             note={triageSentence(triage)}
           />
           {filed.length > 0 ? (

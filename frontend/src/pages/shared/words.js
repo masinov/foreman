@@ -21,6 +21,9 @@ const COUNT_WORDS = [
   ["in_progress", "in progress"],
   ["todo", "to do"],
   ["done", "done"],
+  // Cancelled tasks are still rows in the sprint's list, so the counts say
+  // so: the parts add up to the number of rows.
+  ["cancelled", "cancelled"],
 ];
 
 export function describeTaskCounts(counts) {

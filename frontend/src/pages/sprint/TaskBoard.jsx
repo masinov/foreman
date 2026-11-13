@@ -47,7 +47,11 @@ export function TaskBoard({ tasks, workflow, busy, onApprove }) {
     <>
       <div className="board">
         {columns.map((column) => (
-          <section key={column.key} className="board__column" aria-label={column.label}>
+          <section
+            key={column.key}
+            className={column.tasks.length === 0 ? "board__column board__column--empty" : "board__column"}
+            aria-label={column.label}
+          >
             <h3 className="board__heading">
               {column.label}
               <span className={column.needsYou ? "board__count board__count--attention" : "board__count"}>

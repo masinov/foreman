@@ -103,8 +103,7 @@
   color: var(--color-text-quiet);
 }
 
-.task-section__foot a,
-.task-checks-line__open {
+.task-section__foot a {
   color: var(--color-text-secondary);
 }
 
@@ -128,11 +127,6 @@
   white-space: nowrap;
 }
 
-.task-steps__runs,
-.task-runs__number {
-  text-align: right;
-  white-space: nowrap;
-}
 
 .task-checks-line {
   display: flex;
@@ -141,10 +135,6 @@
   color: var(--color-text-secondary);
 }
 
-.task-checks-line__open {
-  margin-left: auto;
-  font-size: var(--font-size-control);
-}
 
 .guidance {
   display: flex;
@@ -350,11 +340,15 @@
   color: var(--color-text-quiet);
 }
 
+/* The two tables on Checks keep the same columns, so facts and claims line
+   up under each other. */
 .task-checks__check {
+  width: var(--checks-check-width);
   white-space: nowrap;
 }
 
 .task-checks__result {
+  width: var(--checks-result-width);
   white-space: nowrap;
 }
 

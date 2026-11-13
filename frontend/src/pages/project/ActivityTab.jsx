@@ -33,22 +33,25 @@ export function ActivityTab({ projectId }) {
     <section className="activity" aria-labelledby="activity-title">
       <SectionHeading
         id="activity-title"
-        title="Activity"
-        note="Milestones only. Each step is on the sprint page; agent output is on the task page."
+        title="Milestones"
+        note="Each step is on the sprint page; agent output is on the task page."
+        actions={
+          <div className="filter-group" role="group" aria-label="Show">
+            {MILESTONE_FILTERS.map((entry) => (
+              <Button
+                key={entry.key}
+                variant="quiet"
+                inRow
+                className="filter-group__option"
+                aria-pressed={entry.key === filterKey}
+                onClick={() => setFilterKey(entry.key)}
+              >
+                {entry.label}
+              </Button>
+            ))}
+          </div>
+        }
       />
-      <div className="filter-group" role="group" aria-label="Show">
-        {MILESTONE_FILTERS.map((entry) => (
-          <Button
-            key={entry.key}
-            variant="quiet"
-            className="filter-group__option"
-            aria-pressed={entry.key === filterKey}
-            onClick={() => setFilterKey(entry.key)}
-          >
-            {entry.label}
-          </Button>
-        ))}
-      </div>
       {list.error ? (
         <p className="notice notice--error" role="alert">
           {list.error}

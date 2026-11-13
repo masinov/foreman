@@ -41,13 +41,13 @@ export function TaskList({ tasks, busy, onApprove }) {
     {
       key: "runs",
       header: "Runs",
-      className: "task-list__number",
+      numeric: true,
       render: (task) => <Mono>{task.totals?.run_count ?? 0}</Mono>,
     },
     {
       key: "spend",
       header: "Spend",
-      className: "task-list__number",
+      numeric: true,
       render: (task) => <Mono>{formatMoney(task.totals?.total_cost_usd)}</Mono>,
     },
     {

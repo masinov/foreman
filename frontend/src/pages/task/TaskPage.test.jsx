@@ -341,7 +341,7 @@ describe("Overview", () => {
     await waitFor(() => expect(section).toHaveTextContent("1 of 2 acceptance criteria marked met by haiku-5-5"));
     expect(section).toHaveTextContent("Tests passed in 114.2 s at b232eb1");
     expect(section).toHaveTextContent("No evidence files required by this workflow");
-    expect(within(section).getByRole("link", { name: "Open Checks" })).toHaveAttribute("href", `${BASE}/checks`);
+    expect(within(section).getByRole("link", { name: "All checks" })).toHaveAttribute("href", `${BASE}/checks`);
   });
 
   it("shows the details and the task as filed", async () => {

@@ -142,6 +142,10 @@
 }
 
 .section-heading__count {
+  color: var(--color-text-quiet);
+}
+
+.section-heading__count--attention {
   color: var(--color-gold);
 }
 
@@ -212,6 +216,12 @@
 .table td {
   padding: var(--cell-padding-block) var(--cell-padding-inline);
   vertical-align: top;
+}
+
+.table th.table__number,
+.table td.table__number {
+  text-align: right;
+  white-space: nowrap;
 }
 
 /* The first and last cell keep a little room, so that when a row is
@@ -500,4 +510,69 @@
 
 .dialog--wide {
   max-width: var(--dialog-width-wide);
+}
+
+/* Checks: tests · review · commit, each word in the colour of its result */
+.checks {
+  white-space: nowrap;
+  color: var(--color-text-quiet);
+}
+
+.checks__passed {
+  color: var(--color-green);
+}
+
+.checks__failed {
+  color: var(--color-red);
+}
+
+.checks__attention {
+  color: var(--color-gold);
+}
+
+/* A choice of how one list is shown: quiet words, the chosen one shaded. */
+.view-toggle {
+  display: inline-flex;
+  gap: var(--space-1);
+}
+
+.view-toggle__link {
+  display: inline-flex;
+  align-items: center;
+  height: var(--control-height-row);
+  padding-inline: var(--space-2);
+  border-radius: var(--radius);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-control);
+  font-weight: var(--font-weight-medium);
+}
+
+.view-toggle__link:hover {
+  color: var(--color-text);
+}
+
+.view-toggle__link--current {
+  background: var(--color-selected);
+  color: var(--color-text);
+}
+
+/* A drop-down looks like the other inputs, with one caret. */
+select.field__input {
+  appearance: none;
+  padding-right: var(--space-5);
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--color-text-quiet) 50%),
+    linear-gradient(135deg, var(--color-text-quiet) 50%, transparent 50%);
+  background-position:
+    calc(100% - var(--space-3)) 50%,
+    calc(100% - var(--space-2)) 50%;
+  background-size: var(--caret-size) var(--caret-size);
+  background-repeat: no-repeat;
+  cursor: pointer;
+}
+
+/* A quiet link at the right of a section heading, to the fuller view. */
+.section-link {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-control);
 }

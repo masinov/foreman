@@ -36,7 +36,7 @@
 
 .setting-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  grid-template-columns: var(--settings-label-width) minmax(0, 1fr);
   gap: var(--space-1) var(--space-4);
   align-items: start;
   padding-block: var(--space-2);
@@ -131,4 +131,13 @@
   .setting-row {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+.workflow__source {
+  color: var(--color-text-quiet);
+  overflow-wrap: anywhere;
+}
+
+.workflow .section-heading {
+  align-items: center;
 }

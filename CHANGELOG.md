@@ -9,6 +9,7 @@ memory changes rather than versioned product releases.
 
 ### Sprint 58 — frontend rebuild
 
+- Dashboard: one audit pass over every page. Needs you, task counts, headings, numeric columns, the sprint board, the Checks tables, settings forms and the phone-width top bar now follow the same rules (`docs/prs/fix-design-audit.md`).
 - **fix, Backlog is a button, not a tab** (`fix/backlog-is-a-button-not-a-tab`):
   listed between two tabs it was a link to another page that looked like a
   tab. Tabs change what the project page shows (Sprints, Activity); other

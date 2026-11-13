@@ -5,7 +5,8 @@ import React from "react";
  * above the first row or below the last. `tinted` is the variant that sits
  * inside the tinted surface, with its inset row line.
  *
- * `columns` are `{ key, header, render(row), className? }`. `selected(row)`
+ * `columns` are `{ key, header, render(row), className?, numeric? }`; a
+ * numeric column is set to the right, header and figures alike. `selected(row)`
  * marks the row a person picked (its control says so to assistive
  * technology; the row is shaded). While
  * `placeholderRows` is a number, that many placeholder rows stand in for the
@@ -14,6 +15,9 @@ import React from "react";
  * The table scrolls inside its own container, so the page never scrolls
  * sideways at phone width.
  */
+const cellClass = (column) =>
+  [column.className, column.numeric ? "table__number" : ""].filter(Boolean).join(" ") || undefined;
+
 export function Table({
   caption,
   columns,
@@ -34,7 +38,7 @@ export function Table({
         <thead className={hideHeader ? "visually-hidden" : undefined}>
           <tr>
             {columns.map((column) => (
-              <th key={column.key} scope="col" className={column.className}>
+              <th key={column.key} scope="col" className={cellClass(column)}>
                 {column.header}
               </th>
             ))}
@@ -45,7 +49,7 @@ export function Table({
             ? Array.from({ length: placeholderRows }, (_, index) => (
                 <tr key={`placeholder-${index}`} className="table__placeholder" aria-hidden="true">
                   {columns.map((column) => (
-                    <td key={column.key} className={column.className}>
+                    <td key={column.key} className={cellClass(column)}>
                       <span className="table__placeholder-bar" />
                     </td>
                   ))}
@@ -54,7 +58,7 @@ export function Table({
             : rows.map((row) => (
                 <tr key={rowKey(row)} className={selected?.(row) ? "table__row--selected" : undefined}>
                   {columns.map((column) => (
-                    <td key={column.key} className={column.className}>
+                    <td key={column.key} className={cellClass(column)}>
                       {column.render(row)}
                     </td>
                   ))}
