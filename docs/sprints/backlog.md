@@ -26,8 +26,6 @@ None is fixed. Each is a candidate for the next engine sprint.
 - The reviewer approved a 1,310-line change in seven seconds without opening
   a file (the prompt was tightened and the diff cap raised; the behaviour
   needs a real check, such as requiring evidence of files read).
-- There is no command to mark a task done by hand when its work was merged
-  outside the engine (FOR-38 still shows in progress).
 - Two branches that both rebuilt the committed bundle conflicted every time
   (resolved: the bundle is no longer in git).
 

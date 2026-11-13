@@ -57,6 +57,16 @@ export function unblockTask(client, taskId, note, options) {
   return client.post(`${task(taskId)}/unblock`, { note: note || null }, options);
 }
 
+/** Mark a task done by hand, saying why; nothing of its workflow runs. */
+export function completeTask(client, taskId, reason, options) {
+  return client.post(`${task(taskId)}/complete`, { reason }, options);
+}
+
+/** Return a done or cancelled task to the queue. */
+export function reopenTask(client, taskId, options) {
+  return client.post(`${task(taskId)}/reopen`, {}, options);
+}
+
 export function cancelTask(client, taskId, options) {
   return client.post(`${task(taskId)}/cancel`, undefined, options);
 }

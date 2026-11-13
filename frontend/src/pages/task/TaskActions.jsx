@@ -2,9 +2,11 @@ import React, { useState } from "react";
 
 import { useApiClient } from "../../api/ApiProvider";
 import { runTaskNext } from "../../api/engine";
-import { blockTask, cancelTask, deleteTask, stopTask, unblockTask } from "../../api/tasks";
+import { blockTask, cancelTask, completeTask, deleteTask, reopenTask, stopTask, unblockTask } from "../../api/tasks";
+import { ENGINE_STATES } from "../../api/workspace";
 import { Menu } from "../../ui/Menu";
 import { ReasonDialog } from "../shared/ReasonDialog";
+import { useProjectEngine } from "../shared/useProjectEngine";
 
 /**
  * What a person can do to a task from the More menu, each with what will
@@ -53,10 +55,31 @@ export const TASK_ACTIONS = {
     run: (client, task, text) => unblockTask(client, task.id, text),
     done: "Unblocked. The task is back in the queue.",
   },
+  complete: {
+    label: "Mark done",
+    title: "Mark this task done",
+    effect: "The task is marked done on your word. None of its remaining steps run and Foreman checks nothing: nothing is tested, reviewed or merged by this. Its branch and working copy stay as they are. It can be reopened.",
+    ask: "Why it is done",
+    hint: "For example where it was merged. Shown on the task.",
+    required: true,
+    confirm: "Mark done",
+    doing: "Marking done…",
+    run: (client, task, text) => completeTask(client, task.id, text),
+    done: "Marked done.",
+  },
+  reopen: {
+    label: "Reopen",
+    title: "Reopen this task",
+    effect: "The task goes back to the queue and its workflow starts again from the first step. Its branch is kept, and what was merged stays merged.",
+    confirm: "Reopen task",
+    doing: "Reopening…",
+    run: (client, task) => reopenTask(client, task.id),
+    done: "Reopened. The task is back in the queue.",
+  },
   cancel: {
     label: "Cancel",
     title: "Cancel this task",
-    effect: "The task is marked cancelled and its worktree is removed. Its history stays. Nothing runs it again, and it cannot be reopened here.",
+    effect: "The task is marked cancelled and its worktree is removed. Its history stays. Nothing runs it again unless it is reopened.",
     confirm: "Cancel task",
     doing: "Cancelling…",
     run: (client, task) => cancelTask(client, task.id),
@@ -73,16 +96,26 @@ export const TASK_ACTIONS = {
   },
 };
 
-const FINISHED = new Set(["done", "cancelled", "declined"]);
+const OPEN = new Set(["todo", "in_progress", "blocked"]);
+const CLOSED = new Set(["done", "cancelled"]);
 
-/** The actions that exist for a task in its state, in menu order. */
-export function actionsFor(task) {
+/**
+ * The actions that exist for a task in its state, in menu order. `engine` is
+ * the project's engine: Stop is a request to a running engine, so it exists
+ * only while one is running this task; a task left part-way with no engine
+ * on it can be asked to run next instead.
+ */
+export function actionsFor(task, engine = null) {
+  const planned = !task.in_backlog;
+  const engineOnIt = engine?.state === ENGINE_STATES.running && engine.task_id === task.id;
   const names = [];
-  if (task.status === "todo" && !task.in_backlog) names.push("run");
-  if (task.status === "in_progress") names.push("stop");
-  if (!task.in_backlog && (task.status === "todo" || task.status === "in_progress")) names.push("block");
+  if (planned && (task.status === "todo" || (task.status === "in_progress" && !engineOnIt))) names.push("run");
+  if (task.status === "in_progress" && engineOnIt) names.push("stop");
+  if (planned && (task.status === "todo" || task.status === "in_progress")) names.push("block");
   if (task.status === "blocked" && task.blocked_kind !== "gate") names.push("unblock");
-  if (!FINISHED.has(task.status)) names.push("cancel");
+  if (planned && OPEN.has(task.status)) names.push("complete");
+  if (CLOSED.has(task.status)) names.push("reopen");
+  if (!CLOSED.has(task.status) && task.status !== "declined") names.push("cancel");
   names.push("delete");
   return names;
 }
@@ -93,6 +126,7 @@ export function actionsFor(task) {
  */
 export function TaskActions({ task, onDone }) {
   const client = useApiClient();
+  const engine = useProjectEngine(task.project_id);
   const [chosen, setChosen] = useState(null);
   const action = chosen ? TASK_ACTIONS[chosen] : null;
 
@@ -102,7 +136,7 @@ export function TaskActions({ task, onDone }) {
         label="Task actions"
         trigger="More"
         triggerClassName="menu__trigger--button"
-        items={actionsFor(task).map((name) => ({
+        items={actionsFor(task, engine).map((name) => ({
           key: name,
           label: TASK_ACTIONS[name].label,
           onSelect: () => setChosen(name),

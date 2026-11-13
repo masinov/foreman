@@ -117,6 +117,65 @@ class MutationsTests(unittest.TestCase):
         with self.assertRaises(MutationError):
             self.mutations.cancel_task(self.task("t2", status="done"))
 
+    def test_marking_done_by_hand_records_who_and_why(self) -> None:
+        task = self.task(status="in_progress", workflow_current_step="merge")
+
+        self.mutations.complete_task(task, "Merged by hand in 96bee0d.")
+
+        stored = self.store.get_task("t1")
+        self.assertEqual(stored.status, "done")
+        self.assertIsNone(stored.workflow_current_step)
+        self.assertIsNotNone(stored.completed_at)
+        (event,) = self.events("t1", "human.task_completed")
+        self.assertEqual(event.payload["reason"], "Merged by hand in 96bee0d.")
+        self.assertEqual(event.payload["from_status"], "in_progress")
+        self.assertEqual(event.payload["from_step"], "merge")
+
+    def test_only_unfinished_planned_work_can_be_marked_done(self) -> None:
+        for index, status in enumerate(("triage", "done", "cancelled")):
+            with self.subTest(status=status):
+                with self.assertRaises(MutationError):
+                    self.mutations.complete_task(self.task(f"x{index}", status=status), "why")
+        backlog = self.store.ensure_backlog("p1", created_at="2026-11-12T09:00:00+00:00")
+        waiting = Task(id="b1", sprint_id=backlog.id, project_id="p1", title="B", status="todo")
+        self.store.save_task(waiting)
+        with self.assertRaises(MutationError) as caught:
+            self.mutations.complete_task(waiting, "why")
+        self.assertIn("backlog", str(caught.exception))
+
+    def test_a_task_an_engine_is_running_cannot_be_marked_done(self) -> None:
+        task = self.task(status="in_progress")
+        self.running_under_an_engine(task)
+        with self.assertRaises(MutationError) as caught:
+            self.mutations.complete_task(task, "why")
+        self.assertIn("stop-task", str(caught.exception))
+        self.assertEqual(self.store.get_task("t1").status, "in_progress")
+
+    def test_reopening_returns_a_done_or_cancelled_task_to_the_queue(self) -> None:
+        for task_id, status in (("d1", "done"), ("c1", "cancelled")):
+            with self.subTest(status=status):
+                task = self.task(
+                    task_id, status=status, completed_at="2026-11-12T10:00:00+00:00",
+                    step_visit_counts={"develop": 2},
+                )
+                self.mutations.reopen_task(task)
+                stored = self.store.get_task(task_id)
+                self.assertEqual(stored.status, "todo")
+                self.assertIsNone(stored.completed_at)
+                self.assertEqual(stored.step_visit_counts, {})
+                (event,) = self.events(task_id, "human.task_reopened")
+                self.assertEqual(event.payload["from_status"], status)
+
+    def test_reopening_is_refused_for_open_work_and_in_a_finished_sprint(self) -> None:
+        with self.assertRaises(MutationError):
+            self.mutations.reopen_task(self.task(status="todo"))
+        self.store.save_sprint(Sprint(id="s2", project_id="p1", title="Old", status="completed"))
+        old = Task(id="o1", sprint_id="s2", project_id="p1", title="O", status="done")
+        self.store.save_task(old)
+        with self.assertRaises(MutationError) as caught:
+            self.mutations.reopen_task(old)
+        self.assertIn("File a new task", str(caught.exception))
+
     # ── what a running engine owns ───────────────────────────────────────
 
     def test_a_task_an_engine_is_running_cannot_be_cancelled_or_deleted(self) -> None:

@@ -20,6 +20,10 @@ import {
   taskDetail,
   taskRoutes,
 } from "../../testing/taskFixture";
+import { engine, workspacePayload } from "../../testing/workspaceFixture";
+
+/** The More menu depends on the engine, which arrives with the workspace. */
+const engineKnown = () => screen.findByRole("button", { name: /^Engine/ });
 
 const TITLE = "Make the test step report what happened";
 const BASE = `/dashboard/tasks/${TASK_ID}`;
@@ -233,21 +237,70 @@ describe("the decision", () => {
   });
 });
 
+describe("a task left part-way", () => {
+  const stepWords = async (state, onIt) => {
+    const routes = taskRoutes({ task: taskDetail({ status: "in_progress", workflow_current_step: "develop" }) });
+    const workspace = workspacePayload();
+    workspace.projects[0].engine = engine(state, onIt ? { id: TASK_ID, task_key: "FOR-14", title: "x", step: "develop" } : null);
+    routes["GET /api/v1/workspace"] = workspace;
+    const view = await renderTask(BASE, routes);
+    await engineKnown();
+    const row = within(await screen.findByRole("table", { name: "Steps" })).getByText("Develop").closest("tr");
+    const words = row.querySelectorAll("td")[1].textContent;
+    view.unmount();
+    return words;
+  };
+
+  it("reads Running at its step only while the engine is on it", async () => {
+    expect(await stepWords("running", true)).toBe("Running");
+    expect(await stepWords("paused", true)).toBe("Paused here");
+    expect(await stepWords("not_running", false)).toBe("Stopped here");
+  });
+});
+
+describe("a task closed by hand", () => {
+  it("says so in Details, with the reason", async () => {
+    const task = taskDetail({
+      status: "done",
+      closed_by_hand: { reason: "Merged by hand in 96bee0d.", by: "alice", at: "2026-11-13T09:00:00Z" },
+    });
+    await renderTask(BASE, taskRoutes({ task }));
+    const details = await screen.findByRole("region", { name: "Details" });
+    expect(details).toHaveTextContent(/Marked done\s*By hand by alice on 13 Nov, not checked by Foreman\. Merged by hand in 96bee0d\./);
+  });
+
+  it("says nothing for a task the engine finished", async () => {
+    await renderTask(BASE, taskRoutes({ task: taskDetail({ status: "done", closed_by_hand: null }) }));
+    expect(await screen.findByRole("region", { name: "Details" })).not.toHaveTextContent("Marked done");
+  });
+});
+
 describe("the More menu", () => {
   function openMore() {
     fireEvent.click(screen.getByRole("button", { name: "More" }));
     return screen.getByRole("menu", { name: "Task actions" });
   }
 
+  /** The task's routes with the project's engine in `state`, on this task or on none. */
+  function withEngine(routes, state, onThisTask = true) {
+    const workspace = workspacePayload();
+    workspace.projects[0].engine = engine(state, onThisTask ? { id: TASK_ID, task_key: "FOR-14", title: "x", step: "develop" } : null);
+    routes["GET /api/v1/workspace"] = workspace;
+    return routes;
+  }
+
   it.each([
-    ["running", { status: "in_progress", workflow_current_step: "develop" }, ["Stop", "Block", "Cancel", "Delete"]],
-    ["queued", { status: "todo" }, ["Run next", "Block", "Cancel", "Delete"]],
-    ["blocked by the engine", { status: "blocked", blocked_kind: "engine" }, ["Unblock", "Cancel", "Delete"]],
-    ["at a gate", {}, ["Cancel", "Delete"]],
-    ["in the backlog", { status: "todo", in_backlog: true }, ["Cancel", "Delete"]],
-    ["done", { status: "done" }, ["Delete"]],
-  ])("holds what exists for a task that is %s", async (_, fields, labels) => {
-    await renderTask(BASE, taskRoutes({ task: taskDetail(fields) }));
+    ["running", { status: "in_progress", workflow_current_step: "develop" }, "running", ["Stop", "Block", "Mark done", "Cancel", "Delete"]],
+    ["left part-way with no engine", { status: "in_progress", workflow_current_step: "merge" }, "not_running", ["Run next", "Block", "Mark done", "Cancel", "Delete"]],
+    ["queued", { status: "todo" }, "not_running", ["Run next", "Block", "Mark done", "Cancel", "Delete"]],
+    ["blocked by the engine", { status: "blocked", blocked_kind: "engine" }, "not_running", ["Unblock", "Mark done", "Cancel", "Delete"]],
+    ["at a gate", {}, "not_running", ["Mark done", "Cancel", "Delete"]],
+    ["in the backlog", { status: "todo", in_backlog: true }, "not_running", ["Cancel", "Delete"]],
+    ["done", { status: "done" }, "not_running", ["Reopen", "Delete"]],
+    ["cancelled", { status: "cancelled" }, "not_running", ["Reopen", "Delete"]],
+  ])("holds what exists for a task that is %s", async (_, fields, state, labels) => {
+    await renderTask(BASE, withEngine(taskRoutes({ task: taskDetail(fields) }), state, state === "running"));
+    await engineKnown();
     expect(within(openMore()).getAllByRole("menuitem").map((item) => item.textContent)).toEqual(labels);
   });
 
@@ -255,18 +308,21 @@ describe("the More menu", () => {
     ["Stop", "stop", { status: "in_progress" }, null, {}, "Stop requested. The task is blocked when the engine acts on it."],
     ["Block", "block", { status: "todo" }, "Why it is blocked", { reason: "Waiting for a key." }, "Blocked."],
     ["Unblock", "unblock", { status: "blocked", blocked_kind: "engine" }, "Guidance for the agent", { note: "Waiting for a key." }, "Unblocked. The task is back in the queue."],
+    ["Mark done", "complete", { status: "todo" }, "Why it is done", { reason: "Waiting for a key." }, "Marked done."],
+    ["Reopen", "reopen", { status: "done" }, null, {}, "Reopened. The task is back in the queue."],
     ["Cancel", "cancel", { status: "todo" }, null, undefined, "Cancelled."],
   ])("%s is confirmed, calls its endpoint, and shows a refusal", async (label, action, fields, ask, body, done) => {
-    const routes = taskRoutes({ task: taskDetail(fields) });
+    const routes = withEngine(taskRoutes({ task: taskDetail(fields) }), "running");
     let refuse = true;
     routes[post(action)] = () => (refuse ? reply(400, { error: `Cannot ${action} this task`, code: "invalid_request" }) : { ok: true });
     const { fetchImpl } = await renderTask(BASE, routes);
+    await engineKnown();
     fireEvent.click(within(openMore()).getByRole("menuitem", { name: label }));
     const dialog = screen.getByRole("dialog");
     expect(dialog).toHaveAccessibleDescription(/./);
     expect(postCalls(fetchImpl, action)).toHaveLength(0);
     if (ask) fireEvent.change(within(dialog).getByLabelText(ask), { target: { value: "Waiting for a key." } });
-    const confirm = within(dialog).getByRole("button", { name: `${label} task` });
+    const confirm = within(dialog).getByRole("button", { name: new RegExp(`^${label}( task)?$`) });
     fireEvent.click(confirm);
     expect(await within(dialog).findByRole("alert")).toHaveTextContent(`Cannot ${action} this task.`);
     refuse = false;

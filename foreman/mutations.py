@@ -256,6 +256,74 @@ class Mutations:
         self._audit(task, "human.task_cancelled", step="cancel", from_status=from_status)
         return TaskRemoval(task=task, removed_worktree=removed, warning=warning)
 
+    def complete_task(self, task: Task, reason: str) -> Task:
+        """Mark a task done on a person's word, without running its workflow.
+
+        For work that was finished outside the engine (merged by hand, done
+        elsewhere, or no longer needed as a step-by-step run). The reason is
+        recorded: the event is the only trace that Foreman did not verify
+        this. The worktree is left alone, because it may hold work nobody
+        has committed; `foreman worktree prune` removes it later.
+        """
+
+        if task.status not in ("todo", "in_progress", "blocked"):
+            raise MutationError(
+                f"Task {task.id} is {task.status}; only a queued, unfinished or "
+                "blocked task can be marked done."
+            )
+        if self._in_backlog(task):
+            raise MutationError(
+                f"Task {task.id} is in the backlog. Plan it into a sprint first, "
+                "or decline it."
+            )
+        self._refuse_if_running(task, "mark done")
+        from_status = task.status
+        from_step = task.workflow_current_step
+        task.status = "done"
+        task.blocked_reason = None
+        task.workflow_current_step = None
+        task.workflow_carried_output = None
+        task.completed_at = self._now().isoformat()
+        self.store.save_task(task)
+        self._audit(
+            task,
+            "human.task_completed",
+            step="complete",
+            from_status=from_status,
+            from_step=from_step,
+            reason=reason,
+        )
+        return task
+
+    def reopen_task(self, task: Task) -> Task:
+        """Return a done or cancelled task to the queue, workflow from the start.
+
+        What was merged stays merged and the branch is kept; a cancelled
+        task's worktree was removed and is made again when the task runs.
+        """
+
+        if task.status not in _RESOLVED_TASK_STATUSES:
+            raise MutationError(
+                f"Task {task.id} is {task.status}; only a done or cancelled task "
+                "can be reopened."
+            )
+        sprint = self.store.get_sprint(task.sprint_id)
+        if sprint is not None and not sprint.is_backlog and sprint.status not in PLANNABLE_SPRINT_STATUSES:
+            raise MutationError(
+                f"Sprint '{sprint.title}' is {sprint.status}, so nothing in it runs "
+                "again. File a new task for the remaining work."
+            )
+        from_status = task.status
+        task.status = "todo"
+        task.blocked_reason = None
+        task.workflow_current_step = None
+        task.workflow_carried_output = None
+        task.step_visit_counts = {}
+        task.completed_at = None
+        self.store.save_task(task)
+        self._audit(task, "human.task_reopened", step="reopen", from_status=from_status)
+        return task
+
     def delete_task(self, task: Task) -> TaskRemoval:
         """Delete a task with its history and its worktree.
 

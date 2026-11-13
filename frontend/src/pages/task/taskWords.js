@@ -1,3 +1,4 @@
+import { ENGINE_STATES } from "../../api/workspace";
 import { formatDuration, humanize, plural, shortSha } from "../../ui/format";
 
 // How the task page puts what the API says into words (design 05, 12, 13,
@@ -143,7 +144,7 @@ function runTime(run) {
  * that only marks a task done is left out), from the task's runs.
  * `[{ id, label, result: { tone, word }, by, runs }]`.
  */
-export function stepRows(task, workflow) {
+export function stepRows(task, workflow, engine = null) {
   const runs = [...(task.runs ?? [])].sort((a, b) => runTime(a).localeCompare(runTime(b)));
   const steps = (workflow?.steps ?? []).filter((step) => step.role !== MARK_DONE);
   return steps.map((step) => {
@@ -156,7 +157,12 @@ export function stepRows(task, workflow) {
     } else if (here && task.status === "blocked") {
       result = { tone: "attention", word: "Blocked here" };
     } else if (here && task.status === "in_progress") {
-      result = { tone: "running", word: "Running" };
+      // Running only while the project's engine is on this task; a task left
+      // part-way is stopped at its step (the same rule as the task's stage).
+      const onIt = engine?.task_id === task.id;
+      if (onIt && engine.state === ENGINE_STATES.running) result = { tone: "running", word: "Running" };
+      else if (onIt && engine.state === ENGINE_STATES.paused) result = { tone: "idle", word: "Paused here" };
+      else result = { tone: "idle", word: "Stopped here" };
     } else if (last) {
       const { tone, word } = runResult(last);
       const took = formatDuration(runSeconds(last));

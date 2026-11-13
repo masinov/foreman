@@ -24,10 +24,11 @@ Current snapshot only. History up to 2026-09-08 (sprints 1 to 54) is in
 - `main` is pushed to `origin/main`. Work happens on short branches from
   `main`; the operator checkout stays off `main` (the `_integration` worktree
   holds it).
-- Schema version 23. 1334 Python tests, 356 frontend tests. The built bundle
+- Schema version 23. 1342 Python tests, 367 frontend tests. The built bundle
   is not in git; `foreman dashboard` builds it when it is missing or stale.
-- In the Foreman project's own database FOR-38 still reads "in progress":
-  its work was merged by hand and there is no command to say so.
+- A task whose work was finished outside the engine is closed with
+  `foreman task done <id> --reason ...` (Mark done in the task's More menu);
+  `foreman task reopen` undoes it. FOR-38 was closed that way.
 
 ## What sprint 56 changed for an operator
 

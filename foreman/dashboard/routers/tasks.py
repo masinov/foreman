@@ -60,6 +60,21 @@ def build_router(ctx: ApiContext) -> APIRouter:
             )
         )
 
+    @router.post("/tasks/{task_id}/complete")
+    def complete_task(task_id: str, body: TaskBlock = Depends(body_as(TaskBlock))) -> dict[str, Any]:
+        return with_api(
+            lambda api: api.complete_task(
+                task_id, reason=body.reason, requested_by=body.requested_by
+            )
+        )
+
+    @router.post("/tasks/{task_id}/reopen")
+    def reopen_task(
+        task_id: str, body: RequestedBy = Depends(body_as(RequestedBy))
+    ) -> dict[str, Any]:
+        requested_by = body.requested_by or None
+        return with_api(lambda api: api.reopen_task(task_id, requested_by=requested_by))
+
     @router.post("/tasks/{task_id}/accept")
     def accept_task(task_id: str) -> dict[str, Any]:
         return with_api(lambda api: api.accept_task(task_id))

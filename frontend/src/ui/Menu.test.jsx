@@ -98,4 +98,15 @@ describe("Menu", () => {
     expect(onSelect).toHaveBeenCalledTimes(1);
     expect(trigger).toHaveFocus();
   });
+
+  it("opens leftwards when its button is in the right half of the window", () => {
+    const { trigger } = renderMenu();
+    fireEvent.click(trigger);
+    expect(screen.getByRole("menu")).not.toHaveClass("menu__list--end");
+    fireEvent.click(trigger);
+
+    vi.spyOn(trigger, "getBoundingClientRect").mockReturnValue({ left: window.innerWidth - 60, width: 50 });
+    fireEvent.click(trigger);
+    expect(screen.getByRole("menu")).toHaveClass("menu__list--end");
+  });
 });

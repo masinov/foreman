@@ -123,6 +123,46 @@ class TaskBlockApiTests(unittest.TestCase):
         self.assertFalse(payload["guidance"][0]["delivered"])
         self.assertIn("human.task_unblocked", self._event_types("t1"))
 
+    def test_complete_marks_the_task_done_with_the_reason(self) -> None:
+        self._task("t1", "in_progress", workflow_current_step="merge")
+
+        response = self._post(
+            "/api/v1/tasks/t1/complete", {"reason": "Merged by hand.", "requested_by": "alice"}
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["status"], "done")
+        self.assertIsNone(response.json()["workflow_current_step"])
+        closed = response.json()["closed_by_hand"]
+        self.assertEqual((closed["reason"], closed["by"]), ("Merged by hand.", "alice"))
+        self.assertIn("human.task_completed", self._event_types("t1"))
+
+    def test_complete_needs_a_reason_and_unfinished_work(self) -> None:
+        self._task("t1", "todo")
+        self._task("t2", "cancelled")
+
+        no_reason = self._post("/api/v1/tasks/t1/complete", {"reason": " "})
+        finished = self._post("/api/v1/tasks/t2/complete", {"reason": "It is."})
+
+        self.assertEqual(no_reason.status_code, 400)
+        self.assertIn("why", no_reason.json()["error"])
+        self.assertEqual(finished.status_code, 400)
+        self.assertEqual(self._stored("t1").status, "todo")
+        self.assertEqual(self._stored("t2").status, "cancelled")
+
+    def test_reopen_returns_a_finished_task_to_the_queue(self) -> None:
+        self._task("t1", "done", completed_at="2026-11-12T10:00:00+00:00")
+        self._task("t2", "todo")
+
+        reopened = self._post("/api/v1/tasks/t1/reopen")
+        refused = self._post("/api/v1/tasks/t2/reopen")
+
+        self.assertEqual(reopened.status_code, 200, reopened.text)
+        self.assertEqual(reopened.json()["status"], "todo")
+        self.assertIsNone(reopened.json()["closed_by_hand"])
+        self.assertIn("human.task_reopened", self._event_types("t1"))
+        self.assertEqual(refused.status_code, 400)
+
     def test_unblock_without_a_note_records_no_guidance(self) -> None:
         self._task("t1", "blocked", blocked_reason="Parked.")
 

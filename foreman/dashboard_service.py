@@ -1027,6 +1027,27 @@ class DashboardService:
             )
         return named
 
+    def _closed_by_hand(self, task: Task, events: list[Event]) -> dict[str, Any] | None:
+        """Who marked a done task done and why, when a person did.
+
+        A task the engine finished, or one reopened and finished by the
+        engine since, has none: only the latest close counts.
+        """
+
+        if task.status != "done":
+            return None
+        latest = None
+        for event in events:
+            if event.event_type in ("human.task_completed", "human.task_reopened"):
+                latest = event
+        if latest is None or latest.event_type != "human.task_completed":
+            return None
+        return {
+            "reason": latest.payload.get("reason"),
+            "by": latest.payload.get("by"),
+            "at": latest.timestamp,
+        }
+
     def get_task(self, task_id: str) -> dict[str, Any]:
         """Return one task detail payload including run history."""
 
@@ -1036,6 +1057,7 @@ class DashboardService:
 
         project = self.store.get_project(task.project_id)
         gates = self._gate_steps(project)
+        events = self.store.list_events(task_id=task.id)
 
         runs_data = []
         for run in self.store.list_runs(task_id=task_id):
@@ -1102,8 +1124,9 @@ class DashboardService:
                     "delivered_role": note.delivered_role,
                     "delivered_step": note.delivered_step,
                 }
-                for note in guidance_notes(self.store.list_events(task_id=task.id))
+                for note in guidance_notes(events)
             ],
+            "closed_by_hand": self._closed_by_hand(task, events),
             "source": _serialize_task_source(task),
             "policy": describe_resolution(
                 PolicyMatrix.for_project(project).resolve_task(task)
@@ -1461,6 +1484,31 @@ class DashboardService:
             raise DashboardValidationError(str(exc)) from exc
         if note and note.strip():
             self.create_human_message(task.id, text=note)
+        return self.get_task(task.id)
+
+    def complete_task(
+        self, task_id: str, *, reason: str, requested_by: str | None = None
+    ) -> dict[str, Any]:
+        """Mark one task done by hand (see ``Mutations.complete_task``)."""
+
+        task = self._require_task(task_id)
+        normalized = (reason or "").strip()
+        if not normalized:
+            raise DashboardValidationError("Say why the task is done.")
+        try:
+            self._mutations(requested_by).complete_task(task, normalized)
+        except MutationError as exc:
+            raise DashboardValidationError(str(exc)) from exc
+        return self.get_task(task.id)
+
+    def reopen_task(self, task_id: str, *, requested_by: str | None = None) -> dict[str, Any]:
+        """Return a done or cancelled task to the queue (see ``Mutations.reopen_task``)."""
+
+        task = self._require_task(task_id)
+        try:
+            self._mutations(requested_by).reopen_task(task)
+        except MutationError as exc:
+            raise DashboardValidationError(str(exc)) from exc
         return self.get_task(task.id)
 
     def delete_task(self, task_id: str) -> dict[str, Any]:

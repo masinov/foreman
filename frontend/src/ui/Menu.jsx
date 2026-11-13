@@ -18,12 +18,17 @@ import { Link } from "../app/router";
 export function Menu({ label, trigger, triggerLabel, items, className = "", triggerClassName = "", ...triggerProps }) {
   const [open, setOpen] = useState(false);
   const [focusIndex, setFocusIndex] = useState(0);
+  const [towardsStart, setTowardsStart] = useState(false);
   const rootRef = useRef(null);
   const triggerRef = useRef(null);
   const itemRefs = useRef([]);
   const menuId = useId();
 
   function openAt(index) {
+    // A trigger in the right half of the window opens its list leftwards,
+    // so the list stays on the page wherever the trigger ends up.
+    const box = triggerRef.current?.getBoundingClientRect();
+    setTowardsStart(Boolean(box) && box.left + box.width / 2 > window.innerWidth / 2);
     setFocusIndex(index);
     setOpen(true);
   }
@@ -114,7 +119,7 @@ export function Menu({ label, trigger, triggerLabel, items, className = "", trig
         <span className="menu__caret" aria-hidden="true" />
       </button>
       {open ? (
-        <ul className="menu__list" role="menu" id={menuId} aria-label={label} onKeyDown={handleMenuKeyDown}>
+        <ul className={towardsStart ? "menu__list menu__list--end" : "menu__list"} role="menu" id={menuId} aria-label={label} onKeyDown={handleMenuKeyDown}>
           {items.map((item, index) => {
             const content = (
               <>
