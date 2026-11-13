@@ -83,6 +83,10 @@
   --page-gutter-narrow: 12px;
   --topbar-height: 44px;
   --manager-width: 380px;
+  /* The longest comfortable line of prose, and how many lines of a long
+     text show before "Show all" */
+  --text-measure: 84ch;
+  --long-text-lines: 12;
   /* The verb column of a proposal card in the manager side bar */
   --proposal-term-width: 62px;
   /* Below this width the manager cannot sit beside the page and becomes an

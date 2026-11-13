@@ -10,6 +10,7 @@ import { paths } from "../../app/paths";
 import { Link } from "../../app/router";
 import { Button } from "../../ui/Button";
 import { Disclosure } from "../../ui/Disclosure";
+import { LongText } from "../../ui/LongText";
 import { Mono } from "../../ui/Mono";
 import { SectionHeading } from "../../ui/SectionHeading";
 import { StatusDot } from "../../ui/StatusDot";
@@ -264,6 +265,30 @@ function MoreDetails({ task }) {
   );
 }
 
+/** What was filed: the description and the acceptance criteria, as written. */
+function Filed({ task }) {
+  return (
+    <>
+      <section className="task-section" aria-labelledby="task-description">
+        <SectionHeading id="task-description" title="Description" />
+        {task.description ? (
+          <LongText className="task-text">{task.description}</LongText>
+        ) : (
+          <p className="empty">No description was filed.</p>
+        )}
+      </section>
+      <section className="task-section" aria-labelledby="task-criteria">
+        <SectionHeading id="task-criteria" title="Acceptance criteria" />
+        {task.acceptance_criteria ? (
+          <LongText className="task-text">{task.acceptance_criteria}</LongText>
+        ) : (
+          <p className="empty">No acceptance criteria were filed.</p>
+        )}
+      </section>
+    </>
+  );
+}
+
 function Details({ task, workflow }) {
   const stage = stageOf(task);
   const deciders = whoDecides(task, workflow.data);
@@ -315,7 +340,7 @@ function Details({ task, workflow }) {
   ].filter((row) => row && row.value !== null);
 
   return (
-    <aside className="task-details" aria-labelledby="task-details">
+    <section className="task-section" aria-labelledby="task-details">
       <SectionHeading id="task-details" title="Details" />
       <dl className="task-details__list-terms">
         {rows.map((row) => (
@@ -326,19 +351,15 @@ function Details({ task, workflow }) {
         ))}
       </dl>
       <MoreDetails task={task} />
-      <SectionHeading id="task-description" title="Description" />
-      {task.description ? <p className="task-text">{task.description}</p> : <p className="empty">No description was filed.</p>}
-      <SectionHeading id="task-criteria" title="Acceptance criteria" />
-      {task.acceptance_criteria ? (
-        <p className="task-text">{task.acceptance_criteria}</p>
-      ) : (
-        <p className="empty">No acceptance criteria were filed.</p>
-      )}
-    </aside>
+    </section>
   );
 }
 
-/** Overview: steps, a line of checks, guidance, and the task's details as filed. */
+/**
+ * Overview: in the wide column what happened and what was asked for (steps,
+ * checks, the description and criteria as filed, guidance); beside it the
+ * task's facts and its own settings.
+ */
 export function OverviewTab({ task, checks, changed }) {
   const workflow = useResource(
     ["workflow", task.project_id],
@@ -350,10 +371,13 @@ export function OverviewTab({ task, checks, changed }) {
       <div className="task-overview__main">
         <Steps task={task} workflow={workflow} />
         <ChecksSummary task={task} checks={checks} />
-        <Overrides task={task} workflow={workflow.data} onSaved={() => changed(null)} />
+        <Filed task={task} />
         <Guidance task={task} onSaved={() => changed(null)} />
       </div>
-      <Details task={task} workflow={workflow} />
+      <aside className="task-details" aria-label="Details and overrides">
+        <Details task={task} workflow={workflow} />
+        <Overrides task={task} workflow={workflow.data} onSaved={() => changed(null)} />
+      </aside>
     </div>
   );
 }

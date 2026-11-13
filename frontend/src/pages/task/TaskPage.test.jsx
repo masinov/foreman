@@ -346,7 +346,7 @@ describe("Overview", () => {
 
   it("shows the details and the task as filed", async () => {
     await renderTask();
-    const details = await screen.findByRole("complementary", { name: "Details" });
+    const details = await screen.findByRole("region", { name: "Details" });
     await waitFor(() => expect(details).toHaveTextContent(/Workflow\s*development/));
     expect(details).toHaveTextContent(/Stage\s*Waiting for merge approval/);
     expect(within(details).getByRole("link", { name: "Sprint 56: engine truthfulness" })).toHaveAttribute("href", "/dashboard/sprints/sprint-56");
@@ -355,8 +355,13 @@ describe("Overview", () => {
     expect(details).toHaveTextContent(/Branch\s*foreman\/for-14/);
     expect(details).toHaveTextContent("$0.72 · 4 runs");
     expect(details).toHaveTextContent(/Filed by\s*a person on 10 Nov/);
-    expect(details).toHaveTextContent("It should say how long and what the runner printed.");
-    expect(details).toHaveTextContent("The result line is reported");
+    // What was filed is prose for the wide column, not a fact beside it.
+    expect(details).not.toHaveTextContent("It should say how long");
+    expect(screen.getByRole("region", { name: "Description" })).toHaveTextContent("It should say how long and what the runner printed.");
+    expect(screen.getByRole("region", { name: "Acceptance criteria" })).toHaveTextContent("The result line is reported");
+    const beside = screen.getByRole("complementary", { name: "Details and overrides" });
+    expect(beside).toContainElement(details);
+    expect(beside).toContainElement(screen.getByRole("heading", { name: "Overrides for this task" }));
   });
 
   it("saves guidance through the messages endpoint and shows whether the agent read it", async () => {
@@ -472,7 +477,7 @@ describe("Overrides for this task", () => {
       policy: { ...taskDetail().policy, merge_approval: { value: "auto", source: "task_override" } },
     });
     await overrides(task);
-    const details = await screen.findByRole("complementary", { name: "Details" });
+    const details = await screen.findByRole("region", { name: "Details" });
     await waitFor(() => expect(details).toHaveTextContent("Foreman approves merges (this task)"));
   });
 });
@@ -689,7 +694,7 @@ describe("details beyond the usual", () => {
       ],
     });
     await renderTask(BASE, taskRoutes({ task }));
-    const details = await screen.findByRole("complementary", { name: "Details" });
+    const details = await screen.findByRole("region", { name: "Details" });
     expect(within(details).getByRole("link", { name: /FOR-11 Record the result line/ })).toHaveAttribute("href", "/dashboard/tasks/task-a");
     expect(details).toHaveTextContent(/Record the result line\s*done/);
     expect(details).toHaveTextContent(/Time the test step\s*queued/i);
@@ -705,7 +710,7 @@ describe("details beyond the usual", () => {
       totals: { run_count: 4, total_cost_usd: 0.72, token_usage: { input: 1200, output: 34000, cache_read: 2500000 } },
     });
     await renderTask(BASE, taskRoutes({ task }));
-    const details = await screen.findByRole("complementary", { name: "Details" });
+    const details = await screen.findByRole("region", { name: "Details" });
     expect(details).not.toHaveTextContent("Depends on");
     expect(details).not.toHaveTextContent("Priority");
     expect(details).not.toHaveTextContent("worktrees/FOR-14");
