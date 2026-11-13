@@ -389,8 +389,8 @@ describe("Overview", () => {
 
   it("refreshes from the sprint stream while a step runs", async () => {
     const { fetchImpl } = await renderTask(BASE, taskRoutes({ task: taskDetail({ status: "in_progress", workflow_current_step: "develop", awaiting_human_gate: false, gate_policy: null, blocked_kind: null }) }));
-    const [source] = fetchImpl.EventSource.sources;
-    expect(source.url).toBe("/api/v1/sprints/sprint-56/stream");
+    const source = fetchImpl.EventSource.sources.find((entry) => entry.url === "/api/v1/sprints/sprint-56/stream");
+    expect(source).toBeDefined();
     const before = taskReads(fetchImpl);
     source.emit({ type: "event", event: { id: "e9", task_id: "another-task" } });
     source.emit({ type: "event", event: { id: "e10", task_id: TASK_ID } });
@@ -398,9 +398,10 @@ describe("Overview", () => {
     await waitFor(() => expect(taskReads(fetchImpl)).toBe(before + 1));
   });
 
-  it("opens no stream when nothing runs", async () => {
+  it("follows only the project's stream when nothing runs", async () => {
     const { fetchImpl } = await renderTask();
-    expect(fetchImpl.EventSource.sources).toHaveLength(0);
+    await waitFor(() => expect(fetchImpl.EventSource.sources.length).toBeGreaterThan(0));
+    expect(fetchImpl.EventSource.sources.map((entry) => entry.url)).toEqual(["/api/v1/projects/foreman/stream"]);
   });
 });
 

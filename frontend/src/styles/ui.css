@@ -354,6 +354,9 @@
   justify-content: center;
   padding: var(--space-7) var(--page-gutter-narrow);
   background: var(--color-backdrop);
+  /* A dialog taller than the window scrolls with its backdrop, so its
+     buttons can always be reached. */
+  overflow-y: auto;
 }
 
 .dialog {
@@ -623,4 +626,10 @@ select.field__input {
   align-items: baseline;
   gap: var(--space-2);
   padding-block: var(--space-1);
+}
+
+/* A key in a list of things to tick stays on one line. */
+.choice-list__label .mono {
+  flex: none;
+  white-space: nowrap;
 }

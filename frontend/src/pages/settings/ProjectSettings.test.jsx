@@ -498,3 +498,17 @@ describe("General: working copies", () => {
     expect(await within(section()).findByRole("alert")).toHaveTextContent("git worktree remove failed.");
   });
 });
+
+describe("General: a background refresh", () => {
+  it("keeps what is being typed when the same settings are read again", async () => {
+    const fetchImpl = await renderGeneral();
+    const reads = () => fetchImpl.calls.filter((call) => `${call.method} ${call.url}` === SETTINGS_URL).length;
+    fireEvent.change(screen.getByLabelText("Spend per task"), { target: { value: "42" } });
+    const before = reads();
+    // Coming back to the tab reads everything again (app/useLiveData).
+    fireEvent(document, new Event("visibilitychange"));
+    await waitFor(() => expect(reads()).toBeGreaterThan(before));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Save changes" })).toBeEnabled());
+    expect(screen.getByLabelText("Spend per task")).toHaveValue("42");
+  });
+});

@@ -151,3 +151,54 @@ describe("signing in", () => {
     expect(screen.queryByRole("heading", { name: "Sign in" })).toBeNull();
   });
 });
+
+describe("staying current", () => {
+  afterEach(() => vi.useRealTimers());
+
+  const reads = (fetchImpl, url) => fetchImpl.calls.filter((call) => call.method === "GET" && call.url === url).length;
+  const event = (id, type) => ({ type: "event", event: { id, event_type: type, task_id: "t" } });
+
+  it("reads a project page again when its stream says something changed, once per burst", async () => {
+    const fetchImpl = createFakeFetch(workspaceRoutes());
+    renderApp("/dashboard/projects/foreman", fetchImpl);
+    await screen.findByRole("heading", { level: 1, name: "Foreman" });
+    const source = fetchImpl.EventSource.sources.find((entry) => entry.url === "/api/v1/projects/foreman/stream");
+    expect(source).toBeDefined();
+    const before = reads(fetchImpl, "/api/v1/workspace");
+
+    vi.useFakeTimers();
+    // The first events are the replay of what the page has just read.
+    act(() => source.emit(event("e1", "workflow.step_completed")));
+    await act(() => vi.advanceTimersByTimeAsync(1600));
+    expect(reads(fetchImpl, "/api/v1/workspace")).toBe(before);
+
+    // What an agent prints changes nothing the page shows.
+    act(() => source.emit(event("e2", "agent.raw_output")));
+    await act(() => vi.advanceTimersByTimeAsync(1000));
+    expect(reads(fetchImpl, "/api/v1/workspace")).toBe(before);
+
+    // A burst of real changes is one reload.
+    act(() => {
+      source.emit(event("e3", "workflow.step_completed"));
+      source.emit(event("e4", "workflow.transition"));
+      source.emit(event("e5", "workflow.step_started"));
+    });
+    await act(() => vi.advanceTimersByTimeAsync(500));
+    const after = reads(fetchImpl, "/api/v1/workspace");
+    expect(after).toBeGreaterThan(before);
+    // One reload for the burst, not one per event.
+    await act(() => vi.advanceTimersByTimeAsync(3000));
+    expect(reads(fetchImpl, "/api/v1/workspace")).toBe(after);
+  });
+
+  it("reads the workspace again on a slow timer and follows no stream there", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const fetchImpl = createFakeFetch(workspaceRoutes());
+    renderApp("/dashboard", fetchImpl);
+    await screen.findByRole("region", { name: /Needs you/ });
+    expect(fetchImpl.EventSource.sources).toHaveLength(0);
+    const before = reads(fetchImpl, "/api/v1/workspace");
+    await act(() => vi.advanceTimersByTimeAsync(20500));
+    expect(reads(fetchImpl, "/api/v1/workspace")).toBeGreaterThan(before);
+  });
+});
