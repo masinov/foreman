@@ -711,7 +711,7 @@ describe("details beyond the usual", () => {
     expect(details).not.toHaveTextContent("worktrees/FOR-14");
     fireEvent.click(within(details).getByRole("button", { name: "More details" }));
     expect(details).toHaveTextContent("/srv/foreman/.foreman/worktrees/FOR-14");
-    expect(details).toHaveTextContent("1.2K in · 34K out · 2.5M read from cache");
+    expect(details).toHaveTextContent("1.2K in · 34K out · 2.5M cached");
     expect(details).toHaveTextContent("Develop 2 · Test 1");
   });
 });
