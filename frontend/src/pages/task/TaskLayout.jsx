@@ -8,7 +8,7 @@ import { paths } from "../../app/paths";
 import { Link, useNavigate } from "../../app/router";
 import { Tabs } from "../../ui/Tabs";
 import { Decision } from "./Decision";
-import { changeSize, TaskHead } from "./TaskHead";
+import { TaskHead } from "./TaskHead";
 
 import "../../styles/task.css";
 

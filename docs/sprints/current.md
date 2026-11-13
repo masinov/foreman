@@ -60,7 +60,7 @@ sides, `docs/`.
 | 15 | Owner review of the running dashboard: one audit against written rules, fixed in one batch | done | Claude | `docs/prs/fix-design-audit.md`, rules in `docs/TESTING.md` |
 | 16 | What the old dashboard could do and the new one could not: add a project, cancel, delete and reorder sprints, sign in, task details, new-task fields, advanced settings, working copies | done | Claude | four `feat/dashboard-*` branches |
 | 17 | A way to see the look without a person: `scripts/dashboard_shot.mjs` | done | Claude | script, `docs/TESTING.md` |
-| 18 | ESLint, a `lint` script and a CI step | todo | Claude | |
+| 18 | ESLint, a `lint` script and a CI step | done | Claude | `frontend/eslint.config.js`, CI |
 | 19 | Close the sprint: checkpoint, archive | todo | Claude | `docs/checkpoints/`, `docs/sprints/archive/` |
 
 ### Risks

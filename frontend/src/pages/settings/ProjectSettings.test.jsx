@@ -5,7 +5,6 @@ import {
   COPIES,
   COPIES_URL,
   copy,
-  DEVELOPMENT,
   LIGHT,
   PRUNE_URL,
   SAVE_URL,

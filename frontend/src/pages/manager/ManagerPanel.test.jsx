@@ -8,7 +8,7 @@ import { matchRoute } from "../../app/routes";
 import { createFakeFetch, renderApp, reply } from "../../testing/fakeApi";
 import { sprintRoutes } from "../../testing/sprintFixture";
 import { projectRoutes } from "../../testing/projectFixture";
-import { taskDetail, taskRoutes } from "../../testing/taskFixture";
+import { taskRoutes } from "../../testing/taskFixture";
 import { workspaceRoutes } from "../../testing/workspaceFixture";
 import { QUEUE_URL } from "../../testing/projectFixture";
 

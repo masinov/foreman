@@ -16,6 +16,7 @@ repo-memory validation and code-level regression coverage:
 - `./venv/bin/python -m py_compile scripts/repo_validation.py`
 - `./venv/bin/python -m py_compile scripts/validate_repo_memory.py`
 - `./venv/bin/pip install -e . --no-build-isolation`
+- `npm --prefix frontend run lint`
 - `npm --prefix frontend test`
 - `npm --prefix frontend run build`
 - `./venv/bin/python scripts/dashboard_dev.py --help`

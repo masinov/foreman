@@ -3,7 +3,6 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { createFakeFetch, renderApp, reply } from "../../testing/fakeApi";
 import {
   ACCEPTED,
-  ACTIVE,
   backlogPayload,
   backlogRoutes,
   backlogTask,
