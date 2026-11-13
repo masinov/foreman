@@ -48,16 +48,26 @@
 }
 
 /* Needs you: the surface holds only the rows; the heading sits above it. */
-.needs-you__surface {
-  padding: var(--space-1) var(--space-4);
+/* No padding above the first row or below the last: each row's own padding
+   is the frame, so every row is the same height. Written with the surface's
+   own class so it wins over the surface's default padding whatever order the
+   stylesheets load in. */
+.surface.needs-you__surface {
+  padding: 0 var(--space-4);
 }
 
-.needs-you__surface--empty {
+.surface.needs-you__surface--empty {
   padding: var(--space-3) var(--space-4);
 }
 
 .needs-you__checked {
   white-space: nowrap;
+}
+
+/* Every row is one height, with or without a button in it. */
+.needs-you .table td {
+  height: var(--needs-you-row-height);
+  vertical-align: middle;
 }
 
 /* At phone width a row is a small block: what to do and which task, the
@@ -82,6 +92,7 @@
 
   .needs-you .table tbody tr td,
   .needs-you .table tbody tr + tr td {
+    height: auto;
     padding: 0;
     border-top: 0;
   }
@@ -101,7 +112,7 @@
     order: 4;
   }
 
-  .needs-you__surface {
+  .surface.needs-you__surface {
     padding-inline: var(--space-3);
   }
 }
