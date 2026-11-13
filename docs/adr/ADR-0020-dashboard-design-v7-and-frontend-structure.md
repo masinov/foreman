@@ -129,3 +129,12 @@ on the result: "the base is ready for implementation".
 - **Pages stay current on their own** (decision 7): `app/useLiveData.js`
   follows the project's event stream and reloads what the page loaded.
 - **Sign in** takes the application's place when the server answers 401.
+
+- **A task's description is in the wide column.** `05-task-overview.html`
+  draws Description and Acceptance criteria under Details in the side
+  column, with one placeholder line each. Filed descriptions run to dozens
+  of lines, which in a 380px column made the page several screens long
+  beside an empty wide column. They now follow Checks in the wide column,
+  at a readable line length, and fold to twelve lines until "Show all" is
+  pressed. Overrides for this task, a few short controls, takes their
+  place under Details.

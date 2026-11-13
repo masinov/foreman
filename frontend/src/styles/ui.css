@@ -440,6 +440,33 @@
   color: var(--color-red);
 }
 
+/* Long text: folded to a dozen lines until asked for */
+.long-text__text {
+  margin: 0;
+}
+
+.long-text__text--folded {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--long-text-lines);
+  line-clamp: var(--long-text-lines);
+  overflow: hidden;
+}
+
+.long-text__toggle {
+  margin-top: var(--space-1);
+  padding: var(--space-1) 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.long-text__toggle:hover {
+  color: var(--color-gold);
+}
+
 /* Disclosure: a closed line that opens in place */
 .disclosure__summary {
   display: inline-flex;

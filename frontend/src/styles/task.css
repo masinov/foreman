@@ -177,16 +177,12 @@
   display: flex;
   flex: 1 1 var(--manager-width);
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-5);
   min-width: 0;
 }
 
 .task-details__list-terms {
   margin: 0;
-}
-
-.task-details__more {
-  margin-bottom: var(--space-3);
 }
 
 .task-details__more .disclosure__content {
@@ -224,7 +220,10 @@
   overflow-wrap: anywhere;
 }
 
-.task-details .task-text {
+/* What was filed reads as prose: secondary, and no wider than a line of
+   text is comfortable to read. */
+.task-overview__main .task-text {
+  max-width: var(--text-measure);
   color: var(--color-text-secondary);
 }
 
@@ -393,15 +392,20 @@
   border-radius: var(--radius);
 }
 
+/* Kept to the side column's width even where the column is stacked under
+   the page, so a control never stretches across the page. */
 .overrides {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+  max-width: var(--manager-width);
 }
 
+/* A label and its control share the row evenly, so the control is as wide
+   as what it holds and no wider. */
 .overrides__row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   align-items: center;
   gap: var(--space-3);
 }
