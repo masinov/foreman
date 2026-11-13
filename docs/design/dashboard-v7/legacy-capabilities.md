@@ -114,15 +114,15 @@ says so.
 | Allow autonomous task selection | `GET`/`PATCH /projects/{id}/settings` | project settings, General (Task picking) | slice 10 |
 | Completion proof gate on or off | `GET`/`PATCH /projects/{id}/settings` | project settings, Workflow ("What finishing requires") | slice 10 |
 | Default model, manager model | `GET`/`PATCH /projects/{id}/settings` | project settings, General (Models) | slice 10 |
-| Reviewer diff cap (characters) | `GET`/`PATCH /projects/{id}/settings` | none | **no home yet** |
+| Reviewer diff cap (characters) | `GET`/`PATCH /projects/{id}/settings` | project settings, General (Advanced) | built |
 | Criteria judge: base URL, model, API key variable, diff cap (base URL, key variable and test command are shown with the `foreman config` command to change them, not editable) | `GET`/`PATCH /projects/{id}/settings` | none | **no home yet** |
 | Default workflow | `GET`/`PATCH /projects/{id}/settings` | project settings, Workflow | slice 10 |
-| Merge target branch, spec file | `GET`/`PATCH /projects/{id}/settings` | none | **no home yet** |
+| Merge target branch, spec file | `GET`/`PATCH /projects/{id}/settings` | project settings, General (Advanced) | built |
 | Limits: step visits, cost per task, cost per sprint, time per task | `GET`/`PATCH /projects/{id}/settings` | project settings, General (Limits) | slice 10 |
 | Event retention (days) | `GET`/`PATCH /projects/{id}/settings` | project settings, General (Keep history) | slice 10 |
 | Test command (read only, with the terminal command to change it) | `GET /projects/{id}/settings` | project settings, General (Tests) | slice 10 |
 | Task working copies: count, storage limit, root folder | `GET /projects/{id}/worktrees` | project settings, General (This machine) | slice 10 (the design shows the root; count and limit are **no home yet**) |
-| Remove unused working copies | `POST /projects/{id}/worktrees/prune` | none | **no home yet** |
+| Remove unused working copies | `POST /projects/{id}/worktrees/prune` | project settings, General (Working copies) | built |
 
 ## Workspace-level dialogs
 
@@ -147,9 +147,11 @@ it meanwhile (docs/MANUAL.md).
 7. Built: a task's Details name what it depends on, its size and a priority
    that was set; working copy, token split, times at each step and last role
    are behind "More details".
-8. Reviewer diff cap, the criteria judge's settings, merge target branch,
-   spec file (`foreman config <project-id> --set key=value`).
-9. The working copies count and storage limit, and removing unused working
-   copies (`foreman worktree list`, `foreman worktree prune`).
+8. Built: project settings, General, "Advanced": the branch merges land
+   on, the specification file, the reviewer's diff cap, the criteria judge's
+   model and its diff cap. The judge's address and key variable stay under
+   "This machine", changed from a terminal (ADR-0017).
+9. Built: project settings, General, "Working copies": how many against the
+   limit, what each is for, and "Remove unused".
 10. Built: New task takes a size everywhere and, in a sprint, the tasks it
     waits for. A backlog task has no dependencies: it has no run order yet.

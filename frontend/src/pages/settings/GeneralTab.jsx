@@ -8,7 +8,8 @@ import { Button } from "../../ui/Button";
 import { Mono } from "../../ui/Mono";
 import { PolicyRules } from "./PolicyRules";
 import { ReadOnlyRow, SettingRow, SettingsSection } from "./SettingRow";
-import { changedKeys, changesOf, toDraft } from "./settingsForm";
+import { changedKeys, changesOf, sourceOf, toDraft } from "./settingsForm";
+import { WorkingCopies } from "./WorkingCopies";
 import { DECIDERS, machineRows, NOTIFICATIONS } from "./settingsWords";
 
 function Choice({ options, value, onChange, ...controlProps }) {
@@ -23,10 +24,11 @@ function Choice({ options, value, onChange, ...controlProps }) {
   );
 }
 
-function Text({ value, onChange, narrow = true, ...controlProps }) {
+function Text({ value, onChange, narrow = true, wide = false, ...controlProps }) {
+  const size = wide ? " setting-row__input--wide" : narrow ? " setting-row__input--narrow" : "";
   return (
     <input
-      className={narrow ? "field__input setting-row__input--narrow" : "field__input"}
+      className={`field__input${size}`}
       type="text"
       value={value}
       onChange={(event) => onChange(event.target.value)}
@@ -51,7 +53,7 @@ function MachineValue({ value, empty }) {
  */
 function GeneralForm({ projectId, settings, onSaved }) {
   const client = useApiClient();
-  const initial = useMemo(() => toDraft(settings.effective), [settings]);
+  const initial = useMemo(() => toDraft(sourceOf(settings)), [settings]);
   const [draft, setDraft] = useState(initial);
   const [errors, setErrors] = useState({});
   const [notice, setNotice] = useState(null);
@@ -89,7 +91,7 @@ function GeneralForm({ projectId, settings, onSaved }) {
     setErrors({});
     setNotice(null);
     try {
-      await updateProjectSettings(client, projectId, { settings: result.settings });
+      await updateProjectSettings(client, projectId, { settings: result.settings, project: result.project });
       setNotice({ error: false, text: "Saved." });
       onSaved();
     } catch (error) {
@@ -192,6 +194,20 @@ function GeneralForm({ projectId, settings, onSaved }) {
         {textRow("run_retention_days", "Keep runs", "days. Empty: forever", { inputMode: "numeric" })}
         {textRow("prompt_retention_days", "Keep prompts", "days. Empty: forever", { inputMode: "numeric" })}
       </SettingsSection>
+
+      <SettingsSection
+        id="settings-advanced"
+        title="Advanced"
+        note="Rarely changed. Each has a default that suits most projects."
+      >
+        {textRow("default_branch", "Merges land on", "the branch finished tasks are merged into", { narrow: false })}
+        {textRow("spec_path", "Specification", "A file in the repository that agents are pointed to. Empty: none", { wide: true })}
+        {textRow("review_diff_max_chars", "Reviewer reads at most", "characters of a change; a longer one is cut and the reviewer is told", { inputMode: "numeric" })}
+        {textRow("judge_model", "Criteria judge", "The model that checks acceptance criteria. Empty: they are not judged", { narrow: false })}
+        {textRow("judge_max_diff_chars", "Judge reads at most", "characters of a change", { inputMode: "numeric" })}
+      </SettingsSection>
+
+      <WorkingCopies projectId={projectId} />
 
       <SettingsSection
         id="settings-machine"
