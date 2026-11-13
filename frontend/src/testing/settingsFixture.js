@@ -32,6 +32,38 @@ export const EFFECTIVE = {
   context_dir: "",
   judge_base_url: "",
   judge_api_key_env: "",
+  judge_model: "",
+  judge_max_diff_chars: 24000,
+  review_diff_max_chars: 16000,
+};
+
+export const COPIES_URL = "GET /api/v1/projects/foreman/worktrees";
+export const PRUNE_URL = "POST /api/v1/projects/foreman/worktrees/prune";
+
+export function copy(slug, fields = {}) {
+  return {
+    slug,
+    path: `/srv/foreman/.foreman/worktrees/${slug}`,
+    branch: `feat/${slug.toLowerCase()}`,
+    exists: true,
+    is_integration: false,
+    owned: true,
+    task_id: `task-${slug.toLowerCase()}`,
+    task_key: slug,
+    task_status: "in_progress",
+    ...fields,
+  };
+}
+
+export const COPIES = {
+  project_id: "foreman",
+  root: "/srv/foreman/.foreman/worktrees",
+  max_live_worktrees: 4,
+  worktrees: [
+    copy("FOR-13"),
+    copy("FOR-10", { task_status: "done" }),
+    copy("_integration", { is_integration: true, branch: "main", task_id: null, task_key: null, task_status: null }),
+  ],
 };
 
 export function settingsPayload(effective = {}) {
@@ -141,5 +173,6 @@ export function settingsRoutes({ effective, workflow = DEVELOPMENT, workflows = 
     [SETTINGS_URL]: settingsPayload(effective),
     [WORKFLOW_URL]: workflow,
     [WORKFLOWS_URL]: { workflows },
+    [COPIES_URL]: COPIES,
   };
 }

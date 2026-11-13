@@ -26,9 +26,11 @@ export function getProjectSettings(client, projectId, options) {
  * Change settings. `settings` holds only the keys that change. A refusal's
  * error carries `field`, the key it is about, when the API knows it.
  */
-export function updateProjectSettings(client, projectId, { settings, workflowId } = {}, options) {
-  const body = {};
-  if (settings) body.settings = settings;
+export function updateProjectSettings(client, projectId, { settings, workflowId, project } = {}, options) {
+  // `project` holds the values kept on the project itself, not among its
+  // settings: `default_branch` and `spec_path`.
+  const body = { ...(project ?? {}) };
+  if (settings && Object.keys(settings).length) body.settings = settings;
   if (workflowId) body.workflow_id = workflowId;
   return client.patch(`/projects/${segment(projectId)}/settings`, body, options);
 }
@@ -41,4 +43,21 @@ export function listWorkflows(client, options) {
 /** Register a repository on this machine as a project. */
 export function createProject(client, { name, repoPath, workflowId }, options) {
   return client.post("/projects", { name, repo_path: repoPath, workflow_id: workflowId }, options);
+}
+
+/**
+ * The working copies a project has on this machine: `{ root, limit,
+ * copies }`. One is where merges land; the others each belong to a task.
+ */
+export function listWorkingCopies(client, projectId, options) {
+  return client.get(`/projects/${segment(projectId)}/worktrees`, options).then((payload) => ({
+    root: payload?.root ?? "",
+    limit: payload?.max_live_worktrees ?? 0,
+    copies: payload?.worktrees ?? [],
+  }));
+}
+
+/** Remove the working copies of finished, cancelled and deleted tasks. Answers `{ removed, kept }`. */
+export function removeUnusedWorkingCopies(client, projectId, options) {
+  return client.post(`/projects/${segment(projectId)}/worktrees/prune`, {}, options);
 }

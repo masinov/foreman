@@ -141,3 +141,13 @@
 .workflow .section-heading {
   align-items: center;
 }
+
+.settings .section-heading {
+  align-items: center;
+}
+
+/* A path: wide enough to read one without scrolling inside the field. */
+.setting-row__input--wide {
+  width: var(--dialog-width);
+  max-width: 100%;
+}

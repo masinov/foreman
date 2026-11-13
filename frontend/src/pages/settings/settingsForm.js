@@ -83,7 +83,25 @@ export const CODECS = {
   event_retention_days: days,
   run_retention_days: days,
   prompt_retention_days: days,
+  default_branch: { ...text, required: "Name the branch merges land on." },
+  spec_path: text,
+  review_diff_max_chars: { ...whole({ required: true }) },
+  judge_model: text,
+  judge_max_diff_chars: { ...whole({ required: true }) },
 };
+
+// Kept on the project itself rather than among its settings; the API takes
+// them beside `settings`, not inside it.
+export const PROJECT_FIELDS = ["default_branch", "spec_path"];
+
+/** What the form reads: the effective settings and the project's own fields. */
+export function sourceOf(payload) {
+  return {
+    ...(payload?.effective ?? {}),
+    default_branch: payload?.default_branch ?? "",
+    spec_path: payload?.spec_path ?? "",
+  };
+}
 
 export const EDITABLE = Object.keys(CODECS);
 
@@ -101,17 +119,21 @@ export function changedKeys(initial, draft) {
 
 /**
  * The settings to send: only what changed, written as the API stores it.
- * Returns `{ settings }`, or `{ errors }` keyed by setting for what could not
- * be written (nothing is sent then).
+ * Returns `{ settings, project }` (`project` holds the changed
+ * `PROJECT_FIELDS`), or `{ errors }` keyed by setting for what could not be
+ * written (nothing is sent then).
  */
 export function changesOf(initial, draft) {
   const settings = {};
+  const project = {};
   const errors = {};
   for (const key of changedKeys(initial, draft)) {
     const codec = CODECS[key];
     const written = codec.write(draft[key], { empty: codec.empty ?? null });
     if (written.error) errors[key] = written.error;
+    else if (codec.required && !written.value) errors[key] = codec.required;
+    else if (PROJECT_FIELDS.includes(key)) project[key] = written.value;
     else settings[key] = written.value;
   }
-  return Object.keys(errors).length ? { errors } : { settings };
+  return Object.keys(errors).length ? { errors } : { settings, project };
 }

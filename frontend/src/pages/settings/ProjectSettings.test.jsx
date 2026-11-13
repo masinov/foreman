@@ -2,8 +2,12 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 
 import { createFakeFetch, renderApp, reply } from "../../testing/fakeApi";
 import {
+  COPIES,
+  COPIES_URL,
+  copy,
   DEVELOPMENT,
   LIGHT,
+  PRUNE_URL,
   SAVE_URL,
   settingsPayload,
   settingsRoutes,
@@ -413,5 +417,84 @@ describe("Workflow tab", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Use Light Review" }));
     expect(await within(dialog).findByRole("alert")).toHaveTextContent("There is no workflow 'light'.");
     expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+});
+
+describe("General: Advanced", () => {
+  it("reads the rarely changed values and saves the project's own fields beside its settings", async () => {
+    const fetchImpl = await renderGeneral();
+    fetchImpl.routes[SAVE_URL] = settingsPayload();
+    expect(screen.getByLabelText("Merges land on")).toHaveValue("main");
+    expect(screen.getByLabelText("Reviewer reads at most")).toHaveValue("16000");
+    expect(screen.getByLabelText("Criteria judge")).toHaveValue("");
+
+    fireEvent.change(screen.getByLabelText("Merges land on"), { target: { value: "develop" } });
+    fireEvent.change(screen.getByLabelText("Specification"), { target: { value: "docs/spec.md" } });
+    fireEvent.change(screen.getByLabelText("Reviewer reads at most"), { target: { value: "120000" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(saves(fetchImpl)).toHaveLength(1));
+    expect(saves(fetchImpl)[0].body).toEqual({
+      default_branch: "develop",
+      spec_path: "docs/spec.md",
+      settings: { review_diff_max_chars: 120000 },
+    });
+  });
+
+  it("sends no empty settings object when only a project field changed, and refuses an empty branch", async () => {
+    const fetchImpl = await renderGeneral();
+    fetchImpl.routes[SAVE_URL] = settingsPayload();
+    fireEvent.change(screen.getByLabelText("Merges land on"), { target: { value: " " } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(await screen.findByText("Name the branch merges land on.")).toBeInTheDocument();
+    expect(saves(fetchImpl)).toHaveLength(0);
+
+    fireEvent.change(screen.getByLabelText("Merges land on"), { target: { value: "trunk" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(saves(fetchImpl)).toHaveLength(1));
+    expect(saves(fetchImpl)[0].body).toEqual({ default_branch: "trunk" });
+  });
+});
+
+describe("General: working copies", () => {
+  const section = () => screen.getByRole("region", { name: /Working copies/ });
+
+  it("counts the tasks' copies against the limit and says what each is for", async () => {
+    await renderGeneral();
+    await within(section()).findByRole("table");
+    expect(section()).toHaveTextContent("Working copies 2");
+    expect(section()).toHaveTextContent("of at most 4 at once");
+    const rows = within(section()).getAllByRole("row").slice(1);
+    expect(within(rows[0]).getByRole("link", { name: "FOR-13" })).toHaveAttribute("href", "/dashboard/tasks/task-for-13");
+    expect(rows[0]).toHaveTextContent("In use, task in progress");
+    expect(rows[1]).toHaveTextContent("Unused");
+    expect(rows[2]).toHaveTextContent("Where merges land");
+    expect(rows[2]).toHaveTextContent("Always kept");
+  });
+
+  it("removes the unused ones, says how many, and reads the list again", async () => {
+    const routes = settingsRoutes();
+    routes[PRUNE_URL] = () => {
+      routes[COPIES_URL] = { ...COPIES, worktrees: COPIES.worktrees.filter((entry) => entry.slug !== "FOR-10") };
+      return { ok: "pruned", removed: [copy("FOR-10")], kept: [] };
+    };
+    await renderGeneral(routes);
+    await within(section()).findByRole("table");
+    fireEvent.click(within(section()).getByRole("button", { name: "Remove unused" }));
+    expect(await within(section()).findByRole("status")).toHaveTextContent("Removed 1 working copy.");
+    await waitFor(() => expect(section()).toHaveTextContent("Working copies 1"));
+    // Removing is its own action: it does not save the form.
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
+  });
+
+  it("says when there was nothing to remove, and shows a refusal", async () => {
+    const routes = settingsRoutes();
+    routes[PRUNE_URL] = { ok: "pruned", removed: [], kept: [] };
+    await renderGeneral(routes);
+    await within(section()).findByRole("table");
+    fireEvent.click(within(section()).getByRole("button", { name: "Remove unused" }));
+    expect(await within(section()).findByRole("status")).toHaveTextContent("Nothing to remove");
+    routes[PRUNE_URL] = reply(400, { error: "git worktree remove failed", code: "invalid_request" });
+    fireEvent.click(within(section()).getByRole("button", { name: "Remove unused" }));
+    expect(await within(section()).findByRole("alert")).toHaveTextContent("git worktree remove failed.");
   });
 });
