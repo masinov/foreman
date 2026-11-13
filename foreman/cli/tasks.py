@@ -1,4 +1,4 @@
-"""Tasks: add, show, list, override, block, unblock, accept, cancel."""
+"""Tasks: add, show, list, override, block, unblock, accept, done, reopen, cancel."""
 
 from __future__ import annotations
 
@@ -555,6 +555,67 @@ def handle_task_accept(args: argparse.Namespace) -> int:
     return 0
 
 
+def handle_task_done(args: argparse.Namespace) -> int:
+    """Handle ``foreman task done``."""
+
+    db_path = resolve_db_path_or_print(args.db)
+    if db_path is None:
+        return 1
+    reason = (args.reason or "").strip()
+    if not reason:
+        print("Say why the task is done with --reason.", file=sys.stderr)
+        return 1
+
+    with ForemanStore(db_path) as store:
+        store.initialize()
+        task = resolve_task_or_print(store, args.task_id)
+        if task is None:
+            return 1
+        try:
+            cli_mutations(store).complete_task(task, reason)
+        except MutationError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        db_path = store.db_path
+
+    print_lines(
+        "Marked task done",
+        f"Database: {db_path}",
+        f"Task: {task.id} | {task.title}",
+        f"Status: {task.status}",
+        f"Reason: {reason}",
+    )
+    return 0
+
+
+def handle_task_reopen(args: argparse.Namespace) -> int:
+    """Handle ``foreman task reopen``."""
+
+    db_path = resolve_db_path_or_print(args.db)
+    if db_path is None:
+        return 1
+
+    with ForemanStore(db_path) as store:
+        store.initialize()
+        task = resolve_task_or_print(store, args.task_id)
+        if task is None:
+            return 1
+        try:
+            cli_mutations(store).reopen_task(task)
+        except MutationError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        db_path = store.db_path
+
+    print_lines(
+        "Reopened task",
+        f"Database: {db_path}",
+        f"Task: {task.id} | {task.title}",
+        f"Status: {task.status}",
+    )
+    return 0
+
+
 def handle_task_cancel(args: argparse.Namespace) -> int:
     """Handle ``foreman task cancel``."""
 
@@ -743,6 +804,29 @@ def register_task(subparsers: argparse._SubParsersAction) -> None:
         help_text=f"Path to the SQLite store containing the task. {DB_OPTION_NOTE}",
     )
     set_handler(task_accept, handle_task_accept, "task accept")
+
+    task_done = task_commands.add_parser(
+        "done",
+        help="Mark a task done by hand, for work finished outside the engine.",
+    )
+    task_done.add_argument("task_id", help="Task identifier.")
+    task_done.add_argument("--reason", required=True, help="Why it is done; recorded on the task.")
+    add_db_option(
+        task_done,
+        help_text=f"Path to the SQLite store containing the task. {DB_OPTION_NOTE}",
+    )
+    set_handler(task_done, handle_task_done, "task done")
+
+    task_reopen = task_commands.add_parser(
+        "reopen",
+        help="Return a done or cancelled task to the queue; its workflow starts over.",
+    )
+    task_reopen.add_argument("task_id", help="Task identifier.")
+    add_db_option(
+        task_reopen,
+        help_text=f"Path to the SQLite store containing the task. {DB_OPTION_NOTE}",
+    )
+    set_handler(task_reopen, handle_task_reopen, "task reopen")
 
     task_cancel = task_commands.add_parser("cancel", help="Cancel a task.")
     task_cancel.add_argument("task_id", help="Task identifier.")

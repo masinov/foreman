@@ -242,8 +242,17 @@ foreman task show <task-id>           # task + worktree + recent runs + events
 foreman task accept <task-id>         # triage → todo
 foreman task block <task-id>
 foreman task unblock <task-id>
+foreman task done <task-id> --reason "..."   # finished outside the engine; nothing is checked
+foreman task reopen <task-id>         # done or cancelled → todo, workflow from the start
 foreman task cancel <task-id>         # also removes the task's worktree
 ```
+
+`task done` is for work that was finished without the engine (merged by hand,
+done elsewhere). It runs none of the task's remaining steps and verifies
+nothing; the reason is recorded and shown on the task as "Marked done by
+hand". It refuses a task an engine is running, a task in the backlog and a
+task that is already closed, and leaves the worktree for `worktree prune`.
+`task reopen` refuses a task whose sprint is finished.
 
 ### Backlog
 

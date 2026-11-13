@@ -22,6 +22,7 @@ import { Overrides } from "./Overrides";
 import { criteriaSummary, filedBy, stepRows, testsWords, whoDecides } from "./taskWords";
 
 function Steps({ task, workflow }) {
+  const engine = useProjectEngine(task.project_id);
   const total = task.totals?.run_count ?? task.runs?.length ?? 0;
   const columns = [
     { key: "step", header: "Step", className: "task-steps__step", render: (row) => row.label },
@@ -41,7 +42,7 @@ function Steps({ task, workflow }) {
           {workflow.error}
         </p>
       ) : null}
-      {workflow.data ? <Table caption="Steps" columns={columns} rows={stepRows(task, workflow.data)} /> : null}
+      {workflow.data ? <Table caption="Steps" columns={columns} rows={stepRows(task, workflow.data, engine)} /> : null}
       <p className="task-section__foot">
         {plural(total, "run")} in all. Every run and its output is under{" "}
         <Link href={paths.taskActivity(task.id)}>Activity</Link>.
@@ -298,6 +299,19 @@ function Details({ task, workflow }) {
   const when = formatDay(task.created_at);
   const rows = [
     { key: "stage", term: "Stage", value: <StatusDot tone={stage.tone}>{stage.word}</StatusDot> },
+    task.closed_by_hand
+      ? {
+          key: "closed",
+          term: "Marked done",
+          value: (
+            <>
+              By hand{task.closed_by_hand.by ? ` by ${task.closed_by_hand.by}` : ""}
+              {formatDay(task.closed_by_hand.at) ? ` on ${formatDay(task.closed_by_hand.at)}` : ""}, not checked by
+              Foreman.{task.closed_by_hand.reason ? <span className="secondary"> {task.closed_by_hand.reason}</span> : null}
+            </>
+          ),
+        }
+      : null,
     { key: "sprint", term: "Sprint", value: <SprintLink task={task} /> },
     { key: "workflow", term: "Workflow", value: workflow.data ? workflow.data.name || workflow.data.id : null },
     {
