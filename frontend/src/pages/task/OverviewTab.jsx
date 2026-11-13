@@ -9,11 +9,12 @@ import { useResource } from "../../api/useResource";
 import { paths } from "../../app/paths";
 import { Link } from "../../app/router";
 import { Button } from "../../ui/Button";
+import { Disclosure } from "../../ui/Disclosure";
 import { Mono } from "../../ui/Mono";
 import { SectionHeading } from "../../ui/SectionHeading";
 import { StatusDot } from "../../ui/StatusDot";
 import { Table } from "../../ui/Table";
-import { formatDay, formatDayTime, formatMoney, humanize, plural } from "../../ui/format";
+import { formatDay, formatDayTime, formatMoney, formatTokens, humanize, plural } from "../../ui/format";
 import { stageOf } from "../sprint/taskStage";
 import { Overrides } from "./Overrides";
 import { criteriaSummary, filedBy, stepRows, testsWords, whoDecides } from "./taskWords";
@@ -184,6 +185,85 @@ function SprintLink({ task }) {
   return <Link href={paths.sprint(task.sprint_id)}>{sprint.data?.title || task.sprint_id}</Link>;
 }
 
+/** The tasks this one waits for: each a link, saying whether it is finished. */
+function Dependencies({ items }) {
+  return (
+    <ul className="task-details__list">
+      {items.map((item) => {
+        if (!item.title) {
+          return (
+            <li key={item.id} className="quiet">
+              A task that no longer exists
+            </li>
+          );
+        }
+        const stage = stageOf(item);
+        return (
+          <li key={item.id}>
+            <Link className="row-link" href={paths.task(item.id)}>
+              {item.task_key ? <Mono quiet>{item.task_key}</Mono> : null} {item.title}
+            </Link>{" "}
+            <span className={item.status === "done" ? "tone-passed" : "quiet"}>
+              {item.status === "done" ? "done" : stage.word.toLowerCase()}
+            </span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/**
+ * What the engine keeps about a task that a person rarely needs: closed
+ * until asked for.
+ */
+function MoreDetails({ task }) {
+  const usage = task.totals?.token_usage ?? {};
+  const visits = Object.entries(task.step_visit_counts ?? {}).filter(([, count]) => count > 0);
+  const rows = [
+    {
+      key: "copy",
+      term: "Working copy",
+      value: task.worktree_path ? (
+        <Mono className="task-details__branch">{task.worktree_path}</Mono>
+      ) : (
+        <span className="quiet">None now. One exists while the task is being worked on.</span>
+      ),
+    },
+    {
+      key: "tokens",
+      term: "Tokens",
+      value: (
+        <Mono>
+          {`${formatTokens(usage.input)} in · ${formatTokens(usage.output)} out · ${formatTokens(usage.cache_read)} read from cache`}
+        </Mono>
+      ),
+    },
+    {
+      key: "visits",
+      term: "Times at each step",
+      value: visits.length ? (
+        visits.map(([step, count]) => `${humanize(step)} ${count}`).join(" · ")
+      ) : (
+        <span className="quiet">No step has run</span>
+      ),
+    },
+    task.assigned_role ? { key: "role", term: "Last role", value: humanize(task.assigned_role) } : null,
+  ].filter(Boolean);
+  return (
+    <Disclosure summary="More details" className="task-details__more">
+      <dl className="task-details__list-terms">
+        {rows.map((row) => (
+          <div key={row.key} className="task-details__row">
+            <dt>{row.term}</dt>
+            <dd>{row.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </Disclosure>
+  );
+}
+
 function Details({ task, workflow }) {
   const stage = stageOf(task);
   const deciders = whoDecides(task, workflow.data);
@@ -206,6 +286,21 @@ function Details({ task, workflow }) {
         </ul>
       ) : null,
     },
+    task.dependencies?.length
+      ? { key: "depends", term: "Depends on", value: <Dependencies items={task.dependencies} /> }
+      : null,
+    task.complexity ? { key: "size", term: "Size", value: humanize(task.complexity) } : null,
+    task.priority
+      ? {
+          key: "priority",
+          term: "Priority",
+          value: (
+            <>
+              {task.priority} <span className="quiet">(lower runs first; 0 is the default)</span>
+            </>
+          ),
+        }
+      : null,
     { key: "branch", term: "Branch", value: task.branch_name ? <Mono className="task-details__branch">{task.branch_name}</Mono> : <span className="quiet">None yet</span> },
     {
       key: "spend",
@@ -217,7 +312,7 @@ function Details({ task, workflow }) {
       term: "Filed by",
       value: who || when ? <span className="secondary">{[who, when ? `on ${when}` : ""].filter(Boolean).join(" ")}</span> : null,
     },
-  ].filter((row) => row.value !== null);
+  ].filter((row) => row && row.value !== null);
 
   return (
     <aside className="task-details" aria-labelledby="task-details">
@@ -230,6 +325,7 @@ function Details({ task, workflow }) {
           </div>
         ))}
       </dl>
+      <MoreDetails task={task} />
       <SectionHeading id="task-description" title="Description" />
       {task.description ? <p className="task-text">{task.description}</p> : <p className="empty">No description was filed.</p>}
       <SectionHeading id="task-criteria" title="Acceptance criteria" />

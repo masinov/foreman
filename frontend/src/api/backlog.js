@@ -27,7 +27,10 @@ export function listBacklog(client, projectId, { statuses = [], q, limit, offset
 }
 
 /** File a task into the backlog. The project's triage policy decides if it is accepted. */
-export function fileBacklogTask(client, projectId, { title, taskType, description, acceptanceCriteria }, options) {
+// How big a task is, as the API accepts it. None is allowed.
+export const TASK_SIZES = ["small", "medium", "large"];
+
+export function fileBacklogTask(client, projectId, { title, taskType, description, acceptanceCriteria, complexity }, options) {
   return client.post(
     `/projects/${segment(projectId)}/backlog`,
     {
@@ -35,6 +38,7 @@ export function fileBacklogTask(client, projectId, { title, taskType, descriptio
       task_type: taskType,
       description: description || null,
       acceptance_criteria: acceptanceCriteria || null,
+      complexity: complexity || null,
     },
     options,
   );

@@ -269,6 +269,31 @@ describe("new task in the sprint", () => {
     expect(calls(fetchImpl, "POST", "/api/v1/projects/foreman/backlog")).toHaveLength(0);
   });
 
+  it("can make the new task wait for unfinished tasks of the sprint", async () => {
+    const routes = sprintRoutes();
+    routes["POST /api/v1/sprints/sprint-56/tasks"] = { id: "task-new", task_key: "FOR-99", title: "Tighten the retry" };
+    const { fetchImpl } = await renderSprint("/dashboard/sprints/sprint-56", routes);
+    const open = TASKS.filter((task) => ["todo", "in_progress", "blocked"].includes(task.status));
+    const finished = TASKS.find((task) => task.status === "done");
+    fireEvent.click(screen.getByRole("button", { name: "New task" }));
+    const dialog = await screen.findByRole("dialog", { name: "New task" });
+    fireEvent.change(within(dialog).getByLabelText(/Title/), { target: { value: "Tighten the retry" } });
+    fireEvent.click(await within(dialog).findByRole("button", { name: "Make it wait for other tasks" }));
+    // A finished task is nothing to wait for.
+    expect(within(dialog).getAllByRole("checkbox")).toHaveLength(open.length);
+    if (finished) expect(within(dialog).queryByRole("checkbox", { name: new RegExp(finished.title) })).toBeNull();
+    fireEvent.click(within(dialog).getAllByRole("checkbox")[0]);
+    expect(within(dialog).getByRole("button", { name: "Waits for 1 task" })).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add task" }));
+    await waitFor(() =>
+      expect(calls(fetchImpl, "POST", "/api/v1/sprints/sprint-56/tasks")[0].body).toMatchObject({
+        title: "Tighten the retry",
+        complexity: null,
+        depends_on: [open[0].id],
+      }),
+    );
+  });
+
   it("is not offered on a finished sprint", async () => {
     const routes = sprintRoutes();
     routes[SPRINT_URL] = sprintPayload({ status: "completed", completed_at: "2026-11-11T10:00:00Z" });

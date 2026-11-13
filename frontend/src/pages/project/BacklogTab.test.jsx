@@ -255,6 +255,9 @@ describe("filing a new task", () => {
     fireEvent.change(within(dialog).getByLabelText("Type"), { target: { value: "fix" } });
     fireEvent.change(within(dialog).getByLabelText("Description"), { target: { value: "It fails once." } });
     fireEvent.change(within(dialog).getByLabelText("Acceptance criteria"), { target: { value: "It retries." } });
+    fireEvent.change(within(dialog).getByLabelText("Size"), { target: { value: "small" } });
+    // Waiting for other tasks is a thing of sprints; the backlog has no order to wait in.
+    expect(within(dialog).queryByRole("button", { name: /wait for other tasks/ })).toBeNull();
     fireEvent.click(within(dialog).getByRole("button", { name: "File task" }));
 
     expect(await screen.findByText("Filed Add a retry. It waits to be accepted.")).toBeInTheDocument();
@@ -263,6 +266,7 @@ describe("filing a new task", () => {
       task_type: "fix",
       description: "It fails once.",
       acceptance_criteria: "It retries.",
+      complexity: "small",
     });
     await waitFor(() => expect(calls(fetchImpl, "GET", backlogUrl()).length).toBeGreaterThan(1));
     expect(screen.queryByRole("dialog")).toBeNull();

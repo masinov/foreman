@@ -182,7 +182,15 @@
 }
 
 .task-details__list-terms {
-  margin: 0 0 var(--space-3);
+  margin: 0;
+}
+
+.task-details__more {
+  margin-bottom: var(--space-3);
+}
+
+.task-details__more .disclosure__content {
+  padding-top: 0;
 }
 
 .task-details__row {
@@ -465,4 +473,8 @@
 .folder-pick__lines {
   margin-left: auto;
   white-space: nowrap;
+}
+
+.task-details__list li + li {
+  margin-top: var(--space-1);
 }

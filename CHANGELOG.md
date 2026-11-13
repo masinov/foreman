@@ -9,6 +9,7 @@ memory changes rather than versioned product releases.
 
 ### Sprint 58 — frontend rebuild
 
+- Dashboard: a task's Details name what it depends on, its size and priority, with the rest behind "More details"; New task takes a size and, in a sprint, the tasks it waits for. `GET /tasks/{id}` returns `dependencies` with key, title and status.
 - Dashboard: a sign-in page appears when the server asks for its access token; the token is tried before it is kept, and Sign out forgets it.
 - Dashboard: add a project from the workspace; cancel or delete a sprint from More on its page; move planned sprints earlier or later in the queue (`POST /sprints/{id}/move`, one transaction).
 - Dashboard: one audit pass over every page. Needs you, task counts, headings, numeric columns, the sprint board, the Checks tables, settings forms and the phone-width top bar now follow the same rules (`docs/prs/fix-design-audit.md`).
