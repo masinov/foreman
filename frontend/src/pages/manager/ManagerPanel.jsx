@@ -4,7 +4,7 @@ import { Button } from "../../ui/Button";
 import { Field } from "../../ui/Field";
 import { wrapTab } from "../../ui/focus";
 import { plural } from "../../ui/format";
-import { ReasonDialog } from "../task/ReasonDialog";
+import { ReasonDialog } from "../shared/ReasonDialog";
 import { useOverlay } from "../../app/manager";
 import { ProposalCard } from "./ProposalCard";
 import { useConversation } from "./useConversation";

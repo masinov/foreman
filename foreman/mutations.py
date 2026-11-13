@@ -756,6 +756,41 @@ class Mutations:
         self.store.save_sprint(sprint)
         return sprint
 
+    def move_sprint(self, sprint: Sprint, direction: str) -> Sprint:
+        """Move a planned sprint one place earlier (``up``) or later (``down``) in the queue.
+
+        Only planned sprints have an order a person can change: the active one
+        is running and finished ones are history. Moving the first one up or
+        the last one down changes nothing. The planned sprints are renumbered
+        in one transaction, so the queue never shows a half-applied order.
+        """
+
+        if direction not in ("up", "down"):
+            raise MutationError("direction must be 'up' or 'down'.")
+        if sprint.is_backlog:
+            raise MutationError("The backlog is not a sprint and has no place in the queue.")
+        if sprint.status != "planned":
+            raise MutationError(
+                f"Sprint '{sprint.title}' is {sprint.status}; only a planned sprint can be moved in the queue."
+            )
+        everything = self.store.list_sprints(sprint.project_id)
+        planned = [entry for entry in everything if entry.status == "planned"]
+        position = next(index for index, entry in enumerate(planned) if entry.id == sprint.id)
+        target = position - 1 if direction == "up" else position + 1
+        if target < 0 or target >= len(planned):
+            return sprint
+        planned[position], planned[target] = planned[target], planned[position]
+        # Planned sprints run after everything that is not planned, so they
+        # are numbered after it; this also repairs equal numbers, which
+        # swapping two values would leave in place.
+        first = max((entry.order_index for entry in everything if entry.status != "planned"), default=-1) + 1
+        with self.store.atomic():
+            for offset, entry in enumerate(planned):
+                if entry.order_index != first + offset:
+                    entry.order_index = first + offset
+                    self.store.save_sprint(entry)
+        return next(entry for entry in planned if entry.id == sprint.id)
+
     def delete_sprint(self, sprint: Sprint) -> None:
         """Delete a sprint with its tasks, runs and events."""
 

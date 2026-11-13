@@ -414,3 +414,47 @@ describe("when the sprint cannot be read", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Sprint not found: sprint-56");
   });
 });
+
+describe("More on the sprint page", () => {
+  async function choose(item) {
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: item }));
+    return screen.findByRole("dialog");
+  }
+
+  it("cancels an open sprint after saying what that means", async () => {
+    const routes = sprintRoutes();
+    routes["PATCH /api/v1/sprints/sprint-56"] = { id: "sprint-56", status: "cancelled" };
+    const { fetchImpl } = await renderSprint("/dashboard/sprints/sprint-56", routes);
+    const dialog = await choose("Cancel sprint");
+    expect(dialog).toHaveTextContent("nothing in it runs again");
+    expect(calls(fetchImpl, "PATCH", "/api/v1/sprints/sprint-56")).toHaveLength(0);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel sprint" }));
+    await waitFor(() => expect(calls(fetchImpl, "PATCH", "/api/v1/sprints/sprint-56")[0].body).toEqual({ status: "cancelled" }));
+  });
+
+  it("deletes a sprint and goes to its project; a refusal stays in the dialog", async () => {
+    const routes = sprintRoutes();
+    routes["DELETE /api/v1/sprints/sprint-56"] = reply(400, { error: "FOR-14 is running; stop it before deleting.", code: "invalid_request" });
+    const { fetchImpl } = await renderSprint("/dashboard/sprints/sprint-56", routes);
+    const dialog = await choose("Delete sprint");
+    expect(dialog).toHaveTextContent("This cannot be undone.");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete sprint" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("FOR-14 is running");
+
+    routes["DELETE /api/v1/sprints/sprint-56"] = { ok: "deleted", sprint_id: "sprint-56", project_id: "foreman" };
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete sprint" }));
+    await waitFor(() => expect(window.location.pathname).toBe("/dashboard/projects/foreman"));
+    expect(calls(fetchImpl, "DELETE", "/api/v1/sprints/sprint-56")).toHaveLength(2);
+  });
+
+  it("offers only Delete once a sprint is finished", async () => {
+    await renderSprint(
+      "/dashboard/sprints/sprint-56",
+      sprintRoutes({ sprint: sprintPayload({ status: "completed", completed_at: "2025-01-02T10:00:00Z" }) }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    expect(await screen.findByRole("menuitem", { name: "Delete sprint" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Cancel sprint" })).toBeNull();
+  });
+});

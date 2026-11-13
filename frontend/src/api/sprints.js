@@ -4,6 +4,7 @@ export const SPRINT_STATUSES = {
   active: "active",
   planned: "planned",
   completed: "completed",
+  cancelled: "cancelled",
 };
 
 /**
@@ -79,4 +80,14 @@ export function createSprintTask(client, sprintId, { title, taskType, descriptio
     },
     options,
   );
+}
+
+/** Move a planned sprint one place `up` or `down` the queue. */
+export function moveSprint(client, sprintId, direction, options) {
+  return client.post(`/sprints/${segment(sprintId)}/move`, { direction }, options);
+}
+
+/** Delete a sprint with its tasks, runs and history. */
+export function deleteSprint(client, sprintId, options) {
+  return client.delete(`/sprints/${segment(sprintId)}`, options);
 }

@@ -6,7 +6,7 @@ import { Dialog } from "../../ui/Dialog";
 import { Field } from "../../ui/Field";
 
 /**
- * Confirm an action on a task. The dialog says what will happen
+ * Confirm an action on a task or a sprint. The dialog says what will happen
  * (`effect`); with `ask` it also takes a text (guidance, a reason), required
  * when `required`. `run(text)` performs the action; a refusal is shown as the
  * API's sentence and the dialog stays open. Without a text to write, focus

@@ -37,3 +37,8 @@ export function updateProjectSettings(client, projectId, { settings, workflowId 
 export function listWorkflows(client, options) {
   return client.get("/workflows", options).then((payload) => payload?.workflows ?? []);
 }
+
+/** Register a repository on this machine as a project. */
+export function createProject(client, { name, repoPath, workflowId }, options) {
+  return client.post("/projects", { name, repo_path: repoPath, workflow_id: workflowId }, options);
+}

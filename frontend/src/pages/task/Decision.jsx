@@ -9,7 +9,7 @@ import { Link } from "../../app/router";
 import { Button } from "../../ui/Button";
 import { Surface } from "../../ui/Surface";
 import { formatDay, formatDuration, humanize } from "../../ui/format";
-import { ReasonDialog } from "./ReasonDialog";
+import { ReasonDialog } from "../shared/ReasonDialog";
 import {
   branchWords,
   codeReview,

@@ -450,3 +450,39 @@ describe("the Activity tab", () => {
     expect(await screen.findByText("No task has been merged yet.")).toBeInTheDocument();
   });
 });
+
+describe("the order of planned sprints", () => {
+  const first = sprint("p0", "Planned first", "planned");
+  const second = sprint("p1", "Planned second", "planned");
+
+  it("moves a planned sprint earlier or later and reads the queue again", async () => {
+    const routes = projectRoutes({ queue: [ACTIVE, first, second] });
+    routes["POST /api/v1/sprints/p1/move"] = () => {
+      routes[QUEUE_URL] = { sprints: [ACTIVE, second, first], total: 3 };
+      return { id: "p1", order_index: 2, planned_order: ["p1", "p0"] };
+    };
+    const { fetchImpl } = await renderProject("/dashboard/projects/foreman", routes);
+    await screen.findByText("Planned second");
+    // The ends of the queue cannot move past it; the active sprint has no order to change.
+    expect(screen.getByRole("button", { name: "Move Planned first earlier" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Move Planned second later" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: `Move ${ACTIVE.title} later` })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Move Planned second earlier" }));
+    await waitFor(() => expect(calls(fetchImpl, "POST", "/api/v1/sprints/p1/move")[0].body).toEqual({ direction: "up" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Move Planned second earlier" })).toBeDisabled());
+  });
+
+  it("offers no order controls with one planned sprint, and shows a refusal as a sentence", async () => {
+    await renderProject();
+    await screen.findByText(PLANNED.title);
+    expect(screen.queryByRole("columnheader", { name: "Order" })).toBeNull();
+    cleanup();
+
+    const routes = projectRoutes({ queue: [ACTIVE, first, second] });
+    routes["POST /api/v1/sprints/p0/move"] = reply(400, { error: "Sprint 'Planned first' is active; only a planned sprint can be moved in the queue.", code: "invalid_request" });
+    await renderProject("/dashboard/projects/foreman", routes);
+    fireEvent.click(await screen.findByRole("button", { name: "Move Planned first later" }));
+    expect(await screen.findByText(/only a planned sprint can be moved/)).toHaveAttribute("role", "alert");
+  });
+});

@@ -13,7 +13,7 @@ from ...dashboard_service import (
     DashboardValidationError,
 )
 from ..streaming import event_stream_response
-from ..schemas import SprintCreate, TaskCreate, body_as
+from ..schemas import SprintCreate, SprintMove, TaskCreate, body_as
 from ..context import (
     MAX_EVENTS_PAGE_LIMIT,
     MAX_PAGE_LIMIT,
@@ -131,6 +131,10 @@ def build_router(ctx: ApiContext) -> APIRouter:
                 after_event_id=last_event_id,
             ),
         )
+
+    @router.post("/sprints/{sprint_id}/move")
+    def move_sprint(sprint_id: str, body: SprintMove = Depends(body_as(SprintMove))) -> dict[str, Any]:
+        return with_api(lambda api: api.move_sprint(sprint_id, direction=body.direction))
 
     @router.delete("/sprints/{sprint_id}")
     def delete_sprint(sprint_id: str) -> dict[str, Any]:
