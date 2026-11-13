@@ -9,7 +9,38 @@
   place.
 - `--json` on the remaining read commands; response models on the API.
 - Python `Enum` classes for statuses.
-- No real-browser check of the dashboard on the development host.
+
+## Found while Foreman built sprint 58 (2026-11-12 and 13)
+
+Engine and workflow defects seen while the engine ran sprint 58's tasks.
+None is fixed. Each is a candidate for the next engine sprint.
+
+- A corrective retry that ends with zero turns counts as a second failure.
+- A resumed session's cost is recorded cumulatively on each run, so a
+  task's spend is overcounted.
+- `foreman engine run-task` only takes effect at the engine's next pass; a
+  restart was needed to apply it.
+- Merges are only attempted between steps, so an approved merge can wait
+  behind a long step of another task.
+- The engine does not push after a merge.
+- The reviewer approved a 1,310-line change in seven seconds without opening
+  a file (the prompt was tightened and the diff cap raised; the behaviour
+  needs a real check, such as requiring evidence of files read).
+- There is no command to mark a task done by hand when its work was merged
+  outside the engine (FOR-38 still shows in progress).
+- Two branches that both rebuilt the committed bundle conflicted every time
+  (resolved: the bundle is no longer in git).
+
+## Dashboard follow-ups (after sprint 58)
+
+- A task's Activity tab shows run events as raw JSON; say them in sentences.
+- Editing a task's size, priority and dependencies after it is filed.
+- Motion that depends on live data (a row arriving, a step finishing).
+- One event stream per tab instead of two on a running task's page.
+- FOR-42: restrict the manager session's tools to the read surface.
+- FOR-43: the proposal card's "Then" row for a send-back, and a summary line
+  for earlier proposals.
+- ESLint with a `lint` script and a CI step.
 
 ## Finish plan — `docs/reviews/2026-11-10-full-review-and-finish-plan.md`
 

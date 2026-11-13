@@ -552,9 +552,21 @@ The frontend is being rebuilt to `docs/design/dashboard-v7/` in sprint 58.
 | `app/` | `main.jsx` (entry), `mountApp.jsx`, `router.jsx` (History API router and `Link`), `routes.js` (the route table), `paths.js` (every address), `Shell.jsx` and `Breadcrumb.jsx`, `pages.js` (which routes have a built page) |
 | `api/` | `client.js` (the `/api/v1` client; errors are `ApiError` from the ADR-0019 envelope; `queryString`; `stream()` follows an SSE stream with the token in the query), one module per resource (`projects`, `sprints`, `tasks`, `workspace`, `needsYou`, `milestones`, `engine`, `backlog`), `useResource.js` (`{data, error, loading, reload}`, stale responses ignored), `usePagedList.js` (server paging: first page, `loadMore`, `reload`, stale pages ignored), `useEventStream.js` (one stream while a path is given) and `ApiProvider.jsx` |
 | `ui/` | primitives: `Button`, `Table`, `Surface`, `StatusDot`, `Tabs`, `SectionHeading`, `Mono`, `Menu`, `Dialog`, `Field`, `Disclosure`, and `format.js` |
-| `pages/` | `workspace/`, `project/` (Sprints, Backlog and Activity tabs over one shared head, `ProjectLayout`), `sprint/` (list and board), `task/` (Overview, Changes, Checks and Activity over one shared head and decision, `TaskLayout`; wording in `taskWords.js`, the diff parser in `diff.js`), `shared/` (Needs you, the milestone table, the engine menu, shared wording), `status/` (the shared "being rebuilt" page and not-found) |
+| `pages/` | `workspace/`, `project/` (Sprints and Activity tabs over one shared head, `ProjectLayout`; the backlog is a page of its own in the same folder), `sprint/` (list and board), `task/` (Overview, Changes, Checks and Activity over one shared head and decision, `TaskLayout`; wording in `taskWords.js`, the diff parser in `diff.js`), `settings/` (project settings: General with Advanced and Working copies, Workflow), `workspaceSettings/`, `manager/`, `shared/` (Needs you, the milestone table, the engine menu, task counts, the confirm dialog, shared wording), `status/` (the shared "being rebuilt" page and not-found) |
 | `styles/` | `tokens.css` (the only place a colour, size, radius or line weight is written), `base.css`, `shell.css`, `ui.css`, and one stylesheet per page area |
 | `testing/` | the fake API used by tests |
+
+`app/SignInGate.jsx` wraps the application: the API client announces any 401
+(`client.onUnauthorized`), and the gate then shows Sign in in the
+application's place, tries the token against `GET /session` and keeps it only
+if accepted. `app/useLiveData.js` keeps pages current: inside a project it
+follows `GET /projects/{id}/stream` and calls the application-wide
+`refresh()` (every loaded resource loads again and keeps showing what it had
+meanwhile), ignoring agent and test output and the replay a new listener is
+sent, once per burst and at most every two seconds; the workspace reads again
+every 20 seconds; any page reads again when its tab becomes visible. Forms
+restart their draft only when the values read differ, so a reload never wipes
+typing.
 
 The entry (`app/main.jsx`) mounts the one application. Routes without a
 rebuilt page render one shared "This page is not built yet" page that links

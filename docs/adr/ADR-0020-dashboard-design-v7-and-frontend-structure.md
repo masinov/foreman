@@ -53,7 +53,7 @@ on the result: "the base is ready for implementation".
    | `/dashboard` | workspace |
    | `/dashboard/settings` | workspace settings |
    | `/dashboard/projects/{id}` | project, Sprints |
-   | `/dashboard/projects/{id}/backlog` | project, Backlog |
+   | `/dashboard/projects/{id}/backlog` | the project's backlog (a page of its own, see Amendments) |
    | `/dashboard/projects/{id}/activity` | project, Activity |
    | `/dashboard/projects/{id}/settings` | project settings, General |
    | `/dashboard/projects/{id}/settings/workflow` | project settings, Workflow |
@@ -110,6 +110,22 @@ on the result: "the base is ready for implementation".
   deleted, not edited (2026-11-12, decision 11).
 - The backlog changes what the standing "Intake queue" sprint means. That
   decision gets its own ADR with the slice that makes it.
-- A real-browser check is still not possible on the development host
-  (Playwright's browser does not install on it). Page tests run in jsdom;
-  the look is checked by a person against the drawings.
+- Page tests run in jsdom. Playwright's browser does not install on the
+  development host, but the installed Chrome can be driven directly:
+  `scripts/dashboard_shot.mjs` captures any address after clicking, hovering
+  or typing (amended 2026-11-13). The look is checked that way against the
+  rules in `docs/TESTING.md` ("Checking the look") before a person sees it.
+
+## Amendments, 2026-11-13 (owner review of the running dashboard)
+
+- **The backlog is a page, not a tab.** The owner's rule: a tab changes what
+  a page shows and is never a place, so it cannot be a breadcrumb step. The
+  backlog has its own address and breadcrumb step
+  (`/dashboard/projects/{id}/backlog`, "Project / Backlog") and is reached
+  from a button in the project's title row, beside Project settings. The
+  project page has two tabs: Sprints and Activity.
+- **No "Workspace" breadcrumb step.** The wordmark is the one link to the
+  workspace; the breadcrumb starts at the project.
+- **Pages stay current on their own** (decision 7): `app/useLiveData.js`
+  follows the project's event stream and reloads what the page loaded.
+- **Sign in** takes the application's place when the server answers 401.

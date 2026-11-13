@@ -19,7 +19,7 @@ have. It is never a literal string to render.
 | `00-screen-map.html` | The four levels, what each page shows and does (text only) |
 | `01-workspace.html` | Workspace: needs you across projects, projects, recent milestones |
 | `02-project-sprints.html` | Project, Sprints tab: engine, needs you, the sprint queue |
-| `03-project-backlog.html` | Project, Backlog tab: filed work, accepted work, plan into a sprint |
+| `03-project-backlog.html` | The backlog (now a page of its own): filed work, accepted work, plan into a sprint |
 | `04-sprint-list.html` | Sprint, list view |
 | `05-task-overview.html` | Task, Overview tab, with the manager side bar open |
 | `06-manager-open.html` | Project page with the manager side bar open |
@@ -40,9 +40,12 @@ Four levels, one page each, and a breadcrumb that says which you are on:
 Workspace / Project / Sprint / Task.
 
 - **Workspace** is the only place that spans projects. No manager here.
-- **Project** has three tabs of work: Sprints, Backlog, Activity. Its
-  configuration is a separate page, **Project settings** (General and
-  Workflow), reached from the title row. It is not a tab.
+- **Project** has two tabs: Sprints and Activity. A tab changes what the
+  page shows; it is never a place. The **Backlog** and **Project settings**
+  (General and Workflow) are pages of their own, each with a breadcrumb step,
+  reached from two buttons in the project's title row. (Revised 2026-11-13;
+  `03-project-backlog.html` still draws the backlog as a tab and is kept for
+  its content, not its placement.)
 - **Sprint** shows its tasks as a list or a board (one column per workflow
   step, with Queued first and Done last).
 - **Task** shows the pending decision first, then four tabs: Overview,

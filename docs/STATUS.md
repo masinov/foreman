@@ -3,23 +3,31 @@
 Current snapshot only. History up to 2026-09-08 (sprints 1 to 54) is in
 `docs/checkpoints/status-history-through-2026-09-08.md`.
 
-## Where the project is (2026-11-12)
+## Where the project is (2026-11-13)
 
 - Driving document: `docs/reviews/2026-11-10-full-review-and-finish-plan.md`
   (full review of engine, runner, dashboard, frontend and UX, with a six-phase
   plan, 0 to 5).
-- Phases 0, 1 and 2 are done: sprint 55 (baseline and host safety) and
-  sprint 56 (engine truthfulness) are closed and archived under
+- Phases 0 to 3 are done: sprints 55 (baseline and host safety), 56 (engine
+  truthfulness) and 57 (structure) are closed and archived under
   `docs/sprints/archive/`.
-- Phase 3 is done: sprint 57 (structure) is closed and archived.
 - Active sprint: **sprint 58 — frontend rebuild** (`docs/sprints/current.md`),
   Phase 4 of the plan. The dashboard is rebuilt to
-  `docs/design/dashboard-v7/` (ADR-0020), and the slices are run through
-  Foreman itself.
-- `main` is pushed to `origin/main` and CI is green. Work happens on short
-  branches from `main`; the operator checkout stays off `main` (the
-  `_integration` worktree holds it).
-- Schema version 20. 1128 Python tests, 134 frontend tests.
+  `docs/design/dashboard-v7/` (ADR-0020). Every page of the design exists,
+  and everything the old dashboard could do has a place or is dropped on
+  purpose (`docs/design/dashboard-v7/legacy-capabilities.md`). What remains
+  of the sprint is ESLint and the closing checkpoint.
+- Nineteen tasks of the sprint were run by Foreman itself. On
+  2026-11-13 the owner asked for the engine to be stopped and the rest done
+  by hand; it has been since. What the engine did well and badly is in
+  `docs/sprints/current.md` and the defects are in `docs/sprints/backlog.md`.
+- `main` is pushed to `origin/main`. Work happens on short branches from
+  `main`; the operator checkout stays off `main` (the `_integration` worktree
+  holds it).
+- Schema version 23. 1334 Python tests, 356 frontend tests. The built bundle
+  is not in git; `foreman dashboard` builds it when it is missing or stale.
+- In the Foreman project's own database FOR-38 still reads "in progress":
+  its work was merged by hand and there is no command to say so.
 
 ## What sprint 56 changed for an operator
 
@@ -80,14 +88,17 @@ review, human gate, deferred approval, merge). Still true: agents run with full 
 - `AGENTS.md` named `docs/mockups/foreman-mockup-v6.html` as the UI
   authority. On 2026-11-12 the owner agreed a new design and said it was
   ready for implementation; `docs/design/dashboard-v7/` is now the UI
-  reference (ADR-0020) and the mockup is kept as history. Until sprint 58
-  finishes, the shipped dashboard is partly rebuilt: `/dashboard` (the
-  workspace) and the project page's Sprints and Activity tabs are v7, and
-  other v7 routes say they are not built yet and name the terminal command
-  that does the same job. The old application was removed on 2026-11-12 by
-  owner decision (ADR-0020, decision 11); `/dashboard/legacy` is not found.
+  reference (ADR-0020) and the mockup is kept as history. The old application
+  was removed on 2026-11-12 by owner decision (ADR-0020, decision 11);
+  `/dashboard/legacy` is not found.
   `docs/design/dashboard-v7/legacy-capabilities.md` lists what it could do
-  and which of that has no home yet.
+  and where each thing is now.
+- The running dashboard differs from the design's drawings where the owner
+  corrected it on 2026-11-13 (ADR-0020, Amendments): the backlog is a page of
+  its own, reached from a button beside Project settings, not a third tab;
+  the breadcrumb has no "Workspace" step; planned sprints are reordered with
+  earlier and later buttons, not by dragging. The design README states the
+  first of these; the drawings were not redrawn.
 - The design's Needs you has four kinds: accept filed work, approve a plan,
   approve a merge, unblock. Pending decision gates (a proposed sprint order)
   are a fifth kind the design does not show. Resolved: the needs-you endpoint
@@ -99,14 +110,15 @@ review, human gate, deferred approval, merge). Still true: agents run with full 
   row of kind `backlog` that is never listed or run as a sprint; the standing
   "Intake queue" sprint is gone (migration 21 moved its waiting work into the
   backlog). Accepted intake work and agent follow-ups now wait there until a
-  person plans them into a sprint. The rebuilt frontend has no backlog
-  screen yet; it reads `GET /api/v1/projects/{id}/backlog` when it lands.
+  person plans them into a sprint, on the backlog page.
 
 ## Validation baseline
 
-- `./venv/bin/python -m unittest discover -s tests` (989 tests)
-- `npm --prefix frontend test` (50 tests) and `npm --prefix frontend run build`
+- `./venv/bin/python -m unittest discover -s tests` (1334 tests)
+- `npm --prefix frontend test` (356 tests) and `npm --prefix frontend run build`
 - `ruff check foreman tests scripts` (pyflakes and syntax rules)
 - `./venv/bin/python scripts/validate_repo_memory.py`
-- CI runs all of the above plus a check that the committed bundle matches
-  the source (`.github/workflows/ci.yml`).
+- CI runs all of the above; its Python job builds the frontend first, since
+  the bundle is not in git (`.github/workflows/ci.yml`).
+- The look: `scripts/dashboard_shot.mjs` against the rules in
+  `docs/TESTING.md` ("Checking the look").
