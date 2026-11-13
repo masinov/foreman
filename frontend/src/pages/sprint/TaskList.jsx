@@ -11,14 +11,14 @@ import { TaskChecks } from "./TaskChecks";
 import { orderTasks, stageOf, waitsForMerge } from "./taskStage";
 
 /** The sprint's tasks as a table: what needs a person first, finished last. */
-export function TaskList({ tasks, busy, onApprove }) {
+export function TaskList({ tasks, engine, busy, onApprove }) {
   const columns = [
     {
       key: "stage",
       header: "Stage",
       className: "task-list__stage",
       render: (task) => {
-        const { tone, word } = stageOf(task);
+        const { tone, word } = stageOf(task, engine);
         return <StatusDot tone={tone}>{word}</StatusDot>;
       },
     },

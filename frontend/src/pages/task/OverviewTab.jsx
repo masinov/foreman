@@ -16,6 +16,7 @@ import { SectionHeading } from "../../ui/SectionHeading";
 import { StatusDot } from "../../ui/StatusDot";
 import { Table } from "../../ui/Table";
 import { formatDay, formatDayTime, formatMoney, formatTokens, humanize, plural } from "../../ui/format";
+import { useProjectEngine } from "../shared/useProjectEngine";
 import { stageOf } from "../sprint/taskStage";
 import { Overrides } from "./Overrides";
 import { criteriaSummary, filedBy, stepRows, testsWords, whoDecides } from "./taskWords";
@@ -187,7 +188,7 @@ function SprintLink({ task }) {
 }
 
 /** The tasks this one waits for: each a link, saying whether it is finished. */
-function Dependencies({ items }) {
+function Dependencies({ items, engine }) {
   return (
     <ul className="task-details__list">
       {items.map((item) => {
@@ -198,7 +199,7 @@ function Dependencies({ items }) {
             </li>
           );
         }
-        const stage = stageOf(item);
+        const stage = stageOf(item, engine);
         return (
           <li key={item.id}>
             <Link className="row-link" href={paths.task(item.id)}>
@@ -290,7 +291,8 @@ function Filed({ task }) {
 }
 
 function Details({ task, workflow }) {
-  const stage = stageOf(task);
+  const engine = useProjectEngine(task.project_id);
+  const stage = stageOf(task, engine);
   const deciders = whoDecides(task, workflow.data);
   const who = filedBy(task);
   const when = formatDay(task.created_at);
@@ -312,7 +314,7 @@ function Details({ task, workflow }) {
       ) : null,
     },
     task.dependencies?.length
-      ? { key: "depends", term: "Depends on", value: <Dependencies items={task.dependencies} /> }
+      ? { key: "depends", term: "Depends on", value: <Dependencies items={task.dependencies} engine={engine} /> }
       : null,
     task.complexity ? { key: "size", term: "Size", value: humanize(task.complexity) } : null,
     task.priority

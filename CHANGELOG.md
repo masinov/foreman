@@ -9,6 +9,7 @@ memory changes rather than versioned product releases.
 
 ### Sprint 58 — frontend rebuild
 
+- Dashboard: a task part-way through its workflow reads "Running, <step>" only while the project's engine is on it. With the engine stopped or on another task it reads "Stopped at <step>", and "Paused at <step>" when the engine is paused on it. Before, every unfinished task read "Running" whether or not anything ran.
 - Dashboard: a task's Overview is redistributed. Description and Acceptance criteria move to the wide column, capped at a readable line length, and fold to twelve lines with "Show all" when longer; Overrides for this task moves beside them under Details, with controls as wide as what they hold.
 - Dashboard: a task's token line under More details fits on one line ("cached", not "read from cache").
 - CI: an unused import in `foreman/dashboard_service.py` had failed the Python lint step on every push since 2026-11-13 (thirteen merges); removed. The linter is now run locally before each merge.

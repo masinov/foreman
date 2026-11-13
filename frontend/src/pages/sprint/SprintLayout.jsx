@@ -15,6 +15,7 @@ import { NewTaskDialog } from "../project/NewTaskDialog";
 import { AddFromBacklogDialog } from "./AddFromBacklogDialog";
 import { SprintActivity } from "./SprintActivity";
 import { SprintHead } from "./SprintHead";
+import { useProjectEngine } from "../shared/useProjectEngine";
 import { TaskBoard } from "./TaskBoard";
 import { TaskList } from "./TaskList";
 
@@ -55,6 +56,7 @@ export function SprintLayout({ sprintId, view }) {
   const sprint = useResource(["sprint", sprintId], (apiClient, options) => getSprint(apiClient, sprintId, options));
   const tasks = useResource(["sprint-tasks", sprintId], (apiClient, options) => listSprintTasks(apiClient, sprintId, options));
   const projectId = sprint.data?.project_id ?? null;
+  const engine = useProjectEngine(projectId);
   const workflow = useResource(
     ["workflow", projectId],
     (apiClient, options) => getProjectWorkflow(apiClient, projectId, options),
@@ -153,7 +155,7 @@ export function SprintLayout({ sprintId, view }) {
           </p>
         ) : null}
         {tasks.data && taskList.length > 0 && view === VIEWS.list ? (
-          <TaskList tasks={taskList} busy={approving} onApprove={approve} />
+          <TaskList tasks={taskList} engine={engine} busy={approving} onApprove={approve} />
         ) : null}
         {tasks.data && taskList.length > 0 && view === VIEWS.board && workflow.data ? (
           <TaskBoard tasks={taskList} workflow={workflow.data} busy={approving} onApprove={approve} />
