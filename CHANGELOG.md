@@ -9,6 +9,7 @@ memory changes rather than versioned product releases.
 
 ### Sprint 58 — frontend rebuild
 
+- CI: an unused import in `foreman/dashboard_service.py` had failed the Python lint step on every push since 2026-11-13 (thirteen merges); removed. The linter is now run locally before each merge.
 - Frontend: ESLint (`npm --prefix frontend run lint`, flat config with the React and React Hooks rules) and a CI step. Seven unused names it found are removed.
 - `scripts/dashboard_shot.mjs`: capture any dashboard address with the installed Chrome, after clicking, hovering or typing. `docs/TESTING.md` gains "Checking the look" with the fifteen rules a frontend change is checked against. Sprint 58's state, the design README (the backlog is a page, not a tab) and ADR-0020 are brought up to date; engine defects found during the sprint are in `docs/sprints/backlog.md`.
 - Dashboard: pages stay current on their own. Inside a project the project's event stream triggers a reload (once per burst, at most every 2 s, agent output ignored); the workspace reads again every 20 s; returning to a background tab reads at once. Forms keep what is being typed.
