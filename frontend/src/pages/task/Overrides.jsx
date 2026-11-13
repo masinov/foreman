@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useState } from "react";
+import React, { useId, useState } from "react";
 
 import { useApiClient } from "../../api/ApiProvider";
 import { errorSentence } from "../../api/client";
@@ -64,18 +64,24 @@ export function Overrides({ task, workflow, onSaved }) {
   // What can be overridden, as text: the same workflow read again is the
   // same text, so a background refresh does not wipe what is being typed.
   const shape = JSON.stringify([gates.map((gate) => gate.policy), steps.map((step) => step.id)]);
-  const [gateValues, setGateValues] = useState({});
-  const [modelValues, setModelValues] = useState({});
+  const startGates = () => Object.fromEntries(gates.map((gate) => [gate.policy, currentGateOverride(task, gate.policy)]));
+  const startModels = () =>
+    Object.fromEntries(steps.map((step) => [step.id, task.executor_overrides?.models?.[step.id] ?? ""]));
+  const [gateValues, setGateValues] = useState(startGates);
+  const [modelValues, setModelValues] = useState(startModels);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState(null);
 
-  // Start from what the task has; again only when what it has changed.
-  useEffect(() => {
-    const overrides = task.executor_overrides ?? {};
-    setGateValues(Object.fromEntries(gates.map((gate) => [gate.policy, currentGateOverride(task, gate.policy)])));
-    setModelValues(Object.fromEntries(steps.map((step) => [step.id, overrides.models?.[step.id] ?? ""])));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stored, shape]);
+  // Start from what the task has; again only when what it has changed. Done
+  // while rendering, not in an effect, so it cannot land on top of an edit
+  // made right after the first render.
+  const read = `${stored}\n${shape}`;
+  const [shown, setShown] = useState(read);
+  if (shown !== read) {
+    setShown(read);
+    setGateValues(startGates());
+    setModelValues(startModels());
+  }
 
   if (!gates.length && !steps.length) return null;
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 
 import { useApiClient } from "../../api/ApiProvider";
 import { ApiError, errorSentence } from "../../api/client";
@@ -63,11 +63,16 @@ function GeneralForm({ projectId, settings, onSaved }) {
   const [notice, setNotice] = useState(null);
   const [saving, setSaving] = useState(false);
 
-  // What was read changed (after a save, or the page was read again).
-  useEffect(() => {
+  // Start over when different values are read (after a save, or when the
+  // page was read again and something had changed). Done while rendering, not in
+  // an effect: an effect also runs once after the first render, and could
+  // land on top of an edit made in that moment.
+  const [shown, setShown] = useState(read);
+  if (shown !== read) {
+    setShown(read);
     setDraft(initial);
     setErrors({});
-  }, [initial]);
+  }
 
   const dirty = changedKeys(initial, draft).length > 0;
 
