@@ -9,6 +9,7 @@ memory changes rather than versioned product releases.
 
 ### Sprint 58 — frontend rebuild
 
+- Dashboard: project settings and a task's overrides no longer reset their form in an effect after the first render, which could wipe an edit made in that moment (the likely cause of a frontend test that failed now and then, on CI at `a963ac4`). The form starts over only when different values are read.
 - Tasks can be closed and reopened by hand. `foreman task done <id> --reason` (`POST /api/v1/tasks/{id}/complete`, "Mark done" in the task's More menu) marks a queued, unfinished or blocked task done without running its workflow; the reason is recorded and the task says "Marked done by hand, not checked by Foreman". `foreman task reopen <id>` (`POST /api/v1/tasks/{id}/reopen`, "Reopen") returns a done or cancelled task to the queue. In the More menu, Stop is offered only while an engine is running the task; a task left part-way with no engine on it offers Run next instead.
 - Dashboard: the Steps table on a task reads "Running" at the current step only while the engine is on the task ("Stopped here" or "Paused here" otherwise). A menu whose button is in the right half of the window opens leftwards, so the task's More menu no longer runs off the page.
 - Dashboard: a task part-way through its workflow reads "Running, <step>" only while the project's engine is on it. With the engine stopped or on another task it reads "Stopped at <step>", and "Paused at <step>" when the engine is paused on it. Before, every unfinished task read "Running" whether or not anything ran.
