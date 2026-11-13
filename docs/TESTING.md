@@ -168,6 +168,49 @@ The current suite covers:
 - `frontend/src/styles/rules.test.js` for the design rules: no colour or size
   outside `tokens.css`, no inline styles, no `fetch` in pages or primitives
 
+## Checking the look
+
+Tests run in jsdom and cannot see a page. `scripts/dashboard_shot.mjs` can:
+it drives the installed Chrome headless and writes a PNG, after clicking,
+hovering or typing if asked.
+
+```bash
+node scripts/dashboard_shot.mjs http://localhost:8080/dashboard/projects/foreman /tmp/project.png
+node scripts/dashboard_shot.mjs http://localhost:8080/dashboard /tmp/add.png "click:Add project"
+node scripts/dashboard_shot.mjs http://localhost:8080/dashboard/projects/foreman /tmp/phone.png --size=390x844
+node scripts/dashboard_shot.mjs http://localhost:8080/dashboard /tmp/zoom.png --scale=3 --size=700x300
+```
+
+What a change to the frontend is checked against, before a person sees it:
+
+1. Tabs change what a page shows. Anything that opens another page is a
+   button or a link and is never in a tab row.
+2. Every breadcrumb step is a place: clicking it lands on a page that shows
+   that breadcrumb. No tab names. The wordmark is the only link to the
+   workspace.
+3. One way to each place; no two adjacent controls go to the same page.
+4. A section title sits on a rule, joined to what it names. It is a short
+   name; details and actions go beside it on the same row.
+5. A count is a figure beside its label: smaller, a fixed gap away, on the
+   baseline. Gold only when it counts things that wait for a person.
+6. Gold means "needs you"; green, red and blue mean a result or a state.
+7. The same thing is said the same way on every page (checks, task counts,
+   engine state).
+8. Text on one line shares a baseline (check at `--scale=3`); numbers sit
+   under their header.
+9. A highlight stays inside its container and content does not touch its
+   edge; rows of one list are one height.
+10. Nothing wraps that would fit; keys and short facts never break.
+11. Never show an id, a placeholder or a filler line.
+12. Long lists say N of M and offer the rest; a pick shows its result beside
+    the list.
+13. Empty states keep their container, with a sentence inside.
+14. Icons accompany words.
+15. Hints say plainly what to type.
+
+Take the shot at 1440 wide and at 390 wide. Open every dialog and menu the
+change touches. Use a copy of the database when a step would change state.
+
 ## Expected testing layers
 
 Unit tests:
