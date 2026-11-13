@@ -12,6 +12,13 @@ const COLUMNS = [
   { key: "detail", header: "Detail", className: "secondary", render: (row) => row.detail },
 ];
 
+// A criterion is written as a list item in the task; the dash is the list's,
+// not the criterion's.
+const criterionText = (text) => String(text ?? "").replace(/^\s*[-*]\s+/, "");
+// What the engine records when no judge looked. The Result column already
+// says "Not judged"; repeating it under every criterion adds nothing.
+const UNJUDGED_EVIDENCE = "Not checked by a judge model.";
+
 function factRows(facts) {
   const tests = testsWords(facts.tests);
   const branch = branchWords(facts.branch);
@@ -66,8 +73,8 @@ function claimRows(claims) {
       result: words.word,
       detail: (
         <span className="cell-stack">
-          <span>{item.criterion}</span>
-          {item.evidence ? <span className="quiet">{item.evidence}</span> : null}
+          <span>{criterionText(item.criterion)}</span>
+          {item.evidence && item.evidence !== UNJUDGED_EVIDENCE ? <span className="quiet">{item.evidence}</span> : null}
         </span>
       ),
     };

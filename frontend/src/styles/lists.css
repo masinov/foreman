@@ -48,10 +48,71 @@
 }
 
 /* Needs you: the surface holds only the rows; the heading sits above it. */
-.needs-you__surface {
-  padding: var(--space-1) var(--space-4);
+/* No padding above the first row or below the last: each row's own padding
+   is the frame, so every row is the same height. Written with the surface's
+   own class so it wins over the surface's default padding whatever order the
+   stylesheets load in. */
+.surface.needs-you__surface {
+  padding: 0 var(--space-4);
 }
 
-.needs-you__surface--empty {
+.surface.needs-you__surface--empty {
   padding: var(--space-3) var(--space-4);
+}
+
+.needs-you__checked {
+  white-space: nowrap;
+}
+
+/* Every row is one height, with or without a button in it. */
+.needs-you .table td {
+  height: var(--needs-you-row-height);
+  vertical-align: middle;
+}
+
+/* At phone width a row is a small block: what to do and which task, the
+   title on its own line, then what was checked and the action. */
+@media (max-width: 640px) {
+  .needs-you .table,
+  .needs-you .table tbody {
+    display: block;
+  }
+
+  .needs-you .table tbody tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-1) var(--space-3);
+    padding-block: var(--space-2);
+  }
+
+  .needs-you .table tbody tr + tr {
+    border-top: var(--line-width) solid var(--color-line-row-tinted);
+  }
+
+  .needs-you .table tbody tr td,
+  .needs-you .table tbody tr + tr td {
+    height: auto;
+    padding: 0;
+    border-top: 0;
+  }
+
+  .needs-you .table .needs-you__title {
+    flex-basis: 100%;
+    order: 2;
+  }
+
+  .needs-you .table .needs-you__checked {
+    flex: 1 1 auto;
+    order: 3;
+    white-space: normal;
+  }
+
+  .needs-you .table .needs-you__action {
+    order: 4;
+  }
+
+  .surface.needs-you__surface {
+    padding-inline: var(--space-3);
+  }
 }

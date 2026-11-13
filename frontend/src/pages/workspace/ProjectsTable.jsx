@@ -7,7 +7,8 @@ import { StatusDot } from "../../ui/StatusDot";
 import { Table } from "../../ui/Table";
 import { formatDay, formatMoney, humanize } from "../../ui/format";
 import { MilestoneText } from "../shared/milestones";
-import { describeTaskCounts, engineWords } from "../shared/words";
+import { TaskCounts } from "../shared/TaskCounts";
+import { engineWords } from "../shared/words";
 
 function ProjectCell({ project }) {
   const location = [project.repo_path, project.default_branch].filter(Boolean).join(" · ");
@@ -31,28 +32,23 @@ function EngineCell({ engine }) {
           <Mono quiet>{engine.task_key || engine.task_title}</Mono>
           {engine.step ? `, ${humanize(engine.step).toLowerCase()}` : ""}
         </span>
-      ) : (
-        <span className="quiet">working on nothing</span>
-      )}
+      ) : null}
     </div>
   );
 }
 
 function SprintCell({ sprint }) {
   if (!sprint) {
-    return (
-      <div className="cell-stack">
-        <span>None</span>
-        <span className="quiet">nothing active</span>
-      </div>
-    );
+    return <span className="quiet">None</span>;
   }
   return (
     <div className="cell-stack">
       <Link className="row-link" href={paths.sprint(sprint.id)}>
         {sprint.title}
       </Link>
-      <span className="quiet">{describeTaskCounts(sprint.task_counts)}</span>
+      <span className="quiet">
+        <TaskCounts counts={sprint.task_counts} />
+      </span>
     </div>
   );
 }
@@ -74,13 +70,13 @@ const COLUMNS = [
   {
     key: "needs-you",
     header: "Needs you",
-    className: "projects__number",
+    numeric: true,
     render: (p) => <span className={p.needs_you > 0 ? "attention" : "quiet"}>{p.needs_you}</span>,
   },
   {
     key: "backlog",
     header: "Backlog",
-    className: "projects__number",
+    numeric: true,
     render: (p) => (
       <Link className="row-link" href={paths.projectBacklog(p.id)} aria-label={`${p.name} backlog, ${p.backlog}`}>
         {p.backlog}
@@ -90,7 +86,7 @@ const COLUMNS = [
   {
     key: "spend",
     header: "Sprint spend",
-    className: "projects__number",
+    numeric: true,
     render: (p) => (p.active_sprint ? <Mono>{formatMoney(p.active_sprint.spend_usd)}</Mono> : null),
   },
   { key: "last", header: "Last change", className: "projects__last", render: (p) => <LastChangeCell milestone={p.latest_milestone} /> },

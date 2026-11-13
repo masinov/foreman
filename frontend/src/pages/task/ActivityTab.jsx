@@ -116,11 +116,11 @@ export function ActivityTab({ task, revision }) {
       className: "secondary",
       render: (run) => (run.commit_sha ? <Mono quiet>{shortSha(run.commit_sha)}</Mono> : null),
     },
-    { key: "took", header: "Took", className: "task-runs__number", render: (run) => <Mono quiet>{formatDuration(runSeconds(run))}</Mono> },
+    { key: "took", header: "Took", numeric: true, render: (run) => <Mono quiet>{formatDuration(runSeconds(run))}</Mono> },
     {
       key: "spend",
       header: "Spend",
-      className: "task-runs__number",
+      numeric: true,
       render: (run) => (run.cost_usd ? <Mono quiet>{formatMoney(run.cost_usd)}</Mono> : null),
     },
   ];

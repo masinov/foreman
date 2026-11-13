@@ -6,7 +6,7 @@ import { Button } from "../ui/Button";
 export function ManagerToggle({ open, onToggle }) {
   return (
     <Button className="topbar__toggle" variant="quiet" inRow icon="panel" aria-pressed={open} onClick={onToggle}>
-      Manager
+      <span className="topbar__word">Manager</span>
     </Button>
   );
 }

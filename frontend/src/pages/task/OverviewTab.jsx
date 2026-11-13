@@ -28,7 +28,7 @@ function Steps({ task, workflow }) {
       render: (row) => <span className={`tone-${row.result.tone}`}>{row.result.word}</span>,
     },
     { key: "by", header: "By", className: "secondary", render: (row) => row.by },
-    { key: "runs", header: "Runs", className: "task-steps__runs", render: (row) => (row.runs ? <Mono quiet>{row.runs}</Mono> : null) },
+    { key: "runs", header: "Runs", numeric: true, render: (row) => (row.runs ? <Mono quiet>{row.runs}</Mono> : null) },
   ];
   return (
     <section className="task-section" aria-labelledby="task-steps">
@@ -52,7 +52,15 @@ function ChecksSummary({ task, checks }) {
   const tests = data ? testsWords(data.facts.tests) : null;
   return (
     <section className="task-section" aria-labelledby="task-checks-summary">
-      <SectionHeading id="task-checks-summary" title="Checks" />
+      <SectionHeading
+        id="task-checks-summary"
+        title="Checks"
+        actions={
+          <Link className="section-link" href={paths.taskChecks(task.id)}>
+            All checks
+          </Link>
+        }
+      />
       {checks.error ? (
         <p className="notice notice--error" role="alert">
           {checks.error}
@@ -70,9 +78,6 @@ function ChecksSummary({ task, checks }) {
               ? plural(data.evidence_files.length, "evidence file")
               : "No evidence files required by this workflow"}
           </span>
-          <Link className="task-checks-line__open" href={paths.taskChecks(task.id)}>
-            Open Checks
-          </Link>
         </div>
       ) : null}
     </section>

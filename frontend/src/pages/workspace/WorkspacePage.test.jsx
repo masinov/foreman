@@ -38,7 +38,9 @@ describe("WorkspacePage", () => {
     const approval = within(needsYou).getByText("FOR-14").closest("tr");
     expect(within(approval).getByText("Foreman")).toBeInTheDocument();
     expect(within(approval).getByText("Approve merge")).toBeInTheDocument();
-    expect(within(approval).getByText(/tests passed · review approved/)).toBeInTheDocument();
+    // The same words as the sprint list: a word alone, in green, passed.
+    expect(approval).toHaveTextContent("tests · review · b232eb1");
+    expect(within(approval).getByText("tests")).toHaveClass("checks__passed");
     expect(within(approval).getByText("b232eb1")).toBeInTheDocument();
     expect(within(approval).getByRole("link", { name: "Make the test step report what happened" })).toHaveAttribute(
       "href",
@@ -63,7 +65,8 @@ describe("WorkspacePage", () => {
       "href",
       "/dashboard/sprints/sprint-56",
     );
-    expect(within(foremanRow).getByText("2 need you · 1 to do · 1 done")).toBeInTheDocument();
+    expect(foremanRow).toHaveTextContent("2 need you · 1 to do · 1 done");
+    expect(within(foremanRow).getByText("2 need you")).toHaveClass("attention");
     expect(within(foremanRow).getByText("$1.31")).toBeInTheDocument();
     expect(within(foremanRow).getByText("2")).toHaveClass("attention");
     expect(within(foremanRow).getByRole("link", { name: "Foreman backlog, 4" })).toHaveAttribute(
@@ -78,7 +81,8 @@ describe("WorkspacePage", () => {
 
     const otherRow = within(projects).getByRole("link", { name: "Other project" }).closest("tr");
     expect(within(otherRow).getByText("Not running")).toBeInTheDocument();
-    expect(within(otherRow).getByText("working on nothing")).toBeInTheDocument();
+    // An idle engine says so once; there is no second line repeating it.
+    expect(within(otherRow).queryByText(/working on/)).toBeNull();
     expect(within(otherRow).getByText("None")).toBeInTheDocument();
     expect(within(otherRow).getByText("nothing yet")).toBeInTheDocument();
 

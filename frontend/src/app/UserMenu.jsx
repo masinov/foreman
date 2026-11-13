@@ -3,6 +3,7 @@ import React from "react";
 import { getSession } from "../api/access";
 import { clearDashboardToken } from "../api/token";
 import { useResource } from "../api/useResource";
+import { Icon } from "../ui/Icon";
 import { Menu } from "../ui/Menu";
 import { paths } from "./paths";
 import { Link, useRoute } from "./router";
@@ -54,7 +55,12 @@ export function UserMenu() {
       className="user-menu"
       triggerClassName="user-menu__trigger"
       triggerLabel={`You: ${session.name}. Workspace settings${session.can_sign_out ? ", sign out" : ""}`}
-      trigger={<span className="user-menu__name">{session.name}</span>}
+      trigger={
+        <>
+          <Icon name="user" />
+          <span className="user-menu__name topbar__word">{session.name}</span>
+        </>
+      }
       items={items}
     />
   );

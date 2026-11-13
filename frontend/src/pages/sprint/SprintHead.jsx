@@ -6,7 +6,7 @@ import { SPRINT_STATUSES, transitionSprint } from "../../api/sprints";
 import { Button } from "../../ui/Button";
 import { Mono } from "../../ui/Mono";
 import { formatDay, formatMoney, formatTokens } from "../../ui/format";
-import { describeTaskCounts } from "../shared/words";
+import { TaskCounts } from "../shared/TaskCounts";
 import { EditSprintDialog } from "./EditSprintDialog";
 
 // The one state change that applies to a sprint now.
@@ -30,19 +30,6 @@ function stateSentence(sprint) {
     default:
       return sprint.status;
   }
-}
-
-function TaskCounts({ counts }) {
-  const needYou = (counts?.blocked || 0) + (counts?.triage || 0);
-  const words = describeTaskCounts(counts);
-  if (needYou === 0) return words;
-  const [first, ...rest] = words.split(" · ");
-  return (
-    <>
-      <span className="summary__attention">{first}</span>
-      {rest.length ? ` · ${rest.join(" · ")}` : ""}
-    </>
-  );
 }
 
 /**

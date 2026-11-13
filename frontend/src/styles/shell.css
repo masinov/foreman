@@ -135,11 +135,52 @@
   }
 }
 
+/* At phone width the bar is two rows: the word and the controls, then the
+   breadcrumb on a row of its own. The controls keep their icons and drop
+   their words, so nothing in the bar wraps. */
 @media (max-width: 640px) {
   .topbar__inner,
   .page {
     padding-inline: var(--page-gutter-narrow);
   }
+
+  .topbar__inner {
+    gap: 0 var(--space-2);
+  }
+
+  .topbar__right {
+    gap: var(--space-2);
+    min-height: var(--topbar-height);
+  }
+
+  .breadcrumb {
+    order: 3;
+    flex-basis: 100%;
+    padding-bottom: var(--space-2);
+  }
+
+  .breadcrumb:has(.breadcrumb__list:empty) {
+    display: none;
+  }
+
+  .topbar__word {
+    position: absolute;
+    width: var(--line-width);
+    height: var(--line-width);
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .topbar__toggle .icon {
+    margin-right: 0;
+  }
+}
+
+.topbar__right,
+.engine-menu__trigger,
+.user-menu__trigger {
+  white-space: nowrap;
 }
 
 .breadcrumb__switcher {

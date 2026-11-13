@@ -45,8 +45,9 @@ function TopBarRight({ route, params, manager }) {
     );
   }
   if (route.level === "project") {
-    // Settings are a page of their own, but the engine and manager are still the project's.
-    return route.name.startsWith("project-settings") ? (
+    // The project page shows its engine in the page. The pages below it
+    // (settings, backlog) are pages of their own, so the engine is in the bar.
+    return route.name.startsWith("project-settings") || route.name === "project-backlog" ? (
       <>
         <EngineMenu projectId={params.projectId} />
         {manager}

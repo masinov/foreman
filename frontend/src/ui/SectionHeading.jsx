@@ -1,13 +1,14 @@
 import React from "react";
 
 /**
- * A section heading: the title, an optional count beside it, an optional
+ * A section heading: the title, an optional count beside it (gold only when
+ * `attention` says it counts things that wait for a person), an optional
  * quiet note, and optional actions at the right. It sits on a rule that spans
  * the section, so the title reads as the head of what is under it; `plain`
  * drops the rule for a heading above a tinted surface, which is its own
  * container.
  */
-export function SectionHeading({ title, count, note, actions, level = 2, id, plain = false }) {
+export function SectionHeading({ title, count, attention = false, note, actions, level = 2, id, plain = false }) {
   const Heading = `h${level}`;
   return (
     <div className={plain ? "section-heading section-heading--plain" : "section-heading"}>
@@ -16,7 +17,9 @@ export function SectionHeading({ title, count, note, actions, level = 2, id, pla
         {count !== undefined && count !== null ? (
           <>
             <span className="visually-hidden"> </span>
-            <span className="section-heading__count">{count}</span>
+            <span className={attention && count > 0 ? "section-heading__count section-heading__count--attention" : "section-heading__count"}>
+              {count}
+            </span>
           </>
         ) : null}
       </Heading>

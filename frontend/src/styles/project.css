@@ -65,8 +65,9 @@ a.button:hover {
 }
 
 .engine__label {
-  font-size: var(--font-size-section);
-  font-weight: var(--font-weight-strong);
+  color: var(--color-text-quiet);
+  font-size: var(--font-size-control);
+  font-weight: var(--font-weight-medium);
 }
 
 .engine__state {
@@ -100,13 +101,9 @@ a.button:hover {
   gap: var(--space-5);
 }
 
-.queue__heading {
-  display: flex;
-  flex-wrap: wrap;
+.queue .section-heading,
+.activity .section-heading {
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  margin-bottom: var(--space-2);
 }
 
 .queue__state,
@@ -170,7 +167,7 @@ a.button:hover {
 .backlog {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-5);
 }
 
 .backlog__bar {

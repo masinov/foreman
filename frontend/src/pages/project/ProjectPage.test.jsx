@@ -251,7 +251,9 @@ describe("the Sprints tab", () => {
     expect(within(rows[0]).getByRole("link", { name: ACTIVE.title })).toHaveAttribute("href", "/dashboard/sprints/sprint-56");
     // The goal is on the sprint's own page, not under the title in the list.
     expect(within(rows[0]).queryByText(ACTIVE.goal)).toBeNull();
-    expect(within(rows[0]).getByText("3 need you · 1 done")).toBeInTheDocument();
+    expect(rows[0]).toHaveTextContent("3 need you · 1 done");
+    // What waits for a person is gold wherever the counts appear.
+    expect(within(rows[0]).getByText("3 need you")).toHaveClass("attention");
     expect(within(rows[0]).getByText("since 11 Nov")).toBeInTheDocument();
     expect(within(rows[0]).getByText("$1.31")).toBeInTheDocument();
     expect(within(rows[1]).getByText("Planned")).toBeInTheDocument();

@@ -36,18 +36,23 @@
   gap: var(--space-2) var(--space-6);
 }
 
+.summary {
+  margin: 0;
+}
+
 .summary__item {
   display: flex;
-  gap: var(--space-3);
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.summary__item dd {
+  margin: 0;
 }
 
 .summary__item dt {
   font-size: var(--font-size-control);
   color: var(--color-text-quiet);
-}
-
-.summary__attention {
-  color: var(--color-gold);
 }
 
 .sprint__tasks {
@@ -56,33 +61,14 @@
   gap: var(--space-2);
 }
 
-.sprint__tasks-head {
-  display: flex;
-  flex-wrap: wrap;
+/* The heading's actions are boxes; the title and the view choice are text.
+   Centred, the row keeps one height whichever is taller. */
+.sprint__tasks .section-heading {
   align-items: center;
-  gap: var(--space-2) var(--space-4);
 }
 
-.sprint__add {
-  display: flex;
-  gap: var(--space-2);
-  margin-left: auto;
-}
-
-.view-toggle {
-  display: flex;
-  gap: var(--space-3);
-  font-size: var(--font-size-control);
-}
-
-.view-toggle__link {
-  color: var(--color-text-secondary);
-  border-bottom: var(--line-width) solid transparent;
-}
-
-.view-toggle__link--current {
-  color: var(--color-text);
-  border-bottom-color: var(--color-gold);
+.sprint__board-note {
+  color: var(--color-text-quiet);
 }
 
 /* List */
@@ -105,38 +91,34 @@
   white-space: nowrap;
 }
 
-.checks__passed {
-  color: var(--color-green);
-}
-
-.checks__failed {
-  color: var(--color-red);
-}
-
-.checks__attention {
-  color: var(--color-gold);
-}
-
 /* Board */
+/* A column with cards is wide enough to read them; an empty one takes only
+   the room its name needs. Past the page's width the board scrolls. */
 .board {
   display: flex;
   align-items: flex-start;
-  gap: var(--space-5);
+  gap: var(--space-4);
   overflow-x: auto;
 }
 
 .board__column {
   display: flex;
-  flex: 1 1 var(--column-min-width);
+  flex: 1 1 var(--board-column-width);
   flex-direction: column;
   gap: var(--space-2);
-  min-width: var(--column-min-width);
+  min-width: var(--board-column-width);
+}
+
+.board__column--empty {
+  flex: 0 0 auto;
+  min-width: var(--board-column-empty-width);
 }
 
 .board__heading {
   display: flex;
   align-items: baseline;
   gap: var(--space-2);
+  white-space: nowrap;
   padding-bottom: var(--space-1);
   border-bottom: var(--line-width) solid var(--color-line-header);
   font-size: var(--font-size-control);
@@ -175,15 +157,15 @@
 
 .board-card__head {
   display: flex;
-  align-items: center;
-  gap: var(--space-2);
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0 var(--space-2);
+  white-space: nowrap;
 }
 
 .board-card__checks {
-  margin-left: auto;
-  font-family: var(--font-mono);
-  font-size: var(--font-size-mono);
-  color: var(--color-text-secondary);
+  font-size: var(--font-size-control);
 }
 
 .board-card__approve {

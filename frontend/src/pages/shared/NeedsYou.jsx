@@ -32,23 +32,37 @@ const KIND_WORDS = {
 const itemId = (item) => item.gate?.id ?? item.task_id;
 const itemName = (item) => item.task_key || item.task_title || "the sprint order";
 
-const TESTS_WORDS = {
-  passed: "tests passed",
-  failed: "tests failed",
-  stale: "tests stale",
-  not_run: "tests not run",
+// The same words and colours as a task's checks in the sprint list: a word
+// alone in green passed; anything else says what is wrong.
+const TESTS_PARTS = {
+  passed: { tone: "passed", text: "tests" },
+  failed: { tone: "failed", text: "tests failed" },
+  stale: { tone: "attention", text: "tests stale" },
+  not_run: { tone: "attention", text: "tests not run" },
 };
+const GOOD_REVIEWS = new Set(["approve", "approved", "pass", "passed"]);
 
 /** The facts a person weighs at the merge gate (ADR-0018), as words. */
 function MergeFacts({ evidence }) {
   if (!evidence) return <span className="quiet">Nothing checked yet</span>;
   const words = [];
-  if (TESTS_WORDS[evidence.tests_status]) words.push(TESTS_WORDS[evidence.tests_status]);
-  if (evidence.review_outcome) words.push(`review ${humanize(evidence.review_outcome).toLowerCase()}`);
+  if (TESTS_PARTS[evidence.tests_status]) words.push({ key: "tests", ...TESTS_PARTS[evidence.tests_status] });
+  if (evidence.review_outcome) {
+    words.push(
+      GOOD_REVIEWS.has(evidence.review_outcome)
+        ? { key: "review", tone: "passed", text: "review" }
+        : { key: "review", tone: "attention", text: `review ${humanize(evidence.review_outcome).toLowerCase()}` },
+    );
+  }
   const sha = shortSha(evidence.head_sha);
   return (
-    <span className="quiet">
-      {words.join(" · ")}
+    <span className="checks">
+      {words.map((word, index) => (
+        <React.Fragment key={word.key}>
+          {index > 0 ? " · " : ""}
+          <span className={`checks__${word.tone}`}>{word.text}</span>
+        </React.Fragment>
+      ))}
       {sha ? (
         <>
           {words.length ? " · " : ""}
@@ -214,7 +228,7 @@ export function NeedsYou({ projectId = null, note, empty, onChanged }) {
   const headingId = projectId ? `needs-you-${projectId}` : "needs-you-title";
   return (
     <section className="needs-you" aria-labelledby={headingId}>
-      <SectionHeading id={headingId} title="Needs you" count={total} note={note} plain />
+      <SectionHeading id={headingId} title="Needs you" count={total} attention note={note} plain />
       {notice ? (
         <p className={notice.error ? "notice notice--error" : "notice"} role={notice.error ? "alert" : "status"}>
           {notice.text}

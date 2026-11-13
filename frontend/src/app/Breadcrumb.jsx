@@ -20,11 +20,6 @@ function useProjects() {
   return data ? data.projects : null;
 }
 
-function ProjectCrumb({ projectId }) {
-  const projects = useProjects();
-  return projects?.find((project) => project.id === projectId)?.name || "";
-}
-
 /**
  * The project in the breadcrumb, as a switcher: a menu of every project with
  * what waits for a person in each, going to the chosen project.
@@ -137,7 +132,7 @@ export function crumbsFor(route, params) {
     case "project": {
       if (route.name.startsWith("project-settings")) {
         return [
-          { key: "project", href: paths.project(params.projectId), label: <ProjectCrumb projectId={params.projectId} /> },
+          { key: "project", custom: <ProjectLink projectId={params.projectId} /> },
           { key: "settings", href: paths.projectSettings(params.projectId), label: "Settings" },
         ];
       }

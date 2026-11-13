@@ -47,7 +47,7 @@ describe("App routing and shell", () => {
   it("puts project settings below the project in the breadcrumb", async () => {
     renderApp("/dashboard/projects/foreman/settings/workflow", createFakeFetch(settingsRoutes()));
     const crumbs = screen.getByRole("navigation", { name: "Breadcrumb" });
-    expect(await within(crumbs).findByRole("link", { name: "Foreman" })).toHaveAttribute("href", "/dashboard/projects/foreman");
+    expect(await within(crumbs).findByRole("link", { name: /^Foreman/ })).toHaveAttribute("href", "/dashboard/projects/foreman");
     expect(within(crumbs).getByText("Settings")).toHaveAttribute("aria-current", "page");
   });
 

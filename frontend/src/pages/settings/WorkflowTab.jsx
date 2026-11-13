@@ -122,14 +122,12 @@ export function WorkflowTab({ projectId }) {
               {definition.name} <Mono quiet>{definition.id}</Mono>
             </>
           }
-          note={
-            <>
-              Read from <Mono>{definition.source_path}</Mono>. Edit that file to change the steps; it cannot be
-              edited here.
-            </>
-          }
           actions={<Button onClick={() => setChanging(true)}>Use another workflow</Button>}
         />
+        <p className="workflow__source">
+          Read from <Mono>{definition.source_path}</Mono>. Edit that file to change the steps; they cannot be edited
+          here.
+        </p>
         <Steps rows={rows} />
       </section>
 

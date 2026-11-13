@@ -110,23 +110,28 @@ export function SprintLayout({ sprintId, view }) {
     <div className="sprint">
       <SprintHead sprint={current} onChanged={changed} />
       <section className="sprint__tasks" aria-labelledby="sprint-tasks">
-        <div className="sprint__tasks-head">
-          <SectionHeading id="sprint-tasks" title="Tasks" />
-          <ViewToggle sprintId={sprintId} view={view} />
-          {view === VIEWS.board ? (
-            <span className="quiet">
-              One column per step of this project's workflow. The engine moves the cards; you decide where a column waits for you.
-            </span>
-          ) : null}
-          {open ? (
-            <div className="sprint__add">
-              <Button onClick={() => setAdding(true)}>Add from backlog</Button>
-              <Button icon="plus" onClick={() => setWriting(true)}>
-                New task
-              </Button>
-            </div>
-          ) : null}
-        </div>
+        <SectionHeading
+          id="sprint-tasks"
+          title="Tasks"
+          count={tasks.data ? taskList.length : undefined}
+          note={<ViewToggle sprintId={sprintId} view={view} />}
+          actions={
+            open ? (
+              <>
+                <Button onClick={() => setAdding(true)}>Add from backlog</Button>
+                <Button icon="plus" onClick={() => setWriting(true)}>
+                  New task
+                </Button>
+              </>
+            ) : null
+          }
+        />
+        {view === VIEWS.board ? (
+          <p className="sprint__board-note">
+            One column per step of this project's workflow. The engine moves the cards; you decide where a column waits
+            for you.
+          </p>
+        ) : null}
         {notice ? (
           <p className={notice.error ? "notice notice--error" : "notice"} role={notice.error ? "alert" : "status"}>
             {notice.text}

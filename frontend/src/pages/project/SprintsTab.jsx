@@ -6,10 +6,11 @@ import { paths } from "../../app/paths";
 import { Link } from "../../app/router";
 import { Button } from "../../ui/Button";
 import { Mono } from "../../ui/Mono";
+import { SectionHeading } from "../../ui/SectionHeading";
 import { StatusDot } from "../../ui/StatusDot";
 import { Table } from "../../ui/Table";
 import { formatDay, formatMoney } from "../../ui/format";
-import { describeTaskCounts } from "../shared/words";
+import { TaskCounts } from "../shared/TaskCounts";
 import { FinishedSprints } from "./FinishedSprints";
 import { NewSprintDialog } from "./NewSprintDialog";
 
@@ -35,7 +36,7 @@ const COLUMNS = [
       </div>
     ),
   },
-  { key: "tasks", header: "Tasks", className: "queue__tasks", render: (sprint) => describeTaskCounts(sprint.task_counts) },
+  { key: "tasks", header: "Tasks", className: "queue__tasks", render: (sprint) => <TaskCounts counts={sprint.task_counts} /> },
   {
     key: "dates",
     header: "Dates",
@@ -50,7 +51,7 @@ const COLUMNS = [
   {
     key: "spend",
     header: "Spend",
-    className: "queue__number",
+    numeric: true,
     render: (sprint) => <Mono>{formatMoney(sprint.totals?.total_cost_usd)}</Mono>,
   },
 ];
@@ -97,15 +98,16 @@ export function SprintsTab({ projectId, revision }) {
   return (
     <div className="sprints-tab">
       <section className="queue" aria-labelledby="queue-title">
-        <div className="queue__heading">
-          <h2 className="visually-hidden" id="queue-title">
-            Sprint queue
-          </h2>
-          <p className="quiet">Active, then planned in the order they will run</p>
-          <Button icon="plus" onClick={() => setCreating(true)}>
-            New sprint
-          </Button>
-        </div>
+        <SectionHeading
+          id="queue-title"
+          title="Active and planned"
+          note="In the order they will run."
+          actions={
+            <Button icon="plus" onClick={() => setCreating(true)}>
+              New sprint
+            </Button>
+          }
+        />
         {notice ? (
           <p className="notice" role="status">
             {notice}
