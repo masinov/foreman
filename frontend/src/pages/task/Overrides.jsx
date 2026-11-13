@@ -61,18 +61,21 @@ export function Overrides({ task, workflow, onSaved }) {
   const gates = overrideGates(workflow);
   const steps = overrideSteps(workflow);
   const stored = JSON.stringify(task.executor_overrides ?? {});
+  // What can be overridden, as text: the same workflow read again is the
+  // same text, so a background refresh does not wipe what is being typed.
+  const shape = JSON.stringify([gates.map((gate) => gate.policy), steps.map((step) => step.id)]);
   const [gateValues, setGateValues] = useState({});
   const [modelValues, setModelValues] = useState({});
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState(null);
 
-  // Start from what the task has; again whenever the task is read anew.
+  // Start from what the task has; again only when what it has changed.
   useEffect(() => {
     const overrides = task.executor_overrides ?? {};
     setGateValues(Object.fromEntries(gates.map((gate) => [gate.policy, currentGateOverride(task, gate.policy)])));
     setModelValues(Object.fromEntries(steps.map((step) => [step.id, overrides.models?.[step.id] ?? ""])));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stored, workflow]);
+  }, [stored, shape]);
 
   if (!gates.length && !steps.length) return null;
 

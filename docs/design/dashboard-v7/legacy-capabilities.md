@@ -75,9 +75,9 @@ says so.
 | Run, pause and resume the engine from the sprint | `POST /projects/{id}/agent/start`, `/agent/stop` | sprint page, engine menu | built |
 | Cancel the sprint, delete it | `PATCH`/`DELETE /sprints/{id}` | sprint page, More | built |
 | Approve, deny, stop or accept a task from its card | `POST /tasks/{id}/approve`, `/deny`, `/stop`, `/accept` | task page; Needs you; sprint list and board | approve a merge is built (Needs you, sprint list and board); approve, send back (deny), stop and accept are built on the task page |
-| Activity stream for the sprint, newest at the bottom, auto-scroll, load older events | `GET /sprints/{id}/events`, `GET /sprints/{id}/stream` | sprint page, Activity | built for steps and loading earlier; live updates are slice 12 |
+| Activity stream for the sprint, newest at the bottom, auto-scroll, load older events | `GET /sprints/{id}/events`, `GET /sprints/{id}/stream` | sprint page, Activity | built for steps and loading earlier; the page reads again when the project's stream reports a change |
 | Filter activity: All, Agent, Workflow, Decisions, Human | `GET /sprints/{id}/events` | sprint page, Activity | **no home yet** (the design shows milestones and steps, no filter) |
-| Live refresh of tasks and events while the page is open | `GET /sprints/{id}/stream` | all pages | slice 12 |
+| Live refresh of tasks and events while the page is open | `GET /projects/{id}/stream` | every page inside a project; the workspace on a 20 s timer | built (`app/useLiveData.js`) |
 | A banner naming an attention event (a task parked, evidence failed) with "Ask the manager" | `POST /projects/{id}/meta/supervise` | needs you; manager side bar | slice 9 |
 | Write guidance for the selected task, read by its next agent step | `POST /tasks/{id}/messages` | task page, Overview | built |
 
