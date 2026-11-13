@@ -14,6 +14,7 @@ import { ManagerToggle } from "./ManagerToggle";
 import { useRoute } from "./router";
 import { UserMenu } from "./UserMenu";
 import { Shell } from "./Shell";
+import { SignInGate } from "./SignInGate";
 
 /** The engine of the project a sprint or task belongs to. */
 function EngineOf({ resourceKey, load }) {
@@ -64,7 +65,16 @@ function useProjectName(projectId) {
   return data?.projects.find((project) => project.id === projectId)?.name || projectId;
 }
 
+/** The application behind its sign-in: see SignInGate. */
 export function App() {
+  return (
+    <SignInGate>
+      <SignedInApp />
+    </SignInGate>
+  );
+}
+
+function SignedInApp() {
   const { route, params } = useRoute();
   const [managerOpen, setManagerOpen] = useManagerOpen();
   const target = useManagerTarget(route, params);

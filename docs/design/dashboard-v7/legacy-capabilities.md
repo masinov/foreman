@@ -24,7 +24,7 @@ says so.
 
 | Capability | Endpoint | Route | Status |
 |---|---|---|---|
-| A page that asks for an access token when the API answers 401, keeps it in the browser, and sends it as a bearer header | any (401) | none | **no home yet**. The rebuilt client reads a stored token (`api/token.js`) but nothing asks for one; workspace settings (slice 11) lists tokens, which is not the same thing |
+| A page that asks for an access token when the API answers 401, keeps it in the browser, and sends it as a bearer header | any (401) | every address (the sign-in page takes the page's place) | built. Any request the server answers with 401 brings up Sign in; the token is tried before it is kept; Sign out in the user menu forgets it |
 
 ## Workspace (legacy: the Projects page)
 
@@ -137,7 +137,7 @@ design screen owns. Each needs a decision: give it a slice, or record that
 it is dropped and why. The CLI command, where there is one, is the way to do
 it meanwhile (docs/MANUAL.md).
 
-1. The access-token prompt on a 401 response.
+1. Built: the sign-in page on a 401 response.
 2. Built: register a project from the dashboard (workspace, "Add project").
 3. Built: planned sprints are moved earlier or later from the project's
    queue (`POST /sprints/{id}/move`).

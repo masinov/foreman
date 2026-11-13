@@ -21,10 +21,12 @@ function jsonResponse(status, body) {
  */
 export function createFakeFetch(routes = {}) {
   const calls = [];
+  const headers = [];
   const fetchImpl = async (url, init = {}) => {
     const method = (init.method || "GET").toUpperCase();
     const key = `${method} ${url}`;
     calls.push({ method, url, body: init.body ? JSON.parse(init.body) : undefined });
+    headers.push(init.headers ?? {});
     if (!(key in routes)) {
       return jsonResponse(404, { error: `Not found: ${url}`, code: "not_found" });
     }
@@ -35,6 +37,7 @@ export function createFakeFetch(routes = {}) {
     return jsonResponse(200, answer);
   };
   fetchImpl.calls = calls;
+  fetchImpl.headers = headers;
   fetchImpl.routes = routes;
   fetchImpl.EventSource = createFakeEventSource();
   return fetchImpl;

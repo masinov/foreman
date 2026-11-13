@@ -75,8 +75,24 @@ export function createApiClient({
     throw new Error("A fetch implementation is required.");
   }
 
-  async function request(method, path, { body, signal } = {}) {
-    const token = tokenProvider();
+  // Who wants to know that the server refused this browser's token (or the
+  // lack of one). The application shows its sign-in page when that happens.
+  const unauthorizedListeners = new Set();
+  function onUnauthorized(listener) {
+    unauthorizedListeners.add(listener);
+    return () => unauthorizedListeners.delete(listener);
+  }
+  function refused(response) {
+    if (response.status === 401) unauthorizedListeners.forEach((listener) => listener());
+  }
+
+  /**
+   * `token` in the options presents that token instead of the stored one
+   * (trying a token before keeping it); a refusal of it is the caller's to
+   * handle and is not announced.
+   */
+  async function request(method, path, { body, signal, token: presented } = {}) {
+    const token = presented ?? tokenProvider();
     const headers = { Accept: "application/json" };
     if (body !== undefined) headers["Content-Type"] = "application/json";
     if (token) headers.Authorization = `Bearer ${token}`;
@@ -95,7 +111,10 @@ export function createApiClient({
     }
 
     const { ok, payload } = await readEnvelope(response);
-    if (!response.ok) throw errorFromResponse(response, payload);
+    if (!response.ok) {
+      if (presented === undefined) refused(response);
+      throw errorFromResponse(response, payload);
+    }
     if (!ok) throw new ApiError(UNREADABLE_RESPONSE, { code: "invalid_response", status: response.status });
     return payload;
   }
@@ -119,6 +138,7 @@ export function createApiClient({
       throw new ApiError(UNREACHABLE, { code: "network_error", status: 0 });
     }
     if (!response.ok) {
+      refused(response);
       const { payload } = await readEnvelope(response);
       throw errorFromResponse(response, payload);
     }
@@ -185,6 +205,7 @@ export function createApiClient({
   return {
     stream,
     postLines,
+    onUnauthorized,
     get: (path, options) => request("GET", path, options),
     post: (path, body, options) => request("POST", path, { ...options, body }),
     patch: (path, body, options) => request("PATCH", path, { ...options, body }),

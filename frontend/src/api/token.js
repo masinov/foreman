@@ -26,3 +26,13 @@ export function clearDashboardToken(storage = defaultStorage()) {
     // Storage that cannot be written cannot hold a token either.
   }
 }
+
+/** Keep the dashboard token in this browser, so every request presents it. */
+export function writeDashboardToken(token, storage = defaultStorage()) {
+  try {
+    storage?.setItem(TOKEN_STORAGE_KEY, token);
+    return true;
+  } catch {
+    return false;
+  }
+}

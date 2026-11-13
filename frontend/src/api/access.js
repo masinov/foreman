@@ -62,3 +62,12 @@ export function createChannel(client, projectId, { name, url, kind, secretEnv },
 export function deleteChannel(client, channelId, options) {
   return client.delete(`/notification-channels/${segment(channelId)}`, options);
 }
+
+/**
+ * Ask the server whether it accepts `token`, without keeping it. Resolves
+ * with the session it would give; rejects with the API's error (status 401
+ * when the token is not accepted).
+ */
+export function checkToken(client, token, options) {
+  return client.get("/session", { ...options, token });
+}
