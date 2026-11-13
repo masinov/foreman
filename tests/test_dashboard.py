@@ -2000,6 +2000,18 @@ class DashboardSprintTaskBacklogTests(unittest.TestCase):
         data = response.json()
         self.assertIn("depends_on_task_ids", data)
         self.assertEqual(data["depends_on_task_ids"], [blocker.id])
+        # The page names what a task waits for; it does not show ids.
+        self.assertEqual(
+            data["dependencies"],
+            [
+                {
+                    "id": blocker.id,
+                    "task_key": blocker.task_key,
+                    "title": blocker.title,
+                    "status": blocker.status,
+                }
+            ],
+        )
 
     def test_get_task_serializes_completion_evidence(self):
         """GET /api/tasks/{id} surfaces completion evidence (proof, tests, review, judge)."""

@@ -144,11 +144,12 @@ it meanwhile (docs/MANUAL.md).
 4. Built: cancel and delete a sprint (sprint page, More).
 5. A project's token total in the top bar.
 6. Filtering the activity stream by kind.
-7. Task details beyond the design's Overview: worktree path, priority, token
-   split, step visits, complexity, dependency chips.
+7. Built: a task's Details name what it depends on, its size and a priority
+   that was set; working copy, token split, times at each step and last role
+   are behind "More details".
 8. Reviewer diff cap, the criteria judge's settings, merge target branch,
    spec file (`foreman config <project-id> --set key=value`).
 9. The working copies count and storage limit, and removing unused working
    copies (`foreman worktree list`, `foreman worktree prune`).
-10. Adding a task with type, complexity and dependencies in the same form
-    (`foreman task add`, which takes them).
+10. Built: New task takes a size everywhere and, in a sprint, the tasks it
+    waits for. A backlog task has no dependencies: it has no run order yet.

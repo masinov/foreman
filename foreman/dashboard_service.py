@@ -1008,6 +1008,26 @@ class DashboardService:
             for event in events
         ]
 
+    def _dependencies(self, task: Task) -> list[dict[str, Any]]:
+        """The tasks ``task`` waits for, named, in the order they were given.
+
+        A dependency that no longer exists is still listed, by id, so the
+        page can say that something it waited for is gone.
+        """
+
+        named: list[dict[str, Any]] = []
+        for dep_id in task.depends_on_task_ids or []:
+            dep = self.store.get_task(dep_id)
+            named.append(
+                {
+                    "id": dep_id,
+                    "task_key": dep.task_key if dep else None,
+                    "title": dep.title if dep else None,
+                    "status": dep.status if dep else None,
+                }
+            )
+        return named
+
     def get_task(self, task_id: str) -> dict[str, Any]:
         """Return one task detail payload including run history."""
 
@@ -1066,6 +1086,7 @@ class DashboardService:
             "workflow_current_step": task.workflow_current_step,
             "step_visit_counts": task.step_visit_counts or {},
             "depends_on_task_ids": task.depends_on_task_ids or [],
+            "dependencies": self._dependencies(task),
             "complexity": task.complexity,
             "executor_overrides": task.executor_overrides or {},
             "awaiting_human_gate": self._at_human_gate(task, gates),

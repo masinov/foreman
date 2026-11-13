@@ -675,3 +675,42 @@ describe("the page keeps its parts apart", () => {
     expect(calls(fetchImpl, "GET", CHANGES_URL.slice(4))).toHaveLength(1);
   });
 });
+
+describe("details beyond the usual", () => {
+  it("names what the task waits for, its size and a priority that was set", async () => {
+    const task = taskDetail({
+      complexity: "small",
+      priority: 2,
+      dependencies: [
+        { id: "task-a", task_key: "FOR-11", title: "Record the result line", status: "done" },
+        { id: "task-b", task_key: "FOR-12", title: "Time the test step", status: "todo" },
+        { id: "task-gone", task_key: null, title: null, status: null },
+      ],
+    });
+    await renderTask(BASE, taskRoutes({ task }));
+    const details = await screen.findByRole("complementary", { name: "Details" });
+    expect(within(details).getByRole("link", { name: /FOR-11 Record the result line/ })).toHaveAttribute("href", "/dashboard/tasks/task-a");
+    expect(details).toHaveTextContent(/Record the result line\s*done/);
+    expect(details).toHaveTextContent(/Time the test step\s*queued/i);
+    expect(details).toHaveTextContent("A task that no longer exists");
+    expect(details).toHaveTextContent(/Size\s*Small/);
+    expect(details).toHaveTextContent(/Priority\s*2/);
+  });
+
+  it("leaves those rows out when there is nothing to say, and keeps the rest behind More details", async () => {
+    const task = taskDetail({
+      worktree_path: "/srv/foreman/.foreman/worktrees/FOR-14",
+      step_visit_counts: { develop: 2, test: 1 },
+      totals: { run_count: 4, total_cost_usd: 0.72, token_usage: { input: 1200, output: 34000, cache_read: 2500000 } },
+    });
+    await renderTask(BASE, taskRoutes({ task }));
+    const details = await screen.findByRole("complementary", { name: "Details" });
+    expect(details).not.toHaveTextContent("Depends on");
+    expect(details).not.toHaveTextContent("Priority");
+    expect(details).not.toHaveTextContent("worktrees/FOR-14");
+    fireEvent.click(within(details).getByRole("button", { name: "More details" }));
+    expect(details).toHaveTextContent("/srv/foreman/.foreman/worktrees/FOR-14");
+    expect(details).toHaveTextContent("1.2K in · 34K out · 2.5M read from cache");
+    expect(details).toHaveTextContent("Develop 2 · Test 1");
+  });
+});
