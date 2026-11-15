@@ -1,32 +1,71 @@
 # Current Sprint
 
-## No sprint is open
+## Sprint 59 — the engine can be left running again
 
-Sprint 58 (frontend rebuild, Phase 4 of
-`docs/reviews/2026-11-10-full-review-and-finish-plan.md`) closed on
-2026-11-15: `docs/sprints/archive/sprint-58-frontend-rebuild.md`,
-`docs/checkpoints/2026-11-15-sprint-58-closed.md`.
+- **Opened:** 2026-11-15, the first sprint of Phase 5 of
+  `docs/reviews/2026-11-10-full-review-and-finish-plan.md`. Scope agreed by
+  the owner on 2026-11-15.
+- **Status:** in_progress
+- **Method:** by hand, on short branches. The engine stays stopped (owner,
+  2026-11-13) until this sprint's fixes are in; whether to start it again is
+  the owner's call at the end.
 
-Phases 0 to 4 of the plan are done. What is left is Phase 5, "finish the
-product" (two to three sprints), plus the items in `docs/sprints/backlog.md`.
+### Goal
 
-### Proposed sprint 59 (not opened; the owner has not agreed its scope)
+Sprint 58 ended with the engine stopped and a list of defects found while it
+ran. This sprint fixes them and narrows what an agent can do on the host, so
+that running the engine unattended is a reasonable thing to do again.
 
-Goal: the engine can be left running again. Sprint 58 ended with the engine
-stopped by the owner and a list of defects found while it ran.
+### Constraints
 
-| # | Slice | Source |
-|---|-------|--------|
-| 1 | Engine defects from sprint 58: a zero-turn corrective retry counts as a failure; a resumed session's cost is counted on every run; `run-task` waits for the next pass; merges wait behind another task's step; no push after a merge | `docs/sprints/backlog.md` |
-| 2 | The reviewer must show what it read before it can approve | `docs/sprints/backlog.md` |
-| 3 | Agent sandbox, first cut: per-role tool allowlists passed to the runner, read-only reviewers, the manager session limited to its read surface (FOR-42), a scrubbed environment | Phase 5 |
-| 4 | Dashboard follow-ups small enough to ride along: run output in sentences, editing size, priority and dependencies after filing, Mark done and Reopen in the manager's proposals | `docs/sprints/backlog.md` |
+- Spec `docs/specs/engine-design-v3.md` for behaviour; ADR-0011 (gates),
+  ADR-0012 (worktrees), ADR-0017 (what the API may set), ADR-0018 (evidence
+  is facts), ADR-0022 (the manager proposes).
+- Each engine fix comes with a test that fails without it. No fix is called
+  proven against a real agent unless it was run against one.
+- Roles and workflows stay declarative TOML; nothing is hard-coded per
+  project.
+- Dashboard changes follow ADR-0020 and the look rules in `docs/TESTING.md`.
 
-Later Phase 5 sprints, in the plan's order: a planner step per task with a
-protected acceptance test; pull requests through the remote; login, roles
-and audit as a pluggable seam; manager chat through the runner;
-notification seam, checkpoint tags and Codex; the database out of the
-repository and a deployment guide.
+### Affected areas
 
-A fresh agent should not start sprint 59 until this section is replaced by
-an opened sprint.
+`foreman/engine/`, `foreman/orchestrator.py`, `foreman/serve.py`,
+`foreman/runner/`, `foreman/roles/`, `foreman/mutations.py`,
+`foreman/dashboard_service.py`, `frontend/src/pages/task/`, tests, `docs/`.
+
+### Slices
+
+| # | Slice | Status | Executed by | Deliverable |
+|---|-------|--------|-------------|-------------|
+| 1 | A corrective retry that ends with zero turns is not a second failure | todo | Claude | fix, test |
+| 2 | A resumed session's cost is counted once, not on every run | todo | Claude | fix, test |
+| 3 | `foreman engine run-task` takes effect without a restart | todo | Claude | fix, test |
+| 4 | An approved merge does not wait behind another task's step | todo | Claude | fix, test |
+| 5 | The engine pushes after a merge when the project asks for it | todo | Claude | setting, fix, test |
+| 6 | The reviewer must show what it read before it can approve | todo | Claude | role contract, test |
+| 7 | Agent sandbox, first cut: per-role tool allowlists passed to the runner, read-only reviewers, a scrubbed environment | todo | Claude | runner, roles, ADR |
+| 8 | The manager session is limited to its read surface (FOR-42) | todo | Claude | runner, test |
+| 9 | A task's run output reads as sentences | todo | Claude | `pages/task/` |
+| 10 | Editing a task's size, priority and dependencies after filing | todo | Claude | API, CLI, dialog |
+| 11 | Mark done and Reopen in the manager's proposals | todo | Claude | ADR-0022 amendment, proposal kinds |
+| 12 | Close the sprint: checkpoint, archive | todo | Claude | `docs/checkpoints/`, `docs/sprints/archive/` |
+
+### Risks
+
+- Slices 3 and 4 change when the engine acts. They are the ones most likely
+  to disturb the step loop; each keeps the lease and lock rules of ADR-0011.
+- Slice 5 makes the engine write to a remote. It is off unless the project
+  turns it on, and a failed push never undoes a merge.
+- Slices 7 and 8 can make a role unable to do its job. Each role's allowlist
+  is checked against what its prompt asks it to do.
+- Nothing here can be seen against a real agent without starting the engine.
+  What is only covered by tests is said so in the checkpoint.
+
+### Validation
+
+Before every merge: `ruff check foreman tests scripts`,
+`./venv/bin/python -m unittest discover -s tests`,
+`npm --prefix frontend run lint`, `npm --prefix frontend test`,
+`npm --prefix frontend run build`,
+`./venv/bin/python scripts/validate_repo_memory.py`. CI is read after every
+push. Dashboard changes are looked at with `scripts/dashboard_shot.mjs`.
