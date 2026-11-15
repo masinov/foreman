@@ -206,8 +206,10 @@ def with_retry_instruction(
         correction = (
             "Your previous response did not include the required completion marker.\n"
             "Do not do more work.\n"
-            f"Return your completion summary again and end with `{role.completion.marker}` "
-            "on its own line."
+            f"If the work is finished, return your completion summary again and end with "
+            f"`{role.completion.marker}` on its own line.\n"
+            "If it is not finished, do not write the marker: say what is unfinished or "
+            "what blocks it."
         )
     else:
         return prompt

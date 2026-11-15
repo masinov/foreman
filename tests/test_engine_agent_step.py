@@ -8,7 +8,7 @@ from foreman.models import Task
 from foreman.engine.results import AgentExecutionResult
 from foreman.orchestrator import ForemanOrchestrator
 from foreman.git import current_branch
-from foreman.runner.base import AgentEvent, AgentRunConfig, InfrastructureError, PreflightError
+from foreman.runner.base import AgentEvent, AgentRunConfig, InfrastructureError, NoTurnError, PreflightError
 from foreman.store import ForemanStore
 
 from engine_support import (
@@ -51,6 +51,7 @@ class AgentStepTests(OrchestratorTestCase):
             ) -> AgentExecutionResult:
                 self.assertIn("### Output Correction", prompt)
                 self.assertIn("end with `TASK_COMPLETE`", prompt)
+                self.assertIn("If it is not finished, do not write the marker", prompt)
                 self.write_text(self.work_dir(task, repo_path) / "feature.txt", "implemented\n")
                 self.write_text(self.work_dir(task, repo_path) / "ready.txt", "ready\n")
                 self.commit_all(self.work_dir(task, repo_path), "feat: implement workflow slice")
@@ -259,6 +260,55 @@ class AgentStepTests(OrchestratorTestCase):
                 if e.event_type == "agent.infra_error"
             ]
             self.assertEqual(len(infra_events), 1)
+
+    def test_a_corrective_retry_that_ran_no_turn_is_tried_again_not_failed(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+            prompts: list[str] = []
+
+            def no_marker(config: AgentRunConfig):
+                return (
+                    AgentEvent("agent.message", payload={"text": "Done.", "phase": "assistant"}),
+                    AgentEvent("agent.completed", payload={"session_id": "dev-session"}),
+                )
+
+            def corrected(config: AgentRunConfig):
+                prompts.append(config.prompt)
+                return self._native_developer_success(
+                    replace(config, prompt="## Task: Implement orchestrator loop")
+                )
+
+            runner = ScriptedNativeRunner(
+                {
+                    1: no_marker,
+                    # What happened to FOR-17: the retry came back at once,
+                    # having read nothing.
+                    2: NoTurnError("Claude Code returned without running a turn."),
+                    3: corrected,
+                    4: lambda config: self._native_reviewer_approve(config),
+                }
+            )
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=self.roles,
+                workflows=self.workflows,
+                agent_runners={"claude_code": runner},
+                runner_sleep=lambda _seconds: None,
+            )
+
+            orchestrator.run_project(project.id)
+
+            final_task = store.get_task(task.id)
+            assert final_task is not None
+            self.assertEqual(final_task.status, "done")
+            # The attempt after the silent one got the correction, not a
+            # "continue where you stopped".
+            self.assertIn("### Output Correction", prompts[0])
+            self.assertEqual(runner.capture(3).session_id, "dev-session")
 
     def test_a_resumed_session_is_told_what_it_had_already_counted(self) -> None:
         repo_path, db_path = self.create_workspace()

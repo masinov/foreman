@@ -18,6 +18,7 @@ from .base import (
     AgentRunConfig,
     AgentRunner,
     InfrastructureError,
+    NoTurnError,
     PreflightError,
     QuotaExhaustedError,
 )
@@ -50,6 +51,9 @@ _PROGRESS_SYSTEM_SUBTYPES = frozenset({"thinking_tokens"})
 _NOT_JSON = object()
 # The result line ends a run: completed, failed, or stopped at its budget.
 _TERMINAL_EVENT_TYPES = frozenset({"agent.completed", "agent.error", "agent.killed"})
+#: Internal to this module: the parser's word for a result that read no prompt.
+#: ``run`` raises on it; it is never yielded, so it is not an agent event.
+_NO_TURN = "runner.no_turn"
 # How long a process may take to exit after its stream has finished.
 TERMINAL_EXIT_GRACE_SECONDS = 5.0
 #: Error texts the CLI returns when the account's usage window is spent.
@@ -256,6 +260,11 @@ class ClaudeCodeRunner(AgentRunner):
                                 if key in event.payload
                             },
                         )
+                    if event.event_type == _NO_TURN:
+                        raise NoTurnError(
+                            "Claude Code returned without running a turn; "
+                            "the prompt was not read."
+                        )
                     if event.event_type in _TERMINAL_EVENT_TYPES:
                         saw_terminal_event = True
                     yield event
@@ -378,6 +387,16 @@ class ClaudeCodeRunner(AgentRunner):
             }
             if reported_cost is not None:
                 payload["session_cost_usd"] = _coerce_float(reported_cost, default=0.0)
+            if (
+                not result_text
+                and not bool(event.get("is_error"))
+                and event.get("num_turns") == 0
+                and "max_budget" not in str(event.get("subtype") or "")
+            ):
+                # The CLI came back without reading the prompt. That is not
+                # an answer from the agent; ``run`` raises on it.
+                timestamp_events.append(AgentEvent(_NO_TURN, payload=payload))
+                return tuple(timestamp_events)
             token_usage = _extract_token_usage(event)
             if token_usage is not None:
                 payload["token_usage"] = token_usage
