@@ -29,10 +29,91 @@ import asyncio
 import json
 import os
 import shutil
+import sys
 from collections.abc import AsyncIterator
+from pathlib import Path
 from typing import Any
 
 from .proposals import MANAGER_SESSION_ENV, MANAGER_TURN_ENV, OPERATION_KINDS
+from .runner.env import agent_environment
+
+#: The one folder a manager session can write to, relative to the project's
+#: repository: where it puts a proposal document before proposing it.
+MANAGER_DRAFTS_DIR = ".foreman/manager"
+
+#: The manager's whole tool set (ADR-0022, ADR-0023).
+MANAGER_TOOLS: tuple[str, ...] = ("Read", "Grep", "Glob", "Bash", "Write")
+
+#: What those tools may do without asking. Nobody is there to ask in a
+#: headless session, so everything else is refused. Checked against the real
+#: CLI (2.1.325) on 2026-11-15: `foreman ...` runs; commands the CLI itself
+#: classes as read-only run inside the repository (`ls`, `cat`, `git
+#: status`); a redirect, a chain with a writing part, a variable prefix,
+#: `env`, `sqlite3`, `python`, `git commit`, a read outside the repository
+#: and a write outside the drafts folder are all refused.
+MANAGER_PERMISSIONS: tuple[str, ...] = (
+    "Read",
+    "Grep",
+    "Glob",
+    "Bash(foreman:*)",
+    f"Edit({MANAGER_DRAFTS_DIR}/**)",
+)
+
+#: Said in every turn, so a session begun under older instructions follows
+#: these too.
+PROPOSING_REMINDER = "\n".join(
+    [
+        "### How to propose (the only way to change anything)",
+        f"Write the proposal document to `{MANAGER_DRAFTS_DIR}/<name>.json` with the Write",
+        "tool, then run `foreman proposal create <project-id> --json` with that path.",
+        "Your shell runs `foreman` commands and commands that only read inside the",
+        "repository (ls, cat, git log, git diff). Anything that writes, a redirect, a",
+        "heredoc, or a read outside the repository is refused.",
+        f"You can write files only in `{MANAGER_DRAFTS_DIR}/`.",
+    ]
+)
+
+
+def manager_command(
+    executable: str, *, model: str | None, session_id: str | None
+) -> list[str]:
+    """The Claude Code command line for one manager turn."""
+
+    command = [
+        executable,
+        "--print",
+        "--verbose",
+        "--output-format", "stream-json",
+        # Not bypassPermissions: the permission rules below are what confine
+        # the session, and that mode ignores them.
+        "--permission-mode", "default",
+        "--tools", ",".join(MANAGER_TOOLS),
+        "--allowed-tools", ",".join(MANAGER_PERMISSIONS),
+        # None of the connectors the dashboard's user set up for themselves.
+        "--strict-mcp-config",
+    ]
+    if model:
+        command.extend(["--model", model])
+    if session_id:
+        command.extend(["--resume", session_id])
+    return command
+
+
+def manager_process_env(env: dict[str, str] | None) -> dict[str, str]:
+    """The whole environment of a manager session's process.
+
+    The short list every agent gets (ADR-0023) and the session's marks, with
+    this installation's `foreman` first on the path: the session may run only
+    commands that begin with that word.
+    """
+
+    environment = agent_environment(env)
+    bin_dir = Path(sys.executable).parent
+    if (bin_dir / "foreman").exists():
+        environment["PATH"] = os.pathsep.join(
+            part for part in (str(bin_dir), environment.get("PATH", "")) if part
+        )
+    return environment
 
 
 # ---------------------------------------------------------------------------
@@ -258,11 +339,12 @@ def build_operating_contract(project: Any) -> str:
             "  foreman proposal show <proposal-id>",
             "",
             "Change (only this way):",
-            f"  foreman proposal create {pid} --json - <<'EOF'",
-            '  {"reason": "<one paragraph: why>",',
-            '   "operations": [<operation>, ...],',
-            '   "leaves": [<task-id the plan deliberately leaves where it is>, ...]}',
-            "  EOF",
+            f"  1. Write the document to {MANAGER_DRAFTS_DIR}/<name>.json with the Write tool:",
+            '     {"reason": "<one paragraph: why>",',
+            '      "operations": [<operation>, ...],',
+            '      "leaves": [<task-id the plan deliberately leaves where it is>, ...]}',
+            "  2. Then run:",
+            f"  foreman proposal create {pid} --json {MANAGER_DRAFTS_DIR}/<name>.json",
             "",
             f"Operation kinds: {kinds}.",
             "  create_sprint {title, goal?}",
@@ -289,7 +371,11 @@ def build_operating_contract(project: Any) -> str:
             "Hard rules:",
             "- Every other `foreman` command that changes state is refused in this",
             "  session. Do not try to work around that: no direct database writes,",
-            "  no edits under `.foreman/`, no manual merges, no `foreman run`.",
+            "  no manual merges, no `foreman run`.",
+            "- Your shell runs `foreman` commands and commands that only read inside",
+            "  the repository (ls, cat, git log, git diff). Anything that writes, a",
+            "  redirect, a heredoc, or a read outside the repository is refused.",
+            f"  You can write files only in `{MANAGER_DRAFTS_DIR}/`.",
             "- Always re-read the FOREMAN STATE header above before acting; it is",
             "  the source of truth and overrides your memory.",
         ]
@@ -311,21 +397,18 @@ async def _run_claude(
 ) -> AsyncIterator[dict[str, Any]]:
     """Invoke Claude Code and yield structured event dicts.
 
-    ``env`` is added to this process's environment for the session: it marks
-    the process as a manager session (ADR-0022).
+    ``env`` marks the process as a manager session (ADR-0022). The process is
+    started with a fixed tool set and permission rules (``manager_command``)
+    and without the dashboard's own environment (``manager_process_env``).
     """
 
-    cmd = [
-        executable,
-        "--print",
-        "--verbose",
-        "--output-format", "stream-json",
-        "--permission-mode", "bypassPermissions",
-    ]
-    if model:
-        cmd.extend(["--model", model])
-    if session_id:
-        cmd.extend(["--resume", session_id])
+    cmd = manager_command(executable, model=model, session_id=session_id)
+    try:
+        (Path(repo_path) / MANAGER_DRAFTS_DIR).mkdir(parents=True, exist_ok=True)
+    except OSError:
+        # Without the folder the session cannot draft a proposal; it will
+        # say so. Reading still works.
+        pass
 
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -334,7 +417,7 @@ async def _run_claude(
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=repo_path,
-            env={**os.environ, **(env or {})},
+            env=manager_process_env(env),
         )
     except (OSError, FileNotFoundError) as exc:
         yield {"type": "error", "message": f"Failed to start Claude Code: {exc}"}
@@ -484,6 +567,8 @@ async def process_message(
     parts = [state_header, "---"]
     if is_first_turn:
         parts += [build_operating_contract(project), "---"]
+    else:
+        parts += [PROPOSING_REMINDER, "---"]
     if page_context:
         parts.append(page_context)
     parts.append(message)

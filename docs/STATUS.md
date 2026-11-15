@@ -28,7 +28,7 @@ Current snapshot only. History up to 2026-09-08 (sprints 1 to 54) is in
 - `main` is pushed to `origin/main`. Work happens on short branches from
   `main`; the operator checkout stays off `main` (the `_integration` worktree
   holds it).
-- Schema version 24. 1385 Python tests, 367 frontend tests. The built bundle
+- Schema version 24. 1388 Python tests, 367 frontend tests. The built bundle
   is not in git; `foreman dashboard` builds it when it is missing or stale.
 - A task whose work was finished outside the engine is closed with
   `foreman task done <id> --reason ...` (Mark done in the task's More menu);
@@ -123,7 +123,7 @@ is no login.
 
 ## Validation baseline
 
-- `./venv/bin/python -m unittest discover -s tests` (1385 tests)
+- `./venv/bin/python -m unittest discover -s tests` (1388 tests)
 - `npm --prefix frontend run lint`, `npm --prefix frontend test` (367 tests) and `npm --prefix frontend run build`
 - `ruff check foreman tests scripts` (pyflakes and syntax rules)
 - `./venv/bin/python scripts/validate_repo_memory.py`

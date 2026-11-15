@@ -44,7 +44,8 @@ None is fixed. Each is a candidate for the next engine sprint.
 - Editing a task's size, priority and dependencies after it is filed.
 - Motion that depends on live data (a row arriving, a step finishing).
 - One event stream per tab instead of two on a running task's page.
-- FOR-42: restrict the manager session's tools to the read surface.
+- (Done in sprint 59, slice 8.) FOR-42: restrict the manager session's tools
+  to the read surface.
 - FOR-43: the proposal card's "Then" row for a send-back, and a summary line
   for earlier proposals.
 

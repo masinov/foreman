@@ -44,7 +44,7 @@ that running the engine unattended is a reasonable thing to do again.
 | 5 | The engine pushes after a merge when the project asks for it | done | Claude | `feat/engine-push-after-merge`: host-level setting `merge_push_remote`, events `engine.push` and `engine.push_failed` |
 | 6 | The reviewer must show what it read before it can approve | done | Claude | `feat/reviewer-must-read-before-approving`: role option `approve_needs_reading`, on for the four shipped reviewers |
 | 7 | Agent sandbox, first cut: per-role tool allowlists passed to the runner, read-only reviewers, a scrubbed environment, no operator connectors | done | Claude | `feat/agent-sandbox-first-cut`: ADR-0023, `agent_env_passthrough`; checked with one real CLI call |
-| 8 | The manager session is limited to its read surface (FOR-42) | todo | Claude | runner, test |
+| 8 | The manager session is limited to its read surface (FOR-42) | done | Claude | `feat/manager-session-read-surface`: permission rules, drafts folder, ADR-0022 amendment; checked with a real manager turn on a database copy |
 | 9 | A task's run output reads as sentences | todo | Claude | `pages/task/` |
 | 10 | Editing a task's size, priority and dependencies after filing | todo | Claude | API, CLI, dialog |
 | 11 | Mark done and Reopen in the manager's proposals | todo | Claude | ADR-0022 amendment, proposal kinds |
