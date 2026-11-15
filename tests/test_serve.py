@@ -682,6 +682,141 @@ class ResidentEngineIsolationTests(unittest.TestCase):
             self.assertEqual(task.status, "blocked")
             self.assertEqual(task.blocked_reason, "agent exploded")
 
+    def test_a_task_asked_for_by_name_runs_next_not_after_the_queue(self) -> None:
+        """What happened on 2026-11-12: a `run-task` waited 38 minutes behind
+        every queued task, and ran only after the engine was restarted."""
+
+        _seed_more = Task(
+            id="task-3", sprint_id="sprint-1", project_id=self.project.id,
+            title="Task 3", status="todo", order_index=2,
+        )
+        self.store.save_task(_seed_more)
+        outer = self
+        ran: list[str] = []
+
+        class _Orchestrator(ForemanOrchestrator):
+            def run_task(self, project, workflow, task):  # type: ignore[override]
+                ran.append(task.id)
+                if task.id == "task-1":
+                    # Someone asks for task-3 while task-1 is running; the
+                    # running step hears it at its next tick.
+                    outer.store.enqueue_engine_command(
+                        project_id=project.id, command="run_task",
+                        task_id="task-3", requested_by="alice",
+                    )
+                    self._poll_commands(task.id)
+                task.status = "done"
+                task.workflow_current_step = None
+                self.store.save_task(task)
+                self.leases.release(task, project)
+                return task
+
+        clock = _FakeClock()
+        engine = ResidentEngine(
+            store=self.store,
+            project_id=self.project.id,
+            orchestrator=_Orchestrator(self.store),
+            sleep=clock.sleep,
+            monotonic=clock.monotonic,
+        )
+
+        class _Lock:
+            lost = False
+            lost_reason = None
+
+        lock = _Lock()
+        engine.lock = lock  # type: ignore[assignment]
+
+        def sleeper(seconds: float) -> None:
+            clock.sleep(seconds)
+            if len(ran) >= 3:
+                lock.lost = True
+                lock.lost_reason = "test stop"
+
+        engine._sleep = sleeper
+        engine.run()
+
+        self.assertEqual(ran, ["task-1", "task-3", "task-2"])
+
+    def test_a_requested_task_that_is_closed_by_its_turn_is_not_run(self) -> None:
+        ran: list[str] = []
+        outer = self
+
+        class _Orchestrator(ForemanOrchestrator):
+            def run_task(self, project, workflow, task):  # type: ignore[override]
+                ran.append(task.id)
+                if task.id == "task-1":
+                    outer.requested = outer.store.enqueue_engine_command(
+                        project_id=project.id, command="run_task",
+                        task_id="task-2", requested_by="alice",
+                    )
+                    self._poll_commands(task.id)
+                    # A person cancels task-2 before task-1 has finished.
+                    other = self.store.get_task("task-2")
+                    other.status = "cancelled"
+                    self.store.save_task(other)
+                task.status = "done"
+                self.store.save_task(task)
+                self.leases.release(task, project)
+                return task
+
+        clock = _FakeClock()
+        engine = ResidentEngine(
+            store=self.store,
+            project_id=self.project.id,
+            orchestrator=_Orchestrator(self.store),
+            sleep=clock.sleep,
+            monotonic=clock.monotonic,
+        )
+
+        class _Lock:
+            lost = False
+            lost_reason = None
+
+        lock = _Lock()
+        engine.lock = lock  # type: ignore[assignment]
+
+        def sleeper(seconds: float) -> None:
+            clock.sleep(seconds)
+            lock.lost = True
+            lock.lost_reason = "test stop"
+
+        engine._sleep = sleeper
+        engine.run()
+
+        self.assertEqual(ran, ["task-1"])
+        settled = self.store.get_engine_command(self.requested.id)
+        assert settled is not None
+        self.assertEqual(settled.status, "completed")
+        self.assertIn("'cancelled' now", settled.result_detail)
+
+    def test_a_single_pass_is_not_cut_short_by_a_waiting_request(self) -> None:
+        ran: list[str] = []
+        outer = self
+
+        class _Orchestrator(ForemanOrchestrator):
+            def run_task(self, project, workflow, task):  # type: ignore[override]
+                ran.append(task.id)
+                if task.id == "task-1":
+                    outer.store.enqueue_engine_command(
+                        project_id=project.id, command="pause", requested_by="alice",
+                    )
+                task.status = "done"
+                self.store.save_task(task)
+                self.leases.release(task, project)
+                return task
+
+        clock = _FakeClock()
+        ResidentEngine(
+            store=self.store,
+            project_id=self.project.id,
+            orchestrator=_Orchestrator(self.store),
+            sleep=clock.sleep,
+            monotonic=clock.monotonic,
+        ).run(once=True)
+
+        self.assertEqual(ran, ["task-1", "task-2"])
+
     def test_blocking_a_failed_task_releases_its_lease(self) -> None:
         orchestrator = self._orchestrator(RuntimeError("boom"))
         clock = _FakeClock()
