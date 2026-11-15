@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
 from pathlib import Path
+import time
 from typing import Any
 from uuid import uuid4
 
@@ -56,6 +57,12 @@ from .store import ForemanStore
 from .workflows import WorkflowDefinition, default_workflows_dir, load_workflows
 
 _LOGGER = get_logger("orchestrator")
+
+#: How often, at most, a running step looks for approved merges to carry out.
+APPROVED_MERGE_CHECK_SECONDS = 10.0
+#: The steps a running step may carry out for another task: both are quick
+#: and work in the integration tree.
+MERGE_STEP_ROLES = frozenset({"_builtin:merge", "_builtin:mark_done"})
 
 _BRANCH_PREFIXES = {
     "feature": "feat",
@@ -214,6 +221,11 @@ class ForemanOrchestrator:
         #: pass picks another task off the queue. Without it a request to run
         #: a task waited until the whole queue had run.
         self.yield_between_tasks: Callable[[], bool] | None = None
+        #: How often, at most, a running step looks for approved merges of
+        #: other tasks to carry out (see ``_carry_out_approved_merges``).
+        self.approved_merge_check_seconds = APPROVED_MERGE_CHECK_SECONDS
+        self._last_approved_merge_check: float | None = None
+        self._carrying_out_merges = False
 
     def close(self) -> None:
         """Stop the background work this orchestrator started."""
@@ -262,8 +274,68 @@ class ForemanOrchestrator:
         silently ignored.
         """
 
+        if self._carrying_out_merges:
+            # A merge being carried out for another task takes seconds; a
+            # command is heard at the running step's next tick.
+            return
         if self.command_poll is not None:
             self.command_poll(task_id)
+        self._carry_out_approved_merges(task_id)
+
+    def _carry_out_approved_merges(self, running_task_id: str) -> None:
+        """Merge other tasks whose merge a person has approved, now.
+
+        Called from the running step's command poll, so before each step and
+        on every tick of an agent step. An approval made while the engine is
+        busy leaves its task waiting at the merge step; without this it
+        waited until the task in hand had finished or parked, which can be
+        the length of a develop step. Only the merge and mark-done steps are
+        run here: they are quick and work in the integration tree, not in
+        the running task's. A merge that fails or conflicts leaves its task
+        at the step the workflow sends it to, for the queue.
+        """
+
+        now = time.monotonic()
+        last = self._last_approved_merge_check
+        if last is not None and now - last < self.approved_merge_check_seconds:
+            return
+        self._last_approved_merge_check = now
+
+        running = self.store.get_task(running_task_id)
+        project = self.store.get_project(running.project_id) if running else None
+        if project is None:
+            return
+        workflow = self.workflows.get(project.workflow_id)
+        if workflow is None:
+            return
+        waiting = []
+        for task in self.store.list_tasks(project_id=project.id, status="in_progress"):
+            if task.id == running_task_id or not task.workflow_current_step:
+                continue
+            step = workflow.get_step(task.workflow_current_step)
+            if step is not None and step.role == "_builtin:merge":
+                waiting.append(task)
+        if not waiting:
+            return
+
+        self._carrying_out_merges = True
+        try:
+            for task in waiting:
+                if self.leases.acquire(task, project) is None:
+                    continue
+                try:
+                    self.run_task(project, workflow, task, only_roles=MERGE_STEP_ROLES)
+                except LeaseLostError:
+                    continue
+                except Exception as exc:  # noqa: BLE001 - one task's merge must not end another's step
+                    _LOGGER.warning(
+                        "Approved merge of task %s failed while another task was running: %s",
+                        task.id,
+                        exc,
+                    )
+                    self.block_task_for_error(task.id, str(exc))
+        finally:
+            self._carrying_out_merges = False
 
     def run_project(
         self,
@@ -514,14 +586,20 @@ class ForemanOrchestrator:
         project: Project,
         workflow: WorkflowDefinition,
         task: Task,
+        *,
+        only_roles: frozenset[str] | None = None,
     ) -> Task:
-        """Run one task from the workflow entry step, heartbeating its lease throughout."""
+        """Run one task from the workflow entry step, heartbeating its lease throughout.
+
+        ``only_roles`` limits the run to steps of those roles; the task is
+        left resumable at the first step of any other.
+        """
 
         token = self.leases.token_for(task.id)
         if token is not None:
             self.leases.start_heartbeat(task, project, token)
         try:
-            return self._run_leased_task(project, workflow, task)
+            return self._run_leased_task(project, workflow, task, only_roles=only_roles)
         finally:
             self.leases.stop_heartbeat(task.id)
 
@@ -530,6 +608,8 @@ class ForemanOrchestrator:
         project: Project,
         workflow: WorkflowDefinition,
         task: Task,
+        *,
+        only_roles: frozenset[str] | None = None,
     ) -> Task:
         """Run one task from the workflow entry step."""
 
@@ -617,6 +697,7 @@ class ForemanOrchestrator:
             current_task,
             step=resume_step,
             carried_output=resume_carried_output,
+            only_roles=only_roles,
         )
         refreshed = self.store.get_task(current_task.id)
         if refreshed is None:

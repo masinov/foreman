@@ -21,8 +21,8 @@ None is fixed. Each is a candidate for the next engine sprint.
   cumulatively on each run, so a task's spend was overcounted.
 - (Fixed in sprint 59, slice 3.) `foreman engine run-task` only took effect
   at the engine's next pass, which came after the whole queue had run.
-- Merges are only attempted between steps, so an approved merge can wait
-  behind a long step of another task.
+- (Fixed in sprint 59, slice 4.) Merges were only attempted between tasks,
+  so an approved merge could wait behind a long step of another task.
 - The engine does not push after a merge.
 - The reviewer approved a 1,310-line change in seven seconds without opening
   a file (the prompt was tightened and the diff cap raised; the behaviour

@@ -283,3 +283,28 @@ A task paused at a human gate, and any task left `blocked`, now releases
 its lease. Previously the paused task kept it, so an engine had to wait out
 the lease before it could act on the decision.
 
+## Amendment, 2026-11-15: an approved merge is carried out during another task's step
+
+A deferred approval left its task `in_progress` at the merge step until the
+engine next chose a task, which is after the task in hand finishes or parks.
+On 2026-11-12 an approval waited behind a develop step that had started 19
+seconds earlier, and the next task was developed on a `main` that lacked the
+approved work.
+
+The engine now looks for such tasks from the running step's command poll
+(before each step, and on the ticks of an agent step, at most every ten
+seconds) and runs their merge and mark-done steps there. Rules:
+
+- Only steps whose role is `_builtin:merge` or `_builtin:mark_done` are run
+  this way. They are quick and work in the integration tree, never in the
+  running task's worktree. A task whose merge conflicts or fails follows its
+  workflow's transition and is left at that step for the queue.
+- The engine takes the other task's lease for the merge and releases it. It
+  is still one engine under one project lock; nothing runs in parallel.
+- Commands are not polled while the merge runs; they are heard at the
+  running step's next tick.
+- A failure in the other task's merge blocks that task with the reason and
+  does not disturb the running step.
+- The default branch moving under a running task is already allowed
+  (ADR-0012): the task's branch is refreshed at its next step.
+
