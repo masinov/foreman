@@ -6,7 +6,7 @@ Facts are what the engine measured; claims are what an agent reported
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
@@ -184,7 +184,12 @@ class TranscriptEntry(BaseModel):
     at: str
     kind: str
     stream: str | None = None
+    #: Text to show as it is: a line of raw or test output. Empty for an
+    #: event whose facts are in ``data``.
     text: str
+    #: What the event recorded, for the page to say in words. Long strings
+    #: are clipped. None for raw and test output lines.
+    data: dict[str, Any] | None = None
 
 
 class RunOutput(BaseModel):
@@ -198,4 +203,8 @@ class RunOutput(BaseModel):
     #: True when later entries were dropped to stay under ``cap_chars``.
     transcript_truncated: bool
     total_entries: int
+    #: How many lines of the agent's raw stream the run recorded. They are in
+    #: ``transcript`` only when asked for with ``?raw=true``.
+    raw_entries: int = 0
+    raw_included: bool = False
     cap_chars: int

@@ -284,12 +284,46 @@ class TaskReadsCase(unittest.TestCase):
             self.store.save_event(Event(
                 id=f"e{n}", run_id="r", task_id="t", project_id="p", event_type="agent.raw_output",
                 timestamp=f"2026-01-01T00:00:0{n}Z", payload=payload))
-        body = self.get("/api/v1/runs/r/output").json()
+        body = self.get("/api/v1/runs/r/output?raw=true").json()
         self.assertEqual(body["prompt"], "Do the thing.")
         self.assertEqual([(e["stream"], e["text"]) for e in body["transcript"]],
                          [("stdout", "hello"), ("stderr", "warn")])
         self.assertFalse(body["transcript_truncated"])
+        self.assertTrue(body["raw_included"])
         self.assertEqual(self.get("/api/v1/runs/nope/output").status_code, 404)
+
+    def test_run_output_gives_each_events_facts_and_leaves_the_raw_stream_out(self) -> None:
+        self.task()
+        self.store.save_run(Run(
+            id="r", task_id="t", project_id="p", role_id="developer", workflow_step="develop",
+            agent_backend="claude_code", prompt_text="Do the thing."))
+        recorded = [
+            ("agent.raw_output", {"stream": "stdout", "line": '{"type":"assistant"}'}),
+            ("agent.command", {"command": "ls", "cwd": "/w"}),
+            ("agent.message", {"phase": "assistant", "text": "x" * 5000}),
+            ("engine.test_output", {"stream": "stdout", "text": "OK"}),
+        ]
+        for n, (kind, payload) in enumerate(recorded):
+            self.store.save_event(Event(
+                id=f"e{n}", run_id="r", task_id="t", project_id="p", event_type=kind,
+                timestamp=f"2026-01-01T00:00:0{n}Z", payload=payload))
+
+        body = self.get("/api/v1/runs/r/output").json()
+
+        self.assertEqual(
+            [e["kind"] for e in body["transcript"]],
+            ["agent.command", "agent.message", "engine.test_output"],
+        )
+        command, message, test_line = body["transcript"]
+        self.assertEqual(command["data"], {"command": "ls", "cwd": "/w"})
+        self.assertEqual(command["text"], "")
+        # A long string is cut, and says by how much.
+        self.assertTrue(message["data"]["text"].endswith("[... 1000 more characters]"))
+        self.assertEqual((test_line["text"], test_line["data"]), ("OK", None))
+        self.assertEqual((body["raw_entries"], body["raw_included"]), (1, False))
+
+        raw = self.get("/api/v1/runs/r/output?raw=true").json()
+        self.assertEqual([e["kind"] for e in raw["transcript"]], ["agent.raw_output"])
 
     def test_run_output_is_capped(self) -> None:
         self.task()
@@ -301,7 +335,7 @@ class TaskReadsCase(unittest.TestCase):
             self.store.save_event(Event(
                 id=f"e{n}", run_id="r", task_id="t", project_id="p", event_type="agent.raw_output",
                 timestamp=f"2026-01-01T00:00:0{n}Z", payload={"stream": "stdout", "line": chunk}))
-        body = self.get("/api/v1/runs/r/output").json()
+        body = self.get("/api/v1/runs/r/output?raw=true").json()
         self.assertTrue(body["prompt_truncated"])
         self.assertEqual(len(body["prompt"]), OUTPUT_CAP_CHARS)
         self.assertTrue(body["transcript_truncated"])

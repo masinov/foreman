@@ -105,6 +105,7 @@ export function listTaskRuns(client, taskId, { limit, offset, ...options } = {})
 }
 
 /** What a run was given (its prompt) and what it did (its transcript). */
-export function getRunOutput(client, runId, options) {
-  return client.get(`/runs/${segment(runId)}/output`, options);
+/** What a run recorded. With `raw`, the agent's raw stream instead of the events read from it. */
+export function getRunOutput(client, runId, { raw = false, ...options } = {}) {
+  return client.get(`/runs/${segment(runId)}/output${raw ? "?raw=true" : ""}`, options);
 }
