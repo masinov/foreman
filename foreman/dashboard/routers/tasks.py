@@ -124,7 +124,7 @@ def build_router(ctx: ApiContext) -> APIRouter:
         )
 
     @router.get("/runs/{run_id}/output", response_model=RunOutput)
-    def get_run_output(run_id: str) -> RunOutput:
-        return ctx.with_store(lambda store: TaskReads(store).get_run_output(run_id))
+    def get_run_output(run_id: str, raw: bool = Query(default=False)) -> RunOutput:
+        return ctx.with_store(lambda store: TaskReads(store).get_run_output(run_id, raw=raw))
 
     return router

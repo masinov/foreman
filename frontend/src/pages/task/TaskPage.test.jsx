@@ -716,11 +716,53 @@ describe("Activity", () => {
     await renderTask(`${BASE}/activity`, routes);
     const table = await screen.findByRole("table", { name: "Runs" });
     expect(within(table).getAllByRole("row")).toHaveLength(26);
-    expect(await screen.findByText("This run recorded no output.")).toBeInTheDocument();
+    expect(await screen.findByText("This run recorded nothing to read.")).toBeInTheDocument();
     expect(screen.getByText("No prompt was recorded for this run.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Earlier" }));
     await waitFor(() => expect(within(screen.getByRole("table", { name: "Runs" })).getAllByRole("row")).toHaveLength(31));
     expect(screen.queryByRole("button", { name: "Earlier" })).toBeNull();
+  });
+
+  it("tells the run as a story, with the raw stream one level down", async () => {
+    const at = "2026-11-12T18:27:39Z";
+    const routes = taskRoutes();
+    routes[outputUrl("run-3")] = outputPayload("run-3", "", {
+      transcript: [
+        { at, kind: "workflow.step_started", text: "", data: { step: "review", visit_count: 1 } },
+        { at, kind: "engine.role_policy", text: "", data: { allowed_tools: ["Read", "Grep", "Glob"], disallowed_tools: [] } },
+        { at, kind: "agent.file_change", text: "", data: { tool: "Read", path: "/r/.foreman/worktrees/FOR-9/foreman/builtins.py" } },
+        { at, kind: "agent.message", text: "", data: { phase: "assistant", text: "The change does what the task asks." } },
+        { at, kind: "engine.context_write", text: "", data: { path: ".foreman/context.md" } },
+        { at, kind: "workflow.step_completed", text: "", data: { step: "review", outcome: "approve" } },
+      ],
+      raw_entries: 2,
+    });
+    routes[`${outputUrl("run-3")}?raw=true`] = outputPayload("run-3", "", {
+      transcript: [
+        { at, kind: "agent.raw_output", stream: "stdout", text: '{"type":"system"}', data: null },
+        { at, kind: "agent.raw_output", stream: "stdout", text: '{"type":"result"}', data: null },
+      ],
+      raw_entries: 2,
+      raw_included: true,
+    });
+    const { fetchImpl } = await renderTask(`${BASE}/activity`, routes);
+
+    const story = await screen.findByRole("list", { name: "What happened" });
+    const lines = within(story).getAllByRole("listitem").map((item) => item.textContent.replace(/^\d\d:\d\d:\d\d/, ""));
+    expect(lines).toEqual([
+      // These events are dated the day after the run began, and the story says so.
+      "12 Nov",
+      "Started Review",
+      "May use: Read, Grep, Glob",
+      "Read foreman/builtins.py",
+      "The change does what the task asks.",
+      "Review ended: Approved",
+    ]);
+    // Nothing of the raw stream is fetched or shown until it is asked for.
+    expect(story).not.toHaveTextContent("{");
+    expect(calls(fetchImpl, "GET", `${outputUrl("run-3").slice(4)}?raw=true`)).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: "Show the raw output (2 lines)" }));
+    expect(await screen.findByText(/"type":"result"/)).toBeInTheDocument();
   });
 
   it("says when nothing has run", async () => {

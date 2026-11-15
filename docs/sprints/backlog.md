@@ -33,7 +33,8 @@ None is fixed. Each is a candidate for the next engine sprint.
 
 ## Dashboard follow-ups (after sprint 58)
 
-- A task's Activity tab shows run events as raw JSON; say them in sentences.
+- (Done in sprint 59, slice 9.) A task's Activity tab showed run events as
+  raw JSON; they are said in sentences.
 - A browser acceptance pack for the operator journeys (inspect and guide a
   running task, approve a merge, pause, recover from an engine failure).
 - Types in the frontend (TypeScript or JSDoc).

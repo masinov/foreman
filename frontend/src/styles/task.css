@@ -361,20 +361,68 @@
   white-space: nowrap;
 }
 
-.run-output__entries {
+/* A run's story: the time, then what happened. Rows are close together;
+   what an agent said is the only text at full strength. */
+.run-story {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-1);
   margin: 0;
-  padding: var(--space-3);
+  padding: 0;
   list-style: none;
-  background: var(--color-inset);
-  border-radius: var(--radius);
-  overflow-x: auto;
 }
 
-.run-output__kind {
+.run-line {
+  display: grid;
+  grid-template-columns: var(--run-time-width) minmax(0, 1fr);
+  column-gap: var(--space-3);
+  align-items: baseline;
+}
+
+.run-line__what {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+  max-width: var(--text-measure);
+}
+
+.run-line__head {
+  margin: 0;
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+/* The day, where a run was touched again on a later one. */
+.run-line--day {
+  display: block;
+  padding-top: var(--space-2);
   font-size: var(--font-size-table-header);
+  color: var(--color-text-quiet);
+}
+
+.run-line .long-text__text {
+  color: var(--color-text);
+}
+
+/* A test's output: a box of its own that scrolls, so a long one does not
+   push the rest of the story away. */
+.run-line__output {
+  max-height: var(--run-output-max-height);
+  padding: var(--space-2) var(--space-3);
+  overflow-y: auto;
+  background: var(--color-inset);
+  border-radius: var(--radius);
+  color: var(--color-text-secondary);
+}
+
+/* What a tool returned is long and rarely the point: its first lines,
+   quieter than the line that asked for it. */
+.run-line__result {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--run-result-lines);
+  overflow: hidden;
   color: var(--color-text-quiet);
 }
 

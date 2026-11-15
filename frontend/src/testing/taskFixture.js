@@ -168,10 +168,12 @@ export function outputPayload(runId, text, fields = {}) {
     task_id: TASK_ID,
     prompt: `The prompt of ${runId}`,
     prompt_truncated: false,
-    transcript: [{ at: on("11-11"), kind: "agent.raw_output", stream: "stdout", text }],
+    transcript: [{ at: on("11-11"), kind: "agent.message", text: "", data: { phase: "assistant", text } }],
     transcript_truncated: false,
     total_entries: 1,
     cap_chars: 200000,
+    raw_entries: 0,
+    raw_included: false,
     ...fields,
   };
 }

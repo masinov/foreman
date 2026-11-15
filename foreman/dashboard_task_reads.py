@@ -306,7 +306,14 @@ class TaskReads:
             offset=offset,
         )
 
-    def get_run_output(self, run_id: str) -> RunOutput:
+    def get_run_output(self, run_id: str, *, raw: bool = False) -> RunOutput:
+        """What a run recorded, oldest first.
+
+        Without ``raw`` the agent's raw stream is left out: every line of it
+        that means something was also recorded as an event of its own, and
+        those are what a person reads. ``raw`` returns only that stream.
+        """
+
         run = self.store.get_run(run_id)
         if run is None:
             raise DashboardNotFoundError(f"Run not found: {run_id}")
@@ -314,9 +321,14 @@ class TaskReads:
 
         prompt = run.prompt_text
         entries: list[TranscriptEntry] = []
+        raw_entries = 0
         for event in events:
             if event.event_type == "agent.prompt":
                 prompt = prompt or str(event.payload.get("text", ""))
+                continue
+            is_raw = event.event_type == "agent.raw_output"
+            raw_entries += is_raw
+            if is_raw != raw:
                 continue
             entry = _transcript_entry(event)
             if entry is not None:
@@ -325,10 +337,13 @@ class TaskReads:
         kept: list[TranscriptEntry] = []
         used = 0
         for entry in entries:
-            if used + len(entry.text) > OUTPUT_CAP_CHARS:
+            size = len(entry.text) + (
+                len(json.dumps(entry.data, default=str)) if entry.data else 0
+            )
+            if used + size > OUTPUT_CAP_CHARS:
                 break
             kept.append(entry)
-            used += len(entry.text)
+            used += size
         prompt_truncated = prompt is not None and len(prompt) > OUTPUT_CAP_CHARS
         return RunOutput(
             run_id=run.id,
@@ -339,6 +354,8 @@ class TaskReads:
             transcript_truncated=len(kept) < len(entries),
             total_entries=len(entries),
             cap_chars=OUTPUT_CAP_CHARS,
+            raw_entries=raw_entries,
+            raw_included=raw,
         )
 
 
@@ -354,8 +371,27 @@ def _transcript_entry(event: Event) -> TranscriptEntry | None:
     elif event.event_type == "engine.test_output":
         stream = str(payload.get("stream") or "") or None
         text = str(payload.get("text", ""))
-    elif event.event_type == "engine.test_run":
-        text = f"$ {payload.get('command', '')}\n{payload.get('output_tail', '')}".rstrip()
     else:
-        text = json.dumps(payload, sort_keys=True) if payload else ""
+        # The page says these in words from the facts; nothing verbatim.
+        return TranscriptEntry(
+            at=event.timestamp, kind=event.event_type, text="", data=_clipped(payload)
+        )
     return TranscriptEntry(at=event.timestamp, kind=event.event_type, stream=stream, text=text)
+
+
+#: The longest string an event's facts carry to the page.
+_FACT_STRING_CAP = 4000
+
+
+def _clipped(value: Any) -> Any:
+    """A JSON value with every long string cut, so one event cannot fill the page."""
+
+    if isinstance(value, str):
+        if len(value) <= _FACT_STRING_CAP:
+            return value
+        return value[:_FACT_STRING_CAP] + f"\n[... {len(value) - _FACT_STRING_CAP} more characters]"
+    if isinstance(value, dict):
+        return {str(key): _clipped(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_clipped(item) for item in value]
+    return value

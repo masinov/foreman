@@ -65,6 +65,15 @@ export function formatDayTime(timestamp, now = new Date()) {
   return date.getFullYear() === now.getFullYear() ? dayMonthTime.format(date) : dayMonthYearTime.format(date);
 }
 
+const clockTime = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+/** "14:02:07": the time of day, to the second. Empty for no date. */
+export function formatClock(timestamp) {
+  if (!timestamp) return "";
+  const date = new Date(timestamp);
+  return Number.isNaN(date.getTime()) ? "" : clockTime.format(date);
+}
+
 /** 28500 -> "28.5K", 1200000 -> "1.2M". */
 export function formatTokens(count) {
   const value = Number(count) || 0;

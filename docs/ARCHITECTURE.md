@@ -476,23 +476,13 @@ over `foreman/git.py`, with typed response models in
 - `GET /tasks/{id}/runs` pages a task's runs newest first (`limit`, `offset`,
   `total`): `step`, `role_id`, `model`, `outcome`, `started_at`,
   `finished_at`, `duration_ms`, `cost_usd`, `tokens`, `token_usage`.
-- `GET /runs/{id}/output` returns the run's `prompt` and `transcript` entries
-  (`at`, `kind`, `stream`, `text`), each capped at `cap_chars` (200,000
-  characters); `prompt_truncated` and `transcript_truncated` say when a cap
-  applied.
-
-Two writes serve the task page's More menu and decision, in
-`foreman/dashboard/routers/tasks.py` over the shared mutation service:
-`POST /tasks/{id}/block` (`reason`, required) parks a task, and
-`POST /tasks/{id}/unblock` (`note`, optional) returns a blocked task to the
-queue and, when a note is given, records it as guidance for the next agent
-step after the unblock succeeded. A task at a workflow gate is refused
-(approve or deny it instead). `GET /tasks/{id}` carries `created_at`.
-
-### Inspection and dashboard surfaces
-
-Foreman now exposes two first-class observation surfaces:
-
+- `GET /runs/{id}/output` returns the run's `prompt` and `transcript`:
+  one entry per recorded event, oldest first, as `{at, kind, text, data}`.
+  `data` is what the event recorded (long strings clipped), for the page to
+  say in words (`frontend/src/pages/task/runWords.js`); `text` is set only
+  for lines of test output. The agent's raw stream is left out and counted
+  in `raw_entries`; `?raw=true` returns that stream instead. Both are
+  capped at `cap_chars`.
 - CLI inspection commands: `board`, `history`, `cost`, and live `watch`
 - a dashboard service layer in `foreman/dashboard_service.py`, a FastAPI
   transport layer in `foreman/dashboard/`, a React frontend

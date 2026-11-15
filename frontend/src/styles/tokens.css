@@ -122,6 +122,9 @@
 
   /* Task changes: the file list beside the diff */
   --changes-files-width: 300px;
+  --run-time-width: 64px;
+  --run-result-lines: 3;
+  --run-output-max-height: 320px;
   --changes-files-max-width: 400px;
   --changes-diff-min-width: 520px;
   --changes-list-offset: 140px;

@@ -8,18 +8,89 @@ import { Disclosure } from "../../ui/Disclosure";
 import { Mono } from "../../ui/Mono";
 import { SectionHeading } from "../../ui/SectionHeading";
 import { Table } from "../../ui/Table";
-import { formatDayTime, formatDuration, formatMoney, humanize, plural, shortSha } from "../../ui/format";
+import { LongText } from "../../ui/LongText";
+import { formatClock, formatDay, formatDayTime, formatDuration, formatMoney, humanize, plural, shortSha } from "../../ui/format";
+import { narrate } from "./runWords";
 import { runBy, runResult, runSeconds } from "./taskWords";
 
 // Design README: activity 25 at a time.
 export const RUNS_PAGE = 25;
 
-const QUIET_KINDS = new Set(["agent.raw_output", "engine.test_output"]);
+/** The story with a line naming the day wherever it changes from the day the run started. */
+function withDays(lines, startedAt) {
+  const out = [];
+  let day = formatDay(startedAt);
+  for (const line of lines) {
+    const lineDay = formatDay(line.at);
+    if (lineDay && day && lineDay !== day) out.push({ day: lineDay });
+    if (lineDay) day = lineDay;
+    out.push(line);
+  }
+  return out;
+}
+
+/** One line of the story: when, what happened in words, and what it ran or said. */
+function RunLine({ line }) {
+  const tone = line.tone ? ` tone-${line.tone}` : "";
+  if (line.day) {
+    // A run can be touched again on a later day; the times alone would not say so.
+    return <li className="run-line run-line--day">{line.day}</li>;
+  }
+  return (
+    <li className="run-line">
+      <Mono quiet className="run-line__at">
+        {formatClock(line.at)}
+      </Mono>
+      <div className="run-line__what">
+        {line.says || line.mono ? (
+          <p className="run-line__head">
+            {line.says ? <span className={`run-line__says${tone}`}>{line.says}</span> : null}
+            {line.says && line.mono ? " " : null}
+            {line.mono ? <Mono className="run-line__mono">{line.mono}</Mono> : null}
+          </p>
+        ) : null}
+        {line.body ? (
+          line.output ? (
+            <pre className="run-output__text run-line__output">{line.body}</pre>
+          ) : line.prose ? (
+            <LongText>{line.body}</LongText>
+          ) : (
+            <pre className={line.clamp ? "run-output__text run-line__result" : "run-output__text"}>{line.body}</pre>
+          )
+        ) : null}
+      </div>
+    </li>
+  );
+}
+
+/** The agent's stream as the CLI wrote it, read only when someone opens it. */
+function RawOutput({ run }) {
+  const raw = useResource(["run-output-raw", run.id], (client, options) => getRunOutput(client, run.id, { ...options, raw: true }));
+  if (raw.error) {
+    return (
+      <p className="notice notice--error" role="alert">
+        {raw.error}
+      </p>
+    );
+  }
+  if (!raw.data) return null;
+  return (
+    <>
+      {raw.data.transcript_truncated ? (
+        <p className="notice" role="status">
+          The raw output is longer than {raw.data.cap_chars.toLocaleString("en-US")} characters; its start is shown.
+        </p>
+      ) : null}
+      <pre className="run-output__text run-output__prompt">{raw.data.transcript.map((entry) => entry.text).join("\n")}</pre>
+    </>
+  );
+}
 
 function RunOutput({ run }) {
   const output = useResource(["run-output", run.id], (client, options) => getRunOutput(client, run.id, options));
   const by = runBy(run);
   const data = output.data;
+  const lines = data ? withDays(narrate(data.transcript), run.started_at) : [];
   return (
     <section className="task-section run-output" aria-labelledby="run-output">
       {/* The title is the step. Who ran it and when are details beside it. */}
@@ -35,20 +106,22 @@ function RunOutput({ run }) {
       ) : null}
       {data?.transcript_truncated ? (
         <p className="notice" role="status">
-          This output is longer than {data.cap_chars.toLocaleString("en-US")} characters; the earliest of its{" "}
-          {data.total_entries} entries are shown.
+          This run recorded more than {data.cap_chars.toLocaleString("en-US")} characters; the earliest of its{" "}
+          {data.total_entries} events are shown.
         </p>
       ) : null}
-      {data && data.transcript.length === 0 ? <p className="empty">This run recorded no output.</p> : null}
-      {data && data.transcript.length ? (
-        <ol className="run-output__entries" aria-label="Output">
-          {data.transcript.map((entry, index) => (
-            <li key={index} className="run-output__entry">
-              {QUIET_KINDS.has(entry.kind) ? null : <span className="run-output__kind">{humanize(entry.kind.replace(".", " "))}</span>}
-              <pre className="run-output__text">{entry.text}</pre>
-            </li>
+      {data && lines.length === 0 ? <p className="empty">This run recorded nothing to read.</p> : null}
+      {lines.length ? (
+        <ol className="run-story" aria-label="What happened">
+          {lines.map((line, index) => (
+            <RunLine key={index} line={line} />
           ))}
         </ol>
+      ) : null}
+      {data?.raw_entries ? (
+        <Disclosure summary={`Show the raw output (${plural(data.raw_entries, "line")})`}>
+          <RawOutput run={run} />
+        </Disclosure>
       ) : null}
       {data ? (
         data.prompt ? (
