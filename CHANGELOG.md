@@ -7,6 +7,10 @@ memory changes rather than versioned product releases.
 
 ## [Unreleased]
 
+### Sprint 59 — the engine can be left running again
+
+- Sprint 59 opened (2026-11-15), the first of Phase 5: engine defects found during sprint 58, a first cut of the agent sandbox, dashboard follow-ups. See `docs/sprints/current.md`.
+
 ### Sprint 58 — frontend rebuild
 
 - Sprint 58 is closed (2026-11-15): archived at `docs/sprints/archive/sprint-58-frontend-rebuild.md`, checkpoint at `docs/checkpoints/2026-11-15-sprint-58-closed.md`. No sprint is open; `docs/sprints/current.md` holds a proposed sprint 59.
