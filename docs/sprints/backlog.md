@@ -32,6 +32,13 @@ None is fixed. Each is a candidate for the next engine sprint.
 ## Dashboard follow-ups (after sprint 58)
 
 - A task's Activity tab shows run events as raw JSON; say them in sentences.
+- A browser acceptance pack for the operator journeys (inspect and guide a
+  running task, approve a merge, pause, recover from an engine failure).
+- Types in the frontend (TypeScript or JSDoc).
+- Descriptions and manager replies rendered as markdown.
+- Mark done and Reopen in the manager's proposal vocabulary (ADR-0022).
+- Look at the task and sprint pages against a running engine: everything
+  built after 2026-11-13 was seen with fixtures only.
 - Editing a task's size, priority and dependencies after it is filed.
 - Motion that depends on live data (a row arriving, a step finishing).
 - One event stream per tab instead of two on a running task's page.
