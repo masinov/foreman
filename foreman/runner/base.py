@@ -47,6 +47,16 @@ class InfrastructureError(ForemanError):
     """Raised when the agent backend fails at the process or transport layer."""
 
 
+class NoTurnError(InfrastructureError):
+    """Raised when the backend ended a run without acting on the prompt.
+
+    Seen with Claude Code resuming a session (2026-11-12): the process
+    returned a result in 36 ms with no turn and no text. The prompt was never
+    read, so the next attempt sends the same prompt to the same session
+    instead of telling the agent to continue an attempt that never began.
+    """
+
+
 class PreflightError(InfrastructureError):
     """Raised when the agent backend is unavailable before a run can start."""
 
@@ -206,13 +216,17 @@ def run_with_retry(
             early_failures = 0 if attempt_session_id else early_failures + 1
             dropped_session_id = current.session_id
             failed = current
-            current, next_mode = _next_attempt_config(
-                config,
-                current,
-                attempt_session_id=attempt_session_id,
-                error_text=str(exc),
-                early_failures=early_failures,
-            )
+            if isinstance(exc, NoTurnError):
+                # Nothing was read, so nothing is resumed: same prompt again.
+                next_mode = "replay"
+            else:
+                current, next_mode = _next_attempt_config(
+                    config,
+                    current,
+                    attempt_session_id=attempt_session_id,
+                    error_text=str(exc),
+                    early_failures=early_failures,
+                )
             payload: dict[str, Any] = {
                 **spent,
                 "error": str(exc),

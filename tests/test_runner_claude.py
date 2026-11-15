@@ -11,6 +11,7 @@ from foreman.runner import (
     AgentRunConfig,
     ClaudeCodeRunner,
     InfrastructureError,
+    NoTurnError,
     PreflightError,
     QuotaExhaustedError,
     run_with_retry,
@@ -646,13 +647,63 @@ class ClaudeCodeRunnerTests(unittest.TestCase):
         self.assertAlmostEqual(events[-1].payload["cost_usd"], 1.25)
         self.assertAlmostEqual(events[-1].payload["session_cost_usd"], 1.25)
 
-    def test_a_run_that_did_nothing_in_a_resumed_session_costs_nothing(self) -> None:
-        # Seen on 2026-11-12: a resume returned at once, repeating the total.
-        result = {"type": "result", "session_id": "resume-123", "num_turns": 0, "total_cost_usd": 4.99}
+    # ── a run that read no prompt ─────────────────────────────────────────
 
-        events = self._run_resumed([result], carried=4.99)
+    #: Recorded on 2026-11-12: a resume came back in 36 ms, repeating the
+    #: session's total, with no turn and no text.
+    NO_TURN = {
+        "type": "result", "is_error": False, "num_turns": 0, "stop_reason": None,
+        "session_id": "resume-123", "total_cost_usd": 4.99,
+        "usage": {"input_tokens": 0, "output_tokens": 0},
+    }
 
-        self.assertAlmostEqual(events[-1].payload["cost_usd"], 0.0)
+    def test_a_result_with_no_turn_is_a_failed_attempt_not_an_answer(self) -> None:
+        events: list[AgentEvent] = []
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        from dataclasses import replace
+
+        config = replace(self.create_config(Path(temp_dir.name)), session_cost_baseline_usd=4.99)
+        process = _FakeProcess(lines=[json.dumps(self.NO_TURN) + "\n"])
+        runner = ClaudeCodeRunner(
+            popen_factory=_PopenRecorder(process),
+            clock=lambda: 0.0,
+            which=lambda _: "/usr/bin/claude",
+        )
+
+        with self.assertRaises(NoTurnError):
+            for event in runner.run(config):
+                events.append(event)
+
+        self.assertNotIn("agent.completed", [e.event_type for e in events])
+        # It spent nothing: the total it repeated is what the session carried.
+        updates = [e for e in events if e.event_type == "agent.cost_update"]
+        self.assertAlmostEqual(updates[-1].payload["cumulative_usd"], 0.0)
+
+    def test_a_result_with_no_turn_but_an_answer_is_an_answer(self) -> None:
+        events = self._run_lines([json.dumps({**self.NO_TURN, "result": "TASK_COMPLETE"})])
+
+        self.assertEqual(events[-1].event_type, "agent.completed")
+
+    def test_after_no_turn_the_same_prompt_goes_to_the_same_session(self) -> None:
+        seen: list[AgentRunConfig] = []
+
+        class _SilentOnce:
+            def run(self, config: AgentRunConfig):
+                seen.append(config)
+                yield AgentEvent("agent.session", payload={"session_id": "resume-123"})
+                if len(seen) == 1:
+                    raise NoTurnError("returned without running a turn")
+                yield AgentEvent("agent.completed", payload={"session_id": "resume-123"})
+
+        config = self.create_config(Path("/tmp/demo"))
+        events = list(run_with_retry(_SilentOnce(), config, max_retries=1, sleep=lambda _: None))
+
+        self.assertEqual(seen[1].prompt, config.prompt)
+        self.assertEqual(seen[1].session_id, "resume-123")
+        infra = [e for e in events if e.event_type == "agent.infra_error"]
+        self.assertEqual(infra[0].payload["next_attempt"], "replay")
+        self.assertEqual(events[-1].event_type, "agent.completed")
 
     def test_the_cli_budget_is_this_runs_limit_on_top_of_what_was_carried(self) -> None:
         from dataclasses import replace

@@ -37,7 +37,7 @@ that running the engine unattended is a reasonable thing to do again.
 
 | # | Slice | Status | Executed by | Deliverable |
 |---|-------|--------|-------------|-------------|
-| 1 | A corrective retry that ends with zero turns is not a second failure | todo | Claude | fix, test |
+| 1 | A corrective retry that ends with zero turns is not a second failure | done | Claude | `fix/engine-retry-that-ran-no-turn`: `NoTurnError`, the same prompt is sent again; the correction no longer asks for the marker when the work is unfinished |
 | 2 | A resumed session's cost is counted once, not on every run | done | Claude | `fix/engine-session-cost-counted-once`: migration 24, `runs.session_cost_usd` |
 | 3 | `foreman engine run-task` takes effect without a restart | todo | Claude | fix, test |
 | 4 | An approved merge does not wait behind another task's step | todo | Claude | fix, test |
