@@ -208,6 +208,12 @@ class ForemanOrchestrator:
         #: ``EngineCommandInterrupt`` to stop the step. A one-shot ``foreman
         #: run`` leaves it None and behaves exactly as before.
         self.command_poll = command_poll
+        #: Set by a resident engine. Asked between two tasks of one pass;
+        #: True ends the pass there, so the engine can act on what is waiting
+        #: for it (a task someone asked to run next, a command) before the
+        #: pass picks another task off the queue. Without it a request to run
+        #: a task waited until the whole queue had run.
+        self.yield_between_tasks: Callable[[], bool] | None = None
 
     def close(self) -> None:
         """Stop the background work this orchestrator started."""
@@ -315,6 +321,13 @@ class ForemanOrchestrator:
         self.sprints.activate_first_planned(project.id)
         stop_reason = "idle"
         while True:
+            if (
+                executed_task_ids
+                and self.yield_between_tasks is not None
+                and self.yield_between_tasks()
+            ):
+                stop_reason = "yielded"
+                break
             task = self.selector.select_next_task(project)
             if task is not None:
                 try:

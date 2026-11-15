@@ -19,8 +19,8 @@ None is fixed. Each is a candidate for the next engine sprint.
   turns counted as a second failure.
 - (Fixed in sprint 59, slice 2.) A resumed session's cost was recorded
   cumulatively on each run, so a task's spend was overcounted.
-- `foreman engine run-task` only takes effect at the engine's next pass; a
-  restart was needed to apply it.
+- (Fixed in sprint 59, slice 3.) `foreman engine run-task` only took effect
+  at the engine's next pass, which came after the whole queue had run.
 - Merges are only attempted between steps, so an approved merge can wait
   behind a long step of another task.
 - The engine does not push after a merge.

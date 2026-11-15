@@ -43,7 +43,7 @@ from typing import Callable
 from .engine_lock import EngineBusyError, EngineLock
 from .errors import EngineCommandInterrupt
 from .logs import get_logger, log_event
-from .models import ENGINE_COMMANDS_NEEDING_A_RESIDENT_ENGINE, EngineCommand
+from .models import ENGINE_COMMANDS_NEEDING_A_RESIDENT_ENGINE, EngineCommand, Task
 from .notifications import NotificationDeliveryWorker
 from .orchestrator import (
     ForemanOrchestrator,
@@ -120,6 +120,14 @@ class _Backoff:
 
     def reset(self) -> None:
         self.failures = 0
+
+
+def _runnable_on_request(task: Task) -> bool:
+    """A todo task, or one left part-way with a step to resume at."""
+
+    return task.status == "todo" or (
+        task.status == "in_progress" and bool(task.workflow_current_step)
+    )
 
 
 class ResidentEngine:
@@ -215,6 +223,10 @@ class ResidentEngine:
             paused=self._paused,
         )
         self.attach()
+        if not once:
+            # A single pass (`--once`) ends when it ends; nothing would come
+            # back for the tasks a shortened pass left.
+            self.orchestrator.yield_between_tasks = self._has_something_waiting
 
         try:
             while True:
@@ -254,6 +266,18 @@ class ResidentEngine:
                 passes += 1
                 run_request = self._take_run_request()
                 target_task_id = run_request[0] if run_request else None
+                if run_request is not None:
+                    # The request was checked when it was accepted; the task
+                    # may have run, or been blocked or cancelled, since.
+                    target = self.store.get_task(run_request[0])
+                    if target is None or not _runnable_on_request(target):
+                        self._finish_run_request(
+                            run_request,
+                            "completed",
+                            f"Task {target_task_id!r} was not run on request: it is "
+                            f"{target.status if target else 'gone'!r} now.",
+                        )
+                        continue
                 try:
                     result = self.orchestrator.run_project(
                         self.project_id,
@@ -641,10 +665,7 @@ class ResidentEngine:
                 f"not {self.project_id!r}.",
             )
             return
-        runnable = task.status == "todo" or (
-            task.status == "in_progress" and bool(task.workflow_current_step)
-        )
-        if not runnable:
+        if not _runnable_on_request(task):
             self._finish_command(
                 command,
                 "rejected",
@@ -776,6 +797,18 @@ class ResidentEngine:
                 command_id=command.id,
                 reason=str(exc),
             )
+
+    def _has_something_waiting(self) -> bool:
+        """Whether the pass should end between tasks so the loop can act.
+
+        True when a task was asked for by name, or a command arrived that no
+        step was running to hear. The loop drains commands at its top and its
+        next pass runs the requested task first.
+        """
+
+        return bool(self._run_requests) or (
+            self.store.next_pending_engine_command(self.project_id) is not None
+        )
 
     def _take_run_request(self) -> tuple[str, EngineCommand] | None:
         """Consume the next queued `run_task` request, if one is waiting."""
