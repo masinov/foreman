@@ -103,8 +103,56 @@ describe("the task page header", () => {
       task_type: "fix",
       description: taskDetail().description,
       acceptance_criteria: taskDetail().acceptance_criteria,
+      complexity: taskDetail().complexity ?? null,
+      priority: taskDetail().priority ?? 0,
     });
     await waitFor(() => expect(taskReads(fetchImpl)).toBeGreaterThan(1));
+  });
+
+  it("changes a queued task's size, priority and what it waits for", async () => {
+    const task = taskDetail({
+      status: "todo",
+      blocked_kind: null,
+      awaiting_human_gate: false,
+      workflow_current_step: null,
+      complexity: null,
+      priority: 0,
+      depends_on_task_ids: [],
+      dependencies: [],
+    });
+    const routes = taskRoutes({ task });
+    routes[`PATCH /api/v1/tasks/${TASK_ID}`] = { ok: true };
+    const { fetchImpl } = await renderTask(BASE, routes);
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const dialog = screen.getByRole("dialog", { name: "Edit task" });
+    fireEvent.change(within(dialog).getByLabelText("Size"), { target: { value: "large" } });
+    fireEvent.change(within(dialog).getByLabelText("Priority"), { target: { value: "2" } });
+    fireEvent.click(await within(dialog).findByRole("button", { name: "Make it wait for other tasks" }));
+    const boxes = within(dialog).getAllByRole("checkbox");
+    // The task itself is not offered, and finished tasks are not either.
+    expect(within(dialog).queryByRole("checkbox", { name: new RegExp(task.title) })).toBeNull();
+    fireEvent.click(boxes[0]);
+    expect(within(dialog).getByRole("button", { name: "Waits for 1 task" })).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    const body = calls(fetchImpl, "PATCH", `/api/v1/tasks/${TASK_ID}`)[0].body;
+    expect(body.complexity).toBe("large");
+    expect(body.priority).toBe(2);
+    expect(body.depends_on_task_ids).toHaveLength(1);
+    expect(body.depends_on_task_ids[0]).not.toBe(TASK_ID);
+  });
+
+  it("does not offer what a started task waits for, and refuses a priority that is not a number", async () => {
+    const routes = taskRoutes();
+    routes[`PATCH /api/v1/tasks/${TASK_ID}`] = { ok: true };
+    const { fetchImpl } = await renderTask(BASE, routes);
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const dialog = screen.getByRole("dialog", { name: "Edit task" });
+    expect(within(dialog).queryByRole("button", { name: /wait/i })).toBeNull();
+    fireEvent.change(within(dialog).getByLabelText("Priority"), { target: { value: "soon" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    expect(await within(dialog).findByText("A whole number. Lower runs first.")).toBeInTheDocument();
+    expect(calls(fetchImpl, "PATCH", `/api/v1/tasks/${TASK_ID}`)).toHaveLength(0);
   });
 });
 

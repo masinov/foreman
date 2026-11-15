@@ -70,8 +70,13 @@ TASK_EDIT_FIELDS: tuple[str, ...] = (
     "acceptance_criteria",
     "description",
     "priority",
+    "complexity",
+    "depends_on_task_ids",
     "executor_overrides",
 )
+#: Statuses in which what a task waits for can still change: once it has
+#: started, the engine no longer looks at its dependencies.
+_DEPENDENCY_EDIT_STATUSES = frozenset({"triage", "todo"})
 _EDIT_AUDITED_STATUSES = frozenset({"in_progress", "blocked"})
 
 #: Sprint fields a person may edit outside its lifecycle.
@@ -392,6 +397,27 @@ class Mutations:
             if priority != task.priority:
                 changed["priority"] = priority
             task.priority = priority
+        if "complexity" in changes:
+            value = changes["complexity"]
+            complexity = str(value).strip() if value else None
+            if complexity is not None and complexity not in TASK_COMPLEXITIES:
+                raise MutationError(
+                    f"Unsupported complexity: {complexity}. "
+                    f"Expected one of: {', '.join(TASK_COMPLEXITIES)}."
+                )
+            if complexity != task.complexity:
+                changed["complexity"] = complexity
+            task.complexity = complexity
+        if "depends_on_task_ids" in changes:
+            wanted = self._checked_dependencies(task, changes["depends_on_task_ids"])
+            if wanted != list(task.depends_on_task_ids or []):
+                if task.status not in _DEPENDENCY_EDIT_STATUSES:
+                    raise MutationError(
+                        f"Task {task.id!r} is {task.status}: what it waits for can only "
+                        "change before it starts."
+                    )
+                changed["depends_on_task_ids"] = wanted
+                task.depends_on_task_ids = wanted
         if "executor_overrides" in changes:
             try:
                 overrides = validate_executor_overrides(
@@ -406,6 +432,48 @@ class Mutations:
         if changed and (task.status in _EDIT_AUDITED_STATUSES or self.proposal_id):
             self._audit(task, "human.task_edited", step="edit", changed_fields=changed)
         return changed
+
+    def _checked_dependencies(self, task: Task, value: Any) -> list[str]:
+        """The tasks ``task`` is to wait for, checked: real, its project's, no loop."""
+
+        if value is None:
+            return []
+        if isinstance(value, str) or not isinstance(value, (list, tuple)):
+            raise MutationError("Dependencies must be a list of task ids.")
+        wanted: list[str] = []
+        for entry in value:
+            dep_id = str(entry).strip()
+            if not dep_id or dep_id in wanted:
+                continue
+            if dep_id == task.id:
+                raise MutationError("A task cannot wait for itself.")
+            dependency = self.store.get_task(dep_id)
+            if dependency is None or dependency.project_id != task.project_id:
+                raise MutationError(f"Dependency task not found in this project: {dep_id}")
+            if self._waits_for(dependency, task.id):
+                raise MutationError(
+                    f"Task {dep_id!r} already waits for {task.id!r}, directly or through "
+                    "other tasks; making each wait for the other would stop both."
+                )
+            wanted.append(dep_id)
+        return wanted
+
+    def _waits_for(self, task: Task, target_id: str) -> bool:
+        """Whether ``task`` waits for ``target_id``, directly or through others."""
+
+        seen: set[str] = set()
+        pending = list(task.depends_on_task_ids or [])
+        while pending:
+            dep_id = pending.pop()
+            if dep_id == target_id:
+                return True
+            if dep_id in seen:
+                continue
+            seen.add(dep_id)
+            dependency = self.store.get_task(dep_id)
+            if dependency is not None:
+                pending.extend(dependency.depends_on_task_ids or [])
+        return False
 
     def record_guidance(self, task: Task, text: str) -> Event:
         """Record a guidance note the task's next agent step reads (``human.message``)."""
