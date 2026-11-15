@@ -128,12 +128,22 @@ class WorkflowRunner:
         *,
         step: str,
         carried_output: str | None,
+        only_roles: frozenset[str] | None = None,
     ) -> Task:
-        """Execute a workflow from one step until completion or a block."""
+        """Execute a workflow from one step until completion or a block.
+
+        With ``only_roles`` the task is carried only through steps of those
+        roles and left resumable at the first step of any other.
+        """
 
         try:
             return self._run_workflow_steps(
-                project, workflow, task, step=step, carried_output=carried_output
+                project,
+                workflow,
+                task,
+                step=step,
+                carried_output=carried_output,
+                only_roles=only_roles,
             )
         except TaskCancelledError:
             # An operator cancelled the task while a step was running or
@@ -196,6 +206,7 @@ class WorkflowRunner:
         *,
         step: str,
         carried_output: str | None,
+        only_roles: frozenset[str] | None = None,
     ) -> Task:
         """Run a task through its workflow from ``step`` until it stops.
 
@@ -227,6 +238,14 @@ class WorkflowRunner:
                 raise OrchestratorError(
                     f"Workflow {workflow.id!r} is missing step {current_step!r}."
                 )
+            if only_roles is not None and step_def.role not in only_roles:
+                # Not this caller's step to run. The task waits here, as it
+                # would after a deferred decision, for the engine's queue.
+                current_task.workflow_current_step = current_step
+                current_task.workflow_carried_output = carried_output
+                self.tasks.save(current_task)
+                self.leases.release(current_task, project)
+                return current_task
 
             default_branch = project.default_branch
             original_default_sha = head_sha(project.repo_path, f"refs/heads/{default_branch}")
