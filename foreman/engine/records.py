@@ -180,6 +180,7 @@ class RunRecords:
         retry_count: int | None = None,
         failure_type: str | None = None,
         commit_sha: str | None = None,
+        session_cost_usd: float | None = None,
     ) -> None:
         run.status = status
         run.outcome = outcome
@@ -198,6 +199,8 @@ class RunRecords:
             run.retry_count = retry_count
         if commit_sha is not None:
             run.commit_sha = commit_sha
+        if session_cost_usd is not None:
+            run.session_cost_usd = session_cost_usd
         run.duration_ms = duration_ms
         run.completed_at = utc_now_text()
         self.store.save_run(run)

@@ -16,8 +16,8 @@ Engine and workflow defects seen while the engine ran sprint 58's tasks.
 None is fixed. Each is a candidate for the next engine sprint.
 
 - A corrective retry that ends with zero turns counts as a second failure.
-- A resumed session's cost is recorded cumulatively on each run, so a
-  task's spend is overcounted.
+- (Fixed in sprint 59, slice 2.) A resumed session's cost was recorded
+  cumulatively on each run, so a task's spend was overcounted.
 - `foreman engine run-task` only takes effect at the engine's next pass; a
   restart was needed to apply it.
 - Merges are only attempted between steps, so an approved merge can wait

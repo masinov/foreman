@@ -106,7 +106,12 @@ class ClaudeCodeRunner(AgentRunner):
         if config.max_cost_usd > 0:
             # Cost is only reported in the final result line, so nothing on
             # this side can stop spend while the agent works. The CLI can.
-            command.extend(["--max-budget-usd", f"{config.max_cost_usd:.2f}"])
+            # It counts a resumed session from where the session left off, so
+            # the limit it is given is this run's limit on top of that.
+            carried = config.session_cost_baseline_usd if config.session_id else 0.0
+            command.extend(
+                ["--max-budget-usd", f"{config.max_cost_usd + max(carried, 0.0):.2f}"]
+            )
         command.extend(_extra_flag_args(config.extra_flags))
         return command
 
@@ -145,6 +150,9 @@ class ClaudeCodeRunner(AgentRunner):
 
             start_time = self._clock()
             last_cost_usd = 0.0
+            session_cost = _SessionCost(
+                config.session_cost_baseline_usd if config.session_id else 0.0
+            )
             saw_terminal_event = False
             saw_assistant_text = False
             quota_notice: dict[str, Any] | None = None
@@ -210,6 +218,7 @@ class ClaudeCodeRunner(AgentRunner):
                     working_dir=config.working_dir,
                     emit_result_signals=not saw_assistant_text,
                     decoded=decoded,
+                    session_cost=session_cost,
                 )
                 if any(
                     event.event_type == "agent.message"
@@ -303,8 +312,10 @@ class ClaudeCodeRunner(AgentRunner):
         working_dir: Path,
         emit_result_signals: bool = True,
         decoded: Any = None,
+        session_cost: _SessionCost | None = None,
     ) -> tuple[AgentEvent, ...]:
         timestamp_events: list[AgentEvent] = []
+        session_cost = session_cost or _SessionCost()
 
         if line.startswith("FOREMAN_SIGNAL:"):
             _, signal_events = extract_signal_events(line)
@@ -333,7 +344,7 @@ class ClaudeCodeRunner(AgentRunner):
                 timestamp_events.extend(
                     self._parse_assistant_block(block, working_dir=working_dir)
                 )
-            cost_event = _build_cost_update_event(event)
+            cost_event = _build_cost_update_event(event, session_cost)
             if cost_event is not None:
                 timestamp_events.append(cost_event)
             return tuple(timestamp_events)
@@ -354,19 +365,19 @@ class ClaudeCodeRunner(AgentRunner):
                 # again would apply every signal twice.
                 if emit_result_signals:
                     timestamp_events.extend(signal_events)
-            cost_event = _build_cost_update_event(event)
+            cost_event = _build_cost_update_event(event, session_cost)
             if cost_event is not None:
                 timestamp_events.append(cost_event)
 
+            reported_cost = event.get("total_cost_usd", event.get("cost_usd"))
             payload = {
                 "session_id": _optional_string(event.get("session_id")),
-                "cost_usd": _coerce_float(
-                    event.get("total_cost_usd", event.get("cost_usd")),
-                    default=0.0,
-                ),
+                "cost_usd": session_cost.run_cost(reported_cost),
                 "duration_ms": _coerce_int(event.get("duration_ms")),
                 "token_count": _extract_total_tokens(event),
             }
+            if reported_cost is not None:
+                payload["session_cost_usd"] = _coerce_float(reported_cost, default=0.0)
             token_usage = _extract_token_usage(event)
             if token_usage is not None:
                 payload["token_usage"] = token_usage
@@ -399,7 +410,7 @@ class ClaudeCodeRunner(AgentRunner):
         if event_type == "rate_limit_event":
             return _rate_limit_events(event)
 
-        cost_event = _build_cost_update_event(event)
+        cost_event = _build_cost_update_event(event, session_cost)
         if cost_event is not None:
             return (cost_event,)
         # Anything else is kept only as the raw line; inventing a tool use for
@@ -662,14 +673,38 @@ def _rate_limit_events(event: dict[str, Any]) -> tuple[AgentEvent, ...]:
     )
 
 
-def _build_cost_update_event(event: dict[str, Any]) -> AgentEvent | None:
+class _SessionCost:
+    """Turns the CLI's running total for a session into this run's own cost.
+
+    Claude Code carries a session's cost across ``--resume``: the total it
+    reports includes every earlier run of the session. ``baseline`` is what
+    the session had counted before this run. A total below the baseline means
+    the CLI's count started over (older versions did not carry it), so the
+    total is then this run's own.
+    """
+
+    def __init__(self, baseline: float = 0.0) -> None:
+        self.baseline = max(float(baseline or 0.0), 0.0)
+
+    def run_cost(self, reported: Any) -> float:
+        total = _coerce_float(reported, default=0.0)
+        if reported is None:
+            return total
+        if total + 1e-9 < self.baseline:
+            self.baseline = 0.0
+        return max(total - self.baseline, 0.0)
+
+
+def _build_cost_update_event(
+    event: dict[str, Any], session_cost: _SessionCost | None = None
+) -> AgentEvent | None:
     cost = event.get("total_cost_usd", event.get("cost_usd"))
     has_token_info = _has_token_data(event)
     if cost is None and not has_token_info:
         return None
     tokens = _extract_total_tokens(event) if has_token_info else 0
     payload = {
-        "cumulative_usd": _coerce_float(cost, default=0.0),
+        "cumulative_usd": (session_cost or _SessionCost()).run_cost(cost),
         "cumulative_tokens": tokens or 0,
     }
     return AgentEvent("agent.cost_update", payload=payload)

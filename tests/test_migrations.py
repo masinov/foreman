@@ -578,6 +578,77 @@ class BacklogMigrationTests(unittest.TestCase):
         self.assertEqual(self.store.get_task("p1-filed").status, "declined")
 
 
+class SessionCostMigrationTests(unittest.TestCase):
+    """Migration 24: a resumed session's running total becomes each run's share."""
+
+    def setUp(self) -> None:
+        self._temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._temp.cleanup)
+        self.db_path = Path(self._temp.name) / "foreman.db"
+        store = ForemanStore(self.db_path)
+        store._connection.executescript(_SCHEMA_MIGRATIONS_DDL)
+        store.migrate([m for m in MIGRATIONS if m[0] <= 23])
+        connection = store._connection
+        connection.execute("PRAGMA foreign_keys = OFF")
+        rows = [
+            # id, backend, session, cost, started
+            ("a1", "claude_code", "A", 5.0, "2026-11-12T10:00:00Z"),
+            ("a2", "claude_code", "A", 5.5, "2026-11-12T11:00:00Z"),
+            ("a-none", "claude_code", "A", 0.0, "2026-11-12T11:30:00Z"),
+            ("a3", "claude_code", "A", 6.5, "2026-11-12T12:00:00Z"),
+            ("b1", "claude_code", "B", 9.0, "2026-11-12T10:00:00Z"),
+            ("b2", "claude_code", "B", 4.0, "2026-11-12T11:00:00Z"),
+            ("b3", "claude_code", "B", 6.0, "2026-11-12T12:00:00Z"),
+            ("c1", "codex", "C", 2.0, "2026-11-12T10:00:00Z"),
+            ("c2", "codex", "C", 3.0, "2026-11-12T11:00:00Z"),
+            ("n1", "claude_code", None, 1.0, "2026-11-12T10:00:00Z"),
+        ]
+        for run_id, backend, session, cost, started in rows:
+            connection.execute(
+                """
+                INSERT INTO runs (id, task_id, project_id, role_id, workflow_step,
+                                  agent_backend, status, session_id, cost_usd,
+                                  started_at, created_at)
+                VALUES (?, 't', 'p', 'developer', 'develop', ?, 'completed', ?, ?, ?, ?)
+                """,
+                (run_id, backend, session, cost, started, started),
+            )
+        connection.commit()
+        store.close()
+        self.store = ForemanStore(self.db_path)
+        self.addCleanup(self.store.close)
+        self.store.initialize()
+
+    def _run(self, run_id: str) -> tuple[float, float | None]:
+        row = self.store._connection.execute(
+            "SELECT cost_usd, session_cost_usd FROM runs WHERE id = ?", (run_id,)
+        ).fetchone()
+        return (round(row["cost_usd"], 6), row["session_cost_usd"])
+
+    def test_each_run_keeps_its_own_share_and_the_total_it_reported(self) -> None:
+        self.assertEqual(self._run("a1"), (5.0, 5.0))
+        self.assertEqual(self._run("a2"), (0.5, 5.5))
+        self.assertEqual(self._run("a3"), (1.0, 6.5))
+
+    def test_a_total_that_went_down_is_a_count_that_started_over(self) -> None:
+        self.assertEqual(self._run("b1"), (9.0, 9.0))
+        self.assertEqual(self._run("b2"), (4.0, 4.0))
+        self.assertEqual(self._run("b3"), (2.0, 6.0))
+
+    def test_runs_it_does_not_understand_are_left_alone(self) -> None:
+        self.assertEqual(self._run("a-none"), (0.0, None))
+        self.assertEqual(self._run("c2"), (3.0, None))
+        self.assertEqual(self._run("n1"), (1.0, None))
+
+    def test_the_store_reads_the_last_total_a_session_reported(self) -> None:
+        self.assertEqual(
+            self.store.latest_session_cost(session_id="A", agent_backend="claude_code"), 6.5
+        )
+        self.assertEqual(
+            self.store.latest_session_cost(session_id="nobody", agent_backend="claude_code"), 0.0
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
 

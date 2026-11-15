@@ -607,6 +607,86 @@ class ClaudeCodeRunnerTests(unittest.TestCase):
         self.assertEqual(events[1].payload["attempt"], 2)
         self.assertTrue(events[2].payload["retries_exhausted"])
 
+    # ── a resumed session's cost ──────────────────────────────────────────
+
+    def _run_resumed(self, lines: list[dict], *, carried: float) -> list[AgentEvent]:
+        from dataclasses import replace
+
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        config = replace(
+            self.create_config(Path(temp_dir.name)), session_cost_baseline_usd=carried
+        )
+        process = _FakeProcess(lines=[json.dumps(line) + "\n" for line in lines])
+        runner = ClaudeCodeRunner(
+            popen_factory=_PopenRecorder(process),
+            clock=lambda: 0.0,
+            which=lambda _: "/usr/bin/claude",
+        )
+        return list(runner.run(config))
+
+    def test_a_resumed_session_is_charged_only_for_this_run(self) -> None:
+        result = {"type": "result", "session_id": "resume-123", "result": "ok", "total_cost_usd": 4.5}
+
+        events = self._run_resumed([result], carried=4.0)
+
+        completed = events[-1]
+        self.assertEqual(completed.event_type, "agent.completed")
+        self.assertAlmostEqual(completed.payload["cost_usd"], 0.5)
+        self.assertAlmostEqual(completed.payload["session_cost_usd"], 4.5)
+        updates = [e for e in events if e.event_type == "agent.cost_update"]
+        self.assertAlmostEqual(updates[-1].payload["cumulative_usd"], 0.5)
+
+    def test_a_total_below_what_was_carried_is_this_runs_own_cost(self) -> None:
+        # An older CLI starts its count again on a resume.
+        result = {"type": "result", "session_id": "resume-123", "result": "ok", "total_cost_usd": 1.25}
+
+        events = self._run_resumed([result], carried=4.0)
+
+        self.assertAlmostEqual(events[-1].payload["cost_usd"], 1.25)
+        self.assertAlmostEqual(events[-1].payload["session_cost_usd"], 1.25)
+
+    def test_a_run_that_did_nothing_in_a_resumed_session_costs_nothing(self) -> None:
+        # Seen on 2026-11-12: a resume returned at once, repeating the total.
+        result = {"type": "result", "session_id": "resume-123", "num_turns": 0, "total_cost_usd": 4.99}
+
+        events = self._run_resumed([result], carried=4.99)
+
+        self.assertAlmostEqual(events[-1].payload["cost_usd"], 0.0)
+
+    def test_the_cli_budget_is_this_runs_limit_on_top_of_what_was_carried(self) -> None:
+        from dataclasses import replace
+
+        runner = ClaudeCodeRunner()
+        config = replace(self.create_config(Path("/tmp/demo")), session_cost_baseline_usd=4.0)
+
+        command = runner.build_command(config)
+        self.assertEqual(command[command.index("--max-budget-usd") + 1], "14.00")
+
+        fresh = replace(config, session_id=None)
+        command = runner.build_command(fresh)
+        self.assertEqual(command[command.index("--max-budget-usd") + 1], "10.00")
+
+    def test_a_retry_in_the_same_session_carries_what_the_failed_attempt_spent(self) -> None:
+        from dataclasses import replace
+
+        seen: list[AgentRunConfig] = []
+
+        class _FailsOnce:
+            def run(self, config: AgentRunConfig):
+                seen.append(config)
+                yield AgentEvent("agent.session", payload={"session_id": "resume-123"})
+                if len(seen) == 1:
+                    yield AgentEvent("agent.cost_update", payload={"cumulative_usd": 0.75})
+                    raise InfrastructureError("stream cut")
+                yield AgentEvent("agent.completed", payload={"session_id": "resume-123"})
+
+        config = replace(self.create_config(Path("/tmp/demo")), session_cost_baseline_usd=4.0)
+        list(run_with_retry(_FailsOnce(), config, max_retries=1, sleep=lambda _: None))
+
+        self.assertEqual(len(seen), 2)
+        self.assertAlmostEqual(seen[1].session_cost_baseline_usd, 4.75)
+
 
 if __name__ == "__main__":
     unittest.main()

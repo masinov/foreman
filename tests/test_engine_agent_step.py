@@ -260,6 +260,57 @@ class AgentStepTests(OrchestratorTestCase):
             ]
             self.assertEqual(len(infra_events), 1)
 
+    def test_a_resumed_session_is_told_what_it_had_already_counted(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+            carried: list[float] = []
+
+            def no_marker(config: AgentRunConfig):
+                carried.append(config.session_cost_baseline_usd)
+                return (
+                    AgentEvent("agent.message", payload={"text": "Done.", "phase": "assistant"}),
+                    AgentEvent(
+                        "agent.completed",
+                        payload={"session_id": "dev-session", "cost_usd": 3.0, "session_cost_usd": 3.0},
+                    ),
+                )
+
+            def corrected(config: AgentRunConfig):
+                carried.append(config.session_cost_baseline_usd)
+                events = self._native_developer_success(replace(config, prompt="## Task: Implement orchestrator loop"))
+                events[-1].payload.update({"cost_usd": 0.4, "session_cost_usd": 3.4})
+                return events
+
+            runner = ScriptedNativeRunner(
+                {
+                    1: no_marker,
+                    2: corrected,
+                    3: lambda config: self._native_reviewer_approve(config),
+                }
+            )
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=self.roles,
+                workflows=self.workflows,
+                agent_runners={"claude_code": runner},
+            )
+
+            orchestrator.run_project(project.id)
+
+            # The first run opened the session; the retry resumed it and was
+            # told the session had already counted the first run.
+            self.assertEqual(carried, [0.0, 3.0])
+            develop = sorted(
+                (r for r in store.list_runs(task_id=task.id) if r.workflow_step == "develop"),
+                key=lambda r: r.created_at,
+            )
+            self.assertEqual([round(r.cost_usd, 2) for r in develop], [3.0, 0.4])
+            self.assertEqual([r.session_cost_usd for r in develop], [3.0, 3.4])
+
     def test_an_interrupted_attempt_is_resumed_and_its_cost_stays_on_the_run(self) -> None:
         from foreman.runner.base import RESUME_AFTER_INFRA_ERROR_PROMPT
 

@@ -28,6 +28,10 @@ class AgentRunConfig:
     env: dict[str, str] = field(default_factory=dict)
     timeout_seconds: int = 0
     max_cost_usd: float = 0.0
+    #: What the backend had already counted for ``session_id`` before this
+    #: run. A backend that reports a resumed session's running total takes
+    #: this off, so the run's cost and its cost gate are the run's own.
+    session_cost_baseline_usd: float = 0.0
 
 
 @dataclass(slots=True)
@@ -201,6 +205,7 @@ def run_with_retry(
 
             early_failures = 0 if attempt_session_id else early_failures + 1
             dropped_session_id = current.session_id
+            failed = current
             current, next_mode = _next_attempt_config(
                 config,
                 current,
@@ -218,6 +223,19 @@ def run_with_retry(
             if next_mode == "session_dropped":
                 payload["dropped_session_id"] = dropped_session_id
                 early_failures = 0
+            # The next attempt's session has already counted what this
+            # attempt spent, on top of whatever it carried in.
+            carried_in = (
+                failed.session_cost_baseline_usd
+                if current.session_id and current.session_id == failed.session_id
+                else 0.0
+            )
+            current = replace(
+                current,
+                session_cost_baseline_usd=(
+                    carried_in + attempt_cost_usd if current.session_id else 0.0
+                ),
+            )
             backoff = (2**attempt) * 5
             yield AgentEvent("agent.infra_error", payload=payload)
             sleep(backoff)

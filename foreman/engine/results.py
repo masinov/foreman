@@ -28,6 +28,10 @@ class AgentExecutionResult:
     status: str = "completed"
     session_id: str | None = None
     cost_usd: float = 0.0
+    #: The backend's running total for the session when the step ended, when
+    #: the backend carries cost across a resumed session; ``cost_usd`` is
+    #: this step's own share of it.
+    session_cost_usd: float | None = None
     token_count: int = 0
     token_usage: TokenUsage | None = None
     duration_ms: int | None = None
