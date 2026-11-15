@@ -1090,6 +1090,7 @@ offending value, rather than running on silent defaults.
 | `worktree_link_paths` | `[]` | repo-relative paths symlinked from the operator's checkout into every new worktree; shares your environment rather than isolating it (see §24) |
 | `max_live_worktrees` | `4` | ceiling on live task worktrees; the engine reclaims clean, idle trees oldest-first to stay under it. `0` disables the cap (§24) |
 | `worktree_setup_command` | `""` | shell command run once in each new worktree to build that tree's own environment (§24) |
+| `merge_push_remote` | `""` | name of the git remote the default branch is pushed to after each merge (for example `origin`). Empty: merges stay on this machine. A push that fails is recorded (`engine.push_failed`) and the merge stands |
 | `worktree_setup_timeout_seconds` | `1800` | wall-clock cap for `worktree_setup_command`; `0` disables the timeout |
 | `completion_guard_enabled` | `true` | enforce the merge proof gate |
 | `merge_approval` | `auto` | `auto` or `human`: whether the `merge_approval` gate needs a person (§14) |
@@ -1203,7 +1204,7 @@ export FOREMAN_DASHBOARD_TOKEN="$(openssl rand -hex 24)"
   API or the Settings screen (they answer **403** and are shown read-only):
   `test_command`, `worktree_setup_command`, `worktree_root`,
   `worktree_link_paths`, `context_dir`, `judge_base_url`,
-  `judge_api_key_env`. Set them at a terminal with
+  `judge_api_key_env`, `merge_push_remote`. Set them at a terminal with
   `foreman config <project-id> --set <key>=<value>`. A role's `backend` and
   `permission_mode` are likewise changed only in its TOML file. See ADR-0017.
 - The intake endpoint (§25) is exempt from these three rules; it

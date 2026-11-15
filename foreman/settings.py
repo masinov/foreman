@@ -28,6 +28,7 @@ HOST_LEVEL_SETTINGS: frozenset[str] = frozenset(
         "context_dir",
         "judge_base_url",
         "judge_api_key_env",
+        "merge_push_remote",
     }
 )
 
@@ -119,6 +120,10 @@ class ProjectSettings:
     # Wall-clock cap for ``worktree_setup_command``; 0 disables the timeout.
     worktree_setup_timeout_seconds: int = 1800
     completion_guard_enabled: bool = True
+    # The git remote the default branch is pushed to after each merge.
+    # Empty: merges stay on this machine. Host-level: it makes the engine
+    # write to another machine with this host's git credentials.
+    merge_push_remote: str = ""
     # The policy matrix (see foreman/policy.py). Each decision names a
     # project default; "auto" lets the engine decide on its own and records
     # the decision, "human" routes it to a person. `policy_rules` refines the
@@ -187,6 +192,7 @@ class ProjectSettings:
                 raw.get("worktree_setup_timeout_seconds"), default=1800
             ),
             completion_guard_enabled=bool(raw.get("completion_guard_enabled", True)),
+            merge_push_remote=_validate_remote_name(raw.get("merge_push_remote")),
             merge_approval=_validate_policy_default(raw, "merge_approval"),
             plan_approval=_validate_policy_default(raw, "plan_approval"),
             triage=_validate_policy_default(raw, "triage"),
@@ -208,6 +214,21 @@ class ProjectSettings:
                 raw.get("review_diff_max_chars"), default=16000
             ),
         )
+
+
+def _validate_remote_name(value: Any) -> str:
+    """Validate the name of a git remote. Empty means none."""
+
+    name = str(value or "").strip()
+    if not name:
+        return ""
+    # A name, never a URL or an option: the engine passes it to ``git push``.
+    if name.startswith("-") or not all(ch.isalnum() or ch in "._-" for ch in name):
+        raise SettingsError(
+            f"merge_push_remote must be the name of a git remote (letters, digits, "
+            f"'.', '_' or '-'), got {value!r}."
+        )
+    return name
 
 
 def _validate_worktree_link_paths(value: Any) -> tuple[str, ...]:

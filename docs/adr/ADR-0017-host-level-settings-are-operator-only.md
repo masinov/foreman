@@ -52,3 +52,11 @@ directory after `worktree_root` was pointed at its parent.
   off loopback is left for the identity work.
 - A directory left under the worktree root by an older layout is no longer
   cleaned up automatically.
+
+## Amendment, 2026-11-15: `merge_push_remote` is host-level
+
+Sprint 59 added `merge_push_remote`, the remote the default branch is pushed
+to after each merge. It makes the engine write to another machine with this
+host's git credentials, so it joins the host-level settings: read-only over
+the API and on the settings page, changed with `foreman config`. Its value
+must be a remote's name; a URL or an option is refused.
