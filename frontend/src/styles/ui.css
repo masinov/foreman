@@ -305,7 +305,9 @@
   top: calc(100% + var(--space-1));
   left: 0;
   z-index: var(--layer-menu);
-  min-width: var(--menu-min-width);
+  /* As wide as its longest item, and never narrower than its button. */
+  width: max-content;
+  min-width: 100%;
   margin: 0;
   padding: var(--space-1) 0;
   list-style: none;
