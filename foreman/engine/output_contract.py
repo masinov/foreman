@@ -251,6 +251,7 @@ def with_retry_instruction(
         correction = (
             "You approved, but the diff you were given was cut and you opened no file.\n"
             "Read the changed files listed above in full, then decide again.\n"
+            "If you cannot open files, do not approve a change you have seen only part of.\n"
             "End with exactly one line:\n"
             f"{options}"
         )

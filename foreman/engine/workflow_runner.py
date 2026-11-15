@@ -752,6 +752,7 @@ class WorkflowRunner:
                 "role_id": role.id,
                 "backend": role.agent.backend,
                 "permission_mode": role.agent.permission_mode,
+                "allowed_tools": list(role.agent.tools.allowed),
                 "disallowed_tools": list(role.agent.tools.disallowed),
             },
         )

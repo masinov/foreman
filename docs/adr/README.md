@@ -35,3 +35,4 @@ Filename format:
 | ADR-0020 | Dashboard Design v7 Is The UI Reference, And How The Frontend Is Built | accepted |
 | ADR-0021 | The Backlog Is A Place, Not A Sprint | accepted |
 | ADR-0022 | The Manager Proposes, A Person Confirms | accepted |
+| ADR-0023 | Agent Sandbox, First Cut | accepted |

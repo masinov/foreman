@@ -28,7 +28,7 @@ Current snapshot only. History up to 2026-09-08 (sprints 1 to 54) is in
 - `main` is pushed to `origin/main`. Work happens on short branches from
   `main`; the operator checkout stays off `main` (the `_integration` worktree
   holds it).
-- Schema version 24. 1371 Python tests, 367 frontend tests. The built bundle
+- Schema version 24. 1385 Python tests, 367 frontend tests. The built bundle
   is not in git; `foreman dashboard` builds it when it is missing or stale.
 - A task whose work was finished outside the engine is closed with
   `foreman task done <id> --reason ...` (Mark done in the task's More menu);
@@ -57,8 +57,12 @@ commands, paths and role permissions (ADR-0017), unbounded per-run spend,
 agents outliving the engine, the lease loss that re-ran the developer, and
 approve/deny executing outside the engine lock (ADR-0011 amendment). None of
 this was exercised by one real engine run (FOR-13, 2026-11-10: develop, test,
-review, human gate, deferred approval, merge). Still true: agents run with full permissions as the engine's user
-(sandboxing is Phase 5), and there is no login.
+review, human gate, deferred approval, merge). Sprint 59 narrowed what an agent is handed (ADR-0023): a role's tool
+allowlist is passed to the CLI, the reading reviewers have three tools, and
+an agent process no longer gets the engine's environment or the operator's
+MCP connectors. Still true: the process runs as the engine's user with a
+shell and the network (a container per task is later in Phase 5), and there
+is no login.
 
 ## Operating decisions (owner, 2026-11-10)
 
@@ -119,7 +123,7 @@ review, human gate, deferred approval, merge). Still true: agents run with full 
 
 ## Validation baseline
 
-- `./venv/bin/python -m unittest discover -s tests` (1371 tests)
+- `./venv/bin/python -m unittest discover -s tests` (1385 tests)
 - `npm --prefix frontend run lint`, `npm --prefix frontend test` (367 tests) and `npm --prefix frontend run build`
 - `ruff check foreman tests scripts` (pyflakes and syntax rules)
 - `./venv/bin/python scripts/validate_repo_memory.py`

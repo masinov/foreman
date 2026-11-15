@@ -24,6 +24,9 @@ class AgentRunConfig:
     session_id: str | None
     permission_mode: str
     disallowed_tools: tuple[str, ...] = ()
+    #: When not empty, the only tools the agent has (the role's
+    #: ``[agent.tools] allowed``). ``disallowed_tools`` still applies.
+    allowed_tools: tuple[str, ...] = ()
     extra_flags: dict[str, Any] = field(default_factory=dict)
     env: dict[str, str] = field(default_factory=dict)
     timeout_seconds: int = 0

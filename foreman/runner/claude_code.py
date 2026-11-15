@@ -22,6 +22,7 @@ from .base import (
     PreflightError,
     QuotaExhaustedError,
 )
+from .env import agent_environment
 from .process import DEFAULT_TICK_SECONDS, ManagedProcess, popen_kwargs
 from .signals import extract_signal_events
 
@@ -103,6 +104,10 @@ class ClaudeCodeRunner(AgentRunner):
             command.extend(["--resume", config.session_id])
         if config.model:
             command.extend(["--model", config.model])
+        if config.allowed_tools:
+            # The role's whole tool set: nothing outside it exists for the
+            # agent, whatever else the CLI ships or a later version adds.
+            command.extend(["--tools", ",".join(config.allowed_tools)])
         if config.disallowed_tools:
             command.extend(
                 ["--disallowed-tools", ",".join(config.disallowed_tools)]
@@ -116,7 +121,15 @@ class ClaudeCodeRunner(AgentRunner):
             command.extend(
                 ["--max-budget-usd", f"{config.max_cost_usd + max(carried, 0.0):.2f}"]
             )
-        command.extend(_extra_flag_args(config.extra_flags))
+        flags = dict(config.extra_flags)
+        if flags.pop("strict_mcp_config", True) is not False:
+            # Only the MCP servers a role names with ``mcp_config``; never the
+            # ones the engine's user has connected for themselves. Seen on
+            # 2026-11-15: a reviewer limited to Read, Grep and Glob still had
+            # the operator's document and drive connectors. A role opts out
+            # with ``strict_mcp_config = false`` under ``[agent.flags]``.
+            command.append("--strict-mcp-config")
+        command.extend(_extra_flag_args(flags))
         return command
 
     def run(self, config: AgentRunConfig) -> Iterator[AgentEvent]:
@@ -133,7 +146,11 @@ class ClaudeCodeRunner(AgentRunner):
         try:
             proc = self._popen_factory(
                 command,
-                **popen_kwargs(cwd=config.working_dir, env={**HEADLESS_STEP_ENV, **config.env}),
+                **popen_kwargs(
+                    cwd=config.working_dir,
+                    env=agent_environment({**HEADLESS_STEP_ENV, **config.env}),
+                    inherit_env=False,
+                ),
             )
         except OSError as exc:
             raise PreflightError(
