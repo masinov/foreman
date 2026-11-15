@@ -237,6 +237,15 @@ class AgentStepRunner:
                 ),
                 failure_type="preflight",
             )
+        # What the backend already counted for the session being resumed; the
+        # runner takes it off, so this run is charged only for itself.
+        session_baseline_usd = (
+            self.records.store.latest_session_cost(
+                session_id=session_id, agent_backend=role.agent.backend
+            )
+            if session_id
+            else 0.0
+        )
         config = AgentRunConfig(
             backend=role.agent.backend,
             model=model or None,
@@ -254,6 +263,7 @@ class AgentStepRunner:
                 role_timeout_minutes=role.completion.timeout_minutes,
             ),
             max_cost_usd=run_cost_ceiling(project, role.completion.max_cost_usd),
+            session_cost_baseline_usd=session_baseline_usd,
         )
         max_retries = resolve_project_settings(project).max_infra_retries
 
@@ -267,6 +277,7 @@ class AgentStepRunner:
         detail = ""
         final_session_id = session_id
         cost_usd = 0.0
+        session_cost_usd: float | None = None
         aborted_cost_usd = 0.0
         token_count = 0
         token_usage: TokenUsage | None = None
@@ -369,6 +380,7 @@ class AgentStepRunner:
                     event.payload.get("cost_usd"),
                     default=cost_usd,
                 )
+                session_cost_usd = _reported_session_cost(event.payload, session_cost_usd)
                 token_count = coerce_int_value(
                     event.payload.get("token_count"),
                     default=token_count,
@@ -406,6 +418,7 @@ class AgentStepRunner:
                     optional_string(event.payload.get("session_id")) or final_session_id
                 )
                 cost_usd = coerce_float_value(event.payload.get("cost_usd"), default=cost_usd)
+                session_cost_usd = _reported_session_cost(event.payload, session_cost_usd)
                 token_count = coerce_int_value(
                     event.payload.get("token_count"), default=token_count
                 )
@@ -423,6 +436,7 @@ class AgentStepRunner:
                     event.payload.get("cost_usd"),
                     default=cost_usd,
                 )
+                session_cost_usd = _reported_session_cost(event.payload, session_cost_usd)
                 token_count = coerce_int_value(
                     event.payload.get("token_count"),
                     default=token_count,
@@ -459,6 +473,7 @@ class AgentStepRunner:
             status=final_status,
             session_id=final_session_id,
             cost_usd=cost_usd + aborted_cost_usd,
+            session_cost_usd=session_cost_usd,
             token_count=token_count,
             token_usage=token_usage,
             duration_ms=duration_ms,
@@ -469,6 +484,15 @@ class AgentStepRunner:
             failure_type=failure_type,
             retry_after=retry_after,
         )
+
+
+def _reported_session_cost(payload: Mapping[str, Any], current: float | None) -> float | None:
+    """The session's running total a terminal event carries, if it carries one."""
+
+    reported = payload.get("session_cost_usd")
+    if isinstance(reported, (int, float)) and not isinstance(reported, bool):
+        return float(reported)
+    return current
 
 
 def _failure_type_for_error(payload: Mapping[str, Any]) -> str:

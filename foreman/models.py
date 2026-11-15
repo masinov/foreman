@@ -328,6 +328,10 @@ class Run:
     commit_sha: str | None = None
     prompt_text: str | None = None
     cost_usd: float = 0.0
+    # The backend's running total for the run's session when the run ended.
+    # A backend that carries cost across a resumed session reports this, not
+    # the run's own cost; ``cost_usd`` is the difference from the run before.
+    session_cost_usd: float | None = None
     # Fresh input plus output tokens; the cache split is in ``token_usage``.
     token_count: int = 0
     token_usage: TokenUsage = field(default_factory=TokenUsage)

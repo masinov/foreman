@@ -9,6 +9,7 @@ memory changes rather than versioned product releases.
 
 ### Sprint 59 — the engine can be left running again
 
+- Engine: a run in a resumed Claude Code session is charged only for itself. The CLI reports the session's running total, which was stored as each run's cost, so a session resumed three times was counted about three times. Each run now records the total (`runs.session_cost_usd`) and its own share (`cost_usd`); the per-run cost gate and `--max-budget-usd` apply to the run's own share. Migration 24 corrects the runs already recorded (the reported figures remain in each run's events); on Foreman's own project this lowers recorded spend, since sprint 58's $106 included the repeats.
 - Sprint 59 opened (2026-11-15), the first of Phase 5: engine defects found during sprint 58, a first cut of the agent sandbox, dashboard follow-ups. See `docs/sprints/current.md`.
 
 ### Sprint 58 — frontend rebuild

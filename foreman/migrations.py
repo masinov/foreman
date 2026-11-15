@@ -788,4 +788,43 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         ALTER TABLE runs ADD COLUMN commit_sha TEXT;
         """,
     ),
+    (
+        24,
+        "runs: the session's running cost, and each run's cost as its own share",
+        """
+        -- Claude Code reports a resumed session's running total, and that
+        -- total was stored as each run's cost, so a session resumed three
+        -- times was counted about three times over. Keep what was reported
+        -- as the session's total and make each run's cost the difference
+        -- from the run before it in the same session. A total lower than
+        -- the one before means the backend's count started over, and is that
+        -- run's own cost. Runs that reported no cost are left alone. The
+        -- reported figures also remain in each run's events.
+        ALTER TABLE runs ADD COLUMN session_cost_usd REAL;
+
+        CREATE TEMP TABLE _run_cost_share AS
+        SELECT id,
+               cost_usd AS reported,
+               CASE WHEN previous IS NULL OR cost_usd < previous
+                    THEN cost_usd ELSE cost_usd - previous END AS share
+        FROM (
+            SELECT id, cost_usd,
+                   LAG(cost_usd) OVER (
+                       PARTITION BY session_id
+                       ORDER BY COALESCE(started_at, created_at), rowid
+                   ) AS previous
+            FROM runs
+            WHERE agent_backend = 'claude_code'
+              AND session_id IS NOT NULL AND session_id != ''
+              AND cost_usd > 0
+        );
+
+        UPDATE runs
+        SET session_cost_usd = (SELECT reported FROM _run_cost_share s WHERE s.id = runs.id),
+            cost_usd = (SELECT share FROM _run_cost_share s WHERE s.id = runs.id)
+        WHERE id IN (SELECT id FROM _run_cost_share);
+
+        DROP TABLE _run_cost_share;
+        """,
+    ),
 ]

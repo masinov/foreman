@@ -35,8 +35,8 @@ class RunStore(StoreBase):
                     prompt_text, cost_usd, token_count, duration_ms, retry_count,
                     failure_type, started_at, completed_at, created_at,
                     input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
-                    commit_sha
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    commit_sha, session_cost_usd
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     task_id = excluded.task_id,
                     project_id = excluded.project_id,
@@ -62,7 +62,8 @@ class RunStore(StoreBase):
                     output_tokens = excluded.output_tokens,
                     cache_read_tokens = excluded.cache_read_tokens,
                     cache_creation_tokens = excluded.cache_creation_tokens,
-                    commit_sha = excluded.commit_sha
+                    commit_sha = excluded.commit_sha,
+                    session_cost_usd = excluded.session_cost_usd
                 """,
                 (
                     run.id,
@@ -91,6 +92,7 @@ class RunStore(StoreBase):
                     run.token_usage.cache_read,
                     run.token_usage.cache_creation,
                     run.commit_sha,
+                    run.session_cost_usd,
                 ),
             )
 
@@ -172,6 +174,25 @@ class RunStore(StoreBase):
             (task_id,),
         ).fetchone()
         return _row_to_run(row) if row else None
+
+    def latest_session_cost(self, *, session_id: str, agent_backend: str) -> float:
+        """Return the backend's last reported running total for a session.
+
+        Zero when no finished run of that session recorded one.
+        """
+
+        row = self._connection.execute(
+            """
+            SELECT session_cost_usd FROM runs
+            WHERE session_id = ?
+              AND agent_backend = ?
+              AND session_cost_usd IS NOT NULL
+            ORDER BY created_at DESC, rowid DESC
+            LIMIT 1
+            """,
+            (session_id, agent_backend),
+        ).fetchone()
+        return float(row["session_cost_usd"]) if row else 0.0
 
     def get_latest_session_id(
         self,
