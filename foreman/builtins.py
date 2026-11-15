@@ -10,7 +10,15 @@ import time
 from typing import TYPE_CHECKING, Any, Callable
 
 from .context import context_directory, relative_project_path, write_project_context
-from .git import GitMergeResult, head_sha, is_worktree_clean, merge_branch, merge_preflight, run_git
+from .git import (
+    GitMergeResult,
+    head_sha,
+    is_worktree_clean,
+    merge_branch,
+    merge_preflight,
+    push_branch,
+    run_git,
+)
 from .models import CompletionEvidence, Project, Task, utc_now_text
 from .notifications import resolve_notification_policy
 from .runner.process import ManagedProcess
@@ -362,21 +370,55 @@ class BuiltinExecutor:
             target_branch=project.default_branch,
         )
         if result.success:
-            return BuiltinResult(
-                outcome="success",
-                detail=result.detail,
-                events=(
-                    BuiltinEventRecord(
-                        event_type="engine.merge",
-                        payload={
-                            "branch": task.branch_name,
-                            "target": project.default_branch,
-                            "worktree": str(integration_path),
-                            "sha": result.sha,
-                        },
-                    ),
-                ),
-            )
+            events = [
+                BuiltinEventRecord(
+                    event_type="engine.merge",
+                    payload={
+                        "branch": task.branch_name,
+                        "target": project.default_branch,
+                        "worktree": str(integration_path),
+                        "sha": result.sha,
+                    },
+                )
+            ]
+            detail = result.detail
+            remote = settings_of(project).merge_push_remote
+            if remote:
+                # The merge is done whatever the push does: a remote that is
+                # down or refuses must not send finished work back to develop.
+                pushed = push_branch(
+                    integration_path, remote=remote, branch=project.default_branch
+                )
+                if pushed.returncode == 0:
+                    events.append(
+                        BuiltinEventRecord(
+                            event_type="engine.push",
+                            payload={
+                                "remote": remote,
+                                "branch": project.default_branch,
+                                "sha": result.sha,
+                            },
+                        )
+                    )
+                    detail = f"{detail}\nPushed {project.default_branch} to {remote}."
+                else:
+                    error = pushed.stderr or pushed.stdout or "git push failed"
+                    events.append(
+                        BuiltinEventRecord(
+                            event_type="engine.push_failed",
+                            payload={
+                                "remote": remote,
+                                "branch": project.default_branch,
+                                "sha": result.sha,
+                                "error": error,
+                            },
+                        )
+                    )
+                    detail = (
+                        f"{detail}\nMerged, but not pushed: pushing "
+                        f"{project.default_branch} to {remote} failed. {error}"
+                    )
+            return BuiltinResult(outcome="success", detail=detail, events=tuple(events))
 
         if result.conflict:
             detail = (

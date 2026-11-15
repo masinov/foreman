@@ -41,7 +41,7 @@ that running the engine unattended is a reasonable thing to do again.
 | 2 | A resumed session's cost is counted once, not on every run | done | Claude | `fix/engine-session-cost-counted-once`: migration 24, `runs.session_cost_usd` |
 | 3 | `foreman engine run-task` takes effect without a restart | done | Claude | `fix/engine-run-request-jumps-the-queue`: a pass ends between tasks when a request or command is waiting |
 | 4 | An approved merge does not wait behind another task's step | done | Claude | `fix/engine-approved-merge-does-not-wait`: the running step carries out other tasks' approved merges; ADR-0011 amendment |
-| 5 | The engine pushes after a merge when the project asks for it | todo | Claude | setting, fix, test |
+| 5 | The engine pushes after a merge when the project asks for it | done | Claude | `feat/engine-push-after-merge`: host-level setting `merge_push_remote`, events `engine.push` and `engine.push_failed` |
 | 6 | The reviewer must show what it read before it can approve | todo | Claude | role contract, test |
 | 7 | Agent sandbox, first cut: per-role tool allowlists passed to the runner, read-only reviewers, a scrubbed environment | todo | Claude | runner, roles, ADR |
 | 8 | The manager session is limited to its read surface (FOR-42) | todo | Claude | runner, test |

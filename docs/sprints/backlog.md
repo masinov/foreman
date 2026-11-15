@@ -23,7 +23,8 @@ None is fixed. Each is a candidate for the next engine sprint.
   at the engine's next pass, which came after the whole queue had run.
 - (Fixed in sprint 59, slice 4.) Merges were only attempted between tasks,
   so an approved merge could wait behind a long step of another task.
-- The engine does not push after a merge.
+- (Fixed in sprint 59, slice 5.) The engine did not push after a merge; it
+  does when `merge_push_remote` names a remote.
 - The reviewer approved a 1,310-line change in seven seconds without opening
   a file (the prompt was tightened and the diff cap raised; the behaviour
   needs a real check, such as requiring evidence of files read).

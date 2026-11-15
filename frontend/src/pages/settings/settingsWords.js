@@ -45,6 +45,7 @@ const MACHINE_ROWS = {
   context_dir: { label: "Context folder", empty: "The default" },
   judge_base_url: { label: "Criteria judge address", empty: "Not set" },
   judge_api_key_env: { label: "Criteria judge key variable", empty: "Not set" },
+  merge_push_remote: { label: "Push merges to", empty: "Nowhere: merges stay on this machine" },
 };
 
 /**

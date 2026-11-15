@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from pathlib import Path
 import subprocess
 
@@ -128,6 +129,48 @@ def is_worktree_clean(repo_path: str | Path) -> bool:
 
     result = run_git(repo_path, "status", "--porcelain")
     return result.stdout == ""
+
+
+#: How long a push may take before it is given up on.
+PUSH_TIMEOUT_SECONDS = 120
+
+
+def push_branch(
+    repo_path: str | Path,
+    *,
+    remote: str,
+    branch: str,
+    timeout: float = PUSH_TIMEOUT_SECONDS,
+) -> GitCommandResult:
+    """Push one branch to a remote. Never raises; the result says what happened.
+
+    Git is told not to ask for credentials: nobody is there to answer, and a
+    prompt would hold the step open until the timeout.
+    """
+
+    args = ("push", remote, f"refs/heads/{branch}:refs/heads/{branch}")
+    try:
+        result = subprocess.run(
+            ["git", *args],
+            cwd=Path(repo_path),
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=timeout,
+            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+        )
+    except subprocess.TimeoutExpired:
+        return GitCommandResult(
+            args=args, returncode=124, stdout="", stderr=f"git push timed out after {timeout:.0f}s"
+        )
+    except OSError as exc:
+        return GitCommandResult(args=args, returncode=1, stdout="", stderr=str(exc))
+    return GitCommandResult(
+        args=args,
+        returncode=result.returncode,
+        stdout=result.stdout.strip(),
+        stderr=result.stderr.strip(),
+    )
 
 
 def merge_branch(
