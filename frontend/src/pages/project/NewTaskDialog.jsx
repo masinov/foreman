@@ -7,10 +7,9 @@ import { createSprintTask, listSprintTasks } from "../../api/sprints";
 import { useResource } from "../../api/useResource";
 import { Button } from "../../ui/Button";
 import { Dialog } from "../../ui/Dialog";
-import { Disclosure } from "../../ui/Disclosure";
 import { Field } from "../../ui/Field";
-import { humanize, plural } from "../../ui/format";
-import { Mono } from "../../ui/Mono";
+import { humanize } from "../../ui/format";
+import { WaitsFor } from "../shared/WaitsFor";
 
 /**
  * Write a new task. Without `sprint` it is filed into the backlog, where the
@@ -147,36 +146,7 @@ export function NewTaskDialog({ projectId, sprint = null, open, onClose, onFiled
           </select>
           <span className="field__hint">Optional. A workflow can send small and large tasks to different models.</span>
         </div>
-        {sprint && candidates.length > 0 ? (
-          <Disclosure
-            summary={waitsFor.size ? `Waits for ${plural(waitsFor.size, "task")}` : "Make it wait for other tasks"}
-          >
-            <p className="field__hint">It does not start until every task ticked here is done.</p>
-            <ul className="choice-list">
-              {candidates.map((task) => (
-                <li key={task.id}>
-                  <label className="choice-list__label">
-                    <input
-                      type="checkbox"
-                      className="checkbox"
-                      checked={waitsFor.has(task.id)}
-                      onChange={() =>
-                        setWaitsFor((current) => {
-                          const next = new Set(current);
-                          if (next.has(task.id)) next.delete(task.id);
-                          else next.add(task.id);
-                          return next;
-                        })
-                      }
-                    />
-                    {task.task_key ? <Mono quiet>{task.task_key}</Mono> : null}
-                    <span>{task.title}</span>
-                  </label>
-                </li>
-              ))}
-            </ul>
-          </Disclosure>
-        ) : null}
+        {sprint ? <WaitsFor candidates={candidates} value={waitsFor} onChange={setWaitsFor} /> : null}
         {error ? (
           <p className="notice notice--error" role="alert">
             {error}

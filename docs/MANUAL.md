@@ -244,6 +244,9 @@ foreman task block <task-id>
 foreman task unblock <task-id>
 foreman task done <task-id> --reason "..."   # finished outside the engine; nothing is checked
 foreman task reopen <task-id>         # done or cancelled → todo, workflow from the start
+foreman task edit <task-id> [--title T] [--size small|medium|large|none] [--priority N]
+                            [--depends-on ID ...] [--no-dependencies]
+                                      # what it waits for can change only before it starts
 foreman task cancel <task-id>         # also removes the task's worktree
 ```
 

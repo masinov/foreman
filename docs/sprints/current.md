@@ -46,7 +46,7 @@ that running the engine unattended is a reasonable thing to do again.
 | 7 | Agent sandbox, first cut: per-role tool allowlists passed to the runner, read-only reviewers, a scrubbed environment, no operator connectors | done | Claude | `feat/agent-sandbox-first-cut`: ADR-0023, `agent_env_passthrough`; checked with one real CLI call |
 | 8 | The manager session is limited to its read surface (FOR-42) | done | Claude | `feat/manager-session-read-surface`: permission rules, drafts folder, ADR-0022 amendment; checked with a real manager turn on a database copy |
 | 9 | A task's run output reads as sentences | done | Claude | `feat/task-run-output-in-sentences`: `runWords.js`, the API gives each event's facts, raw stream behind a disclosure |
-| 10 | Editing a task's size, priority and dependencies after filing | todo | Claude | API, CLI, dialog |
+| 10 | Editing a task's size, priority and dependencies after filing | done | Claude | `feat/task-edit-size-priority-dependencies`: `foreman task edit`, the Edit task dialog, loop check |
 | 11 | Mark done and Reopen in the manager's proposals | todo | Claude | ADR-0022 amendment, proposal kinds |
 | 12 | Close the sprint: checkpoint, archive | todo | Claude | `docs/checkpoints/`, `docs/sprints/archive/` |
 

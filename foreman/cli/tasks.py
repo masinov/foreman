@@ -1,4 +1,4 @@
-"""Tasks: add, show, list, override, block, unblock, accept, done, reopen, cancel."""
+"""Tasks: add, edit, show, list, override, block, unblock, accept, done, reopen, cancel."""
 
 from __future__ import annotations
 
@@ -616,6 +616,57 @@ def handle_task_reopen(args: argparse.Namespace) -> int:
     return 0
 
 
+def handle_task_edit(args: argparse.Namespace) -> int:
+    """Handle ``foreman task edit``."""
+
+    changes: dict[str, object] = {}
+    if args.title is not None:
+        changes["title"] = args.title
+    if args.size is not None:
+        changes["complexity"] = None if args.size == "none" else args.size
+    if args.priority is not None:
+        changes["priority"] = args.priority
+    if args.no_dependencies and args.depends_on:
+        print("Give --depends-on or --no-dependencies, not both.", file=sys.stderr)
+        return 1
+    if args.no_dependencies:
+        changes["depends_on_task_ids"] = []
+    elif args.depends_on:
+        changes["depends_on_task_ids"] = list(args.depends_on)
+    if not changes:
+        print(
+            "Nothing to change. Give --title, --size, --priority, --depends-on "
+            "or --no-dependencies.",
+            file=sys.stderr,
+        )
+        return 1
+
+    db_path = resolve_db_path_or_print(args.db)
+    if db_path is None:
+        return 1
+
+    with ForemanStore(db_path) as store:
+        store.initialize()
+        task = resolve_task_or_print(store, args.task_id)
+        if task is None:
+            return 1
+        try:
+            changed = cli_mutations(store).edit_task(task, changes)
+        except MutationError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        db_path = store.db_path
+
+    print_lines(
+        "Edited task" if changed else "Nothing changed",
+        f"Database: {db_path}",
+        f"Task: {task.id} | {task.title}",
+        f"Size: {task.complexity or 'not said'} | Priority: {task.priority}",
+        "Waits for: " + (", ".join(task.depends_on_task_ids) if task.depends_on_task_ids else "nothing"),
+    )
+    return 0
+
+
 def handle_task_cancel(args: argparse.Namespace) -> int:
     """Handle ``foreman task cancel``."""
 
@@ -827,6 +878,38 @@ def register_task(subparsers: argparse._SubParsersAction) -> None:
         help_text=f"Path to the SQLite store containing the task. {DB_OPTION_NOTE}",
     )
     set_handler(task_reopen, handle_task_reopen, "task reopen")
+
+    task_edit = task_commands.add_parser(
+        "edit",
+        help="Change a task's title, size, priority or what it waits for.",
+    )
+    task_edit.add_argument("task_id", help="Task identifier.")
+    task_edit.add_argument("--title", help="New title.")
+    task_edit.add_argument(
+        "--size",
+        choices=[*TASK_COMPLEXITIES, "none"],
+        help="How big the task is; `none` clears it.",
+    )
+    task_edit.add_argument(
+        "--priority", type=int, help="Lower runs first; 0 is the default."
+    )
+    task_edit.add_argument(
+        "--depends-on",
+        action="append",
+        metavar="TASK_ID",
+        help="A task this one waits for. Repeat for several; the list replaces "
+        "what it waited for. Only before the task starts.",
+    )
+    task_edit.add_argument(
+        "--no-dependencies",
+        action="store_true",
+        help="Make the task wait for nothing.",
+    )
+    add_db_option(
+        task_edit,
+        help_text=f"Path to the SQLite store containing the task. {DB_OPTION_NOTE}",
+    )
+    set_handler(task_edit, handle_task_edit, "task edit")
 
     task_cancel = task_commands.add_parser("cancel", help="Cancel a task.")
     task_cancel.add_argument("task_id", help="Task identifier.")

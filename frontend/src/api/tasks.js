@@ -7,17 +7,27 @@ export function getTask(client, taskId, options) {
 }
 
 /** Change a task's title, type, description and acceptance criteria. */
-export function updateTask(client, taskId, { title, taskType, description, acceptanceCriteria }, options) {
-  return client.patch(
-    task(taskId),
-    {
-      title,
-      task_type: taskType,
-      description: description || null,
-      acceptance_criteria: acceptanceCriteria || null,
-    },
-    options,
-  );
+/**
+ * Change a task's fields. `complexity` (its size) and `priority` are sent
+ * when given; `dependsOn` (the ids it waits for) only when given, since it
+ * can change only before the task starts.
+ */
+export function updateTask(
+  client,
+  taskId,
+  { title, taskType, description, acceptanceCriteria, complexity, priority, dependsOn },
+  options,
+) {
+  const body = {
+    title,
+    task_type: taskType,
+    description: description || null,
+    acceptance_criteria: acceptanceCriteria || null,
+  };
+  if (complexity !== undefined) body.complexity = complexity || null;
+  if (priority !== undefined) body.priority = priority;
+  if (dependsOn !== undefined) body.depends_on_task_ids = dependsOn;
+  return client.patch(task(taskId), body, options);
 }
 
 /**

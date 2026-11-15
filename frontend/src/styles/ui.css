@@ -414,6 +414,14 @@
   color: var(--color-text-secondary);
 }
 
+/* Two short fields side by side; one under the other where there is no room. */
+.field-pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(var(--column-min-width), 1fr));
+  gap: var(--space-3);
+  align-items: start;
+}
+
 .field__input {
   height: var(--control-height);
   padding-inline: var(--space-2);

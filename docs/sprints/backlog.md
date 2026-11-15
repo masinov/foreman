@@ -42,7 +42,8 @@ None is fixed. Each is a candidate for the next engine sprint.
 - Mark done and Reopen in the manager's proposal vocabulary (ADR-0022).
 - Look at the task and sprint pages against a running engine: everything
   built after 2026-11-13 was seen with fixtures only.
-- Editing a task's size, priority and dependencies after it is filed.
+- (Done in sprint 59, slice 10.) Editing a task's size, priority and
+  dependencies after it is filed.
 - Motion that depends on live data (a row arriving, a step finishing).
 - One event stream per tab instead of two on a running task's page.
 - (Done in sprint 59, slice 8.) FOR-42: restrict the manager session's tools
