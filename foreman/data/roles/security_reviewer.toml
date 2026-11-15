@@ -10,7 +10,8 @@ session_persistence = false
 permission_mode = "bypassPermissions"
 
 [agent.tools]
-allowed = []
+# The whole tool set: this role reads, and does nothing else.
+allowed = ["Read", "Grep", "Glob"]
 disallowed = ["Bash", "Write", "Edit", "NotebookEdit"]
 
 [prompt]

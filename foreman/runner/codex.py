@@ -19,6 +19,7 @@ from .base import (
     InfrastructureError,
     PreflightError,
 )
+from .env import agent_environment
 from .process import DEFAULT_TICK_SECONDS, ManagedProcess, popen_kwargs
 from .signals import extract_signal_events
 
@@ -354,7 +355,10 @@ class _JsonRpcClient:
     ) -> None:
         self.command = list(command)
         try:
-            self.proc = popen_factory(self.command, **popen_kwargs(cwd=cwd, env=env))
+            self.proc = popen_factory(
+                self.command,
+                **popen_kwargs(cwd=cwd, env=agent_environment(env), inherit_env=False),
+            )
         except OSError as exc:
             raise InfrastructureError(f"Failed to launch Codex app server: {exc}") from exc
         self.managed = ManagedProcess(self.proc, name="codex", tick_seconds=tick_seconds)
@@ -494,6 +498,14 @@ def _sandbox_mode_for(config: AgentRunConfig) -> str:
     return "read-only"
 
 
+def _tool_permitted(config: AgentRunConfig, tool: str) -> bool:
+    """Whether the role may use ``tool``: on its allowlist if it has one, and not denied."""
+
+    if config.allowed_tools and tool not in config.allowed_tools:
+        return False
+    return tool not in config.disallowed_tools
+
+
 def _approval_response(
     method: str,
     params: Any,
@@ -503,7 +515,7 @@ def _approval_response(
         return None
 
     if method == "item/commandExecution/requestApproval":
-        allowed = "Bash" not in config.disallowed_tools
+        allowed = _tool_permitted(config, "Bash")
         available_decisions = params.get("availableDecisions")
         cancel_decision = "cancel"
         if isinstance(available_decisions, list) and "decline" in available_decisions:
@@ -511,7 +523,7 @@ def _approval_response(
         return {"decision": "accept" if allowed else cancel_decision}
 
     if method == "item/fileChange/requestApproval":
-        allowed = not any(tool in config.disallowed_tools for tool in _WRITE_TOOL_NAMES)
+        allowed = all(_tool_permitted(config, tool) for tool in _WRITE_TOOL_NAMES)
         available_decisions = params.get("availableDecisions")
         cancel_decision = "cancel"
         if isinstance(available_decisions, list) and "decline" in available_decisions:

@@ -57,12 +57,19 @@ _handlers_installed = False
 _previous_handlers: dict[int, Any] = {}
 
 
-def popen_kwargs(*, cwd: str | Path, env: dict[str, str] | None = None) -> dict[str, Any]:
+def popen_kwargs(
+    *,
+    cwd: str | Path,
+    env: dict[str, str] | None = None,
+    inherit_env: bool = True,
+) -> dict[str, Any]:
     """Standard ``Popen`` keyword arguments for a managed child.
 
     Pipes on all three streams, UTF-8 text with replacement so an odd byte
     can never abort a run, line buffering, and a new session so the child
-    leads its own process group.
+    leads its own process group. ``env`` is added to the engine's own
+    environment, or with ``inherit_env=False`` is the child's whole
+    environment (agent processes: see ``runner.env.agent_environment``).
     """
 
     kwargs: dict[str, Any] = {
@@ -75,7 +82,9 @@ def popen_kwargs(*, cwd: str | Path, env: dict[str, str] | None = None) -> dict[
         "bufsize": 1,
         "start_new_session": True,
     }
-    if env:
+    if not inherit_env:
+        kwargs["env"] = dict(env or {})
+    elif env:
         kwargs["env"] = {**os.environ, **env}
     if _can_bind_child_to_parent():
         kwargs["preexec_fn"] = _die_with_parent

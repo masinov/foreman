@@ -159,6 +159,63 @@ class ClaudeCodeRunnerTests(unittest.TestCase):
         self.assertEqual(env["ANTHROPIC_AUTH_TOKEN"], "test-token")
         self.assertEqual(env["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"], "1")
 
+    def test_the_agent_is_started_without_the_engines_secrets(self) -> None:
+        import os
+        from unittest.mock import patch
+
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        config = self.create_config(Path(temp_dir.name))
+        process = _FakeProcess(
+            lines=[json.dumps({"type": "result", "session_id": "s", "result": "TASK_COMPLETE"}) + "\n"]
+        )
+        popen = _PopenRecorder(process)
+        runner = ClaudeCodeRunner(popen_factory=popen, clock=lambda: 0.0, which=lambda _: "/usr/bin/claude")
+        host = {"PATH": "/usr/bin", "ANTHROPIC_API_KEY": "k", "FOREMAN_DASHBOARD_TOKEN": "t", "GITHUB_TOKEN": "g"}
+
+        with patch.dict(os.environ, host, clear=True):
+            list(runner.run(config))
+
+        env = popen.calls[0][1]["env"]
+        self.assertEqual(env["PATH"], "/usr/bin")
+        self.assertEqual(env["ANTHROPIC_API_KEY"], "k")
+        self.assertNotIn("FOREMAN_DASHBOARD_TOKEN", env)
+        self.assertNotIn("GITHUB_TOKEN", env)
+
+    def test_a_roles_allowlist_is_the_agents_whole_tool_set(self) -> None:
+        from dataclasses import replace
+
+        runner = ClaudeCodeRunner()
+        config = replace(
+            self.create_config(Path("/tmp/demo")), allowed_tools=("Read", "Grep", "Glob")
+        )
+
+        command = runner.build_command(config)
+        self.assertEqual(command[command.index("--tools") + 1], "Read,Grep,Glob")
+
+        without = runner.build_command(self.create_config(Path("/tmp/demo")))
+        self.assertNotIn("--tools", without)
+
+    def test_the_operators_own_connectors_are_not_the_agents(self) -> None:
+        """Seen with the real CLI on 2026-11-15: an agent limited to Read,
+        Grep and Glob still listed the operator's document and drive
+        connectors until the CLI was told to load none."""
+
+        from dataclasses import replace
+
+        runner = ClaudeCodeRunner()
+        config = self.create_config(Path("/tmp/demo"))
+
+        self.assertIn("--strict-mcp-config", runner.build_command(config))
+
+        opted_out = replace(config, extra_flags={"strict_mcp_config": False})
+        self.assertNotIn("--strict-mcp-config", runner.build_command(opted_out))
+
+        named = replace(config, extra_flags={"strict_mcp_config": True, "mcp_config": "/etc/x.json"})
+        command = runner.build_command(named)
+        self.assertEqual(command.count("--strict-mcp-config"), 1)
+        self.assertEqual(command[command.index("--mcp-config") + 1], "/etc/x.json")
+
     def test_a_step_cannot_leave_work_in_the_background(self) -> None:
         temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(temp_dir.cleanup)

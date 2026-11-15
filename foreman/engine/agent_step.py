@@ -19,7 +19,7 @@ from ..outcomes import ERROR
 from ..roles import RoleDefinition
 from ..runner import AgentRunConfig, PreflightError, run_with_retry
 from ..runner.base import AgentRunner as NativeAgentRunner
-from ..runner.env import resolve_env
+from ..runner.env import passthrough_env, resolve_env
 from ..runner.process import EngineShutdown
 from .branch_sync import task_working_dir
 from .coerce import coerce_float_value, coerce_int_value, optional_string
@@ -256,8 +256,15 @@ class AgentStepRunner:
             session_id=session_id,
             permission_mode=role.agent.permission_mode,
             disallowed_tools=role.agent.tools.disallowed,
+            allowed_tools=role.agent.tools.allowed,
             extra_flags=role.agent.flags,
-            env=resolved_env,
+            # What the project passes through from the host, then what the
+            # role sets; the runner adds both to the short list of host
+            # variables every agent gets (ADR-0023).
+            env={
+                **passthrough_env(resolve_project_settings(project).agent_env_passthrough),
+                **resolved_env,
+            },
             timeout_seconds=project_timeout_seconds(
                 project,
                 role_timeout_minutes=role.completion.timeout_minutes,

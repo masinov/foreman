@@ -29,6 +29,7 @@ HOST_LEVEL_SETTINGS: frozenset[str] = frozenset(
         "judge_base_url",
         "judge_api_key_env",
         "merge_push_remote",
+        "agent_env_passthrough",
     }
 )
 
@@ -124,6 +125,10 @@ class ProjectSettings:
     # Empty: merges stay on this machine. Host-level: it makes the engine
     # write to another machine with this host's git credentials.
     merge_push_remote: str = ""
+    # Names of host environment variables passed to every agent process on
+    # top of the short list all agents get (ADR-0023). Host-level: it hands
+    # this machine's secrets to an agent.
+    agent_env_passthrough: tuple[str, ...] = ()
     # The policy matrix (see foreman/policy.py). Each decision names a
     # project default; "auto" lets the engine decide on its own and records
     # the decision, "human" routes it to a person. `policy_rules` refines the
@@ -193,6 +198,7 @@ class ProjectSettings:
             ),
             completion_guard_enabled=bool(raw.get("completion_guard_enabled", True)),
             merge_push_remote=_validate_remote_name(raw.get("merge_push_remote")),
+            agent_env_passthrough=_validate_env_names(raw.get("agent_env_passthrough")),
             merge_approval=_validate_policy_default(raw, "merge_approval"),
             plan_approval=_validate_policy_default(raw, "plan_approval"),
             triage=_validate_policy_default(raw, "triage"),
@@ -214,6 +220,33 @@ class ProjectSettings:
                 raw.get("review_diff_max_chars"), default=16000
             ),
         )
+
+
+def _validate_env_names(value: Any) -> tuple[str, ...]:
+    """Validate a list of environment variable names."""
+
+    if value is None or value == "":
+        return ()
+    if isinstance(value, str):
+        value = [part.strip() for part in value.split(",")]
+    if not isinstance(value, (list, tuple)):
+        raise SettingsError(
+            f"agent_env_passthrough must be a list of variable names, got {value!r}."
+        )
+    names: list[str] = []
+    for entry in value:
+        name = str(entry).strip()
+        if not name:
+            continue
+        if not (name[0].isalpha() or name[0] == "_") or not all(
+            ch.isalnum() or ch == "_" for ch in name
+        ):
+            raise SettingsError(
+                f"agent_env_passthrough: {entry!r} is not an environment variable name."
+            )
+        if name not in names:
+            names.append(name)
+    return tuple(names)
 
 
 def _validate_remote_name(value: Any) -> str:

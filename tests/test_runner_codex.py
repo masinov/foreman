@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import tempfile
+import os
 import unittest
+from unittest.mock import patch
 
 from foreman.runner import AgentRunConfig, CodexRunner, InfrastructureError, PreflightError
 from foreman.runner.codex import _JsonRpcClient
@@ -132,22 +134,42 @@ class CodexRunnerTests(unittest.TestCase):
         self.assertIsInstance(env, dict)
         self.assertEqual(env["FOREMAN_CODEX_TEST"], "enabled")
 
-    def test_json_rpc_client_omits_environment_kwarg_when_unconfigured(self) -> None:
+    def test_the_app_server_is_started_without_the_engines_secrets(self) -> None:
         process = _FakeProcess(
             lines=[
                 json.dumps({"jsonrpc": "2.0", "id": 1, "result": {"userAgent": "codex-tests"}}) + "\n",
             ]
         )
         popen = _PopenRecorder(process)
+        host = {"PATH": "/usr/bin", "OPENAI_API_KEY": "key", "GITHUB_TOKEN": "forge-secret"}
 
-        client = _JsonRpcClient(
-            ["codex", "app-server", "--listen", "stdio://"],
-            cwd=Path("/tmp"),
-            popen_factory=popen,
+        with patch.dict(os.environ, host, clear=True):
+            client = _JsonRpcClient(
+                ["codex", "app-server", "--listen", "stdio://"],
+                cwd=Path("/tmp"),
+                popen_factory=popen,
+                env={"EXTRA": "from the role"},
+            )
+            client.close()
+
+        self.assertEqual(
+            popen.calls[0][1]["env"],
+            {"PATH": "/usr/bin", "OPENAI_API_KEY": "key", "EXTRA": "from the role"},
         )
-        client.close()
 
-        self.assertNotIn("env", popen.calls[0][1])
+    def test_a_role_with_an_allowlist_is_refused_what_is_not_on_it(self) -> None:
+        from dataclasses import replace
+
+        from foreman.runner.codex import _approval_response
+
+        config = replace(
+            self.create_config(Path("/tmp")), allowed_tools=("Read", "Grep"), disallowed_tools=()
+        )
+        command = _approval_response("item/commandExecution/requestApproval", {}, config)
+        change = _approval_response("item/fileChange/requestApproval", {}, config)
+
+        self.assertEqual(command, {"decision": "cancel"})
+        self.assertEqual(change, {"decision": "cancel"})
 
     def test_run_starts_thread_and_maps_rpc_notifications(self) -> None:
         temp_dir = tempfile.TemporaryDirectory()

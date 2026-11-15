@@ -495,9 +495,14 @@ backend = "claude_code"            # or "codex"
 model = "claude-sonnet-4-6"        # "" → project default_model
 session_persistence = true         # reuse --resume session across runs
 permission_mode = "bypassPermissions"
-disallowed_tools = []
 # Optional escalation ladder (see §9):
 model_ladder = ["claude-haiku-4-5-20251001", "claude-sonnet-4-6", "claude-opus-4-8"]
+
+# What the agent can use (ADR-0023). A non-empty `allowed` is its whole tool
+# set; `disallowed` is taken away on top. Both empty: every tool.
+[agent.tools]
+allowed = []                       # e.g. ["Read", "Grep", "Glob"] for a reviewer
+disallowed = []
 
 # Optional per-endpoint environment (see §9):
 [agent.env]
@@ -1091,6 +1096,7 @@ offending value, rather than running on silent defaults.
 | `worktree_link_paths` | `[]` | repo-relative paths symlinked from the operator's checkout into every new worktree; shares your environment rather than isolating it (see §24) |
 | `max_live_worktrees` | `4` | ceiling on live task worktrees; the engine reclaims clean, idle trees oldest-first to stay under it. `0` disables the cap (§24) |
 | `worktree_setup_command` | `""` | shell command run once in each new worktree to build that tree's own environment (§24) |
+| `agent_env_passthrough` | `[]` | names of host environment variables given to every agent process on top of the short list all agents get (ADR-0023); for example a database address the tests need |
 | `merge_push_remote` | `""` | name of the git remote the default branch is pushed to after each merge (for example `origin`). Empty: merges stay on this machine. A push that fails is recorded (`engine.push_failed`) and the merge stands |
 | `worktree_setup_timeout_seconds` | `1800` | wall-clock cap for `worktree_setup_command`; `0` disables the timeout |
 | `completion_guard_enabled` | `true` | enforce the merge proof gate |
@@ -1205,7 +1211,8 @@ export FOREMAN_DASHBOARD_TOKEN="$(openssl rand -hex 24)"
   API or the Settings screen (they answer **403** and are shown read-only):
   `test_command`, `worktree_setup_command`, `worktree_root`,
   `worktree_link_paths`, `context_dir`, `judge_base_url`,
-  `judge_api_key_env`, `merge_push_remote`. Set them at a terminal with
+  `judge_api_key_env`, `merge_push_remote`, `agent_env_passthrough`. Set them
+  at a terminal with
   `foreman config <project-id> --set <key>=<value>`. A role's `backend` and
   `permission_mode` are likewise changed only in its TOML file. See ADR-0017.
 - The intake endpoint (§25) is exempt from these three rules; it

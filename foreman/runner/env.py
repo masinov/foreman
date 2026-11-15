@@ -2,10 +2,56 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 import os
 
 from .base import PreflightError
+
+
+#: Host variables an agent process is started with. Everything else in the
+#: engine's environment (tokens for the dashboard, the forge, cloud accounts,
+#: an SSH agent) stays with the engine. A role names what else it needs in
+#: ``[agent.env]``; a project in the ``agent_env_passthrough`` setting. ADR-0023.
+AGENT_ENV_NAMES: frozenset[str] = frozenset(
+    {
+        "PATH", "HOME", "USER", "LOGNAME", "SHELL", "TERM", "COLORTERM",
+        "LANG", "LANGUAGE", "TZ", "TMPDIR", "TEMP", "TMP",
+        "SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE", "NODE_EXTRA_CA_CERTS",
+        "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY",
+        "http_proxy", "https_proxy", "no_proxy", "all_proxy",
+    }
+)
+#: Prefixes of host variables an agent process is started with: locale and
+#: per-user directories, and the two backends' own configuration and keys.
+AGENT_ENV_PREFIXES: tuple[str, ...] = ("LC_", "XDG_", "ANTHROPIC_", "CLAUDE_", "OPENAI_", "CODEX_")
+
+
+def agent_environment(
+    extra: Mapping[str, str] | None = None,
+    *,
+    host: Mapping[str, str] | None = None,
+) -> dict[str, str]:
+    """The whole environment for one agent process.
+
+    The host variables on the list above, then ``extra`` (the engine's own
+    additions and the role's ``[agent.env]``) over them.
+    """
+
+    source = os.environ if host is None else host
+    environment = {
+        name: value
+        for name, value in source.items()
+        if name in AGENT_ENV_NAMES or name.startswith(AGENT_ENV_PREFIXES)
+    }
+    environment.update(extra or {})
+    return environment
+
+
+def passthrough_env(names: Iterable[str], *, host: Mapping[str, str] | None = None) -> dict[str, str]:
+    """The host's values for the variables a project asks to pass through."""
+
+    source = os.environ if host is None else host
+    return {name: source[name] for name in names if name in source}
 
 
 def resolve_env(spec: Mapping[str, str]) -> dict[str, str]:
