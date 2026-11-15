@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import argparse
 
@@ -231,7 +233,8 @@ class OperatingContractDriftTests(unittest.TestCase):
             if _subparser_choices(top_level[path]):
                 path = f"{path} {tokens[2]}"
             self.assertIn(path, MANAGER_SESSION_COMMANDS, line)
-        self.assertIn("foreman proposal create proj-1 --json -", contract)
+        self.assertIn("foreman proposal create proj-1 --json .foreman/manager/<name>.json", contract)
+        self.assertNotIn("<<", contract)
         self.assertIn("nothing you propose", contract.lower().replace("\n", " "))
         for kind in OPERATION_KINDS:
             self.assertIn(kind, contract)
@@ -507,4 +510,88 @@ class ManagerProposalStreamTests(ProcessMessagePersistenceTests):
 
         events = asyncio.run(run())
         self.assertEqual(events, [{"type": "text_delta", "text": "proj-1/turn-1"}])
+
+    def test_the_session_is_started_confined_to_reading_and_proposing(self) -> None:
+        """FOR-42: what the Claude Code process is started with, from a fake
+        executable that records its arguments and environment."""
+
+        record = Path(self.tmp.name) / "record.json"
+        script = Path(self.tmp.name) / "fake-claude"
+        script.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json, os, sys\n"
+            "sys.stdin.read()\n"
+            f"json.dump({{'argv': sys.argv[1:], 'env': dict(os.environ)}}, open({str(record)!r}, 'w'))\n"
+            'print(json.dumps({"type": "result", "session_id": "s-1"}))\n'
+        )
+        script.chmod(0o755)
+        repo = Path(self.tmp.name) / "repo"
+        repo.mkdir()
+
+        async def run():
+            async for _ in self._orig_run(
+                "earlier-session",
+                "prompt",
+                repo_path=str(repo),
+                executable=str(script),
+                model="some-model",
+                env={"FOREMAN_MANAGER_SESSION": "proj-1", "FOREMAN_MANAGER_TURN": "turn-1"},
+            ):
+                pass
+
+        secrets = {"FOREMAN_DASHBOARD_TOKEN": "dashboard-secret", "GITHUB_TOKEN": "forge-secret"}
+        with patch.dict(os.environ, secrets):
+            asyncio.run(run())
+
+        seen = json.loads(record.read_text())
+        argv = seen["argv"]
+
+        def value(flag: str) -> str:
+            return argv[argv.index(flag) + 1]
+
+        # The permission rules are what confine it; bypassPermissions ignores them.
+        self.assertEqual(value("--permission-mode"), "default")
+        self.assertNotIn("bypassPermissions", argv)
+        self.assertEqual(value("--tools"), "Read,Grep,Glob,Bash,Write")
+        self.assertEqual(
+            value("--allowed-tools"),
+            "Read,Grep,Glob,Bash(foreman:*),Edit(.foreman/manager/**)",
+        )
+        self.assertIn("--strict-mcp-config", argv)
+        self.assertEqual(value("--model"), "some-model")
+        self.assertEqual(value("--resume"), "earlier-session")
+        # It is told who it is, and not given the dashboard's secrets.
+        self.assertEqual(seen["env"]["FOREMAN_MANAGER_SESSION"], "proj-1")
+        for name in secrets:
+            self.assertNotIn(name, seen["env"])
+        # The one folder it may write to exists.
+        self.assertTrue((repo / ".foreman" / "manager").is_dir())
+
+    def test_this_installations_foreman_is_first_on_the_sessions_path(self) -> None:
+        import sys
+
+        environment = meta_agent.manager_process_env({"FOREMAN_MANAGER_SESSION": "proj-1"})
+        bin_dir = Path(sys.executable).parent
+        if (bin_dir / "foreman").exists():
+            self.assertEqual(environment["PATH"].split(os.pathsep)[0], str(bin_dir))
+
+    def test_a_later_turn_is_reminded_how_to_propose(self) -> None:
+        captured: list[dict] = []
+
+        async def _run_claude(session_id, prompt, *, repo_path, executable, model, env=None):
+            captured.append({"prompt": prompt})
+            yield {"type": "session", "session_id": "s-1"}
+            yield {"type": "text_delta", "text": "ok"}
+
+        meta_agent._run_claude = _run_claude
+        with self._open() as store:
+            project = store.get_project("proj-1")
+            _drain(meta_agent.process_message("proj-1", "first", store=store, project=project))
+            _drain(meta_agent.process_message("proj-1", "second", store=store, project=project))
+
+        first, second = (entry["prompt"] for entry in captured)
+        self.assertIn("## OPERATING CONTRACT", first)
+        self.assertNotIn("## OPERATING CONTRACT", second)
+        self.assertIn("How to propose", second)
+        self.assertIn(".foreman/manager/", second)
 

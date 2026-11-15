@@ -166,3 +166,47 @@ answers 400 (`invalid_request`), with the error envelope of ADR-0019.
   that open their own transaction outside `atomic` behave as before.
 - Proposals made before a confirm may go stale; confirming re-checks
   everything and fails whole, never half-applied.
+
+## Amendment, 2026-11-15: the session is confined to reading and proposing (FOR-42)
+
+Section 4 ended: "It is not a sandbox: the session still has a shell and
+file access ... Restricting the session's tools to the read surface is a
+follow-up." This is that follow-up.
+
+A manager turn's Claude Code process is now started with
+(`meta_agent.manager_command`, `manager_process_env`):
+
+- `--permission-mode default`, not `bypassPermissions`. In a headless
+  session nobody can be asked, so whatever the rules below do not allow is
+  refused.
+- `--tools Read,Grep,Glob,Bash,Write`: its whole tool set.
+- `--allowed-tools Read,Grep,Glob,Bash(foreman:*),Edit(.foreman/manager/**)`.
+- `--strict-mcp-config`: none of the dashboard user's own connectors.
+- The short agent environment of ADR-0023 plus the session's marks and
+  `FOREMAN_DB`, with this installation's `foreman` first on the path.
+
+What that gives, checked against the real CLI (2.1.325):
+
+| The session tries | Result |
+|---|---|
+| `foreman board <project>` and the other read commands | runs |
+| `foreman proposal create <project> --json .foreman/manager/x.json` | runs |
+| Write a file in `.foreman/manager/` | allowed |
+| Write or edit any other file | refused |
+| `ls`, `cat <file in the repository>`, `git status` | runs (the CLI classes them as read-only) |
+| `cat <file outside the repository>` | refused |
+| `echo hi > note.txt`, `foreman board p && touch x` | refused |
+| `FOO=1 foreman board p` (a variable prefix, so also clearing the session mark) | refused |
+| `sqlite3 x.db ...`, `python3 -c ...`, `git commit`, `env` | refused |
+
+The manager no longer sends its proposal through a heredoc (the CLI refuses
+one that contains JSON). It writes the document to `.foreman/manager/` with
+the Write tool and passes the path to `foreman proposal create`. Every turn
+after the first carries a five-line reminder of this, so a session begun
+under the earlier contract follows it.
+
+Still true: this rests on the Claude Code CLI's permission rules and its
+own judgement of which shell commands only read. It is as strong as that,
+and it is checked for one CLI version. State changes are still refused a
+second time at the Foreman CLI (section 4).
+
