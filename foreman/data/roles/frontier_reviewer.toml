@@ -61,6 +61,7 @@ max_cost_usd = 10.0
 
 [completion.output]
 extract_decision = true
+approve_needs_reading = true
 
 [signals]
 allowed = ['progress', 'blocker']

@@ -67,6 +67,10 @@ class CompletionOutputConfig:
     extract_branch: bool = False
     extract_decision: bool = False
     extract_json: bool = False
+    #: For a role that decides on a change: an approval given on a diff that
+    #: was cut, with no file opened, is not accepted. The role is asked once
+    #: to read the change; an approval still unread stops the task.
+    approve_needs_reading: bool = False
 
 
 @dataclass(slots=True)
@@ -187,6 +191,9 @@ def load_role(path: str | Path) -> RoleDefinition:
                 extract_branch=_require_bool(output_data, "extract_branch", role_path, default=False),
                 extract_decision=extract_decision,
                 extract_json=_require_bool(output_data, "extract_json", role_path, default=False),
+                approve_needs_reading=_require_bool(
+                    output_data, "approve_needs_reading", role_path, default=False
+                ),
             ),
             outcomes=outcomes,
             review_kind=review_kind,

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 
-from ..outcomes import DONE, ERROR
+from ..outcomes import APPROVE, DONE, ERROR
 from ..roles import RoleDefinition
 from .results import AgentExecutionResult
 
@@ -187,6 +187,50 @@ def contract_retry_reason(
     return None
 
 
+#: The line ``truncate_diff`` leaves where it cut a diff.
+_CUT_DIFF = re.compile(r"\[\.\.\.truncated \d+ chars\.\.\.\]")
+#: Tools whose use shows a file or the tree was looked at.
+_READING_TOOLS = frozenset({"Read", "Grep", "Glob"})
+
+#: What a task is stopped with when a reviewer approves unread twice.
+UNREAD_APPROVAL_DETAIL = (
+    "The reviewer approved a change it had not read: the diff it was given was "
+    "cut, and it opened no file, also after being asked to. A person should "
+    "review this change, or unblock the task to have it reviewed again."
+)
+
+
+def approved_without_reading(
+    role: RoleDefinition,
+    prompt: str,
+    result: AgentExecutionResult,
+) -> bool:
+    """Whether a role that must read approved a cut diff without opening a file.
+
+    Seen on 2026-11-12: a 1,310-line change approved in seven seconds. A
+    diff that reached the role whole needs no file opened; one that was cut
+    cannot be approved on what the prompt showed.
+    """
+
+    if not role.completion.output.approve_needs_reading:
+        return False
+    if result.status != "completed" or result.outcome != APPROVE:
+        return False
+    if not _CUT_DIFF.search(prompt):
+        return False
+    return not any(_shows_reading(event) for event in result.events)
+
+
+def _shows_reading(event: object) -> bool:
+    event_type = getattr(event, "event_type", "")
+    if event_type == "agent.command":
+        # A shell command may read; a role allowed a shell is taken at its word.
+        return True
+    if event_type in {"agent.file_change", "agent.tool_use"}:
+        return getattr(event, "payload", {}).get("tool") in _READING_TOOLS
+    return False
+
+
 def with_retry_instruction(
     prompt: str,
     role: RoleDefinition,
@@ -200,6 +244,14 @@ def with_retry_instruction(
             "Your previous response did not follow the required final output format.\n"
             "Do not do more review work.\n"
             "Return exactly one line and nothing else:\n"
+            f"{options}"
+        )
+    elif reason == "approved_unread":
+        options = "\n".join(decision_option_lines(role.completion.outcomes))
+        correction = (
+            "You approved, but the diff you were given was cut and you opened no file.\n"
+            "Read the changed files listed above in full, then decide again.\n"
+            "End with exactly one line:\n"
             f"{options}"
         )
     elif reason == "missing_completion_marker":

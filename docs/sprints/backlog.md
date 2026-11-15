@@ -25,9 +25,9 @@ None is fixed. Each is a candidate for the next engine sprint.
   so an approved merge could wait behind a long step of another task.
 - (Fixed in sprint 59, slice 5.) The engine did not push after a merge; it
   does when `merge_push_remote` names a remote.
-- The reviewer approved a 1,310-line change in seven seconds without opening
-  a file (the prompt was tightened and the diff cap raised; the behaviour
-  needs a real check, such as requiring evidence of files read).
+- (Fixed in sprint 59, slice 6.) The reviewer approved a 1,310-line change
+  in seven seconds without opening a file. An approval of a cut diff with no
+  file opened is now sent back once and then stops the task.
 - Two branches that both rebuilt the committed bundle conflicted every time
   (resolved: the bundle is no longer in git).
 

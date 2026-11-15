@@ -509,6 +509,7 @@ CLAUDE_CONFIG_DIR = "env:EXAMPLE_CONFIG_DIR?~/.foreman/claude-example"
 # How the engine interprets this role's final message.
 [completion.output]
 extract_decision = true            # decision role: parse APPROVE/DENY/STEER/ESCALATE
+approve_needs_reading = true       # an approval of a cut diff with no file opened is sent back once, then stops the task
 
 [prompt]
 template = """..."""                # supports {task_title}, {acceptance_criteria},

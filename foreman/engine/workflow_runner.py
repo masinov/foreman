@@ -11,6 +11,7 @@ built-in, or an agent), record what happened, and follow the transition.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from dataclasses import replace
 import time
 from typing import Any
 
@@ -36,7 +37,12 @@ from .gates import blocked_reason_for_unhandled_outcome, gate_policy_decision
 from .leasing import TaskLeases
 from .limits import resolve_project_settings
 from .model_selection import resolve_step_model_selection
-from .output_contract import contract_retry_reason, with_retry_instruction
+from .output_contract import (
+    UNREAD_APPROVAL_DETAIL,
+    approved_without_reading,
+    contract_retry_reason,
+    with_retry_instruction,
+)
 from .prompts import PromptBuilder
 from .records import RunRecords, new_id
 from .results import AgentExecutionResult
@@ -832,6 +838,12 @@ class WorkflowRunner:
             if result.failure_type == "quota"
             else contract_retry_reason(role, result)
         )
+        if (
+            retry_reason is None
+            and result.failure_type != "quota"
+            and approved_without_reading(role, prompt, result)
+        ):
+            retry_reason = "approved_unread"
         if retry_reason is not None:
             self.records.emit_event(
                 run,
@@ -897,6 +909,12 @@ class WorkflowRunner:
                     project,
                     role.id,
                     retry_result.events,
+                )
+            if approved_without_reading(role, prompt, retry_result):
+                # Asked to read, it approved unread again. That is not a
+                # review; the task stops for a person.
+                retry_result = replace(
+                    retry_result, outcome=ERROR, detail=UNREAD_APPROVAL_DETAIL
                 )
             self.records.complete_run(
                 retry_run,
