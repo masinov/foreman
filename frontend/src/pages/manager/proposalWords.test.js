@@ -27,6 +27,15 @@ describe("a proposal in words", () => {
     [{ kind: "block_task", task_id: "t1", reason: "Wait." }, [["Block", "FOR-1 One", null, false], ["Why", null, "Wait.", false]]],
     [{ kind: "unblock_task", task_id: "t1" }, [["Unblock", "FOR-1 One", null, false]]],
     [{ kind: "cancel_task", task_id: "t1" }, [["Cancel", "FOR-1 One", null, false]]],
+    [
+      { kind: "complete_task", task_id: "t1", reason: "Merged by hand." },
+      [["Mark done", "FOR-1 One", "by hand, without running its remaining steps", false], ["Why", null, "Merged by hand.", false]],
+    ],
+    [{ kind: "reopen_task", task_id: "t1" }, [["Reopen", "FOR-1 One", "its steps start over", false]]],
+    [
+      { kind: "edit_task", task_id: "t1", complexity: "large", depends_on_task_ids: [] },
+      [["Change", "FOR-1 One", "its size and dependencies", false]],
+    ],
     [{ kind: "send_back", task_id: "t1", guidance: "More tests." }, [["Send back", "FOR-1 ", "One", false], ["Guidance", null, "More tests.", false]]],
     [
       { kind: "send_back", task_id: "t2", guidance: "More tests." },

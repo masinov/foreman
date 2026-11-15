@@ -47,7 +47,7 @@ that running the engine unattended is a reasonable thing to do again.
 | 8 | The manager session is limited to its read surface (FOR-42) | done | Claude | `feat/manager-session-read-surface`: permission rules, drafts folder, ADR-0022 amendment; checked with a real manager turn on a database copy |
 | 9 | A task's run output reads as sentences | done | Claude | `feat/task-run-output-in-sentences`: `runWords.js`, the API gives each event's facts, raw stream behind a disclosure |
 | 10 | Editing a task's size, priority and dependencies after filing | done | Claude | `feat/task-edit-size-priority-dependencies`: `foreman task edit`, the Edit task dialog, loop check |
-| 11 | Mark done and Reopen in the manager's proposals | todo | Claude | ADR-0022 amendment, proposal kinds |
+| 11 | Mark done and Reopen in the manager's proposals | done | Claude | `feat/manager-proposes-done-and-reopen`: `complete_task`, `reopen_task`, size and dependencies in `edit_task`; ADR-0022 amendment |
 | 12 | Close the sprint: checkpoint, archive | todo | Claude | `docs/checkpoints/`, `docs/sprints/archive/` |
 
 ### Risks

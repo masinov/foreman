@@ -39,7 +39,8 @@ None is fixed. Each is a candidate for the next engine sprint.
   running task, approve a merge, pause, recover from an engine failure).
 - Types in the frontend (TypeScript or JSDoc).
 - Descriptions and manager replies rendered as markdown.
-- Mark done and Reopen in the manager's proposal vocabulary (ADR-0022).
+- (Done in sprint 59, slice 11.) Mark done and Reopen in the manager's
+  proposal vocabulary (ADR-0022).
 - Look at the task and sprint pages against a running engine: everything
   built after 2026-11-13 was seen with fixtures only.
 - (Done in sprint 59, slice 10.) Editing a task's size, priority and
