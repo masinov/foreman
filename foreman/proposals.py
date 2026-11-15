@@ -93,6 +93,8 @@ _TASK_EDITS = (
     _opt("description", "text"),
     _opt("acceptance_criteria", "text"),
     _opt("priority", "int"),
+    _opt("complexity", "words"),
+    _opt("depends_on_task_ids", "id_list"),
 )
 
 #: The vocabulary, in the order the ADR lists it.
@@ -139,6 +141,12 @@ OPERATION_KINDS: dict[str, OperationKind] = {
         OperationKind("block_task", "block a task", (_req("task_id", "id"), _req("reason", "words"))),
         OperationKind("unblock_task", "unblock a task", (_req("task_id", "id"),)),
         OperationKind("cancel_task", "cancel a task", (_req("task_id", "id"),)),
+        OperationKind(
+            "complete_task",
+            "mark a task done by hand",
+            (_req("task_id", "id"), _req("reason", "words")),
+        ),
+        OperationKind("reopen_task", "reopen a closed task", (_req("task_id", "id"),)),
         OperationKind(
             "send_back", "send a task back with guidance", (_req("task_id", "id"), _req("guidance", "words"))
         ),
@@ -191,6 +199,13 @@ def _check_value(field: _Field, value: Any, where: str) -> Any:
             or not all(isinstance(item, str) and item.strip() for item in value)
         ):
             raise ValueError(f"{where}: {field.name} must be a non-empty list of ids.")
+        return [item.strip() for item in value]
+    if field.type == "id_list":
+        # May be empty: an empty list is how a task is made to wait for nothing.
+        if not isinstance(value, list) or not all(
+            isinstance(item, str) and item.strip() for item in value
+        ):
+            raise ValueError(f"{where}: {field.name} must be a list of ids.")
         return [item.strip() for item in value]
     if field.type == "new_sprint":
         if not isinstance(value, Mapping):
@@ -368,6 +383,12 @@ def apply_operation(
         elif kind == "cancel_task":
             removal = mutations.cancel_task(task(operation["task_id"]))
             result["task_id"] = removal.task.id
+        elif kind == "complete_task":
+            result["task_id"] = mutations.complete_task(
+                task(operation["task_id"]), operation["reason"]
+            ).id
+        elif kind == "reopen_task":
+            result["task_id"] = mutations.reopen_task(task(operation["task_id"])).id
         elif kind == "send_back":
             result["task_id"] = mutations.send_back(task(operation["task_id"]), operation["guidance"]).id
         elif kind == "approve_gate":

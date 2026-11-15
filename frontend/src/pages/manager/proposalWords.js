@@ -16,6 +16,8 @@ const TASK_FIELDS = {
   description: "description",
   acceptance_criteria: "acceptance criteria",
   priority: "priority",
+  complexity: "size",
+  depends_on_task_ids: "dependencies",
 };
 
 function taskOf(names, taskId) {
@@ -94,6 +96,11 @@ function rowsOf(operation, names) {
       return [{ term: "Unblock", task }];
     case "cancel_task":
       return [{ term: "Cancel", task }];
+    case "complete_task":
+      // Said in full: nothing checks work that is closed this way.
+      return [{ term: "Mark done", task, text: "by hand, without running its remaining steps" }, { term: "Why", text: operation.reason }];
+    case "reopen_task":
+      return [{ term: "Reopen", task, text: "its steps start over" }];
     case "send_back": {
       const gate = gateOf(names, operation.task_id);
       const where = gate?.deny_to ? `to ${humanize(gate.deny_to)}, in place of approving ${gateObject(gate)}` : "";

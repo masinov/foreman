@@ -140,6 +140,7 @@ class CreateTests(ProposalCase):
         self.task("todo1", "todo", sprint="s2")
         self.task("blocked1", "blocked", blocked_reason="Parked.")
         self.task("running", "in_progress")
+        self.task("closed1", "done")
         self.gate_task("g1")
         self.gate_task("g2")
         cases = {
@@ -156,6 +157,8 @@ class CreateTests(ProposalCase):
             "block_task": {"kind": "block_task", "task_id": "running", "reason": "Wait for the spec."},
             "unblock_task": {"kind": "unblock_task", "task_id": "blocked1"},
             "cancel_task": {"kind": "cancel_task", "task_id": "todo1"},
+            "complete_task": {"kind": "complete_task", "task_id": "blocked1", "reason": "Merged by hand."},
+            "reopen_task": {"kind": "reopen_task", "task_id": "closed1"},
             "send_back": {"kind": "send_back", "task_id": "g1", "guidance": "Report skipped tests too."},
             "approve_gate": {"kind": "approve_gate", "task_id": "g2"},
         }
@@ -290,6 +293,8 @@ class CreateRefusalTests(ProposalCase):
             ("block_task", "cannot be blocked from status done", {"kind": "block_task", "task_id": "done1", "reason": "x"}),
             ("unblock_task", "is not blocked", {"kind": "unblock_task", "task_id": "todo1"}),
             ("cancel_task", "already done", {"kind": "cancel_task", "task_id": "done1"}),
+            ("complete_task", "only a queued, unfinished or", {"kind": "complete_task", "task_id": "done1", "reason": "x"}),
+            ("reopen_task", "only a done or cancelled task", {"kind": "reopen_task", "task_id": "todo1"}),
             ("send_back", "not waiting for a person", {"kind": "send_back", "task_id": "todo1", "guidance": "x"}),
             ("approve_gate", "not waiting at a gate", {"kind": "approve_gate", "task_id": "running"}),
         ]
@@ -367,6 +372,39 @@ class ConfirmTests(ProposalCase):
         self.assertEqual(self.snapshot(), before)
         self.assertEqual(self.store.get_task(filed.id).status, "triage")
         self.assertEqual(self.store.get_proposal(proposal.id).state, "failed")
+
+    def test_confirming_closes_and_reopens_a_task_as_a_person_would_by_hand(self) -> None:
+        self.task("stuck", "blocked", blocked_reason="Parked.")
+        self.task("old", "cancelled")
+        self.task("first", "todo")
+        proposal = self.propose(
+            {"kind": "complete_task", "task_id": "stuck", "reason": "Merged by hand on Friday."},
+            {"kind": "reopen_task", "task_id": "old"},
+            {"kind": "edit_task", "task_id": "old", "complexity": "small", "depends_on_task_ids": ["first"]},
+        )
+
+        self.assertEqual(self.proposals.confirm(proposal.id).state, "confirmed")
+
+        self.assertEqual(self.store.get_task("stuck").status, "done")
+        closed = [
+            e for e in self.store.list_events(task_id="stuck") if e.event_type == "human.task_completed"
+        ]
+        # The reason is the only record that nothing checked this work.
+        self.assertEqual(closed[-1].payload["reason"], "Merged by hand on Friday.")
+        reopened = self.store.get_task("old")
+        self.assertEqual(
+            (reopened.status, reopened.complexity, reopened.depends_on_task_ids),
+            ("todo", "small", ["first"]),
+        )
+
+    def test_a_task_can_be_proposed_to_wait_for_nothing_but_not_for_itself(self) -> None:
+        self.task("a", "todo")
+        self.task("b", "todo", depends_on_task_ids=["a"])
+        self.propose({"kind": "edit_task", "task_id": "b", "depends_on_task_ids": []})
+        with self.assertRaisesRegex(ProposalError, "cannot wait for itself"):
+            self.propose({"kind": "edit_task", "task_id": "b", "depends_on_task_ids": ["b"]})
+        with self.assertRaisesRegex(ProposalError, "must be a list of ids"):
+            self.propose({"kind": "edit_task", "task_id": "b", "depends_on_task_ids": "a"})
 
     def test_a_deleted_task_fails_the_proposal(self) -> None:
         self.task("todo1", "todo")

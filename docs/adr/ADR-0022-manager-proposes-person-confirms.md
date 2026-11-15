@@ -63,10 +63,12 @@ Every operation maps to exactly one operation of the mutation service
 | `decline_task` | `task_id`, `reason?` | `decline_task` |
 | `plan_tasks` | `task_ids`, and `sprint_id` or `new_sprint: {title, goal?}` | `plan_tasks` |
 | `unplan_task` | `task_id` | `unplan_task` |
-| `edit_task` | `task_id`, `title?`, `task_type?`, `description?`, `acceptance_criteria?`, `priority?` | `edit_task` |
+| `edit_task` | `task_id`, `title?`, `task_type?`, `description?`, `acceptance_criteria?`, `priority?`, `complexity?`, `depends_on_task_ids?` | `edit_task` |
 | `block_task` | `task_id`, `reason` | `block_task` |
 | `unblock_task` | `task_id` | `unblock_task` |
 | `cancel_task` | `task_id` | `cancel_task` |
+| `complete_task` | `task_id`, `reason` | `complete_task`: done by hand, without running its remaining steps |
+| `reopen_task` | `task_id` | `reopen_task`: a done or cancelled task back to the queue |
 | `send_back` | `task_id`, `guidance` | `send_back`: at a gate it is a denial with the guidance; a blocked task goes back to the queue with the guidance as a note |
 | `approve_gate` | `task_id` | `decide_gate(.., "approve")` |
 
@@ -209,4 +211,18 @@ Still true: this rests on the Claude Code CLI's permission rules and its
 own judgement of which shell commands only read. It is as strong as that,
 and it is checked for one CLI version. State changes are still refused a
 second time at the Foreman CLI (section 4).
+
+## Amendment, 2026-11-15: closing and reopening by hand, size and dependencies
+
+The vocabulary gains `complete_task` and `reopen_task`, the two operations a
+person got in sprint 58 for work finished outside the engine, and
+`edit_task` gains `complexity` and `depends_on_task_ids` (an empty list
+makes a task wait for nothing). They map to the same `Mutations` methods
+the CLI and the task page use, with the same refusals: a task the engine is
+running cannot be closed by hand, a task cannot wait for itself or for one
+that waits for it, and what a started task waits for cannot change.
+
+`complete_task` needs a reason. The card says "by hand, without running its
+remaining steps" beside it, because confirming closes work nothing checked;
+the reason is recorded on the task and shown in its Details.
 
