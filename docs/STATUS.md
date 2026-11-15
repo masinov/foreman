@@ -3,24 +3,27 @@
 Current snapshot only. History up to 2026-09-08 (sprints 1 to 54) is in
 `docs/checkpoints/status-history-through-2026-09-08.md`.
 
-## Where the project is (2026-11-13)
+## Where the project is (2026-11-15)
 
 - Driving document: `docs/reviews/2026-11-10-full-review-and-finish-plan.md`
   (full review of engine, runner, dashboard, frontend and UX, with a six-phase
   plan, 0 to 5).
-- Phases 0 to 3 are done: sprints 55 (baseline and host safety), 56 (engine
-  truthfulness) and 57 (structure) are closed and archived under
-  `docs/sprints/archive/`.
-- Active sprint: **sprint 58 — frontend rebuild** (`docs/sprints/current.md`),
-  Phase 4 of the plan. The dashboard is rebuilt to
-  `docs/design/dashboard-v7/` (ADR-0020). Every page of the design exists,
-  and everything the old dashboard could do has a place or is dropped on
-  purpose (`docs/design/dashboard-v7/legacy-capabilities.md`). What remains
-  of the sprint is the closing checkpoint.
-- Nineteen tasks of the sprint were run by Foreman itself. On
-  2026-11-13 the owner asked for the engine to be stopped and the rest done
-  by hand; it has been since. What the engine did well and badly is in
-  `docs/sprints/current.md` and the defects are in `docs/sprints/backlog.md`.
+- Phases 0 to 4 are done: sprints 55 (baseline and host safety), 56 (engine
+  truthfulness), 57 (structure) and 58 (frontend rebuild) are closed and
+  archived under `docs/sprints/archive/`.
+- No sprint is open. Sprint 58 closed on 2026-11-15
+  (`docs/checkpoints/2026-11-15-sprint-58-closed.md`): the dashboard is the
+  one in `docs/design/dashboard-v7/` (ADR-0020), and everything the old
+  dashboard could do has a place or is dropped on purpose
+  (`docs/design/dashboard-v7/legacy-capabilities.md`). The Phase 4 items
+  that were not built are in `docs/sprints/backlog.md`.
+- Next is Phase 5. `docs/sprints/current.md` holds a proposed sprint 59
+  (engine defects and a first cut of the agent sandbox); the owner has not
+  agreed its scope.
+- Nineteen tasks of sprint 58 were run by Foreman itself. On 2026-11-13 the
+  owner asked for the engine to be stopped and the rest done by hand; it has
+  been stopped since. What the engine did well and badly is in the archived
+  sprint file and the defects are in `docs/sprints/backlog.md`.
 - `main` is pushed to `origin/main`. Work happens on short branches from
   `main`; the operator checkout stays off `main` (the `_integration` worktree
   holds it).
@@ -115,8 +118,8 @@ review, human gate, deferred approval, merge). Still true: agents run with full 
 
 ## Validation baseline
 
-- `./venv/bin/python -m unittest discover -s tests` (1334 tests)
-- `npm --prefix frontend run lint`, `npm --prefix frontend test` (356 tests) and `npm --prefix frontend run build`
+- `./venv/bin/python -m unittest discover -s tests` (1342 tests)
+- `npm --prefix frontend run lint`, `npm --prefix frontend test` (367 tests) and `npm --prefix frontend run build`
 - `ruff check foreman tests scripts` (pyflakes and syntax rules)
 - `./venv/bin/python scripts/validate_repo_memory.py`
 - CI runs all of the above; its Python job builds the frontend first, since

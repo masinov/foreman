@@ -544,7 +544,7 @@ The current dashboard baseline includes:
 
 ### Frontend layout (ADR-0020)
 
-The frontend is being rebuilt to `docs/design/dashboard-v7/` in sprint 58.
+The frontend was rebuilt to `docs/design/dashboard-v7/` in sprint 58.
 `frontend/src/` is laid out as:
 
 | Path | Holds |
