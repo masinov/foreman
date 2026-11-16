@@ -23,6 +23,8 @@ from foreman.leases import generate_lease_token
 from foreman.models import Event, Project, Run, Sprint, Task
 from foreman.store import ENGINE_RESOURCE_TYPE, ForemanStore
 
+from plan_workflow import install_plan_workflow
+
 
 class RecordingSpawner:
     """A ``foreman serve`` spawner that records instead of forking.
@@ -534,6 +536,7 @@ class DashboardApproveDenyIntegrationTests(unittest.TestCase):
             workflow_id="development_with_architect",
         )
         store.save_project(project)
+        install_plan_workflow(store, project.id)
 
         sprint = Sprint(
             id="sprint-approve-test",
@@ -591,6 +594,7 @@ class DashboardApproveDenyIntegrationTests(unittest.TestCase):
             workflow_id="development_with_architect",
         )
         store.save_project(project)
+        install_plan_workflow(store, project.id)
 
         sprint = Sprint(
             id="sprint-deny-test",
@@ -2082,6 +2086,7 @@ class DashboardSprintTaskBacklogTests(unittest.TestCase):
             workflow_id="development_with_architect",  # has a human_approval gate
         )
         store.save_project(project)
+        install_plan_workflow(store, project.id)
         sprint = Sprint(
             id=self._next_id("sprint-gate"),
             project_id=project.id,
@@ -2149,6 +2154,7 @@ class DashboardSprintTaskBacklogTests(unittest.TestCase):
             workflow_id="development_with_architect",  # has a human_approval gate
         )
         store.save_project(project)
+        install_plan_workflow(store, project.id)
         sprint = Sprint(
             id=self._next_id("sprint-kind"),
             project_id=project.id,

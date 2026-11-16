@@ -292,3 +292,50 @@ class TurnTests(ProposalCase):
         self.assertTrue(self.prompts[0].rstrip().endswith("What is next?"))
         asked = next(turn for turn in self.store.list_meta_turns("p1")[0] if turn["role"] == "user")
         self.assertEqual(asked["origin"], "chat")
+
+
+class RemovedWorkflowTests(ProposalCase):
+    """Migration 26: a project that was on the architect workflow."""
+
+    def migrate(self) -> None:
+        from foreman.migrations import MIGRATIONS
+
+        version, _, sql = MIGRATIONS[-1]
+        self.assertEqual(version, 26)
+        self.store._connection.executescript(sql)
+
+    def on_removed_workflow(self) -> None:
+        # Written the way an older Foreman left it: the id is no longer known.
+        self.store._connection.execute(
+            "UPDATE projects SET workflow_id = 'development_with_architect' WHERE id = 'p1'"
+        )
+        self.store._connection.commit()
+
+    def test_the_project_goes_to_the_standard_workflow(self) -> None:
+        self.on_removed_workflow()
+
+        self.migrate()
+
+        self.assertEqual(self.store.get_project("p1").workflow_id, "development")
+        self.assertEqual(self.store.get_project("p2").workflow_id, "development")
+
+    def test_a_task_waiting_at_the_plan_gate_goes_back_to_the_queue(self) -> None:
+        self.on_removed_workflow()
+        self.task("gated", "blocked", blocked_reason="Awaiting human approval", workflow_current_step="human_approval")
+        self.task("later", "blocked", blocked_reason="Awaiting human approval", workflow_current_step="merge_approval")
+
+        self.migrate()
+
+        gated, later = self.store.get_task("gated"), self.store.get_task("later")
+        self.assertEqual((gated.status, gated.workflow_current_step, gated.blocked_reason), ("todo", None, None))
+        self.assertEqual((later.status, later.workflow_current_step), ("blocked", "merge_approval"))
+
+    def test_a_project_that_keeps_its_own_copy_is_left_alone(self) -> None:
+        from plan_workflow import install_plan_workflow
+
+        install_plan_workflow(self.store, "p1")
+        self.on_removed_workflow()
+
+        self.migrate()
+
+        self.assertEqual(self.store.get_project("p1").workflow_id, "development_with_architect")

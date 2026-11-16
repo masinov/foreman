@@ -733,7 +733,7 @@ def register_task(subparsers: argparse._SubParsersAction) -> None:
     task_add.add_argument(
         "--complexity",
         choices=TASK_COMPLEXITIES,
-        help="Optional architect-style complexity hint used for model-ladder start selection.",
+        help="How big the task is. A role with a model ladder starts a large task one model up.",
     )
     add_db_option(
         task_add,

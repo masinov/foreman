@@ -17,12 +17,27 @@ from foreman.models import Project, Run, Sprint, Task
 from foreman.engine.results import AgentExecutionResult
 from foreman.orchestrator import ForemanOrchestrator
 from foreman.runner.base import AgentEvent, AgentRunConfig
-from foreman.roles import default_roles_dir, load_roles
+from foreman.roles import default_roles_dir, load_role, load_roles
 from foreman.store import ForemanStore
 from foreman.workflows import (
     default_workflows_dir,
+    load_workflow,
     load_workflows,
 )
+
+from plan_workflow import ARCHITECT_TOML, PLAN_WORKFLOW, PLAN_WORKFLOW_TOML, install_plan_workflow
+
+
+def definitions_with_plan_workflow():
+    """The shipped roles and workflows, plus the plan-first pair kept for tests."""
+
+    roles = load_roles(default_roles_dir())
+    architect = load_role(ARCHITECT_TOML)
+    roles[architect.id] = architect
+    workflows = load_workflows(default_workflows_dir(), available_role_ids=set(roles))
+    plan_first = load_workflow(PLAN_WORKFLOW_TOML, available_role_ids=set(roles))
+    workflows[plan_first.id] = plan_first
+    return roles, workflows
 
 
 @dataclass(slots=True)
@@ -162,11 +177,7 @@ class RepoTestCase(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.roles = load_roles(default_roles_dir())
-        cls.workflows = load_workflows(
-            default_workflows_dir(),
-            available_role_ids=set(cls.roles),
-        )
+        cls.roles, cls.workflows = definitions_with_plan_workflow()
 
     def create_workspace(self) -> tuple[Path, Path]:
         temp_dir = tempfile.TemporaryDirectory()
@@ -217,11 +228,7 @@ class OrchestratorTestCase(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.roles = load_roles(default_roles_dir())
-        cls.workflows = load_workflows(
-            default_workflows_dir(),
-            available_role_ids=set(cls.roles),
-        )
+        cls.roles, cls.workflows = definitions_with_plan_workflow()
 
     def create_workspace(self) -> tuple[Path, Path]:
         temp_dir = tempfile.TemporaryDirectory()
@@ -329,6 +336,8 @@ class OrchestratorTestCase(unittest.TestCase):
         )
         task.branch_name = branch_name
         store.save_project(project)
+        if workflow_id == PLAN_WORKFLOW:
+            install_plan_workflow(store, project.id)
         store.save_sprint(sprint)
         store.save_task(task)
         return project, sprint, task

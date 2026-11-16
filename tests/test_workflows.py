@@ -33,7 +33,6 @@ class WorkflowLoaderTests(unittest.TestCase):
                 "development",
                 "development_secure",
                 "development_tiered",
-                "development_with_architect",
             },
         )
         tiered = workflows["development_tiered"]

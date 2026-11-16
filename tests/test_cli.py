@@ -15,6 +15,8 @@ import unittest
 from foreman.models import Event, Project, Run, Sprint, Task
 from foreman.store import ForemanStore
 
+from plan_workflow import install_plan_workflow
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 VENV_BIN = REPO_ROOT / "venv" / "bin"
 PIP = VENV_BIN / "pip"
@@ -828,6 +830,7 @@ class ForemanCLISmokeTests(unittest.TestCase):
             workflow_current_step="develop",
         )
         store.save_project(project)
+        install_plan_workflow(store, project.id)
         store.save_sprint(sprint)
         store.save_task(gated)
         store.save_task(dead_letter)
@@ -1729,7 +1732,7 @@ class ForemanCLISmokeTests(unittest.TestCase):
             "--spec",
             "docs/spec.md",
             "--workflow",
-            "development_with_architect",
+            "development_secure",
             "--default-branch",
             "trunk",
             "--test-command",
@@ -1752,7 +1755,7 @@ class ForemanCLISmokeTests(unittest.TestCase):
         self.assertEqual(len(projects), 1)
         self.assertEqual(projects[0].id, "sample-project")
         self.assertEqual(projects[0].name, "Sample Project Renamed")
-        self.assertEqual(projects[0].workflow_id, "development_with_architect")
+        self.assertEqual(projects[0].workflow_id, "development_secure")
         self.assertEqual(projects[0].default_branch, "trunk")
         self.assertEqual(projects[0].settings["test_command"], "pytest -q")
         self.assertEqual(
@@ -2256,6 +2259,7 @@ class ForemanCLISmokeTests(unittest.TestCase):
             started_at="2026-03-30T09:16:00Z",
         )
         store.save_project(project)
+        install_plan_workflow(store, project.id)
         store.save_sprint(sprint)
         store.save_task(task)
 
@@ -2314,6 +2318,7 @@ class ForemanCLISmokeTests(unittest.TestCase):
             started_at="2026-03-30T09:16:00Z",
         )
         store.save_project(project)
+        install_plan_workflow(store, project.id)
         store.save_sprint(sprint)
         store.save_task(task)
 
@@ -2360,6 +2365,7 @@ class ForemanCLISmokeTests(unittest.TestCase):
             started_at="2026-03-30T09:16:00Z",
         )
         store.save_project(project)
+        install_plan_workflow(store, project.id)
         store.save_sprint(sprint)
         store.save_task(task)
 

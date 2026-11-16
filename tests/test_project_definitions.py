@@ -189,10 +189,10 @@ class RemovalTests(_Workspace):
 
 class ShippedRoleTests(unittest.TestCase):
     def test_a_misspelt_tool_is_refused_when_a_role_is_loaded(self) -> None:
-        text = shipped_role("architect").replace('"NotebookEdit"', '"NotebookEdits"')
+        text = shipped_role("code_reviewer").replace('"NotebookEdit"', '"NotebookEdits"')
 
         with self.assertRaisesRegex(RoleLoadError, "agent.tools.disallowed names unknown tool"):
-            load_role_text(text, "architect")
+            load_role_text(text, "code_reviewer")
 
 
 class EngineTests(_Workspace):

@@ -22,8 +22,8 @@ class PackagedDataTests(unittest.TestCase):
         self.assertEqual(default_roles_dir(), ROLES_DIR)
         self.assertEqual(default_workflows_dir(), WORKFLOWS_DIR)
         roles = load_roles()
-        self.assertGreaterEqual(len(roles), 7)
-        self.assertGreaterEqual(len(load_workflows(available_role_ids=set(roles))), 4)
+        self.assertGreaterEqual(len(roles), 6)
+        self.assertGreaterEqual(len(load_workflows(available_role_ids=set(roles))), 3)
 
     def test_the_build_ships_every_data_file(self) -> None:
         import fnmatch

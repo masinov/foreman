@@ -15,12 +15,15 @@ from pathlib import Path
 
 from foreman.models import Project, Sprint, Task, validate_executor_overrides
 from foreman.orchestrator import ForemanOrchestrator
-from foreman.roles import default_roles_dir, load_roles
+from foreman.roles import default_roles_dir, load_role, load_roles
 from foreman.runner import AgentRunConfig
 from foreman.runner.base import AgentEvent
 from foreman.settings import ProjectSettings, SettingsError
 from foreman.store import ForemanStore
-from foreman.workflows import WorkflowLoadError, default_workflows_dir, load_workflow, load_workflows
+from foreman.workflows import load_workflow
+
+from plan_workflow import ARCHITECT_TOML, PLAN_WORKFLOW_TOML
+from foreman.workflows import WorkflowLoadError, default_workflows_dir, load_workflows
 
 
 def _shipped_workflows():
@@ -55,8 +58,17 @@ class ShippedWorkflowShapeTests(unittest.TestCase):
             deny = workflow.find_transition("merge_approval", "deny")
             self.assertEqual((deny.to_step, deny.carry_output), ("develop", True), workflow_id)
 
-    def test_architect_plan_gate_is_governed_by_plan_approval(self) -> None:
-        workflow = _shipped_workflows()["development_with_architect"]
+    def test_a_gate_may_be_governed_by_plan_approval(self) -> None:
+        roles = load_roles()
+        architect = load_role(ARCHITECT_TOML)
+        workflow = load_workflow(
+            PLAN_WORKFLOW_TOML,
+            available_role_ids={*roles, architect.id},
+            role_outcomes={
+                **{role_id: role.completion.outcomes for role_id, role in roles.items()},
+                architect.id: architect.completion.outcomes,
+            },
+        )
         self.assertEqual(workflow.get_step("human_approval").policy, "plan_approval")
 
     def test_policy_is_only_valid_on_human_gate_steps(self) -> None:
