@@ -21,8 +21,10 @@ export function getManagerHistory(client, projectId, { before, limit = HISTORY_P
  * Send a message with where the person is (`context`: `page`, and `sprint_id`
  * or `task_id` when on one). Returns an async generator of the reply's lines.
  */
-export function sendManagerMessage(client, projectId, message, context, options) {
-  return client.postLines(`/projects/${segment(projectId)}/meta/message`, { message, context }, options);
+export function sendManagerMessage(client, projectId, message, context, options, plan = null) {
+  // A planning request is named, not worded: the API writes what the manager is told.
+  const body = plan ? { plan, context } : { message, context };
+  return client.postLines(`/projects/${segment(projectId)}/meta/message`, body, options);
 }
 
 /** Forget the project's conversation: the next message starts a new one. */

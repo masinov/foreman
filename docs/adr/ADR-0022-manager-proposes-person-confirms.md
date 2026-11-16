@@ -226,3 +226,48 @@ that waits for it, and what a started task waits for cannot change.
 remaining steps" beside it, because confirming closes work nothing checked;
 the reason is recorded on the task and shown in its Details.
 
+## Amendment, 2026-11-16: planning
+
+The owner decided on 2026-11-16 that planning is not a role or a workflow
+step. A task that needs a plan before it can start is too big and is split;
+turning a sprint's goal into tasks is what the manager already does. So
+planning is one ability of the manager with two requests, both ending in an
+ordinary proposal (`foreman/planning.py`):
+
+- **Plan this sprint** (a sprint's More menu, for a planned or active sprint
+  that has a goal): the tasks that reach the goal.
+- **Split into smaller tasks** (a task's More menu, before it starts):
+  smaller tasks that together do what it asks, and the task cancelled.
+
+What changes:
+
+1. **A request is named, not worded.** `POST /api/v1/projects/{id}/meta/message`
+   takes `{"plan": {"kind": "plan_sprint", "sprint_id": ...}}` or
+   `{"kind": "split_task", "task_id": ...}` in place of a message. The server
+   writes what the manager is told (what a good task is, which operations to
+   use, what is already in the sprint) and stores only one line as the
+   person's message. A request that cannot be planned (no goal, a finished
+   sprint, a task already underway) is refused before a turn starts.
+2. **`add_task`** is a new operation: a task added straight into a planned
+   or active sprint, ready to run. `ref` names it within the proposal, and a
+   later `add_task` lists refs or task ids in `waits_for`. Before this a
+   proposal could not put a task it created into a sprint, because the task
+   had no id until the proposal was confirmed.
+3. **"Approve plans" decides who confirms.** The project's `plan_approval`
+   policy, which until now only governed a plan gate in a workflow, also
+   says who confirms a planning proposal: a person (the default), or
+   Foreman. With Foreman, the proposal is confirmed when the turn ends, as
+   `foreman` via `policy`, and only if it does what was asked and nothing
+   else: `add_task` into that sprint for a plan; the pieces and then
+   `cancel_task` of that task for a split. Any other proposal made in the
+   turn waits for a person. This is the one case where a proposal is
+   confirmed without a person, and it is a setting a person chose.
+4. **The card shows what is confirmed.** For each `add_task`: the title,
+   size and what it waits for, what it is ("What") and its acceptance
+   criteria ("Done when").
+
+Checked with the real manager on a copy of the database: asked to plan a
+sprint from a three-part goal, it read the code for 39 tool calls and wrote
+five tasks with files named, checkable criteria and two dependencies; that
+proposal was stored and confirmed with this code. Not checked: a planning
+turn with Foreman approving plans against the real manager (tests only).

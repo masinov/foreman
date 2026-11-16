@@ -19,6 +19,11 @@ describe("a proposal in words", () => {
     [{ kind: "finish_sprint", sprint_id: "s1" }, [["Finish", null, "Sprint 1", false]]],
     [{ kind: "file_task", title: "New", accept: true }, [["File", null, "New, accepted", false]]],
     [{ kind: "file_task", title: "New" }, [["File", null, "New, in the backlog", false]]],
+    [
+      { kind: "add_task", sprint_id: "s2", title: "API", ref: "api", complexity: "small", waits_for: ["schema"], description: "Add the route.", acceptance_criteria: "It answers 200." },
+      [["Add", null, "API (api), to Sprint 2, small, after schema", false], ["What", null, "Add the route.", false], ["Done when", null, "It answers 200.", false]],
+    ],
+    [{ kind: "add_task", sprint_id: "s2", title: "Schema" }, [["Add", null, "Schema, to Sprint 2", false]]],
     [{ kind: "accept_task", task_id: "t1" }, [["Accept", "FOR-1 One", null, false]]],
     [{ kind: "decline_task", task_id: "t1", reason: "No." }, [["Decline", "FOR-1 One", null, false], ["Why", null, "No.", false]]],
     [{ kind: "plan_tasks", task_ids: ["t1", "t2"], sprint_id: "s2" }, [["Into", null, "Sprint 2", false], ["Plan in", null, "One", false], ["", null, "Two", false]]],

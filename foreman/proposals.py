@@ -123,6 +123,24 @@ OPERATION_KINDS: dict[str, OperationKind] = {
                 _opt("accept", "bool"),
             ),
         ),
+        OperationKind(
+            "add_task",
+            "add a task to a sprint",
+            (
+                _req("sprint_id", "id"),
+                _req("title", "words"),
+                _opt("task_type", "words"),
+                _opt("description", "text"),
+                _opt("acceptance_criteria", "text"),
+                _opt("priority", "int"),
+                _opt("complexity", "words"),
+                # A name other operations of the same proposal use for this
+                # task, which has no id until the proposal is confirmed.
+                _opt("ref", "words"),
+                # Each a ``ref`` of an earlier add_task here, or a task id.
+                _opt("waits_for", "id_list"),
+            ),
+        ),
         OperationKind("accept_task", "accept filed work", (_req("task_id", "id"),)),
         OperationKind("decline_task", "decline filed work", (_req("task_id", "id"), _opt("reason", "text"))),
         OperationKind(
@@ -312,6 +330,7 @@ def apply_operation(
     mutations: Mutations,
     operation: Mapping[str, Any],
     index: int,
+    refs: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Apply one operation through the mutation service; return what it did.
 
@@ -322,6 +341,8 @@ def apply_operation(
     kind = str(operation["kind"])
     where = _label(index, kind)
     result: dict[str, Any] = {"index": index, "kind": kind}
+    if refs is None:
+        refs = {}
 
     def task(task_id: str):
         return _task(store, project, task_id, where, index, kind)
@@ -351,6 +372,29 @@ def apply_operation(
                 accept=bool(operation.get("accept", False)),
             )
             result["task_id"] = filed.task.id
+        elif kind == "add_task":
+            target_sprint = sprint(operation["sprint_id"])
+            name = operation.get("ref")
+            if name and name in refs:
+                raise MutationError(f"Two tasks in this proposal are called {name!r}.")
+            filed = mutations.file_task(
+                project,
+                title=operation["title"],
+                task_type=operation.get("task_type", "feature"),
+                description=operation.get("description"),
+                acceptance_criteria=operation.get("acceptance_criteria"),
+                priority=operation.get("priority", 0),
+                complexity=operation.get("complexity"),
+                accept=True,
+            )
+            mutations.plan_tasks([filed.task], sprint=target_sprint)
+            waits_for = [refs.get(item, item) for item in operation.get("waits_for", [])]
+            if waits_for:
+                mutations.edit_task(task(filed.task.id), {"depends_on_task_ids": waits_for})
+            if name:
+                refs[name] = filed.task.id
+            result["task_id"] = filed.task.id
+            result["sprint_id"] = target_sprint.id
         elif kind == "accept_task":
             result["task_id"] = mutations.accept_task(task(operation["task_id"])).id
         elif kind == "decline_task":
@@ -545,8 +589,9 @@ class Proposals:
         )
         dry_run = self._mutations(proposal)
         with self.store.atomic(commit=False):
+            refs: dict[str, str] = {}
             for index, operation in enumerate(normalized):
-                apply_operation(self.store, project, dry_run, operation, index)
+                apply_operation(self.store, project, dry_run, operation, index, refs)
         return self.store.save_proposal(proposal)
 
     def confirm(self, proposal_id: str) -> Proposal:
@@ -567,8 +612,9 @@ class Proposals:
                 # Re-read inside the transaction: two people confirming at once
                 # must not both apply it.
                 proposal = self._require_open(proposal_id)
+                refs: dict[str, str] = {}
                 applied = [
-                    apply_operation(self.store, project, mutations, operation, index)
+                    apply_operation(self.store, project, mutations, operation, index, refs)
                     for index, operation in enumerate(proposal.operations)
                 ]
                 self._decide(

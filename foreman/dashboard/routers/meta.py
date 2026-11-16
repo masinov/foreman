@@ -12,6 +12,7 @@ from ...dashboard_service import (
     DashboardValidationError,
 )
 from ...dashboard_service import DashboardNotFoundError
+from ...planning import PlanningError, planning_request, settle_plan
 from ..context import (
     ApiContext,
     open_store,
@@ -34,7 +35,10 @@ def build_router(ctx: ApiContext) -> APIRouter:
         ctx.require_manager()
         data = await read_json_body(request)
         message = str(data.get("message", "")).strip()
-        if not message:
+        plan = data.get("plan")
+        if plan is not None and not isinstance(plan, dict):
+            raise DashboardValidationError("plan must be an object.")
+        if not message and plan is None:
             raise DashboardValidationError("message cannot be empty.")
         try:
             page_context = describe_page_context(data.get("context"))
@@ -44,8 +48,16 @@ def build_router(ctx: ApiContext) -> APIRouter:
         # Validate up front; the streaming generator opens its own store so it
         # can keep state available for the full turn (history + session writes).
         with open_store(ctx.db_path) as store:
-            if store.get_project(project_id) is None:
+            found = store.get_project(project_id)
+            if found is None:
                 raise DashboardNotFoundError(f"Project not found: {project_id}")
+            if plan is not None:
+                # Refused here, before a turn starts: a sprint with no goal
+                # or a task already underway is not something to plan.
+                try:
+                    planning_request(store, found, plan)
+                except PlanningError as exc:
+                    raise DashboardValidationError(str(exc)) from exc
 
         async def _stream():
             with open_store(ctx.db_path) as store:
@@ -56,12 +68,18 @@ def build_router(ctx: ApiContext) -> APIRouter:
                         "message": f"Project not found: {project_id}",
                     }) + "\n").encode("utf-8")
                     return
+                planned = planning_request(store, project, plan) if plan is not None else None
                 async for chunk in meta_process_message(
                     project_id,
-                    message,
+                    planned.says if planned else message,
                     store=store,
                     project=project,
                     page_context=page_context,
+                    origin="plan" if planned else "chat",
+                    instructions=planned.instructions if planned else None,
+                    after_turn=(
+                        (lambda turn_id: settle_plan(store, project, planned, turn_id)) if planned else None
+                    ),
                 ):
                     yield chunk.encode("utf-8")
 

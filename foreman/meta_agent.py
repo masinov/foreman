@@ -30,7 +30,7 @@ import json
 import os
 import shutil
 import sys
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from typing import Any
 
@@ -352,6 +352,11 @@ def build_operating_contract(project: Any) -> str:
             "  activate_sprint {sprint_id} | finish_sprint {sprint_id}",
             "  file_task {title, task_type?, description?, acceptance_criteria?,",
             "             priority?, complexity?, accept?}  (into the backlog)",
+            "  add_task {sprint_id, title, task_type?, description?,",
+            "            acceptance_criteria?, priority?, complexity?, ref?, waits_for?}",
+            "            (straight into a planned or active sprint. `ref` is a name",
+            "            you give it; a later add_task in the same proposal lists",
+            "            refs or task ids in `waits_for` to start after them)",
             "  accept_task {task_id} | decline_task {task_id, reason?}",
             "  plan_tasks {task_ids, sprint_id} or {task_ids, new_sprint: {title, goal?}}",
             "  unplan_task {task_id}",
@@ -517,6 +522,8 @@ async def process_message(
     origin: str = "chat",
     consumed_event_id: str | None = None,
     page_context: str | None = None,
+    instructions: str | None = None,
+    after_turn: Callable[[str], list[str]] | None = None,
 ) -> AsyncIterator[str]:
     """Stream NDJSON events for one user message turn, persisting both turns.
 
@@ -533,6 +540,12 @@ async def process_message(
     ``page_context`` is a line from :func:`describe_page_context`. It goes into
     this turn's prompt after the state header and is not stored with the turn,
     so the transcript keeps only what the person wrote.
+
+    ``instructions`` is what the manager is told for this turn beyond
+    ``message``; it too goes into the prompt and is not stored. ``after_turn``
+    is called with the turn's id when the reply has ended without an error,
+    and returns the ids of proposals it settled, which are announced again so
+    the conversation shows them as they now are (planning, ``foreman.planning``).
     """
 
     backend = (project.settings or {}).get("meta_agent_backend", "claude")
@@ -577,6 +590,8 @@ async def process_message(
     if page_context:
         parts.append(page_context)
     parts.append(message)
+    if instructions:
+        parts.append(instructions)
     prompt = "\n\n".join(parts)
 
     model = (project.settings or {}).get("meta_agent_model") or None
@@ -625,6 +640,9 @@ async def process_message(
                 yield json.dumps({"type": "proposal", "proposal_id": proposal_id}) + "\n"
         for proposal_id in new_proposals():
             yield json.dumps({"type": "proposal", "proposal_id": proposal_id}) + "\n"
+        if after_turn is not None and not interrupted:
+            for proposal_id in after_turn(user_turn_id):
+                yield json.dumps({"type": "proposal", "proposal_id": proposal_id, "settled": True}) + "\n"
     except (asyncio.CancelledError, GeneratorExit):
         interrupted = True
         raise

@@ -36,7 +36,7 @@ function fromStored(turn) {
  * `done`, `streaming`, `failed` or `interrupted` (a stored reply that was cut
  * short).
  */
-export function useConversation(projectId, context) {
+export function useConversation(projectId, context, { onSettled } = {}) {
   const client = useApiClient();
   const history = useResource(["manager-history", projectId], (api, options) => getManagerHistory(api, projectId, {}, options), {
     enabled: Boolean(projectId),
@@ -49,6 +49,8 @@ export function useConversation(projectId, context) {
   const controller = useRef(null);
   const contextRef = useRef(context);
   contextRef.current = context;
+  const settledRef = useRef(onSettled);
+  settledRef.current = onSettled;
   const streaming = turns.some((turn) => turn.state === "streaming");
 
   // The first page of history replaces whatever was shown for another project.
@@ -77,12 +79,12 @@ export function useConversation(projectId, context) {
   }, [client, projectId, turns, loadingOlder]);
 
   const run = useCallback(
-    async (text, replacing = 0) => {
+    async (text, replacing = 0, plan = null) => {
       counter.current += 1;
       const replyKey = `reply-${counter.current}`;
       const update = (change) =>
         setTurns((current) => current.map((turn) => (turn.key === replyKey ? { ...turn, ...change(turn) } : turn)));
-      const sent = { key: `sent-${counter.current}`, role: "user", text, tools: [], proposals: [], state: "done", error: null };
+      const sent = { key: `sent-${counter.current}`, role: "user", text, plan, tools: [], proposals: [], state: "done", error: null };
       const reply = { key: replyKey, role: "assistant", text: "", tools: [], proposals: [], state: "streaming", error: null };
       setTurns((current) => [...current.slice(0, current.length - replacing), sent, reply]);
 
@@ -90,11 +92,15 @@ export function useConversation(projectId, context) {
       controller.current = abort;
       let finished = false;
       try {
-        for await (const line of sendManagerMessage(client, projectId, text, contextRef.current, { signal: abort.signal })) {
+        for await (const line of sendManagerMessage(client, projectId, text, contextRef.current, { signal: abort.signal }, plan)) {
           if (line.type === "text_delta" && typeof line.text === "string") {
             update((turn) => ({ text: turn.text + line.text }));
           } else if (line.type === "tool_use" && line.name) {
             update((turn) => ({ tools: [...turn.tools, line.name] }));
+          } else if (line.type === "proposal" && line.proposal_id && line.settled) {
+            // Decided by the project's policy while the turn ended: show it as it now is.
+            update((turn) => ({ settled: (turn.settled || 0) + 1 }));
+            settledRef.current?.();
           } else if (line.type === "proposal" && line.proposal_id) {
             update((turn) => (turn.proposals.includes(line.proposal_id) ? {} : { proposals: [...turn.proposals, line.proposal_id] }));
           } else if (line.type === "error") {
@@ -116,12 +122,18 @@ export function useConversation(projectId, context) {
 
   const send = useCallback((text) => (streaming ? Promise.resolve() : run(text)), [streaming, run]);
 
+  /** Make a planning request: `{ says, plan }` from `app/managerRequests`. */
+  const plan = useCallback(
+    (request) => (streaming ? Promise.resolve() : run(request.says, 0, request.plan)),
+    [streaming, run],
+  );
+
   /** Send the last message again, in place of the failed attempt. */
   const retry = useCallback(() => {
     const last = turns[turns.length - 1];
     const before = turns[turns.length - 2];
     if (streaming || last?.state !== "failed" || before?.role !== "user") return Promise.resolve();
-    return run(before.text, 2);
+    return run(before.text, 2, before.plan ?? null);
   }, [turns, streaming, run]);
 
   const clear = useCallback(async () => {
@@ -132,6 +144,7 @@ export function useConversation(projectId, context) {
   }, [client, projectId]);
 
   return {
+    plan,
     turns,
     streaming,
     hasMore,

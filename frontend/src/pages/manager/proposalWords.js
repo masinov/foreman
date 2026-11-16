@@ -71,6 +71,16 @@ function rowsOf(operation, names) {
       return [{ term: "Finish", text: sprint }];
     case "file_task":
       return [{ term: "File", text: `${operation.title}, ${operation.accept ? "accepted" : "in the backlog"}` }];
+    case "add_task": {
+      // Everything a person confirms is on the card: what the task is and what will prove it.
+      const size = operation.complexity ? `, ${operation.complexity}` : "";
+      const after = (operation.waits_for || []).length ? `, after ${list(operation.waits_for)}` : "";
+      const name = operation.ref ? ` (${operation.ref})` : "";
+      const rows = [{ term: "Add", text: `${operation.title}${name}, to ${sprint}${size}${after}` }];
+      if (operation.description) rows.push({ term: "What", text: operation.description });
+      if (operation.acceptance_criteria) rows.push({ term: "Done when", text: operation.acceptance_criteria });
+      return rows;
+    }
     case "accept_task":
       return [{ term: "Accept", task }];
     case "decline_task":

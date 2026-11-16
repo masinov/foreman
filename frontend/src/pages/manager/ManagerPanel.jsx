@@ -5,7 +5,9 @@ import { Field } from "../../ui/Field";
 import { wrapTab } from "../../ui/focus";
 import { plural } from "../../ui/format";
 import { ReasonDialog } from "../shared/ReasonDialog";
+import { useDataRefresh } from "../../api/ApiProvider";
 import { useOverlay } from "../../app/manager";
+import { onManagerRequest, takeManagerRequest } from "../../app/managerRequests";
 import { ProposalCard } from "./ProposalCard";
 import { useConversation } from "./useConversation";
 
@@ -34,7 +36,7 @@ function Turn({ turn, onRetry, canRetry }) {
       ) : null}
       {turn.tools.length > 0 ? <p className="manager__tools">Ran {toolSummary(turn.tools)}.</p> : null}
       {(turn.proposals || []).map((proposalId) => (
-        <ProposalCard key={proposalId} proposalId={proposalId} />
+        <ProposalCard key={`${proposalId}:${turn.settled || 0}`} proposalId={proposalId} />
       ))}
       {turn.state === "interrupted" ? <p className="manager__tools">This reply was cut short.</p> : null}
       {turn.state === "failed" ? (
@@ -63,8 +65,21 @@ export function ManagerPanel({ projectId, projectName, page, context, onClose })
   const headingId = useId();
   const root = useRef(null);
   const overlay = useOverlay();
-  const conversation = useConversation(projectId, context);
+  const { refresh } = useDataRefresh();
+  const conversation = useConversation(projectId, context, { onSettled: refresh });
   const { turns, streaming } = conversation;
+
+  // A page asked for a plan: take the request now, or when it is made.
+  const planRef = useRef(conversation.plan);
+  planRef.current = conversation.plan;
+  useEffect(() => {
+    const take = () => {
+      const request = takeManagerRequest(projectId);
+      if (request) planRef.current(request);
+    };
+    take();
+    return onManagerRequest(take);
+  }, [projectId]);
   const [draft, setDraft] = useState("");
   const [asking, setAsking] = useState(false);
   const thread = useRef(null);

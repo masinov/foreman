@@ -4,6 +4,7 @@ import { useApiClient } from "../../api/ApiProvider";
 import { runTaskNext } from "../../api/engine";
 import { blockTask, cancelTask, completeTask, deleteTask, reopenTask, stopTask, unblockTask } from "../../api/tasks";
 import { ENGINE_STATES } from "../../api/workspace";
+import { askManager, splitTaskRequest } from "../../app/managerRequests";
 import { Menu } from "../../ui/Menu";
 import { ReasonDialog } from "../shared/ReasonDialog";
 import { useProjectEngine } from "../shared/useProjectEngine";
@@ -76,6 +77,16 @@ export const TASK_ACTIONS = {
     run: (client, task) => reopenTask(client, task.id),
     done: "Reopened. The task is back in the queue.",
   },
+  split: {
+    label: "Split into smaller tasks",
+    title: "Split this task",
+    effect:
+      "The manager reads the task and the code it touches, and proposes smaller tasks that together do what this one asks, with this one cancelled. The proposal appears in the manager's side bar. Who confirms it is this project's \u201cApprove plans\u201d setting.",
+    confirm: "Ask the manager",
+    doing: "Asking…",
+    run: async (client, task) => askManager(splitTaskRequest(task)),
+    done: "Asked. The proposal appears in the manager's side bar.",
+  },
   cancel: {
     label: "Cancel",
     title: "Cancel this task",
@@ -115,6 +126,7 @@ export function actionsFor(task, engine = null) {
   if (task.status === "blocked" && task.blocked_kind !== "gate") names.push("unblock");
   if (planned && OPEN.has(task.status)) names.push("complete");
   if (CLOSED.has(task.status)) names.push("reopen");
+  if (task.status === "todo" || task.status === "triage") names.push("split");
   if (!CLOSED.has(task.status) && task.status !== "declined") names.push("cancel");
   names.push("delete");
   return names;
