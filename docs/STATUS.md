@@ -95,8 +95,9 @@ is no login.
   task, not the place it works in.
 - Spec §6.3 revised 2026-11-16 (ADR-0025): the engine completes a resolved
   sprint only in an autonomous project; in a directed or supervised one the
-  sprint stays active until a person finishes it. The code still completes
-  it at every level until the next task of sprint 60b lands.
+  sprint stays active until a person finishes it. Implemented in
+  `SprintFlow.resolve`; `engine.sprint_ready` now means "resolved, waiting for
+  a person".
 - Spec §6.4 sprint checkpoints (tag, note, event) are not built.
 - ADR-0007 described a restricted planner session that was never built; the
   manager chat was a full-access Claude Code session that changed project

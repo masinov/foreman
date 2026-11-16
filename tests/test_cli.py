@@ -1191,12 +1191,12 @@ class ForemanCLISmokeTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Executed tasks: none", result.stdout)
-        self.assertIn("Stop reason: idle", result.stdout)
+        self.assertIn("Stop reason: sprint_resolved", result.stdout)
         refreshed = store.get_sprint(sprint.id)
         assert refreshed is not None
-        self.assertEqual(refreshed.status, "completed")
+        self.assertEqual(refreshed.status, "active")
         self.assertIsNotNone(refreshed.started_at)
-        self.assertIsNotNone(refreshed.completed_at)
+        self.assertIsNone(refreshed.completed_at)
 
     def test_run_command_is_refused_while_a_resident_engine_holds_the_lock(self) -> None:
         store, db_path = self.create_store()
