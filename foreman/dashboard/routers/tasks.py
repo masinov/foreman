@@ -101,6 +101,14 @@ def build_router(ctx: ApiContext) -> APIRouter:
             lambda api: api.create_human_message(task_id, text=body.text)
         )
 
+    @router.post("/tasks/{task_id}/steer")
+    def steer_task(
+        task_id: str, body: GuidanceNote = Depends(body_as(GuidanceNote))
+    ) -> dict[str, Any]:
+        """Record guidance and interrupt the running agent step so it reads it now."""
+
+        return with_api(lambda api: api.steer_task(task_id, text=body.text))
+
     @router.get("/tasks/{task_id}/changes", response_model=TaskChanges)
     def get_task_changes(task_id: str) -> TaskChanges:
         return ctx.with_store(lambda store: TaskReads(store).get_changes(task_id))

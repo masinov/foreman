@@ -695,7 +695,7 @@ class Lease:
     released_at: str | None = None
 
 
-EngineCommandName = Literal["pause", "resume", "run_task", "stop_task", "shutdown"]
+EngineCommandName = Literal["pause", "resume", "run_task", "stop_task", "steer_task", "shutdown"]
 EngineCommandStatus = Literal["pending", "acknowledged", "completed", "rejected"]
 
 ENGINE_COMMANDS: tuple[EngineCommandName, ...] = (
@@ -703,6 +703,7 @@ ENGINE_COMMANDS: tuple[EngineCommandName, ...] = (
     "resume",
     "run_task",
     "stop_task",
+    "steer_task",
     "shutdown",
 )
 ENGINE_COMMAND_STATUSES: tuple[EngineCommandStatus, ...] = (
@@ -720,6 +721,7 @@ ENGINE_COMMAND_STATUSES: tuple[EngineCommandStatus, ...] = (
 ENGINE_COMMANDS_NEEDING_A_RESIDENT_ENGINE: tuple[EngineCommandName, ...] = (
     "pause",
     "stop_task",
+    "steer_task",
     "shutdown",
 )
 

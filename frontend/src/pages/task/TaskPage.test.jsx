@@ -903,3 +903,64 @@ describe("details beyond the usual", () => {
     expect(details).toHaveTextContent("Develop 2 · Test 1");
   });
 });
+
+describe("Telling a running agent something", () => {
+  const working = () => [runItem("run-9", "develop", { status: "running", outcome: null, finished_at: null })];
+
+  async function open(runs) {
+    const routes = taskRoutes({ task: taskDetail({ status: "in_progress", blocked_kind: null }), runs });
+    routes[outputUrl("run-9")] = outputPayload("run-9", "Reading the parser.");
+    const utils = await renderTask(`${BASE}/activity`, routes);
+    await screen.findByRole("table", { name: "Runs" });
+    return utils;
+  }
+
+  it("is offered under the output of a step an agent is doing, and nowhere else", async () => {
+    await open(working());
+    const box = await screen.findByRole("form", { name: "Tell the agent" });
+    expect(within(box).getByLabelText("Tell the agent (Develop is running)")).toBeInTheDocument();
+    expect(within(box).getByRole("button", { name: "Interrupt and tell it now" })).toBeInTheDocument();
+    expect(within(box).getByRole("button", { name: "Save for its next step" })).toBeInTheDocument();
+  });
+
+  it("is not offered when the step has ended or the engine is doing it", async () => {
+    await open([runItem("run-9", "develop")]);
+    expect(screen.queryByRole("form", { name: "Tell the agent" })).toBeNull();
+  });
+
+  it("interrupts the step with the note and says what is happening", async () => {
+    const { fetchImpl } = await open(working());
+    fetchImpl.routes[post("steer")] = { status: "interrupting", message: "Recorded. The develop step is being interrupted and starts again with this guidance." };
+    const box = await screen.findByRole("form", { name: "Tell the agent" });
+    fireEvent.change(within(box).getByRole("textbox"), { target: { value: " Use the existing parser. " } });
+    fireEvent.click(within(box).getByRole("button", { name: "Interrupt and tell it now" }));
+
+    await waitFor(() => expect(calls(fetchImpl, "POST", `/api/v1/tasks/${TASK_ID}/steer`)).toHaveLength(1));
+    expect(calls(fetchImpl, "POST", `/api/v1/tasks/${TASK_ID}/steer`)[0].body).toEqual({ text: "Use the existing parser." });
+    expect(await within(box).findByRole("status")).toHaveTextContent("is being interrupted and starts again");
+    expect(within(box).getByRole("textbox")).toHaveValue("");
+  });
+
+  it("saves the note for the next step without interrupting", async () => {
+    const { fetchImpl } = await open(working());
+    fetchImpl.routes[post("messages")] = { status: "recorded", message: "Recorded. The next agent step for this task will read it." };
+    const box = await screen.findByRole("form", { name: "Tell the agent" });
+    fireEvent.change(within(box).getByRole("textbox"), { target: { value: "Later is fine." } });
+    fireEvent.click(within(box).getByRole("button", { name: "Save for its next step" }));
+
+    await waitFor(() => expect(calls(fetchImpl, "POST", `/api/v1/tasks/${TASK_ID}/messages`)).toHaveLength(1));
+    expect(calls(fetchImpl, "POST", `/api/v1/tasks/${TASK_ID}/steer`)).toHaveLength(0);
+  });
+
+  it("shows the refusal when there is nothing to interrupt, and asks for words first", async () => {
+    const { fetchImpl } = await open(working());
+    fetchImpl.routes[post("steer")] = reply(400, { error: "No agent is running on this task, so there is nothing to interrupt.", code: "validation_error" });
+    const box = await screen.findByRole("form", { name: "Tell the agent" });
+    fireEvent.click(within(box).getByRole("button", { name: "Interrupt and tell it now" }));
+    expect(await within(box).findByRole("alert")).toHaveTextContent("Write what to tell it first.");
+    fireEvent.change(within(box).getByRole("textbox"), { target: { value: "Stop." } });
+    fireEvent.click(within(box).getByRole("button", { name: "Interrupt and tell it now" }));
+    expect(await within(box).findByRole("alert")).toHaveTextContent("nothing to interrupt");
+  });
+});
+

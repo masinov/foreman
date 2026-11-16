@@ -904,4 +904,40 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         );
         """,
     ),
+    (
+        28,
+        "engine_commands: steer_task, a running step interrupted to read guidance",
+        """
+        -- `steer_task` stops the agent step a task is running and lets the
+        -- step start again at once, so guidance a person just wrote is read
+        -- now and not after the step has ended. The command's name is held
+        -- by a CHECK, which SQLite cannot alter: the table is rebuilt.
+        CREATE TABLE engine_commands_new (
+            id              TEXT PRIMARY KEY,
+            project_id      TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            command         TEXT NOT NULL
+                            CHECK (command IN ('pause', 'resume', 'run_task',
+                                               'stop_task', 'steer_task', 'shutdown')),
+            task_id         TEXT REFERENCES tasks(id) ON DELETE CASCADE,
+            requested_by    TEXT NOT NULL,
+            requested_at    TEXT NOT NULL,
+            status          TEXT NOT NULL DEFAULT 'pending'
+                            CHECK (status IN ('pending', 'acknowledged',
+                                              'completed', 'rejected')),
+            acknowledged_at TEXT,
+            completed_at    TEXT,
+            result_detail   TEXT
+        );
+        INSERT INTO engine_commands_new
+            (id, project_id, command, task_id, requested_by, requested_at,
+             status, acknowledged_at, completed_at, result_detail)
+        SELECT id, project_id, command, task_id, requested_by, requested_at,
+               status, acknowledged_at, completed_at, result_detail
+        FROM engine_commands;
+        DROP TABLE engine_commands;
+        ALTER TABLE engine_commands_new RENAME TO engine_commands;
+        CREATE INDEX IF NOT EXISTS idx_engine_commands_project_status
+        ON engine_commands(project_id, status, requested_at);
+        """,
+    ),
 ]

@@ -8,7 +8,7 @@ and the step. Nothing is called delivered before that event exists.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable
 from dataclasses import dataclass
 
 from .models import Event
@@ -33,13 +33,18 @@ class GuidanceNote:
         return self.delivered_at is not None
 
 
-def guidance_notes(events: Iterable[Event]) -> list[GuidanceNote]:
-    """Return a task's notes, oldest first, each with its delivery state."""
+def guidance_notes(events: Iterable[Event], *, void_runs: Collection[str] = ()) -> list[GuidanceNote]:
+    """Return a task's notes, oldest first, each with its delivery state.
+
+    A delivery made to a run in ``void_runs`` does not count: that run was
+    killed before it finished, so what it was given cannot be relied on to
+    have been acted on, or even kept (a role with no session forgets it).
+    """
 
     ordered = sorted(events, key=lambda event: (event.timestamp, event.id))
     deliveries: dict[str, Event] = {}
     for event in ordered:
-        if event.event_type != GUIDANCE_DELIVERED_EVENT:
+        if event.event_type != GUIDANCE_DELIVERED_EVENT or event.run_id in void_runs:
             continue
         for message_id in event.payload.get("message_event_ids") or ():
             deliveries.setdefault(str(message_id), event)
@@ -64,10 +69,10 @@ def guidance_notes(events: Iterable[Event]) -> list[GuidanceNote]:
     return notes
 
 
-def pending_guidance(events: Iterable[Event]) -> list[GuidanceNote]:
-    """Return the notes no agent step has received yet."""
+def pending_guidance(events: Iterable[Event], *, void_runs: Collection[str] = ()) -> list[GuidanceNote]:
+    """Return the notes no agent step that ran to its end has received."""
 
-    return [note for note in guidance_notes(events) if not note.delivered]
+    return [note for note in guidance_notes(events, void_runs=void_runs) if not note.delivered]
 
 
 def prompt_with_guidance(prompt: str, notes: list[GuidanceNote]) -> str:

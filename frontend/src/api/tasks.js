@@ -90,6 +90,15 @@ export function sendGuidance(client, taskId, text, options) {
   return client.post(`${task(taskId)}/messages`, { text }, options);
 }
 
+/**
+ * Record guidance and have the agent step the task is running read it now:
+ * the engine stops that step and starts it again with the note. Refused, with
+ * the reason, when no agent is running on the task.
+ */
+export function steerTask(client, taskId, text, options) {
+  return client.post(`${task(taskId)}/steer`, { text }, options);
+}
+
 // Reads for the task page's tabs (sprint 58, slice 7).
 
 /** The files the task's branch changed against the default branch, with totals. */

@@ -572,7 +572,7 @@ class ResidentEngine:
             self._acknowledge(command)
 
             if command.command in {"pause", "shutdown"} or (
-                command.command == "stop_task"
+                command.command in {"stop_task", "steer_task"}
                 and command.task_id == running_task_id
             ):
                 # Kill the agent's whole process group first: the run must be
@@ -623,6 +623,15 @@ class ResidentEngine:
                 command,
                 "rejected",
                 self._stop_task_rejection(command, running_task_id),
+            )
+        elif name == "steer_task":
+            # Nothing to interrupt. The guidance is recorded and the task's
+            # next agent step reads it, as it would have without the command.
+            self._finish_command(
+                command,
+                "completed",
+                f"Task {command.task_id!r} was not running a step, so nothing was "
+                "interrupted; its next agent step reads the guidance.",
             )
         else:  # pragma: no cover - the schema CHECK constraint prevents this
             self._finish_command(
@@ -723,6 +732,21 @@ class ResidentEngine:
                 f"Stopped task {command.task_id!r}: the agent process group was "
                 f"terminated, its run settled as killed, and the task is blocked "
                 f"({reason})."
+            )
+        elif command.command == "steer_task":
+            # The task stays exactly where it was, in progress at the step
+            # that was interrupted, and the engine keeps going: its next pass
+            # starts that step again, with the guidance in the prompt and, for
+            # a role that keeps its session, in the conversation it had. The
+            # interrupted visit did not finish, so it is not counted against
+            # the step's limit.
+            if task_id:
+                self.orchestrator.forgive_step_visit(task_id)
+                self.orchestrator.release_task(task_id)
+            detail = (
+                f"Interrupted task {task_id!r} to read guidance: the agent process "
+                "group was terminated, its run settled as killed, and the step "
+                "starts again."
             )
         else:
             # `pause` and `shutdown` both leave the task resumable. The lease
