@@ -300,8 +300,7 @@ class RemovedWorkflowTests(ProposalCase):
     def migrate(self) -> None:
         from foreman.migrations import MIGRATIONS
 
-        version, _, sql = MIGRATIONS[-1]
-        self.assertEqual(version, 26)
+        version, _, sql = next(m for m in MIGRATIONS if m[0] == 26)
         self.store._connection.executescript(sql)
 
     def on_removed_workflow(self) -> None:

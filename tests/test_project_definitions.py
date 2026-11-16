@@ -475,3 +475,90 @@ class ApiTests(_Workspace):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WorkspaceDefaultTests(ApiTests):
+    """The workspace's own definitions: the defaults every project starts from."""
+
+    def model(self, project: str | None) -> str:
+        return project_definitions(self.store, project).roles["code_reviewer"].agent.model
+
+    def test_a_default_reaches_every_project_that_keeps_no_version_of_its_own(self) -> None:
+        save_role(self.store, "p2", reviewer_on("claude-haiku-5-5"), changed_by="bob")
+
+        save_role(self.store, None, reviewer_on("claude-opus-5-5"), changed_by="alice")
+
+        self.assertEqual(self.model(None), "claude-opus-5-5")
+        self.assertEqual(self.model("p1"), "claude-opus-5-5")
+        self.assertEqual(self.model("p2"), "claude-haiku-5-5")
+        # For p1 the role is the default, not something of its own.
+        self.assertEqual(project_definitions(self.store, "p1").own_roles, {})
+        self.assertEqual(self.role("code_reviewer")["origin"], "shipped")
+
+    def test_a_project_that_drops_its_own_goes_back_to_the_workspaces_default(self) -> None:
+        save_role(self.store, None, reviewer_on("claude-opus-5-5"), changed_by="alice")
+        save_role(self.store, "p1", reviewer_on("claude-haiku-5-5"), changed_by="bob")
+
+        remove_definition(self.store, "p1", "role", "code_reviewer", changed_by="bob")
+
+        self.assertEqual(self.model("p1"), "claude-opus-5-5")
+
+    def test_a_default_that_would_break_a_project_is_refused_and_names_it(self) -> None:
+        # p1 keeps a workflow that routes the reviewer's "steer".
+        save_workflow(self.store, "p1", workflow_called("careful"), changed_by="bob")
+        no_steer = shipped_role("code_reviewer").replace(
+            "outcomes = ['approve', 'deny', 'steer']", "outcomes = ['approve', 'deny']"
+        )
+        with self.refused("steer"):
+            save_role(self.store, None, no_steer, changed_by="alice")
+        self.assertEqual(self.store.current_definitions(None), [])
+
+    def test_a_workflow_added_to_the_workspace_can_be_used_and_then_not_removed(self) -> None:
+        save_workflow(self.store, None, workflow_called("house"), changed_by="alice")
+        self.assertIn("house", project_definitions(self.store, "p2").workflows)
+        project = self.store.get_project("p2")
+        project.workflow_id = "house"
+        self.store.save_project(project)
+
+        with self.refused("p2.*uses workflow 'house'"):
+            remove_definition(self.store, None, "workflow", "house", changed_by="alice")
+
+    def test_going_back_to_what_is_shipped(self) -> None:
+        save_role(self.store, None, reviewer_on("claude-opus-5-5"), changed_by="alice")
+
+        left = remove_definition(self.store, None, "role", "code_reviewer", changed_by="alice")
+
+        self.assertTrue(left)
+        self.assertEqual(self.model("p1"), "claude-sonnet-5-5")
+        self.assertEqual(len(self.store.definition_revisions(None, "role", "code_reviewer")), 2)
+
+    def test_the_dashboard_reads_and_saves_the_defaults(self) -> None:
+        payload = self.request("GET", "/definitions").json()
+        development = next(w for w in payload["workflows"] if w["id"] == "development")
+        self.assertEqual(development["used_by"], ["p1", "p2"])
+        reviewer = next(role for role in payload["roles"] if role["id"] == "code_reviewer")
+        fields = fields_of(reviewer)
+        fields["model"] = "claude-opus-5-5"
+
+        response = self.request("PUT", "/roles/code_reviewer", json={"fields": fields})
+
+        self.assertEqual(response.status_code, 200, response.text)
+        saved = next(role for role in response.json()["roles"] if role["id"] == "code_reviewer")
+        self.assertEqual((saved["model"], saved["origin"]), ("claude-opus-5-5", "changed"))
+        self.assertEqual(self.model("p1"), "claude-opus-5-5")
+        # A project's editor starts from the default's text, not the shipped file's.
+        self.assertIn("claude-opus-5-5", self.role("code_reviewer")["text"])
+        # The plain lists read the defaults too.
+        listed = self.request("GET", "/roles").json()["roles"]
+        self.assertEqual(next(r for r in listed if r["id"] == "code_reviewer")["model"], "claude-opus-5-5")
+
+        response = self.request("DELETE", "/roles/code_reviewer")
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(self.model("p1"), "claude-sonnet-5-5")
+
+    def test_a_refused_default_is_a_400_with_the_reason(self) -> None:
+        response = self.request("PUT", "/roles/code_reviewer", json={"text": "not toml ["})
+
+        self.assertEqual(response.status_code, 400)
+

@@ -7,7 +7,7 @@ import { Dialog } from "../../ui/Dialog";
 import { Mono } from "../../ui/Mono";
 import { SectionHeading } from "../../ui/SectionHeading";
 import { Table } from "../../ui/Table";
-import { endsWords, ORIGIN, toolsWords } from "./definitionWords";
+import { endsWords, originWords, toolsWords } from "./definitionWords";
 import { RoleEditor } from "./RoleEditor";
 
 /** A new role starts as a copy of one the project has: which one. */
@@ -48,8 +48,12 @@ function StartFrom({ open, roles, onClose, onChosen }) {
   );
 }
 
-/** /dashboard/projects/{id}/settings/roles: the roles this project runs with. */
-export function RolesTab({ projectId }) {
+/**
+ * /dashboard/projects/{id}/settings/roles: the roles this project runs with.
+ * With no project it is the workspace's roles, the defaults for every project.
+ */
+export function RolesTab({ projectId = null }) {
+  const ORIGIN = originWords(projectId);
   const definitions = useResource(["project-definitions", projectId], (client, options) =>
     getProjectDefinitions(client, projectId, options),
   );
@@ -94,7 +98,7 @@ export function RolesTab({ projectId }) {
             key: "model",
             header: "Model",
             className: "definition__nowrap",
-            render: (role) => (role.model ? <Mono>{role.model}</Mono> : "Project default"),
+            render: (role) => (role.model ? <Mono>{role.model}</Mono> : projectId ? "Project default" : "Each project's default"),
           },
           { key: "tools", header: "Tools", render: (role) => toolsWords(role.tools) },
           { key: "ends", header: "Ends with", render: endsWords },

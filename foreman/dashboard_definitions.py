@@ -48,9 +48,13 @@ def _origin(definition_id: str, own: Mapping[str, str], shipped: frozenset[str])
     return "changed" if definition_id in shipped else "own"
 
 
-def _text(definition_id: str, own: Mapping[str, str], source_path: Path) -> str:
-    text = own.get(definition_id)
-    return text if text is not None else Path(source_path).read_text(encoding="utf-8")
+def _text(definition_id: str, own: Mapping[str, str], default: Mapping[str, str], source_path: Path) -> str:
+    """The text in force: the scope's own, else the workspace's, else the shipped file."""
+
+    for texts in (own, default):
+        if definition_id in texts:
+            return texts[definition_id]
+    return Path(source_path).read_text(encoding="utf-8")
 
 
 def _tools(role: RoleDefinition) -> dict[str, Any]:
@@ -85,7 +89,7 @@ def _describe_role(role: RoleDefinition, definitions: ProjectDefinitions) -> dic
             for workflow in definitions.workflows.values()
             if any(step.role == role.id for step in workflow.steps)
         ],
-        "text": _text(role.id, definitions.own_roles, role.source_path),
+        "text": _text(role.id, definitions.own_roles, definitions.default_roles, role.source_path),
     }
 
 
@@ -105,7 +109,7 @@ def _step_outcomes(role_id: str, roles: Mapping[str, RoleDefinition]) -> list[st
 
 
 def _describe_workflow(
-    workflow: WorkflowDefinition, definitions: ProjectDefinitions, used: bool
+    workflow: WorkflowDefinition, definitions: ProjectDefinitions, used_by: list[str]
 ) -> dict[str, Any]:
     then: dict[str, dict[str, Any]] = {}
     for transition in workflow.transitions:
@@ -118,7 +122,8 @@ def _describe_workflow(
         "id": workflow.id,
         "name": workflow.name,
         "origin": _origin(workflow.id, definitions.own_workflows, definitions.shipped_workflows),
-        "used": used,
+        "used": bool(used_by),
+        "used_by": used_by,
         "steps": [
             {
                 "id": step.id,
@@ -128,17 +133,27 @@ def _describe_workflow(
             }
             for step in workflow.steps
         ],
-        "text": _text(workflow.id, definitions.own_workflows, workflow.source_path),
+        "text": _text(workflow.id, definitions.own_workflows, definitions.default_workflows, workflow.source_path),
     }
 
 
-def describe_project_definitions(store, project_id: str) -> dict[str, Any]:
-    """Everything the editor needs: the project's roles, workflows and the words to choose from."""
+def describe_project_definitions(store, project_id: str | None) -> dict[str, Any]:
+    """Everything the editor needs: the roles, workflows and the words to choose from.
 
-    project = store.get_project(project_id)
+    For a project, what it runs with; for ``None``, the workspace's defaults,
+    each workflow with the projects that use it.
+    """
+
     definitions = project_definitions(store, project_id)
+    if project_id is None:
+        default_model = ""
+        users = store.list_projects()
+    else:
+        project = store.get_project(project_id)
+        default_model = settings_of(project).default_model or ""
+        users = [project]
     models: list[str] = []
-    for model in [settings_of(project).default_model, *(role.agent.model for role in definitions.roles.values())]:
+    for model in [default_model, *(role.agent.model for role in definitions.roles.values())]:
         if model and model not in models:
             models.append(model)
     done_by = [
@@ -151,14 +166,16 @@ def describe_project_definitions(store, project_id: str) -> dict[str, Any]:
     return {
         "roles": [_describe_role(role, definitions) for role in definitions.roles.values()],
         "workflows": [
-            _describe_workflow(workflow, definitions, used=workflow.id == project.workflow_id)
+            _describe_workflow(
+                workflow, definitions, [user.name for user in users if user.workflow_id == workflow.id]
+            )
             for workflow in definitions.workflows.values()
         ],
         "vocabulary": {
             "tools": {backend: list(names) for backend, names in KNOWN_TOOLS.items()},
             "decisions": list(DECISIONS),
             "models": models,
-            "default_model": settings_of(project).default_model or "",
+            "default_model": default_model,
             "done_by": done_by,
             "gate_policies": ["merge_approval", "plan_approval"],
         },
@@ -301,11 +318,12 @@ def _base_text(kind: str, definitions: ProjectDefinitions, definition_id: str, c
         raise DefinitionError(
             f"There is no {kind} {definition_id!r} yet. A new {kind} starts as a copy: say which one."
         )
-    return _text(source, own, loaded[source].source_path)
+    default = definitions.default_roles if kind == ROLE else definitions.default_workflows
+    return _text(source, own, default, loaded[source].source_path)
 
 
 def save_from_dashboard(
-    store, project_id: str, kind: str, definition_id: str, body: Mapping[str, Any], *, changed_by: str
+    store, project_id: str | None, kind: str, definition_id: str, body: Mapping[str, Any], *, changed_by: str
 ) -> dict[str, Any]:
     """Save one role or workflow from the editor: its text, or its form fields."""
 
@@ -327,7 +345,7 @@ def save_from_dashboard(
 
 
 def reset_from_dashboard(
-    store, project_id: str, kind: str, definition_id: str, *, changed_by: str
+    store, project_id: str | None, kind: str, definition_id: str, *, changed_by: str
 ) -> dict[str, Any]:
     left = remove_definition(store, project_id, kind, definition_id, changed_by=changed_by)
     return {"id": definition_id, "shipped": left}

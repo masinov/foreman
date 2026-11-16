@@ -99,7 +99,9 @@ export function RoleEditor({ open, projectId, role, isNew = false, vocabulary, o
         hint={
           vocabulary.default_model
             ? `Empty uses the project's default, ${vocabulary.default_model}.`
-            : "Empty uses the project's default."
+            : projectId
+              ? "Empty uses the project's default."
+              : "Empty uses each project's default."
         }
         list={modelsId}
         value={model}

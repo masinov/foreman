@@ -1,14 +1,18 @@
-"""A project's roles and workflows: the shipped ones, with the project's own over them.
+"""Roles and workflows in three layers: shipped, the workspace's, a project's.
 
-Foreman ships roles and workflows as TOML files. A project may keep its own
-under any id, as TOML text in the database (ADR-0024): one with a shipped id
-replaces the shipped definition for that project, one with a new id adds to
-them. Everything that runs or shows a project's work reads its definitions
-through :func:`project_definitions`.
+Foreman ships roles and workflows as TOML files. The workspace may keep its
+own text under any id (ADR-0024): that is the default every project starts
+from. A project may keep its own over that. One with an id from the layer
+below replaces it; one with a new id adds to it. Everything that runs or
+shows a project's work reads its definitions through
+:func:`project_definitions`; what has no project reads
+:func:`workspace_definitions`.
 
-A save is refused unless the whole set still loads afterwards, so a project
-is never left with a workflow that names a missing role or an outcome its
-role cannot produce.
+Wherever a function takes ``project_id``, ``None`` means the workspace.
+
+A save is refused unless every set it reaches still loads afterwards, so
+no project is left with a workflow that names a missing role or an outcome
+its role cannot produce.
 """
 
 from __future__ import annotations
@@ -41,15 +45,21 @@ class ProjectDefinitions:
 
     roles: dict[str, RoleDefinition]
     workflows: dict[str, WorkflowDefinition]
-    #: Ids the project keeps its own text for, and that text.
+    #: Ids this scope keeps its own text for, and that text.
     own_roles: dict[str, str] = field(default_factory=dict)
     own_workflows: dict[str, str] = field(default_factory=dict)
-    #: Ids Foreman ships (whether or not the project replaced them).
+    #: Ids the layers below define (whether or not this scope replaced them):
+    #: what Foreman ships and, for a project, what the workspace keeps.
     shipped_roles: frozenset[str] = frozenset()
     shipped_workflows: frozenset[str] = frozenset()
+    #: The workspace's text under a project's: what "back to the default" restores.
+    default_roles: dict[str, str] = field(default_factory=dict)
+    default_workflows: dict[str, str] = field(default_factory=dict)
 
 
-def _source(project_id: str, kind: str, definition_id: str) -> str:
+def _source(project_id: str | None, kind: str, definition_id: str) -> str:
+    if project_id is None:
+        return f"{kind} {definition_id!r} of the workspace"
     return f"{kind} {definition_id!r} of project {project_id!r}"
 
 
@@ -57,48 +67,66 @@ def _role_outcomes(roles: dict[str, RoleDefinition]) -> dict[str, tuple[str, ...
     return {role_id: role.completion.outcomes for role_id, role in roles.items()}
 
 
-def _assemble(
-    project_id: str, own_roles: dict[str, str], own_workflows: dict[str, str]
-) -> ProjectDefinitions:
-    """Load the shipped definitions and lay the given texts over them."""
+Texts = tuple[dict[str, str], dict[str, str]]
+
+
+def _assemble(project_id: str | None, own: Texts, default: Texts = ({}, {})) -> ProjectDefinitions:
+    """Load the shipped definitions and lay the given texts over them.
+
+    ``default`` is the workspace's texts under a project's ``own``; for the
+    workspace itself there is nothing between it and what is shipped.
+    """
+
+    own_roles, own_workflows = own
+    default_roles, default_workflows = default
+
+    def lay_roles(scope: str | None, texts: dict[str, str]) -> None:
+        for role_id, text in texts.items():
+            role = load_role_text(text, _source(scope, ROLE, role_id))
+            if role.id != role_id:
+                raise RoleLoadError(
+                    f"{_source(scope, ROLE, role_id)}: the file says its id is {role.id!r}."
+                )
+            roles[role_id] = role
+
+    def lay_workflows(scope: str | None, texts: dict[str, str]) -> None:
+        for workflow_id, text in texts.items():
+            workflow = load_workflow_text(
+                text,
+                _source(scope, WORKFLOW, workflow_id),
+                available_role_ids=set(roles),
+                role_outcomes=outcomes,
+            )
+            if workflow.id != workflow_id:
+                raise WorkflowLoadError(
+                    f"{_source(scope, WORKFLOW, workflow_id)}: the file says its id is {workflow.id!r}."
+                )
+            workflows[workflow_id] = workflow
 
     roles = load_roles()
-    shipped_roles = frozenset(roles)
-    for role_id, text in own_roles.items():
-        role = load_role_text(text, _source(project_id, ROLE, role_id))
-        if role.id != role_id:
-            raise RoleLoadError(
-                f"{_source(project_id, ROLE, role_id)}: the file says its id is {role.id!r}."
-            )
-        roles[role_id] = role
+    lay_roles(None, default_roles)
+    below_roles = frozenset(roles)
+    lay_roles(project_id, own_roles)
 
     outcomes = _role_outcomes(roles)
     workflows = load_workflows(available_role_ids=set(roles), role_outcomes=outcomes)
-    shipped_workflows = frozenset(workflows)
-    for workflow_id, text in own_workflows.items():
-        workflow = load_workflow_text(
-            text,
-            _source(project_id, WORKFLOW, workflow_id),
-            available_role_ids=set(roles),
-            role_outcomes=outcomes,
-        )
-        if workflow.id != workflow_id:
-            raise WorkflowLoadError(
-                f"{_source(project_id, WORKFLOW, workflow_id)}: the file says its id is {workflow.id!r}."
-            )
-        workflows[workflow_id] = workflow
+    lay_workflows(None, default_workflows)
+    below_workflows = frozenset(workflows)
+    lay_workflows(project_id, own_workflows)
 
     return ProjectDefinitions(
         roles=roles,
         workflows=workflows,
         own_roles=dict(own_roles),
         own_workflows=dict(own_workflows),
-        shipped_roles=shipped_roles,
-        shipped_workflows=shipped_workflows,
+        shipped_roles=below_roles,
+        shipped_workflows=below_workflows,
+        default_roles=dict(default_roles),
+        default_workflows=dict(default_workflows),
     )
 
 
-def _own_texts(store: ForemanStore, project_id: str) -> tuple[dict[str, str], dict[str, str]]:
+def _own_texts(store: ForemanStore, project_id: str | None) -> Texts:
     own_roles: dict[str, str] = {}
     own_workflows: dict[str, str] = {}
     for stored in store.current_definitions(project_id):
@@ -106,25 +134,54 @@ def _own_texts(store: ForemanStore, project_id: str) -> tuple[dict[str, str], di
     return own_roles, own_workflows
 
 
-def project_definitions(store: ForemanStore, project_id: str) -> ProjectDefinitions:
-    """Return the roles and workflows a project runs with.
+def _default_texts(store: ForemanStore, project_id: str | None) -> Texts:
+    """What lies between the shipped files and this scope: the workspace's, under a project."""
+
+    return ({}, {}) if project_id is None else _own_texts(store, None)
+
+
+def project_definitions(store: ForemanStore, project_id: str | None) -> ProjectDefinitions:
+    """Return the roles and workflows a project runs with (the workspace's for ``None``).
 
     Raises :class:`RoleLoadError` or :class:`WorkflowLoadError` when a
     definition does not load.
     """
 
-    own_roles, own_workflows = _own_texts(store, project_id)
-    return _assemble(project_id, own_roles, own_workflows)
+    return _assemble(project_id, _own_texts(store, project_id), _default_texts(store, project_id))
 
 
-def _checked(project_id: str, own_roles: dict[str, str], own_workflows: dict[str, str]) -> ProjectDefinitions:
+def workspace_definitions(store: ForemanStore) -> ProjectDefinitions:
+    """The defaults: what Foreman ships with the workspace's own over it."""
+
+    return project_definitions(store, None)
+
+
+def _checked(store: ForemanStore, project_id: str | None, own: Texts) -> ProjectDefinitions:
+    """Load the scope with these texts, and every project a workspace change reaches."""
+
     try:
-        return _assemble(project_id, own_roles, own_workflows)
+        definitions = _assemble(project_id, own, _default_texts(store, project_id))
     except (RoleLoadError, WorkflowLoadError) as exc:
         raise DefinitionError(str(exc)) from exc
+    if project_id is None:
+        for project in store.list_projects():
+            try:
+                theirs = _assemble(project.id, _own_texts(store, project.id), own)
+            except (RoleLoadError, WorkflowLoadError) as exc:
+                raise DefinitionError(
+                    f"Project {project.id!r} would no longer load with this change: {exc}"
+                ) from exc
+            if project.workflow_id not in theirs.workflows:
+                raise DefinitionError(
+                    f"Project {project.id!r} uses workflow {project.workflow_id!r}. "
+                    "Change the project's workflow first."
+                )
+    return definitions
 
 
-def _require_project(store: ForemanStore, project_id: str):
+def _require_project(store: ForemanStore, project_id: str | None):
+    if project_id is None:
+        return None
     project = store.get_project(project_id)
     if project is None:
         raise DefinitionError(f"Project {project_id!r} was not found.")
@@ -166,13 +223,13 @@ def check_role_says_how_to_end(role: RoleDefinition) -> None:
 
 def save_role(
     store: ForemanStore,
-    project_id: str,
+    project_id: str | None,
     text: str,
     *,
     changed_by: str,
     expected_id: str | None = None,
 ) -> RoleDefinition:
-    """Save a role for one project, under the id the text gives."""
+    """Save a role for one project or the workspace, under the id the text gives."""
 
     _require_project(store, project_id)
     try:
@@ -187,7 +244,7 @@ def save_role(
         )
     own_roles, own_workflows = _own_texts(store, project_id)
     own_roles[role.id] = text
-    definitions = _checked(project_id, own_roles, own_workflows)
+    definitions = _checked(store, project_id, (own_roles, own_workflows))
     store.add_definition_revision(
         project_id=project_id,
         kind=ROLE,
@@ -202,17 +259,17 @@ def save_role(
 
 def save_workflow(
     store: ForemanStore,
-    project_id: str,
+    project_id: str | None,
     text: str,
     *,
     changed_by: str,
     expected_id: str | None = None,
 ) -> WorkflowDefinition:
-    """Save a workflow for one project, under the id the text gives."""
+    """Save a workflow for one project or the workspace, under the id the text gives."""
 
     _require_project(store, project_id)
     own_roles, own_workflows = _own_texts(store, project_id)
-    current = _checked(project_id, own_roles, own_workflows)
+    current = _checked(store, project_id, (own_roles, own_workflows))
     try:
         workflow = load_workflow_text(
             text,
@@ -228,7 +285,7 @@ def save_workflow(
             f"A workflow id is lower-case letters, digits and underscores, starting with a letter; got {workflow.id!r}."
         )
     own_workflows[workflow.id] = text
-    definitions = _checked(project_id, own_roles, own_workflows)
+    definitions = _checked(store, project_id, (own_roles, own_workflows))
     store.add_definition_revision(
         project_id=project_id,
         kind=WORKFLOW,
@@ -242,25 +299,24 @@ def save_workflow(
 
 
 def remove_definition(
-    store: ForemanStore, project_id: str, kind: str, definition_id: str, *, changed_by: str
+    store: ForemanStore, project_id: str | None, kind: str, definition_id: str, *, changed_by: str
 ) -> bool:
-    """Drop the project's own text for one definition.
+    """Drop the scope's own text for one definition.
 
-    A shipped id goes back to the shipped definition; any other id is gone.
-    Returns whether a shipped definition is left under the id.
+    An id the layer below defines goes back to that definition; any other
+    id is gone. Returns whether a definition is left under the id.
     """
 
     project = _require_project(store, project_id)
     own_roles, own_workflows = _own_texts(store, project_id)
     own = own_roles if kind == ROLE else own_workflows
     if definition_id not in own:
-        raise DefinitionError(
-            f"Project {project_id!r} keeps no {kind} of its own called {definition_id!r}."
-        )
+        keeper = "The workspace" if project_id is None else f"Project {project_id!r}"
+        raise DefinitionError(f"{keeper} keeps no {kind} of its own called {definition_id!r}.")
     del own[definition_id]
-    definitions = _checked(project_id, own_roles, own_workflows)
+    definitions = _checked(store, project_id, (own_roles, own_workflows))
     left = definition_id in (definitions.roles if kind == ROLE else definitions.workflows)
-    if kind == WORKFLOW and not left and project.workflow_id == definition_id:
+    if project is not None and kind == WORKFLOW and not left and project.workflow_id == definition_id:
         raise DefinitionError(
             f"Project {project_id!r} uses workflow {definition_id!r}. Change the project's workflow first."
         )

@@ -28,6 +28,12 @@ export const ORIGIN = {
   own: "this project's own",
 };
 
+/** The same for the workspace's defaults, which belong to no project. */
+export const DEFAULT_ORIGIN = { shipped: "", changed: "changed", own: "added" };
+
+/** The origin words for a scope: a project's id, or null for the workspace. */
+export const originWords = (projectId) => (projectId ? ORIGIN : DEFAULT_ORIGIN);
+
 const OUTCOME = {
   "_builtin:run_tests": { success: "the tests pass", failure: "the tests fail" },
   "_builtin:merge": { success: "it merges", conflict: "there is a conflict", failure: "the merge fails" },

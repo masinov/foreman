@@ -48,6 +48,8 @@ refuses).
 - "Developer (worker fleet)" is a shipped role no workflow uses.
 - The test command and the other "This machine" values can only be changed
   from a terminal.
+- `foreman role|workflow set` cannot change a workspace default; `foreman
+  init` and the Runners list read the shipped files only.
 
 ## Dashboard follow-ups (after sprint 58)
 

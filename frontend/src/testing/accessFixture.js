@@ -1,4 +1,5 @@
 // API answers for workspace settings and the user menu, on top of the workspace's.
+import { definitionsPayload } from "./settingsFixture";
 import { DEVELOPMENT, LIGHT } from "./settingsFixture";
 import { workspaceRoutes } from "./workspaceFixture";
 
@@ -88,6 +89,7 @@ export function accessRoutes({ tokens = [TOKEN, REVOKED_TOKEN], channels = [CHAN
     ...workspaceRoutes(),
     "GET /api/v1/workflows": { workflows: [DEVELOPMENT, LIGHT] },
     "GET /api/v1/roles": { roles: ROLES },
+    "GET /api/v1/definitions": definitionsPayload({ usedBy: ["Foreman", "Other project"] }),
     "GET /api/v1/tokens": { tokens, scopes: ["intake"] },
     "GET /api/v1/notification-channels": { channels, kinds: ["webhook"] },
     "GET /api/v1/runners": { runners: RUNNERS },

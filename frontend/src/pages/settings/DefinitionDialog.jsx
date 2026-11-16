@@ -97,7 +97,7 @@ export function DefinitionDialog({
                 disabled={busy}
                 onClick={() => act(() => resetDefinition(client, projectId, kind, definition.id))}
               >
-                Back to the shipped {kind}
+                {projectId ? `Back to the default ${kind}` : `Back to the shipped ${kind}`}
               </Button>
             ) : null}
             {origin === "own" ? (

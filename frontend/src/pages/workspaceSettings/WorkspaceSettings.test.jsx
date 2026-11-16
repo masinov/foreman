@@ -1,7 +1,8 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 
 import { createFakeFetch, renderApp, reply } from "../../testing/fakeApi";
-import { accessRoutes, CHANNEL, MACHINE, ROLES, RUNNERS, TOKEN } from "../../testing/accessFixture";
+import { accessRoutes, CHANNEL, MACHINE, RUNNERS, TOKEN } from "../../testing/accessFixture";
+import { definitionsPayload, editableRole } from "../../testing/settingsFixture";
 
 function section(name) {
   return screen.getByRole("region", { name });
@@ -21,7 +22,7 @@ describe("Workspace settings", () => {
     expect(screen.getByRole("heading", { name: "Workspace settings", level: 1 })).toBeInTheDocument();
     expect(
       screen.getAllByRole("heading", { level: 2 }).map((heading) => heading.textContent),
-    ).toEqual(["Defaults for projects", "Access", "Notification channels", "Runners", "This machine"]);
+    ).toEqual(["Defaults for projects", "Workflows", "Roles", "Access", "Notification channels", "Runners", "This machine"]);
     const crumbs = screen.getByRole("navigation", { name: "Breadcrumb" });
     // The wordmark is the way to the workspace; the breadcrumb names this page.
     expect(within(crumbs).getByText("Workspace settings")).toHaveAttribute("aria-current", "page");
@@ -29,40 +30,56 @@ describe("Workspace settings", () => {
   });
 
   describe("defaults for projects", () => {
-    it("lists workflows with the projects that use each, and the roles, with no create buttons", async () => {
+    const sent = (fetchImpl, method) => fetchImpl.calls.filter((call) => call.method === method);
+
+    it("lists the workflows with the projects that use each, and the roles", async () => {
       await openPage();
       const defaults = section("Defaults for projects");
       const workflows = within(within(defaults).getByRole("table", { name: "Workflows" }));
-      const development = workflows.getByText("development").closest("tr");
+      const development = workflows.getByText("Standard Development").closest("tr");
       expect(within(development).getByText("Foreman, Other project")).toBeInTheDocument();
-      const light = workflows.getByText("light").closest("tr");
+      const light = workflows.getByText("Light Review").closest("tr");
       expect(within(light).getByText("No project")).toBeInTheDocument();
       const roles = within(within(defaults).getByRole("table", { name: "Roles" }));
-      expect(roles.getByText("developer")).toBeInTheDocument();
-      expect(roles.getByText("code_reviewer")).toBeInTheDocument();
-      expect(within(defaults).queryByRole("button", { name: /new (workflow|role)/i })).toBeNull();
+      expect(roles.getByText("Developer")).toBeInTheDocument();
+      expect(roles.getByText("Each project's default")).toBeInTheDocument();
+      expect(within(defaults).getByRole("button", { name: "New workflow" })).toBeInTheDocument();
+      expect(within(defaults).getByRole("button", { name: "New role" })).toBeInTheDocument();
     });
 
-    it("opens a role read-only with the file it comes from", async () => {
-      await openPage();
-      fireEvent.click(screen.getByRole("button", { name: "Open role code_reviewer" }));
-      const dialog = screen.getByRole("dialog", { name: "Code Reviewer" });
-      expect(within(dialog).getByText(/Reviews completed work/)).toBeInTheDocument();
-      expect(within(dialog).getByText("claude-sonnet-5-5")).toBeInTheDocument();
-      expect(within(dialog).getByText("30 minutes")).toBeInTheDocument();
-      expect(within(dialog).getByText(ROLES[1].source_path)).toBeInTheDocument();
-      expect(within(dialog).queryByRole("textbox")).toBeNull();
-      fireEvent.keyDown(dialog, { key: "Escape" });
-      expect(screen.queryByRole("dialog")).toBeNull();
+    it("edits a role and saves it as the workspace's", async () => {
+      const fetchImpl = await openPage();
+      fetchImpl.routes["PUT /api/v1/roles/code_reviewer"] = definitionsPayload();
+      fireEvent.click(screen.getByRole("button", { name: "Edit role Code Reviewer" }));
+      const dialog = await screen.findByRole("dialog", { name: "Code Reviewer" });
+      fireEvent.change(within(dialog).getByLabelText("Model"), { target: { value: "claude-opus-5-5" } });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+      await waitFor(() => expect(sent(fetchImpl, "PUT")).toHaveLength(1));
+      expect(sent(fetchImpl, "PUT")[0].url).toMatch(/\/api\/v1\/roles\/code_reviewer$/);
+      expect(sent(fetchImpl, "PUT")[0].body.fields.model).toBe("claude-opus-5-5");
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     });
 
-    it("opens a workflow read-only with its steps and its file", async () => {
-      await openPage();
-      fireEvent.click(screen.getByRole("button", { name: "Open workflow development" }));
-      const dialog = screen.getByRole("dialog", { name: "Standard Development" });
-      const steps = within(dialog).getByRole("table", { name: "Steps of Standard Development" });
-      expect(within(steps).getByText("Merge approval")).toBeInTheDocument();
-      expect(within(dialog).getByText("/srv/foreman/foreman/data/workflows/development.toml")).toBeInTheDocument();
+    it("edits a workflow's steps and saves them as the workspace's", async () => {
+      const fetchImpl = await openPage();
+      fetchImpl.routes["PUT /api/v1/workflows/development"] = definitionsPayload();
+      fireEvent.click(screen.getByRole("button", { name: "Edit workflow Standard Development" }));
+      const dialog = await screen.findByRole("dialog", { name: "Standard Development" });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+      await waitFor(() => expect(sent(fetchImpl, "PUT")).toHaveLength(1));
+      expect(sent(fetchImpl, "PUT")[0].url).toMatch(/\/api\/v1\/workflows\/development$/);
+    });
+
+    it("offers the way back to the shipped role for one the workspace changed", async () => {
+      const routes = accessRoutes();
+      routes["GET /api/v1/definitions"] = definitionsPayload({ roles: [editableRole({ origin: "changed" })] });
+      await openPage(routes);
+      expect(screen.getByText("changed")).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Edit role Code Reviewer" }));
+      const dialog = await screen.findByRole("dialog", { name: "Code Reviewer" });
+      expect(within(dialog).getByRole("button", { name: "Back to the shipped role" })).toBeInTheDocument();
     });
   });
 

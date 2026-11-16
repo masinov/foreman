@@ -884,4 +884,24 @@ MIGRATIONS: list[tuple[int, str, str]] = [
           );
         """,
     ),
+    (
+        27,
+        "workspace_definitions: the defaults every project starts from, editable",
+        """
+        -- The workspace's own text for a role or workflow (ADR-0024,
+        -- amendment of 2026-11-16). It is loaded over the definition Foreman
+        -- ships under the same id, and under any project's own. Revisions
+        -- as in `definitions`.
+        CREATE TABLE IF NOT EXISTS workspace_definitions (
+            kind            TEXT NOT NULL CHECK (kind IN ('role', 'workflow')),
+            definition_id   TEXT NOT NULL,
+            revision        INTEGER NOT NULL,
+            body            TEXT NOT NULL,
+            removed         INTEGER NOT NULL DEFAULT 0,
+            changed_by      TEXT NOT NULL,
+            changed_at      TEXT NOT NULL,
+            PRIMARY KEY (kind, definition_id, revision)
+        );
+        """,
+    ),
 ]

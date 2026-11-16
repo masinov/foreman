@@ -29,22 +29,11 @@
   white-space: nowrap;
 }
 
-/* Workflows beside roles, wrapping to one column when there is no room. */
+/* The workspace's workflows, then its roles, each with its own heading. */
 .definitions {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: var(--space-4) var(--space-7);
-}
-
-.definitions__workflows {
-  flex: 3 1 var(--definitions-workflows-basis);
-  min-width: 0;
-}
-
-.definitions__roles {
-  flex: 2 1 var(--definitions-roles-basis);
-  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-6);
 }
 
 .machine {
