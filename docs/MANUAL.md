@@ -915,20 +915,26 @@ Two related knobs:
 
 - **`Project.autonomy_level`** (`directed` / `supervised` / `autonomous`)
   governs how far the engine advances on its own:
-  - `directed` — completes the active sprint and stops; the human starts the
-    next.
-  - `supervised` — same, but emits `engine.sprint_ready` to surface the next
-    queued sprint.
-  - `autonomous` — auto-activates the next planned sprint and keeps going until
-    work is exhausted.
+  - `directed` and `supervised` — the engine never finishes a sprint
+    (ADR-0025). When every task is `done` or `cancelled` the sprint stays
+    `active`, the pass stops with `sprint_resolved`, and one `sprint_resolved`
+    attention turn (with `engine.sprint_ready`) says it is ready to be
+    finished. Later passes over the same resolved sprint add nothing; a task
+    added to it is run, and the turn is raised again once it is resolved. A
+    person finishes the sprint (dashboard "Finish sprint", `foreman sprint
+    complete`, or a confirmed `finish_sprint` proposal); the next pass then
+    activates the next planned sprint.
+  - `autonomous` — completes the resolved sprint (`engine.sprint_completed`),
+    activates the next planned sprint and keeps going; when there is none it
+    stops `idle` with the `sprint_resolved` turn.
 - **`task_selection_mode`** setting (`directed` / `autonomous`): in
   `autonomous` mode the engine may select and start orchestrator-created tasks,
   which must satisfy the autonomous contract (emit `signal.task_started` with
   title, branch, and acceptance criteria) or they are blocked.
 
-When a sprint resolves and the engine stops (the non-auto-advance paths), it
-raises a `sprint_resolved` supervision turn so the manager can decide the next
-move.
+When a sprint resolves and the engine stops (a directed or supervised sprint
+left active, or an autonomous project with no further sprint), it raises a
+`sprint_resolved` supervision turn so the manager can decide the next move.
 
 ---
 
@@ -1326,7 +1332,7 @@ Events are the append-only truth of what happened. Families:
   `task_created`, `merge`/`merge_blocked`/`merge_conflict`, `branch_violation`,
   `quota_exhausted` (the backend's usage window ran out; the task is paused
   at its step with `retry_after`),
-  `sprint_started`/`sprint_ready`/`sprint_completed`, `attention_needed`,
+  `sprint_started`/`sprint_ready` (a directed or supervised sprint is fully resolved and waits for a person)/`sprint_completed` (autonomous projects only), `attention_needed`,
   `crash_recovery`, `event_pruned`/`run_pruned`, `test_run`/`test_output`,
   `command_applied`/`command_rejected` (one per engine command, carrying
   `command_id`, `command`, `requested_by`, `task_id`, and `detail`).

@@ -80,7 +80,7 @@ class AgentStepTests(OrchestratorTestCase):
 
             result = orchestrator.run_project(project.id)
 
-            self.assertEqual(result.stop_reason, "idle")
+            self.assertEqual(result.stop_reason, "sprint_resolved")
             self.assertEqual(executor.call_counts["developer"], 2)
             final_task = store.get_task(task.id)
             assert final_task is not None
@@ -159,7 +159,7 @@ class AgentStepTests(OrchestratorTestCase):
 
             result = orchestrator.run_project(project.id)
 
-            self.assertEqual(result.stop_reason, "idle")
+            self.assertEqual(result.stop_reason, "sprint_resolved")
             self.assertEqual(executor.call_counts["code_reviewer"], 2)
             final_task = store.get_task(task.id)
             assert final_task is not None
@@ -197,7 +197,7 @@ class AgentStepTests(OrchestratorTestCase):
             result = orchestrator.run_project(project.id)
 
             self.assertEqual(result.executed_task_ids, (task.id,))
-            self.assertEqual(result.stop_reason, "idle")
+            self.assertEqual(result.stop_reason, "sprint_resolved")
             updated_task = store.get_task(task.id)
             self.assertIsNotNone(updated_task)
             assert updated_task is not None
@@ -542,7 +542,7 @@ class AgentStepTests(OrchestratorTestCase):
 
             result = orchestrator.run_project(project.id)
 
-            self.assertEqual(result.stop_reason, "idle")
+            self.assertEqual(result.stop_reason, "sprint_resolved")
             self.assertEqual(runner.capture(1).session_id, None)
             self.assertEqual(runner.capture(3).session_id, "dev-session")
             self.assertIn("Please add the ready marker.", runner.capture(3).prompt)
@@ -608,7 +608,7 @@ class AgentStepTests(OrchestratorTestCase):
 
             result = resume_orchestrator.run_project(project.id)
 
-            self.assertEqual(result.stop_reason, "idle")
+            self.assertEqual(result.stop_reason, "sprint_resolved")
             self.assertEqual(runner.capture(1).session_id, "persisted-dev-session")
             updated_task = store.get_task(task.id)
             self.assertIsNotNone(updated_task)
@@ -677,7 +677,7 @@ class AgentStepTests(OrchestratorTestCase):
 
             result = resume_orchestrator.run_project(project.id)
 
-            self.assertEqual(result.stop_reason, "idle")
+            self.assertEqual(result.stop_reason, "sprint_resolved")
             self.assertIsNone(runner.capture(1).session_id)
             updated_task = store.get_task(task.id)
             self.assertIsNotNone(updated_task)
@@ -820,7 +820,7 @@ class AgentStepTests(OrchestratorTestCase):
 
             result = orchestrator.run_project(project.id)
 
-            self.assertEqual(result.stop_reason, "idle")
+            self.assertEqual(result.stop_reason, "sprint_resolved")
             updated_task = store.get_task(task.id)
             assert updated_task is not None
             self.assertEqual(updated_task.status, "done")
@@ -911,7 +911,7 @@ class AgentStepTests(OrchestratorTestCase):
 
             result = orchestrator.run_project(project.id)
 
-            self.assertEqual(result.stop_reason, "idle")
+            self.assertEqual(result.stop_reason, "sprint_resolved")
             self.assertEqual(runner.capture(1).timeout_seconds, 420)
             self.assertEqual(runner.capture(2).timeout_seconds, 420)
 
@@ -1060,7 +1060,7 @@ class AgentStepTests(OrchestratorTestCase):
             result = orchestrator.run_project(project.id)
 
             self.assertEqual(result.executed_task_ids, (task.id,))
-            self.assertEqual(result.stop_reason, "idle")
+            self.assertEqual(result.stop_reason, "sprint_resolved")
             updated_task = store.get_task(task.id)
             self.assertIsNotNone(updated_task)
             assert updated_task is not None
@@ -1118,7 +1118,7 @@ class AgentStepTests(OrchestratorTestCase):
 
             result = orchestrator.run_project(project.id)
 
-            self.assertEqual(result.stop_reason, "idle")
+            self.assertEqual(result.stop_reason, "sprint_resolved")
             self.assertEqual(runner.capture(1).session_id, None)
             self.assertEqual(runner.capture(3).session_id, "dev-session")
             self.assertIn("Please add the ready marker.", runner.capture(3).prompt)
@@ -1181,7 +1181,7 @@ class AgentStepTests(OrchestratorTestCase):
 
             result = resume_orchestrator.run_project(project.id)
 
-            self.assertEqual(result.stop_reason, "idle")
+            self.assertEqual(result.stop_reason, "sprint_resolved")
             self.assertEqual(runner.capture(1).session_id, "persisted-thread-123")
             updated_task = store.get_task(task.id)
             self.assertIsNotNone(updated_task)

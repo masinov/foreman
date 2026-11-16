@@ -48,6 +48,6 @@ project's autonomy level is autonomous.
 - Autonomous behaviour is unchanged.
 - Not decided here: reopening a completed sprint, and the checkpoint actions of
   section 6.4 themselves.
-- Code and tests follow in the next tasks of sprint 60b; until they land the
-  engine still completes a resolved sprint at every level. This is a known gap,
-  recorded in `docs/STATUS.md`.
+- Implemented in `SprintFlow.resolve`. `engine.sprint_ready` is emitted once
+  per resolution of a directed or supervised sprint, with the resolving task
+  ids, and is the dedupe key for the `sprint_resolved` attention turn.

@@ -392,7 +392,7 @@ class HumanGateTests(OrchestratorTestCase):
             result = runner_orchestrator.run_project(project.id)
 
             self.assertEqual(result.executed_task_ids, (task.id,))
-            self.assertEqual(result.stop_reason, "idle")
+            self.assertEqual(result.stop_reason, "sprint_resolved")
             final_task = store.get_task(task.id)
             self.assertIsNotNone(final_task)
             assert final_task is not None

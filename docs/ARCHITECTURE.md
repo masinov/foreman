@@ -90,6 +90,15 @@ aggregate (`projects`, `sprints`, `tasks`, `runs`, `events`, `gates`, `meta`,
 
 Foreman's runtime source of truth is SQLite.
 
+Sprint lifecycle at the end of a sprint (ADR-0025, `SprintFlow.resolve`): when
+every task of the active sprint is `done` or `cancelled`, an autonomous project
+has the sprint completed by the engine (`engine.sprint_completed`) and the next
+planned sprint activated, or stops `idle` with a `sprint_resolved` attention
+turn. A directed or supervised project keeps the sprint `active`; the pass stops
+with `sprint_resolved`, and `engine.sprint_ready` plus one attention turn are
+recorded once per resolution (not on every pass). Only a person finishes it, via
+`MutationService.transition_sprint`.
+
 Primary persisted entities:
 
 - projects

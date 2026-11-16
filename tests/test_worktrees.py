@@ -1079,7 +1079,7 @@ class EngineWorktreeIsolationTests(unittest.TestCase):
             result = orchestrator.run_project(project.id)
 
             self.assertEqual(
-                result.stop_reason, "idle", store.get_task(task.id).blocked_reason
+                result.stop_reason, "sprint_resolved", store.get_task(task.id).blocked_reason
             )
             self.assertEqual(store.get_task(task.id).status, "done")
 
@@ -1354,7 +1354,7 @@ class EngineWorktreeIsolationTests(unittest.TestCase):
             result = orchestrator.run_project(project.id)
 
             self.assertEqual(
-                result.stop_reason, "idle", store.get_task(task.id).blocked_reason
+                result.stop_reason, "sprint_resolved", store.get_task(task.id).blocked_reason
             )
             self.assertEqual(store.get_task(task.id).status, "done")
 
@@ -1377,7 +1377,7 @@ class EngineWorktreeIsolationTests(unittest.TestCase):
             result = orchestrator.run_project(project.id)
 
             self.assertEqual(
-                result.stop_reason, "idle", store.get_task(task.id).blocked_reason
+                result.stop_reason, "sprint_resolved", store.get_task(task.id).blocked_reason
             )
             self.assertEqual(store.get_task(task.id).status, "done")
 

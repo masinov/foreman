@@ -191,7 +191,7 @@ class WorkflowExecutionTests(OrchestratorTestCase):
 
             self.assertEqual(result.executed_task_ids, (task.id,))
             self.assertEqual(result.blocked_task_ids, ())
-            self.assertEqual(result.stop_reason, "idle")
+            self.assertEqual(result.stop_reason, "sprint_resolved")
 
             updated_task = store.get_task(task.id)
             self.assertIsNotNone(updated_task)
@@ -339,7 +339,7 @@ class WorkflowExecutionTests(OrchestratorTestCase):
             result = orchestrator.run_project(project.id)
 
             self.assertEqual(result.executed_task_ids, (task.id,))
-            self.assertEqual(result.stop_reason, "idle")
+            self.assertEqual(result.stop_reason, "sprint_resolved")
 
             updated_task = store.get_task(task.id)
             self.assertIsNotNone(updated_task)
@@ -1034,7 +1034,7 @@ class WorkflowExecutionTests(OrchestratorTestCase):
 
             result = orchestrator.run_project(project.id)
 
-            self.assertEqual(result.stop_reason, "idle")
+            self.assertEqual(result.stop_reason, "sprint_resolved")
             context_text = (repo_path / ".foreman" / "context.md").read_text(encoding="utf-8")
             status_text = (repo_path / ".foreman" / "status.md").read_text(encoding="utf-8")
             self.assertIn("* [done] Implement orchestrator loop (task-1)", context_text)
