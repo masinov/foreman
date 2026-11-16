@@ -247,9 +247,9 @@ class WorkspaceReader:
     def _gate_steps(self, project: Project) -> WorkflowGateSteps:
         # Resolving a workflow reads every role and workflow TOML, so each
         # distinct workflow is resolved once per request.
-        if project.workflow_id not in self._gates:
-            self._gates[project.workflow_id] = resolve_gate_steps(project.workflow_id)
-        return self._gates[project.workflow_id]
+        if project.id not in self._gates:
+            self._gates[project.id] = resolve_gate_steps(self.store, project)
+        return self._gates[project.id]
 
     def _sprint_titles(self, sprint_ids: set[str]) -> dict[str, str]:
         return self.store.sprint_titles(sorted(sprint_ids))

@@ -10,6 +10,7 @@ from typing import Any
 from uuid import uuid4
 
 from .builtins import BuiltinExecutor
+from .definitions import project_definitions
 from .context import (
     build_project_context,
 )
@@ -121,6 +122,9 @@ class ForemanOrchestrator:
             )
         )
         self.store = store
+        #: Definitions handed in (tests, embedding) are used as they are;
+        #: otherwise each project's own are loaded when its work starts.
+        self._definitions_given = roles is not None or workflows is not None
         self.roles = loaded_roles
         self.evidence = EvidenceBuilder(self.store, self.roles)
         self.workflows = loaded_workflows
@@ -251,6 +255,22 @@ class ForemanOrchestrator:
         """Pick and lease the next runnable task (see ``engine.selection``)."""
 
         return self.selector.select_next_task(project)
+
+    def use_project_definitions(self, project_id: str) -> None:
+        """Run with this project's roles and workflows (ADR-0024).
+
+        The dictionaries are changed in place: the parts of the engine that
+        were handed them see the project's definitions without being rebuilt.
+        A definition that does not load raises, like a broken shipped file.
+        """
+
+        if self._definitions_given:
+            return
+        definitions = project_definitions(self.store, project_id)
+        self.roles.clear()
+        self.roles.update(definitions.roles)
+        self.workflows.clear()
+        self.workflows.update(definitions.workflows)
 
     def recover_orphaned_tasks(self, project_id: str) -> None:
         """Reset tasks an earlier engine left mid-work (see ``engine.recovery``)."""
@@ -911,6 +931,7 @@ class ForemanOrchestrator:
     # ── Sprint advancement ────────────────────────────────────────────────────
 
     def _load_workflow_for_project(self, project: Project) -> WorkflowDefinition:
+        self.use_project_definitions(project.id)
         workflow = self.workflows.get(project.workflow_id)
         if workflow is None:
             raise OrchestratorError(

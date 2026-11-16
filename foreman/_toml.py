@@ -14,6 +14,15 @@ except ModuleNotFoundError:  # pragma: no cover - exercised on Python 3.10.
         from pip._vendor import tomli as tomllib  # type: ignore[no-redef]
 
 
+def load_toml_text(text: str) -> dict[str, Any]:
+    """Parse TOML text into a dictionary."""
+
+    return tomllib.loads(text)
+
+
+TOMLDecodeError = tomllib.TOMLDecodeError
+
+
 def load_toml_file(path: str | Path) -> dict[str, Any]:
     """Load one TOML file into a dictionary."""
 

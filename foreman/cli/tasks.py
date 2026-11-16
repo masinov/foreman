@@ -63,7 +63,7 @@ def handle_task_show(args: argparse.Namespace) -> int:
     active_run = next((run for run in reversed(runs) if run.status == "running"), None)
     latest_event = events[-1] if events else None
     kind = blocked_kind(
-        task, resolve_gate_steps(project.workflow_id if project is not None else None)
+        task, resolve_gate_steps(store, project)
     )
 
     lines = [

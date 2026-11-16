@@ -14,6 +14,7 @@ from ..proposals import manager_session
 from . import (
     backlog,
     catalog,
+    definitions,
     db,
     engine,
     gates,
@@ -41,6 +42,10 @@ MANAGER_SESSION_COMMANDS: frozenset[str] = frozenset(
         "projects",
         "roles",
         "workflows",
+        "role list",
+        "role show",
+        "workflow list",
+        "workflow show",
         "task show",
         "task list",
         "sprint list",
@@ -106,6 +111,8 @@ def build_parser() -> argparse.ArgumentParser:
     gates.register_revoke_waiver(subparsers)
     catalog.register_roles(subparsers)
     catalog.register_workflows(subparsers)
+    definitions.register_role(subparsers)
+    definitions.register_workflow(subparsers)
     projects.register_config(subparsers)
     db.register_db(subparsers)
     engine.register_dashboard(subparsers)

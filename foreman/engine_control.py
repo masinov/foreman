@@ -105,31 +105,26 @@ class WorkflowGateSteps:
 UNKNOWN_WORKFLOW = WorkflowGateSteps(step_ids=None)
 
 
-def resolve_gate_steps(workflow_id: str | None) -> WorkflowGateSteps:
-    """Return the human-gate steps of one workflow, tolerating load failures.
+def resolve_gate_steps(store: "ForemanStore", project: Project | None) -> WorkflowGateSteps:
+    """Return the human-gate steps of a project's workflow, tolerating load failures.
 
-    A workflow that will not load must not take a dashboard or a board listing
-    down with it, so every failure resolves to :data:`UNKNOWN_WORKFLOW`.
+    The workflow is the project's own when it keeps one under that id
+    (ADR-0024). A workflow that will not load must not take a dashboard or a
+    board listing down with it, so every failure resolves to
+    :data:`UNKNOWN_WORKFLOW`.
     """
 
-    if not workflow_id:
+    if project is None or not project.workflow_id:
         return UNKNOWN_WORKFLOW
 
-    from .roles import load_roles
-    from .workflows import load_workflows
+    from .definitions import project_definitions
 
     try:
-        roles = load_roles()
-        workflows = load_workflows(
-            available_role_ids=set(roles),
-            role_outcomes={
-                role_id: role.completion.outcomes for role_id, role in roles.items()
-            },
-        )
+        workflows = project_definitions(store, project.id).workflows
     except Exception:  # noqa: BLE001 - a broken definition must not hide tasks
         return UNKNOWN_WORKFLOW
 
-    workflow = workflows.get(workflow_id)
+    workflow = workflows.get(project.workflow_id)
     if workflow is None:
         return UNKNOWN_WORKFLOW
     return WorkflowGateSteps(

@@ -16,6 +16,7 @@ connection and write helper in ``base``:
 - ``tokens``: ``ApiTokenStore``
 - ``notifications``: ``NotificationStore``
 - ``proposals``: ``ProposalStore``, the manager's proposals (ADR-0022)
+- ``definitions``: ``DefinitionStore``, a project's own roles and workflows (ADR-0024)
 - ``overview``: ``OverviewStore``, the grouped cross-project reads
 """
 
@@ -23,6 +24,7 @@ from __future__ import annotations
 
 from .base import ENGINE_RESOURCE_TYPE, MigrationError, StoreBase, _SCHEMA_MIGRATIONS_DDL
 from .commands import EngineCommandStore
+from .definitions import DefinitionStore
 from .events import EventStore
 from .gates import GateStore
 from .leases import LeaseStore
@@ -51,6 +53,7 @@ class ForemanStore(
     ApiTokenStore,
     NotificationStore,
     ProposalStore,
+    DefinitionStore,
     OverviewStore,
 ):
     """Persist and query Foreman entities in SQLite."""

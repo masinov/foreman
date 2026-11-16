@@ -23,7 +23,7 @@ from .models import CompletionEvidence, Project, Task, utc_now_text
 from .notifications import resolve_notification_policy
 from .runner.process import ManagedProcess
 from .engine.evidence import EvidenceBuilder
-from .roles import load_roles
+from .definitions import project_definitions
 from .settings import settings_of
 from .worktrees import WorktreeError, WorktreeManager
 
@@ -663,7 +663,7 @@ class BuiltinExecutor:
                 return evidence_builder(task, project)
             if store is None:
                 return None
-            return EvidenceBuilder(store, load_roles()).build(task, project)
+            return EvidenceBuilder(store, project_definitions(store, project.id).roles).build(task, project)
         except Exception:  # pragma: no cover - guard logic must not crash execution
             return None
 

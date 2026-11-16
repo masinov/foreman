@@ -188,7 +188,7 @@ def handle_board(args: argparse.Namespace) -> int:
             return 0
 
         tasks = store.list_tasks(sprint_id=active_sprint.id)
-        gates = resolve_gate_steps(project.workflow_id)
+        gates = resolve_gate_steps(store, project)
         blocked_counts = blocked_kind_counts(tasks, gates)
         counts = store.task_counts(sprint_id=active_sprint.id)
         totals = store.run_totals(project_id=project.id, sprint_id=active_sprint.id)
@@ -593,7 +593,7 @@ def handle_status(args: argparse.Namespace) -> int:
         # letters" is.
         blocked_counts = {"gate": 0, "engine": 0}
         for project in store.list_projects():
-            gates = resolve_gate_steps(project.workflow_id)
+            gates = resolve_gate_steps(store, project)
             project_counts = blocked_kind_counts(
                 store.list_tasks(project_id=project.id, status="blocked"), gates
             )

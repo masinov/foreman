@@ -13,14 +13,15 @@ from ..engine_control import (
     default_command_requester,
 )
 from ..models import Event, Project, Sprint, Task
-from ..roles import RoleLoadError, default_roles_dir, load_roles
+from ..roles import RoleLoadError
+from ..definitions import project_definitions
 from ..mutations import Mutations
 from ..scaffold import (
     DEFAULT_DB_FILENAME,
     generate_project_id,
 )
 from ..store import ForemanStore
-from ..workflows import WorkflowLoadError, default_workflows_dir, load_workflows
+from ..workflows import WorkflowLoadError
 
 
 #: Exit code of ``foreman run`` when the pass stopped because the agent backend's
@@ -438,12 +439,7 @@ def project_workflow_step_ids(store: ForemanStore, project: Project) -> set[str]
     """
 
     try:
-        roles = load_roles(default_roles_dir())
-        workflows = load_workflows(
-            default_workflows_dir(),
-            available_role_ids=set(roles),
-            role_outcomes=role_outcomes(roles),
-        )
+        workflows = project_definitions(store, project.id).workflows
     except (RoleLoadError, WorkflowLoadError) as exc:
         print(f"Failed to load workflow definitions: {exc}", file=sys.stderr)
         return None

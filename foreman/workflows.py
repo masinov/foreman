@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ._toml import load_toml_file
+from ._toml import TOMLDecodeError, load_toml_file, load_toml_text
 from .errors import ForemanError
 from .data import WORKFLOWS_DIR
 
@@ -237,7 +237,41 @@ def load_workflow(
     """Load one workflow definition from disk."""
 
     workflow_path = Path(path)
-    data = load_toml_file(workflow_path)
+    return parse_workflow(
+        load_toml_file(workflow_path),
+        workflow_path,
+        available_role_ids=available_role_ids,
+        role_outcomes=role_outcomes,
+    )
+
+
+def load_workflow_text(
+    text: str,
+    source: str | Path,
+    *,
+    available_role_ids: Collection[str] | None = None,
+    role_outcomes: Mapping[str, Collection[str]] | None = None,
+) -> WorkflowDefinition:
+    """Load one workflow definition from TOML text; ``source`` names it in errors."""
+
+    try:
+        data = load_toml_text(text)
+    except TOMLDecodeError as exc:
+        raise WorkflowLoadError(f"{source}: not valid TOML: {exc}") from exc
+    return parse_workflow(
+        data, Path(source), available_role_ids=available_role_ids, role_outcomes=role_outcomes
+    )
+
+
+def parse_workflow(
+    data: Mapping[str, Any],
+    workflow_path: Path,
+    *,
+    available_role_ids: Collection[str] | None = None,
+    role_outcomes: Mapping[str, Collection[str]] | None = None,
+) -> WorkflowDefinition:
+    """Build one workflow definition from decoded TOML."""
+
 
     try:
         workflow_data = _require_mapping(data, "workflow", workflow_path)
