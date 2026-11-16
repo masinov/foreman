@@ -340,10 +340,10 @@ describe("the More menu", () => {
   it.each([
     ["running", { status: "in_progress", workflow_current_step: "develop" }, "running", ["Stop", "Block", "Mark done", "Cancel", "Delete"]],
     ["left part-way with no engine", { status: "in_progress", workflow_current_step: "merge" }, "not_running", ["Run next", "Block", "Mark done", "Cancel", "Delete"]],
-    ["queued", { status: "todo" }, "not_running", ["Run next", "Block", "Mark done", "Cancel", "Delete"]],
+    ["queued", { status: "todo" }, "not_running", ["Run next", "Block", "Mark done", "Split into smaller tasks", "Cancel", "Delete"]],
     ["blocked by the engine", { status: "blocked", blocked_kind: "engine" }, "not_running", ["Unblock", "Mark done", "Cancel", "Delete"]],
     ["at a gate", {}, "not_running", ["Mark done", "Cancel", "Delete"]],
-    ["in the backlog", { status: "todo", in_backlog: true }, "not_running", ["Cancel", "Delete"]],
+    ["in the backlog", { status: "todo", in_backlog: true }, "not_running", ["Split into smaller tasks", "Cancel", "Delete"]],
     ["done", { status: "done" }, "not_running", ["Reopen", "Delete"]],
     ["cancelled", { status: "cancelled" }, "not_running", ["Reopen", "Delete"]],
   ])("holds what exists for a task that is %s", async (_, fields, state, labels) => {

@@ -3,6 +3,7 @@ import React, { useState } from "react";
 import { useApiClient } from "../../api/ApiProvider";
 import { errorSentence } from "../../api/client";
 import { deleteSprint, SPRINT_STATUSES, transitionSprint } from "../../api/sprints";
+import { askManager, planSprintRequest } from "../../app/managerRequests";
 import { paths } from "../../app/paths";
 import { useNavigate } from "../../app/router";
 import { Button } from "../../ui/Button";
@@ -24,6 +25,15 @@ const STATE_ACTIONS = {
  * a sprint is planned or active; delete always.
  */
 export const SPRINT_ACTIONS = {
+  plan: {
+    label: "Plan this sprint",
+    title: "Plan this sprint",
+    effect:
+      "The manager reads the sprint's goal, the spec and the repository, and proposes the tasks that reach the goal. The proposal appears in the manager's side bar. Who confirms it is this project's \u201cApprove plans\u201d setting.",
+    confirm: "Ask the manager",
+    doing: "Asking…",
+    run: async (client, sprint) => askManager(planSprintRequest(sprint)),
+  },
   cancel: {
     label: "Cancel sprint",
     title: "Cancel this sprint",
@@ -45,7 +55,9 @@ export const SPRINT_ACTIONS = {
 
 export function sprintActionsFor(sprint) {
   const open = sprint.status === SPRINT_STATUSES.planned || sprint.status === SPRINT_STATUSES.active;
-  return open ? ["cancel", "delete"] : ["delete"];
+  if (!open) return ["delete"];
+  // Planning starts from the goal: a sprint without one has nothing to plan from.
+  return (sprint.goal || "").trim() ? ["plan", "cancel", "delete"] : ["cancel", "delete"];
 }
 
 function stateSentence(sprint) {

@@ -146,6 +146,9 @@ Foreman now has:
   `definitions` table, read through `foreman/definitions.py` (ADR-0024);
   `foreman/dashboard_definitions.py` turns one into the editor's form fields
   and the fields back into text,
+- `foreman/planning.py`: the two planning requests to the manager (plan a
+  sprint, split a task) and who confirms their proposals (ADR-0022,
+  amendment of 2026-11-16),
 - prompt rendering with completion and signal conventions,
 - a persisted orchestrator loop that can execute the shipped workflow graph,
 - end-to-end runtime coverage for the opt-in `development_secure` variant

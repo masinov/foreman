@@ -10,6 +10,7 @@ import { RebuildingPage } from "../pages/status/RebuildingPage";
 import { BUILT_PAGES } from "./pages";
 import { ManagerPanel } from "../pages/manager/ManagerPanel";
 import { useManagerOpen, useManagerTarget } from "./manager";
+import { onManagerRequest } from "./managerRequests";
 import { ManagerToggle } from "./ManagerToggle";
 import { useRoute } from "./router";
 import { useLiveData } from "./useLiveData";
@@ -79,6 +80,7 @@ function SignedInApp() {
   const [managerOpen, setManagerOpen] = useManagerOpen();
   const target = useManagerTarget(route, params);
   const projectName = useProjectName(target.projectId);
+  useEffect(() => onManagerRequest(() => setManagerOpen(true)), [setManagerOpen]);
   useLiveData({ projectId: target.projectId, poll: route.name === "workspace" });
 
   useEffect(() => {
