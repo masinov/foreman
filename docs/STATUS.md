@@ -3,7 +3,7 @@
 Current snapshot only. History up to 2026-09-08 (sprints 1 to 54) is in
 `docs/checkpoints/status-history-through-2026-09-08.md`.
 
-## Where the project is (2026-11-15)
+## Where the project is (2026-11-16)
 
 - Driving document: `docs/reviews/2026-11-10-full-review-and-finish-plan.md`
   (full review of engine, runner, dashboard, frontend and UX, with a six-phase
@@ -17,10 +17,15 @@ Current snapshot only. History up to 2026-09-08 (sprints 1 to 54) is in
   dashboard could do has a place or is dropped on purpose
   (`docs/design/dashboard-v7/legacy-capabilities.md`). The Phase 4 items
   that were not built are in `docs/sprints/backlog.md`.
-- Active sprint: **sprint 59 — the engine can be left running again**
-  (`docs/sprints/current.md`), the first of Phase 5: the engine defects
-  found during sprint 58, a first cut of the agent sandbox, and three
-  dashboard follow-ups. Scope agreed by the owner on 2026-11-15.
+- Sprint 59 (the engine can be left running again), the first of Phase 5,
+  closed on 2026-11-16 (`docs/checkpoints/2026-11-16-sprint-59-closed.md`):
+  the engine defects found during sprint 58 are fixed, the agent sandbox has
+  its first cut (ADR-0023), and three dashboard follow-ups landed. The
+  engine fixes are covered by tests and have not been seen in a run of the
+  engine.
+- No sprint is open. `docs/sprints/current.md` holds a proposed sprint 60
+  (identity, roles and audit; manager chat through the runner) that the
+  owner has not agreed.
 - Nineteen tasks of sprint 58 were run by Foreman itself. On 2026-11-13 the
   owner asked for the engine to be stopped and the rest done by hand; it has
   been stopped since. What the engine did well and badly is in the archived
