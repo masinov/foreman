@@ -557,6 +557,10 @@
   max-width: var(--dialog-width-wide);
 }
 
+.dialog--workflow {
+  max-width: var(--dialog-width-workflow);
+}
+
 /* Checks: tests · review · commit, each word in the colour of its result */
 .checks {
   white-space: nowrap;

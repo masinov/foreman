@@ -244,18 +244,38 @@ describe("Editing a workflow's steps", () => {
     return { fetchImpl, dialog };
   }
 
-  it("opens as a sequence: the steps in order, each ending saying where the task goes", async () => {
+  // The step whose fields are shown beside the graph.
+  const choose = (dialog, title) => fireEvent.click(within(dialog).getByRole("button", { name: new RegExp(`^Step \\d+: ${title}$`) }));
+  const picked = (dialog, label) => within(within(dialog).getByLabelText(label)).getByRole("option", { selected: true });
+
+  it("opens as a graph: the steps in order, with a line wherever a task leaves the order", async () => {
     const { dialog } = await openSteps();
-    const steps = within(within(dialog).getByRole("list", { name: "Steps" })).getAllByRole("listitem");
-    // The step that marks a task done is the end of the list, not a row in it.
-    expect(steps).toHaveLength(5);
+    const graph = within(dialog).getByRole("group", { name: "Steps" });
+    // The step that marks a task done is the end of the graph, not a step to edit.
+    expect(within(graph).getAllByRole("button").map((node) => node.getAttribute("aria-label"))).toEqual([
+      "Step 1: Develop",
+      "Step 2: Test",
+      "Step 3: Review",
+      "Step 4: Merge approval",
+      "Step 5: Merge",
+    ]);
+    expect(graph).toHaveTextContent("Done");
+    // In words under each step: what does not simply go on to the next one.
+    expect(graph).toHaveTextContent("fail ↩ 1");
+    expect(graph).toHaveTextContent("denies, steers ↩ 1");
+    expect(graph).toHaveTextContent("fails, conflict ↩ 1");
+    // Every way back leads to Develop: one line beside the rail.
+    expect(graph.querySelectorAll(".wf-graph__line")).toHaveLength(1);
+
+    // The first step is shown beside it; another is one click away.
+    expect(within(dialog).getByLabelText("Name of step 1")).toHaveValue("Develop");
+    choose(dialog, "Test");
     expect(within(dialog).getByLabelText("Name of step 2")).toHaveValue("Test");
     expect(within(dialog).getByLabelText("Who does Test")).toHaveValue("_builtin:run_tests");
-    const picked = (label) => within(within(dialog).getByLabelText(label)).getByRole("option", { selected: true });
-    expect(picked("Test: when the tests pass")).toHaveTextContent("on to 3 · Review");
-    expect(picked("Test: when the tests fail")).toHaveTextContent("back to 1 · Develop");
-    expect(picked("Merge: when it merges")).toHaveTextContent("the task is done");
-    expect(within(dialog).queryByLabelText("Who does Done")).toBeNull();
+    expect(picked(dialog, "Test: when the tests pass")).toHaveTextContent("on to 3 · Review");
+    expect(picked(dialog, "Test: when the tests fail")).toHaveTextContent("back to 1 · Develop");
+    choose(dialog, "Merge");
+    expect(picked(dialog, "Merge: when it merges")).toHaveTextContent("the task is done");
     expect(within(dialog).queryByRole("checkbox")).toBeNull();
   });
 
@@ -275,10 +295,12 @@ describe("Editing a workflow's steps", () => {
   it("saves the steps: one removed, another sent elsewhere, a renamed step still pointed at", async () => {
     const { fetchImpl, dialog } = await openSteps();
     fetchImpl.routes[`PUT ${WORKFLOW_URL}/development`] = definitionsPayload();
+    choose(dialog, "Review");
     fireEvent.click(within(dialog).getByRole("button", { name: "Remove Review" }));
     // With Review gone, the tests passing leads on to what is now below: the approval.
-    const passes = within(dialog).getByLabelText("Test: when the tests pass");
-    expect(within(passes).getByRole("option", { selected: true })).toHaveTextContent("on to 3 · Merge approval");
+    choose(dialog, "Test");
+    expect(picked(dialog, "Test: when the tests pass")).toHaveTextContent("on to 3 · Merge approval");
+    choose(dialog, "Develop");
     fireEvent.change(within(dialog).getByLabelText("Name of step 1"), { target: { value: "Build" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
 
@@ -302,26 +324,25 @@ describe("Editing a workflow's steps", () => {
   it("keeps the sequence when a step is moved or added", async () => {
     const { fetchImpl, dialog } = await openSteps();
     fetchImpl.routes[`PUT ${WORKFLOW_URL}/development`] = definitionsPayload();
-    const picked = (label) => within(within(dialog).getByLabelText(label)).getByRole("option", { selected: true });
     expect(within(dialog).getByRole("button", { name: "Move Develop up" })).toBeDisabled();
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Add a step" }));
-    // The new step is the last one: the merge now leads on to it, and it ends the workflow.
+    // The new step is the last one and is the one shown; the merge now leads on to it.
     fireEvent.change(within(dialog).getByLabelText("Name of step 6"), { target: { value: "Announce" } });
     expect(within(dialog).getByLabelText("Who does Announce")).toHaveValue("developer");
-    expect(picked("Merge: when it merges")).toHaveTextContent("on to 6 · Announce");
-    expect(picked("Announce: when it says it is done")).toHaveTextContent("the task is done");
+    expect(picked(dialog, "Announce: when it says it is done")).toHaveTextContent("the task is done");
 
     // Choosing who does a step fills in where each of its endings leads: on,
     // and otherwise back to the last step that did the work.
     fireEvent.change(within(dialog).getByLabelText("Who does Announce"), { target: { value: "code_reviewer" } });
-    expect(picked("Announce: when it approves")).toHaveTextContent("the task is done");
-    expect(picked("Announce: when it denies")).toHaveTextContent("back to 1 · Develop");
+    expect(picked(dialog, "Announce: when it approves")).toHaveTextContent("the task is done");
+    expect(picked(dialog, "Announce: when it denies")).toHaveTextContent("back to 1 · Develop");
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Move Announce up" }));
     expect(within(dialog).getByLabelText("Name of step 5")).toHaveValue("Announce");
-    expect(picked("Announce: when it approves")).toHaveTextContent("on to 6 · Merge");
-    expect(picked("Merge approval: when the person approves")).toHaveTextContent("on to 5 · Announce");
+    expect(picked(dialog, "Announce: when it approves")).toHaveTextContent("on to 6 · Merge");
+    choose(dialog, "Merge approval");
+    expect(picked(dialog, "Merge approval: when the person approves")).toHaveTextContent("on to 5 · Announce");
     fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(sent(fetchImpl, "PUT")).toHaveLength(1));
@@ -337,6 +358,7 @@ describe("Editing a workflow's steps", () => {
 
   it("refuses two steps with the same name before asking the API", async () => {
     const { fetchImpl, dialog } = await openSteps();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Step 2: Test" }));
     fireEvent.change(within(dialog).getByLabelText("Name of step 2"), { target: { value: "Develop" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
 

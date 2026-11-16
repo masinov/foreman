@@ -4,7 +4,8 @@ import { Button } from "../../ui/Button";
 import { Field } from "../../ui/Field";
 import { humanize } from "../../ui/format";
 import { DefinitionDialog } from "./DefinitionDialog";
-import { GATE_POLICY, idFromName, outcomeWords } from "./definitionWords";
+import { GATE_POLICY, idFromName, outcomeWords, shortOutcome } from "./definitionWords";
+import { WorkflowGraph } from "./WorkflowGraph";
 
 const GATE = "_builtin:human_gate";
 const LAST = "_builtin:mark_done";
@@ -37,7 +38,9 @@ export function WorkflowEditor({ open, projectId, workflow, isNew = false, vocab
   // the form then keeps out of sight as "the end".
   const [hasEnd, setHasEnd] = useState(true);
   const nextKey = useRef(0);
-  const stepsId = useId();
+  const whoId = useId();
+  // The step shown beside the graph, by its key.
+  const [selected, setSelected] = useState(null);
 
   const doneBy = (role) => vocabulary?.done_by.find((entry) => entry.role === role);
   const outcomesOf = (role) => (role === LAST ? [] : (doneBy(role)?.outcomes ?? []));
@@ -54,6 +57,7 @@ export function WorkflowEditor({ open, projectId, workflow, isNew = false, vocab
     const keys = Object.fromEntries(shown.map((step, index) => [step.id, `k${index}`]));
     nextKey.current = shown.length;
     setHasEnd(Boolean(closing));
+    setSelected(shown.length ? keys[shown[0].id] : null);
     setSteps(
       shown.map((step, index) => {
         const below = shown[index + 1]?.id ?? closing?.id;
@@ -102,6 +106,7 @@ export function WorkflowEditor({ open, projectId, workflow, isNew = false, vocab
     const key = `k${nextKey.current++}`;
     const first = vocabulary.done_by.find((entry) => !entry.role.startsWith("_builtin:")) ?? vocabulary.done_by[0];
     setSteps([...steps, { key, label: "", role: first.role, policy: "", then: defaults(first.role, steps.length, steps) }]);
+    setSelected(key);
   }
 
   function remove(key) {
@@ -149,6 +154,31 @@ export function WorkflowEditor({ open, projectId, workflow, isNew = false, vocab
   }
 
   const titleOf = (step, index) => step.label.trim() || `step ${index + 1}`;
+  const index = Math.max(
+    0,
+    steps.findIndex((step) => step.key === selected),
+  );
+  const step = steps[index];
+  const below = steps[index + 1];
+
+  // The graph: where each ending of each step leads, as rows of the drawing.
+  const rows = steps.map((entry, at) => {
+    const routes = [];
+    const stops = [];
+    const nexts = [];
+    outcomesOf(entry.role).forEach((outcome) => {
+      const chosen = entry.then[outcome] ?? STOP;
+      const words = shortOutcome(entry.role, outcome);
+      let to = null;
+      if (chosen === NEXT) to = at + 1 < steps.length || hasEnd ? at + 1 : null;
+      else if (chosen === END) to = steps.length;
+      else if (chosen !== STOP) to = steps.findIndex((other) => other.key === chosen);
+      if (to === null || to < 0) stops.push(words);
+      else if (to !== at + 1) routes.push({ to, words });
+      else if (outcome !== outcomesOf(entry.role)[0]) nexts.push(words);
+    });
+    return { key: entry.key, title: titleOf(entry, at), who: doneBy(entry.role)?.label ?? entry.role, routes, stops, nexts };
+  });
 
   return (
     <DefinitionDialog
@@ -161,130 +191,114 @@ export function WorkflowEditor({ open, projectId, workflow, isNew = false, vocab
       fields={fields}
       onClose={onClose}
       onSaved={onSaved}
+      className="dialog--workflow"
     >
       <Field label="Name" value={name} onChange={(event) => setName(event.target.value)} data-autofocus />
-      <div className="steps-editor__title">
-        <span className="field__label" id={stepsId}>
-          Steps
-        </span>
-        <span className="steps-editor__columns" aria-hidden="true">
-          <span />
-          <span>Step</span>
-          <span>Done by</span>
-        </span>
-      </div>
-      <ol className="steps-editor" aria-labelledby={stepsId}>
-        {steps.map((step, index) => {
-          const title = titleOf(step, index);
-          const outcomes = outcomesOf(step.role);
-          const below = steps[index + 1];
-          return (
-            <li key={step.key} className="steps-editor__step">
-              <div className="steps-editor__head">
-                <span className="steps-editor__number">{index + 1}</span>
-                <Field
-                  label={`Name of step ${index + 1}`}
-                  hideLabel
-                  placeholder="Step name"
-                  value={step.label}
-                  onChange={(event) => change(step.key, { label: event.target.value })}
-                />
-                <select
-                  className="field__input"
-                  aria-label={`Who does ${title}`}
-                  value={step.role}
-                  onChange={(event) => changeRole(step, index, event.target.value)}
-                >
-                  {vocabulary.done_by
-                    .filter((entry) => entry.role !== LAST || !hasEnd || entry.role === step.role)
-                    .map((entry) => (
-                      <option key={entry.role} value={entry.role}>
-                        {entry.label}
-                      </option>
-                    ))}
+      <div className="wf-editor">
+        <div className="wf-editor__graph">
+          <span className="field__label">Steps</span>
+          <WorkflowGraph rows={rows} end={hasEnd} selected={step?.key} onSelect={setSelected} label="Steps" />
+          <div>
+            <Button variant="quiet" onClick={add}>
+              Add a step
+            </Button>
+          </div>
+        </div>
+        {step ? (
+          <div className="wf-editor__step" role="group" aria-label={`Step ${index + 1}`}>
+            <Field
+              label="Step name"
+              aria-label={`Name of step ${index + 1}`}
+              placeholder="Step name"
+              value={step.label}
+              onChange={(event) => change(step.key, { label: event.target.value })}
+            />
+            <div className="field">
+              <label className="field__label" htmlFor={whoId}>
+                Done by
+              </label>
+              <select
+                id={whoId}
+                className="field__input"
+                aria-label={`Who does ${titleOf(step, index)}`}
+                value={step.role}
+                onChange={(event) => changeRole(step, index, event.target.value)}
+              >
+                {vocabulary.done_by
+                  .filter((entry) => entry.role !== LAST || !hasEnd || entry.role === step.role)
+                  .map((entry) => (
+                    <option key={entry.role} value={entry.role}>
+                      {entry.label}
+                    </option>
+                  ))}
+              </select>
+            </div>
+            {step.role === GATE ? (
+              <label className="wf-editor__ending">
+                <span>It stops for a person when</span>
+                <select className="field__input" value={step.policy} onChange={(event) => change(step.key, { policy: event.target.value })}>
+                  <option value="">always</option>
+                  {vocabulary.gate_policies.map((policy) => (
+                    <option key={policy} value={policy}>
+                      {GATE_POLICY[policy] ?? policy}
+                    </option>
+                  ))}
                 </select>
-                <span className="steps-editor__moves">
-                  <Button variant="quiet" inRow disabled={index === 0} aria-label={`Move ${title} up`} onClick={() => move(index, -1)}>
-                    Up
-                  </Button>
-                  <Button
-                    variant="quiet"
-                    inRow
-                    disabled={index === steps.length - 1}
-                    aria-label={`Move ${title} down`}
-                    onClick={() => move(index, 1)}
+              </label>
+            ) : null}
+            {outcomesOf(step.role).map((outcome, at) => {
+              const chosen = step.then[outcome] ?? STOP;
+              const words = outcomeWords(step.role, outcome);
+              const known = [NEXT, STOP, END].includes(chosen) || steps.some((entry) => entry.key === chosen);
+              return (
+                <label key={outcome} className="wf-editor__ending">
+                  <span>When {words}</span>
+                  <select
+                    className="field__input"
+                    aria-label={`${titleOf(step, index)}: when ${words}`}
+                    value={known ? chosen : STOP}
+                    onChange={(event) => change(step.key, { then: { ...step.then, [outcome]: event.target.value } })}
                   >
-                    Down
-                  </Button>
-                  <Button variant="quiet" inRow aria-label={`Remove ${title}`} onClick={() => remove(step.key)}>
-                    Remove
-                  </Button>
-                </span>
-              </div>
-              {step.role === GATE ? (
-                <div className="steps-editor__then">
-                  <label className="steps-editor__pick">
-                    <span>It stops for a person when</span>
-                    <select
-                      className="field__input"
-                      value={step.policy}
-                      onChange={(event) => change(step.key, { policy: event.target.value })}
-                    >
-                      <option value="">always</option>
-                      {vocabulary.gate_policies.map((policy) => (
-                        <option key={policy} value={policy}>
-                          {GATE_POLICY[policy] ?? policy}
+                    {at === 0 || chosen === NEXT ? (
+                      <option value={NEXT}>
+                        {below
+                          ? `on to ${index + 2} · ${titleOf(below, index + 1)}`
+                          : hasEnd
+                            ? "the task is done"
+                            : "stop and wait for a person"}
+                      </option>
+                    ) : null}
+                    {steps.map((entry, other) =>
+                      entry.key === step.key || (at === 0 && entry === below) ? null : (
+                        <option key={entry.key} value={entry.key}>
+                          {other < index ? "back to" : "ahead to"} {other + 1} · {titleOf(entry, other)}
                         </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-              ) : null}
-              {outcomes.map((outcome, at) => {
-                const chosen = step.then[outcome] ?? STOP;
-                const words = outcomeWords(step.role, outcome);
-                const known = [NEXT, STOP, END].includes(chosen) || steps.some((entry) => entry.key === chosen);
-                return (
-                  <div key={outcome} className="steps-editor__then">
-                    <label className="steps-editor__pick">
-                      <span>When {words}</span>
-                      <select
-                        className="field__input"
-                        aria-label={`${title}: when ${words}`}
-                        value={known ? chosen : STOP}
-                        onChange={(event) => change(step.key, { then: { ...step.then, [outcome]: event.target.value } })}
-                      >
-                        {at === 0 || chosen === NEXT ? (
-                          <option value={NEXT}>
-                            {below
-                              ? `on to ${index + 2} · ${titleOf(below, index + 1)}`
-                              : hasEnd
-                                ? "the task is done"
-                                : "stop and wait for a person"}
-                          </option>
-                        ) : null}
-                        {steps.map((entry, other) =>
-                          entry.key === step.key || (at === 0 && entry === below) ? null : (
-                            <option key={entry.key} value={entry.key}>
-                              {other < index ? "back to" : "ahead to"} {other + 1} · {titleOf(entry, other)}
-                            </option>
-                          ),
-                        )}
-                        {chosen === END ? <option value={END}>the task is done</option> : null}
-                        <option value={STOP}>stop and wait for a person</option>
-                      </select>
-                    </label>
-                  </div>
-                );
-              })}
-            </li>
-          );
-        })}
-      </ol>
-      <div>
-        <Button variant="quiet" onClick={add}>
-          Add a step
-        </Button>
+                      ),
+                    )}
+                    {chosen === END ? <option value={END}>the task is done</option> : null}
+                    <option value={STOP}>stop and wait for a person</option>
+                  </select>
+                </label>
+              );
+            })}
+            <div className="wf-editor__moves">
+              <Button variant="quiet" disabled={index === 0} aria-label={`Move ${titleOf(step, index)} up`} onClick={() => move(index, -1)}>
+                Move up
+              </Button>
+              <Button
+                variant="quiet"
+                disabled={index === steps.length - 1}
+                aria-label={`Move ${titleOf(step, index)} down`}
+                onClick={() => move(index, 1)}
+              >
+                Move down
+              </Button>
+              <Button variant="quiet" aria-label={`Remove ${titleOf(step, index)}`} onClick={() => remove(step.key)}>
+                Remove step
+              </Button>
+            </div>
+          </div>
+        ) : null}
       </div>
     </DefinitionDialog>
   );

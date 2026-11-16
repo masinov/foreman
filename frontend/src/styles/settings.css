@@ -196,78 +196,130 @@
   gap: var(--space-2);
 }
 
-.steps-editor {
+/* The workflow editor: the graph of steps, and beside it the step chosen. */
+.wf-editor {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, var(--wf-step-width));
+  gap: var(--space-6);
+  align-items: start;
+}
+
+.wf-editor__graph {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.wf-editor__step {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  padding-left: var(--space-5);
+  border-left: var(--line-width) solid var(--color-line-structural);
 }
 
-.steps-editor__step {
+/* One way the step can end, and where the task goes. */
+.wf-editor__ending {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+  color: var(--color-text-secondary);
 }
 
-/* The number, the step's name, who does it, and the moves: the heading row
-   above the list uses the same columns. */
-.steps-editor__head,
-.steps-editor__columns {
-  display: grid;
-  grid-template-columns: var(--steps-number) minmax(0, 1fr) minmax(0, 1fr) var(--steps-moves);
-  gap: var(--space-2);
-  align-items: center;
-}
-
-.steps-editor__title {
+.wf-editor__moves {
   display: flex;
-  flex-direction: column;
   gap: var(--space-1);
 }
 
-.steps-editor__columns {
-  color: var(--color-text-quiet);
+.wf-graph {
+  display: block;
+  flex: none;
+}
+
+.wf-graph__rail,
+.wf-graph__line line,
+.wf-graph__line path {
+  fill: none;
+  stroke: var(--color-border-control);
+  stroke-width: var(--graph-line-width);
+}
+
+.wf-graph__line line,
+.wf-graph__line path {
+  stroke: var(--color-text-quiet);
+}
+
+.wf-graph__line--ahead line,
+.wf-graph__line--ahead path {
+  stroke: var(--color-blue);
+}
+
+.wf-graph__line .wf-graph__arrow {
+  fill: var(--color-text-quiet);
+  stroke: none;
+}
+
+.wf-graph__line--ahead .wf-graph__arrow {
+  fill: var(--color-blue);
+}
+
+.wf-graph__node {
+  fill: var(--color-ground);
+  stroke: var(--color-text-secondary);
+  stroke-width: var(--graph-line-width);
+}
+
+.wf-graph__step {
+  cursor: pointer;
+  outline: none;
+}
+
+.wf-graph__hit {
+  fill: transparent;
+}
+
+.wf-graph__step:hover .wf-graph__hit,
+.wf-graph__step:focus-visible .wf-graph__hit {
+  fill: var(--color-tinted);
+}
+
+.wf-graph__step--selected .wf-graph__hit {
+  fill: var(--color-selected);
+}
+
+.wf-graph__step--selected .wf-graph__node {
+  fill: var(--color-gold);
+  stroke: var(--color-gold);
+}
+
+.wf-graph__title {
+  fill: var(--color-text);
+  font-size: var(--font-size-body);
+}
+
+.wf-graph__number,
+.wf-graph__who,
+.wf-graph__words {
+  fill: var(--color-text-quiet);
+}
+
+.wf-graph__who,
+.wf-graph__words {
   font-size: var(--font-size-table-header);
 }
 
-.steps-editor__number {
-  display: flex;
-  flex-direction: column;
-  color: var(--color-text-secondary);
-  font-variant-numeric: tabular-nums;
-  line-height: var(--line-height-tight);
+.wf-graph__end .wf-graph__title {
+  fill: var(--color-text-secondary);
 }
-
-.steps-editor__moves {
-  display: flex;
-  gap: var(--space-1);
-}
-
-/* One way a step can end: the words and where the task goes, in the same two
-   columns on every line. */
-.steps-editor__then {
-  display: grid;
-  grid-template-columns: var(--steps-then-words) minmax(0, var(--steps-then-step));
-  align-items: center;
-  gap: var(--space-1) var(--space-2);
-  padding-left: calc(var(--steps-number) + var(--space-2));
-  color: var(--color-text-secondary);
-}
-
-.steps-editor__pick {
-  display: contents;
-}
-
 
 .definition__nowrap {
   white-space: nowrap;
 }
 
 @media (max-width: 640px) {
-  .steps-editor__head,
-  .steps-editor__then {
+  .wf-editor {
     grid-template-columns: minmax(0, 1fr);
   }
 }
