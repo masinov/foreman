@@ -125,13 +125,13 @@ export function RoleEditor({ open, projectId, role, isNew = false, vocabulary, o
               {entry}
             </option>
           ))}
-          <option value={OTHER}>Another model</option>
+          <option value={OTHER}>Type a model id…</option>
         </select>
         {otherModel ? (
           <input
             className="field__input"
             aria-label="Model id"
-            placeholder="Model id"
+            placeholder="Model id, as the agent program takes it"
             spellCheck={false}
             value={model}
             onChange={(event) => setModel(event.target.value)}

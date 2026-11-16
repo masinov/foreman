@@ -557,8 +557,11 @@
   max-width: var(--dialog-width-wide);
 }
 
+/* As wide as the graph and the step beside it need, and no wider. */
 .dialog--workflow {
-  max-width: var(--dialog-width-workflow);
+  width: fit-content;
+  min-width: min(100%, var(--dialog-width));
+  max-width: min(100%, var(--dialog-width-workflow));
 }
 
 /* Checks: tests · review · commit, each word in the colour of its result */
