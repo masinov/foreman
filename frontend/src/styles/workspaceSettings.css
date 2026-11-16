@@ -1,4 +1,4 @@
-/* Workspace settings: five sections on one page. */
+/* Workspace settings: six sections on one page. */
 .workspace-settings {
   display: flex;
   flex-direction: column;
@@ -29,12 +29,6 @@
   white-space: nowrap;
 }
 
-/* The workspace's workflows, then its roles, each with its own heading. */
-.definitions {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-6);
-}
 
 .machine {
   margin: 0;

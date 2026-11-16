@@ -35,7 +35,7 @@ export function WorkflowsList() {
       : workflows.find((workflow) => workflow.id === editing.id);
 
   return (
-    <section className="settings-section" aria-labelledby="workspace-workflows">
+    <section className="settings-block" aria-labelledby="workspace-workflows">
       <SectionHeading
         id="workspace-workflows"
         title="Workflows"

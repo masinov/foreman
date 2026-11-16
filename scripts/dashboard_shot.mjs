@@ -18,6 +18,7 @@
 //
 // `--text` also prints what the page says after the steps (the open dialog,
 // or the page), which is how a control is checked without reading a picture.
+// `--eval=<js>` prints what an expression gives in the page, for measuring.
 // `--scale=3` magnifies, which is how alignment is checked. Use it against a
 // copy of the database (`sqlite3 .foreman.db ".backup copy.db"`, then
 // `foreman dashboard --port 8081 --db copy.db`) when a step would change
@@ -150,6 +151,11 @@ try {
       await send("Input.insertText", { text });
       await sleep(200);
     } else throw new Error(`Unknown step ${step}`);
+  }
+  const measure = args.find((a) => a.startsWith("--eval="));
+  if (measure) {
+    const { result } = await send("Runtime.evaluate", { returnByValue: true, expression: measure.slice("--eval=".length) });
+    console.log(JSON.stringify(result?.value));
   }
   if (args.includes("--text")) {
     const { result } = await send("Runtime.evaluate", {
