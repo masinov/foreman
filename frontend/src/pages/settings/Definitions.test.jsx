@@ -168,7 +168,6 @@ describe("A new role", () => {
     fetchImpl.routes[`PUT ${ROLE_URL}/strict_reviewer`] = definitionsPayload();
     fireEvent.click(screen.getByRole("button", { name: "New role" }));
     const start = await screen.findByRole("dialog", { name: "New role" });
-    expect(within(start).getByRole("button", { name: "Continue" })).toBeDisabled();
     fireEvent.change(within(start).getByLabelText("Start from"), { target: { value: "code_reviewer" } });
     fireEvent.click(within(start).getByRole("button", { name: "Continue" }));
 
@@ -184,6 +183,53 @@ describe("A new role", () => {
     expect(call.url).toBe(`${ROLE_URL}/strict_reviewer`);
     expect(call.body.copy_of).toBe("code_reviewer");
     expect(call.body.fields.name).toBe("Strict Reviewer");
+  });
+
+  it("starts empty unless a role to copy is chosen", async () => {
+    const fetchImpl = await renderRoles();
+    fetchImpl.routes[`PUT ${ROLE_URL}/doc_writer`] = definitionsPayload();
+    fireEvent.click(screen.getByRole("button", { name: "New role" }));
+    const start = await screen.findByRole("dialog", { name: "New role" });
+    expect(within(start).getByLabelText("Start from")).toHaveDisplayValue("An empty role");
+    fireEvent.click(within(start).getByRole("button", { name: "Continue" }));
+
+    const form = await screen.findByRole("dialog", { name: "New role" });
+    expect(await within(form).findByLabelText("Prompt")).toHaveValue("Say here what this role does.\n{completion_marker}");
+    expect(within(form).getByLabelText("What it does")).toHaveValue("");
+    fireEvent.change(within(form).getByLabelText("Name"), { target: { value: "Doc writer" } });
+    fireEvent.click(within(form).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(sent(fetchImpl, "PUT")).toHaveLength(1));
+    expect(sent(fetchImpl, "PUT")[0].url).toBe(`${ROLE_URL}/doc_writer`);
+    expect(sent(fetchImpl, "PUT")[0].body.copy_of).toBe("_blank");
+  });
+});
+
+describe("A role's model", () => {
+  it("is chosen from a list, with the project's default first", async () => {
+    const { fetchImpl, dialog } = await openRole();
+    fetchImpl.routes[`PUT ${ROLE_URL}/code_reviewer`] = definitionsPayload();
+    const model = within(dialog).getByLabelText("Model");
+    expect(model.tagName).toBe("SELECT");
+    expect(model).toHaveValue("claude-sonnet-5-5");
+    expect(within(model).getAllByRole("option")[0]).toHaveTextContent(/default/);
+    fireEvent.change(model, { target: { value: "" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(sent(fetchImpl, "PUT")).toHaveLength(1));
+    expect(sent(fetchImpl, "PUT")[0].body.fields.model).toBe("");
+  });
+
+  it("takes a model the list does not have", async () => {
+    const { fetchImpl, dialog } = await openRole();
+    fetchImpl.routes[`PUT ${ROLE_URL}/code_reviewer`] = definitionsPayload();
+    expect(within(dialog).queryByLabelText("Model id")).toBeNull();
+    fireEvent.change(within(dialog).getByLabelText("Model"), { target: { value: "_other" } });
+    fireEvent.change(within(dialog).getByLabelText("Model id"), { target: { value: "some-new-model" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(sent(fetchImpl, "PUT")).toHaveLength(1));
+    expect(sent(fetchImpl, "PUT")[0].body.fields.model).toBe("some-new-model");
   });
 });
 
@@ -264,7 +310,12 @@ describe("Editing a workflow's steps", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "New workflow" })).toBeEnabled());
     fetchImpl.routes[`PUT ${WORKFLOW_URL}/careful_development`] = definitionsPayload();
     fireEvent.click(screen.getByRole("button", { name: "New workflow" }));
+    const start = await screen.findByRole("dialog", { name: "New workflow" });
+    expect(within(start).getByLabelText("Start from")).toHaveDisplayValue("An empty workflow");
+    fireEvent.change(within(start).getByLabelText("Start from"), { target: { value: "development" } });
+    fireEvent.click(within(start).getByRole("button", { name: "Continue" }));
     const dialog = await screen.findByRole("dialog", { name: "New workflow" });
+    await within(dialog).findByLabelText("Name");
     fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "Careful development" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
 

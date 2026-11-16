@@ -1,52 +1,14 @@
-import React, { useId, useState } from "react";
+import React, { useState } from "react";
 
 import { getProjectDefinitions } from "../../api/definitions";
 import { useResource } from "../../api/useResource";
 import { Button } from "../../ui/Button";
-import { Dialog } from "../../ui/Dialog";
 import { Mono } from "../../ui/Mono";
 import { SectionHeading } from "../../ui/SectionHeading";
 import { Table } from "../../ui/Table";
 import { endsWords, originWords, toolsWords } from "./definitionWords";
 import { RoleEditor } from "./RoleEditor";
-
-/** A new role starts as a copy of one the project has: which one. */
-function StartFrom({ open, roles, onClose, onChosen }) {
-  const id = useId();
-  const [chosen, setChosen] = useState("");
-  return (
-    <Dialog
-      open={open}
-      title="New role"
-      description="A new role starts as a copy of one you have. Choose the closest."
-      onClose={onClose}
-      footer={
-        <>
-          <Button variant="quiet" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button disabled={!chosen} onClick={() => onChosen(chosen)}>
-            Continue
-          </Button>
-        </>
-      }
-    >
-      <div className="field">
-        <label className="field__label" htmlFor={id}>
-          Start from
-        </label>
-        <select id={id} className="field__input" value={chosen} data-autofocus onChange={(event) => setChosen(event.target.value)}>
-          <option value="">Choose a role</option>
-          {roles.map((role) => (
-            <option key={role.id} value={role.id}>
-              {role.name}
-            </option>
-          ))}
-        </select>
-      </div>
-    </Dialog>
-  );
-}
+import { BLANK, StartFrom } from "./StartFrom";
 
 /**
  * /dashboard/projects/{id}/settings/roles: the roles this project runs with.
@@ -69,8 +31,8 @@ export function RolesTab({ projectId = null }) {
   }
   if (!definitions.data) return <p className="notice">Loading the roles…</p>;
 
-  const { roles, vocabulary } = definitions.data;
-  const edited = editing ? roles.find((role) => role.id === editing.id) : null;
+  const { roles, vocabulary, blank } = definitions.data;
+  const edited = !editing ? null : editing.id === BLANK ? blank.role : roles.find((role) => role.id === editing.id);
 
   return (
     <section className="settings-section" aria-labelledby="project-roles">
@@ -122,7 +84,8 @@ export function RolesTab({ projectId = null }) {
       />
       <StartFrom
         open={starting}
-        roles={roles}
+        kind="role"
+        items={roles}
         onClose={() => setStarting(false)}
         onChosen={(id) => {
           setStarting(false);

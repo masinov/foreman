@@ -1,51 +1,14 @@
-import React, { useId, useState } from "react";
+import React, { useState } from "react";
 
 import { getProjectDefinitions } from "../../api/definitions";
 import { useResource } from "../../api/useResource";
 import { Button } from "../../ui/Button";
-import { Dialog } from "../../ui/Dialog";
 import { Mono } from "../../ui/Mono";
 import { SectionHeading } from "../../ui/SectionHeading";
 import { Table } from "../../ui/Table";
 import { DEFAULT_ORIGIN } from "../settings/definitionWords";
+import { BLANK, StartFrom } from "../settings/StartFrom";
 import { WorkflowEditor } from "../settings/WorkflowEditor";
-
-/** A new workflow starts as a copy of one the workspace has: which one. */
-function StartFrom({ open, workflows, onClose, onChosen }) {
-  const id = useId();
-  const [chosen, setChosen] = useState("");
-  return (
-    <Dialog
-      open={open}
-      title="New workflow"
-      onClose={onClose}
-      footer={
-        <>
-          <Button variant="quiet" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button disabled={!chosen} onClick={() => onChosen(chosen)}>
-            Continue
-          </Button>
-        </>
-      }
-    >
-      <div className="field">
-        <label className="field__label" htmlFor={id}>
-          Start from
-        </label>
-        <select id={id} className="field__input" value={chosen} data-autofocus onChange={(event) => setChosen(event.target.value)}>
-          <option value="">Choose a workflow</option>
-          {workflows.map((workflow) => (
-            <option key={workflow.id} value={workflow.id}>
-              {workflow.name}
-            </option>
-          ))}
-        </select>
-      </div>
-    </Dialog>
-  );
-}
 
 /** The workspace's workflows: the ones every project can use, each editable. */
 export function WorkflowsList() {
@@ -64,8 +27,12 @@ export function WorkflowsList() {
   }
   if (!definitions.data) return <p className="notice">Loading the workflows…</p>;
 
-  const { workflows, vocabulary } = definitions.data;
-  const edited = editing ? workflows.find((workflow) => workflow.id === editing.id) : null;
+  const { workflows, vocabulary, blank } = definitions.data;
+  const edited = !editing
+    ? null
+    : editing.id === BLANK
+      ? blank.workflow
+      : workflows.find((workflow) => workflow.id === editing.id);
 
   return (
     <section className="settings-section" aria-labelledby="workspace-workflows">
@@ -121,7 +88,8 @@ export function WorkflowsList() {
       />
       <StartFrom
         open={starting}
-        workflows={workflows}
+        kind="workflow"
+        items={workflows}
         onClose={() => setStarting(false)}
         onChosen={(id) => {
           setStarting(false);

@@ -8,6 +8,8 @@ from the text the definition already has so that what the form does not show
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -24,9 +26,9 @@ from .definitions import (
     save_workflow,
 )
 from .outcomes import CANONICAL_OUTCOMES
-from .roles import KNOWN_TOOLS, RoleDefinition
+from .roles import KNOWN_TOOLS, RoleDefinition, load_role_text
 from .settings import settings_of
-from .workflows import _BUILTIN_OUTCOMES, WorkflowDefinition
+from .workflows import _BUILTIN_OUTCOMES, WorkflowDefinition, load_workflow_text
 
 DECISIONS: tuple[str, ...] = ("approve", "deny", "steer", "escalate")
 DEFAULT_MARKER = "TASK_COMPLETE"
@@ -40,6 +42,78 @@ ENGINE_STEPS: tuple[tuple[str, str], ...] = (
 )
 _OUTCOME_ORDER = ("done", "success", "approve", "deny", "steer", "escalate", "failure", "conflict", "updated", "blocked", "error")
 _COMPLETION = "completion:"
+
+#: What a new definition is a copy of when it starts empty.
+BLANK = "_blank"
+
+#: Models offered for a backend besides the ones the roles already name.
+_KNOWN_MODELS = ("claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5")
+
+_BLANK_ROLE = '''[role]
+id = "new_role"
+name = "New role"
+description = ""
+
+[agent]
+backend = "claude_code"
+model = ""
+session_persistence = true
+permission_mode = "bypassPermissions"
+
+[agent.tools]
+allowed = []
+disallowed = []
+
+[prompt]
+template = """
+## Task: {task_title}
+Branch: {branch_name}
+
+### Description
+{task_description}
+
+### Acceptance criteria
+{acceptance_criteria}
+
+### What the step before this one said
+{previous_feedback}
+
+### Repository instructions
+{repo_instructions}
+
+Say here what this role does with the task.
+
+When you are finished, end your message with:
+{completion_marker}
+"""
+
+[completion]
+marker = "TASK_COMPLETE"
+timeout_minutes = 30
+max_cost_usd = 10.0
+
+[completion.output]
+extract_summary = true
+'''
+
+_BLANK_WORKFLOW = '''[workflow]
+id = "new_workflow"
+name = "New workflow"
+methodology = "development"
+
+[[steps]]
+id = "develop"
+role = "developer"
+
+[[steps]]
+id = "done"
+role = "_builtin:mark_done"
+
+[[transitions]]
+from = "develop"
+trigger = "completion:done"
+to = "done"
+'''
 
 
 def _origin(definition_id: str, own: Mapping[str, str], shipped: frozenset[str]) -> str:
@@ -137,6 +211,27 @@ def _describe_workflow(
     }
 
 
+def _describe_blank(definitions: ProjectDefinitions) -> dict[str, Any]:
+    """The empty role and the two-step workflow a new one may start from."""
+
+    role = load_role_text(_BLANK_ROLE, "the empty role")
+    workflow = load_workflow_text(
+        _BLANK_WORKFLOW,
+        "the empty workflow",
+        available_role_ids=set(definitions.roles),
+        role_outcomes={role_id: r.completion.outcomes for role_id, r in definitions.roles.items()},
+    )
+    with_blank = replace(
+        definitions,
+        own_roles={**definitions.own_roles, role.id: _BLANK_ROLE},
+        own_workflows={**definitions.own_workflows, workflow.id: _BLANK_WORKFLOW},
+    )
+    return {
+        "role": {**_describe_role(role, with_blank), "id": BLANK, "name": "", "used_by": []},
+        "workflow": {**_describe_workflow(workflow, with_blank, []), "id": BLANK, "name": ""},
+    }
+
+
 def describe_project_definitions(store, project_id: str | None) -> dict[str, Any]:
     """Everything the editor needs: the roles, workflows and the words to choose from.
 
@@ -163,7 +258,11 @@ def describe_project_definitions(store, project_id: str | None) -> dict[str, Any
         {"role": role.id, "label": role.name, "outcomes": _step_outcomes(role.id, definitions.roles)}
         for role in definitions.roles.values()
     ]
+    for model in _KNOWN_MODELS:
+        if model not in models:
+            models.append(model)
     return {
+        "blank": _describe_blank(definitions),
         "roles": [_describe_role(role, definitions) for role in definitions.roles.values()],
         "workflows": [
             _describe_workflow(
@@ -313,6 +412,8 @@ def workflow_text_from_fields(base_text: str, workflow_id: str, fields: Mapping[
 def _base_text(kind: str, definitions: ProjectDefinitions, definition_id: str, copy_of: str | None) -> str:
     loaded = definitions.roles if kind == ROLE else definitions.workflows
     own = definitions.own_roles if kind == ROLE else definitions.own_workflows
+    if definition_id not in loaded and copy_of == BLANK:
+        return _BLANK_ROLE if kind == ROLE else _BLANK_WORKFLOW
     source = definition_id if definition_id in loaded else copy_of
     if source is None or source not in loaded:
         raise DefinitionError(

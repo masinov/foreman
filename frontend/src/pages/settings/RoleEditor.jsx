@@ -21,13 +21,17 @@ function Ticks({ legend, names, chosen, onChange, label = (name) => name }) {
   );
 }
 
+// The choice that opens a field for a model the list does not have.
+const OTHER = "_other";
+
 /**
  * One role, as a form: what it is called, the model, the tools, how its run
  * ends, its limits and its prompt. `role` is the role being edited; with
  * `isNew` it is the role a new one starts as a copy of.
  */
 export function RoleEditor({ open, projectId, role, isNew = false, vocabulary, onClose, onSaved }) {
-  const modelsId = useId();
+  const modelId = useId();
+  const [otherModel, setOtherModel] = useState(false);
   const endsId = useId();
   const everyId = useId();
   const [name, setName] = useState("");
@@ -46,6 +50,7 @@ export function RoleEditor({ open, projectId, role, isNew = false, vocabulary, o
     setName(isNew ? "" : role.name);
     setDescription(role.description);
     setModel(role.model);
+    setOtherModel(Boolean(role.model) && !vocabulary.models.includes(role.model));
     setEvery(role.tools.every);
     setTools(role.tools.chosen);
     setEnds(role.ends);
@@ -94,24 +99,45 @@ export function RoleEditor({ open, projectId, role, isNew = false, vocabulary, o
     >
       <Field label="Name" value={name} onChange={(event) => setName(event.target.value)} data-autofocus />
       <Field label="What it does" value={description} onChange={(event) => setDescription(event.target.value)} />
-      <Field
-        label="Model"
-        hint={
-          vocabulary.default_model
-            ? `Empty uses the project's default, ${vocabulary.default_model}.`
-            : projectId
-              ? "Empty uses the project's default."
-              : "Empty uses each project's default."
-        }
-        list={modelsId}
-        value={model}
-        onChange={(event) => setModel(event.target.value)}
-      />
-      <datalist id={modelsId}>
-        {vocabulary.models.map((entry) => (
-          <option key={entry} value={entry} />
-        ))}
-      </datalist>
+      <div className="field">
+        <label className="field__label" htmlFor={modelId}>
+          Model
+        </label>
+        <select
+          id={modelId}
+          className="field__input"
+          value={otherModel ? OTHER : model}
+          onChange={(event) => {
+            const picked = event.target.value;
+            setOtherModel(picked === OTHER);
+            setModel(picked === OTHER ? "" : picked);
+          }}
+        >
+          <option value="">
+            {vocabulary.default_model
+              ? `The project's default, ${vocabulary.default_model}`
+              : projectId
+                ? "The project's default"
+                : "Each project's default"}
+          </option>
+          {vocabulary.models.map((entry) => (
+            <option key={entry} value={entry}>
+              {entry}
+            </option>
+          ))}
+          <option value={OTHER}>Another model</option>
+        </select>
+        {otherModel ? (
+          <input
+            className="field__input"
+            aria-label="Model id"
+            placeholder="Model id"
+            spellCheck={false}
+            value={model}
+            onChange={(event) => setModel(event.target.value)}
+          />
+        ) : null}
+      </div>
 
       <div className="field">
         <span className="field__label">Tools</span>

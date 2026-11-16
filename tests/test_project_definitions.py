@@ -562,3 +562,24 @@ class WorkspaceDefaultTests(ApiTests):
 
         self.assertEqual(response.status_code, 400)
 
+    def test_a_new_role_or_workflow_may_start_empty(self) -> None:
+        payload = self.request("GET", "/projects/p1/definitions").json()
+        blank = payload["blank"]
+        self.assertEqual((blank["role"]["id"], blank["workflow"]["id"]), ("_blank", "_blank"))
+        self.assertIn("{completion_marker}", blank["role"]["prompt"])
+        self.assertIn("claude-haiku-5-5", payload["vocabulary"]["models"])
+        fields = fields_of(blank["role"])
+        fields["name"] = "Doc Writer"
+
+        response = self.request("PUT", "/projects/p1/roles/doc_writer", json={"fields": fields, "copy_of": "_blank"})
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(project_definitions(self.store, "p1").roles["doc_writer"].name, "Doc Writer")
+        response = self.request(
+            "PUT",
+            "/projects/p1/workflows/tiny",
+            json={"fields": {"name": "Tiny", "steps": blank["workflow"]["steps"]}, "copy_of": "_blank"},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual([s.id for s in project_definitions(self.store, "p1").workflows["tiny"].steps], ["develop", "done"])
+

@@ -248,6 +248,34 @@ export function definitionsPayload({ roles, workflows = [DEVELOPMENT, LIGHT], cu
       editable(workflow, { used: workflow.id === current, used_by: workflow.id === current ? usedBy : [] }),
     ),
     vocabulary: VOCABULARY,
+    blank: {
+      role: editableRole({
+        id: "_blank",
+        name: "",
+        description: "",
+        model: "",
+        tools: { every: true, chosen: [] },
+        ends: "done",
+        decisions: [],
+        marker: "TASK_COMPLETE",
+        timeout_minutes: 30,
+        max_cost_usd: 10,
+        prompt: "Say here what this role does.\n{completion_marker}",
+        used_by: [],
+      }),
+      workflow: {
+        id: "_blank",
+        name: "",
+        origin: "own",
+        used: false,
+        used_by: [],
+        steps: [
+          { id: "develop", role: "developer", policy: null, then: { done: { to: "done", carry_output: false } } },
+          { id: "done", role: "_builtin:mark_done", policy: null, then: {} },
+        ],
+        text: "",
+      },
+    },
   };
 }
 
