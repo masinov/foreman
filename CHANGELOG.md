@@ -14,6 +14,7 @@ memory changes rather than versioned product releases.
 
 ### Sprint 60 — what is there works and makes sense
 
+- A task's "Model for <step>" overrides are lists of the models the project has configured (its default, the ones its roles name, the known Claude models), with "No override" first. They were free-text boxes that took anything.
 - A role is not saved with a model the agent program cannot run. When a save names a model the role did not have, Foreman asks Claude Code one short question with that model (`foreman/model_check.py`) and refuses the save with the program's own reason if it cannot: typing "minimax" is refused in about two seconds, where it used to be saved and then fail every task that reached the role. From the dashboard and from `foreman role set`. A model that runs costs a fraction of a cent to check; `FOREMAN_MODEL_CHECK=off` skips it. Codex roles are not checked.
 - A role's model list ends with "Type a model id…" where it said "Another model", which read as the name of a model. In the workflow editor the chosen step's name, who does it and each ending's choice are one width, and the dialog is as wide as the graph and that column need.
 - Workflow graph, after the owner's look: the way down from each step has an arrow tip like the lines that go back, and is drawn only where a task can take it; the drawing is as wide as what it says, so there is no empty band beside it; "Add a step" is a button beside the "Steps" label; the chosen step's dropdowns are as wide as their text.

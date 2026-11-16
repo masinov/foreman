@@ -2,7 +2,9 @@ import React, { useId, useState } from "react";
 
 import { useApiClient } from "../../api/ApiProvider";
 import { errorSentence } from "../../api/client";
+import { getProjectDefinitions } from "../../api/definitions";
 import { setTaskOverrides } from "../../api/tasks";
+import { useResource } from "../../api/useResource";
 import { Button } from "../../ui/Button";
 import { SectionHeading } from "../../ui/SectionHeading";
 import {
@@ -32,21 +34,24 @@ function GateRow({ gate, value, onChange }) {
   );
 }
 
-function StepRow({ step, value, onChange }) {
+/** One of the models the project has configured; a model is added on a role, not here. */
+function StepRow({ step, value, models, onChange }) {
   const id = useId();
+  // What the task already has stays choosable even if no role names it any more.
+  const choices = value && !models.includes(value) ? [value, ...models] : models;
   return (
     <div className="overrides__row">
       <label className="field__label" htmlFor={id}>
         Model for {step.label.toLowerCase()}
       </label>
-      <input
-        id={id}
-        className="field__input"
-        type="text"
-        placeholder="No override"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-      />
+      <select id={id} className="field__input" value={value} onChange={(event) => onChange(event.target.value)}>
+        <option value="">No override</option>
+        {choices.map((model) => (
+          <option key={model} value={model}>
+            {model}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }
@@ -58,6 +63,13 @@ function StepRow({ step, value, onChange }) {
  */
 export function Overrides({ task, workflow, onSaved }) {
   const client = useApiClient();
+  // The models to choose from are the project's: its default, the ones its roles name, the known ones.
+  const definitions = useResource(
+    ["project-definitions", task.project_id],
+    (api, options) => getProjectDefinitions(api, task.project_id, options),
+    { enabled: Boolean(task.project_id) },
+  );
+  const models = definitions.data?.vocabulary.models ?? [];
   const gates = overrideGates(workflow);
   const steps = overrideSteps(workflow);
   const stored = JSON.stringify(task.executor_overrides ?? {});
@@ -117,6 +129,7 @@ export function Overrides({ task, workflow, onSaved }) {
             key={step.id}
             step={step}
             value={modelValues[step.id] ?? ""}
+            models={models}
             onChange={(value) => setModelValues((all) => ({ ...all, [step.id]: value }))}
           />
         ))}

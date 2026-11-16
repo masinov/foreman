@@ -1,5 +1,6 @@
 // API answers for the task page, shaped like foreman/dashboard_service.py
 // (get_task) and foreman/dashboard/task_models.py, on top of the sprint's.
+import { DEFINITIONS_URL, definitionsPayload } from "./settingsFixture";
 import { sprintRoutes, WORKFLOW_URL } from "./sprintFixture";
 import { on } from "./workspaceFixture";
 
@@ -189,6 +190,7 @@ export function taskRoutes({ task = taskDetail(), checks = checksPayload(), chan
     [diffUrl("foreman/builtins.py")]: diffPayload("foreman/builtins.py", BUILTINS_DIFF),
     [outputUrl("run-3")]: outputPayload("run-3", "Reviewed the change."),
     [outputUrl("run-2")]: outputPayload("run-2", "Ran 1221 tests"),
+    [DEFINITIONS_URL]: definitionsPayload(),
     [WORKFLOW_URL]: {
       id: "development",
       name: "development",
