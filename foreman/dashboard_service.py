@@ -1689,21 +1689,14 @@ class DashboardService:
         """
 
         from .definitions import project_definitions
-        from .roles import RoleLoadError, load_roles
-        from .workflows import WorkflowLoadError, load_workflows
+        from .roles import RoleLoadError
+        from .workflows import WorkflowLoadError
 
         try:
-            if project_id is not None:
-                definitions = project_definitions(self.store, project_id)
-                return definitions.roles, definitions.workflows
-            roles = load_roles()
-            workflows = load_workflows(
-                available_role_ids=set(roles),
-                role_outcomes={rid: role.completion.outcomes for rid, role in roles.items()},
-            )
+            definitions = project_definitions(self.store, project_id)
         except (RoleLoadError, WorkflowLoadError) as exc:
             raise DashboardValidationError(f"The workflow could not be loaded: {exc}") from exc
-        return roles, workflows
+        return definitions.roles, definitions.workflows
 
     def get_project_workflow(self, project_id: str) -> dict[str, Any]:
         """The project's workflow: steps, transitions, roles and what finishing requires."""
@@ -1768,42 +1761,49 @@ class DashboardService:
     def list_roles(self) -> dict[str, Any]:
         """Return all available role definitions."""
 
-        from .roles import RoleLoadError, load_roles
+        from .definitions import workspace_definitions
+        from .roles import RoleLoadError
+        from .workflows import WorkflowLoadError
 
         try:
-            roles = load_roles()
-        except RoleLoadError as exc:
+            roles = workspace_definitions(self.store).roles
+        except (RoleLoadError, WorkflowLoadError) as exc:
             raise DashboardActionError(f"Failed to load roles: {exc}") from exc
         return {"roles": [_serialize_role(role) for role in roles.values()]}
 
     # ── a project's own roles and workflows (ADR-0024) ─────────────────────
 
-    def get_project_definitions(self, project_id: str) -> dict[str, Any]:
-        """The roles and workflows a project runs with, as the editor shows them."""
+    def get_project_definitions(self, project_id: str | None) -> dict[str, Any]:
+        """The roles and workflows a project runs with, as the editor shows them.
+
+        ``None`` is the workspace: the defaults every project starts from.
+        """
 
         from .dashboard_definitions import describe_project_definitions
         from .roles import RoleLoadError
         from .workflows import WorkflowLoadError
 
-        self._require_project(project_id)
+        if project_id is not None:
+            self._require_project(project_id)
         try:
             return describe_project_definitions(self.store, project_id)
         except (RoleLoadError, WorkflowLoadError) as exc:
-            raise DashboardValidationError(f"The project's definitions do not load: {exc}") from exc
+            raise DashboardValidationError(f"The definitions do not load: {exc}") from exc
 
     def save_project_definition(
         self,
-        project_id: str,
+        project_id: str | None,
         kind: str,
         definition_id: str,
         body: dict[str, Any],
     ) -> dict[str, Any]:
-        """Save one role or workflow for a project from the editor."""
+        """Save one role or workflow, for a project or the workspace, from the editor."""
 
         from .dashboard_definitions import save_from_dashboard
         from .definitions import DefinitionError
 
-        self._require_project(project_id)
+        if project_id is not None:
+            self._require_project(project_id)
         changed_by = str(body.get("requested_by") or "").strip() or "dashboard"
         try:
             save_from_dashboard(
@@ -1814,14 +1814,15 @@ class DashboardService:
         return self.get_project_definitions(project_id)
 
     def reset_project_definition(
-        self, project_id: str, kind: str, definition_id: str, *, requested_by: str | None = None
+        self, project_id: str | None, kind: str, definition_id: str, *, requested_by: str | None = None
     ) -> dict[str, Any]:
-        """Drop a project's own role or workflow; a shipped id goes back to the shipped one."""
+        """Drop a scope's own role or workflow; the id goes back to the layer below."""
 
         from .dashboard_definitions import reset_from_dashboard
         from .definitions import DefinitionError
 
-        self._require_project(project_id)
+        if project_id is not None:
+            self._require_project(project_id)
         try:
             reset_from_dashboard(
                 self.store, project_id, kind, definition_id, changed_by=requested_by or "dashboard"

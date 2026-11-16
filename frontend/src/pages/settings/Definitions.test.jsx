@@ -149,7 +149,7 @@ describe("Editing a role", () => {
     routes[DEFINITIONS_URL] = definitionsPayload({ roles: [editableRole({ origin: "changed" })] });
     const { fetchImpl, dialog } = await openRole("Code Reviewer", routes);
     fetchImpl.routes[`DELETE ${ROLE_URL}/code_reviewer`] = definitionsPayload();
-    fireEvent.click(within(dialog).getByRole("button", { name: "Back to the shipped role" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Back to the default role" }));
 
     await waitFor(() => expect(sent(fetchImpl, "DELETE")).toHaveLength(1));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
@@ -157,7 +157,7 @@ describe("Editing a role", () => {
 
   it("offers no way back for a role as shipped", async () => {
     const { dialog } = await openRole();
-    expect(within(dialog).queryByRole("button", { name: /Back to the shipped/ })).toBeNull();
+    expect(within(dialog).queryByRole("button", { name: /Back to the/ })).toBeNull();
     expect(within(dialog).queryByRole("button", { name: /Remove this/ })).toBeNull();
   });
 });

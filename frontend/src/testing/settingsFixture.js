@@ -225,7 +225,7 @@ export const VOCABULARY = {
   gate_policies: ["merge_approval", "plan_approval"],
 };
 
-export function definitionsPayload({ roles, workflows = [DEVELOPMENT, LIGHT], current = "development" } = {}) {
+export function definitionsPayload({ roles, workflows = [DEVELOPMENT, LIGHT], current = "development", usedBy = ["Foreman"] } = {}) {
   return {
     roles: roles ?? [
       editableRole({
@@ -244,7 +244,9 @@ export function definitionsPayload({ roles, workflows = [DEVELOPMENT, LIGHT], cu
       }),
       editableRole(),
     ],
-    workflows: workflows.map((workflow) => editable(workflow, { used: workflow.id === current })),
+    workflows: workflows.map((workflow) =>
+      editable(workflow, { used: workflow.id === current, used_by: workflow.id === current ? usedBy : [] }),
+    ),
     vocabulary: VOCABULARY,
   };
 }

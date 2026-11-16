@@ -119,3 +119,34 @@ the variables agents are given stay host-level and are not set over HTTP.
 - **Where it is in the dashboard:** Project settings has a Roles tab (the
   roles, a form per role, New role as a copy), and the Workflow tab has Edit
   steps and New workflow. Both editors have a text view.
+
+## Amendment, 2026-11-16: the workspace's defaults are edited too
+
+The owner, on Workspace settings: a list of roles and workflows under
+"Defaults for projects" that can only be opened, and changed only in a file,
+is not configuration. So the defaults are a layer of their own:
+
+1. **Three layers.** What Foreman ships, then the workspace's own text, then
+   a project's own text. Each replaces the one below under the same id or
+   adds a new id. A project that keeps no version of a role or workflow runs
+   with the workspace's.
+2. **Storage.** `workspace_definitions` (migration 27): the `definitions`
+   table without a project. In the store and in `foreman/definitions.py` a
+   project id of `None` means the workspace.
+3. **A change to a default is checked against every project.** It is refused
+   when the workspace's set, or any project's set with that change under it,
+   would no longer load, and when it removes a workflow a project uses. The
+   refusal names the project.
+4. **Going back.** A project's "Back to the default" drops its own text and
+   returns to the workspace's; the workspace's "Back to the shipped" returns
+   to the file.
+5. **API.** `GET /api/v1/definitions`, `PUT|DELETE /api/v1/roles/{id}` and
+   `/api/v1/workflows/{id}`, with the bodies of the project routes.
+   `GET /api/v1/roles` and `GET /api/v1/workflows` read the workspace's
+   definitions, not the bare files.
+6. **Dashboard.** Workspace settings, "Defaults for projects": the Workflows
+   and Roles tables with Edit and New, using the editors a project has. The
+   read-only dialog is gone.
+
+Not done here: `foreman role|workflow set` for the workspace from a terminal;
+`foreman init` and the Runners list still read the shipped files only.
