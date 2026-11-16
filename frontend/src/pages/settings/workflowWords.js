@@ -33,7 +33,7 @@ const OUTCOMES = {
     success: "the merge succeeds",
     conflict: "the merge conflicts",
     failure: "the merge fails",
-    updated: "the branch was behind and was updated",
+    updated: "the branch was out of date",
   },
   human_gate: { approve: "approved", deny: "denied", steer: "sent back" },
   default: { success: "it succeeds", failure: "it fails", done: "it is done" },

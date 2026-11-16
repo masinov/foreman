@@ -65,8 +65,10 @@
   --label-column-width: 160px;
   --field-multiline-height: 76px;
   --definition-text-height: 280px;
-  --steps-then-words: 300px;
+  --steps-then-words: 205px;
   --steps-then-step: 200px;
+  --steps-number: 36px;
+  --steps-moves: 170px;
   --caret-size: 4px;
   --color-backdrop: rgba(12, 12, 14, 0.72);
   --layer-menu: 10;

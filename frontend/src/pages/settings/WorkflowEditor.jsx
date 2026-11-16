@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 
 import { Button } from "../../ui/Button";
 import { Field } from "../../ui/Field";
@@ -21,6 +21,7 @@ export function WorkflowEditor({ open, projectId, workflow, isNew = false, vocab
   const [name, setName] = useState("");
   const [steps, setSteps] = useState([]);
   const nextKey = useRef(0);
+  const stepsId = useId();
 
   useEffect(() => {
     if (!open || !workflow) return;
@@ -62,7 +63,20 @@ export function WorkflowEditor({ open, projectId, workflow, isNew = false, vocab
   function add() {
     const key = `k${nextKey.current++}`;
     const first = vocabulary.done_by.find((entry) => !entry.role.startsWith("_builtin:")) ?? vocabulary.done_by[0];
-    setSteps([...steps, { key, label: "", role: first.role, policy: "", then: {} }]);
+    // Before the step that marks the task done, if the workflow ends with one.
+    const at = steps.length && steps[steps.length - 1].role === LAST ? steps.length - 1 : steps.length;
+    const after = steps[at];
+    const good = first.outcomes[0];
+    const then = after && good ? { [good]: { to: after.key, carry: false } } : {};
+    // The step before it led to the step it now stands in front of: it leads here instead.
+    const before = steps.slice(0, at).map((step, index) => {
+      if (index !== at - 1 || !after) return step;
+      const rerouted = Object.fromEntries(
+        Object.entries(step.then).map(([outcome, target]) => [outcome, target.to === after.key ? { ...target, to: key } : target]),
+      );
+      return { ...step, then: rerouted };
+    });
+    setSteps([...before, { key, label: "", role: first.role, policy: "", then }, ...steps.slice(at)]);
   }
 
   function fields() {
@@ -101,13 +115,27 @@ export function WorkflowEditor({ open, projectId, workflow, isNew = false, vocab
       onSaved={onSaved}
     >
       <Field label="Name" value={name} onChange={(event) => setName(event.target.value)} data-autofocus />
-      <ol className="steps-editor" aria-label="Steps">
+      <div className="steps-editor__title">
+        <span className="field__label" id={stepsId}>
+          Steps
+        </span>
+        <span className="steps-editor__columns" aria-hidden="true">
+          <span />
+          <span>Step</span>
+          <span>Done by</span>
+        </span>
+      </div>
+      <ol className="steps-editor" aria-labelledby={stepsId}>
         {steps.map((step, index) => {
           const title = step.label.trim() || `step ${index + 1}`;
           const outcomes = step.role === LAST ? [] : (doneBy(step.role)?.outcomes ?? []);
           return (
             <li key={step.key} className="steps-editor__step">
               <div className="steps-editor__head">
+                <span className="steps-editor__number">
+                  {index + 1}
+                  {index === 0 ? <span className="steps-editor__start">start</span> : null}
+                </span>
                 <Field
                   label={`Name of step ${index + 1}`}
                   hideLabel
@@ -128,17 +156,17 @@ export function WorkflowEditor({ open, projectId, workflow, isNew = false, vocab
                   ))}
                 </select>
                 <span className="steps-editor__moves">
-                  <Button variant="quiet" inRow disabled={index === 0} aria-label={`Move ${title} earlier`} onClick={() => move(index, -1)}>
-                    Earlier
+                  <Button variant="quiet" inRow disabled={index === 0} aria-label={`Move ${title} up`} onClick={() => move(index, -1)}>
+                    Up
                   </Button>
                   <Button
                     variant="quiet"
                     inRow
                     disabled={index === steps.length - 1}
-                    aria-label={`Move ${title} later`}
+                    aria-label={`Move ${title} down`}
                     onClick={() => move(index, 1)}
                   >
-                    Later
+                    Down
                   </Button>
                   <Button
                     variant="quiet"
@@ -151,15 +179,15 @@ export function WorkflowEditor({ open, projectId, workflow, isNew = false, vocab
                 </span>
               </div>
               {step.role === GATE ? (
-                <div className="steps-editor__then">
+                <div className="steps-editor__then steps-editor__then--wide">
                   <label className="steps-editor__pick">
-                    <span>Whether it stops for a person is decided by</span>
+                    <span>It stops for a person when</span>
                     <select
                       className="field__input"
                       value={step.policy}
                       onChange={(event) => change(step.key, { policy: event.target.value })}
                     >
-                      <option value="">nothing: it always stops</option>
+                      <option value="">always</option>
                       {vocabulary.gate_policies.map((policy) => (
                         <option key={policy} value={policy}>
                           {GATE_POLICY[policy] ?? policy}
@@ -175,19 +203,19 @@ export function WorkflowEditor({ open, projectId, workflow, isNew = false, vocab
                 return (
                   <div key={outcome} className="steps-editor__then">
                     <label className="steps-editor__pick">
-                      <span>When {words}, go to</span>
+                      <span>When {words}</span>
                       <select
                         className="field__input"
                         aria-label={`${title}: when ${words}, go to`}
                         value={steps.some((entry) => entry.key === target.to) ? target.to : ""}
                         onChange={(event) => changeThen(step, outcome, { to: event.target.value })}
                       >
-                        <option value="">nowhere: stop for a person</option>
+                        <option value="">stop and wait for a person</option>
                         {steps
                           .filter((entry) => entry.key !== step.key)
                           .map((entry) => (
                             <option key={entry.key} value={entry.key}>
-                              {entry.label.trim() || `step ${steps.indexOf(entry) + 1}`}
+                              go to {steps.indexOf(entry) + 1} · {entry.label.trim() || "unnamed step"}
                             </option>
                           ))}
                       </select>
@@ -197,13 +225,15 @@ export function WorkflowEditor({ open, projectId, workflow, isNew = false, vocab
                         <input
                           type="checkbox"
                           className="checkbox"
-                          aria-label={`${title}: when ${words}, with its output`}
+                          aria-label={`${title}: when ${words}, tell the next step what this step said`}
                           checked={target.carry}
                           onChange={(event) => changeThen(step, outcome, { carry: event.target.checked })}
                         />
-                        with its output
+                        and tell it what this step said
                       </label>
-                    ) : null}
+                    ) : (
+                      <span />
+                    )}
                   </div>
                 );
               })}

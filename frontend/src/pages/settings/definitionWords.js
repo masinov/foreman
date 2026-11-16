@@ -40,7 +40,7 @@ const OUTCOME = {
     success: "it merges",
     conflict: "there is a conflict",
     failure: "the merge fails",
-    updated: "the branch was behind and was updated",
+    updated: "the branch was out of date",
   },
   "_builtin:human_gate": { approve: "the person approves", deny: "the person sends it back", steer: "the person steers" },
   "_builtin:mark_done": { success: "it is marked done" },
@@ -59,8 +59,8 @@ export function outcomeWords(role, outcome) {
 }
 
 export const GATE_POLICY = {
-  merge_approval: "the project's “Approve merges”",
-  plan_approval: "the project's “Approve plans”",
+  merge_approval: "the project's “Approve merges” is a person",
+  plan_approval: "the project's “Approve plans” is a person",
 };
 
 /** An id from a name: lower case, underscores, starting with a letter. */
