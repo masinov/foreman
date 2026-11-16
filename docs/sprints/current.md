@@ -1,51 +1,51 @@
 # Current Sprint
 
-## Sprint 60 — Foreman knows who did what
+## Sprint 60 — what is there works and makes sense
 
-- **Opened:** 2026-11-16, the second sprint of Phase 5 of
-  `docs/reviews/2026-11-10-full-review-and-finish-plan.md`. Scope agreed by
-  the owner on 2026-11-16.
+- **Opened:** 2026-11-16 as "Foreman knows who did what" (identity, roles,
+  audit). **Re-scoped the same day by the owner:** identity is not this
+  project's concern now (the owner's company will build it separately and
+  plug it in later). "You must focus on the actual app working properly and
+  all the surfaces and features making sense and being functional."
 - **Status:** in_progress
-- **Method:** decided per slice. The owner allowed the engine to be started
-  for one supervised run (2026-11-16); slice 1 is that run. What it shows
-  decides whether later slices are given to the engine or done by hand.
+- **Method:** by hand unless a slice says otherwise. The engine is started
+  only for the runs slices 1 and 6 name.
 
 ### Goal
 
-Today every decision is recorded as made by whoever holds the one dashboard
-token. After this sprint a person signs in, has a role, and every decision
-names the actor the server derived. No identity provider is chosen (owner,
-2026-11-10): the sprint delivers the seam and one built-in way to fill it.
+Every screen and control of the dashboard does something a person can
+follow, and every feature that is shown works end to end against a running
+engine. Nothing new is added until that holds.
 
 ### Constraints
 
-- Spec `docs/specs/engine-design-v3.md` for behaviour; ADR-0016 (browser
-  routes into the API), ADR-0017 (what the API may set), ADR-0022 (the
-  manager proposes), ADR-0023 (what an agent is handed).
-- The identity decision gets its own ADR before code depends on it (slice 2).
-- The shared token keeps working for a single-operator install; nothing that
-  runs today stops running.
-- Dashboard changes follow ADR-0020 and the look rules in `docs/TESTING.md`.
+- Spec `docs/specs/engine-design-v3.md` for behaviour; ADR-0020 for the
+  dashboard; ADR-0017 for what the API may set.
+- No interface text that is a footnote about the implementation. A line of
+  text is something the person acts on or needs to read a value (owner,
+  2026-11-16).
+- Read-only things look read-only and say once where they are changed.
+- The owner is asked before a screen's structure changes; the audit of slice
+  3 is brought as one review, not fixed piece by piece.
 
 ### Affected areas
 
-`foreman/dashboard/`, `foreman/dashboard_guard.py`, `foreman/store/`,
-`foreman/mutations.py`, `foreman/meta_agent.py`, `foreman/runner/`,
-`foreman/cli/`, `frontend/src/`, tests, `docs/`.
+`frontend/src/`, `foreman/dashboard/`, `foreman/dashboard_service.py`,
+`foreman/engine/`, `foreman/orchestrator.py`, `foreman/roles/`, tests,
+`docs/`.
 
 ### Slices
 
 | # | Slice | Status | Executed by | Deliverable |
 |---|-------|--------|-------------|-------------|
 | 1 | One supervised run of the engine on a small task, to see sprint 59's fixes against a real agent | done | Foreman, watched by Claude | FOR-44 merged at `e59136a`; "The supervised run" below |
-| 2 | An ADR for identity: users, the four roles (viewer, operator, approver, admin), where a provider plugs in | todo | | `docs/adr/` |
-| 3 | Users and sessions in the database; sign in with a built-in local provider behind the seam | todo | | migration, CLI to add a user, sign-in page |
-| 4 | Every decision (approve, send back, mark done, confirm a proposal, settings) records the actor the server derived, never one the client sent | todo | | |
-| 5 | Roles enforced on the API and shown in the dashboard: a viewer cannot approve, only an admin changes host-level settings | todo | | |
-| 6 | Audit events cannot be changed or deleted | todo | | |
-| 7 | Manager chat through the runner: a declared tool set, a session per user, one turn at a time, stopped when the person leaves, cost per turn | todo | | |
-| 8 | FOR-43, if the owner accepts it: the proposal card's "Then" row for a send-back, a summary line for earlier proposals | todo | | |
-| 9 | Close the sprint: checkpoint, archive | todo | Claude | `docs/checkpoints/`, `docs/sprints/archive/` |
+| 2 | A walkthrough for the owner: one task through a workflow, which role runs at each step, what it may do and must produce, where the gates are, how a model is chosen, what is set where | todo | Claude | a page for the owner |
+| 3 | Audit of every screen and control: does it work, can a person tell what it does, is anything shown that cannot be acted on; footnote strings listed | todo | Claude | one review for the owner |
+| 4 | The fixes the owner agrees from slice 3, in one batch | todo | Claude | |
+| 5 | The engine findings of slice 1: a sprint that closes itself, a branch behind `main` merged without being tested again, the developer using the system Python | todo | Claude | fixes with tests |
+| 6 | A second supervised run with several tasks, so that Run next, a merge during another step, a resumed session's cost and the reviewer rule are seen against a real agent | todo | Foreman, watched by Claude | what was seen, in this file |
+| 7 | The manager chat works for a person who is not on the machine (it is off on a network bind today) and FOR-43 if the owner accepts it | todo | Claude | |
+| 8 | Close the sprint: checkpoint, archive | todo | Claude | `docs/checkpoints/`, `docs/sprints/archive/` |
 
 ### The supervised run (slice 1, 2026-11-16)
 
@@ -82,12 +82,11 @@ Found:
 
 ### Risks
 
-- Slice 1 runs an agent as the engine's user with a shell and the network.
-  It is one small task, watched, with the merge behind a human gate.
-- Slices 3 to 5 sit in front of every request. A mistake locks the operator
-  out or lets a viewer act; the token path stays as the way back in.
-- Slice 7 replaces how the manager is started. Its confinement from sprint
-  59 (ADR-0022 amendment) must hold through the runner.
+- Slice 3 can grow without limit. It is an audit with a list, and the owner
+  chooses what is fixed.
+- Slices 5 and 6 touch when the engine merges and when a sprint ends.
+- Slice 7 widens who can start an agent session on the host; it rests on the
+  confinement of sprint 59 (ADR-0022 amendment).
 
 ### Validation
 

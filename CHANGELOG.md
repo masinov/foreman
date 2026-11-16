@@ -7,8 +7,9 @@ memory changes rather than versioned product releases.
 
 ## [Unreleased]
 
-### Sprint 60 — Foreman knows who did what
+### Sprint 60 — what is there works and makes sense
 
+- Sprint 60 re-scoped by the owner (2026-11-16): identity, roles of people and audit are dropped from it; the sprint is now an audit and repair of every screen and feature, the engine findings of the supervised run, and a second run with several tasks.
 - The supervised engine run (slice 1) is recorded in `docs/sprints/current.md`: FOR-44 went from develop to a pushed merge; three things it found are in the backlog.
 - Dashboard: a long value in a settings row (the file of a role or a workflow, a path under "This machine") wraps inside its row instead of running out of the dialog.
 - Sprint 60 opened (2026-11-16): identity, roles and audit behind a seam; manager chat through the runner; first, one supervised run of the engine. See `docs/sprints/current.md`.
