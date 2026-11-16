@@ -131,7 +131,47 @@ def _require_project(store: ForemanStore, project_id: str):
     return project
 
 
-def save_role(store: ForemanStore, project_id: str, text: str, *, changed_by: str) -> RoleDefinition:
+def _check_expected(kind: str, found: str, expected: str | None) -> None:
+    if expected is not None and found != expected:
+        raise DefinitionError(
+            f"The text says its id is {found!r}, and this is {kind} {expected!r}. "
+            f"An id is not changed by editing; save it as a new {kind} instead."
+        )
+
+
+def check_role_says_how_to_end(role: RoleDefinition) -> None:
+    """Refuse a role whose prompt does not tell the agent how the engine reads its end.
+
+    The engine looks for the completion marker, or for one of the role's
+    decisions on a line of its own. Nothing joins that to the prompt but
+    this check: an agent that is never told ends every run asked again.
+    """
+
+    prompt = role.prompt_template
+    if role.completion.output.extract_decision:
+        missing = [word.upper() for word in role.completion.outcomes if word.upper() not in prompt]
+        if missing:
+            raise DefinitionError(
+                f"Role {role.id!r} may decide {', '.join(missing)} but its prompt never says so. "
+                "The prompt must tell the agent to end with each decision in capitals, "
+                "for example 'DENY: <reason>'."
+            )
+    elif role.completion.marker:
+        if "{completion_marker}" not in prompt and role.completion.marker not in prompt:
+            raise DefinitionError(
+                f"Role {role.id!r} ends with the marker {role.completion.marker} but its prompt never "
+                "says so. Tell the agent to end with {completion_marker}."
+            )
+
+
+def save_role(
+    store: ForemanStore,
+    project_id: str,
+    text: str,
+    *,
+    changed_by: str,
+    expected_id: str | None = None,
+) -> RoleDefinition:
     """Save a role for one project, under the id the text gives."""
 
     _require_project(store, project_id)
@@ -139,6 +179,8 @@ def save_role(store: ForemanStore, project_id: str, text: str, *, changed_by: st
         role = load_role_text(text, "the role")
     except RoleLoadError as exc:
         raise DefinitionError(str(exc)) from exc
+    _check_expected(ROLE, role.id, expected_id)
+    check_role_says_how_to_end(role)
     if not _ID_RE.match(role.id):
         raise DefinitionError(
             f"A role id is lower-case letters, digits and underscores, starting with a letter; got {role.id!r}."
@@ -159,7 +201,12 @@ def save_role(store: ForemanStore, project_id: str, text: str, *, changed_by: st
 
 
 def save_workflow(
-    store: ForemanStore, project_id: str, text: str, *, changed_by: str
+    store: ForemanStore,
+    project_id: str,
+    text: str,
+    *,
+    changed_by: str,
+    expected_id: str | None = None,
 ) -> WorkflowDefinition:
     """Save a workflow for one project, under the id the text gives."""
 
@@ -175,6 +222,7 @@ def save_workflow(
         )
     except WorkflowLoadError as exc:
         raise DefinitionError(str(exc)) from exc
+    _check_expected(WORKFLOW, workflow.id, expected_id)
     if not _ID_RE.match(workflow.id):
         raise DefinitionError(
             f"A workflow id is lower-case letters, digits and underscores, starting with a letter; got {workflow.id!r}."

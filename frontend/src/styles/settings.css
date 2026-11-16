@@ -153,3 +153,98 @@
   width: var(--dialog-width);
   max-width: 100%;
 }
+
+/* Role and workflow editors */
+.definition__origin {
+  color: var(--color-text-quiet);
+}
+
+.definition__left {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-right: auto;
+}
+
+.definition__prompt .field__input,
+.definition__text .field__input {
+  height: var(--definition-text-height);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-mono);
+  white-space: pre;
+  overflow-wrap: normal;
+  overflow-x: auto;
+}
+
+.definition__prompt .field__input {
+  white-space: pre-wrap;
+}
+
+.ticks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.ticks__label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.steps-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.steps-editor__step {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.steps-editor__head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.steps-editor__moves {
+  display: flex;
+  gap: var(--space-1);
+}
+
+/* One way a step can end: the words, the step that follows, and whether
+   what was said goes with it, in the same three columns on every line. */
+.steps-editor__then {
+  display: grid;
+  grid-template-columns: minmax(0, var(--steps-then-words)) minmax(0, var(--steps-then-step)) auto;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  padding-left: var(--space-4);
+  color: var(--color-text-secondary);
+}
+
+.steps-editor__pick {
+  display: contents;
+}
+
+.definition__nowrap {
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .steps-editor__head,
+  .steps-editor__then {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

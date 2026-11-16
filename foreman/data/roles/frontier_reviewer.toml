@@ -10,8 +10,10 @@ session_persistence = false
 permission_mode = "bypassPermissions"
 
 [agent.tools]
+# No tool at all: this role judges from what the engine hands it.
+none = true
 allowed = []
-disallowed = ["Bash", "Read", "Glob", "Grep", "Write", "Edit", "NotebookEdit"]
+disallowed = []
 
 [prompt]
 template = """

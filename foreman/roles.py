@@ -43,6 +43,9 @@ class AgentToolConfig:
 
     allowed: tuple[str, ...] = ()
     disallowed: tuple[str, ...] = ()
+    #: The role has no tool at all. An empty ``allowed`` means every tool,
+    #: so having none is said outright.
+    none: bool = False
 
 
 @dataclass(slots=True)
@@ -221,6 +224,12 @@ def parse_role(data: Mapping[str, Any], role_path: Path) -> RoleDefinition:
                     f"{', '.join(unknown)}. Known tools: {', '.join(known_tools)}."
                 )
 
+    no_tools = _require_bool(tools_data, "none", role_path, default=False)
+    if no_tools and _require_string_list(tools_data, "allowed", role_path, default=()):
+        raise RoleLoadError(
+            f"{role_path}: agent.tools says none and also lists allowed tools; keep one."
+        )
+
     return RoleDefinition(
         id=_require_string(role_data, "id", role_path),
         name=_require_string(role_data, "name", role_path),
@@ -238,6 +247,7 @@ def parse_role(data: Mapping[str, Any], role_path: Path) -> RoleDefinition:
             tools=AgentToolConfig(
                 allowed=_require_string_list(tools_data, "allowed", role_path, default=()),
                 disallowed=_require_string_list(tools_data, "disallowed", role_path, default=()),
+                none=no_tools,
             ),
         ),
         prompt_template=prompt_template,

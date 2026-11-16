@@ -257,6 +257,7 @@ class AgentStepRunner:
             permission_mode=role.agent.permission_mode,
             disallowed_tools=role.agent.tools.disallowed,
             allowed_tools=role.agent.tools.allowed,
+            no_tools=role.agent.tools.none,
             extra_flags=role.agent.flags,
             # What the project passes through from the host, then what the
             # role sets; the runner adds both to the short list of host

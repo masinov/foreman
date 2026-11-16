@@ -143,7 +143,9 @@ Foreman now has:
 
 - shipped `foreman/data/roles/*.toml` and `foreman/data/workflows/*.toml` defaults,
   with a project's own roles and workflows over them: TOML text in the
-  `definitions` table, read through `foreman/definitions.py` (ADR-0024),
+  `definitions` table, read through `foreman/definitions.py` (ADR-0024);
+  `foreman/dashboard_definitions.py` turns one into the editor's form fields
+  and the fields back into text,
 - prompt rendering with completion and signal conventions,
 - a persisted orchestrator loop that can execute the shipped workflow graph,
 - end-to-end runtime coverage for the opt-in `development_secure` variant

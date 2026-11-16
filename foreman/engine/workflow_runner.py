@@ -754,6 +754,7 @@ class WorkflowRunner:
                 "permission_mode": role.agent.permission_mode,
                 "allowed_tools": list(role.agent.tools.allowed),
                 "disallowed_tools": list(role.agent.tools.disallowed),
+                "no_tools": role.agent.tools.none,
             },
         )
         self.write_runtime_context(

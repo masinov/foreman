@@ -3117,7 +3117,7 @@ class DashboardTaskEditEventTests(unittest.TestCase):
 
 
 class DashboardRolesTests(unittest.TestCase):
-    """Tests for GET /api/roles and PATCH /api/roles/{role_id} (sprint-36)."""
+    """Tests for GET /api/roles: the shipped roles."""
 
     @classmethod
     def setUpClass(cls):
@@ -3151,35 +3151,6 @@ class DashboardRolesTests(unittest.TestCase):
 
         return asyncio.run(send())
 
-    def test_patch_cannot_change_what_an_agent_may_do_on_the_host(self):
-        before = (self.roles_dir / "code_reviewer.toml").read_text(encoding="utf-8")
-        for field, value in (("permission_mode", "plan"), ("backend", "codex")):
-            with self.subTest(field=field):
-                resp = self._request("PATCH", "/api/roles/code_reviewer", json={field: value})
-                self.assertEqual(resp.status_code, 403)
-                self.assertIn(field, resp.json()["error"])
-        self.assertEqual((self.roles_dir / "code_reviewer.toml").read_text(encoding="utf-8"), before)
-
-    def test_patch_accepts_host_level_fields_sent_back_unchanged(self):
-        role = next(
-            r for r in self._request("GET", "/api/roles").json()["roles"] if r["id"] == "code_reviewer"
-        )
-        resp = self._request(
-            "PATCH",
-            "/api/roles/code_reviewer",
-            json={
-                "model": "claude-test-model",
-                "backend": role["backend"],
-                "permission_mode": role["permission_mode"],
-            },
-        )
-        self.assertEqual(resp.status_code, 200, resp.text)
-        self.assertEqual(resp.json()["model"], "claude-test-model")
-
-    def test_patch_leaves_no_temporary_file_behind(self):
-        self._request("PATCH", "/api/roles/architect", json={"model": "claude-test-model"})
-        self.assertEqual([p.name for p in self.roles_dir.iterdir() if p.name.startswith(".")], [])
-
     # ── GET /api/roles ────────────────────────────────────────────────────────
 
     def test_list_roles_returns_200_with_roles_array(self):
@@ -3207,79 +3178,6 @@ class DashboardRolesTests(unittest.TestCase):
         resp = self._request("GET", "/api/roles")
         ids = {r["id"] for r in resp.json()["roles"]}
         self.assertIn("developer", ids)
-
-    # ── PATCH /api/roles/{role_id} ────────────────────────────────────────────
-
-    def test_patch_unknown_role_returns_404(self):
-        """PATCH on a non-existent role returns 404."""
-        resp = self._request("PATCH", "/api/roles/no-such-role", json={"model": "x"})
-        self.assertEqual(resp.status_code, 404)
-
-    def test_patch_unknown_field_returns_400(self):
-        """PATCH with an unknown field returns 400."""
-        resp = self._request("PATCH", "/api/roles/developer", json={"prompt_template": "x"})
-        self.assertEqual(resp.status_code, 400)
-
-    def test_patch_invalid_timeout_type_returns_400(self):
-        """PATCH with a float timeout_minutes returns 400."""
-        resp = self._request("PATCH", "/api/roles/developer", json={"timeout_minutes": 1.5})
-        self.assertEqual(resp.status_code, 400)
-
-    def test_patch_negative_timeout_returns_400(self):
-        """PATCH with a non-positive timeout_minutes returns 400."""
-        resp = self._request("PATCH", "/api/roles/developer", json={"timeout_minutes": 0})
-        self.assertEqual(resp.status_code, 400)
-
-    def test_patch_invalid_cost_type_returns_400(self):
-        """PATCH with a string max_cost_usd returns 400."""
-        resp = self._request("PATCH", "/api/roles/developer", json={"max_cost_usd": "free"})
-        self.assertEqual(resp.status_code, 400)
-
-    def test_patch_empty_body_returns_role_unchanged(self):
-        """PATCH with no fields returns 200 with the current role state."""
-        resp = self._request("PATCH", "/api/roles/developer", json={})
-        self.assertEqual(resp.status_code, 200)
-        role = resp.json()
-        self.assertEqual(role["id"], "developer")
-
-    def test_patch_model_updates_and_persists(self):
-        """PATCH model on a role writes to TOML and returns the updated value."""
-        # Read current model value
-        resp = self._request("GET", "/api/roles")
-        developer = next(r for r in resp.json()["roles"] if r["id"] == "developer")
-        original_model = developer["model"]
-
-        new_model = "claude-test-model"
-        resp = self._request("PATCH", "/api/roles/developer", json={"model": new_model})
-        self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.json()["model"], new_model)
-
-        # Re-read to confirm persistence
-        resp2 = self._request("GET", "/api/roles")
-        developer2 = next(r for r in resp2.json()["roles"] if r["id"] == "developer")
-        self.assertEqual(developer2["model"], new_model)
-
-        # Restore original value so we don't pollute other tests
-        self._request("PATCH", "/api/roles/developer", json={"model": original_model})
-
-    def test_patch_invalid_json_returns_400(self):
-        """PATCH with malformed JSON returns 400."""
-        async def send():
-            app = create_dashboard_app(str(self.db_path))
-            transport = httpx.ASGITransport(app=app)
-            async with httpx.AsyncClient(
-                transport=transport,
-                base_url="http://testserver",
-            ) as client:
-                return await client.patch(
-                    "/api/roles/developer",
-                    content=b"not-json",
-                    headers={"content-type": "application/json"},
-                )
-
-        resp = asyncio.run(send())
-        self.assertEqual(resp.status_code, 400)
-
 
 class DashboardInterventionTests(unittest.TestCase):
     """Tests for sprint-36 intervention and ordering features."""

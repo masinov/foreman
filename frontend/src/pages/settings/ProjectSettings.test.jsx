@@ -16,6 +16,7 @@ import {
 
 const GENERAL = "/dashboard/projects/foreman/settings";
 const WORKFLOW = "/dashboard/projects/foreman/settings/workflow";
+const ROLES = "/dashboard/projects/foreman/settings/roles";
 
 async function renderGeneral(routes = settingsRoutes()) {
   const fetchImpl = createFakeFetch(routes);
@@ -27,7 +28,7 @@ async function renderGeneral(routes = settingsRoutes()) {
 const saves = (fetchImpl) => fetchImpl.calls.filter((call) => `${call.method} ${call.url}` === SAVE_URL);
 
 describe("the page around project settings", () => {
-  it("is a page of its own: breadcrumb, two tabs, no engine row and no Needs you", async () => {
+  it("is a page of its own: breadcrumb, three tabs, no engine row and no Needs you", async () => {
     await renderGeneral();
     const crumbs = screen.getByRole("navigation", { name: "Breadcrumb" });
     expect(within(crumbs).queryByRole("link", { name: "Workspace" })).toBeNull();
@@ -39,7 +40,7 @@ describe("the page around project settings", () => {
     expect(screen.getByRole("heading", { level: 1, name: "Project settings" })).toBeInTheDocument();
     expect(await screen.findByText("Foreman · /srv/foreman")).toBeInTheDocument();
     const tabs = screen.getByRole("navigation", { name: "Project settings" });
-    expect(within(tabs).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual([GENERAL, WORKFLOW]);
+    expect(within(tabs).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual([GENERAL, WORKFLOW, ROLES]);
     expect(within(tabs).getByRole("link", { current: "page" })).toHaveTextContent("General");
     expect(screen.queryByRole("region", { name: /needs you/i })).toBeNull();
     expect(screen.queryByText(/Needs you/i, { selector: "h2" })).toBeNull();
@@ -366,12 +367,6 @@ describe("Workflow tab", () => {
       ["Developer", "Writes code, tests, and documentation for assigned tasks", "claude_code", "project default"],
       ["Code Reviewer", "Reviews completed work and returns APPROVE, DENY, or STEER", "claude_code", "claude-sonnet-5-5"],
     ]);
-  });
-
-  it("says where the definition file is and that it is not edited here", async () => {
-    await renderWorkflow();
-    expect(screen.getByText("/srv/foreman/foreman/data/workflows/development.toml")).toBeInTheDocument();
-    expect(screen.getByText(/cannot be edited here/)).toBeInTheDocument();
   });
 
   it("asks for confirmation before changing the workflow, then changes it through the API", async () => {

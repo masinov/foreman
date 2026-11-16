@@ -5,6 +5,7 @@ export const SETTINGS_URL = "GET /api/v1/projects/foreman/settings";
 export const SAVE_URL = "PATCH /api/v1/projects/foreman/settings";
 export const WORKFLOW_URL = "GET /api/v1/projects/foreman/workflow";
 export const WORKFLOWS_URL = "GET /api/v1/workflows";
+export const DEFINITIONS_URL = "GET /api/v1/projects/foreman/definitions";
 
 export const EFFECTIVE = {
   triage: "human",
@@ -167,12 +168,94 @@ export const LIGHT = {
   requirements_enforced: true,
 };
 
+/** A workflow as the editor is given it: each step with what follows each way it can end. */
+function editable(workflow, fields = {}) {
+  return {
+    id: workflow.id,
+    name: workflow.name,
+    origin: "shipped",
+    used: false,
+    steps: workflow.steps.map((step) => ({
+      ...step,
+      then: Object.fromEntries(
+        workflow.transitions
+          .filter((edge) => edge.from === step.id)
+          .map((edge) => [edge.outcome, { to: edge.to, carry_output: edge.carry_output }]),
+      ),
+    })),
+    text: `[workflow]\nid = "${workflow.id}"\n`,
+    ...fields,
+  };
+}
+
+export function editableRole(fields = {}) {
+  return {
+    id: "code_reviewer",
+    name: "Code Reviewer",
+    description: "Reviews completed work and returns APPROVE, DENY, or STEER",
+    backend: "claude_code",
+    model: "claude-sonnet-5-5",
+    tools: { every: false, chosen: ["Read", "Grep", "Glob"] },
+    ends: "decides",
+    decisions: ["approve", "deny", "steer"],
+    marker: "",
+    timeout_minutes: 10,
+    max_cost_usd: 5,
+    prompt: "Review the change.\nAPPROVE\nDENY: <reason>\nSTEER: <what to do>",
+    origin: "shipped",
+    used_by: ["Standard Development"],
+    text: '[role]\nid = "code_reviewer"\n',
+    ...fields,
+  };
+}
+
+export const VOCABULARY = {
+  tools: { claude_code: ["Read", "Grep", "Glob", "Edit", "Write", "Bash"] },
+  decisions: ["approve", "deny", "steer", "escalate"],
+  models: ["claude-sonnet-5-5", "claude-opus-5-5"],
+  default_model: "claude-sonnet-5-5",
+  done_by: [
+    { role: "_builtin:run_tests", label: "The tests", outcomes: ["success", "failure"] },
+    { role: "_builtin:human_gate", label: "A person", outcomes: ["approve", "deny", "steer"] },
+    { role: "_builtin:merge", label: "The merge", outcomes: ["success", "failure", "conflict"] },
+    { role: "_builtin:mark_done", label: "Mark the task done", outcomes: ["success"] },
+    { role: "developer", label: "Developer", outcomes: ["done"] },
+    { role: "code_reviewer", label: "Code Reviewer", outcomes: ["approve", "deny", "steer"] },
+  ],
+  gate_policies: ["merge_approval", "plan_approval"],
+};
+
+export function definitionsPayload({ roles, workflows = [DEVELOPMENT, LIGHT], current = "development" } = {}) {
+  return {
+    roles: roles ?? [
+      editableRole({
+        id: "developer",
+        name: "Developer",
+        description: "Writes code, tests, and documentation for assigned tasks",
+        model: "",
+        tools: { every: true, chosen: [] },
+        ends: "done",
+        decisions: [],
+        marker: "TASK_COMPLETE",
+        timeout_minutes: 60,
+        max_cost_usd: 30,
+        prompt: "Do the task. End with {completion_marker}",
+        used_by: ["Standard Development", "Light Review"],
+      }),
+      editableRole(),
+    ],
+    workflows: workflows.map((workflow) => editable(workflow, { used: workflow.id === current })),
+    vocabulary: VOCABULARY,
+  };
+}
+
 export function settingsRoutes({ effective, workflow = DEVELOPMENT, workflows = [DEVELOPMENT, LIGHT] } = {}) {
   return {
     ...workspaceRoutes(),
     [SETTINGS_URL]: settingsPayload(effective),
     [WORKFLOW_URL]: workflow,
     [WORKFLOWS_URL]: { workflows },
+    [DEFINITIONS_URL]: definitionsPayload({ workflows, current: workflow.id }),
     [COPIES_URL]: COPIES,
   };
 }

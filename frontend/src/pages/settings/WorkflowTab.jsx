@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 
+import { getProjectDefinitions } from "../../api/definitions";
 import { getProjectSettings, getProjectWorkflow } from "../../api/projects";
 import { useResource } from "../../api/useResource";
 import { Button } from "../../ui/Button";
@@ -7,7 +8,9 @@ import { Mono } from "../../ui/Mono";
 import { SectionHeading } from "../../ui/SectionHeading";
 import { Table } from "../../ui/Table";
 import { ChangeWorkflowDialog } from "./ChangeWorkflowDialog";
+import { ORIGIN } from "./definitionWords";
 import { decider } from "./settingsWords";
+import { WorkflowEditor } from "./WorkflowEditor";
 import { REQUIREMENT_SOURCES, stepRows } from "./workflowWords";
 
 function How({ how }) {
@@ -92,7 +95,12 @@ export function WorkflowTab({ projectId }) {
   const settings = useResource(["project-settings", projectId], (client, options) =>
     getProjectSettings(client, projectId, options),
   );
+  const definitions = useResource(["project-definitions", projectId], (client, options) =>
+    getProjectDefinitions(client, projectId, options),
+  );
   const [changing, setChanging] = useState(false);
+  // null, "edit" or "new": the step editor, on this workflow or on a copy of it.
+  const [editing, setEditing] = useState(null);
 
   const error = workflow.error || settings.error;
   if (error && !(workflow.data && settings.data)) {
@@ -111,6 +119,12 @@ export function WorkflowTab({ projectId }) {
     plan_approval: decider(effective.plan_approval),
   };
   const rows = stepRows(definition, { decidedBy, defaultBranch: settings.data.default_branch });
+  const own = definitions.data?.workflows.find((entry) => entry.id === definition.id) ?? null;
+  const reloadAll = () => {
+    workflow.reload();
+    settings.reload();
+    definitions.reload();
+  };
 
   return (
     <div className="workflow">
@@ -122,12 +136,19 @@ export function WorkflowTab({ projectId }) {
               {definition.name} <Mono quiet>{definition.id}</Mono>
             </>
           }
-          actions={<Button onClick={() => setChanging(true)}>Use another workflow</Button>}
+          note={ORIGIN[own?.origin] || undefined}
+          actions={
+            <>
+              <Button disabled={!own} onClick={() => setEditing("edit")}>
+                Edit steps
+              </Button>
+              <Button disabled={!own} onClick={() => setEditing("new")}>
+                New workflow
+              </Button>
+              <Button onClick={() => setChanging(true)}>Use another workflow</Button>
+            </>
+          }
         />
-        <p className="workflow__source">
-          Read from <Mono>{definition.source_path}</Mono>. Edit that file to change the steps; they cannot be edited
-          here.
-        </p>
         <Steps rows={rows} />
       </section>
 
@@ -155,8 +176,19 @@ export function WorkflowTab({ projectId }) {
         onClose={() => setChanging(false)}
         onChanged={() => {
           setChanging(false);
-          workflow.reload();
-          settings.reload();
+          reloadAll();
+        }}
+      />
+      <WorkflowEditor
+        open={Boolean(editing && own)}
+        projectId={projectId}
+        workflow={own}
+        isNew={editing === "new"}
+        vocabulary={definitions.data?.vocabulary}
+        onClose={() => setEditing(null)}
+        onSaved={() => {
+          setEditing(null);
+          reloadAll();
         }}
       />
     </div>

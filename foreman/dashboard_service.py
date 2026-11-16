@@ -128,30 +128,6 @@ class DashboardPermissionError(DashboardServiceError):
     """Raised when a valid credential is not allowed to do this (HTTP 403)."""
 
 
-_ALLOWED_ROLE_FIELDS: frozenset[str] = frozenset(
-    {"backend", "model", "permission_mode", "timeout_minutes", "max_cost_usd"}
-)
-_HOST_LEVEL_ROLE_FIELDS: frozenset[str] = frozenset({"backend", "permission_mode"})
-
-
-def _validate_role_updates(updates: dict[str, Any]) -> None:
-    """Raise DashboardValidationError when any role field value is invalid."""
-
-    for field_name in ("backend", "model", "permission_mode"):
-        if field_name in updates and not isinstance(updates[field_name], str):
-            raise DashboardValidationError(f"'{field_name}' must be a string.")
-
-    if "timeout_minutes" in updates:
-        value = updates["timeout_minutes"]
-        if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
-            raise DashboardValidationError("'timeout_minutes' must be a positive integer.")
-
-    if "max_cost_usd" in updates:
-        value = updates["max_cost_usd"]
-        if isinstance(value, bool) or not isinstance(value, (int, float)) or float(value) <= 0:
-            raise DashboardValidationError("'max_cost_usd' must be a positive number.")
-
-
 def _serialize_role(role: "Any") -> dict[str, Any]:
     """Serialize one RoleDefinition to a JSON-friendly dict."""
 
@@ -1800,79 +1776,59 @@ class DashboardService:
             raise DashboardActionError(f"Failed to load roles: {exc}") from exc
         return {"roles": [_serialize_role(role) for role in roles.values()]}
 
-    def update_role(self, role_id: str, *, updates: dict[str, Any]) -> dict[str, Any]:
-        """Apply allowed field updates to one role TOML file and return the updated role.
+    # ── a project's own roles and workflows (ADR-0024) ─────────────────────
 
-        Allowed fields: backend, model, permission_mode, timeout_minutes, max_cost_usd.
-        Unknown role returns DashboardNotFoundError; validation failures raise
-        DashboardValidationError.
-        """
+    def get_project_definitions(self, project_id: str) -> dict[str, Any]:
+        """The roles and workflows a project runs with, as the editor shows them."""
 
-        from .roles import RoleLoadError, load_role, load_roles
+        from .dashboard_definitions import describe_project_definitions
+        from .roles import RoleLoadError
+        from .workflows import WorkflowLoadError
 
+        self._require_project(project_id)
         try:
-            roles = load_roles()
-        except RoleLoadError as exc:
-            raise DashboardActionError(f"Failed to load roles: {exc}") from exc
+            return describe_project_definitions(self.store, project_id)
+        except (RoleLoadError, WorkflowLoadError) as exc:
+            raise DashboardValidationError(f"The project's definitions do not load: {exc}") from exc
 
-        if role_id not in roles:
-            raise DashboardNotFoundError(f"Role not found: {role_id}")
+    def save_project_definition(
+        self,
+        project_id: str,
+        kind: str,
+        definition_id: str,
+        body: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Save one role or workflow for a project from the editor."""
 
-        unknown = set(updates) - _ALLOWED_ROLE_FIELDS
-        if unknown:
-            raise DashboardValidationError(
-                f"Unknown role fields: {', '.join(sorted(unknown))}"
-            )
+        from .dashboard_definitions import save_from_dashboard
+        from .definitions import DefinitionError
 
-        if not updates:
-            return _serialize_role(roles[role_id])
-
-        _validate_role_updates(updates)
-
-        import tomlkit
-
-        role = roles[role_id]
-        with open(role.source_path, encoding="utf-8") as fh:
-            doc = tomlkit.load(fh)
-
-        # What an agent may do on the host is not a dashboard decision. A
-        # client that sends back the value it read is not changing anything.
-        blocked = sorted(
-            key
-            for key in _HOST_LEVEL_ROLE_FIELDS
-            if key in updates and updates[key] != doc["agent"].get(key)
-        )
-        if blocked:
-            raise DashboardPermissionError(
-                f"{', '.join(blocked)} cannot be changed through the dashboard: "
-                "these fields decide what an agent may do on the host. Edit "
-                f"{Path(role.source_path).name} in the roles directory instead."
-            )
-
-        for key, value in updates.items():
-            if key in ("backend", "model", "permission_mode"):
-                doc["agent"][key] = value
-            elif key == "timeout_minutes":
-                doc["completion"]["timeout_minutes"] = int(value)
-            elif key == "max_cost_usd":
-                doc["completion"]["max_cost_usd"] = float(value)
-
-        # Validate the new file before it replaces the old one, so a bad value
-        # never leaves a role that fails to load.
-        source_path = Path(role.source_path)
-        candidate = source_path.with_name(f".{source_path.name}.tmp")
+        self._require_project(project_id)
+        changed_by = str(body.get("requested_by") or "").strip() or "dashboard"
         try:
-            with open(candidate, "w", encoding="utf-8") as fh:
-                tomlkit.dump(doc, fh)
-            try:
-                load_role(candidate)
-            except RoleLoadError as exc:
-                raise DashboardValidationError(f"Invalid role update: {exc}") from exc
-            os.replace(candidate, source_path)
-        finally:
-            candidate.unlink(missing_ok=True)
+            save_from_dashboard(
+                self.store, project_id, kind, definition_id, body, changed_by=changed_by
+            )
+        except DefinitionError as exc:
+            raise DashboardValidationError(str(exc)) from exc
+        return self.get_project_definitions(project_id)
 
-        return _serialize_role(load_role(source_path))
+    def reset_project_definition(
+        self, project_id: str, kind: str, definition_id: str, *, requested_by: str | None = None
+    ) -> dict[str, Any]:
+        """Drop a project's own role or workflow; a shipped id goes back to the shipped one."""
+
+        from .dashboard_definitions import reset_from_dashboard
+        from .definitions import DefinitionError
+
+        self._require_project(project_id)
+        try:
+            reset_from_dashboard(
+                self.store, project_id, kind, definition_id, changed_by=requested_by or "dashboard"
+            )
+        except DefinitionError as exc:
+            raise DashboardValidationError(str(exc)) from exc
+        return self.get_project_definitions(project_id)
 
     def get_project_status(self, project_id: str) -> str:
         """Derive one project status from its task states."""

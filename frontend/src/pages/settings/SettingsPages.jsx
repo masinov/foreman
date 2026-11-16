@@ -7,6 +7,7 @@ import { Link } from "../../app/router";
 import { Mono } from "../../ui/Mono";
 import { Tabs } from "../../ui/Tabs";
 import { GeneralTab } from "./GeneralTab";
+import { RolesTab } from "./RolesTab";
 import { WorkflowTab } from "./WorkflowTab";
 
 import "../../styles/lists.css";
@@ -49,6 +50,7 @@ function SettingsLayout({ projectId, children }) {
         items={[
           { href: paths.projectSettings(projectId), label: "General" },
           { href: paths.projectSettingsWorkflow(projectId), label: "Workflow" },
+          { href: paths.projectSettingsRoles(projectId), label: "Roles" },
         ]}
       />
       <div className="settings-page__tab">{children}</div>
@@ -70,6 +72,15 @@ export function ProjectSettingsWorkflowPage({ params }) {
   return (
     <SettingsLayout projectId={params.projectId}>
       <WorkflowTab projectId={params.projectId} />
+    </SettingsLayout>
+  );
+}
+
+/** /dashboard/projects/{id}/settings/roles: Roles. */
+export function ProjectSettingsRolesPage({ params }) {
+  return (
+    <SettingsLayout projectId={params.projectId}>
+      <RolesTab projectId={params.projectId} />
     </SettingsLayout>
   );
 }

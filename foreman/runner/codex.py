@@ -501,6 +501,8 @@ def _sandbox_mode_for(config: AgentRunConfig) -> str:
 def _tool_permitted(config: AgentRunConfig, tool: str) -> bool:
     """Whether the role may use ``tool``: on its allowlist if it has one, and not denied."""
 
+    if config.no_tools:
+        return False
     if config.allowed_tools and tool not in config.allowed_tools:
         return False
     return tool not in config.disallowed_tools

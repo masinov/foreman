@@ -209,6 +209,7 @@ export function createApiClient({
     get: (path, options) => request("GET", path, options),
     post: (path, body, options) => request("POST", path, { ...options, body }),
     patch: (path, body, options) => request("PATCH", path, { ...options, body }),
+    put: (path, body, options) => request("PUT", path, { ...options, body }),
     delete: (path, options) => request("DELETE", path, options),
   };
 }

@@ -2,14 +2,23 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import io
 from pathlib import Path
 import tempfile
 import unittest
 
+import httpx
+
 from foreman.cli import main
 from foreman.cli.parser import MANAGER_SESSION_COMMANDS
+from foreman.dashboard_backend import create_dashboard_app
+from foreman.dashboard_definitions import (
+    describe_project_definitions,
+    role_text_from_fields,
+    workflow_text_from_fields,
+)
 from foreman.data import ROLES_DIR, WORKFLOWS_DIR
 from foreman.definitions import (
     DefinitionError,
@@ -22,6 +31,7 @@ from foreman.engine_control import resolve_gate_steps
 from foreman.models import Project
 from foreman.orchestrator import ForemanOrchestrator
 from foreman.roles import RoleLoadError, load_role_text, load_roles
+from foreman.workflows import load_workflow_text
 from foreman.store import ForemanStore
 
 
@@ -259,6 +269,208 @@ class CliTests(_Workspace):
     def test_a_manager_session_may_read_definitions_and_not_change_them(self) -> None:
         self.assertLessEqual({"role list", "role show", "workflow list", "workflow show"}, MANAGER_SESSION_COMMANDS)
         self.assertFalse({"role set", "role reset", "workflow set", "workflow reset"} & MANAGER_SESSION_COMMANDS)
+
+
+ROLE_FIELDS = ("name", "description", "model", "tools", "ends", "decisions", "timeout_minutes", "max_cost_usd", "prompt")
+
+
+def fields_of(described: dict) -> dict:
+    return {key: described[key] for key in ROLE_FIELDS}
+
+
+class FormTests(_Workspace):
+    """The editor's form and the stored text say the same thing, both ways."""
+
+    def test_every_shipped_role_survives_the_form_unchanged(self) -> None:
+        described = describe_project_definitions(self.store, "p1")
+        shipped = load_roles()
+
+        for role in described["roles"]:
+            with self.subTest(role=role["id"]):
+                text = role_text_from_fields(role["text"], role["id"], fields_of(role))
+                again = load_role_text(text, role["id"])
+                before = shipped[role["id"]]
+                self.assertEqual(again.completion, before.completion)
+                self.assertEqual(again.prompt_template, before.prompt_template)
+                self.assertEqual(again.agent.model, before.agent.model)
+                self.assertEqual(again.agent.flags, before.agent.flags)
+                self.assertEqual(again.signals, before.signals)
+
+    def test_a_role_with_no_tool_stays_without_tools(self) -> None:
+        described = describe_project_definitions(self.store, "p1")
+        triage = next(role for role in described["roles"] if role["id"] == "triage_reviewer")
+        self.assertEqual(triage["tools"], {"every": False, "chosen": []})
+
+        again = load_role_text(role_text_from_fields(triage["text"], "triage_reviewer", fields_of(triage)), "t")
+
+        self.assertTrue(again.agent.tools.none)
+        self.assertEqual(list(again.agent.tools.allowed), [])
+
+    def test_choosing_a_tool_for_a_role_that_had_none(self) -> None:
+        described = describe_project_definitions(self.store, "p1")
+        triage = next(role for role in described["roles"] if role["id"] == "triage_reviewer")
+        fields = fields_of(triage)
+        fields["tools"] = {"every": False, "chosen": ["Read"]}
+
+        again = load_role_text(role_text_from_fields(triage["text"], "triage_reviewer", fields), "t")
+
+        self.assertFalse(again.agent.tools.none)
+        self.assertEqual(list(again.agent.tools.allowed), ["Read"])
+
+    def test_every_shipped_workflow_survives_the_form_unchanged(self) -> None:
+        described = describe_project_definitions(self.store, "p1")
+        roles = load_roles()
+        outcomes = {role_id: role.completion.outcomes for role_id, role in roles.items()}
+
+        for workflow in described["workflows"]:
+            with self.subTest(workflow=workflow["id"]):
+                text = workflow_text_from_fields(
+                    workflow["text"], workflow["id"], {"name": workflow["name"], "steps": workflow["steps"]}
+                )
+                again = load_workflow_text(text, "w", available_role_ids=set(roles), role_outcomes=outcomes)
+                before = project_definitions(self.store, "p1").workflows[workflow["id"]]
+                self.assertEqual(again.steps, before.steps)
+                self.assertEqual(
+                    sorted(again.transitions, key=lambda tr: (tr.from_step, tr.trigger)),
+                    sorted(before.transitions, key=lambda tr: (tr.from_step, tr.trigger)),
+                )
+                self.assertEqual(again.gates, before.gates)
+                self.assertEqual(again.fallback, before.fallback)
+
+
+class ApiTests(_Workspace):
+    def request(self, method: str, path: str, **kwargs):
+        async def send():
+            app = create_dashboard_app(str(self.db_path))
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://testserver"
+            ) as client:
+                return await client.request(method, f"/api/v1{path}", **kwargs)
+
+        return asyncio.run(send())
+
+    def role(self, role_id: str, project: str = "p1") -> dict:
+        payload = self.request("GET", f"/projects/{project}/definitions").json()
+        return next(role for role in payload["roles"] if role["id"] == role_id)
+
+    def test_the_editor_is_given_roles_workflows_and_the_words_to_choose_from(self) -> None:
+        response = self.request("GET", "/projects/p1/definitions")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        reviewer = next(role for role in payload["roles"] if role["id"] == "code_reviewer")
+        self.assertEqual(reviewer["origin"], "shipped")
+        self.assertEqual(reviewer["ends"], "decides")
+        self.assertEqual(reviewer["decisions"], ["approve", "deny", "steer"])
+        self.assertEqual(reviewer["tools"], {"every": False, "chosen": ["Read", "Grep", "Glob"]})
+        self.assertIn("Standard Development", reviewer["used_by"])
+        development = next(w for w in payload["workflows"] if w["id"] == "development")
+        self.assertTrue(development["used"])
+        self.assertEqual(development["steps"][1]["then"]["failure"], {"to": "develop", "carry_output": True})
+        self.assertIn("Read", payload["vocabulary"]["tools"]["claude_code"])
+        tests = next(entry for entry in payload["vocabulary"]["done_by"] if entry["role"] == "_builtin:run_tests")
+        self.assertEqual(tests["outcomes"], ["success", "failure"])
+
+    def test_saving_the_form_changes_the_role_for_this_project(self) -> None:
+        fields = fields_of(self.role("code_reviewer"))
+        fields["model"] = "claude-opus-5-5"
+        fields["tools"] = {"every": False, "chosen": ["Read", "Grep", "Glob", "Bash"]}
+        fields["timeout_minutes"] = 20
+
+        response = self.request("PUT", "/projects/p1/roles/code_reviewer", json={"fields": fields})
+
+        self.assertEqual(response.status_code, 200, response.text)
+        saved = project_definitions(self.store, "p1").roles["code_reviewer"]
+        self.assertEqual(saved.agent.model, "claude-opus-5-5")
+        self.assertEqual(list(saved.agent.tools.allowed), ["Read", "Grep", "Glob", "Bash"])
+        self.assertEqual(list(saved.agent.tools.disallowed), [])
+        self.assertEqual(saved.completion.timeout_minutes, 20)
+        self.assertTrue(saved.completion.output.approve_needs_reading)
+        self.assertEqual(self.role("code_reviewer")["origin"], "changed")
+        self.assertEqual(self.role("code_reviewer", "p2")["origin"], "shipped")
+
+    def test_a_decision_the_prompt_never_mentions_is_refused(self) -> None:
+        fields = fields_of(self.role("security_reviewer"))
+        fields["decisions"] = ["approve", "deny", "steer"]
+
+        response = self.request("PUT", "/projects/p1/roles/security_reviewer", json={"fields": fields})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("may decide STEER but its prompt never says so", response.text)
+        self.assertEqual(self.store.current_definitions("p1"), [])
+
+    def test_a_new_role_starts_as_a_copy(self) -> None:
+        fields = fields_of(self.role("code_reviewer"))
+        fields["name"] = "Strict Reviewer"
+
+        refused = self.request("PUT", "/projects/p1/roles/strict_reviewer", json={"fields": fields})
+        self.assertEqual(refused.status_code, 400)
+        self.assertIn("starts as a copy", refused.text)
+
+        response = self.request(
+            "PUT", "/projects/p1/roles/strict_reviewer", json={"fields": fields, "copy_of": "code_reviewer"}
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        created = self.role("strict_reviewer")
+        self.assertEqual((created["name"], created["origin"], created["used_by"]), ("Strict Reviewer", "own", []))
+
+    def test_a_workflow_saved_from_its_steps(self) -> None:
+        payload = self.request("GET", "/projects/p1/definitions").json()
+        development = next(w for w in payload["workflows"] if w["id"] == "development")
+        steps = [step for step in development["steps"] if step["id"] != "review"]
+        for step in steps:
+            if step["id"] == "test":
+                step["then"]["success"] = {"to": "merge_approval", "carry_output": False}
+
+        response = self.request(
+            "PUT",
+            "/projects/p1/workflows/no_review",
+            json={"fields": {"name": "Without review", "steps": steps}, "copy_of": "development"},
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        saved = project_definitions(self.store, "p1").workflows["no_review"]
+        self.assertEqual([step.id for step in saved.steps], ["develop", "test", "merge_approval", "merge", "done"])
+        self.assertEqual(saved.find_transition("test", "success").to_step, "merge_approval")
+        self.assertEqual(len(saved.gates), 2)
+
+    def test_a_step_that_goes_to_a_step_that_is_gone_is_refused(self) -> None:
+        payload = self.request("GET", "/projects/p1/definitions").json()
+        development = next(w for w in payload["workflows"] if w["id"] == "development")
+        steps = [step for step in development["steps"] if step["id"] != "review"]
+
+        response = self.request(
+            "PUT", "/projects/p1/workflows/development", json={"fields": {"name": "Broken", "steps": steps}}
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("unknown step 'review'", response.text)
+
+    def test_text_whose_id_is_another_is_refused(self) -> None:
+        response = self.request(
+            "PUT", "/projects/p1/roles/code_reviewer", json={"text": shipped_role("developer")}
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("An id is not changed by editing", response.text)
+
+    def test_reset_goes_back_to_the_shipped_role(self) -> None:
+        self.request("PUT", "/projects/p1/roles/code_reviewer", json={"text": reviewer_on("claude-opus-5-5")})
+        self.assertEqual(self.role("code_reviewer")["model"], "claude-opus-5-5")
+
+        response = self.request("DELETE", "/projects/p1/roles/code_reviewer")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.role("code_reviewer")["model"], "claude-sonnet-5-5")
+        self.assertEqual(self.role("code_reviewer")["origin"], "shipped")
+
+    def test_an_unknown_project_is_not_found(self) -> None:
+        self.assertEqual(self.request("GET", "/projects/nope/definitions").status_code, 404)
+
+    def test_the_route_that_wrote_into_shipped_role_files_is_gone(self) -> None:
+        response = self.request("PATCH", "/roles/code_reviewer", json={"model": "x"})
+
+        self.assertIn(response.status_code, (404, 405))
 
 
 if __name__ == "__main__":
