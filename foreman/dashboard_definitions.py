@@ -106,13 +106,75 @@ id = "develop"
 role = "developer"
 
 [[steps]]
+id = "test"
+role = "_builtin:run_tests"
+
+[[steps]]
+id = "review"
+role = "code_reviewer"
+
+[[steps]]
+id = "merge"
+role = "_builtin:merge"
+
+[[steps]]
 id = "done"
 role = "_builtin:mark_done"
 
 [[transitions]]
 from = "develop"
 trigger = "completion:done"
+to = "test"
+
+[[transitions]]
+from = "test"
+trigger = "completion:success"
+to = "review"
+
+[[transitions]]
+from = "test"
+trigger = "completion:failure"
+to = "develop"
+carry_output = true
+
+[[transitions]]
+from = "review"
+trigger = "completion:approve"
+to = "merge"
+
+[[transitions]]
+from = "review"
+trigger = "completion:deny"
+to = "develop"
+carry_output = true
+
+[[transitions]]
+from = "review"
+trigger = "completion:steer"
+to = "develop"
+carry_output = true
+
+[[transitions]]
+from = "merge"
+trigger = "completion:success"
 to = "done"
+
+[[transitions]]
+from = "merge"
+trigger = "completion:failure"
+to = "develop"
+carry_output = true
+
+[[transitions]]
+from = "merge"
+trigger = "completion:conflict"
+to = "develop"
+carry_output = true
+
+[[transitions]]
+from = "merge"
+trigger = "completion:updated"
+to = "test"
 '''
 
 
@@ -212,7 +274,7 @@ def _describe_workflow(
 
 
 def _describe_blank(definitions: ProjectDefinitions) -> dict[str, Any]:
-    """The empty role and the two-step workflow a new one may start from."""
+    """The empty role, and the shortest workflow that can finish a task, to start a new one from."""
 
     role = load_role_text(_BLANK_ROLE, "the empty role")
     workflow = load_workflow_text(

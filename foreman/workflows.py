@@ -189,7 +189,99 @@ class WorkflowDefinition:
                             f"unrecognized outcome {trigger_outcome!r}."
                         )
 
+        if not errors:
+            errors.extend(self._soundness_errors(contracts))
         return errors
+
+    def _soundness_errors(self, contracts: Mapping[str, Collection[str]]) -> list[str]:
+        """Say why a task could not get through this workflow properly.
+
+        The checks above are about each route; these are about the whole:
+
+        - a task starts at the first step, which must be one that can start;
+        - every step is reached from there, and from every step the end
+          (a ``_builtin:mark_done`` step) can be reached;
+        - the end is only reached through a successful merge, so nothing is
+          marked done with its work unmerged;
+        - a merge is only reached with the tests having passed since the
+          last step that may have changed the code.
+        """
+
+        MERGE, DONE, TESTS = "_builtin:merge", "_builtin:mark_done", "_builtin:run_tests"
+        role_of = {step.id: step.role for step in self.steps}
+        entry = self.entry_step
+        edges = [
+            (t.from_step, t.trigger.removeprefix("completion:"), t.to_step) for t in self.transitions
+        ]
+
+        def reach(sources: Collection[str], skip=lambda edge: False) -> dict[str, str | None]:
+            """Steps reachable from ``sources``, each with the step it was reached from."""
+
+            came_from: dict[str, str | None] = {source: None for source in sources}
+            queue = list(sources)
+            while queue:
+                here = queue.pop(0)
+                for edge in edges:
+                    if edge[0] == here and not skip(edge) and edge[2] not in came_from:
+                        came_from[edge[2]] = here
+                        queue.append(edge[2])
+            return came_from
+
+        def path(came_from: Mapping[str, str | None], step: str) -> str:
+            steps = [step]
+            while came_from[steps[0]] is not None:
+                steps.insert(0, str(came_from[steps[0]]))
+            return " -> ".join(steps)
+
+        errors: list[str] = []
+        if role_of[entry] in (MERGE, DONE):
+            errors.append(
+                f"A task starts at the first step, {entry!r}, and that step is "
+                f"{'the merge' if role_of[entry] == MERGE else 'the one that marks it done'}: "
+                "there is nothing yet to merge or finish."
+            )
+
+        reached = reach([entry])
+        for step in self.steps:
+            if step.id not in reached:
+                errors.append(f"Step {step.id!r} is never reached: no step leads to it.")
+
+        ends = [step.id for step in self.steps if step.role == DONE]
+        if not ends:
+            errors.append("No step marks the task done, so a task would never finish.")
+        else:
+            for step in self.steps:
+                if step.id in reached and not any(end in reach([step.id]) for end in ends):
+                    errors.append(f"From step {step.id!r} a task can never reach the end.")
+
+        unmerged = reach([entry], skip=lambda edge: role_of[edge[0]] == MERGE and edge[1] == "success")
+        for end in ends:
+            if end in unmerged and role_of[entry] != DONE:
+                errors.append(
+                    f"A task can reach {end!r} without a successful merge ({path(unmerged, end)}): "
+                    "its work would be marked done and never merged."
+                )
+
+        # A step may have changed the code if an agent does it and it does not
+        # end in a decision. Only roles whose endings are known are counted.
+        changers = [
+            step.id
+            for step in self.steps
+            if not step.role.startswith("_builtin:")
+            and step.role in contracts
+            and "approve" not in contracts[step.role]
+        ]
+        for source in dict.fromkeys([entry, *changers]):
+            if source not in reached:
+                continue
+            untested = reach([source], skip=lambda edge: role_of[edge[0]] == TESTS and edge[1] == "success")
+            for step in self.steps:
+                if step.role == MERGE and step.id in untested and step.id != source:
+                    errors.append(
+                        f"A task can reach the merge step {step.id!r} from {source!r} without the tests "
+                        f"passing in between ({path(untested, step.id)})."
+                    )
+        return list(dict.fromkeys(errors))
 
     def find_transition_by_trigger(
         self,

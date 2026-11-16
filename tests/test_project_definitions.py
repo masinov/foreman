@@ -581,5 +581,8 @@ class WorkspaceDefaultTests(ApiTests):
             json={"fields": {"name": "Tiny", "steps": blank["workflow"]["steps"]}, "copy_of": "_blank"},
         )
         self.assertEqual(response.status_code, 200, response.text)
-        self.assertEqual([s.id for s in project_definitions(self.store, "p1").workflows["tiny"].steps], ["develop", "done"])
+        self.assertEqual(
+            [s.id for s in project_definitions(self.store, "p1").workflows["tiny"].steps],
+            ["develop", "test", "review", "merge", "done"],
+        )
 
