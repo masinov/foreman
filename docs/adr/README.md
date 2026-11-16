@@ -36,3 +36,4 @@ Filename format:
 | ADR-0021 | The Backlog Is A Place, Not A Sprint | accepted |
 | ADR-0022 | The Manager Proposes, A Person Confirms | accepted |
 | ADR-0023 | Agent Sandbox, First Cut | accepted |
+| ADR-0026 | A Branch Is Current Before It Is Merged | accepted |

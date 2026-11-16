@@ -600,3 +600,98 @@ class BranchAndMergeTests(OrchestratorTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BranchBehindAtMergeTests(OrchestratorTestCase):
+    """ADR-0026: a branch behind the default branch is updated and tested again."""
+
+    def test_branch_behind_at_merge_is_updated_tested_reviewed_and_merged(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+            project.settings["completion_guard_enabled"] = False
+            project.settings["merge_approval"] = "human"
+            store.save_project(project)
+            branch = task.branch_name or "feat/task-1"
+            self.git(repo_path, "checkout", "-b", branch)
+            self.write_text(repo_path / "ready.txt", "ready\n")
+            self.commit_all(repo_path, "feat: branch work")
+            self.git(repo_path, "checkout", "main")
+            executor = ScriptedAgentExecutor({})
+
+            def developer(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
+                return AgentExecutionResult(outcome="done", detail="Work done on the branch.")
+
+            def reviewer(*, task: Task, prompt: str, carried_output: str | None) -> AgentExecutionResult:
+                return AgentExecutionResult(outcome="approve", detail="Approved.")
+
+            executor.handlers.update(
+                {
+                    ("developer", 1): developer,
+                    ("code_reviewer", 1): reviewer,
+                    ("code_reviewer", 2): reviewer,
+                }
+            )
+            orchestrator = ForemanOrchestrator(
+                store,
+                roles=self.roles,
+                workflows=self.workflows,
+                agent_executor=executor,
+            )
+
+            orchestrator.run_project(project.id)
+            paused = store.get_task(task.id)
+            assert paused is not None
+            self.assertEqual(paused.workflow_current_step, "merge_approval")
+            reviewed_head = self.git(repo_path, "rev-parse", branch).stdout.strip()
+
+            # `main` moves while the task waits for the person.
+            self.write_text(repo_path / "other.txt", "other\n")
+            self.commit_all(repo_path, "feat: other work lands on main")
+            main_head = self.git(repo_path, "rev-parse", "main").stdout.strip()
+            operator_branch = current_branch(repo_path)
+
+            # Approved, but the branch is behind: updated, back at the test
+            # step, and the new head goes through review and approval again.
+            orchestrator.resume_human_gate(task.id, outcome="approve")
+            again = store.get_task(task.id)
+            assert again is not None
+            self.assertEqual(again.status, "blocked")
+            self.assertEqual(again.workflow_current_step, "merge_approval")
+            self.assertEqual(self.git(repo_path, "rev-parse", "main").stdout.strip(), main_head)
+            new_head = self.git(repo_path, "rev-parse", branch).stdout.strip()
+            self.assertNotEqual(new_head, reviewed_head)
+            self.git(repo_path, "merge-base", "--is-ancestor", main_head, branch)
+            self.assertEqual(current_branch(repo_path), operator_branch)
+
+            orchestrator.resume_human_gate(task.id, outcome="approve")
+            done = store.get_task(task.id)
+            assert done is not None
+            self.assertEqual(done.status, "done")
+            step_runs = [
+                r
+                for r in store.list_runs(task_id=task.id)
+                if r.role_id not in {"_builtin:orchestrator", "_builtin:human_gate"}
+            ]
+            self.assertEqual(
+                [(r.workflow_step, r.outcome) for r in step_runs],
+                [
+                    ("develop", "done"),
+                    ("test", "success"),
+                    ("review", "approve"),
+                    ("merge", "updated"),
+                    ("test", "success"),
+                    ("review", "approve"),
+                    ("merge", "success"),
+                    ("done", "success"),
+                ],
+            )
+            self.assertEqual(
+                self.git(repo_path, "show", "main:other.txt").stdout, "other\n"
+            )
+            self.assertEqual(
+                self.git(repo_path, "show", "main:ready.txt").stdout, "ready\n"
+            )

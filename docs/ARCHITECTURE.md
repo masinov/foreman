@@ -280,7 +280,9 @@ engine the same way every other surface does (ADR-0002 amendment):
 - `ensure(task)` — the task's tree, on the task branch, created on the first
   develop visit and reused on every later visit,
 - `ensure_integration()` — one shared tree pinned to the default branch, where
-  `_builtin:merge` runs its `--no-ff` merge,
+  `_builtin:merge` runs its `--no-ff` merge (only for a branch that contains
+  the default branch's head; a branch behind it is updated in its own tree and
+  sent back to `test` with the outcome `updated`, ADR-0026),
 - `remove(task)` / `remove_path(path)` — deletion, refusing anything outside
   the worktree root,
 - `list()` and `prune_project_worktrees(store, project)` — the operator
