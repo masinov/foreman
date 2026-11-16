@@ -4,44 +4,22 @@ import { useApiClient } from "../../api/ApiProvider";
 import { errorSentence } from "../../api/client";
 import { sendGuidance, steerTask } from "../../api/tasks";
 import { Button } from "../../ui/Button";
-import { StatusDot } from "../../ui/StatusDot";
 import { formatDayTime, humanize } from "../../ui/format";
 
 /** A step an agent is doing right now. */
 export const agentAtWork = (run) => run.status === "running" && !String(run.role_id || "").startsWith("_builtin:");
 
-function noteState(note) {
+/** Whether an agent step has been given a note, in words. */
+export function noteState(note) {
   if (!note.delivered) return { tone: "attention", word: "Waiting for the next agent step" };
   const step = note.delivered_step ? humanize(note.delivered_step).toLowerCase() : "";
   const when = formatDayTime(note.delivered_at);
   return { tone: "passed", word: ["Read by the agent", step ? `at ${step}` : "", when ? `on ${when}` : ""].filter(Boolean).join(" ") };
 }
 
-/** What a person has told the agent on this task, newest first, and whether it was read. */
-export function ToldTheAgent({ task }) {
-  const notes = [...(task.guidance ?? [])].reverse();
-  if (!notes.length) return null;
-  return (
-    <ul className="guidance__notes" aria-label="Told the agent">
-      {notes.map((note) => {
-        const state = noteState(note);
-        return (
-          <li key={note.event_id} className="guidance__note">
-            <p className="guidance__text">{note.text}</p>
-            <span className="guidance__meta">
-              <StatusDot tone={state.tone}>{state.word}</StatusDot>
-              <span className="quiet">Written {formatDayTime(note.recorded_at)}</span>
-            </span>
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
 /**
- * The one place to tell a task's agent something. It stays at the bottom of
- * the window, under the agent's output, the way a prompt does.
+ * The one place to tell a task's agent something: the bottom of the
+ * conversation with it, in the task's side bar.
  *
  * `running` is the agent step in progress, if there is one. Then there are
  * two ways to send: "Interrupt and tell it now" stops that step and starts

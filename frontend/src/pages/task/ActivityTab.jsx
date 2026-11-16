@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 
 import { getRunOutput, listTaskRuns } from "../../api/tasks";
 import { usePagedList } from "../../api/usePagedList";
@@ -8,61 +8,14 @@ import { Disclosure } from "../../ui/Disclosure";
 import { Mono } from "../../ui/Mono";
 import { SectionHeading } from "../../ui/SectionHeading";
 import { Table } from "../../ui/Table";
-import { LongText } from "../../ui/LongText";
-import { formatClock, formatDay, formatDayTime, formatDuration, formatMoney, humanize, plural, shortSha } from "../../ui/format";
+import { formatDayTime, formatDuration, formatMoney, humanize, plural, shortSha } from "../../ui/format";
 import { narrate } from "./runWords";
+import { RunLine, withDays } from "./RunStory";
 import { runBy, runResult, runSeconds } from "./taskWords";
-import { agentAtWork, TellAgent, ToldTheAgent } from "./TellAgent";
+import { useTaskPulse } from "./useTaskPulse";
 
 // Design README: activity 25 at a time.
 export const RUNS_PAGE = 25;
-
-/** The story with a line naming the day wherever it changes from the day the run started. */
-function withDays(lines, startedAt) {
-  const out = [];
-  let day = formatDay(startedAt);
-  for (const line of lines) {
-    const lineDay = formatDay(line.at);
-    if (lineDay && day && lineDay !== day) out.push({ day: lineDay });
-    if (lineDay) day = lineDay;
-    out.push(line);
-  }
-  return out;
-}
-
-/** One line of the story: when, what happened in words, and what it ran or said. */
-function RunLine({ line }) {
-  const tone = line.tone ? ` tone-${line.tone}` : "";
-  if (line.day) {
-    // A run can be touched again on a later day; the times alone would not say so.
-    return <li className="run-line run-line--day">{line.day}</li>;
-  }
-  return (
-    <li className="run-line">
-      <Mono quiet className="run-line__at">
-        {formatClock(line.at)}
-      </Mono>
-      <div className="run-line__what">
-        {line.says || line.mono ? (
-          <p className="run-line__head">
-            {line.says ? <span className={`run-line__says${tone}`}>{line.says}</span> : null}
-            {line.says && line.mono ? " " : null}
-            {line.mono ? <Mono className="run-line__mono">{line.mono}</Mono> : null}
-          </p>
-        ) : null}
-        {line.body ? (
-          line.output ? (
-            <pre className="run-output__text run-line__output">{line.body}</pre>
-          ) : line.prose ? (
-            <LongText>{line.body}</LongText>
-          ) : (
-            <pre className={line.clamp ? "run-output__text run-line__result" : "run-output__text"}>{line.body}</pre>
-          )
-        ) : null}
-      </div>
-    </li>
-  );
-}
 
 /** The agent's stream as the CLI wrote it, read only when someone opens it. */
 function RawOutput({ run }) {
@@ -87,8 +40,13 @@ function RawOutput({ run }) {
   );
 }
 
-function RunOutput({ run }) {
+function RunOutput({ run, pulse = 0 }) {
   const output = useResource(["run-output", run.id], (client, options) => getRunOutput(client, run.id, options));
+  const reload = output.reload;
+  // `pulse` grows while this run is in progress and printing.
+  useEffect(() => {
+    if (pulse) reload();
+  }, [pulse, reload]);
   const by = runBy(run);
   const data = output.data;
   const lines = data ? withDays(narrate(data.transcript), run.started_at) : [];
@@ -147,7 +105,8 @@ function RunOutput({ run }) {
  * Selecting a run shows its output and the prompt it was given; the newest
  * is selected until another is picked.
  */
-export function ActivityTab({ task, revision, changed }) {
+export function ActivityTab({ task, revision }) {
+  const pulse = useTaskPulse(task.id, task.status === "in_progress");
   const runs = usePagedList(
     ["task-runs", task.id, revision],
     (client, options) => listTaskRuns(client, task.id, options),
@@ -200,8 +159,6 @@ export function ActivityTab({ task, revision, changed }) {
   ];
 
   const totals = task.totals ?? {};
-  // Nothing reads a note once the task is finished.
-  const finished = task.status === "done" || task.status === "cancelled";
   return (
     <div className="task-activity">
       <section className="task-section" aria-labelledby="task-runs">
@@ -225,18 +182,7 @@ export function ActivityTab({ task, revision, changed }) {
           </Button>
         ) : null}
       </section>
-      {selected ? <RunOutput key={selected.id} run={selected} /> : null}
-      <ToldTheAgent task={task} />
-      {finished ? null : (
-        <TellAgent
-          task={task}
-          running={items.find(agentAtWork) ?? null}
-          onSent={() => {
-            runs.reload?.();
-            changed?.(null);
-          }}
-        />
-      )}
+      {selected ? <RunOutput key={selected.id} run={selected} pulse={selected.status === "running" ? pulse : 0} /> : null}
     </div>
   );
 }

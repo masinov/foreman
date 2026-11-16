@@ -59,7 +59,6 @@ describe("the Manager toggle", () => {
     ["a project page", "/dashboard/projects/foreman", projectRoutes],
     ["a project's Backlog", "/dashboard/projects/foreman/backlog", projectRoutes],
     ["a sprint page", "/dashboard/sprints/sprint-56", sprintRoutes],
-    ["a task page", "/dashboard/tasks/task-merge", taskRoutes],
   ])("is in the top bar on %s, not pressed to start with", async (_name, path, routes) => {
     renderApp(path, createFakeFetch(withManager(routes())));
     expect(toggle()).toHaveAttribute("aria-pressed", "false");
@@ -85,17 +84,21 @@ describe("the Manager toggle", () => {
     expect(within(panel()).getByRole("heading", { name: "Manager" })).toBeInTheDocument();
     expect(window.localStorage.getItem("foreman.dashboard.manager.open")).toBe("true");
 
-    // Project to sprint to task: the same side bar stays open.
+    // Project to sprint: the same side bar stays open.
     fireEvent.click(await screen.findByRole("link", { name: /Sprint 56/ }));
     await screen.findByRole("heading", { level: 1, name: /Sprint 56/ });
     expect(toggle()).toHaveAttribute("aria-pressed", "true");
     expect(panel()).toBeInTheDocument();
 
-    // A new visit finds it as it was left.
+    // A new visit finds it as it was left. On a task the open side bar is the agents'.
     unmount();
-    renderApp("/dashboard/tasks/task-merge", createFakeFetch(routes));
+    const onTask = renderApp("/dashboard/tasks/task-merge", createFakeFetch(routes));
+    expect(toggle()).toBeNull();
+    expect(await screen.findByRole("complementary", { name: "Agent" })).toBeInTheDocument();
+    onTask.unmount();
+    renderApp("/dashboard/sprints/sprint-56", createFakeFetch(routes));
     expect(toggle()).toHaveAttribute("aria-pressed", "true");
-    expect(await within(panel()).findByText("You are on: FOR-14")).toBeInTheDocument();
+    expect(await within(panel()).findByText("You are on: Sprint 56: engine truthfulness")).toBeInTheDocument();
 
     fireEvent.click(toggle());
     expect(document.querySelector(".manager-slot")).toBeNull();
@@ -111,8 +114,7 @@ describe("You are on", () => {
     expect(on("/dashboard/projects/foreman/activity")).toBe("Activity");
     expect(on("/dashboard/projects/foreman/settings")).toBe("Settings");
     expect(on("/dashboard/sprints/s/board", { sprint: { title: "Sprint 56: x" } })).toBe("Sprint 56: x");
-    expect(on("/dashboard/tasks/t/checks", { task: { task_key: "FOR-14", title: "T" } })).toBe("FOR-14");
-    expect(on("/dashboard/tasks/t", { task: { task_key: null, title: "Untitled work" } })).toBe("Untitled work");
+    expect(on("/dashboard/tasks/t/checks")).toBeNull();
     expect(on("/dashboard/sprints/s")).toBeNull();
     expect(on("/dashboard")).toBeNull();
   });
@@ -161,8 +163,8 @@ describe("the conversation", () => {
 
   it("sends a message with the page, and the reply grows as it is written, with a cursor", async () => {
     const stream = controlledStream();
-    const routes = taskRoutes();
-    const fetchImpl = await openAt("/dashboard/tasks/task-merge", routes);
+    const routes = sprintRoutes();
+    const fetchImpl = await openAt("/dashboard/sprints/sprint-56", routes);
     fetchImpl.routes[MESSAGE] = () => stream.response;
     const box = within(panel()).getByRole("textbox", { name: "Message to the manager" });
     fireEvent.change(box, { target: { value: "Is this safe to merge?" } });
@@ -172,7 +174,10 @@ describe("the conversation", () => {
     expect(await within(thread).findByText("Is this safe to merge?")).toBeInTheDocument();
     expect(box).toHaveValue("");
     const call = fetchImpl.calls.find((entry) => entry.method === "POST" && entry.url.endsWith("/meta/message"));
-    expect(call.body).toEqual({ message: "Is this safe to merge?", context: { page: "FOR-14", task_id: "task-merge" } });
+    expect(call.body).toEqual({
+      message: "Is this safe to merge?",
+      context: { page: "Sprint 56: engine truthfulness", sprint_id: "sprint-56" },
+    });
 
     // Nothing yet but the cursor.
     expect(document.querySelector(".manager__cursor")).not.toBeNull();
@@ -291,8 +296,13 @@ describe("the narrow layout", () => {
   it("covers the page below the width where both fit, with a close control shown only there", () => {
     expect(shellCss).toMatch(/@media \(max-width: 960px\)\s*\{\s*\.manager-slot\s*\{[^}]*position: fixed;/);
     // Stretched between top and bottom, so the composer stays on the screen.
-    expect(shellCss).toMatch(/@media \(max-width: 960px\)\s*\{\s*\.manager-slot\s*\{[^}]*bottom: 0;[^}]*align-self: stretch;/);
-    expect(shellCss).toMatch(/\.manager-slot\s*\{[^}]*position: sticky;[^}]*flex: 0 0 var\(--manager-width\)/);
+    expect(shellCss).toMatch(/@media \(max-width: 960px\)\s*\{\s*\.manager-slot\s*\{[^}]*bottom: 0;/);
+    expect(shellCss).toMatch(/\.manager-slot\s*\{[^}]*flex: 0 0 var\(--manager-width\);[^}]*align-self: stretch;/);
+    // Beside the page, what is in the bar stays in the window and ends at its
+    // bottom edge while the page is at its top, under the top bar.
+    expect(shellCss).toMatch(
+      /\.manager-slot > \*\s*\{[^}]*position: sticky;[^}]*height: calc\(100vh - var\(--topbar-height\) - var\(--line-width\)\);/,
+    );
     expect(managerCss).toMatch(/\.manager \.manager__close\s*\{\s*display: none;/);
     expect(managerCss).toMatch(/@media \(max-width: 960px\)\s*\{\s*\.manager \.manager__close\s*\{\s*display: inline-flex;/);
   });

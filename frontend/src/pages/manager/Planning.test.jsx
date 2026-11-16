@@ -61,7 +61,7 @@ describe("Plan this sprint", () => {
 });
 
 describe("Split into smaller tasks", () => {
-  it("asks the manager to split a task that has not started", async () => {
+  it("asks the manager to split a task that has not started, on the task's sprint", async () => {
     const routes = taskRoutes({ task: taskDetail({ status: "todo", blocked_kind: null }) });
     const fetchImpl = createFakeFetch({ ...routes, [HISTORY]: { turns: [], has_more: false } });
     fetchImpl.routes[MESSAGE] = () => lines({ type: "done" });
@@ -72,6 +72,8 @@ describe("Split into smaller tasks", () => {
     expect(dialog).toHaveTextContent("with this one cancelled");
     fireEvent.click(within(dialog).getByRole("button", { name: "Ask the manager" }));
 
+    // The manager works on the sprint, so that is where the person is taken.
+    await screen.findByRole("heading", { level: 1, name: "Sprint 56: engine truthfulness" });
     await screen.findByRole("complementary", { name: "Manager" });
     await waitFor(() => expect(asked(fetchImpl)).toHaveLength(1));
     expect(asked(fetchImpl)[0].body.plan).toEqual({ kind: "split_task", task_id: "task-merge" });

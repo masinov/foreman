@@ -138,13 +138,9 @@
   gap: var(--space-2);
 }
 
-/* Under a running step's output, where what the agent is doing is in view. */
+/* The box at the bottom of the conversation with a task's agents. */
 .tell-agent {
-  position: sticky;
-  bottom: 0;
-  padding: var(--space-3) 0 var(--space-4);
-  background: var(--color-ground);
-  border-top: var(--line-width) solid var(--color-line-structural);
+  gap: var(--space-2);
 }
 
 .guidance__actions {

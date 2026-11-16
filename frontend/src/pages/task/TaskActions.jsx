@@ -5,6 +5,8 @@ import { runTaskNext } from "../../api/engine";
 import { blockTask, cancelTask, completeTask, deleteTask, reopenTask, stopTask, unblockTask } from "../../api/tasks";
 import { ENGINE_STATES } from "../../api/workspace";
 import { askManager, splitTaskRequest } from "../../app/managerRequests";
+import { paths } from "../../app/paths";
+import { useNavigate } from "../../app/router";
 import { Menu } from "../../ui/Menu";
 import { ReasonDialog } from "../shared/ReasonDialog";
 import { useProjectEngine } from "../shared/useProjectEngine";
@@ -81,7 +83,7 @@ export const TASK_ACTIONS = {
     label: "Split into smaller tasks",
     title: "Split this task",
     effect:
-      "The manager reads the task and the code it touches, and proposes smaller tasks that together do what this one asks, with this one cancelled. The proposal appears in the manager's side bar. Who confirms it is this project's \u201cApprove plans\u201d setting.",
+      "The manager reads the task and the code it touches, and proposes smaller tasks that together do what this one asks, with this one cancelled. You are taken to the sprint, where the proposal appears in the manager's side bar. Who confirms it is this project's \u201cApprove plans\u201d setting.",
     confirm: "Ask the manager",
     doing: "Asking…",
     run: async (client, task) => askManager(splitTaskRequest(task)),
@@ -139,6 +141,7 @@ export function actionsFor(task, engine = null) {
 export function TaskActions({ task, onDone }) {
   const client = useApiClient();
   const engine = useProjectEngine(task.project_id);
+  const navigate = useNavigate();
   const [chosen, setChosen] = useState(null);
   const action = chosen ? TASK_ACTIONS[chosen] : null;
 
@@ -168,6 +171,11 @@ export function TaskActions({ task, onDone }) {
         onDone={() => {
           const name = chosen;
           setChosen(null);
+          if (name === "split") {
+            // The manager works at the level of the sprint, so that is where its answer is.
+            navigate(task.in_backlog ? paths.projectBacklog(task.project_id) : paths.sprint(task.sprint_id));
+            return;
+          }
           onDone(name, TASK_ACTIONS[name].done);
         }}
       />

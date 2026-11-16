@@ -328,5 +328,5 @@ The interrupted visit is not counted against the step's visit limit.
   command, and refuses when no agent run of the task is running or no engine
   holds the project. Migration 28 rebuilds `engine_commands` for the name.
 - The dashboard offers it under a running agent step's output on the task's
-  Activity tab ("Interrupt and tell it now"), beside "Save for its next
+  side bar (ADR-0029; first built on the Activity tab) ("Interrupt and tell it now"), beside "Save for its next
   step".

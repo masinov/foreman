@@ -104,16 +104,22 @@
   outline: none;
 }
 
-/* The manager side bar: its own column beside the page, the full height of
-   the window. Where both cannot fit it covers the page instead. */
+/* The side bar (the manager's, or on a task its agents'): its own column
+   beside the page. The column runs the height of the page; what is in it
+   stays in the window, under the top bar while the page is at its top.
+   Where both cannot fit it covers the page instead. */
 .manager-slot {
-  position: sticky;
-  top: 0;
   flex: 0 0 var(--manager-width);
-  align-self: flex-start;
-  height: 100vh;
+  align-self: stretch;
+  min-width: 0;
   background: var(--color-bar);
   border-left: var(--line-width) solid var(--color-line-structural);
+}
+
+.manager-slot > * {
+  position: sticky;
+  top: 0;
+  height: calc(100vh - var(--topbar-height) - var(--line-width));
 }
 
 .manager-slot[hidden] {
@@ -129,9 +135,11 @@
     z-index: var(--layer-overlay);
     width: min(100%, var(--manager-width));
     height: auto;
-    /* Browsers apply align-self to a fixed box in a flex row: flex-start
-       would size it to its content and push the composer off the screen. */
-    align-self: stretch;
+  }
+
+  .manager-slot > * {
+    position: static;
+    height: 100%;
   }
 }
 
