@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -291,6 +292,10 @@ def load_roles(directory: str | Path | None = None) -> dict[str, RoleDefinition]
     return roles
 
 
+#: Variables that sit alone on a line; the line goes when the value is empty.
+OPTIONAL_LINE_VARIABLES = ("environment_rules",)
+
+
 def render_prompt(role: RoleDefinition, context: Mapping[str, Any]) -> str:
     """Render one role prompt template with stable built-in defaults."""
 
@@ -300,8 +305,15 @@ def render_prompt(role: RoleDefinition, context: Mapping[str, Any]) -> str:
     for key, value in context.items():
         values[key] = _stringify_prompt_value(value)
 
+    template = role.prompt_template
+    for name in OPTIONAL_LINE_VARIABLES:
+        if not values.get(name):
+            # A placeholder alone on its line leaves no empty line when unset.
+            template = re.sub(
+                rf"^[ \t]*\{{{name}\}}[ \t]*\n", "", template, flags=re.MULTILINE
+            )
     try:
-        return role.prompt_template.format_map(values)
+        return template.format_map(values)
     except (KeyError, ValueError) as exc:
         raise PromptRenderError(
             f"Failed to render role {role.id!r} from {role.source_path}: {exc}"

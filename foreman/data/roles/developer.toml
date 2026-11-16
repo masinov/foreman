@@ -51,7 +51,7 @@ Read it if you need to understand the broader product direction.
 ### Rules
 - Work only on the branch `{branch_name}`
 - Never merge to main - the supervisor handles merges after approval
-- Use only ./venv/bin/python and ./venv/bin/pip for Python work
+{environment_rules}
 - Commit small, coherent changes with conventional prefixes
   (feat:, fix:, refactor:, test:, docs:, chore:)
 - Create ADRs in docs/adr/ for meaningful architectural decisions

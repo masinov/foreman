@@ -554,3 +554,69 @@ class BuiltinTranscriptLoggingTests(RepoTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EnvironmentRulesTests(RepoTestCase):
+    """The developer prompts' Python rule follows the repository's instructions."""
+
+    seed_project = ReviewerPromptHardeningTests.seed_project
+
+    def render(self, role_id: str, agents_md: str | None) -> str:
+        from foreman.context import build_project_context
+
+        repo, db_path = self.create_workspace()
+        self.initialize_repo(repo)
+        if agents_md is not None:
+            (repo / "AGENTS.md").write_text(agents_md, encoding="utf-8")
+        store = ForemanStore(db_path)
+        self.addCleanup(store.close)
+        store.initialize()
+        project, _, task = self.seed_project(store, repo_path=repo)
+        orchestrator = ForemanOrchestrator(store, roles=self.roles, workflows=self.workflows)
+        return orchestrator.prompts.build(
+            self.roles[role_id],
+            project,
+            task,
+            carried_output=None,
+            context_projection=build_project_context(store, project, current_task=task),
+        )
+
+    def test_detect_virtualenv(self) -> None:
+        from foreman.engine.prompts import detect_virtualenv
+
+        self.assertEqual(detect_virtualenv("Use `./venv/bin/python`."), "./venv")
+        self.assertEqual(detect_virtualenv("- use venv/bin/pip"), "./venv")
+        self.assertEqual(detect_virtualenv("activate .venv first"), ".venv")
+        self.assertEqual(detect_virtualenv("in ./.venv"), "./.venv")
+        self.assertIsNone(detect_virtualenv("make a venv somewhere"))
+        self.assertIsNone(detect_virtualenv("see myvenv/ and not_venv"))
+        self.assertIsNone(detect_virtualenv(""))
+
+    def test_developers_forbid_system_python_when_venv_named(self) -> None:
+        for role_id in ("developer", "developer_worker"):
+            with self.subTest(role=role_id):
+                prompt = self.render(role_id, "- Run tools with `./venv/bin/python`.\n")
+                self.assertIn("Never run `python`, `python3` or `pip` from the system", prompt)
+                self.assertIn("one-off scripts", prompt)
+                self.assertIn("`./venv/bin/python`", prompt)
+                self.assertNotIn("{environment_rules}", prompt)
+
+    def test_dot_venv_is_named_in_the_rule(self) -> None:
+        prompt = self.render("developer", "Environment lives in .venv\n")
+        self.assertIn("`.venv/bin/python`", prompt)
+        self.assertNotIn("./venv/bin/python", prompt)
+
+    def test_no_python_rule_without_a_named_environment(self) -> None:
+        for agents_md in (None, "# Rules\nBe nice.\n"):
+            for role_id in ("developer", "developer_worker"):
+                with self.subTest(role=role_id, agents=agents_md):
+                    prompt = self.render(role_id, agents_md)
+                    self.assertNotIn("python3", prompt)
+                    self.assertNotIn("/bin/pip", prompt)
+                    self.assertNotIn("\n- \n", prompt)
+                    self.assertNotIn("- \n", prompt)
+                    self.assertIn(
+                        "- Never merge to main - the supervisor handles merges after approval\n"
+                        "- Commit small",
+                        prompt,
+                    )

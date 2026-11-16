@@ -146,6 +146,30 @@ class RoleLoaderTests(unittest.TestCase):
         self.assertIn("FOREMAN_SIGNAL:", prompt)
         self.assertIn("Address the reviewer note.", prompt)
 
+    def test_shipped_developers_carry_the_environment_placeholder(self) -> None:
+        for role_id in ("developer", "developer_worker"):
+            role = load_roles(default_roles_dir())[role_id]
+            self.assertIn("{environment_rules}", role.prompt_template)
+            self.assertNotIn("./venv/bin/python", role.prompt_template)
+
+    def test_environment_rules_line_vanishes_when_empty(self) -> None:
+        developer = load_roles(default_roles_dir())["developer"]
+        empty = developer.render_prompt({"branch_name": "b"})
+        self.assertNotIn("\n- \n", empty)
+        self.assertNotIn("\n\n- Commit small", empty)
+        filled = developer.render_prompt({"environment_rules": "- Use X."})
+        self.assertIn("- Use X.\n- Commit small", filled)
+
+    def test_role_text_without_the_placeholder_renders(self) -> None:
+        developer = load_roles(default_roles_dir())["developer"]
+        old = developer.prompt_template.replace("{environment_rules}\n", "")
+        from dataclasses import replace
+
+        prompt = replace(developer, prompt_template=old).render_prompt(
+            {"environment_rules": "- Use X."}
+        )
+        self.assertNotIn("Use X.", prompt)
+
     def test_duplicate_role_ids_are_rejected(self) -> None:
         roles_dir = self.create_directory()
         role_template = textwrap.dedent(
