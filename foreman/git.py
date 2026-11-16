@@ -365,6 +365,29 @@ def merge_base(repo_path: str | Path, base_branch: str, branch_name: str) -> str
     return result.stdout if result.returncode == 0 and result.stdout else None
 
 
+def landed_as(repo_path: str | Path, head: str, base_branch: str) -> str | None:
+    """Return the commit on ``base_branch`` that brought ``head`` in, if any.
+
+    That is the oldest commit on the base branch's first-parent line that
+    contains ``head``: the merge commit of a ``--no-ff`` merge. ``None`` when
+    ``head`` is not in the base branch, or is itself on its first-parent line
+    (a fast-forward, where no one commit holds the change).
+    """
+
+    if run_git(repo_path, "merge-base", "--is-ancestor", head, base_branch, check=False).returncode != 0:
+        return None
+    result = run_git(
+        repo_path, "rev-list", "--first-parent", "--ancestry-path", f"{head}..{base_branch}", check=False
+    )
+    if result.returncode != 0 or not result.stdout:
+        return None
+    landed = result.stdout.splitlines()[-1].strip()
+    parents = run_git(repo_path, "rev-list", "--parents", "-n", "1", landed, check=False)
+    if parents.returncode != 0 or len(parents.stdout.split()) < 3:
+        return None
+    return landed
+
+
 def commits_ahead(repo_path: str | Path, branch_name: str, base_branch: str) -> int:
     """Return how many commits ``branch_name`` has that ``base_branch`` lacks."""
 

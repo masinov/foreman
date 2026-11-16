@@ -54,8 +54,8 @@ function Notice({ notice }) {
 
 function triageSentence(triage) {
   return triage === "auto"
-    ? "Cannot be planned until accepted. This project accepts filed work on its own."
-    : "Cannot be planned until accepted. This project sends these to a person.";
+    ? "Accepted by Foreman"
+    : "Accepted by a person";
 }
 
 /**
@@ -333,7 +333,7 @@ export function BacklogTab({ projectId, revision, onChanged }) {
             <p className="empty">
               {q
                 ? `No accepted work matches “${q}”.`
-                : "Nothing is waiting to be planned. Accepted work appears here until it is planned into a sprint."}
+                : "Nothing is waiting to be planned."}
             </p>
           )}
         </section>

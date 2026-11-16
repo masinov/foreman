@@ -33,14 +33,21 @@ All were fixed in sprint 59.
 
 ## Found in the supervised run of sprint 60 (2026-11-16)
 
-- A sprint closes itself when the last task filed in it is done, also when
-  more tasks were going to be filed, and a completed sprint cannot be
-  reopened (`foreman sprint activate` refuses).
-- A branch that is behind `main` at the merge step is merged without being
-  brought up to date or tested again; the recorded test run is for the
-  branch head only.
-- The developer role's prompt does not stop an agent using the system
-  `python3` in a repository whose rules forbid it.
+Fixed in the second run of the same day (ADR-0025, ADR-0026, the Python rule).
+Left: a completed sprint cannot be reopened (`foreman sprint activate`
+refuses).
+
+## Found in the audit of every screen (2026-11-16)
+
+- Acceptance criteria are never judged unless a project sets `judge_model`
+  and `judge_base_url`, which no page offers; every finished task says "not
+  judged yet", while the Workflow tab lists "Acceptance criteria marked met"
+  as something finishing requires.
+- The board of a finished sprint is one long Done column and leaves out
+  cancelled tasks.
+- "Developer (worker fleet)" is a shipped role no workflow uses.
+- The test command and the other "This machine" values can only be changed
+  from a terminal.
 
 ## Dashboard follow-ups (after sprint 58)
 

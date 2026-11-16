@@ -158,7 +158,6 @@ export function AccessSection() {
       <SectionHeading
         id="access-title"
         title="Access"
-        note="Who can open this dashboard and act in it."
         actions={<Button onClick={() => setCreating(true)}>New token</Button>}
       />
       {tokens.error ? (
@@ -211,16 +210,9 @@ export function AccessSection() {
           ]}
         />
       )}
-      <p className="settings-block__line">
-        {session.data && session.data.identity_provider
-          ? `Identity provider: ${session.data.identity_provider.name}. `
-          : "Identity provider: none configured. "}
-        <span className="settings-block__aside">
-          {session.data && !session.data.identity_provider
-            ? "People are identified by the token they use, and that name is recorded on every decision."
-            : ""}
-        </span>
-      </p>
+      {session.data?.identity_provider ? (
+        <p className="settings-block__line">Identity provider: {session.data.identity_provider.name}</p>
+      ) : null}
 
       <NewTokenDialog
         open={creating}

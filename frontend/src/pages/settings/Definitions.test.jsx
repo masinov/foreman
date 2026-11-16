@@ -54,7 +54,7 @@ describe("Roles tab", () => {
     const table = screen.getByRole("table", { name: "Roles" });
     expect(within(table).getByText("changed for this project")).toBeInTheDocument();
     expect(within(table).getByText("this project's own")).toBeInTheDocument();
-    expect(within(table).getByText("No tool")).toBeInTheDocument();
+    expect(within(table).getByText("No tools")).toBeInTheDocument();
     expect(within(table).getByText("No workflow")).toBeInTheDocument();
   });
 });

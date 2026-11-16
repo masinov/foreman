@@ -94,6 +94,54 @@ class TaskReadsCase(unittest.TestCase):
         self.assertEqual(body["head"]["sha"], self.git("rev-parse", "feat/x"))
         self.assertIsNone(body["empty_reason"])
 
+    def merge(self, name: str = "feat/x") -> str:
+        self.git("merge", "-q", "--no-ff", name, "-m", f"Merge branch '{name}' into main")
+        merged = self.git("rev-parse", "main")
+        self.write("later.txt", "after\n")
+        self.commit("chore: main moves on")
+        return merged
+
+    def test_a_merged_task_shows_what_it_landed(self) -> None:
+        self.branch_with_changes()
+        self.task(branch_name="feat/x")
+        before = self.git("rev-parse", "main")
+        merged = self.merge()
+
+        body = self.get("/api/v1/tasks/t/changes").json()
+
+        self.assertEqual(body["totals"], {"files": 4, "added": 3, "deleted": 1})
+        self.assertEqual(body["merged_as"], merged)
+        self.assertEqual((body["base"]["sha"], body["head"]["sha"]), (before, merged))
+        self.assertNotIn("later.txt", [f["path"] for f in body["files"]])
+        diff = self.get("/api/v1/tasks/t/changes/diff?path=new.txt").json()
+        self.assertIn("+a", diff["diff"])
+
+    def test_a_merged_task_whose_branch_is_gone_still_shows_it(self) -> None:
+        from foreman.models import CompletionEvidence
+
+        self.branch_with_changes()
+        head = self.git("rev-parse", "feat/x")
+        task = self.task(branch_name="feat/x")
+        merged = self.merge()
+        self.git("branch", "-q", "-D", "feat/x")
+        task.completion_evidence = CompletionEvidence(task_id="t", task_title="Task t", acceptance_criteria="", head_sha=head)
+        self.store.save_task(task)
+
+        body = self.get("/api/v1/tasks/t/changes").json()
+
+        self.assertEqual((body["totals"]["files"], body["merged_as"]), (4, merged))
+
+    def test_a_merged_task_is_not_called_behind(self) -> None:
+        self.branch_with_changes()
+        self.task(branch_name="feat/x")
+        merged = self.merge()
+
+        facts = self.get("/api/v1/tasks/t/checks").json()["facts"]
+
+        self.assertEqual((facts["branch"]["state"], facts["branch"]["merged_as"]), ("merged", merged))
+        self.assertIsNone(facts["branch"]["behind"])
+        self.assertEqual(facts["size"]["files"], 4)
+
     def test_task_without_branch_says_why(self) -> None:
         self.task()
         body = self.get("/api/v1/tasks/t/changes").json()

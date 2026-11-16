@@ -80,10 +80,7 @@ describe("Workspace settings", () => {
       expect(within(revoked).getByText("Never")).toBeInTheDocument();
       expect(within(revoked).getByText("Revoked 5 Nov")).toBeInTheDocument();
       expect(within(revoked).queryByRole("button", { name: /Revoke/ })).toBeNull();
-      await waitFor(() =>
-        expect(within(access).getByText(/Identity provider: none configured/)).toBeInTheDocument(),
-      );
-      expect(within(access).getByText(/identified by the token they use/)).toBeInTheDocument();
+      expect(within(access).queryByText(/Identity provider/)).toBeNull();
     });
 
     it("says so when there are no tokens", async () => {
@@ -202,7 +199,6 @@ describe("Workspace settings", () => {
     it("says so when there are none", async () => {
       renderApp("/dashboard/settings", createFakeFetch(accessRoutes({ channels: [] })));
       expect(await screen.findByText(/No channels yet/)).toBeInTheDocument();
-      expect(screen.getByText(/each project chooses what to send/)).toBeInTheDocument();
     });
 
     it("lists channels without exposing the signing variable", async () => {
@@ -293,7 +289,7 @@ describe("Workspace settings", () => {
       expect(within(claude).getByText("Found")).toBeInTheDocument();
       expect(within(claude).getByText(RUNNERS[0].path)).toBeInTheDocument();
       expect(within(claude).getByText("claude-sonnet-5-5")).toBeInTheDocument();
-      expect(within(claude).getByText(/its own default/)).toBeInTheDocument();
+      expect(within(claude).queryByText(/its own default/)).toBeNull();
       const codex = within(runners).getByText("Codex").closest("tr");
       expect(within(codex).getByText("Not found")).toBeInTheDocument();
       expect(within(codex).getByText(/no codex on the path/)).toBeInTheDocument();

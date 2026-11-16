@@ -208,7 +208,15 @@ export function ChangesTab({ task, changes }) {
         />
         {head && base ? (
           <p className="quiet task-changes__compared">
-            <Mono>{head}</Mono> compared with {base}
+            {data.merged_as ? (
+              <>
+                Merged into {base} as <Mono>{head}</Mono>
+              </>
+            ) : (
+              <>
+                <Mono>{head}</Mono> compared with {base}
+              </>
+            )}
           </p>
         ) : null}
         {offerFolders || here ? <FolderCrumbs dir={here} onPick={setDir} /> : null}

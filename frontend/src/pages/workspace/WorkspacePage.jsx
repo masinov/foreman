@@ -62,7 +62,6 @@ export function WorkspacePage() {
         <SectionHeading
           id="recent-title"
           title="Recent"
-          note="Milestones only: sprints started and finished, tasks merged, the engine started, paused or stopped."
         />
         {recent.error ? (
           <p className="notice notice--error" role="alert">

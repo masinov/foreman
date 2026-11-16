@@ -51,6 +51,8 @@ class TaskChanges(BaseModel):
     head: CommitRef | None = None
     #: Why ``files`` is empty when the task has no comparable branch.
     empty_reason: str | None = None
+    #: The commit the task landed as, once merged; the files are then what it landed.
+    merged_as: str | None = None
 
 
 class FileDiff(BaseModel):
@@ -86,9 +88,11 @@ class BranchFact(BaseModel):
     default_branch: str
     ahead: int | None = None
     behind: int | None = None
-    #: ``current`` (nothing new on the default branch), ``behind``, or
+    #: ``current`` (nothing new on the default branch), ``behind``,
+    #: ``merged`` (it is in the default branch, as ``merged_as``), or
     #: ``no_branch`` when there is nothing to compare.
-    state: Literal["current", "behind", "no_branch"]
+    state: Literal["current", "behind", "merged", "no_branch"]
+    merged_as: str | None = None
 
 
 class SizeFact(BaseModel):

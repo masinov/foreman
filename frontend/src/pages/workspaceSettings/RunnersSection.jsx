@@ -7,7 +7,7 @@ import { SectionHeading } from "../../ui/SectionHeading";
 import { Table } from "../../ui/Table";
 
 function Models({ runner }) {
-  if (runner.models.length === 0 && !runner.uses_default) return <span className="settings-block__aside">None named</span>;
+  if (runner.models.length === 0) return <span className="settings-block__aside">None named</span>;
   return (
     <>
       {runner.models.map((model, index) => (
@@ -16,11 +16,6 @@ function Models({ runner }) {
           <Mono>{model}</Mono>
         </React.Fragment>
       ))}
-      {runner.uses_default ? (
-        <span className="settings-block__aside">
-          {runner.models.length > 0 ? " · " : ""}its own default for roles that name none
-        </span>
-      ) : null}
     </>
   );
 }
@@ -31,7 +26,7 @@ export function RunnersSection() {
   const placeholder = useDelayedFlag(runners.loading && !runners.data);
   return (
     <section className="settings-block" aria-labelledby="runners-title">
-      <SectionHeading id="runners-title" title="Runners" note="The programs that run agents." />
+      <SectionHeading id="runners-title" title="Runners" />
       {runners.error ? (
         <p className="notice notice--error" role="alert">
           {runners.error}

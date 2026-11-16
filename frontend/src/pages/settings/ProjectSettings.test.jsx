@@ -94,7 +94,7 @@ describe("General: every field reads its real value", () => {
 
   it("says there are no rules when there are none", async () => {
     await renderGeneral();
-    expect(screen.getByText(/None\. A rule can send one kind of task to a different decider\./)).toBeInTheDocument();
+    expect(screen.getByText("None")).toBeInTheDocument();
   });
 });
 
@@ -102,7 +102,7 @@ describe("General: host-level values are read-only", () => {
   it("shows them as text with the terminal sentence and offers no control", async () => {
     await renderGeneral();
     const machine = screen.getByRole("region", { name: "This machine" });
-    expect(within(machine).getByText(/changed from a terminal/)).toBeInTheDocument();
+    expect(within(machine).getByText(/foreman config .* --set key=value/)).toBeInTheDocument();
     expect(within(machine).getByText("foreman config foreman --set key=value")).toBeInTheDocument();
     expect(within(machine).getByText("ln -s ../node_modules frontend/node_modules")).toBeInTheDocument();
     expect(within(machine).getByText("venv")).toBeInTheDocument();

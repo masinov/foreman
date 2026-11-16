@@ -149,10 +149,9 @@ function GeneralForm({ projectId, settings, onSaved }) {
       <SettingsSection
         id="settings-who"
         title="Who decides"
-        note="Which decisions come to a person. Everything else in Needs you follows from this."
       >
         {choiceRow("triage", "Accept filed work", DECIDERS, "Work filed by another system or an agent")}
-        {choiceRow("plan_approval", "Approve plans", DECIDERS, "Before development starts")}
+        {choiceRow("plan_approval", "Approve plans", DECIDERS, "A plan the manager proposes")}
         {choiceRow("merge_approval", "Approve merges", DECIDERS, "After tests and review")}
         <SettingRow label="Exceptions" error={errors.policy_rules} group>
           {(controlProps) => (
@@ -177,7 +176,7 @@ function GeneralForm({ projectId, settings, onSaved }) {
         {textRow("max_autonomous_tasks", "At most, per sprint", "tasks it may add on its own")}
       </SettingsSection>
 
-      <SettingsSection id="settings-limits" title="Limits" note="When one is reached the engine stops and says which.">
+      <SettingsSection id="settings-limits" title="Limits">
         {textRow("cost_limit_per_task_usd", "Spend per task", "USD. Empty: no limit", { inputMode: "decimal" })}
         {textRow("cost_limit_per_sprint_usd", "Spend per sprint", "USD. Empty: no limit", { inputMode: "decimal" })}
         {textRow("time_limit_per_task_ms", "Time per task", "minutes. Empty: no limit", { inputMode: "decimal" })}
@@ -223,7 +222,7 @@ function GeneralForm({ projectId, settings, onSaved }) {
         title="This machine"
         note={
           <>
-            Shown here, changed from a terminal: <Mono>foreman config {projectId} --set key=value</Mono>
+            <Mono>foreman config {projectId} --set key=value</Mono>
           </>
         }
       >

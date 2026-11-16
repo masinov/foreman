@@ -141,10 +141,7 @@ export function ChannelsSection() {
       ) : null}
       {channels.data && channels.data.channels.length === 0 ? (
         <p className="empty">
-          No channels yet.{" "}
-          <span className="settings-block__aside">
-            A channel is where Foreman sends a message; each project chooses what to send.
-          </span>
+          No channels yet.
         </p>
       ) : (
         <Table

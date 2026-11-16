@@ -128,12 +128,6 @@ export function SprintLayout({ sprintId, view }) {
             ) : null
           }
         />
-        {view === VIEWS.board ? (
-          <p className="sprint__board-note">
-            One column per step of this project's workflow. The engine moves the cards; you decide where a column waits
-            for you.
-          </p>
-        ) : null}
         {notice ? (
           <p className={notice.error ? "notice notice--error" : "notice"} role={notice.error ? "alert" : "status"}>
             {notice.text}

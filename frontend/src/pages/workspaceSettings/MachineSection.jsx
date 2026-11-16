@@ -11,7 +11,7 @@ export function MachineSection() {
   const machine = useResource(["machine"], getMachine);
   return (
     <section className="settings-block" aria-labelledby="machine-title">
-      <SectionHeading id="machine-title" title="This machine" note="Shown here, changed from a terminal." />
+      <SectionHeading id="machine-title" title="This machine" />
       {machine.error ? (
         <p className="notice notice--error" role="alert">
           {machine.error}

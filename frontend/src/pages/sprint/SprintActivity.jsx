@@ -67,7 +67,6 @@ export function SprintActivity({ sprintId, tasks, revision }) {
       <SectionHeading
         id="sprint-activity"
         title="Activity"
-        note="Steps that finished, newest first. What is waiting is in the table above; agent output is on the task page."
       />
       {state.error ? (
         <p className="notice notice--error" role="alert">

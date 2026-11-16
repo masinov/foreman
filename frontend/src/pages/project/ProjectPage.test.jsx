@@ -119,7 +119,7 @@ describe("the engine row", () => {
     const row = engineSection();
     expect(within(row).getByText("Not running")).toBeInTheDocument();
     expect(
-      within(row).getByText("Nothing is being worked on. Decisions you make are carried out when it starts."),
+      within(row).getByText("Nothing is being worked on."),
     ).toBeInTheDocument();
     expect(within(row).getByRole("button", { name: "Pause" })).toBeDisabled();
     expect(within(row).getByRole("button", { name: "Stop" })).toBeDisabled();

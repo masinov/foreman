@@ -30,14 +30,10 @@ export function ProjectBacklogPage({ params }) {
     reloadWorkspace();
     setRevision((value) => value + 1);
   }, [reloadWorkspace]);
-  const project = workspace.data?.projects.find((entry) => entry.id === params.projectId) ?? null;
   return (
     <div className="backlog-page">
       <div className="backlog-page__head">
         <h1 className="page-title">Backlog</h1>
-        <p className="secondary">
-          {project ? `${project.name}: ` : ""}work that is in no sprint. Filed work is accepted, then planned into a sprint.
-        </p>
       </div>
       <BacklogTab projectId={params.projectId} revision={revision} onChanged={changed} />
     </div>
