@@ -199,7 +199,7 @@
 /* The workflow editor: the graph of steps, and beside it the step chosen. */
 .wf-editor {
   display: grid;
-  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  grid-template-columns: minmax(0, auto) var(--wf-step-width);
   gap: var(--space-6);
   align-items: start;
 }
@@ -227,12 +227,9 @@
   gap: var(--space-4);
 }
 
-/* A choice is as wide as what it says, not as wide as the column. */
+/* Every control of the step is as wide as its column, so they end together. */
 .wf-editor__step select {
-  width: auto;
-  max-width: 100%;
-  justify-self: start;
-  align-self: flex-start;
+  width: 100%;
 }
 
 /* One way the step can end, and under it where the task goes. */
