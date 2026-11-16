@@ -17,34 +17,33 @@ async function openPage(routes = accessRoutes()) {
 }
 
 describe("Workspace settings", () => {
-  it("renders the five sections from the server and names itself in the breadcrumb", async () => {
+  it("renders its sections from the server and names itself in the breadcrumb", async () => {
     await openPage();
     expect(screen.getByRole("heading", { name: "Workspace settings", level: 1 })).toBeInTheDocument();
     expect(
       screen.getAllByRole("heading", { level: 2 }).map((heading) => heading.textContent),
-    ).toEqual(["Defaults for projects", "Workflows", "Roles", "Access", "Notification channels", "Runners", "This machine"]);
+    ).toEqual(["Workflows", "Roles", "Access", "Notification channels", "Runners", "This machine"]);
     const crumbs = screen.getByRole("navigation", { name: "Breadcrumb" });
     // The wordmark is the way to the workspace; the breadcrumb names this page.
     expect(within(crumbs).getByText("Workspace settings")).toHaveAttribute("aria-current", "page");
     expect(document.title).toBe("Workspace settings · Foreman");
   });
 
-  describe("defaults for projects", () => {
+  describe("workflows and roles", () => {
     const sent = (fetchImpl, method) => fetchImpl.calls.filter((call) => call.method === method);
 
     it("lists the workflows with the projects that use each, and the roles", async () => {
       await openPage();
-      const defaults = section("Defaults for projects");
-      const workflows = within(within(defaults).getByRole("table", { name: "Workflows" }));
+      const workflows = within(within(section("Workflows")).getByRole("table", { name: "Workflows" }));
       const development = workflows.getByText("Standard Development").closest("tr");
       expect(within(development).getByText("Foreman, Other project")).toBeInTheDocument();
       const light = workflows.getByText("Light Review").closest("tr");
       expect(within(light).getByText("No project")).toBeInTheDocument();
-      const roles = within(within(defaults).getByRole("table", { name: "Roles" }));
+      const roles = within(within(section("Roles")).getByRole("table", { name: "Roles" }));
       expect(roles.getByText("Developer")).toBeInTheDocument();
       expect(roles.getByText("Each project's default")).toBeInTheDocument();
-      expect(within(defaults).getByRole("button", { name: "New workflow" })).toBeInTheDocument();
-      expect(within(defaults).getByRole("button", { name: "New role" })).toBeInTheDocument();
+      expect(within(section("Workflows")).getByRole("button", { name: "New workflow" })).toBeInTheDocument();
+      expect(within(section("Roles")).getByRole("button", { name: "New role" })).toBeInTheDocument();
     });
 
     it("edits a role and saves it as the workspace's", async () => {

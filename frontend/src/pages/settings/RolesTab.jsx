@@ -35,7 +35,7 @@ export function RolesTab({ projectId = null }) {
   const edited = !editing ? null : editing.id === BLANK ? blank.role : roles.find((role) => role.id === editing.id);
 
   return (
-    <section className="settings-section" aria-labelledby="project-roles">
+    <section className={projectId ? "settings-section" : "settings-block"} aria-labelledby="project-roles">
       <SectionHeading
         id="project-roles"
         title="Roles"
