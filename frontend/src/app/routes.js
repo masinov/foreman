@@ -50,10 +50,17 @@ export const ROUTES = [
   },
   {
     name: "project-settings-workflow",
-    cli: ({ projectId }) => [`foreman config ${projectId}`, "foreman workflows"],
+    cli: ({ projectId }) => [`foreman config ${projectId}`, `foreman workflow list ${projectId}`],
     pattern: "/projects/:projectId/settings/workflow",
     level: "project",
     title: "Project settings, Workflow",
+  },
+  {
+    name: "project-settings-roles",
+    cli: ({ projectId }) => [`foreman role list ${projectId}`],
+    pattern: "/projects/:projectId/settings/roles",
+    level: "project",
+    title: "Project settings, Roles",
   },
   {
     name: "sprint",

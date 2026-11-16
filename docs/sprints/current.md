@@ -41,7 +41,7 @@ engine. Nothing new is added until that holds.
 | 1 | One supervised run of the engine on a small task, to see sprint 59's fixes against a real agent | done | Foreman, watched by Claude | FOR-44 merged at `e59136a`; "The supervised run" below |
 | 2 | Explain to the owner how roles, workflows, gates and model choice work | done | Claude | in conversation (the owner prefers plain explanations to pages); it found that a project could not have definitions of its own |
 | 3 | A project's own roles and workflows, in the database, loaded over the shipped ones; tool names checked | done | Claude | `feat/project-definitions-in-database`: ADR-0024, migration 25, `foreman role`, `foreman workflow` |
-| 4 | Roles and workflows editable from the dashboard | todo | Claude | API and editor; the read-only dialogs and the false sentence go |
+| 4 | Roles and workflows editable from the dashboard | done | Claude | `feat/definitions-editor`: Roles tab and role form, step editor, text view; a prompt must say how its run ends; `none = true` for a role with no tool |
 | 5 | Decide with the owner what the architect role is for; its plan reaches nobody today | todo | owner and Claude | |
 | 6 | Audit of every screen and control: does it work, can a person tell what it does, is anything shown that cannot be acted on; footnote strings listed | todo | Claude | one review for the owner |
 | 7 | The fixes the owner agrees from slice 6, in one batch | todo | Claude | |

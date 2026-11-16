@@ -1,5 +1,9 @@
 import { ProjectActivityPage, ProjectBacklogPage, ProjectSprintsPage } from "../pages/project/ProjectPages";
-import { ProjectSettingsGeneralPage, ProjectSettingsWorkflowPage } from "../pages/settings/SettingsPages";
+import {
+  ProjectSettingsGeneralPage,
+  ProjectSettingsRolesPage,
+  ProjectSettingsWorkflowPage,
+} from "../pages/settings/SettingsPages";
 import { SprintBoardPage, SprintListPage } from "../pages/sprint/SprintPages";
 import { TaskActivityPage, TaskChangesPage, TaskChecksPage, TaskOverviewPage } from "../pages/task/TaskPages";
 import { WorkspaceSettingsPage } from "../pages/workspaceSettings/WorkspaceSettingsPage";
@@ -15,6 +19,7 @@ export const BUILT_PAGES = {
   "project-activity": ProjectActivityPage,
   "project-settings": ProjectSettingsGeneralPage,
   "project-settings-workflow": ProjectSettingsWorkflowPage,
+  "project-settings-roles": ProjectSettingsRolesPage,
   sprint: SprintListPage,
   "sprint-board": SprintBoardPage,
   task: TaskOverviewPage,

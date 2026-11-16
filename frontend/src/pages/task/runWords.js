@@ -100,6 +100,7 @@ export function sayEntry(entry) {
       return { says: join([`Model: ${d.model || "the runner's default"}`, source], ", ") };
     }
     case "engine.role_policy": {
+      if (d.no_tools) return { says: "May use no tool" };
       if (d.allowed_tools?.length) return { says: `May use: ${d.allowed_tools.join(", ")}` };
       if (d.disallowed_tools?.length) return { says: `May use every tool except ${d.disallowed_tools.join(", ")}` };
       return { says: "May use every tool" };

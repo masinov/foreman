@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from unittest.mock import patch
 import unittest
 
 from foreman.roles import default_roles_dir, load_roles
 from foreman.orchestrator import ForemanOrchestrator
 from foreman.runner.base import AgentRunConfig
+from foreman.runner.claude_code import ClaudeCodeRunner
 from foreman.settings import HOST_LEVEL_SETTINGS, ProjectSettings, SettingsError
 from foreman.store import ForemanStore
 
@@ -31,11 +33,36 @@ class ShippedRoleToolTests(unittest.TestCase):
             if not role.completion.output.extract_decision:
                 continue
             tools = role.agent.tools
+            if tools.none:
+                continue
             usable = set(tools.allowed) - set(tools.disallowed) if tools.allowed else None
             if usable is not None:
                 self.assertFalse(usable & WRITING, role_id)
             else:
                 self.assertTrue(WRITING <= set(tools.disallowed), role_id)
+
+
+class NoToolTests(unittest.TestCase):
+    def test_the_reviewers_that_judge_from_what_they_are_handed_have_no_tool(self) -> None:
+        roles = load_roles()
+
+        for role_id in ("triage_reviewer", "frontier_reviewer"):
+            self.assertTrue(roles[role_id].agent.tools.none, role_id)
+
+    def test_no_tool_is_said_to_the_cli_as_an_empty_tool_list(self) -> None:
+        config = AgentRunConfig(
+            backend="claude_code",
+            model="m",
+            prompt="p",
+            working_dir=Path("."),
+            session_id=None,
+            permission_mode="bypassPermissions",
+            no_tools=True,
+        )
+
+        command = ClaudeCodeRunner().build_command(config)
+
+        self.assertEqual(command[command.index("--tools") + 1], "")
 
 
 class PassthroughSettingTests(unittest.TestCase):

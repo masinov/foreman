@@ -104,7 +104,11 @@ class ClaudeCodeRunner(AgentRunner):
             command.extend(["--resume", config.session_id])
         if config.model:
             command.extend(["--model", config.model])
-        if config.allowed_tools:
+        if config.no_tools:
+            # An empty list is the CLI's way of saying no tool at all. A deny
+            # list cannot say it: it misses every tool it does not name.
+            command.extend(["--tools", ""])
+        elif config.allowed_tools:
             # The role's whole tool set: nothing outside it exists for the
             # agent, whatever else the CLI ships or a later version adds.
             command.extend(["--tools", ",".join(config.allowed_tools)])

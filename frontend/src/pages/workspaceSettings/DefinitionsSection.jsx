@@ -115,7 +115,7 @@ export function DefinitionsSection() {
       <SectionHeading
         id="defaults-title"
         title="Defaults for projects"
-        note="Every project starts from these. A project can override any of them in its own repository."
+        note="Every project starts from these. A project changes its own in its settings."
       />
       {[workflows.error, roles.error].filter(Boolean).map((message) => (
         <p key={message} className="notice notice--error" role="alert">

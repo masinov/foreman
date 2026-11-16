@@ -88,3 +88,34 @@ the variables agents are given stay host-level and are not set over HTTP.
   it.
 - Not done here: definitions do not travel with a clone of the repository;
   `foreman role show` and `set` are the way to copy one between machines.
+
+## Amendment, 2026-11-16: the dashboard editor
+
+- **Routes.** `GET /api/v1/projects/{id}/definitions` gives the project's
+  roles and workflows as form fields and as text, with the words an editor
+  chooses from (tools, decisions, models in use, what can do a step).
+  `PUT /api/v1/projects/{id}/roles/{role}` and `.../workflows/{workflow}`
+  save `{ "fields": ... }` from the form or `{ "text": ... }`, the TOML; a
+  new definition also names `copy_of`. `DELETE` on the same paths drops the
+  project's own text. `PATCH /api/v1/roles/{id}` is removed.
+- **The form writes into the text it started from.** A role's flags, its
+  signals and a workflow's cost and time gates are not in the form and are
+  kept as they were. A test takes every shipped role and workflow through
+  the form and back and compares.
+- **An id is not changed by editing.** Saving text whose id differs from the
+  one being edited is refused; a new definition is a copy saved under a new
+  id.
+- **A prompt must say how the run ends.** A role that decides must name each
+  of its decisions in capitals in its prompt; a role that ends with a marker
+  must name the marker or `{completion_marker}`. The engine reads the end of
+  a run that way, and nothing joined the two before. Checked on every save
+  (`check_role_says_how_to_end`).
+- **No tool at all is said outright:** `[agent.tools] none = true`. An empty
+  `allowed` list means every tool, and a deny list misses whatever it does
+  not name: the two shipped reviewers that judge from what they are handed
+  denied seven tools and still had the web tools and sub-agents. They now
+  say `none = true`, which the Claude runner passes as `--tools ""` (checked
+  with the installed CLI: it reports no tools).
+- **Where it is in the dashboard:** Project settings has a Roles tab (the
+  roles, a form per role, New role as a copy), and the Workflow tab has Edit
+  steps and New workflow. Both editors have a text view.

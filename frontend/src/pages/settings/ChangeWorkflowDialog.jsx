@@ -2,7 +2,8 @@ import React, { useEffect, useId, useState } from "react";
 
 import { useApiClient } from "../../api/ApiProvider";
 import { errorSentence } from "../../api/client";
-import { listWorkflows, updateProjectSettings } from "../../api/projects";
+import { getProjectDefinitions } from "../../api/definitions";
+import { updateProjectSettings } from "../../api/projects";
 import { useResource } from "../../api/useResource";
 import { Button } from "../../ui/Button";
 import { Dialog } from "../../ui/Dialog";
@@ -17,7 +18,11 @@ import { stepLabel } from "./workflowWords";
 export function ChangeWorkflowDialog({ open, projectId, current, onClose, onChanged }) {
   const client = useApiClient();
   const selectId = useId();
-  const workflows = useResource(["workflows"], (apiClient, options) => listWorkflows(apiClient, options), { enabled: open });
+  const workflows = useResource(
+    ["project-definitions", projectId],
+    (apiClient, options) => getProjectDefinitions(apiClient, projectId, options),
+    { enabled: open },
+  );
   const [chosen, setChosen] = useState("");
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -28,7 +33,7 @@ export function ChangeWorkflowDialog({ open, projectId, current, onClose, onChan
     setError(null);
   }, [open]);
 
-  const others = (workflows.data ?? []).filter((workflow) => workflow.id !== current);
+  const others = (workflows.data?.workflows ?? []).filter((workflow) => workflow.id !== current);
   const picked = others.find((workflow) => workflow.id === chosen) ?? null;
 
   async function confirm() {

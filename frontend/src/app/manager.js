@@ -51,6 +51,7 @@ const PROJECT_PAGES = {
   "project-activity": "Activity",
   "project-settings": "Settings",
   "project-settings-workflow": "Workflow settings",
+  "project-settings-roles": "Role settings",
 };
 
 /**
