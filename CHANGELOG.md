@@ -9,6 +9,7 @@ memory changes rather than versioned product releases.
 
 ### Sprint 60 — Foreman knows who did what
 
+- Dashboard: a long value in a settings row (the file of a role or a workflow, a path under "This machine") wraps inside its row instead of running out of the dialog.
 - Sprint 60 opened (2026-11-16): identity, roles and audit behind a seam; manager chat through the runner; first, one supervised run of the engine. See `docs/sprints/current.md`.
 
 ### Sprint 59 — the engine can be left running again
