@@ -39,3 +39,4 @@ Filename format:
 | ADR-0024 | A Project's Own Roles And Workflows Live In The Database | accepted |
 | ADR-0025 | The Engine Finishes A Sprint Only In An Autonomous Project | accepted |
 | ADR-0026 | A Branch Is Current Before It Is Merged | accepted |
+| ADR-0027 | A Workflow Is Sound Before It Is Saved | accepted |
