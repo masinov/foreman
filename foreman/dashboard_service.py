@@ -325,10 +325,8 @@ class DashboardService:
         for project in self.store.list_projects():
             active_sprint = self.store.get_active_sprint(project.id)
             engine = describe_engine(self.store, project.id, now=self._now())
-            if project.workflow_id not in gates_by_workflow:
-                gates_by_workflow[project.workflow_id] = resolve_gate_steps(
-                    project.workflow_id
-                )
+            if project.id not in gates_by_workflow:
+                gates_by_workflow[project.id] = resolve_gate_steps(self.store, project)
             result.append(
                 {
                     "id": project.id,
@@ -338,7 +336,7 @@ class DashboardService:
                     "agent_running": engine.resident,
                     "engine": _serialize_engine_state(engine),
                     **self._blocked_kind_counts(
-                        project, gates_by_workflow[project.workflow_id]
+                        project, gates_by_workflow[project.id]
                     ),
                     "active_sprint": (
                         {
@@ -465,7 +463,7 @@ class DashboardService:
 
         if "workflow_id" in updates:
             workflow_id = str(updates["workflow_id"])
-            if workflow_id not in self._workflow_catalogue()[1]:
+            if workflow_id not in self._workflow_catalogue(project.id)[1]:
                 raise DashboardValidationError(
                     f"There is no workflow {workflow_id!r}.", field="workflow_id"
                 )
@@ -1705,13 +1703,23 @@ class DashboardService:
             ),
         }
 
-    def _workflow_catalogue(self) -> tuple[dict[str, Any], dict[str, Any]]:
-        """Every role and every workflow definition, as ``(roles, workflows)``."""
+    def _workflow_catalogue(
+        self, project_id: str | None = None
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Every role and workflow definition, as ``(roles, workflows)``.
 
+        With a project, the ones that project runs with: the shipped
+        definitions with the project's own over them (ADR-0024).
+        """
+
+        from .definitions import project_definitions
         from .roles import RoleLoadError, load_roles
         from .workflows import WorkflowLoadError, load_workflows
 
         try:
+            if project_id is not None:
+                definitions = project_definitions(self.store, project_id)
+                return definitions.roles, definitions.workflows
             roles = load_roles()
             workflows = load_workflows(
                 available_role_ids=set(roles),
@@ -1727,7 +1735,7 @@ class DashboardService:
         from .dashboard_workflow_reads import describe_workflow
 
         project = self._require_project(project_id)
-        roles, workflows = self._workflow_catalogue()
+        roles, workflows = self._workflow_catalogue(project_id)
         workflow = workflows.get(project.workflow_id)
         if workflow is None:
             raise DashboardNotFoundError(f"Workflow not found: {project.workflow_id}")
@@ -1748,18 +1756,15 @@ class DashboardService:
     def _project_workflow_step_ids(self, project_id: str) -> set[str] | None:
         """Return the workflow step ids for a project, or ``None`` if unresolved."""
 
-        from .roles import RoleLoadError, load_roles
-        from .workflows import WorkflowLoadError, load_workflows
+        from .definitions import project_definitions
+        from .roles import RoleLoadError
+        from .workflows import WorkflowLoadError
 
         project = self.store.get_project(project_id)
         if project is None:
             return None
         try:
-            roles = load_roles()
-            workflows = load_workflows(
-                available_role_ids=set(roles),
-                role_outcomes={rid: role.completion.outcomes for rid, role in roles.items()},
-            )
+            workflows = project_definitions(self.store, project_id).workflows
         except (RoleLoadError, WorkflowLoadError):
             return None
         workflow = workflows.get(project.workflow_id)
@@ -1894,7 +1899,7 @@ class DashboardService:
     def _gate_steps(self, project: Project | None) -> WorkflowGateSteps:
         """Resolve the human-gate steps of a project's workflow."""
 
-        return resolve_gate_steps(project.workflow_id if project else None)
+        return resolve_gate_steps(self.store, project)
 
     def _blocked_kind_counts(
         self, project: Project, gates: WorkflowGateSteps | None = None

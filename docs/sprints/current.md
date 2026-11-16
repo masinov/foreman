@@ -9,7 +9,7 @@
   all the surfaces and features making sense and being functional."
 - **Status:** in_progress
 - **Method:** by hand unless a slice says otherwise. The engine is started
-  only for the runs slices 1 and 6 name.
+  only for the runs slices 1 and 9 name.
 
 ### Goal
 
@@ -26,7 +26,7 @@ engine. Nothing new is added until that holds.
   2026-11-16).
 - Read-only things look read-only and say once where they are changed.
 - The owner is asked before a screen's structure changes; the audit of slice
-  3 is brought as one review, not fixed piece by piece.
+  6 is brought as one review, not fixed piece by piece.
 
 ### Affected areas
 
@@ -39,13 +39,16 @@ engine. Nothing new is added until that holds.
 | # | Slice | Status | Executed by | Deliverable |
 |---|-------|--------|-------------|-------------|
 | 1 | One supervised run of the engine on a small task, to see sprint 59's fixes against a real agent | done | Foreman, watched by Claude | FOR-44 merged at `e59136a`; "The supervised run" below |
-| 2 | A walkthrough for the owner: one task through a workflow, which role runs at each step, what it may do and must produce, where the gates are, how a model is chosen, what is set where | todo | Claude | a page for the owner |
-| 3 | Audit of every screen and control: does it work, can a person tell what it does, is anything shown that cannot be acted on; footnote strings listed | todo | Claude | one review for the owner |
-| 4 | The fixes the owner agrees from slice 3, in one batch | todo | Claude | |
-| 5 | The engine findings of slice 1: a sprint that closes itself, a branch behind `main` merged without being tested again, the developer using the system Python | todo | Claude | fixes with tests |
-| 6 | A second supervised run with several tasks, so that Run next, a merge during another step, a resumed session's cost and the reviewer rule are seen against a real agent | todo | Foreman, watched by Claude | what was seen, in this file |
-| 7 | The manager chat works for a person who is not on the machine (it is off on a network bind today) and FOR-43 if the owner accepts it | todo | Claude | |
-| 8 | Close the sprint: checkpoint, archive | todo | Claude | `docs/checkpoints/`, `docs/sprints/archive/` |
+| 2 | Explain to the owner how roles, workflows, gates and model choice work | done | Claude | in conversation (the owner prefers plain explanations to pages); it found that a project could not have definitions of its own |
+| 3 | A project's own roles and workflows, in the database, loaded over the shipped ones; tool names checked | done | Claude | `feat/project-definitions-in-database`: ADR-0024, migration 25, `foreman role`, `foreman workflow` |
+| 4 | Roles and workflows editable from the dashboard | todo | Claude | API and editor; the read-only dialogs and the false sentence go |
+| 5 | Decide with the owner what the architect role is for; its plan reaches nobody today | todo | owner and Claude | |
+| 6 | Audit of every screen and control: does it work, can a person tell what it does, is anything shown that cannot be acted on; footnote strings listed | todo | Claude | one review for the owner |
+| 7 | The fixes the owner agrees from slice 6, in one batch | todo | Claude | |
+| 8 | The engine findings of slice 1: a sprint that closes itself, a branch behind `main` merged without being tested again, the developer using the system Python | todo | Claude | fixes with tests |
+| 9 | A second supervised run with several tasks, so that Run next, a merge during another step, a resumed session's cost and the reviewer rule are seen against a real agent | todo | Foreman, watched by Claude | what was seen, in this file |
+| 10 | The manager chat works for a person who is not on the machine (it is off on a network bind today) and FOR-43 if the owner accepts it | todo | Claude | |
+| 11 | Close the sprint: checkpoint, archive | todo | Claude | `docs/checkpoints/`, `docs/sprints/archive/` |
 
 ### The supervised run (slice 1, 2026-11-16)
 
@@ -82,10 +85,10 @@ Found:
 
 ### Risks
 
-- Slice 3 can grow without limit. It is an audit with a list, and the owner
+- Slice 6 can grow without limit. It is an audit with a list, and the owner
   chooses what is fixed.
-- Slices 5 and 6 touch when the engine merges and when a sprint ends.
-- Slice 7 widens who can start an agent session on the host; it rests on the
+- Slices 8 and 9 touch when the engine merges and when a sprint ends.
+- Slice 10 widens who can start an agent session on the host; it rests on the
   confinement of sprint 59 (ADR-0022 amendment).
 
 ### Validation

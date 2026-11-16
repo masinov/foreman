@@ -223,7 +223,7 @@ class Mutations:
         if task.status != "blocked":
             raise MutationError(f"Task {task.id} is not blocked.")
         project = self.store.get_project(task.project_id)
-        gates = resolve_gate_steps(project.workflow_id if project is not None else None)
+        gates = resolve_gate_steps(self.store, project)
         if blocked_kind(task, gates) == "gate":
             raise MutationError(
                 f"Task {task.id} is paused at a workflow gate; use `foreman approve` "
@@ -534,7 +534,7 @@ class Mutations:
                 "waiting at a gate or blocked can be sent back."
             )
         project = self.store.get_project(task.project_id)
-        gates = resolve_gate_steps(project.workflow_id if project is not None else None)
+        gates = resolve_gate_steps(self.store, project)
         if blocked_kind(task, gates) == "gate":
             return self.decide_gate(task, "deny", clean).task
         unblocked = self.unblock_task(task)

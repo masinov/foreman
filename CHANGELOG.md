@@ -9,6 +9,7 @@ memory changes rather than versioned product releases.
 
 ### Sprint 60 — what is there works and makes sense
 
+- A project can have its own roles and workflows (ADR-0024). They are TOML text in the database, loaded over the shipped ones: a shipped id is replaced for that project, a new id is added. `foreman role list|show|set --file|reset <project>` and the same for `foreman workflow`. Every save is kept as a revision with who made it. A save is refused, with the reason, unless everything still loads: a workflow naming a missing role, a role change that breaks a workflow, a misspelt tool name (tool names were unchecked before) or an unknown backend. The engine picks a change up from the next task it starts. Migration 25. The settings page's claim that a project could override definitions "in its own repository" was false until now; the dashboard editor is the next slice.
 - Sprint 60 re-scoped by the owner (2026-11-16): identity, roles of people and audit are dropped from it; the sprint is now an audit and repair of every screen and feature, the engine findings of the supervised run, and a second run with several tasks.
 - The supervised engine run (slice 1) is recorded in `docs/sprints/current.md`: FOR-44 went from develop to a pushed merge; three things it found are in the backlog.
 - Dashboard: a long value in a settings row (the file of a role or a workflow, a path under "This machine") wraps inside its row instead of running out of the dialog.

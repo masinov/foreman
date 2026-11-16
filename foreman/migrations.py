@@ -827,4 +827,26 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         DROP TABLE _run_cost_share;
         """,
     ),
+    (
+        25,
+        "definitions: a project's own roles and workflows, every revision kept",
+        """
+        -- A project's own role or workflow is TOML text here, loaded over
+        -- the definition Foreman ships under the same id (ADR-0024). Every
+        -- save is a new revision; the highest revision is the current one,
+        -- and a revision marked removed means the project went back to the
+        -- shipped definition (or has none under that id).
+        CREATE TABLE IF NOT EXISTS definitions (
+            project_id      TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            kind            TEXT NOT NULL CHECK (kind IN ('role', 'workflow')),
+            definition_id   TEXT NOT NULL,
+            revision        INTEGER NOT NULL,
+            body            TEXT NOT NULL,
+            removed         INTEGER NOT NULL DEFAULT 0,
+            changed_by      TEXT NOT NULL,
+            changed_at      TEXT NOT NULL,
+            PRIMARY KEY (project_id, kind, definition_id, revision)
+        );
+        """,
+    ),
 ]

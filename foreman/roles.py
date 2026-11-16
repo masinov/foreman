@@ -8,7 +8,7 @@ from pathlib import Path
 from string import Formatter
 from typing import Any
 
-from ._toml import load_toml_file
+from ._toml import TOMLDecodeError, load_toml_file, load_toml_text
 from .outcomes import CANONICAL_OUTCOMES
 from .errors import ForemanError
 from .data import ROLES_DIR
@@ -118,11 +118,51 @@ def default_roles_dir() -> Path:
     return ROLES_DIR
 
 
+#: The tools a Claude Code role may name. The names are the agent program's
+#: own; Foreman passes them through. A name that is not here is refused when
+#: the role is loaded, because the program ignores a name it does not know and
+#: the role would then run with a different tool set than the one written.
+CLAUDE_CODE_TOOLS: tuple[str, ...] = (
+    "Read",
+    "Grep",
+    "Glob",
+    "Edit",
+    "Write",
+    "NotebookEdit",
+    "Bash",
+    "WebFetch",
+    "WebSearch",
+    "Task",
+    "Skill",
+    "LSP",
+    "ToolSearch",
+)
+
+KNOWN_TOOLS: dict[str, tuple[str, ...]] = {"claude_code": CLAUDE_CODE_TOOLS}
+
+BACKENDS: tuple[str, ...] = ("claude_code", "codex")
+
+
 def load_role(path: str | Path) -> RoleDefinition:
     """Load one role definition from disk."""
 
     role_path = Path(path)
-    data = load_toml_file(role_path)
+    return parse_role(load_toml_file(role_path), role_path)
+
+
+def load_role_text(text: str, source: str | Path) -> RoleDefinition:
+    """Load one role definition from TOML text; ``source`` names it in errors."""
+
+    try:
+        data = load_toml_text(text)
+    except TOMLDecodeError as exc:
+        raise RoleLoadError(f"{source}: not valid TOML: {exc}") from exc
+    return parse_role(data, Path(source))
+
+
+def parse_role(data: Mapping[str, Any], role_path: Path) -> RoleDefinition:
+    """Build one role definition from decoded TOML."""
+
 
     try:
         role_data = _require_mapping(data, "role", role_path)
@@ -161,6 +201,25 @@ def load_role(path: str | Path) -> RoleDefinition:
             f"{role_path}: signals.allowed contains unknown signal(s) "
             f"{', '.join(sorted(invalid_signals))}."
         )
+
+    backend = _require_string(agent_data, "backend", role_path)
+    if backend not in BACKENDS:
+        raise RoleLoadError(
+            f"{role_path}: agent.backend must be one of {', '.join(BACKENDS)}; got {backend!r}."
+        )
+    known_tools = KNOWN_TOOLS.get(backend)
+    if known_tools is not None:
+        for key in ("allowed", "disallowed"):
+            unknown = [
+                name
+                for name in _require_string_list(tools_data, key, role_path, default=())
+                if name not in known_tools
+            ]
+            if unknown:
+                raise RoleLoadError(
+                    f"{role_path}: agent.tools.{key} names unknown tool(s) "
+                    f"{', '.join(unknown)}. Known tools: {', '.join(known_tools)}."
+                )
 
     return RoleDefinition(
         id=_require_string(role_data, "id", role_path),

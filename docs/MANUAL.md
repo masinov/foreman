@@ -389,6 +389,11 @@ foreman transcript <run-id>           # full persisted transcript for one run
 ```bash
 foreman roles                         # list shipped roles
 foreman workflows                     # list shipped workflows
+foreman role list <project>            # the roles a project runs with, and where each comes from
+foreman role show <project> <id>       # one role as TOML
+foreman role set <project> --file F    # save a role for the project (its id is in the file)
+foreman role reset <project> <id>      # back to the shipped role
+foreman workflow list|show|set|reset   # the same for workflows (ADR-0024)
 foreman db version                    # current schema version
 foreman db migrate                    # apply pending migrations
 foreman dashboard                     # start the web dashboard
