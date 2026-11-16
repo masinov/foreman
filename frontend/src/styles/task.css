@@ -66,6 +66,10 @@
   color: var(--color-text-secondary);
 }
 
+.decision__sprint {
+  width: auto;
+}
+
 .decision__actions {
   display: flex;
   gap: var(--space-2);

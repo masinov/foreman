@@ -418,7 +418,9 @@ class WorkspaceTests(WorkspaceApiCase):
         self.assertEqual(p1["active_sprint"]["task_counts"]["triage"], 1)
         self.assertEqual(p1["active_sprint"]["needs_you"], 2)
         self.assertAlmostEqual(p1["active_sprint"]["spend_usd"], 1.75)
-        self.assertEqual((p1["needs_you"], p1["backlog"]), (3, 2))  # the backlog's filed task counts too
+        # A request in the backlog of a project where a person plans everything
+        # does not wait for anyone (ADR-0028); it is counted as backlog work.
+        self.assertEqual((p1["needs_you"], p1["backlog"]), (2, 2))
         self.assertEqual(p2["engine"]["state"], "not_running")
         self.assertEqual((p2["needs_you"], p2["backlog"]), (2, 0))
 

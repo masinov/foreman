@@ -172,10 +172,14 @@ export function SprintHead({ sprint, onChanged }) {
             </Mono>
           </dd>
         </div>
-        <div className="summary__item">
-          <dt>Foreman picks its own tasks</dt>
-          <dd>{sprint.picks_own_tasks ? "On" : "Off"}</dd>
-        </div>
+        {sprint.picks_own_tasks ? (
+          <div className="summary__item">
+            <dt>Started by Foreman</dt>
+            <dd>
+              {sprint.started_by_foreman ?? 0} of {sprint.foreman_limit ?? 0}
+            </dd>
+          </div>
+        ) : null}
       </dl>
       <EditSprintDialog
         open={editing}

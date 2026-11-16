@@ -33,19 +33,23 @@ function rowKeys() {
 }
 
 describe("the sprint page head", () => {
-  it("shows title, goal, state, counts, spend and the selection setting", async () => {
+  it("shows title, goal, state, counts and spend", async () => {
     await renderSprint();
     expect(screen.getByText("What the engine records is what happened.")).toBeInTheDocument();
     const summary = screen.getByText("State").closest("dl");
     expect(summary).toHaveTextContent(/State\s*Active since 11 Nov/);
     expect(summary).toHaveTextContent("1 need you · 1 in progress · 2 to do · 1 done");
     expect(summary).toHaveTextContent("$1.31 · 28.5K tokens");
-    expect(summary).toHaveTextContent(/Foreman picks its own tasks\s*Off/);
+    // Nothing about Foreman starting tasks where a person plans them all.
+    expect(summary).not.toHaveTextContent(/Foreman/);
   });
 
-  it("says On when the project lets Foreman pick its own tasks", async () => {
-    await renderSprint("/dashboard/sprints/sprint-56", sprintRoutes({ sprint: sprintPayload({ picks_own_tasks: true }) }));
-    expect(screen.getByText("Foreman picks its own tasks").closest("div")).toHaveTextContent("On");
+  it("says how many tasks Foreman started itself where the project lets it", async () => {
+    await renderSprint(
+      "/dashboard/sprints/sprint-56",
+      sprintRoutes({ sprint: sprintPayload({ picks_own_tasks: true, started_by_foreman: 2, foreman_limit: 5 }) }),
+    );
+    expect(screen.getByText("Started by Foreman").closest("div")).toHaveTextContent("2 of 5");
   });
 
   it("puts the project, with what needs you, in the breadcrumb", async () => {

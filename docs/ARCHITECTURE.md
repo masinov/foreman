@@ -764,9 +764,10 @@ The current CLI watch baseline now includes:
   task-bound orchestrator run instead of a pure project-level event.
 - product-facing CLI surfaces now ship as explicit commands rather than a
   generic stub handler.
-- `task_selection_mode="autonomous"` now creates placeholder tasks within the
-  active sprint, while `autonomy_level` separately governs sprint-to-sprint
-  advancement behavior.
+- `task_selection_mode="autonomous"` lets Foreman start accepted backlog work
+  on its own once nothing planned can run, up to `max_autonomous_tasks` per
+  sprint (`foreman/engine/selection.py`, ADR-0028); `autonomy_level` separately
+  governs who finishes a sprint. The earlier placeholder tasks are gone.
 - `session_persistence` is a role-level policy with scope `task + role +
   backend`, and fresh orchestrator invocations now reload the last compatible
   persisted session from SQLite for persistent roles.
@@ -803,15 +804,10 @@ The following items were implemented as hardening before the 1.0 release:
 - After every agent step: default branch HEAD must not have changed unless `_builtin:merge`
 - `engine.branch_violation` is emitted on invariant failure
 
-**Autonomous contract (Item 5)**
-- In autonomous mode the agent names its task with `signal.task_started`
-  (title, criteria, task type). The engine gives the task its branch and
-  worktree as in directed mode.
-- A missing signal emits `workflow.autonomous_contract_missing` once and the
-  workflow continues (spec §6.2, degraded path); with the completion guard
-  on, the merge is what stops a task that has no acceptance criteria.
-- A reported task type or branch that cannot be accepted is refused with
-  `signal.rejected` naming the field; the rest of the signal is applied.
+**Autonomous contract (Item 5)** (removed by ADR-0028)
+- `signal.task_started` and the placeholder task it named are gone. An agent
+  that finds work files it with `signal.task_created`; nothing an agent sends
+  changes a task's title, type, branch or acceptance criteria.
 
 **Signal validation (Items 6–7)**
 - `foreman/runner/signals.py` now emits `signal.invalid` or `signal.unknown` instead of silently dropping bad signals

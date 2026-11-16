@@ -217,8 +217,8 @@ describe("the decision", () => {
     expect(postCalls(fetchImpl, "approve")).toHaveLength(1);
   });
 
-  it("asks to accept filed work; Accept calls accept and Decline calls decline with the reason", async () => {
-    const task = taskDetail({
+  const request = (fields = {}) =>
+    taskDetail({
       status: "triage",
       in_backlog: true,
       awaiting_human_gate: false,
@@ -227,17 +227,43 @@ describe("the decision", () => {
       workflow_current_step: null,
       source: { system: "github", external_ref: "#42", url: "https://example.test/42", reporter: "ana" },
       runs: [],
+      ...fields,
     });
+  const SPRINTS_URL = "GET /api/v1/projects/foreman/sprints?status=active&status=planned&order=queue";
+  const PLAN = "/api/v1/projects/foreman/backlog/plan";
+
+  function backlogTaskRoutes(task) {
     const routes = taskRoutes({ task });
-    routes[post("accept")] = task;
+    routes[SPRINTS_URL] = {
+      sprints: [
+        { id: "sprint-56", title: "Sprint 56: engine truthfulness", status: "active" },
+        { id: "sprint-57", title: "Sprint 57: next", status: "planned" },
+      ],
+      total: 2,
+    };
+    return routes;
+  }
+
+  it("a backlog task is planned into a sprint from its own page, or declined with a reason", async () => {
+    const task = request();
+    const routes = backlogTaskRoutes(task);
+    routes[`POST ${PLAN}`] = { sprint: { id: "sprint-57", title: "Sprint 57: next" }, created_sprint: false, task_ids: [TASK_ID] };
     routes[post("decline")] = task;
     const { fetchImpl } = await renderTask(BASE, routes);
-    const region = await screen.findByRole("region", { name: "Accept this task?" });
+    const region = await screen.findByRole("region", { name: "A request: plan it into a sprint?" });
     expect(region).toHaveTextContent("Filed by ana via github on 10 Nov");
     expect(within(region).getByRole("link", { name: "#42" })).toHaveAttribute("href", "https://example.test/42");
-    fireEvent.click(within(region).getByRole("button", { name: "Accept" }));
-    expect(await screen.findByText("Accepted. It can be planned into a sprint.")).toBeInTheDocument();
-    expect(postCalls(fetchImpl, "accept")).toHaveLength(1);
+    // Where a person plans everything there is nothing to accept.
+    expect(within(region).queryByRole("button", { name: /Accept/ })).toBeNull();
+
+    const sprint = within(region).getByRole("combobox", { name: "Sprint to plan it into" });
+    await within(sprint).findByRole("option", { name: "Sprint 57: next (planned)" });
+    // The sprint that is running is the one offered first.
+    expect(sprint).toHaveValue("sprint-56");
+    fireEvent.change(sprint, { target: { value: "sprint-57" } });
+    fireEvent.click(within(region).getByRole("button", { name: "Plan" }));
+    expect(await screen.findByText("Planned into Sprint 57: next.")).toBeInTheDocument();
+    expect(calls(fetchImpl, "POST", PLAN)[0].body).toEqual({ task_ids: [TASK_ID], sprint_id: "sprint-57" });
 
     fireEvent.click(within(region).getByRole("button", { name: "Decline" }));
     const dialog = screen.getByRole("dialog", { name: "Decline this task" });
@@ -245,6 +271,35 @@ describe("the decision", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Decline" }));
     expect(await screen.findByText("Declined.")).toBeInTheDocument();
     expect(postCalls(fetchImpl, "decline")[0].body).toEqual({ reason: "Out of scope." });
+  });
+
+  it("a request can be accepted where Foreman starts backlog work on its own", async () => {
+    const task = request({ foreman_starts_backlog_work: true });
+    const routes = backlogTaskRoutes(task);
+    routes[post("accept")] = task;
+    const { fetchImpl } = await renderTask(BASE, routes);
+    const region = await screen.findByRole("region", { name: "A request: plan it into a sprint?" });
+    fireEvent.click(within(region).getByRole("button", { name: "Accept: Foreman may start it" }));
+    expect(await screen.findByText("Accepted. Foreman may start it.")).toBeInTheDocument();
+    expect(postCalls(fetchImpl, "accept")).toHaveLength(1);
+  });
+
+  it("backlog work that is not a request is planned the same way, with no Accept", async () => {
+    const task = request({ status: "todo", foreman_starts_backlog_work: true, source: null });
+    await renderTask(BASE, backlogTaskRoutes(task));
+    const region = await screen.findByRole("region", { name: "Plan this into a sprint?" });
+    expect(within(region).queryByRole("button", { name: /Accept/ })).toBeNull();
+    expect(within(region).getByRole("button", { name: "Plan" })).toBeInTheDocument();
+  });
+
+  it("a request another system filed straight into a sprint is still accepted there", async () => {
+    const task = request({ in_backlog: false });
+    const routes = taskRoutes({ task });
+    routes[post("accept")] = task;
+    const { fetchImpl } = await renderTask(BASE, routes);
+    const region = await screen.findByRole("region", { name: "Accept this task?" });
+    fireEvent.click(within(region).getByRole("button", { name: "Accept" }));
+    await waitFor(() => expect(postCalls(fetchImpl, "accept")).toHaveLength(1));
   });
 
   it("says why a task is blocked; Unblock and Send back call unblock", async () => {

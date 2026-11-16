@@ -8,6 +8,7 @@ import {
   backlogTask,
   backlogUrl,
   FILED,
+  FOREMAN_STARTS,
   PLANNED,
 } from "../../testing/projectFixture";
 
@@ -22,46 +23,59 @@ function calls(fetchImpl, method, url) {
 async function renderBacklog(routes = backlogRoutes()) {
   const fetchImpl = createFakeFetch(routes);
   const utils = renderApp(PATH, fetchImpl);
-  await screen.findByRole("region", { name: /Accepted, not planned/ });
+  await screen.findByRole("region", { name: /^Backlog/ });
   return { ...utils, fetchImpl };
 }
 
-const filedSection = () => screen.getByRole("region", { name: /Filed, not accepted/ });
-const acceptedSection = () => screen.getByRole("region", { name: /Accepted, not planned/ });
+// Requests are listed apart only where Foreman starts backlog work on its own.
+const STARTS = { foreman: FOREMAN_STARTS };
+const requestsSection = () => screen.getByRole("region", { name: /^Requests/ });
+const backlogSection = () => screen.getByRole("region", { name: /^Backlog/ });
 
 describe("the backlog tab", () => {
-  it("renders both groups from the backlog endpoint", async () => {
+  it("is one list where a person plans everything: plan or decline, nothing to accept", async () => {
     const { fetchImpl } = await renderBacklog();
     expect(calls(fetchImpl, "GET", backlogUrl())).toHaveLength(1);
-
     expect(screen.queryByRole("navigation", { name: "Project" })).toBeNull();
 
-    const filed = filedSection();
-    expect(within(filed).getByRole("link", { name: FILED.title })).toHaveAttribute("href", "/dashboard/tasks/task-filed");
-    expect(within(filed).getByText(/manager, 9 Nov/)).toBeInTheDocument();
-    expect(within(filed).getByText("Accepted by a person")).toBeInTheDocument();
-
-    const accepted = acceptedSection();
-    const rows = within(accepted).getAllByRole("row").slice(1);
-    expect(rows).toHaveLength(3);
-    expect(within(rows[0]).getByRole("link", { name: ACCEPTED[0].title })).toHaveAttribute("href", "/dashboard/tasks/task-a");
-    expect(within(rows[0]).getByText("carried from Sprint 56: engine truthfulness")).toBeInTheDocument();
-    expect(within(rows[1]).getByText("ada via github")).toBeInTheDocument();
-    expect(within(rows[2]).getByText("feature")).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: /^Requests/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Accept / })).toBeNull();
+    const rows = within(backlogSection()).getAllByRole("row").slice(1);
+    // What an agent filed is in the same list, saying who filed it.
+    expect(rows).toHaveLength(4);
+    expect(within(rows[0]).getByRole("link", { name: FILED.title })).toHaveAttribute("href", "/dashboard/tasks/task-filed");
+    expect(within(rows[0]).getByText(/manager, 9 Nov/)).toBeInTheDocument();
+    expect(within(rows[1]).getByRole("link", { name: ACCEPTED[0].title })).toHaveAttribute("href", "/dashboard/tasks/task-a");
+    expect(within(rows[1]).getByText(/carried from Sprint 56: engine truthfulness/)).toBeInTheDocument();
+    expect(within(rows[2]).getByText(/ada via github/)).toBeInTheDocument();
+    expect(within(rows[3]).getByText("feature")).toBeInTheDocument();
+    for (const row of rows) expect(within(row).getByRole("button", { name: /^Decline / })).toBeInTheDocument();
   });
 
-  it("says who accepts when the project accepts filed work itself", async () => {
-    await renderBacklog(backlogRoutes([...ACCEPTED], { triage: "auto" }));
-    expect(
-      within(filedSection()).getByText("Accepted by Foreman"),
-    ).toBeInTheDocument();
+  it("lists requests apart where Foreman starts backlog work, and says how many it has started", async () => {
+    await renderBacklog(backlogRoutes([FILED, ...ACCEPTED], STARTS));
+    const requests = requestsSection();
+    expect(within(requests).getByRole("link", { name: FILED.title })).toBeInTheDocument();
+    expect(within(requests).getByRole("button", { name: `Accept ${FILED.title}` })).toBeInTheDocument();
+    expect(within(requests).getByRole("button", { name: `Decline ${FILED.title}` })).toBeInTheDocument();
+
+    const backlog = backlogSection();
+    expect(within(backlog).getAllByRole("row").slice(1)).toHaveLength(3);
+    expect(within(backlog).queryByRole("link", { name: FILED.title })).toBeNull();
+    expect(within(backlog).getByText("Foreman has started 1 of 5 this sprint")).toBeInTheDocument();
+    // A request can be planned straight into a sprint: it is selectable too.
+    expect(within(requests).getByRole("checkbox", { name: `Select: ${FILED.title}` })).toBeInTheDocument();
   });
 
-  it("says what is true when nothing is filed and nothing waits to be planned", async () => {
+  it("has no requests list when there are none", async () => {
+    await renderBacklog(backlogRoutes([...ACCEPTED], STARTS));
+    expect(screen.queryByRole("region", { name: /^Requests/ })).toBeNull();
+  });
+
+  it("says the backlog is empty when it is", async () => {
     await renderBacklog(backlogRoutes([]));
-    expect(within(filedSection()).getByText(/^Nothing is filed\./)).toBeInTheDocument();
-    expect(within(acceptedSection()).getByText(/^Nothing is waiting to be planned\./)).toBeInTheDocument();
-    expect(within(acceptedSection()).getByRole("button", { name: "Plan" })).toBeDisabled();
+    expect(within(backlogSection()).getByText("The backlog is empty.")).toBeInTheDocument();
+    expect(within(backlogSection()).getByRole("button", { name: "Plan" })).toBeDisabled();
   });
 
   it("shows an API failure as a sentence", async () => {
@@ -72,48 +86,56 @@ describe("the backlog tab", () => {
   });
 });
 
-describe("accepting and declining filed work", () => {
+describe("accepting and declining a request", () => {
   it.each([
     ["Accept", "accept", /Accepted Retry the webhook on a timeout/],
     ["Decline", "decline", /Declined Retry the webhook on a timeout/],
   ])("%s calls its endpoint, reloads and the row leaves", async (button, endpoint, sentence) => {
-    const routes = backlogRoutes();
+    const routes = backlogRoutes(undefined, STARTS);
     routes[`POST /api/v1/tasks/task-filed/${endpoint}`] = { id: "task-filed" };
     const { fetchImpl } = await renderBacklog(routes);
     // After the change the API no longer lists it as filed.
-    routes[backlogUrl()] = backlogPayload([...ACCEPTED]);
+    routes[backlogUrl()] = backlogPayload([...ACCEPTED], STARTS);
     routes["GET /api/v1/workspace"] = {
       ...(await (await fetchImpl("/api/v1/workspace")).json()),
     };
 
-    fireEvent.click(within(filedSection()).getByRole("button", { name: `${button} ${FILED.title}` }));
+    fireEvent.click(within(requestsSection()).getByRole("button", { name: `${button} ${FILED.title}` }));
     expect(await screen.findByText(sentence)).toBeInTheDocument();
     expect(calls(fetchImpl, "POST", `/api/v1/tasks/task-filed/${endpoint}`)).toHaveLength(1);
-    await waitFor(() => expect(within(filedSection()).queryByRole("link", { name: FILED.title })).toBeNull());
-    expect(within(filedSection()).getByText(/^Nothing is filed\./)).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("region", { name: /^Requests/ })).toBeNull());
     // The tab count is read again from the workspace.
     await waitFor(() => expect(calls(fetchImpl, "GET", "/api/v1/workspace").length).toBeGreaterThan(2));
   });
 
-  it("shows a refusal as a sentence and keeps the row", async () => {
+  it("declines backlog work from the one list where there are no requests", async () => {
     const routes = backlogRoutes();
+    routes["POST /api/v1/tasks/task-a/decline"] = { id: "task-a" };
+    const { fetchImpl } = await renderBacklog(routes);
+    fireEvent.click(within(backlogSection()).getByRole("button", { name: `Decline ${ACCEPTED[0].title}` }));
+    expect(await screen.findByText(`Declined ${ACCEPTED[0].title}.`)).toBeInTheDocument();
+    expect(calls(fetchImpl, "POST", "/api/v1/tasks/task-a/decline")).toHaveLength(1);
+  });
+
+  it("shows a refusal as a sentence and keeps the row", async () => {
+    const routes = backlogRoutes(undefined, STARTS);
     routes["POST /api/v1/tasks/task-filed/accept"] = reply(422, {
       error: "Task task-filed is already accepted.",
       code: "validation_error",
     });
     await renderBacklog(routes);
-    fireEvent.click(within(filedSection()).getByRole("button", { name: `Accept ${FILED.title}` }));
+    fireEvent.click(within(requestsSection()).getByRole("button", { name: `Accept ${FILED.title}` }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Task task-filed is already accepted.");
-    expect(within(filedSection()).getByRole("link", { name: FILED.title })).toBeInTheDocument();
+    expect(within(requestsSection()).getByRole("link", { name: FILED.title })).toBeInTheDocument();
   });
 });
 
 describe("selecting and planning", () => {
   it("has accessible checkboxes, a select-all, and Plan disabled with nothing selected", async () => {
     await renderBacklog();
-    const section = acceptedSection();
+    const section = backlogSection();
     const plan = within(section).getByRole("button", { name: "Plan" });
-    const all = within(section).getByRole("checkbox", { name: "Select all accepted tasks" });
+    const all = within(section).getByRole("checkbox", { name: "Select every task in the backlog" });
     expect(plan).toBeDisabled();
 
     const first = within(section).getByRole("checkbox", { name: `Select: ${ACCEPTED[0].title}` });
@@ -137,7 +159,7 @@ describe("selecting and planning", () => {
 
   it("lists a new sprint and every planned or active sprint to plan into", async () => {
     await renderBacklog();
-    const select = within(acceptedSection()).getByRole("combobox", { name: "Plan selected into" });
+    const select = within(backlogSection()).getByRole("combobox", { name: "Plan selected into" });
     expect(within(select).getAllByRole("option").map((option) => [option.value, option.textContent])).toEqual([
       ["new", "A new sprint"],
       ["sprint-56", "Sprint 56: engine truthfulness (active)"],
@@ -153,7 +175,7 @@ describe("selecting and planning", () => {
       task_ids: ["task-a", "task-c"],
     };
     const { fetchImpl } = await renderBacklog(routes);
-    const section = acceptedSection();
+    const section = backlogSection();
     fireEvent.click(within(section).getByRole("checkbox", { name: `Select: ${ACCEPTED[0].title}` }));
     fireEvent.click(within(section).getByRole("checkbox", { name: `Select: ${ACCEPTED[2].title}` }));
     fireEvent.change(within(section).getByRole("combobox", { name: "Plan selected into" }), {
@@ -167,9 +189,10 @@ describe("selecting and planning", () => {
       task_ids: ["task-a", "task-c"],
       sprint_id: "sprint-57",
     });
-    await waitFor(() => expect(within(acceptedSection()).getAllByRole("row")).toHaveLength(2));
-    expect(within(acceptedSection()).queryByRole("link", { name: ACCEPTED[0].title })).toBeNull();
-    expect(within(acceptedSection()).getByRole("button", { name: "Plan" })).toBeDisabled();
+    // The header, and the two tasks that were not planned.
+    await waitFor(() => expect(within(backlogSection()).getAllByRole("row")).toHaveLength(3));
+    expect(within(backlogSection()).queryByRole("link", { name: ACCEPTED[0].title })).toBeNull();
+    expect(within(backlogSection()).getByRole("button", { name: "Plan" })).toBeDisabled();
   });
 
   it("shows a refusal to plan into an existing sprint as a sentence", async () => {
@@ -179,7 +202,7 @@ describe("selecting and planning", () => {
       code: "validation_error",
     });
     await renderBacklog(routes);
-    const section = acceptedSection();
+    const section = backlogSection();
     fireEvent.click(within(section).getByRole("checkbox", { name: `Select: ${ACCEPTED[0].title}` }));
     fireEvent.change(within(section).getByRole("combobox", { name: "Plan selected into" }), {
       target: { value: "sprint-56" },
@@ -197,8 +220,8 @@ describe("selecting and planning", () => {
       task_ids: ["task-b"],
     };
     const { fetchImpl } = await renderBacklog(routes);
-    fireEvent.click(within(acceptedSection()).getByRole("checkbox", { name: `Select: ${ACCEPTED[1].title}` }));
-    fireEvent.click(within(acceptedSection()).getByRole("button", { name: "Plan" }));
+    fireEvent.click(within(backlogSection()).getByRole("checkbox", { name: `Select: ${ACCEPTED[1].title}` }));
+    fireEvent.click(within(backlogSection()).getByRole("button", { name: "Plan" }));
 
     const dialog = await screen.findByRole("dialog", { name: "Plan into a new sprint" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Create sprint and plan" }));
@@ -225,8 +248,8 @@ describe("selecting and planning", () => {
       code: "validation_error",
     });
     await renderBacklog(routes);
-    fireEvent.click(within(acceptedSection()).getByRole("checkbox", { name: `Select: ${ACCEPTED[1].title}` }));
-    fireEvent.click(within(acceptedSection()).getByRole("button", { name: "Plan" }));
+    fireEvent.click(within(backlogSection()).getByRole("checkbox", { name: `Select: ${ACCEPTED[1].title}` }));
+    fireEvent.click(within(backlogSection()).getByRole("button", { name: "Plan" }));
     const dialog = await screen.findByRole("dialog", { name: "Plan into a new sprint" });
     fireEvent.change(within(dialog).getByLabelText("Title"), { target: { value: "Sprint 58" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "Create sprint and plan" }));
@@ -241,7 +264,7 @@ describe("filing a new task", () => {
     routes["POST /api/v1/projects/foreman/backlog"] = reply(201, {
       id: "task-new",
       title: "Add a retry",
-      status: "triage",
+      status: "todo",
     });
     const { fetchImpl } = await renderBacklog(routes);
     fireEvent.click(screen.getByRole("button", { name: "New task" }));
@@ -259,7 +282,7 @@ describe("filing a new task", () => {
     expect(within(dialog).queryByRole("button", { name: /wait for other tasks/ })).toBeNull();
     fireEvent.click(within(dialog).getByRole("button", { name: "File task" }));
 
-    expect(await screen.findByText("Filed Add a retry. It waits to be accepted.")).toBeInTheDocument();
+    expect(await screen.findByText("Filed Add a retry.")).toBeInTheDocument();
     expect(calls(fetchImpl, "POST", "/api/v1/projects/foreman/backlog")[0].body).toEqual({
       title: "Add a retry",
       task_type: "fix",
@@ -269,19 +292,6 @@ describe("filing a new task", () => {
     });
     await waitFor(() => expect(calls(fetchImpl, "GET", backlogUrl()).length).toBeGreaterThan(1));
     expect(screen.queryByRole("dialog")).toBeNull();
-  });
-
-  it("says when the project accepted the task itself", async () => {
-    const routes = backlogRoutes();
-    routes["POST /api/v1/projects/foreman/backlog"] = reply(201, { id: "task-new", title: "Add a retry", status: "todo" });
-    await renderBacklog(routes);
-    fireEvent.click(screen.getByRole("button", { name: "New task" }));
-    const dialog = await screen.findByRole("dialog", { name: "New task" });
-    fireEvent.change(within(dialog).getByLabelText("Title"), { target: { value: "Add a retry" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: "File task" }));
-    expect(
-      await screen.findByText("Filed Add a retry. This project accepted it, so it is waiting to be planned."),
-    ).toBeInTheDocument();
   });
 
   it("shows a refusal in the dialog as a sentence", async () => {
@@ -310,10 +320,10 @@ describe("paging and filtering", () => {
     routes[backlogUrl()] = { ...backlogPayload(all.slice(0, 25), { total: 30 }), counts: { filed: 0, accepted: 30, declined: 0 } };
     routes[backlogUrl({ offset: 25 })] = { ...backlogPayload(all.slice(25), { total: 30 }), counts: { filed: 0, accepted: 30, declined: 0 } };
     const { fetchImpl } = await renderBacklog(routes);
-    expect(within(acceptedSection()).getAllByRole("row")).toHaveLength(26);
+    expect(within(backlogSection()).getAllByRole("row")).toHaveLength(26);
 
     fireEvent.click(screen.getByRole("button", { name: "Show more" }));
-    await waitFor(() => expect(within(acceptedSection()).getAllByRole("row")).toHaveLength(31));
+    await waitFor(() => expect(within(backlogSection()).getAllByRole("row")).toHaveLength(31));
     expect(calls(fetchImpl, "GET", backlogUrl({ offset: 25 }))).toHaveLength(1);
     expect(screen.queryByRole("button", { name: "Show more" })).toBeNull();
   });
@@ -326,13 +336,12 @@ describe("paging and filtering", () => {
     const box = screen.getByRole("searchbox", { name: "Filter the backlog" });
 
     fireEvent.change(box, { target: { value: "lease" } });
-    await waitFor(() => expect(within(acceptedSection()).getAllByRole("row")).toHaveLength(2));
+    await waitFor(() => expect(within(backlogSection()).getAllByRole("row")).toHaveLength(2));
     expect(calls(fetchImpl, "GET", backlogUrl({ q: "lease" }))).toHaveLength(1);
-    expect(within(acceptedSection()).getByRole("link", { name: ACCEPTED[1].title })).toBeInTheDocument();
+    expect(within(backlogSection()).getByRole("link", { name: ACCEPTED[1].title })).toBeInTheDocument();
 
     fireEvent.change(box, { target: { value: "zzz" } });
-    expect(await screen.findByText("No accepted work matches “zzz”.")).toBeInTheDocument();
-    expect(within(filedSection()).getByText("No filed work matches “zzz”.")).toBeInTheDocument();
+    expect(await screen.findByText("Nothing in the backlog matches “zzz”.")).toBeInTheDocument();
   });
 });
 

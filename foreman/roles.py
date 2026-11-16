@@ -17,14 +17,13 @@ from .data import ROLES_DIR
 _FORMATTER = Formatter()
 
 SIGNAL_FORMAT_DOC = """Available signals:
-- FOREMAN_SIGNAL: {"type": "task_started", "title": "...", "task_type": "...", "branch": "...", "criteria": "..."}
 - FOREMAN_SIGNAL: {"type": "task_created", "title": "...", "task_type": "...", "description": "...", "criteria": "..."}
 - FOREMAN_SIGNAL: {"type": "progress", "message": "..."}
 - FOREMAN_SIGNAL: {"type": "blocker", "message": "..."}"""
 
 
 #: Every signal an agent may emit; roles narrow this with ``[signals] allowed``.
-ALL_SIGNALS: tuple[str, ...] = ("task_started", "task_created", "progress", "blocker")
+ALL_SIGNALS: tuple[str, ...] = ("task_created", "progress", "blocker")
 _DECISION_DEFAULT_OUTCOMES: tuple[str, ...] = ("approve", "deny", "steer")
 REVIEW_KINDS: tuple[str, ...] = ("code", "security")
 _AGENT_DEFAULT_OUTCOMES: tuple[str, ...] = ("done", "blocked", "error")
