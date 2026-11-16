@@ -643,6 +643,15 @@ Agent/builtin terminal results normalize to a canonical set
 `escalate`. Transitions are keyed `completion:<outcome>`. Unknown agent
 outcomes normalize to `error` (deterministic fallback).
 
+The merge step (`_builtin:merge`) ends in `success`, `failure`, `conflict` or
+`updated` (ADR-0026). `updated` means the branch was behind the default branch,
+Foreman merged the default branch into it in the task's worktree and did not
+merge the task. A workflow of a project's own needs a transition
+`from = "merge"`, `trigger = "completion:updated"`, `to = "test"` (the shipped
+workflows have it). Without one the outcome has no transition: the task takes
+the workflow's `[fallback]` and blocks, and the `workflow.no_transition` event
+names the step and the outcome `updated`.
+
 ### Loop protection
 
 Each step visit increments `step_visit_counts[step]`. Exceeding

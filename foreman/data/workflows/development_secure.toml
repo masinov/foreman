@@ -96,6 +96,10 @@ trigger = "completion:success"
 to = "done"
 [[transitions]]
 from = "merge"
+trigger = "completion:updated"
+to = "test"
+[[transitions]]
+from = "merge"
 trigger = "completion:conflict"
 to = "develop"
 carry_output = true

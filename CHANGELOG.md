@@ -7,6 +7,10 @@ memory changes rather than versioned product releases.
 
 ## [Unreleased]
 
+### Sprint 60b — engine findings of the supervised run
+
+- A branch behind the default branch is updated and tested again before it is merged (ADR-0026). The merge step used to merge a branch without asking whether it contained the default branch's head, so what landed had not been tested or reviewed. Now it merges the default branch into the task branch in the task's own worktree, ends with the new outcome `updated` and an `engine.branch_sync` event (step `merge`), and the three shipped workflows send `updated` to the test step. A conflict gives `conflict` as before. A project's own workflow needs a `merge` + `completion:updated` transition, or the task blocks.
+
 ### Sprint 60 — what is there works and makes sense
 
 - The architect role and the workflow `development_with_architect` are removed (ADR-0022 amendment). The role asked for a sprint's tasks while running as the first step of every task, and its approved plan reached nobody. Planning is the manager's now. Migration 26 moves a project that was on that workflow to `development` unless it keeps its own copy. Six roles and three workflows are shipped.
