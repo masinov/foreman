@@ -13,7 +13,7 @@
 ## Found while Foreman built sprint 58 (2026-11-12 and 13)
 
 Engine and workflow defects seen while the engine ran sprint 58's tasks.
-None is fixed. Each is a candidate for the next engine sprint.
+All were fixed in sprint 59.
 
 - (Fixed in sprint 59, slice 1.) A corrective retry that ended with zero
   turns counted as a second failure.
@@ -77,7 +77,8 @@ Phases 0 and 1. Queued after that, in order:
   ESLint.
 - **Phase 5, finish the product:** planner step per task; pull-request
   integration; login and roles as a pluggable seam (no provider chosen);
-  agent sandbox; manager chat through the runner; spec §6.4 checkpoints;
+  agent sandbox (first cut done in sprint 59; a container per task is
+  left); manager chat through the runner; spec §6.4 checkpoints;
   Codex role and smoke test; database out of the repository; deployment
   guide.
 
