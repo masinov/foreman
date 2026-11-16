@@ -1,37 +1,66 @@
 # Current Sprint
 
-## No sprint is open
+## Sprint 60 — Foreman knows who did what
 
-Sprint 59 (the engine can be left running again, the first of Phase 5 of
-`docs/reviews/2026-11-10-full-review-and-finish-plan.md`) closed on
-2026-11-16: `docs/sprints/archive/sprint-59-engine-left-running.md`,
-`docs/checkpoints/2026-11-16-sprint-59-closed.md`.
+- **Opened:** 2026-11-16, the second sprint of Phase 5 of
+  `docs/reviews/2026-11-10-full-review-and-finish-plan.md`. Scope agreed by
+  the owner on 2026-11-16.
+- **Status:** in_progress
+- **Method:** decided per slice. The owner allowed the engine to be started
+  for one supervised run (2026-11-16); slice 1 is that run. What it shows
+  decides whether later slices are given to the engine or done by hand.
 
-The engine is stopped (owner, 2026-11-13). Sprint 59's engine fixes are
-covered by tests and have not been seen in a run of the engine; whether to
-start it again is the owner's call.
+### Goal
 
-### Proposed sprint 60 (not opened; the owner has not agreed its scope)
+Today every decision is recorded as made by whoever holds the one dashboard
+token. After this sprint a person signs in, has a role, and every decision
+names the actor the server derived. No identity provider is chosen (owner,
+2026-11-10): the sprint delivers the seam and one built-in way to fill it.
 
-Goal: Foreman knows who did what. Today every decision is recorded as made
-by whoever holds the one dashboard token. No identity provider is chosen
-(owner, 2026-11-10); the sprint delivers the seam and one built-in way to
-fill it.
+### Constraints
 
-| # | Slice | Source |
-|---|-------|--------|
-| 1 | An ADR for identity: users, the four roles (viewer, operator, approver, admin), where a provider plugs in | Phase 5 |
-| 2 | Users and sessions in the database; sign in with a built-in local provider behind the seam | Phase 5 |
-| 3 | Every decision (approve, send back, mark done, confirm a proposal, settings) records the actor the server derived, never one the client sent | Phase 5 |
-| 4 | Roles enforced on the API and shown in the dashboard: a viewer cannot approve, only an admin changes host-level settings | Phase 5 |
-| 5 | Audit events cannot be changed or deleted | Phase 5 |
-| 6 | Manager chat through the runner: a declared tool set, a session per user, one turn at a time, stopped when the person leaves, cost per turn | Phase 5 |
-| 7 | FOR-43, if accepted: the proposal card's "Then" row for a send-back, a summary line for earlier proposals | `docs/sprints/backlog.md` |
+- Spec `docs/specs/engine-design-v3.md` for behaviour; ADR-0016 (browser
+  routes into the API), ADR-0017 (what the API may set), ADR-0022 (the
+  manager proposes), ADR-0023 (what an agent is handed).
+- The identity decision gets its own ADR before code depends on it (slice 2).
+- The shared token keeps working for a single-operator install; nothing that
+  runs today stops running.
+- Dashboard changes follow ADR-0020 and the look rules in `docs/TESTING.md`.
 
-Later Phase 5 sprints: a planner step per task with a protected acceptance
-test, pull requests through the remote and a container per task; then the
-notification seam, checkpoint tags, Codex, the database out of the
-repository and a deployment guide.
+### Affected areas
 
-A fresh agent should not start sprint 60 until this section is replaced by
-an opened sprint.
+`foreman/dashboard/`, `foreman/dashboard_guard.py`, `foreman/store/`,
+`foreman/mutations.py`, `foreman/meta_agent.py`, `foreman/runner/`,
+`foreman/cli/`, `frontend/src/`, tests, `docs/`.
+
+### Slices
+
+| # | Slice | Status | Executed by | Deliverable |
+|---|-------|--------|-------------|-------------|
+| 1 | One supervised run of the engine on a small task, to see sprint 59's fixes against a real agent | todo | Foreman, watched by Claude | what was seen, in this file |
+| 2 | An ADR for identity: users, the four roles (viewer, operator, approver, admin), where a provider plugs in | todo | | `docs/adr/` |
+| 3 | Users and sessions in the database; sign in with a built-in local provider behind the seam | todo | | migration, CLI to add a user, sign-in page |
+| 4 | Every decision (approve, send back, mark done, confirm a proposal, settings) records the actor the server derived, never one the client sent | todo | | |
+| 5 | Roles enforced on the API and shown in the dashboard: a viewer cannot approve, only an admin changes host-level settings | todo | | |
+| 6 | Audit events cannot be changed or deleted | todo | | |
+| 7 | Manager chat through the runner: a declared tool set, a session per user, one turn at a time, stopped when the person leaves, cost per turn | todo | | |
+| 8 | FOR-43, if the owner accepts it: the proposal card's "Then" row for a send-back, a summary line for earlier proposals | todo | | |
+| 9 | Close the sprint: checkpoint, archive | todo | Claude | `docs/checkpoints/`, `docs/sprints/archive/` |
+
+### Risks
+
+- Slice 1 runs an agent as the engine's user with a shell and the network.
+  It is one small task, watched, with the merge behind a human gate.
+- Slices 3 to 5 sit in front of every request. A mistake locks the operator
+  out or lets a viewer act; the token path stays as the way back in.
+- Slice 7 replaces how the manager is started. Its confinement from sprint
+  59 (ADR-0022 amendment) must hold through the runner.
+
+### Validation
+
+Before every merge: `ruff check foreman tests scripts`,
+`./venv/bin/python -m unittest discover -s tests`,
+`npm --prefix frontend run lint`, `npm --prefix frontend test`,
+`npm --prefix frontend run build`,
+`./venv/bin/python scripts/validate_repo_memory.py`. CI is read after every
+push. Dashboard changes are looked at with `scripts/dashboard_shot.mjs`.
