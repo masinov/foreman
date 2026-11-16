@@ -7,6 +7,10 @@ memory changes rather than versioned product releases.
 
 ## [Unreleased]
 
+### Sprint 60 — Foreman knows who did what
+
+- Sprint 60 opened (2026-11-16): identity, roles and audit behind a seam; manager chat through the runner; first, one supervised run of the engine. See `docs/sprints/current.md`.
+
 ### Sprint 59 — the engine can be left running again
 
 - Sprint 59 is closed (2026-11-16): archived at `docs/sprints/archive/sprint-59-engine-left-running.md`, checkpoint at `docs/checkpoints/2026-11-16-sprint-59-closed.md`. No sprint is open; `docs/sprints/current.md` holds a proposed sprint 60.
