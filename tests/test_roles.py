@@ -29,7 +29,6 @@ class RoleLoaderTests(unittest.TestCase):
         self.assertEqual(
             set(roles),
             {
-                "architect",
                 "code_reviewer",
                 "developer",
                 "developer_worker",
@@ -42,7 +41,6 @@ class RoleLoaderTests(unittest.TestCase):
         self.assertTrue(roles["developer_worker"].agent.session_persistence)
         self.assertEqual(roles["developer_worker"].agent.model, "")
         self.assertEqual(roles["code_reviewer"].completion.max_cost_usd, 5.0)
-        self.assertTrue(roles["architect"].completion.output.extract_json)
 
     def test_loads_agent_env_table(self) -> None:
         roles_dir = self.create_directory()

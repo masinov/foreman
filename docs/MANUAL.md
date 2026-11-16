@@ -214,7 +214,7 @@ foreman config <project-id> [--set key=value]   # read / mutate settings
 ```
 
 `--workflow` defaults to `development`; use `development_secure`,
-`development_tiered`, or `development_with_architect` as needed.
+or `development_tiered` as needed.
 
 ### Sprints
 
@@ -484,7 +484,6 @@ A role is a declarative TOML file describing one agent identity. Shipped roles:
 
 | Role | Model (default) | Session | Purpose |
 |---|---|---|---|
-| `architect` | `claude-opus-5-5` | ephemeral | Plan/decompose into tasks (emits `signal.task_created`). |
 | `developer` | project default | persistent | Implement the change on the task branch. |
 | `developer_worker` | project default | persistent | Worker-fleet developer; carries a commented `[agent.env]` example. |
 | `code_reviewer` | `claude-sonnet-5-5` | ephemeral | Agentic review with repo tools. |
@@ -578,7 +577,6 @@ A workflow is a state machine over steps. Shipped workflows:
 | `development` | `develop` | develop → test → review → merge_approval → merge → done |
 | `development_secure` | `develop` | develop → test → code_review → security_review → merge_approval → merge → done |
 | `development_tiered` | `develop` | develop → test → **triage** → (escalate) **frontier review** → merge_approval → merge → done |
-| `development_with_architect` | `plan` | plan → human_approval → develop → test → review → merge_approval → merge → done |
 
 Tests run before any review so reviewers judge with real test results in the
 engine evidence, and a failing suite goes straight back to develop. Every
@@ -930,7 +928,7 @@ person do this?":
 | Decision | Values | Default | What it governs |
 | --- | --- | --- | --- |
 | `triage` | `auto`, `human` | `human` | whether work filed through the intake API (§25) is runnable on arrival, or waits in `triage` for a person |
-| `plan_approval` | `auto`, `human` | `human` | the architect workflow's plan gate |
+| `plan_approval` | `auto`, `human` | `human` | who confirms a plan the manager proposes (Plan this sprint, Split into smaller tasks), and a workflow gate that names it |
 | `merge_approval` | `auto`, `human` | `auto` | the merge gate every shipped workflow ends in |
 | `notification` | `none`, `attention`, `all` | `attention` | how much a project wants to be told: nothing, attention turns and human gates, or those plus task completions |
 
@@ -1109,7 +1107,7 @@ offending value, rather than running on silent defaults.
 | `worktree_setup_timeout_seconds` | `1800` | wall-clock cap for `worktree_setup_command`; `0` disables the timeout |
 | `completion_guard_enabled` | `true` | enforce the merge proof gate |
 | `merge_approval` | `auto` | `auto` or `human`: whether the `merge_approval` gate needs a person (§14) |
-| `plan_approval` | `human` | `auto` or `human`: whether the architect's plan gate needs a person (§14) |
+| `plan_approval` | `human` | `auto` or `human`: whether a person confirms a plan the manager proposes (§14) |
 | `triage` | `human` | `auto` or `human`: whether filed work is runnable on arrival or waits in `triage` (§14) |
 | `notification` | `attention` | `none`, `attention`, or `all`: what the project wants to be told about (§14) |
 | `policy_rules` | `{}` | per-task-type policy overrides, `{"<task_type>": {"<decision>": "<value>"}}` (§14) |
@@ -1543,7 +1541,7 @@ absolute path puts it on another filesystem).
 
 | Step | Working directory |
 |---|---|
-| developer, reviewers, architect (native role steps) | the task's worktree |
+| developer, reviewers (native role steps) | the task's worktree |
 | `_builtin:run_tests` | the task's worktree |
 | refresh-before-develop, conflict-recovery merges | the task's worktree |
 | `_builtin:merge` (`--no-ff` into the default branch) | the integration worktree |

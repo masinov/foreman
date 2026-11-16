@@ -14,6 +14,8 @@ from foreman.dashboard.app import create_dashboard_app
 from foreman.models import CompletionEvidence, DecisionGate, Event, Project, Run, Sprint, Task
 from foreman.store import ForemanStore
 
+from plan_workflow import PLAN_WORKFLOW, install_plan_workflow
+
 ENGINE = "engine"
 
 
@@ -41,6 +43,8 @@ class WorkspaceApiCase(unittest.TestCase):
         self.store.save_project(
             Project(id=pid, name=f"Project {pid}", repo_path=self._temp.name, workflow_id=workflow)
         )
+        if workflow == PLAN_WORKFLOW:
+            install_plan_workflow(self.store, pid)
 
     def sprint(self, sid: str, pid: str, title: str, status: str = "planned", **kw) -> None:
         self.store.save_sprint(Sprint(id=sid, project_id=pid, title=title, status=status, **kw))

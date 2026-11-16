@@ -849,4 +849,39 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         );
         """,
     ),
+    (
+        26,
+        "projects on the removed architect workflow go to the standard one",
+        """
+        -- The architect role and development_with_architect are no longer
+        -- shipped (ADR-0022, amendment of 2026-11-16: planning is the
+        -- manager's). A project that keeps its own copy of that workflow
+        -- (ADR-0024) is left alone. Any other project on it is moved to the
+        -- standard workflow, and a task of such a project waiting at the
+        -- plan step or its gate goes back to the start of the queue.
+        UPDATE tasks
+        SET workflow_current_step = NULL,
+            blocked_reason = NULL,
+            status = CASE WHEN status IN ('in_progress', 'blocked') THEN 'todo' ELSE status END
+        WHERE workflow_current_step IN ('plan', 'human_approval')
+          AND project_id IN (
+              SELECT id FROM projects p
+              WHERE p.workflow_id = 'development_with_architect'
+                AND NOT EXISTS (
+                    SELECT 1 FROM definitions d
+                    WHERE d.project_id = p.id AND d.kind = 'workflow'
+                      AND d.definition_id = 'development_with_architect'
+                )
+          );
+
+        UPDATE projects
+        SET workflow_id = 'development'
+        WHERE workflow_id = 'development_with_architect'
+          AND NOT EXISTS (
+              SELECT 1 FROM definitions d
+              WHERE d.project_id = projects.id AND d.kind = 'workflow'
+                AND d.definition_id = 'development_with_architect'
+          );
+        """,
+    ),
 ]

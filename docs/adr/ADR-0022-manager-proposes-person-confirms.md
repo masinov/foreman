@@ -271,3 +271,14 @@ sprint from a three-part goal, it read the code for 39 tool calls and wrote
 five tasks with files named, checkable criteria and two dependencies; that
 proposal was stored and confirmed with this code. Not checked: a planning
 turn with Foreman approving plans against the real manager (tests only).
+
+5. **The architect role and `development_with_architect` are no longer
+   shipped.** The role's prompt asked for a sprint's tasks; the workflow ran
+   it as the first step of every task, stopped at a gate, and did not hand
+   the approved plan to the developer. Nothing read its output. Migration 26
+   moves a project that was on that workflow to `development`, unless the
+   project keeps its own copy (ADR-0024), and puts a task waiting at the
+   plan step or its gate back in the queue. A workflow may still start with
+   a planning step and a gate governed by `plan_approval`: the pair is kept
+   under `tests/fixtures/definitions/`, where the engine's gate tests use
+   it, and a project can save it as its own.
