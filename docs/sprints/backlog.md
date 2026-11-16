@@ -31,6 +31,17 @@ All were fixed in sprint 59.
 - Two branches that both rebuilt the committed bundle conflicted every time
   (resolved: the bundle is no longer in git).
 
+## Found in the supervised run of sprint 60 (2026-11-16)
+
+- A sprint closes itself when the last task filed in it is done, also when
+  more tasks were going to be filed, and a completed sprint cannot be
+  reopened (`foreman sprint activate` refuses).
+- A branch that is behind `main` at the merge step is merged without being
+  brought up to date or tested again; the recorded test run is for the
+  branch head only.
+- The developer role's prompt does not stop an agent using the system
+  `python3` in a repository whose rules forbid it.
+
 ## Dashboard follow-ups (after sprint 58)
 
 - (Done in sprint 59, slice 9.) A task's Activity tab showed run events as
