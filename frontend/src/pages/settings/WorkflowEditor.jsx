@@ -166,6 +166,7 @@ export function WorkflowEditor({ open, projectId, workflow, isNew = false, vocab
     const routes = [];
     const stops = [];
     const nexts = [];
+    let on = false;
     outcomesOf(entry.role).forEach((outcome) => {
       const chosen = entry.then[outcome] ?? STOP;
       const words = shortOutcome(entry.role, outcome);
@@ -173,11 +174,12 @@ export function WorkflowEditor({ open, projectId, workflow, isNew = false, vocab
       if (chosen === NEXT) to = at + 1 < steps.length || hasEnd ? at + 1 : null;
       else if (chosen === END) to = steps.length;
       else if (chosen !== STOP) to = steps.findIndex((other) => other.key === chosen);
+      if (to === at + 1) on = true;
       if (to === null || to < 0) stops.push(words);
       else if (to !== at + 1) routes.push({ to, words });
       else if (outcome !== outcomesOf(entry.role)[0]) nexts.push(words);
     });
-    return { key: entry.key, title: titleOf(entry, at), who: doneBy(entry.role)?.label ?? entry.role, routes, stops, nexts };
+    return { key: entry.key, title: titleOf(entry, at), who: doneBy(entry.role)?.label ?? entry.role, on, routes, stops, nexts };
   });
 
   return (
@@ -196,13 +198,11 @@ export function WorkflowEditor({ open, projectId, workflow, isNew = false, vocab
       <Field label="Name" value={name} onChange={(event) => setName(event.target.value)} data-autofocus />
       <div className="wf-editor">
         <div className="wf-editor__graph">
-          <span className="field__label">Steps</span>
-          <WorkflowGraph rows={rows} end={hasEnd} selected={step?.key} onSelect={setSelected} label="Steps" />
-          <div>
-            <Button variant="quiet" onClick={add}>
-              Add a step
-            </Button>
+          <div className="wf-editor__heading">
+            <span className="field__label">Steps</span>
+            <Button onClick={add}>Add a step</Button>
           </div>
+          <WorkflowGraph rows={rows} end={hasEnd} selected={step?.key} onSelect={setSelected} label="Steps" />
         </div>
         {step ? (
           <div className="wf-editor__step" role="group" aria-label={`Step ${index + 1}`}>

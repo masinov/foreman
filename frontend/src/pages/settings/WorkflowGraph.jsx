@@ -7,7 +7,12 @@ const ROW = 46;
 const TOP = 20;
 const LANE = 14;
 const RADIUS = 5;
-const TEXT_WIDTH = 300;
+// The text beside the rail is given the room its longest line needs, between
+// these bounds; a character is about this wide in each of the two sizes.
+const TEXT_MIN = 150;
+const TEXT_MAX = 320;
+const TITLE_CHAR = 7.4;
+const SMALL_CHAR = 6;
 const TURN = 5;
 
 const y = (row) => TOP + row * ROW;
@@ -33,7 +38,8 @@ function lanes(lines) {
  * A workflow drawn as a graph: the steps in order on a rail, a task going
  * down it, and a line beside the rail wherever a task leaves the order, back
  * to an earlier step or ahead to a later one. Under each step, the same in
- * words. `rows` are `{ key, title, who, routes: [{ to, words }], stops: [words], nexts: [words] }`
+ * words. `rows` are `{ key, title, who, on, routes: [{ to, words }], stops: [words], nexts: [words] }`
+ * (`on`: some ending leads to the row below)
  * with `to` a row index; `end` adds the closing row a task finishes at.
  */
 export function WorkflowGraph({ rows, end, selected, onSelect, label }) {
@@ -53,28 +59,46 @@ export function WorkflowGraph({ rows, end, selected, onSelect, label }) {
     top: Math.min(line.target, ...line.sources),
     bottom: Math.max(line.target, ...line.sources),
   }));
-  const laneCount = lanes(lines);
-  const rail = laneCount * LANE + LANE;
-  const textX = rail + RADIUS + 10;
-  const width = textX + TEXT_WIDTH;
-  const height = TOP + (count - 1) * ROW + 30;
-  const lineX = (line) => rail - LANE - line.lane * LANE;
-
-  const sentence = (row) =>
+  const sentence = (row, at) =>
     [
       ...Object.entries(
         row.routes.reduce((groups, route) => {
           (groups[route.to] ??= []).push(route.words);
           return groups;
         }, {}),
-      ).map(([to, words]) => `${words.join(", ")} ${Number(to) < rows.indexOf(row) ? "↩" : "↪"} ${Number(to) + 1}`),
-      ...(row.nexts?.length ? [`${row.nexts.join(", ")} ↓ ${rows.indexOf(row) + 2}`] : []),
+      ).map(([to, words]) => `${words.join(", ")} ${Number(to) < at ? "↩" : "↪"} ${Number(to) + 1}`),
+      ...(row.nexts?.length ? [`${row.nexts.join(", ")} ↓ ${at + 2}`] : []),
       ...(row.stops.length ? [`${row.stops.join(", ")}: waits for a person`] : []),
     ].join("  ·  ");
 
+  const laneCount = lanes(lines);
+  const rail = laneCount * LANE + LANE;
+  const textX = rail + RADIUS + 10;
+  const longest = Math.max(
+    ...rows.map((row, index) =>
+      Math.max(
+        (String(index + 1).length + row.title.length) * TITLE_CHAR + row.who.length * SMALL_CHAR + 28,
+        sentence(row, index).length * SMALL_CHAR,
+      ),
+    ),
+    0,
+  );
+  const textWidth = Math.min(TEXT_MAX, Math.max(TEXT_MIN, Math.ceil(longest) + 14));
+  const width = textX + textWidth;
+  const height = TOP + (count - 1) * ROW + 30;
+  const lineX = (line) => rail - LANE - line.lane * LANE;
+
   return (
     <svg className="wf-graph" width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="group" aria-label={label}>
-      <line className="wf-graph__rail" x1={rail} y1={y(0)} x2={rail} y2={y(count - 1)} />
+      {rows.map((row, index) =>
+        // The way down from a step is drawn only where a task can take it.
+        row.on && index + 1 < count ? (
+          <g key={row.key} className="wf-graph__rail">
+            <line x1={rail} y1={y(index) + RADIUS} x2={rail} y2={y(index + 1) - RADIUS - 6} />
+            <path className="wf-graph__arrow" d={`M ${rail} ${y(index + 1) - RADIUS - 1} l -3.5 -6 h 7 z`} />
+          </g>
+        ) : null,
+      )}
       {lines.map((line) => {
         const x = lineX(line);
         const targetY = y(line.target);
@@ -115,7 +139,7 @@ export function WorkflowGraph({ rows, end, selected, onSelect, label }) {
             }
           }}
         >
-          <rect className="wf-graph__hit" x={textX - 6} y={y(index) - 15} width={TEXT_WIDTH} height={ROW - 6} rx="3" />
+          <rect className="wf-graph__hit" x={textX - 6} y={y(index) - 15} width={textWidth} height={ROW - 6} rx="3" />
           <circle className="wf-graph__node" cx={rail} cy={y(index)} r={RADIUS} />
           <text className="wf-graph__title" x={textX} y={y(index) + 4}>
             <tspan className="wf-graph__number">{index + 1}</tspan>
@@ -125,7 +149,7 @@ export function WorkflowGraph({ rows, end, selected, onSelect, label }) {
             </tspan>
           </text>
           <text className="wf-graph__words" x={textX} y={y(index) + 20}>
-            {sentence(row)}
+            {sentence(row, index)}
           </text>
         </g>
       ))}

@@ -199,7 +199,7 @@
 /* The workflow editor: the graph of steps, and beside it the step chosen. */
 .wf-editor {
   display: grid;
-  grid-template-columns: minmax(0, auto) minmax(0, var(--wf-step-width));
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
   gap: var(--space-6);
   align-items: start;
 }
@@ -220,7 +220,22 @@
   border-left: var(--line-width) solid var(--color-line-structural);
 }
 
-/* One way the step can end, and where the task goes. */
+.wf-editor__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+/* A choice is as wide as what it says, not as wide as the column. */
+.wf-editor__step select {
+  width: auto;
+  max-width: 100%;
+  justify-self: start;
+  align-self: flex-start;
+}
+
+/* One way the step can end, and under it where the task goes. */
 .wf-editor__ending {
   display: flex;
   flex-direction: column;
@@ -230,7 +245,9 @@
 
 .wf-editor__moves {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-1);
+  margin-left: calc(-1 * var(--space-2));
 }
 
 .wf-graph {
@@ -238,12 +255,16 @@
   flex: none;
 }
 
-.wf-graph__rail,
+.wf-graph__rail line,
 .wf-graph__line line,
 .wf-graph__line path {
   fill: none;
-  stroke: var(--color-border-control);
+  stroke: var(--color-text-secondary);
   stroke-width: var(--graph-line-width);
+}
+
+.wf-graph__rail .wf-graph__arrow {
+  fill: var(--color-text-secondary);
 }
 
 .wf-graph__line line,
