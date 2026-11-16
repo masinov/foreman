@@ -127,8 +127,8 @@ def create_dashboard_app(
     (``Authorization: Bearer``, ``X-Foreman-Token``, or ``?token=`` for the
     event stream). ``allowed_origins`` enables CORS only for the listed
     origins; the shipped frontend is same-origin and needs none.
-    ``manager_enabled`` gates the manager chat, which runs a full-access
-    agent session on the server and must stay off on non-loopback binds
+    ``manager_enabled`` gates the manager chat, whose agent session reads the
+    repository and runs foreman commands on the server, and must stay off on non-loopback binds
     unless explicitly allowed. ``trusted_hosts`` lists the host names the API
     answers to; the runtime sets it whenever no token protects the API, so a
     hostile name re-pointed at this machine is refused. ``None`` leaves the

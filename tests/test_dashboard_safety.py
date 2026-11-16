@@ -3,7 +3,7 @@
 The dashboard binds to loopback by default, refuses a non-loopback bind
 without a shared token, requires that token on every ``/api`` route once
 configured, sends no cross-origin headers unless origins are allowlisted,
-keeps the full-access manager chat loopback-only unless explicitly allowed,
+keeps the manager chat (an agent session that runs foreman commands) loopback-only unless explicitly allowed,
 validates repository paths on project creation, and bounds the events page.
 """
 

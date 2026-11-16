@@ -11,6 +11,7 @@ memory changes rather than versioned product releases.
 
 - Dashboard: a long value in a settings row (the file of a role or a workflow, a path under "This machine") wraps inside its row instead of running out of the dialog.
 - Sprint 60 opened (2026-11-16): identity, roles and audit behind a seam; manager chat through the runner; first, one supervised run of the engine. See `docs/sprints/current.md`.
+- The off-loopback manager chat messages, `--allow-remote-manager` help and related docstrings no longer call the manager session "full-access"; they say it reads the repository and runs foreman commands on this host. Wording only; enablement is unchanged.
 
 ### Sprint 59 — the engine can be left running again
 
