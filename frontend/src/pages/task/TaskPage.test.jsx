@@ -469,40 +469,20 @@ describe("Overview", () => {
     expect(beside).toContainElement(screen.getByRole("heading", { name: "Overrides for this task" }));
   });
 
-  it("offers no guidance and no overrides on a finished task", async () => {
+  it("has no box for telling the agent something (that is on Activity) and no overrides on a finished task", async () => {
     await renderTask(BASE, taskRoutes({ task: taskDetail({ status: "done", blocked_kind: null }) }));
     await screen.findByRole("region", { name: "Description" });
-    expect(screen.queryByRole("textbox", { name: "Guidance for the next agent step" })).toBeNull();
+    expect(screen.queryByRole("form", { name: "Tell the agent" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "Overrides for this task" })).toBeNull();
   });
 
-  it("saves guidance through the messages endpoint and shows whether the agent read it", async () => {
-    const task = taskDetail({
-      guidance: [
-        { event_id: "e1", text: "Earlier advice.", recorded_at: "2026-11-10T09:00:00Z", delivered: true, delivered_at: "2026-11-10T10:00:00Z", delivered_role: "developer", delivered_step: "develop" },
-        { event_id: "e2", text: "Newer advice.", recorded_at: "2026-11-11T09:00:00Z", delivered: false, delivered_at: null, delivered_role: null, delivered_step: null },
-      ],
-    });
-    const routes = taskRoutes({ task });
-    routes[post("messages")] = { status: "recorded", message: "Recorded. The next agent step for this task will read it." };
-    const { fetchImpl } = await renderTask(BASE, routes);
-    const notes = await screen.findByRole("list", { name: "Guidance written" });
-    const items = within(notes).getAllByRole("listitem");
-    expect(items[0]).toHaveTextContent("Newer advice.");
-    expect(items[0]).toHaveTextContent("Waiting for the next agent step");
-    expect(items[1]).toHaveTextContent(/Read by the agent at develop on 10 Nov/);
-
-    const field = screen.getByRole("textbox", { name: "Guidance for the next agent step" });
-    fireEvent.click(screen.getByRole("button", { name: "Save guidance" }));
-    expect(screen.getByRole("alert")).toHaveTextContent("Write the guidance first.");
-    fireEvent.change(field, { target: { value: "Count skipped tests." } });
-    const before = taskReads(fetchImpl);
-    fireEvent.click(screen.getByRole("button", { name: "Save guidance" }));
-    expect(await screen.findByText("Recorded. The next agent step for this task will read it.")).toBeInTheDocument();
-    expect(postCalls(fetchImpl, "messages")[0].body).toEqual({ text: "Count skipped tests." });
-    expect(field).toHaveValue("");
-    await waitFor(() => expect(taskReads(fetchImpl)).toBeGreaterThan(before));
+  it("has no box for telling the agent something on a task that is not finished either", async () => {
+    await renderTask(BASE);
+    await screen.findByRole("region", { name: "Description" });
+    expect(screen.queryByRole("form", { name: "Tell the agent" })).toBeNull();
+    expect(screen.queryByText("Guidance for the next agent step")).toBeNull();
   });
+
 
   it("refreshes from the sprint stream while a step runs", async () => {
     const { fetchImpl } = await renderTask(BASE, taskRoutes({ task: taskDetail({ status: "in_progress", workflow_current_step: "develop", awaiting_human_gate: false, gate_policy: null, blocked_kind: null }) }));
@@ -923,9 +903,43 @@ describe("Telling a running agent something", () => {
     expect(within(box).getByRole("button", { name: "Save for its next step" })).toBeInTheDocument();
   });
 
-  it("is not offered when the step has ended or the engine is doing it", async () => {
-    await open([runItem("run-9", "develop")]);
+  it("with no step in progress, a note can only be saved for the next one", async () => {
+    const { fetchImpl } = await open([runItem("run-9", "develop")]);
+    fetchImpl.routes[post("messages")] = { status: "recorded", message: "Recorded. The next agent step for this task will read it." };
+    const box = await screen.findByRole("form", { name: "Tell the agent" });
+    expect(within(box).queryByRole("button", { name: "Interrupt and tell it now" })).toBeNull();
+    fireEvent.click(within(box).getByRole("button", { name: "Save for the next step" }));
+    expect(await within(box).findByRole("alert")).toHaveTextContent("Write what to tell it first.");
+    fireEvent.change(within(box).getByRole("textbox", { name: "Tell the agent" }), { target: { value: "Count skipped tests." } });
+    fireEvent.click(within(box).getByRole("button", { name: "Save for the next step" }));
+    expect(await within(box).findByRole("status")).toHaveTextContent("The next agent step for this task will read it.");
+    expect(calls(fetchImpl, "POST", `/api/v1/tasks/${TASK_ID}/messages`)[0].body).toEqual({ text: "Count skipped tests." });
+  });
+
+  it("is not offered on a finished task", async () => {
+    const routes = taskRoutes({ task: taskDetail({ status: "done", blocked_kind: null }), runs: [runItem("run-9", "develop")] });
+    routes[outputUrl("run-9")] = outputPayload("run-9", "Done.");
+    await renderTask(`${BASE}/activity`, routes);
+    await screen.findByRole("table", { name: "Runs" });
     expect(screen.queryByRole("form", { name: "Tell the agent" })).toBeNull();
+  });
+
+  it("lists what the agent was told, newest first, and whether it was read", async () => {
+    const task = taskDetail({
+      status: "in_progress",
+      blocked_kind: null,
+      guidance: [
+        { event_id: "e1", text: "Earlier advice.", recorded_at: "2026-11-10T09:00:00Z", delivered: true, delivered_at: "2026-11-10T10:00:00Z", delivered_role: "developer", delivered_step: "develop" },
+        { event_id: "e2", text: "Newer advice.", recorded_at: "2026-11-11T09:00:00Z", delivered: false, delivered_at: null, delivered_role: null, delivered_step: null },
+      ],
+    });
+    const routes = taskRoutes({ task, runs: working() });
+    routes[outputUrl("run-9")] = outputPayload("run-9", "Reading the parser.");
+    await renderTask(`${BASE}/activity`, routes);
+    const items = within(await screen.findByRole("list", { name: "Told the agent" })).getAllByRole("listitem");
+    expect(items[0]).toHaveTextContent("Newer advice.");
+    expect(items[0]).toHaveTextContent("Waiting for the next agent step");
+    expect(items[1]).toHaveTextContent(/Read by the agent at develop on 10 Nov/);
   });
 
   it("interrupts the step with the note and says what is happening", async () => {

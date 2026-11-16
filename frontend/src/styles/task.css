@@ -136,7 +136,10 @@
 
 /* Under a running step's output, where what the agent is doing is in view. */
 .tell-agent {
-  padding-top: var(--space-3);
+  position: sticky;
+  bottom: 0;
+  padding: var(--space-3) 0 var(--space-4);
+  background: var(--color-ground);
   border-top: var(--line-width) solid var(--color-line-structural);
 }
 

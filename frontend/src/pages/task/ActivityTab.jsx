@@ -1,8 +1,6 @@
-import { useApiClient } from "../../api/ApiProvider";
-import { errorSentence } from "../../api/client";
-import React, { useId, useState } from "react";
+import React, { useState } from "react";
 
-import { getRunOutput, listTaskRuns, sendGuidance, steerTask } from "../../api/tasks";
+import { getRunOutput, listTaskRuns } from "../../api/tasks";
 import { usePagedList } from "../../api/usePagedList";
 import { useResource } from "../../api/useResource";
 import { Button } from "../../ui/Button";
@@ -14,6 +12,7 @@ import { LongText } from "../../ui/LongText";
 import { formatClock, formatDay, formatDayTime, formatDuration, formatMoney, humanize, plural, shortSha } from "../../ui/format";
 import { narrate } from "./runWords";
 import { runBy, runResult, runSeconds } from "./taskWords";
+import { agentAtWork, TellAgent, ToldTheAgent } from "./TellAgent";
 
 // Design README: activity 25 at a time.
 export const RUNS_PAGE = 25;
@@ -148,78 +147,7 @@ function RunOutput({ run }) {
  * Selecting a run shows its output and the prompt it was given; the newest
  * is selected until another is picked.
  */
-/**
- * Something to tell the agent whose step is running, under what it is doing.
- * "Interrupt and tell it now" stops the step and starts it again with the
- * note; "Save for its next step" leaves the step alone and the note waits.
- */
-function TellAgent({ task, run, onSent }) {
-  const client = useApiClient();
-  const fieldId = useId();
-  const [text, setText] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState(null);
-
-  async function send(request) {
-    if (!text.trim()) {
-      setNotice({ error: true, text: "Write what to tell it first." });
-      return;
-    }
-    setBusy(true);
-    setNotice(null);
-    try {
-      const result = await request(client, task.id, text.trim());
-      setText("");
-      setNotice({ error: false, text: result?.message || "Recorded." });
-      onSent?.();
-    } catch (error) {
-      setNotice({ error: true, text: errorSentence(error) });
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <form
-      className="guidance tell-agent"
-      aria-label="Tell the agent"
-      onSubmit={(event) => {
-        event.preventDefault();
-        send(steerTask);
-      }}
-      noValidate
-    >
-      <label className="field__label" htmlFor={fieldId}>
-        Tell the agent ({humanize(run.step)} is running)
-      </label>
-      <textarea
-        id={fieldId}
-        className="field__input field__input--multiline"
-        rows={2}
-        value={text}
-        onChange={(event) => setText(event.target.value)}
-      />
-      <div className="guidance__actions">
-        <Button type="submit" disabled={busy}>
-          Interrupt and tell it now
-        </Button>
-        <Button variant="quiet" disabled={busy} onClick={() => send(sendGuidance)}>
-          Save for its next step
-        </Button>
-        {notice ? (
-          <span className={notice.error ? "notice notice--error" : "notice"} role={notice.error ? "alert" : "status"}>
-            {notice.text}
-          </span>
-        ) : null}
-      </div>
-    </form>
-  );
-}
-
-/** A step an agent is doing right now. */
-const agentAtWork = (run) => run.status === "running" && !String(run.role_id || "").startsWith("_builtin:");
-
-export function ActivityTab({ task, revision }) {
+export function ActivityTab({ task, revision, changed }) {
   const runs = usePagedList(
     ["task-runs", task.id, revision],
     (client, options) => listTaskRuns(client, task.id, options),
@@ -272,6 +200,8 @@ export function ActivityTab({ task, revision }) {
   ];
 
   const totals = task.totals ?? {};
+  // Nothing reads a note once the task is finished.
+  const finished = task.status === "done" || task.status === "cancelled";
   return (
     <div className="task-activity">
       <section className="task-section" aria-labelledby="task-runs">
@@ -296,7 +226,17 @@ export function ActivityTab({ task, revision }) {
         ) : null}
       </section>
       {selected ? <RunOutput key={selected.id} run={selected} /> : null}
-      {selected && agentAtWork(selected) ? <TellAgent task={task} run={selected} onSent={() => runs.reload?.()} /> : null}
+      <ToldTheAgent task={task} />
+      {finished ? null : (
+        <TellAgent
+          task={task}
+          running={items.find(agentAtWork) ?? null}
+          onSent={() => {
+            runs.reload?.();
+            changed?.(null);
+          }}
+        />
+      )}
     </div>
   );
 }
