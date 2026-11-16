@@ -292,7 +292,7 @@ class BacklogIsNeverRunTests(RepoTestCase):
         self.store.save_sprint(sprint)
         self.store.save_task(Task(id="done", sprint_id="s", project_id="p", title="d", status="done"))
 
-        result = self._orchestrator().sprints.advance(project, self.store.get_sprint("s"))
+        result = self._orchestrator().sprints.resolve(project, self.store.get_sprint("s"))
 
         self.assertEqual(result, "idle")
         self.assertIsNone(self.store.get_active_sprint("p"))

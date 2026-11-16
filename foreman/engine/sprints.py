@@ -43,14 +43,26 @@ class SprintFlow:
         tasks = self.store.list_tasks(sprint_id=sprint.id)
         return bool(tasks) and all(t.status in {"done", "cancelled"} for t in tasks)
 
-    def advance(self, project: Project, sprint: Sprint) -> str | None:
-        """Complete *sprint* and advance to the next planned sprint if appropriate.
+    def resolve(self, project: Project, sprint: Sprint) -> str | None:
+        """Handle a fully resolved active sprint according to the autonomy level.
+
+        Only an autonomous project has its sprint finished by the engine
+        (ADR-0025). In a directed or supervised project the sprint stays
+        active and the engine hands the next move to a person.
 
         Returns:
-            None            — autonomous mode advanced; caller should continue loop.
-            "sprint_complete" — next sprint is queued but waiting for human.
-            "idle"          — sprint done, no further sprints in the queue.
+            None              — autonomous: next sprint is active, keep looping.
+            "idle"            — autonomous: sprint completed, no further sprint.
+            "sprint_resolved" — directed/supervised: sprint left active, waiting
+                                for a person to finish it.
         """
+        if project.autonomy_level == "autonomous":
+            return self._complete_and_advance(project, sprint)
+        self._announce_resolved(project, sprint)
+        return "sprint_resolved"
+
+    def _complete_and_advance(self, project: Project, sprint: Sprint) -> str | None:
+        """Complete *sprint* (autonomous projects only) and activate the next one."""
         now = self.utc_now().isoformat()
         sprint.status = "completed"
         sprint.completed_at = now
@@ -66,25 +78,34 @@ class SprintFlow:
             self.emit_attention(project, sprint)
             return "idle"
 
-        if project.autonomy_level == "autonomous":
-            next_sprint.status = "active"
-            next_sprint.started_at = now
-            self.store.save_sprint(next_sprint)
-            self.emit_event(project, "engine.sprint_started", {
-                "sprint_id": next_sprint.id,
-                "sprint_title": next_sprint.title,
-            }, sprint=next_sprint)
-            return None  # continue loop
+        next_sprint.status = "active"
+        next_sprint.started_at = now
+        self.store.save_sprint(next_sprint)
+        self.emit_event(project, "engine.sprint_started", {
+            "sprint_id": next_sprint.id,
+            "sprint_title": next_sprint.title,
+        }, sprint=next_sprint)
+        return None
 
-        # supervised or directed: emit ready signal and stop.
-        if project.autonomy_level == "supervised":
-            self.emit_event(project, "engine.sprint_ready", {
-                "sprint_id": next_sprint.id,
-                "sprint_title": next_sprint.title,
-            }, sprint=sprint)
-        # The engine stops here and hands the next move to the manager/human.
+    def _announce_resolved(self, project: Project, sprint: Sprint) -> None:
+        """Say once per resolution that the sprint is ready to be finished.
+
+        ``engine.sprint_ready`` carries the ids of the tasks that resolved the
+        sprint. A later pass over the same set adds nothing; a task added,
+        run and finished changes the set, so the sprint is announced again.
+        """
+        task_ids = sorted(t.id for t in self.store.list_tasks(sprint_id=sprint.id))
+        previous = self.store.list_sprint_events(
+            sprint.id, event_types=["engine.sprint_ready"]
+        )
+        if previous and previous[-1].payload.get("task_ids") == task_ids:
+            return
+        self.emit_event(project, "engine.sprint_ready", {
+            "sprint_id": sprint.id,
+            "sprint_title": sprint.title,
+            "task_ids": task_ids,
+        }, sprint=sprint)
         self.emit_attention(project, sprint)
-        return "sprint_complete"
 
     def emit_event(
         self,
@@ -105,8 +126,9 @@ class SprintFlow:
         self.records.emit_event(run, event_type, payload)
 
     def emit_attention(self, project: Project, sprint: Sprint) -> None:
-        """Raise one ``sprint_resolved`` attention turn when a sprint finishes and
-        the engine stops (a supervised/directed handoff, or no further sprints).
+        """Raise one ``sprint_resolved`` attention turn when every task of a
+        sprint is finished and the next move is a person's (a directed or
+        supervised sprint left active, or an autonomous one with no successor).
 
         Autonomous runs that auto-advance to the next sprint do not call this.
         """

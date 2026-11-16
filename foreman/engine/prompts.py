@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from pathlib import Path
 
@@ -21,6 +22,39 @@ def load_repo_instructions(repo_path: str) -> str:
     if not agents_path.is_file():
         return ""
     return agents_path.read_text(encoding="utf-8")
+
+
+_VENV_PATH = re.compile(r"(?<![\w./-])(?:(\./)(\.?venv)|(\.venv)|venv(?=/))(?![\w-])")
+
+
+def detect_virtualenv(instructions: str) -> str | None:
+    """The virtual environment path a repository's instructions name, if any.
+
+    Recognises ``./venv``, ``./.venv``, ``.venv`` and ``venv/``; a bare word
+    "venv" in prose is not a path. Returns the path as ``./venv`` or ``.venv``.
+    """
+
+    match = _VENV_PATH.search(instructions)
+    if match is None:
+        return None
+    if match.group(3):
+        return ".venv"
+    if match.group(2):
+        return f"./{match.group(2)}"
+    return "./venv"
+
+
+def environment_rules(instructions: str) -> str:
+    """The Python rule for a prompt: empty when no virtual environment is named."""
+
+    venv = detect_virtualenv(instructions)
+    if venv is None:
+        return ""
+    return (
+        f"- Never run `python`, `python3` or `pip` from the system, for anything, "
+        f"including one-off scripts, edits and checks. Use `{venv}/bin/python` "
+        f"and `{venv}/bin/pip`."
+    )
 
 
 def safe_git_status(repo_path: str | Path) -> str:
@@ -114,6 +148,7 @@ class PromptBuilder:
             evidence = self.build_completion_evidence(task, project)
             task.completion_evidence = evidence
             self.tasks.save(task)
+        repo_instructions = load_repo_instructions(project.repo_path)
         context = {
             "task_title": task.title,
             "task_description": task.description or "",
@@ -122,7 +157,8 @@ class PromptBuilder:
             "branch_name": task.branch_name or "",
             "sprint_context": context_projection.context_markdown,
             "project_status": context_projection.status_markdown,
-            "repo_instructions": load_repo_instructions(project.repo_path),
+            "repo_instructions": repo_instructions,
+            "environment_rules": environment_rules(repo_instructions),
             "spec_path": project.spec_path or "",
             "previous_feedback": carried_output or "",
             "previous_output": latest_run.outcome_detail if latest_run else "",

@@ -194,7 +194,7 @@ class MergeGateFlowTests(unittest.TestCase):
                 store, agent_runners={"claude_code": _ScriptedRunner([self._developer(repo), _reviewer_sees_tests_then_approves])}
             )
             result = orchestrator.run_project(project.id)
-            self.assertEqual(result.stop_reason, "idle", store.get_task(task.id).blocked_reason)
+            self.assertEqual(result.stop_reason, "sprint_resolved", store.get_task(task.id).blocked_reason)
             self.assertEqual(store.get_task(task.id).status, "done")
             self.assertEqual(
                 self._steps(store, task.id),

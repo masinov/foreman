@@ -17,7 +17,7 @@ _TRIGGER_LABELS: dict[str, str] = {
     "task_blocked": "A task was blocked and needs a decision.",
     "evidence_failed": "Completion evidence failed the proof gate.",
     "loop_limit": "A task hit the workflow step-visit loop limit.",
-    "sprint_resolved": "A sprint finished and the next move needs confirmation.",
+    "sprint_resolved": "Every task of the sprint is finished and the next move is a person's.",
 }
 
 

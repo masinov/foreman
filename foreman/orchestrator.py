@@ -436,7 +436,7 @@ class ForemanOrchestrator:
             # No runnable task — check sprint state.
             sprint = self.store.get_active_sprint(project.id)
             if sprint is not None and self.sprints.fully_resolved(sprint):
-                result = self.sprints.advance(project, sprint)
+                result = self.sprints.resolve(project, sprint)
                 if result is None:
                     # Autonomous mode: next sprint now active — keep looping.
                     continue

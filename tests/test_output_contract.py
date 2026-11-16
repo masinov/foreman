@@ -511,7 +511,7 @@ class OrchestratorContractTests(unittest.TestCase):
                     (r.workflow_step, r.role_id, r.outcome, (r.outcome_detail or "")[:160])
                     for r in store.list_runs(task_id=task.id)
                 ]
-                self.assertEqual(result.stop_reason, "idle", f"{store.get_task(task.id).blocked_reason}\n{diagnostics}")
+                self.assertEqual(result.stop_reason, "sprint_resolved", f"{store.get_task(task.id).blocked_reason}\n{diagnostics}")
                 self.assertEqual(store.get_task(task.id).status, "done")
                 review_runs = [r for r in store.list_runs(task_id=task.id) if r.role_id == "qa_reviewer"]
                 self.assertEqual([r.outcome for r in review_runs], ["approve"])
@@ -551,7 +551,7 @@ class OrchestratorContractTests(unittest.TestCase):
                 agent_runners={"claude_code": _ScriptedRunner([developer_commits, triage_escalates, frontier_approves])},
             )
             result = orchestrator.run_project(project.id)
-            self.assertEqual(result.stop_reason, "idle", store.get_task(task.id).blocked_reason)
+            self.assertEqual(result.stop_reason, "sprint_resolved", store.get_task(task.id).blocked_reason)
             done = store.get_task(task.id)
             self.assertEqual(done.status, "done")
             self.assertEqual(done.completion_evidence.review_outcome, "approve")

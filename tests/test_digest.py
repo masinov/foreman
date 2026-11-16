@@ -92,7 +92,8 @@ class AttentionDigestTests(unittest.TestCase):
             self.store, project, trigger="sprint_resolved", task_id=None
         )
         self.assertIn("Trigger: sprint_resolved", digest)
-        self.assertIn("A sprint finished", digest)
+        self.assertIn("Every task of the sprint is finished", digest)
+        self.assertNotIn("A sprint finished", digest)
         self.assertNotIn("### Affected task", digest)
         self.assertIn("Your allowed responses", digest)
 
