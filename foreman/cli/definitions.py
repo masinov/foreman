@@ -1,4 +1,4 @@
-"""`foreman role` and `foreman workflow`: a project's own definitions (ADR-0024)."""
+"""`foreman role` and `foreman workflow`: a project's own or the workspace's defaults (ADR-0024)."""
 
 from __future__ import annotations
 
@@ -23,30 +23,49 @@ from ..workflows import WorkflowLoadError
 from .common import print_lines, resolve_db_path_or_print, set_handler
 
 
-def _origin(definition_id: str, own: dict[str, str], shipped: frozenset[str]) -> str:
+WORKSPACE_NAME = "the workspace"
+
+
+def _scope(args: argparse.Namespace) -> str | None:
+    """The project id the definitions module takes: None is the workspace."""
+
+    return None if args.workspace else args.project_id
+
+
+def _label(args: argparse.Namespace) -> str:
+    return WORKSPACE_NAME if args.workspace else args.project_id
+
+
+def _origin(definition_id: str, own: dict[str, str], shipped: frozenset[str], workspace: bool) -> str:
     if definition_id not in own:
         return "shipped"
-    return "changed for this project" if definition_id in shipped else "this project's own"
+    owner = "the workspace" if workspace else "this project"
+    if definition_id in shipped:
+        return f"changed for {owner}"
+    return "the workspace's own" if workspace else "this project's own"
 
 
 def _open(args: argparse.Namespace):
+    if args.workspace == (args.project_id is not None):
+        print("Name a project, or pass --workspace for the workspace's defaults, not both.", file=sys.stderr)
+        return None
     db_path = resolve_db_path_or_print(args.db)
     if db_path is None:
         return None
     store = ForemanStore(db_path)
     store.initialize()
-    if store.get_project(args.project_id) is None:
+    if not args.workspace and store.get_project(args.project_id) is None:
         print(f"Unknown project: {args.project_id}", file=sys.stderr)
         store.close()
         return None
     return store
 
 
-def _definitions(store: ForemanStore, project_id: str):
+def _definitions(store: ForemanStore, project_id: str | None):
     try:
         return project_definitions(store, project_id)
     except (RoleLoadError, WorkflowLoadError) as exc:
-        print(f"The project's definitions do not load: {exc}", file=sys.stderr)
+        print(f"The definitions do not load: {exc}", file=sys.stderr)
         return None
 
 
@@ -61,13 +80,13 @@ def handle_list(args: argparse.Namespace) -> int:
     if store is None:
         return 1
     with store:
-        definitions = _definitions(store, args.project_id)
+        definitions = _definitions(store, _scope(args))
         if definitions is None:
             return 1
         loaded, own, shipped = _parts(definitions, args.kind)
-        lines = [f"{args.kind.capitalize()}s of {args.project_id}"]
+        lines = [f"{args.kind.capitalize()}s of {_label(args)}"]
         for definition_id, definition in loaded.items():
-            lines.append(f"{definition_id} | {definition.name} | {_origin(definition_id, own, shipped)}")
+            lines.append(f"{definition_id} | {definition.name} | {_origin(definition_id, own, shipped, args.workspace)}")
         print_lines(*lines)
     return 0
 
@@ -77,7 +96,7 @@ def handle_show(args: argparse.Namespace) -> int:
     if store is None:
         return 1
     with store:
-        definitions = _definitions(store, args.project_id)
+        definitions = _definitions(store, _scope(args))
         if definitions is None:
             return 1
         loaded, own, _ = _parts(definitions, args.kind)
@@ -104,15 +123,15 @@ def handle_set(args: argparse.Namespace) -> int:
         try:
             if args.kind == ROLE:
                 saved = save_role(
-                    store, args.project_id, text, changed_by=default_command_requester(), check_model=check_model
+                    store, _scope(args), text, changed_by=default_command_requester(), check_model=check_model
                 )
             else:
-                saved = save_workflow(store, args.project_id, text, changed_by=default_command_requester())
+                saved = save_workflow(store, _scope(args), text, changed_by=default_command_requester())
         except DefinitionError as exc:
             print(f"Not saved: {exc}", file=sys.stderr)
             return 1
         print_lines(
-            f"Saved {args.kind} {saved.id} for {args.project_id}.",
+            f"Saved {args.kind} {saved.id} for {_label(args)}.",
             "The engine uses it from the next task it starts.",
         )
     return 0
@@ -126,7 +145,7 @@ def handle_reset(args: argparse.Namespace) -> int:
         try:
             shipped_left = remove_definition(
                 store,
-                args.project_id,
+                _scope(args),
                 args.kind,
                 args.definition_id,
                 changed_by=default_command_requester(),
@@ -135,9 +154,9 @@ def handle_reset(args: argparse.Namespace) -> int:
             print(f"Not changed: {exc}", file=sys.stderr)
             return 1
         print(
-            f"{args.project_id} uses the shipped {args.kind} {args.definition_id} again."
+            f"{_label(args).capitalize() if args.workspace else args.project_id} uses the shipped {args.kind} {args.definition_id} again."
             if shipped_left
-            else f"Removed {args.kind} {args.definition_id} from {args.project_id}."
+            else f"Removed {args.kind} {args.definition_id} from {_label(args)}."
         )
     return 0
 
@@ -145,13 +164,23 @@ def handle_reset(args: argparse.Namespace) -> int:
 def _register(subparsers: argparse._SubParsersAction, kind: str) -> None:
     parser = subparsers.add_parser(
         kind,
-        help=f"A project's own {kind}s: list, show, set from a file, reset.",
+        help=f"A project's own {kind}s, or the workspace's defaults with --workspace: list, show, set from a file, reset.",
     )
     commands = parser.add_subparsers(dest=f"{kind}_command", required=True)
 
     def add(name: str, help_text: str, handler, *, definition: bool = False, file: bool = False):
         sub = commands.add_parser(name, help=help_text)
-        sub.add_argument("project_id", help="Project identifier.")
+        sub.add_argument(
+            "project_id",
+            nargs="?",
+            help="Project identifier. Leave it out and pass --workspace to work on the workspace's defaults.",
+        )
+        sub.add_argument(
+            "--workspace",
+            action="store_true",
+            help=f"Act on the workspace's default {kind}s, which every project without its own version uses, "
+            "instead of on a project.",
+        )
         if definition:
             sub.add_argument("definition_id", help=f"The {kind}'s id.")
         if file:

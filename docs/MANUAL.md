@@ -394,6 +394,8 @@ foreman role show <project> <id>       # one role as TOML
 foreman role set <project> --file F    # save a role for the project (its id is in the file)
 foreman role reset <project> <id>      # back to the shipped role
 foreman workflow list|show|set|reset   # the same for workflows (ADR-0024)
+foreman role list --workspace          # the workspace's defaults: every project without its own version runs with them
+foreman role show --workspace <id>     # (also set --file F, reset <id>; the same four for `foreman workflow`)
 foreman db version                    # current schema version
 foreman db migrate                    # apply pending migrations
 foreman dashboard                     # start the web dashboard
