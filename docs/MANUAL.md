@@ -528,6 +528,12 @@ template = """..."""                # supports {task_title}, {acceptance_criteri
                                     # {completion_evidence}, {completion_diff}, …
 ```
 
+`{environment_rules}` is filled from the repository's `AGENTS.md`: when it names
+a virtual environment (`./venv`, `.venv`), the value is a bullet forbidding the
+system `python`, `python3` and `pip` and naming that environment's binaries;
+otherwise it is empty. Put it alone on a line; an empty value removes the line.
+A role without it renders as before.
+
 `extract_decision = true` marks a role as a **decision role**: it receives the
 completion-evidence block and the curated `{completion_diff}` payload, and its
 output is parsed into a canonical reviewer decision.

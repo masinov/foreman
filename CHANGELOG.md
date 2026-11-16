@@ -9,6 +9,7 @@ memory changes rather than versioned product releases.
 
 ### Sprint 60b — engine findings of the supervised run
 
+- The developer prompts forbid the system Python where the repository names a virtual environment. The fixed line "Use only ./venv/bin/python and ./venv/bin/pip" is replaced by the prompt variable `{environment_rules}`: when `AGENTS.md` names `./venv` or `.venv`, it forbids `python`, `python3` and `pip` from the system for anything, one-off scripts included, and names that environment's binaries; otherwise the prompt says nothing about Python. A role text without the placeholder still renders.
 - A branch behind the default branch is updated and tested again before it is merged (ADR-0026). The merge step used to merge a branch without asking whether it contained the default branch's head, so what landed had not been tested or reviewed. Now it merges the default branch into the task branch in the task's own worktree, ends with the new outcome `updated` and an `engine.branch_sync` event (step `merge`), and the three shipped workflows send `updated` to the test step. A conflict gives `conflict` as before. A project's own workflow needs a `merge` + `completion:updated` transition, or the task blocks.
 
 ### Sprint 60 — what is there works and makes sense
