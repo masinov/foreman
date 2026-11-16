@@ -59,6 +59,8 @@
   gap: var(--space-1);
   min-width: 0;
   margin: 0;
+  /* A path or a command has no spaces to break at. */
+  overflow-wrap: anywhere;
 }
 
 .setting-row__control {
