@@ -22,6 +22,7 @@ from .engine_control import (
     describe_engine,
     resolve_gate_steps,
 )
+from .engine.limits import resolve_project_settings
 from .models import DecisionGate, Project, Task
 from .store import ForemanStore
 from .store.overview import MILESTONE_KINDS, MilestoneRow
@@ -58,6 +59,8 @@ class _Attention:
     key: str
     task: Task | None = None
     gate: DecisionGate | None = None
+    #: How many things this one line stands for (requests are counted, not listed).
+    count: int = 0
 
 
 class WorkspaceReader:
@@ -98,12 +101,26 @@ class WorkspaceReader:
         self, projects: dict[str, Project], project_id: str | None
     ) -> list[_Attention]:
         found: list[_Attention] = []
+        # Requests waiting in a backlog, by project: (backlog id, newest moment, how many).
+        requests: dict[str, tuple[str, str, int]] = {}
+        backlogs: dict[str, str | None] = {}
         for task, since in self.store.list_tasks_awaiting_person(project_id=project_id):
             project = projects.get(task.project_id)
             if project is None:
                 continue
             if task.status == "triage":
-                found.append(_attention("accept_filed_work", task, since))
+                if project.id not in backlogs:
+                    backlog = self.store.get_backlog(project.id)
+                    backlogs[project.id] = backlog.id if backlog is not None else None
+                if task.sprint_id != backlogs[project.id]:
+                    # Filed straight into a sprint by another system: accepting
+                    # it is what lets it run there.
+                    found.append(_attention("accept_filed_work", task, since))
+                elif foreman_starts_backlog_work(project):
+                    # A request waits for a person only where Foreman would
+                    # otherwise start it: one line for all of a project's.
+                    _, newest, number = requests.get(project.id, (task.sprint_id, since, 0))
+                    requests[project.id] = (task.sprint_id, max(newest, since), number + 1)
                 continue
             gates = self._gate_steps(project)
             if blocked_kind(task, gates) == "gate":
@@ -119,6 +136,17 @@ class WorkspaceReader:
                 _Attention(
                     "settle_order", gate.project_id, gate.sprint_id, gate.raised_at,
                     gate.id, gate=gate,
+                )
+            )
+        for requested_project, (backlog_id, newest, number) in requests.items():
+            found.append(
+                _Attention(
+                    "answer_requests",
+                    requested_project,
+                    backlog_id,
+                    newest,
+                    f"requests:{requested_project}",
+                    count=number,
                 )
             )
         return found
@@ -154,6 +182,8 @@ class WorkspaceReader:
             }
         if item.kind == "approve_merge" and task is not None:
             entry["evidence"] = _merge_facts(task)
+        if item.count:
+            entry["count"] = item.count
         return entry
 
     # ── milestones ────────────────────────────────────────────────────────
@@ -253,6 +283,12 @@ class WorkspaceReader:
 
     def _sprint_titles(self, sprint_ids: set[str]) -> dict[str, str]:
         return self.store.sprint_titles(sorted(sprint_ids))
+
+
+def foreman_starts_backlog_work(project: Project) -> bool:
+    """Whether this project lets Foreman take accepted backlog work on its own (ADR-0028)."""
+
+    return resolve_project_settings(project).task_selection_mode == "autonomous"
 
 
 def _attention(kind: str, task: Task, since: str) -> _Attention:

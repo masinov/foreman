@@ -52,17 +52,18 @@ function Notice({ notice }) {
   );
 }
 
-function triageSentence(triage) {
-  return triage === "auto"
-    ? "Accepted by Foreman"
-    : "Accepted by a person";
-}
-
 /**
- * The Backlog tab (ADR-0021): work that is filed and waiting to be accepted,
- * and work that is accepted and waiting to be planned into a sprint. Paging
- * and the filter are the server's; the list is reloaded after every change
- * through `onChanged`, which also re-reads the tab count in the project head.
+ * The Backlog tab (ADR-0021, ADR-0028): work that is in no sprint. A task is
+ * planned into a sprint or declined.
+ *
+ * Where the project lets Foreman start backlog work on its own, what an agent
+ * or another system filed and no person has accepted is listed apart as
+ * requests: accepting one lets Foreman start it. Where a person plans
+ * everything there is nothing for acceptance to decide, so there is one list
+ * and no Accept.
+ *
+ * Paging and the filter are the server's; the list is reloaded after every
+ * change through `onChanged`, which also re-reads the count in the project head.
  */
 export function BacklogTab({ projectId, revision, onChanged }) {
   const client = useApiClient();
@@ -97,20 +98,24 @@ export function BacklogTab({ projectId, revision, onChanged }) {
   const [filing, setFiling] = useState(false);
   const [namingSprint, setNamingSprint] = useState(false);
 
-  const items = list.items ?? [];
+  const items = useMemo(() => list.items ?? [], [list.items]);
   const filed = items.filter((task) => task.state === BACKLOG_STATES.filed);
   const accepted = items.filter((task) => task.state === BACKLOG_STATES.accepted);
   const counts = list.meta?.counts ?? {};
-  const triage = list.meta?.triage ?? "human";
+  const foreman = list.meta?.foreman ?? { starts: false, limit: 0, started: null, ready: 0 };
   const planTargets = sprints.data?.items ?? [];
+  // Requests are their own list only where accepting one has an effect.
+  const requests = foreman.starts ? filed : [];
+  const work = foreman.starts ? accepted : items;
+  const workCount = foreman.starts ? (counts.accepted ?? 0) : (counts.filed ?? 0) + (counts.accepted ?? 0);
 
   // Only rows still in the list count as selected: a reload can remove them.
-  const chosen = useMemo(() => accepted.filter((task) => selected.has(task.id)), [accepted, selected]);
-  const allChosen = accepted.length > 0 && chosen.length === accepted.length;
+  const chosen = useMemo(() => items.filter((task) => selected.has(task.id)), [items, selected]);
+  const allChosen = work.length > 0 && work.every((task) => selected.has(task.id));
   const selectAll = useRef(null);
   useEffect(() => {
-    if (selectAll.current) selectAll.current.indeterminate = chosen.length > 0 && !allChosen;
-  }, [chosen.length, allChosen]);
+    if (selectAll.current) selectAll.current.indeterminate = work.some((task) => selected.has(task.id)) && !allChosen;
+  }, [work, selected, allChosen]);
 
   function toggle(task) {
     setSelected((previous) => {
@@ -122,7 +127,14 @@ export function BacklogTab({ projectId, revision, onChanged }) {
   }
 
   function toggleAll() {
-    setSelected(allChosen ? new Set() : new Set(accepted.map((task) => task.id)));
+    setSelected((previous) => {
+      const next = new Set(previous);
+      for (const task of work) {
+        if (allChosen) next.delete(task.id);
+        else next.add(task.id);
+      }
+      return next;
+    });
   }
 
   function changed() {
@@ -173,42 +185,54 @@ export function BacklogTab({ projectId, revision, onChanged }) {
     if (refusal) setNotice({ error: true, text: refusal });
   }
 
-  const filedColumns = [
-    { key: "title", header: "Task", render: (task) => <TaskLink task={task} /> },
-    {
-      key: "by",
-      header: "Filed by",
-      className: "backlog__by",
-      render: (task) => {
-        const when = formatDay(task.created_at);
-        return (
-          <span className="quiet">
-            {filedBy(task)}
-            {when ? `, ${when}` : ""}
-          </span>
-        );
-      },
-    },
+  const pick = (task) => (
+    <input
+      type="checkbox"
+      className="checkbox"
+      aria-label={`Select: ${task.title}`}
+      checked={selected.has(task.id)}
+      onChange={() => toggle(task)}
+    />
+  );
+  const by = (task) => {
+    const when = formatDay(task.created_at);
+    return (
+      <span className="quiet">
+        {filedBy(task)}
+        {when ? `, ${when}` : ""}
+      </span>
+    );
+  };
+  const decline = (task) => (
+    <Button
+      inRow
+      disabled={busy}
+      aria-label={`Decline ${task.title}`}
+      onClick={() => decide(task, declineTask, (done) => `Declined ${done.title}.`)}
+    >
+      Decline
+    </Button>
+  );
+  const type = (task) => <span className="secondary">{task.task_type}</span>;
+
+  const requestColumns = [
+    { key: "select", header: <span className="visually-hidden">Select</span>, className: "backlog__select", render: pick },
+    { key: "title", header: "Request", render: (task) => <TaskLink task={task} /> },
+    { key: "type", header: "Type", className: "backlog__type", render: type },
+    { key: "by", header: "Filed by", className: "backlog__by", render: by },
     {
       key: "action",
       header: "Action",
       className: "backlog__actions",
       render: (task) => (
         <>
-          <Button
-            inRow
-            disabled={busy}
-            aria-label={`Decline ${task.title}`}
-            onClick={() => decide(task, declineTask, (done) => `Declined ${done.title}.`)}
-          >
-            Decline
-          </Button>
+          {decline(task)}
           <Button
             variant="gold-outline"
             inRow
             disabled={busy}
             aria-label={`Accept ${task.title}`}
-            onClick={() => decide(task, acceptTask, (done) => `Accepted ${done.title}. It is waiting to be planned.`)}
+            onClick={() => decide(task, acceptTask, (done) => `Accepted ${done.title}.`)}
           >
             Accept
           </Button>
@@ -217,7 +241,7 @@ export function BacklogTab({ projectId, revision, onChanged }) {
     },
   ];
 
-  const acceptedColumns = [
+  const workColumns = [
     {
       key: "select",
       header: (
@@ -225,27 +249,45 @@ export function BacklogTab({ projectId, revision, onChanged }) {
           ref={selectAll}
           type="checkbox"
           className="checkbox"
-          aria-label="Select all accepted tasks"
+          aria-label="Select every task in the backlog"
           checked={allChosen}
-          disabled={accepted.length === 0}
+          disabled={work.length === 0}
           onChange={toggleAll}
         />
       ),
       className: "backlog__select",
-      render: (task) => (
-        <input
-          type="checkbox"
-          className="checkbox"
-          aria-label={`Select: ${task.title}`}
-          checked={selected.has(task.id)}
-          onChange={() => toggle(task)}
-        />
-      ),
+      render: pick,
     },
     { key: "title", header: "Task", render: (task) => <TaskLink task={task} /> },
-    { key: "type", header: "Type", className: "backlog__type", render: (task) => <span className="secondary">{task.task_type}</span> },
-    { key: "by", header: "Filed by", className: "backlog__by", render: (task) => <span className="quiet">{filedBy(task)}</span> },
+    { key: "type", header: "Type", className: "backlog__type", render: type },
+    { key: "by", header: "Filed by", className: "backlog__by", render: by },
+    { key: "action", header: "Action", className: "backlog__actions", render: decline },
   ];
+
+  const planInto = (
+    <div className="backlog__plan">
+      <label className="backlog__plan-label" htmlFor="backlog-plan-into">
+        Plan selected into
+      </label>
+      <select id="backlog-plan-into" className="field__input" value={target} onChange={(event) => setTarget(event.target.value)}>
+        <option value={NEW_SPRINT}>A new sprint</option>
+        {planTargets.map((sprint) => (
+          <option key={sprint.id} value={sprint.id}>
+            {sprint.title} ({sprint.status})
+          </option>
+        ))}
+      </select>
+      <Button disabled={chosen.length === 0 || busy} onClick={planSelected}>
+        Plan
+      </Button>
+    </div>
+  );
+  // What Foreman has done with this backlog, where it starts work itself.
+  const foremanNote = !foreman.starts
+    ? undefined
+    : foreman.started === null
+      ? "Foreman starts these itself, when a sprint is active"
+      : `Foreman has started ${foreman.started} of ${foreman.limit} this sprint`;
 
   return (
     <div className="backlog">
@@ -269,72 +311,31 @@ export function BacklogTab({ projectId, revision, onChanged }) {
           {list.error}
         </p>
       ) : null}
-      {placeholder ? <Table caption="Backlog" columns={acceptedColumns} placeholderRows={3} /> : null}
+      {placeholder ? <Table caption="Backlog" columns={workColumns} placeholderRows={3} /> : null}
+      {sprints.error ? (
+        <p className="notice notice--error" role="alert">
+          {sprints.error}
+        </p>
+      ) : null}
 
-      {list.items ? (
-        <section className="backlog__group" aria-labelledby="backlog-filed">
-          <SectionHeading
-            id="backlog-filed"
-            title="Filed, not accepted"
-            count={counts.filed ?? 0}
-            attention
-            note={triageSentence(triage)}
-          />
-          {filed.length > 0 ? (
-            <Table caption="Filed, not accepted" columns={filedColumns} rows={filed} hideHeader />
+      {list.items && foreman.starts && (requests.length > 0 || (counts.filed ?? 0) > 0) ? (
+        <section className="backlog__group" aria-labelledby="backlog-requests">
+          <SectionHeading id="backlog-requests" title="Requests" count={counts.filed ?? 0} attention />
+          {requests.length > 0 ? (
+            <Table caption="Requests" columns={requestColumns} rows={requests} />
           ) : (
-            <p className="empty">
-              {q
-                ? `No filed work matches “${q}”.`
-                : "Nothing is filed. Work that other systems or agents file, and tasks you add, wait here to be accepted."}
-            </p>
+            <p className="empty">No request matches “{q}”.</p>
           )}
         </section>
       ) : null}
 
       {list.items ? (
-        <section className="backlog__group" aria-labelledby="backlog-accepted">
-          <SectionHeading
-            id="backlog-accepted"
-            title="Accepted, not planned"
-            count={counts.accepted ?? 0}
-            actions={
-              <div className="backlog__plan">
-                <label className="backlog__plan-label" htmlFor="backlog-plan-into">
-                  Plan selected into
-                </label>
-                <select
-                  id="backlog-plan-into"
-                  className="field__input"
-                  value={target}
-                  onChange={(event) => setTarget(event.target.value)}
-                >
-                  <option value={NEW_SPRINT}>A new sprint</option>
-                  {planTargets.map((sprint) => (
-                    <option key={sprint.id} value={sprint.id}>
-                      {sprint.title} ({sprint.status})
-                    </option>
-                  ))}
-                </select>
-                <Button disabled={chosen.length === 0 || busy} onClick={planSelected}>
-                  Plan
-                </Button>
-              </div>
-            }
-          />
-          {sprints.error ? (
-            <p className="notice notice--error" role="alert">
-              {sprints.error}
-            </p>
-          ) : null}
-          {accepted.length > 0 ? (
-            <Table caption="Accepted, not planned" columns={acceptedColumns} rows={accepted} />
+        <section className="backlog__group" aria-labelledby="backlog-work">
+          <SectionHeading id="backlog-work" title="Backlog" count={workCount} note={foremanNote} actions={planInto} />
+          {work.length > 0 ? (
+            <Table caption="Backlog" columns={workColumns} rows={work} />
           ) : (
-            <p className="empty">
-              {q
-                ? `No accepted work matches “${q}”.`
-                : "Nothing is waiting to be planned."}
-            </p>
+            <p className="empty">{q ? `Nothing in the backlog matches “${q}”.` : "The backlog is empty."}</p>
           )}
         </section>
       ) : null}
@@ -351,13 +352,7 @@ export function BacklogTab({ projectId, revision, onChanged }) {
         onClose={() => setFiling(false)}
         onFiled={(task) => {
           setFiling(false);
-          setNotice({
-            error: false,
-            text:
-              task?.status === "todo"
-                ? `Filed ${task.title}. This project accepted it, so it is waiting to be planned.`
-                : `Filed ${task?.title ?? "the task"}. It waits to be accepted.`,
-          });
+          setNotice({ error: false, text: `Filed ${task?.title ?? "the task"}.` });
           changed();
         }}
       />

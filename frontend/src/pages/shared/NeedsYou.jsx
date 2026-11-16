@@ -14,7 +14,7 @@ import { Mono } from "../../ui/Mono";
 import { SectionHeading } from "../../ui/SectionHeading";
 import { Surface } from "../../ui/Surface";
 import { Table } from "../../ui/Table";
-import { humanize, shortSha } from "../../ui/format";
+import { humanize, plural, shortSha } from "../../ui/format";
 
 // Design README: Needs you shows at most 5, with a way to see the rest.
 export const NEEDS_YOU_CAP = 5;
@@ -23,13 +23,14 @@ const MAX_PAGE = 200;
 
 const KIND_WORDS = {
   [NEEDS_YOU_KINDS.acceptFiledWork]: "Accept filed work",
+  [NEEDS_YOU_KINDS.answerRequests]: "Answer requests",
   [NEEDS_YOU_KINDS.approvePlan]: "Approve plan",
   [NEEDS_YOU_KINDS.approveMerge]: "Approve merge",
   [NEEDS_YOU_KINDS.unblock]: "Unblock",
   [NEEDS_YOU_KINDS.settleOrder]: "Settle sprint order",
 };
 
-const itemId = (item) => item.gate?.id ?? item.task_id;
+const itemId = (item) => item.gate?.id ?? item.task_id ?? `${item.kind}:${item.project_id}`;
 const itemName = (item) => item.task_key || item.task_title || "the sprint order";
 
 // The same words and colours as a task's checks in the sprint list: a word
@@ -87,6 +88,7 @@ function OrderProposal({ gate }) {
 function Detail({ item }) {
   if (item.gate) return <OrderProposal gate={item.gate} />;
   if (item.kind === NEEDS_YOU_KINDS.approveMerge) return <MergeFacts evidence={item.evidence} />;
+  if (item.kind === NEEDS_YOU_KINDS.answerRequests) return <span className="quiet">Backlog</span>;
   return <span className="quiet">{item.sprint_title || ""}</span>;
 }
 
@@ -169,7 +171,11 @@ export function NeedsYou({ projectId = null, note, empty, onChanged }) {
       header: "Title",
       className: "needs-you__title",
       render: (item) =>
-        item.gate ? (
+        item.kind === NEEDS_YOU_KINDS.answerRequests ? (
+          <Link className="row-link" href={paths.projectBacklog(item.project_id)}>
+            {plural(item.count ?? 0, "request")} from agents and other systems
+          </Link>
+        ) : item.gate ? (
           <Link className="row-link" href={paths.sprint(item.sprint_id)}>
             {item.gate.conflict_description}
           </Link>

@@ -486,3 +486,31 @@ describe("the order of planned sprints", () => {
     expect(await screen.findByText(/only a planned sprint can be moved/)).toHaveAttribute("role", "alert");
   });
 });
+
+describe("requests in Needs you", () => {
+  it("are one line that counts them and leads to the backlog", async () => {
+    const routes = projectRoutes();
+    routes[PROJECT_NEEDS_YOU_URL] = {
+      items: [
+        {
+          kind: "answer_requests",
+          project_id: "foreman",
+          project_name: "Foreman",
+          sprint_id: "foreman-backlog",
+          sprint_title: "Backlog",
+          task_id: null,
+          task_key: null,
+          task_title: null,
+          since: "2026-11-16T10:00:00Z",
+          count: 3,
+        },
+      ],
+      total: 1,
+    };
+    renderApp("/dashboard/projects/foreman", createFakeFetch(routes));
+    const link = await screen.findByRole("link", { name: "3 requests from agents and other systems" });
+    expect(link).toHaveAttribute("href", "/dashboard/projects/foreman/backlog");
+    expect(link.closest("tr")).toHaveTextContent("Answer requests");
+  });
+});
+

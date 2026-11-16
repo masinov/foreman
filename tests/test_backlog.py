@@ -36,7 +36,8 @@ class BacklogCase(unittest.TestCase):
         self.store.save_sprint(Sprint(id="s2", project_id="p1", title="Sprint 2", status="planned"))
 
     def file(self, title: str, *, accept: bool = False) -> Task:
-        task = Mutations(self.store, via="cli").file_task(self.project, title=title).task
+        # Filed by an agent: what a person files is never a request (ADR-0028).
+        task = Mutations(self.store, via="engine", actor="agent:developer", role="developer").file_task(self.project, title=title).task
         if accept:
             task = Mutations(self.store, via="cli").accept_task(task)
         return task
@@ -106,17 +107,13 @@ class BacklogApiTests(BacklogCase):
 
         self.assertEqual(response.status_code, 201, response.text)
         body = response.json()
-        self.assertEqual((body["status"], body["in_backlog"]), ("triage", True))
+        # A person filed it: it is backlog work, not a request.
+        self.assertEqual((body["status"], body["in_backlog"]), ("todo", True))
         filed = [
             e for e in self.store.list_events(task_id=body["id"])
             if e.event_type == "backlog.task_filed"
         ]
         self.assertEqual((filed[0].payload["via"], filed[0].payload["by"]), ("dashboard", "ana"))
-
-        accepted = self.request(
-            "POST", "/api/v1/projects/p1/backlog", json={"title": "Mine", "accept": True}
-        ).json()
-        self.assertEqual(accepted["status"], "todo")
 
         bad = self.request("POST", "/api/v1/projects/p1/backlog", json={"title": " "})
         self.assertEqual(bad.status_code, 400)
@@ -161,11 +158,11 @@ class BacklogApiTests(BacklogCase):
         self.assertEqual(self.store.get_task(second.id).sprint_id, created["sprint"]["id"])
 
     def test_plan_refusals(self) -> None:
-        filed = self.file("Not accepted")
+        declined = Mutations(self.store, via="cli").decline_task(self.file("Declined"))
         accepted = self.file("Accepted", accept=True)
         self.store.save_sprint(Sprint(id="old", project_id="p1", title="Old", status="completed"))
         cases = (
-            ({"task_ids": [filed.id], "sprint_id": "s2"}, 400),
+            ({"task_ids": [declined.id], "sprint_id": "s2"}, 400),
             ({"task_ids": [accepted.id], "sprint_id": "old"}, 400),
             ({"task_ids": [accepted.id], "sprint_id": "p1-backlog"}, 404),
             ({"task_ids": [accepted.id]}, 400),
@@ -284,19 +281,20 @@ class BacklogCliTests(BacklogCase):
         return code, out.getvalue(), err.getvalue()
 
     def test_add_list_accept_decline_plan_and_unplan(self) -> None:
-        code, out, _ = self.run_cli("backlog", "add", "p1", "--title", "First", "--type", "fix")
+        # A request comes from an agent or another system; what a person adds is backlog work.
+        first_task, third_task = self.file("First"), None
+        code, out, _ = self.run_cli("backlog", "add", "p1", "--title", "Second")
         self.assertEqual(code, 0)
-        self.assertIn("filed, not accepted", out)
-        code, out, _ = self.run_cli("backlog", "add", "p1", "--title", "Second", "--accept")
         self.assertIn("accepted, not planned", out)
-        code, out, _ = self.run_cli("backlog", "add", "p1", "--title", "Third")
+        third_task = self.file("Third")
+        self.assertEqual((first_task.status, third_task.status), ("triage", "triage"))
 
         code, out, _ = self.run_cli("backlog", "list", "p1", "--json")
         self.assertEqual(code, 0)
         page = json.loads(out)
         self.assertEqual([t["title"] for t in page["tasks"]], ["First", "Third", "Second"])
         first, third, second = (t["id"] for t in page["tasks"])
-        filed = self.store.list_events(task_id=first)
+        filed = self.store.list_events(task_id=second)
         self.assertEqual({e.payload.get("via") for e in filed if e.event_type == "backlog.task_filed"}, {"cli"})
 
         code, out, _ = self.run_cli("backlog", "list", "p1")
@@ -326,10 +324,11 @@ class BacklogCliTests(BacklogCase):
 
     def test_refusals_are_reported_and_change_nothing(self) -> None:
         filed = self.file("Not accepted")
+        declined = Mutations(self.store, via="cli").decline_task(self.file("Declined"))
 
-        code, _, err = self.run_cli("backlog", "plan", "p1", filed.id, "--sprint", "s2")
+        code, _, err = self.run_cli("backlog", "plan", "p1", declined.id, "--sprint", "s2")
         self.assertEqual(code, 1)
-        self.assertIn("accept it before planning", err)
+        self.assertIn("only backlog work can be planned", err)
         code, _, err = self.run_cli("backlog", "list", "p1", "--status", "bogus")
         self.assertEqual(code, 1)
         code, _, err = self.run_cli(
@@ -366,3 +365,73 @@ class BacklogCliTests(BacklogCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ForemanAndTheBacklogApiTests(BacklogApiTests):
+    """What the API says about requests and about Foreman starting backlog work (ADR-0028)."""
+
+    def autonomous(self, limit: int = 5) -> None:
+        self.project.settings = {"task_selection_mode": "autonomous", "max_autonomous_tasks": limit}
+        self.store.save_project(self.project)
+
+    def needs_you(self) -> list[dict]:
+        return self.request("GET", "/api/v1/projects/p1/needs-you").json()["items"]
+
+    def test_a_directed_project_is_not_asked_to_accept_anything(self) -> None:
+        self.file("From an agent")
+        self.file("Another")
+
+        self.assertEqual(self.needs_you(), [])
+        body = self.request("GET", "/api/v1/projects/p1/backlog").json()
+        self.assertEqual(body["foreman"], {"starts": False, "limit": 5, "started": 0, "ready": 0})
+        task = self.request("GET", f"/api/v1/tasks/{body['tasks'][0]['id']}").json()
+        self.assertFalse(task["foreman_starts_backlog_work"])
+
+    def test_where_foreman_starts_backlog_work_requests_are_one_line(self) -> None:
+        self.autonomous(limit=3)
+        first = self.file("From an agent")
+        self.file("Another")
+        self.file("Cleared", accept=True)
+
+        (line,) = self.needs_you()
+
+        self.assertEqual((line["kind"], line["count"], line["task_id"]), ("answer_requests", 2, None))
+        self.assertEqual(line["sprint_id"], "p1-backlog")
+        body = self.request("GET", "/api/v1/projects/p1/backlog").json()
+        self.assertEqual(body["foreman"], {"starts": True, "limit": 3, "started": 0, "ready": 1})
+        self.assertTrue(self.request("GET", f"/api/v1/tasks/{first.id}").json()["foreman_starts_backlog_work"])
+        # The workspace counts that one line, not each request.
+        workspace = self.request("GET", "/api/v1/workspace").json()
+        self.assertEqual(workspace["projects"][0]["needs_you"], 1)
+
+    def test_a_request_another_system_filed_into_a_sprint_is_its_own_line_anywhere(self) -> None:
+        intake = Mutations(self.store, via="api", actor="api:pagerduty", role="api")
+        task = intake.file_task(self.project, title="Prod is down", into=self.store.get_sprint("s1")).task
+
+        (line,) = self.needs_you()
+
+        self.assertEqual((line["kind"], line["task_id"]), ("accept_filed_work", task.id))
+
+    def test_a_sprint_says_how_many_of_its_tasks_foreman_started(self) -> None:
+        self.autonomous(limit=2)
+        accepted = self.file("Cleared", accept=True)
+        foreman = Mutations(self.store, via="policy", actor="foreman")
+        foreman.plan_tasks([accepted], sprint=self.store.get_sprint("s1"), pulled=True)
+
+        sprint = self.request("GET", "/api/v1/sprints/s1").json()
+
+        self.assertEqual((sprint["started_by_foreman"], sprint["foreman_limit"]), (1, 2))
+        body = self.request("GET", "/api/v1/projects/p1/backlog").json()
+        self.assertEqual(body["foreman"], {"starts": True, "limit": 2, "started": 1, "ready": 0})
+
+    def test_planning_a_request_through_the_api_accepts_it(self) -> None:
+        request = self.file("From an agent")
+
+        response = self.request(
+            "POST", "/api/v1/projects/p1/backlog/plan", json={"task_ids": [request.id], "sprint_id": "s2"}
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        stored = self.store.get_task(request.id)
+        self.assertEqual((stored.status, stored.sprint_id), ("todo", "s2"))
+

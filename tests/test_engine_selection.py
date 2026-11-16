@@ -1,4 +1,4 @@
-"""Choosing the next task in autonomous mode."""
+"""Choosing the next task: what was planned, then (when a project allows it) backlog work."""
 
 from __future__ import annotations
 from pathlib import Path
@@ -15,7 +15,7 @@ from engine_support import (
 
 
 class AutonomousTaskSelectionTests(RepoTestCase):
-    """Tests for select_next_task in autonomous mode."""
+    """select_next_task when Foreman may start backlog work on its own (ADR-0028)."""
 
     def _make_store(self) -> tuple[ForemanStore, str]:
         self._tmp = tempfile.TemporaryDirectory()
@@ -55,138 +55,182 @@ class AutonomousTaskSelectionTests(RepoTestCase):
     def _orchestrator(self, store: ForemanStore) -> ForemanOrchestrator:
         return ForemanOrchestrator(store, roles=self.roles, workflows=self.workflows)
 
-    def test_autonomous_no_sprint_returns_none(self) -> None:
+    # ── Foreman starts backlog work on its own (ADR-0028) ────────────────
+
+    def _backlog(self, store: ForemanStore, task_id: str, *, status: str = "todo", **fields) -> Task:
+        backlog = store.ensure_backlog("proj-auto", created_at="2026-11-16T00:00:00Z")
+        task = Task(
+            id=task_id,
+            sprint_id=backlog.id,
+            project_id="proj-auto",
+            title=task_id,
+            status=status,  # type: ignore[arg-type]
+            order_index=store.next_task_order_index(backlog.id),
+            **fields,
+        )
+        return store.save_task(task)
+
+    def _planned(self, store: ForemanStore, task_id: str, status: str = "todo", **fields) -> Task:
+        return store.save_task(
+            Task(id=task_id, sprint_id="sprint-auto", project_id="proj-auto", title=task_id, status=status, **fields)  # type: ignore[arg-type]
+        )
+
+    def test_with_no_active_sprint_nothing_is_taken(self) -> None:
         store, _ = self._make_store()
         project = Project(
-            id="proj-nosprint",
-            name="No Sprint",
-            repo_path="/tmp/nosprint",
-            workflow_id="development",
+            id="proj-auto", name="Auto", repo_path="/tmp/auto", workflow_id="development",
             settings={"task_selection_mode": "autonomous"},
         )
         store.save_project(project)
-        orc = self._orchestrator(store)
-        result = orc.select_next_task(project)
-        self.assertIsNone(result)
+        waiting = self._backlog(store, "waiting")
 
-    def test_autonomous_creates_placeholder_task(self) -> None:
+        self.assertIsNone(self._orchestrator(store).select_next_task(project))
+        self.assertEqual(store.get_task("waiting").sprint_id, waiting.sprint_id)
+
+    def test_what_a_person_planned_runs_first(self) -> None:
         store, _ = self._make_store()
-        project, sprint = self._seed(store)
-        orc = self._orchestrator(store)
+        project, _sprint = self._seed(store)
+        self._backlog(store, "from-backlog")
+        self._planned(store, "planned")
 
-        selected = orc.select_next_task(project)
+        selected = self._orchestrator(store).select_next_task(project)
 
-        self.assertIsNotNone(selected)
         assert selected is not None
-        self.assertEqual(selected.sprint_id, sprint.id)
-        self.assertEqual(selected.project_id, project.id)
-        self.assertEqual(selected.created_by, "orchestrator")
-        self.assertEqual(selected.title, "[autonomous] new task")
-        # Task should be persisted.
-        persisted = store.get_task(selected.id)
-        self.assertIsNotNone(persisted)
+        self.assertEqual(selected.id, "planned")
+        self.assertTrue(store.get_sprint(store.get_task("from-backlog").sprint_id).is_backlog)
 
-    def test_autonomous_resumes_inprogress_before_creating(self) -> None:
+    def test_with_nothing_planned_to_run_the_next_accepted_backlog_task_is_taken(self) -> None:
         store, _ = self._make_store()
         project, sprint = self._seed(store)
-        existing = Task(
-            id="task-existing",
-            sprint_id=sprint.id,
-            project_id=project.id,
-            title="In-flight task",
-            status="in_progress",
-            workflow_current_step="develop",
-            created_by="orchestrator",
-        )
-        store.save_task(existing)
-        orc = self._orchestrator(store)
+        self._planned(store, "finished", "done")
+        self._planned(store, "waits-for-a-person", "blocked", blocked_reason="Awaiting human approval")
+        self._backlog(store, "from-backlog")
 
-        selected = orc.select_next_task(project)
+        selected = self._orchestrator(store).select_next_task(project)
 
-        self.assertIsNotNone(selected)
         assert selected is not None
-        self.assertEqual(selected.id, existing.id)
-        # No new placeholder should have been created.
-        all_tasks = store.list_tasks(sprint_id=sprint.id)
-        self.assertEqual(len(all_tasks), 1)
+        self.assertEqual((selected.id, selected.sprint_id, selected.status), ("from-backlog", sprint.id, "todo"))
+        (pulled,) = [e for e in store.list_events(task_id="from-backlog") if e.event_type == "engine.task_pulled"]
+        self.assertEqual((pulled.payload["via"], pulled.payload["by"]), ("policy", "foreman"))
+        self.assertEqual(pulled.payload["sprint_id"], sprint.id)
+        # It is leased like any task the engine is about to run.
+        self.assertIsNotNone(
+            store.get_active_lease(project_id=project.id, resource_type="task", resource_id="from-backlog")
+        )
 
-    def test_autonomous_waits_for_live_in_progress_task_before_creating_placeholder(self) -> None:
+    def test_higher_priority_goes_first_then_the_order_it_was_filed_in(self) -> None:
+        store, _ = self._make_store()
+        project, _sprint = self._seed(store)
+        self._backlog(store, "first-filed")
+        self._backlog(store, "second-filed")
+        self._backlog(store, "urgent", priority=5)
+
+        taken = []
+        for _ in range(3):
+            selected = self._orchestrator(store).select_next_task(project)
+            assert selected is not None
+            taken.append(selected.id)
+            selected.status = "done"
+            store.save_task(selected)
+
+        self.assertEqual(taken, ["urgent", "first-filed", "second-filed"])
+
+    def test_a_request_no_person_has_accepted_is_never_taken(self) -> None:
+        store, _ = self._make_store()
+        project, _sprint = self._seed(store)
+        request = self._backlog(store, "request", status="triage", created_by="agent:developer")
+
+        self.assertIsNone(self._orchestrator(store).select_next_task(project))
+
+        stored = store.get_task("request")
+        self.assertEqual((stored.status, stored.sprint_id), ("triage", request.sprint_id))
+
+    def test_it_stops_at_the_limit_per_sprint(self) -> None:
+        store, _ = self._make_store()
+        project, _sprint = self._seed(store, max_autonomous_tasks=1)
+        self._backlog(store, "one")
+        self._backlog(store, "two")
+
+        first = self._orchestrator(store).select_next_task(project)
+        assert first is not None
+        first.status = "done"
+        store.save_task(first)
+
+        self.assertIsNone(self._orchestrator(store).select_next_task(project))
+        self.assertTrue(store.get_sprint(store.get_task("two").sprint_id).is_backlog)
+
+    def test_the_default_limit_is_five(self) -> None:
         store, _ = self._make_store()
         project, sprint = self._seed(store)
-        existing = Task(
-            id="task-existing",
-            sprint_id=sprint.id,
-            project_id=project.id,
-            title="Live native task",
-            status="in_progress",
-            created_by="orchestrator",
-        )
-        store.save_task(existing)
-        orc = self._orchestrator(store)
+        for n in range(7):
+            self._backlog(store, f"task-{n}")
 
-        selected = orc.select_next_task(project)
+        taken = 0
+        while True:
+            selected = self._orchestrator(store).select_next_task(project)
+            if selected is None:
+                break
+            taken += 1
+            selected.status = "done"
+            store.save_task(selected)
 
-        self.assertIsNone(selected)
-        all_tasks = store.list_tasks(sprint_id=sprint.id)
-        self.assertEqual(len(all_tasks), 1)
+        self.assertEqual(taken, 5)
 
-    def test_autonomous_respects_max_autonomous_tasks_limit(self) -> None:
-        store, _ = self._make_store()
-        project, sprint = self._seed(store, max_autonomous_tasks=2)
-        for i in range(2):
-            store.save_task(Task(
-                id=f"task-orc-{i}",
-                sprint_id=sprint.id,
-                project_id=project.id,
-                title=f"Orchestrator task {i}",
-                status="done",
-                created_by="orchestrator",
-            ))
-        orc = self._orchestrator(store)
+    def test_what_a_person_planned_from_the_backlog_does_not_use_up_the_limit(self) -> None:
+        from foreman.mutations import Mutations
 
-        result = orc.select_next_task(project)
-
-        self.assertIsNone(result)
-
-    def test_autonomous_default_limit_is_five(self) -> None:
-        store, _ = self._make_store()
-        project, sprint = self._seed(store)  # no max_autonomous_tasks override
-        for i in range(5):
-            store.save_task(Task(
-                id=f"task-orc-{i}",
-                sprint_id=sprint.id,
-                project_id=project.id,
-                title=f"Orchestrator task {i}",
-                status="done",
-                created_by="orchestrator",
-            ))
-        orc = self._orchestrator(store)
-
-        result = orc.select_next_task(project)
-
-        self.assertIsNone(result)
-
-    def test_autonomous_human_created_tasks_dont_count_toward_limit(self) -> None:
         store, _ = self._make_store()
         project, sprint = self._seed(store, max_autonomous_tasks=1)
-        # Five human-created tasks — should not count against the autonomous limit.
-        for i in range(5):
-            store.save_task(Task(
-                id=f"task-human-{i}",
-                sprint_id=sprint.id,
-                project_id=project.id,
-                title=f"Human task {i}",
-                status="todo",
-                created_by="human",
-            ))
-        orc = self._orchestrator(store)
+        mine = self._backlog(store, "planned-by-a-person")
+        Mutations(store, via="cli", actor="alice").plan_tasks([mine], sprint=sprint)
+        done = store.get_task("planned-by-a-person")
+        done.status = "done"
+        store.save_task(done)
+        self._backlog(store, "for-foreman")
 
-        selected = orc.select_next_task(project)
+        selected = self._orchestrator(store).select_next_task(project)
 
-        # One placeholder should be created because no orchestrator task exists yet.
-        self.assertIsNotNone(selected)
         assert selected is not None
-        self.assertEqual(selected.created_by, "orchestrator")
+        self.assertEqual(selected.id, "for-foreman")
+
+    def test_backlog_work_that_waits_for_unfinished_work_is_not_taken(self) -> None:
+        store, _ = self._make_store()
+        project, _sprint = self._seed(store)
+        self._planned(store, "prerequisite", "blocked", blocked_reason="Parked")
+        self._backlog(store, "needs-it", depends_on_task_ids=["prerequisite"])
+        self._backlog(store, "free")
+
+        selected = self._orchestrator(store).select_next_task(project)
+
+        assert selected is not None
+        self.assertEqual(selected.id, "free")
+
+    def test_a_task_in_progress_is_resumed_before_anything_is_taken(self) -> None:
+        store, _ = self._make_store()
+        project, _sprint = self._seed(store)
+        self._planned(store, "resumable", "in_progress", workflow_current_step="develop")
+        self._backlog(store, "from-backlog")
+
+        selected = self._orchestrator(store).select_next_task(project)
+
+        assert selected is not None
+        self.assertEqual(selected.id, "resumable")
+        self.assertTrue(store.get_sprint(store.get_task("from-backlog").sprint_id).is_backlog)
+
+    def test_a_project_that_does_not_let_foreman_start_backlog_work_takes_nothing(self) -> None:
+        store, _ = self._make_store()
+        project, _sprint = self._seed(store, selection_mode="directed")
+        self._backlog(store, "from-backlog")
+
+        self.assertIsNone(self._orchestrator(store).select_next_task(project))
+        self.assertTrue(store.get_sprint(store.get_task("from-backlog").sprint_id).is_backlog)
+
+    def test_nothing_is_invented_when_the_backlog_is_empty(self) -> None:
+        store, _ = self._make_store()
+        project, _sprint = self._seed(store)
+
+        self.assertIsNone(self._orchestrator(store).select_next_task(project))
+        self.assertEqual(store.list_tasks(project_id=project.id), [])
 
     def test_directed_mode_unchanged(self) -> None:
         store, _ = self._make_store()
@@ -238,7 +282,8 @@ class AutonomousTaskSelectionTests(RepoTestCase):
 
 
 class BacklogIsNeverRunTests(RepoTestCase):
-    """The engine runs the active sprint only; the backlog is not one (ADR-0021)."""
+    """The backlog is not a sprint (ADR-0021): the engine runs the active sprint, and only
+    a project that lets Foreman start backlog work has tasks taken from it (ADR-0028)."""
 
     def setUp(self) -> None:
         temp = tempfile.TemporaryDirectory()
@@ -298,11 +343,12 @@ class BacklogIsNeverRunTests(RepoTestCase):
         self.assertIsNone(self.store.get_active_sprint("p"))
         self.assertEqual(self.store.get_backlog("p").status, "planned")
 
-    def test_autonomous_mode_creates_nothing_in_the_backlog(self) -> None:
+    def test_with_no_active_sprint_backlog_work_stays_where_it_is(self) -> None:
         project = self._project(mode="autonomous")
-        self._backlog_task()
+        task = self._backlog_task()
 
         self.assertIsNone(self._orchestrator().select_next_task(project))
+        self.assertEqual(self.store.get_task(task.id).sprint_id, task.sprint_id)
         self.assertEqual(len(self.store.list_tasks(project_id="p")), 1)
 
     def test_planning_a_backlog_task_makes_it_selectable(self) -> None:

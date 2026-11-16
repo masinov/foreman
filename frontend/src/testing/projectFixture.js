@@ -108,12 +108,17 @@ export const ACCEPTED = [
   backlogTask("task-c", "JSON output on the remaining read commands", "accepted", { task_type: "feature" }),
 ];
 
-export function backlogPayload(tasks, { triage = "human", total = tasks.length } = {}) {
+/** What the API says of a project where Foreman starts backlog work on its own (ADR-0028). */
+export const FOREMAN_STARTS = { starts: true, limit: 5, started: 1, ready: 3 };
+const A_PERSON_PLANS = { starts: false, limit: 5, started: 0, ready: 0 };
+
+export function backlogPayload(tasks, { triage = "human", total = tasks.length, foreman = A_PERSON_PLANS } = {}) {
   const count = (state) => tasks.filter((task) => task.state === state).length;
   return {
     project_id: "foreman",
     backlog_id: "foreman-backlog",
     triage,
+    foreman,
     counts: { filed: count("filed"), accepted: count("accepted"), declined: 0 },
     tasks,
     total,

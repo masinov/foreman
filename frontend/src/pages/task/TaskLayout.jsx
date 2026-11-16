@@ -7,6 +7,7 @@ import { useResource } from "../../api/useResource";
 import { paths } from "../../app/paths";
 import { Link, useNavigate } from "../../app/router";
 import { Tabs } from "../../ui/Tabs";
+import { BacklogDecision } from "./BacklogDecision";
 import { Decision } from "./Decision";
 import { TaskHead } from "./TaskHead";
 
@@ -103,7 +104,11 @@ export function TaskLayout({ taskId, children }) {
         </p>
       ) : null}
       <Notice notice={notice} />
-      <Decision task={current} checks={checks.data} onDecided={changed} />
+      {current.in_backlog && (current.status === "triage" || current.status === "todo") ? (
+        <BacklogDecision task={current} onDecided={changed} />
+      ) : (
+        <Decision task={current} checks={checks.data} onDecided={changed} />
+      )}
       <div className="task__tabs">
         <Tabs
           label="Task"

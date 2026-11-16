@@ -6,6 +6,8 @@ import { queryString, segment } from "./client";
  */
 export const NEEDS_YOU_KINDS = {
   acceptFiledWork: "accept_filed_work",
+  // Not a task: the requests waiting in a project's backlog, counted (`count`).
+  answerRequests: "answer_requests",
   approvePlan: "approve_plan",
   approveMerge: "approve_merge",
   unblock: "unblock",

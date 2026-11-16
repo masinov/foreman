@@ -195,7 +195,6 @@ Event types:
 - `agent.killed` — killed by gate; `{reason, gate_type}`
 
 **Agent signals:**
-- `signal.task_started` — `{title, task_type, branch, criteria}`
 - `signal.task_created` — `{title, task_type, description, criteria}`
 - `signal.progress` — `{message}`
 - `signal.blocker` — `{message}`
@@ -503,7 +502,6 @@ Agents can emit structured signals that the engine parses from their output.
 Signals use a line-based marker format:
 
 ```
-FOREMAN_SIGNAL: {"type": "task_started", "title": "Add claim store", "task_type": "feature", "branch": "feat/claim-store", "criteria": "Store persists and round-trips claims"}
 FOREMAN_SIGNAL: {"type": "task_created", "title": "Add migration tooling", "task_type": "chore", "description": "...", "criteria": "..."}
 FOREMAN_SIGNAL: {"type": "progress", "message": "Tests passing, writing docs"}
 FOREMAN_SIGNAL: {"type": "blocker", "message": "Cannot resolve dependency conflict"}
@@ -513,9 +511,7 @@ The runner scans each output line for the `FOREMAN_SIGNAL:` prefix, parses
 the JSON defensively (log and skip on failure), and emits `signal.*` events.
 
 The `{signal_format}` prompt variable is replaced with documentation of
-available signal types. In autonomous mode, `signal.task_started` is
-required and must include `criteria` so the reviewer has something to
-review against.
+available signal types.
 
 ---
 
@@ -987,66 +983,62 @@ def run_workflow_from_step(project, workflow, task, step, carried_output):
     write_context(project, task)
 ```
 
-### 6.2 Task Selection: Directed vs Autonomous
+### 6.2 Task Selection
 
-**Directed mode (`"directed"`):**
+Revised 2026-11-16 (ADR-0028). The earlier autonomous mode, in which the
+orchestrator created an empty placeholder task and the agent named it with
+`signal.task_started`, is removed: it ignored the tasks a person had planned,
+and it let an agent write its own title and acceptance criteria.
 
-The orchestrator picks the next `todo` task by priority, order, and
-dependency satisfaction.
+What a person planned into the active sprint always runs first: the next
+`todo` task by order whose dependencies are satisfied, after any task that
+is in progress and can be resumed.
+
+**Directed mode (`"directed"`):** only that. The backlog is never run.
+
+**Autonomous mode (`"autonomous"`):** Foreman starts backlog work on its own.
+When no planned task can run, the engine takes the next *accepted* backlog
+task into the active sprint and runs it, up to `max_autonomous_tasks` per
+sprint. It never takes a request: a task filed by an agent or another system
+that no person has accepted (see below). It invents nothing; with an empty
+backlog it is idle.
 
 ```
-def select_next_task_directed(project):
+def select_next_task(project):
     sprint = get_active_sprint(project.id)
-    tasks = get_tasks(sprint_id=sprint.id, status="todo",
-                      order_by="priority ASC, order_index ASC")
-    for task in tasks:
-        if dependencies_satisfied(task):
+    if sprint is None:
+        return None
+    task = next_planned_task(sprint)          # resume, then todo by order
+    if task or project.task_selection_mode == "directed":
+        return task
+    if count_pulled(sprint) >= project.max_autonomous_tasks:
+        return None
+    for task in backlog(project, status="todo",
+                        order_by="priority DESC, order_index ASC"):
+        if dependencies_done(task):
+            plan(task, sprint, by="foreman")  # recorded as engine.task_pulled
             return task
     return None
 ```
 
-**Autonomous mode (`"autonomous"`):**
+**Requests and acceptance.** Work reaches the backlog from people, from
+agents (`signal.task_created`) and from other systems (intake). What a
+person files is backlog work at once. What an agent or another system files
+follows the project's triage policy: `human` makes it a *request* (status
+`triage`), `auto` makes it backlog work. Accepting a request is saying
+"Foreman may start this on its own"; a person planning a request into a
+sprint accepts it by doing so. Acceptance therefore only matters to a
+project in autonomous mode, and the dashboard only asks for it there.
 
-The orchestrator creates a placeholder task. The agent reads context,
-decides what to work on, creates its own branch, and emits a
-`signal.task_started` with title, type, branch, and acceptance criteria.
-The engine updates the placeholder from the signal.
-
-```
-def select_next_task_autonomous(project):
-    sprint = get_active_sprint(project.id)
-    in_progress = get_tasks(sprint_id=sprint.id, status="in_progress")
-    if in_progress:
-        return in_progress[0]
-    task = create_task(
-        sprint_id=sprint.id,
-        title="(agent-selected)",
-        status="todo",
-        created_by="orchestrator",
-    )
-    return task
-```
-
-In autonomous mode, **the orchestrator does not create a branch**. The
-agent creates its own branch and reports it. If the agent fails to emit
-`signal.task_started`, the placeholder remains and the reviewer reviews
-against whatever the agent actually did — this is a degraded but
-functional path.
+The limit per sprint is the bound on an agent filing work that Foreman then
+starts, which files more.
 
 ```
 def check_agent_signals(event, task, project):
-    if event.event_type == "signal.task_started":
+    if event.event_type == "signal.task_created":
         p = event.payload
-        task.title = p["title"]
-        task.task_type = p.get("task_type", "feature")
-        task.branch_name = p.get("branch", task.branch_name)
-        task.acceptance_criteria = p.get("criteria", task.acceptance_criteria)
-        save_task(task)
-    elif event.event_type == "signal.task_created":
-        p = event.payload
-        sprint = get_active_sprint(project.id)
-        create_task(
-            sprint_id=sprint.id,
+        file_task(                              # into the backlog, never
+            project,                            # into the running sprint
             title=p["title"],
             task_type=p.get("task_type", "feature"),
             description=p.get("description"),
@@ -1255,8 +1247,8 @@ and covers:
   not generate or manage them
 
 **Signal format:**
-- Full documentation of `FOREMAN_SIGNAL` types (`task_started`,
-  `task_created`, `progress`, `blocker`)
+- Full documentation of `FOREMAN_SIGNAL` types (`task_created`,
+  `progress`, `blocker`)
 - When to emit each signal
 - Required fields per signal type
 
@@ -1591,9 +1583,9 @@ Adding a role or changing a review chain never requires engine code
 changes.
 
 ### 12.3 Dual task selection: directed and autonomous
-Pre-planned sprints use directed mode. Open-ended development uses
-autonomous mode with agent signals. Both produce identical structured
-state.
+In directed mode only what a person planned runs. In autonomous mode Foreman
+also starts accepted backlog work on its own, within a limit per sprint
+(§6.2). Both run the same tasks through the same workflow.
 
 ### 12.4 Session persistence for developers, fresh for reviewers
 Developers keep conversation context across steering loops. Reviewers

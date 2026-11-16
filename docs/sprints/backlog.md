@@ -37,6 +37,17 @@ Fixed in the second run of the same day (ADR-0025, ADR-0026, the Python rule).
 Left: a completed sprint cannot be reopened (`foreman sprint activate`
 refuses).
 
+## After ADR-0028 (Foreman starts backlog work)
+
+- A limit per day for a project that keeps one standing sprint fed by intake;
+  per sprint never resets there.
+- A cap on how many tasks one agent step may file, and refusing a filing that
+  repeats an open or declined one.
+- Show, on a task an agent filed, which task the agent was working on.
+- `autonomy_level` (who finishes a sprint, ADR-0025) has no control in the
+  dashboard; it is set from a terminal.
+- Trust per access token for work filed by other systems.
+
 ## Found in the audit of every screen (2026-11-16)
 
 - Acceptance criteria are never judged unless a project sets `judge_model`
