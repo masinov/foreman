@@ -308,3 +308,25 @@ seconds) and runs their merge and mark-done steps there. Rules:
 - The default branch moving under a running task is already allowed
   (ADR-0012): the task's branch is refreshed at its next step.
 
+## Amendment, 2026-11-16: `steer_task`
+
+A sixth command. Guidance a person writes for a task is read by the next
+agent step that starts, which is too late when the step that is running is
+the one going wrong. `steer_task` names a task; the engine that is running
+an agent step of that task terminates the step's process group, settles its
+run as killed, and leaves the task as it was (in progress, at that step, not
+blocked). The engine is not paused: its next pass starts the step again.
+The interrupted visit is not counted against the step's visit limit.
+
+- Guidance that had been handed to a run that was killed is handed over
+  again when the step restarts (`pending_guidance(..., void_runs=)`): a role
+  that keeps no session would otherwise never have it.
+- When the task is not running a step, the command completes having
+  interrupted nothing; queued before an engine starts, it is rejected as
+  stale like `pause` and `stop_task`.
+- `POST /api/v1/tasks/{id}/steer {text}` records the note and queues the
+  command, and refuses when no agent run of the task is running or no engine
+  holds the project. Migration 28 rebuilds `engine_commands` for the name.
+- The dashboard offers it under a running agent step's output on the task's
+  Activity tab ("Interrupt and tell it now"), beside "Save for its next
+  step".

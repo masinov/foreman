@@ -716,7 +716,10 @@ class WorkflowRunner:
         # Notes a person wrote for this task since the last agent step
         # go into this prompt, and are marked delivered once the run
         # that carries them exists.
-        guidance = pending_guidance(self.store.list_events(task_id=task.id))
+        # A step that was killed (an interruption, a shutdown) starts again
+        # with whatever guidance it had been given, as well as any since.
+        killed = {earlier.id for earlier in self.store.list_runs(task_id=task.id, status="killed")}
+        guidance = pending_guidance(self.store.list_events(task_id=task.id), void_runs=killed)
         prompt = prompt_with_guidance(prompt, guidance)
         model_selection = resolve_step_model_selection(
             task=task,

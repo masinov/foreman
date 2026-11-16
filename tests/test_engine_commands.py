@@ -177,7 +177,8 @@ class Migration15Tests(unittest.TestCase):
     def test_the_python_vocabulary_matches_the_schema_constraint(self) -> None:
         """The CHECK constraint and the model tuples must not drift apart."""
 
-        sql = dict((v, s) for v, _d, s in MIGRATIONS)[15]
+        # Migration 28 rebuilt the table to add `steer_task`: its CHECK is the one in force.
+        sql = dict((v, s) for v, _d, s in MIGRATIONS)[28]
         for name in ENGINE_COMMANDS:
             self.assertIn(f"'{name}'", sql)
         for status in ENGINE_COMMAND_STATUSES:

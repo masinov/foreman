@@ -2153,6 +2153,93 @@ class EngineCommandDuringAgentStepTests(unittest.TestCase):
             ]
             self.assertEqual(applied[0].payload["command"], "stop_task")
 
+    def test_steer_task_interrupts_the_step_and_it_starts_again_with_the_guidance(self) -> None:
+        from foreman.mutations import Mutations as MutationService
+
+        repo, db_path = _git_workspace(self)
+        with ForemanStore(db_path) as store:
+            self._seed(store, repo)
+            task = store.get_task("task-1")
+            assert task is not None
+            MutationService(store, via="dashboard", actor="dana").record_guidance(
+                task, "Use the existing parser, do not write a new one."
+            )
+            runner = _CommandingRunner.for_command(
+                db_path,
+                project_id="project-1",
+                command="steer_task",
+                requested_by="dana",
+                task_id="task-1",
+            )
+
+            with unittest.mock.patch("foreman.serve.terminate_all", return_value=1) as terminated:
+                result = self._serve(runner, db_path, store, once=True)
+
+            terminated.assert_called()
+            self.assertEqual(result.exit_code, 0)
+            # (Recording the note is itself a run, of the step "message".)
+            develop = lambda: [run for run in self._agent_runs(store) if run.workflow_step == "develop"]
+            self.assertEqual([run.status for run in develop()], ["killed"])
+
+            # The task is where it was, not parked, and the visit is not counted.
+            task = store.get_task("task-1")
+            assert task is not None
+            self.assertEqual((task.status, task.workflow_current_step), ("in_progress", "develop"))
+            self.assertIsNone(task.blocked_reason)
+            self.assertEqual(task.step_visit_counts.get("develop", 0), 0)
+            self.assertIsNone(
+                store.get_active_lease(project_id="project-1", resource_type="task", resource_id="task-1")
+            )
+
+            assert runner.command_id is not None
+            command = store.get_engine_command(runner.command_id)
+            assert command is not None
+            self.assertEqual(command.status, "completed")
+            self.assertIn("starts again", command.result_detail or "")
+
+            # The engine was not paused: its next pass runs the same step, and
+            # the guidance is in what the agent is given.
+            seen: list[str] = []
+
+            class _Reading:
+                def run(self, config: AgentRunConfig):
+                    seen.append(config.prompt)
+                    yield AgentEvent("agent.started", payload={"command": "fake"})
+                    raise EngineShutdown("SIGTERM")
+
+            self._serve(_Reading(), db_path, store, once=True)
+
+            self.assertEqual(len(seen), 1)
+            self.assertIn("Guidance from a person", seen[0])
+            self.assertIn("Use the existing parser, do not write a new one.", seen[0])
+            self.assertEqual(len(develop()), 2)
+
+    def test_steer_task_when_nothing_is_running_interrupts_nothing(self) -> None:
+        repo, db_path = _git_workspace(self)
+        with ForemanStore(db_path) as store:
+            self._seed(store, repo)
+            task = store.get_task("task-1")
+            assert task is not None
+            task.status = "blocked"
+            task.blocked_reason = "Waiting"
+            store.save_task(task)
+            runner = _CommandingRunner(db_path, project_id="project-1", schedule={})
+            lock_holder = "probe"
+            with ForemanStore(db_path) as writer:
+                queued = writer.enqueue_engine_command(
+                    project_id="project-1", command="steer_task", requested_by=lock_holder, task_id="task-1"
+                )
+
+            # Queued before the engine starts, it is stale by then: nothing is running to interrupt.
+            self._serve(runner, db_path, store, once=True)
+
+            command = store.get_engine_command(queued.id)
+            assert command is not None
+            self.assertEqual(command.status, "rejected")
+            task = store.get_task("task-1")
+            assert task is not None
+            self.assertEqual(task.status, "blocked")
+
     def test_stop_task_for_a_different_task_is_rejected_and_the_step_continues(self) -> None:
         repo, db_path = _git_workspace(self)
         with ForemanStore(db_path) as store:

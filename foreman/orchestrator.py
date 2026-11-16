@@ -544,6 +544,22 @@ class ForemanOrchestrator:
         if project is not None:
             self.leases.release(task, project)
 
+    def forgive_step_visit(self, task_id: str) -> None:
+        """Take back the visit a step was charged when it was interrupted on request.
+
+        A step a person interrupted to steer it did not get to finish; counting
+        it would let three or four notes use up the step's visit limit.
+        """
+
+        task = self.store.get_task(task_id)
+        if task is None or not task.workflow_current_step:
+            return
+        counts = dict(task.step_visit_counts)
+        if counts.get(task.workflow_current_step, 0) > 0:
+            counts[task.workflow_current_step] -= 1
+            task.step_visit_counts = counts
+            self.tasks.save(task)
+
     def stop_task(self, task_id: str, *, reason: str) -> Task | None:
         """Park one task as ``blocked`` at an operator's request.
 

@@ -82,3 +82,69 @@ class EngineCommandApiTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SteerTaskApiTests(EngineCommandApiTests):
+    """POST /tasks/{id}/steer: guidance an agent reads now, by interrupting its step."""
+
+    def running_task(self, *, agent: bool = True) -> None:
+        from foreman.models import Run, Sprint, Task
+
+        self.store.save_sprint(Sprint(id="s1", project_id="p1", title="S", status="active"))
+        self.store.save_task(
+            Task(id="t1", sprint_id="s1", project_id="p1", title="T", status="in_progress", workflow_current_step="develop")
+        )
+        self.store.save_run(
+            Run(
+                id="r1",
+                task_id="t1",
+                project_id="p1",
+                role_id="developer" if agent else "_builtin:run_tests",
+                workflow_step="develop" if agent else "test",
+                agent_backend="claude_code" if agent else "builtin",
+                status="running",
+            )
+        )
+
+    def guidance(self) -> list[str]:
+        return [e.payload["text"] for e in self.store.list_events(task_id="t1") if e.event_type == "human.message"]
+
+    def test_records_the_note_and_asks_the_engine_to_interrupt_the_step(self) -> None:
+        self.running_task()
+        self.hold_engine()
+
+        response = self.post("/api/v1/tasks/t1/steer", {"text": "Stop: the schema is in models.py."})
+
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()
+        self.assertEqual((body["status"], body["step"]), ("interrupting", "develop"))
+        self.assertIn("develop step is being interrupted", body["message"])
+        self.assertEqual(self.guidance(), ["Stop: the schema is in models.py."])
+        self.assertEqual(self.queued(), ["steer_task"])
+
+    def test_refused_when_no_agent_is_running_on_the_task_and_nothing_is_recorded(self) -> None:
+        self.running_task(agent=False)
+        self.hold_engine()
+
+        response = self.post("/api/v1/tasks/t1/steer", {"text": "Too late."})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("nothing to interrupt", response.json()["error"])
+        self.assertEqual(self.guidance(), [])
+        self.assertEqual(self.queued(), [])
+
+    def test_refused_when_the_engine_is_not_running(self) -> None:
+        self.running_task()
+
+        response = self.post("/api/v1/tasks/t1/steer", {"text": "Anyone there?"})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("engine is not running", response.json()["error"])
+        self.assertEqual(self.queued(), [])
+
+    def test_needs_text(self) -> None:
+        self.running_task()
+        self.hold_engine()
+
+        self.assertEqual(self.post("/api/v1/tasks/t1/steer", {"text": "  "}).status_code, 400)
+

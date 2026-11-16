@@ -1346,6 +1346,59 @@ class DashboardService:
             "command": _serialize_engine_command(command),
         }
 
+    def steer_task(
+        self, task_id: str, *, text: str, requested_by: str | None = None
+    ) -> dict[str, Any]:
+        """Record guidance and have the agent step the task is running read it now.
+
+        The note is recorded like any other. Then the engine is asked to stop
+        the step in progress and start it again, which puts the note in front
+        of the agent at once instead of after the step has ended. Refused
+        when no agent is running on the task: then there is nothing to
+        interrupt and the note should simply be saved for the next step.
+        """
+
+        task = self._require_task(task_id)
+        if not text.strip():
+            raise DashboardValidationError("Message text required")
+        running = [
+            run
+            for run in self.store.list_runs(task_id=task.id, status="running")
+            if not run.role_id.startswith("_builtin:")
+        ]
+        if task.status != "in_progress" or not running:
+            raise DashboardValidationError(
+                "No agent is running on this task, so there is nothing to interrupt. "
+                "Save the guidance for its next step instead."
+            )
+        if self.store.get_engine_lock(task.project_id) is None:
+            raise DashboardValidationError(
+                "The engine is not running, so the step cannot be interrupted. "
+                "Save the guidance for the task's next step instead."
+            )
+        try:
+            event = self._mutations().record_guidance(task, text)
+        except MutationError as exc:
+            raise DashboardValidationError(str(exc)) from exc
+        who = self._requester(requested_by)
+        command = self.store.enqueue_engine_command(
+            project_id=task.project_id,
+            command="steer_task",
+            requested_by=who,
+            task_id=task.id,
+        )
+        return {
+            "status": "interrupting",
+            "event_id": event.id,
+            "task_id": task.id,
+            "step": running[-1].workflow_step,
+            "command": _serialize_engine_command(command),
+            "message": (
+                f"Recorded. The {running[-1].workflow_step} step is being interrupted "
+                "and starts again with this guidance."
+            ),
+        }
+
     def move_sprint(self, sprint_id: str, *, direction: str) -> dict[str, Any]:
         """Move a planned sprint one place up or down the queue; return the planned order."""
 
