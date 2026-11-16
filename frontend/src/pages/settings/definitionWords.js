@@ -58,6 +58,18 @@ export function outcomeWords(role, outcome) {
   return (OUTCOME[role] ?? OUTCOME.agent)[outcome] ?? humanize(outcome).toLowerCase();
 }
 
+const SHORT = {
+  "_builtin:run_tests": { success: "pass", failure: "fail" },
+  "_builtin:merge": { success: "merged", conflict: "conflict", failure: "fails", updated: "out of date" },
+  "_builtin:human_gate": { approve: "approved", deny: "sent back", steer: "steered" },
+  agent: { done: "done", approve: "approves", deny: "denies", steer: "steers", escalate: "escalates" },
+};
+
+/** One way a step can end in a word or two, for the drawing of a workflow. */
+export function shortOutcome(role, outcome) {
+  return (SHORT[role] ?? SHORT.agent)[outcome] ?? humanize(outcome).toLowerCase();
+}
+
 export const GATE_POLICY = {
   merge_approval: "“Approve merges” is a person",
   plan_approval: "“Approve plans” is a person",

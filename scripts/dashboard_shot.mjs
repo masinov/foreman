@@ -81,7 +81,7 @@ const send = (method, params = {}) =>
 const FIND = `(text) => {
   const layers = [...document.querySelectorAll('[role=dialog], [role=menu]')];
   const within = layers.length ? layers[layers.length - 1] : document;
-  const all = [...within.querySelectorAll('button, a, [role=menuitem], [role=tab], summary, label')];
+  const all = [...within.querySelectorAll('button, a, [role=button], [role=menuitem], [role=tab], summary, label')];
   const name = (el) => (el.getAttribute('aria-label') || el.textContent || '').trim().replace(/\\s+/g, ' ');
   const el = all.find((e) => name(e) === text) || all.find((e) => name(e).startsWith(text));
   if (!el) return null;

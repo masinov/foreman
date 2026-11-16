@@ -27,6 +27,7 @@ export function DefinitionDialog({
   onClose,
   onSaved,
   children,
+  className = "dialog--wide",
 }) {
   const client = useApiClient();
   const isNew = !definition;
@@ -86,7 +87,7 @@ export function DefinitionDialog({
       open={open}
       title={isNew ? `New ${kind}` : definition.name}
       onClose={onClose}
-      className="dialog--wide"
+      className={className}
       footer={
         <>
           <span className="definition__left">
