@@ -18,6 +18,7 @@ its role cannot produce.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -228,8 +229,14 @@ def save_role(
     *,
     changed_by: str,
     expected_id: str | None = None,
+    check_model: Callable[[str, str], str | None] | None = None,
 ) -> RoleDefinition:
-    """Save a role for one project or the workspace, under the id the text gives."""
+    """Save a role for one project or the workspace, under the id the text gives.
+
+    ``check_model(backend, model)`` says why the agent program cannot run a
+    model, or ``None``. It is asked when the save names a model the role did
+    not have before, and its answer refuses the save.
+    """
 
     _require_project(store, project_id)
     try:
@@ -245,6 +252,12 @@ def save_role(
     own_roles, own_workflows = _own_texts(store, project_id)
     own_roles[role.id] = text
     definitions = _checked(store, project_id, (own_roles, own_workflows))
+    if check_model is not None and role.agent.model:
+        before = project_definitions(store, project_id).roles.get(role.id)
+        if before is None or (before.agent.model, before.agent.backend) != (role.agent.model, role.agent.backend):
+            problem = check_model(role.agent.backend, role.agent.model)
+            if problem:
+                raise DefinitionError(problem)
     store.add_definition_revision(
         project_id=project_id,
         kind=ROLE,

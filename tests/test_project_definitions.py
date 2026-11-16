@@ -8,6 +8,7 @@ import io
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 import httpx
 
@@ -70,6 +71,18 @@ class _Workspace(unittest.TestCase):
         self.store = ForemanStore(self.db_path)
         self.addCleanup(self.store.close)
         self.store.initialize()
+        # No test asks the real agent program about a model; `asked` records what would be.
+        self.asked: list[tuple[str, str]] = []
+        self.unknown_models: set[str] = set()
+
+        def check_model(backend: str, model: str) -> str | None:
+            self.asked.append((backend, model))
+            return f"Claude Code cannot run the model {model!r}." if model in self.unknown_models else None
+
+        for target in ("foreman.dashboard_definitions.check_model", "foreman.cli.definitions.check_model"):
+            patcher = mock.patch(target, check_model)
+            patcher.start()
+            self.addCleanup(patcher.stop)
         for project_id in ("p1", "p2"):
             self.store.save_project(
                 Project(id=project_id, name=project_id, repo_path=self._temp.name, workflow_id="development")
@@ -585,4 +598,95 @@ class WorkspaceDefaultTests(ApiTests):
             [s.id for s in project_definitions(self.store, "p1").workflows["tiny"].steps],
             ["develop", "test", "review", "merge", "done"],
         )
+
+
+class ModelCheckTests(ApiTests):
+    """A role is not saved with a model the agent program cannot run."""
+
+    def save_with(self, model: str):
+        fields = fields_of(self.role("code_reviewer"))
+        fields["model"] = model
+        return self.request("PUT", "/projects/p1/roles/code_reviewer", json={"fields": fields})
+
+    def test_a_model_the_program_cannot_run_is_refused_with_its_reason(self) -> None:
+        self.unknown_models.add("minimax")
+
+        response = self.save_with("minimax")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("cannot run the model 'minimax'", response.json()["error"])
+        self.assertEqual(project_definitions(self.store, "p1").roles["code_reviewer"].agent.model, "claude-sonnet-5-5")
+        self.assertEqual(self.store.current_definitions("p1"), [])
+
+    def test_a_model_it_can_run_is_saved_after_asking(self) -> None:
+        self.assertEqual(self.save_with("claude-opus-5-5").status_code, 200)
+        self.assertEqual(self.asked, [("claude_code", "claude-opus-5-5")])
+
+    def test_it_is_not_asked_again_when_the_model_did_not_change(self) -> None:
+        self.save_with("claude-opus-5-5")
+        self.asked.clear()
+
+        fields = fields_of(self.role("code_reviewer"))
+        fields["timeout_minutes"] = 25
+        response = self.request("PUT", "/projects/p1/roles/code_reviewer", json={"fields": fields})
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(self.asked, [])
+
+    def test_no_model_means_the_projects_default_and_nothing_to_ask(self) -> None:
+        self.assertEqual(self.save_with("").status_code, 200)
+        self.assertEqual(self.asked, [])
+
+    def test_the_terminal_command_asks_too(self) -> None:
+        self.unknown_models.add("minimax")
+        path = Path(self._temp.name) / "role.toml"
+        path.write_text(reviewer_on("minimax"), encoding="utf-8")
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = main(["role", "set", "p1", "--file", str(path), "--db", str(self.db_path)])
+
+        self.assertNotEqual(code, 0)
+        self.assertIn("cannot run the model 'minimax'", out.getvalue() + err.getvalue())
+
+
+class ModelCheckProgramTests(unittest.TestCase):
+    """What is asked of the agent program, and how its answer is read."""
+
+    def answer(self, stdout: str, *, found: bool = True):
+        from foreman import model_check
+
+        done = mock.Mock(stdout=stdout)
+        with (
+            mock.patch.object(model_check.shutil, "which", return_value="/bin/claude" if found else None),
+            mock.patch.object(model_check.subprocess, "run", return_value=done) as run,
+            mock.patch.dict(model_check.os.environ, {}, clear=False),
+        ):
+            model_check.os.environ.pop(model_check.SWITCH, None)
+            return model_check.check_model("claude_code", "minimax"), run
+
+    def test_the_programs_refusal_is_passed_on_in_its_words(self) -> None:
+        problem, run = self.answer('{"is_error": true, "result": "It may not exist or you may not have access to it."}')
+
+        self.assertIn("cannot run the model 'minimax'", problem)
+        self.assertIn("It may not exist or you may not have access to it.", problem)
+        command = run.call_args.args[0]
+        self.assertEqual(command[:3], ["/bin/claude", "--model", "minimax"])
+        # It is asked one question and given no tools to answer it with.
+        self.assertEqual(command[command.index("--tools") + 1], "")
+
+    def test_an_answer_is_no_problem(self) -> None:
+        self.assertIsNone(self.answer('{"is_error": false, "result": "ok"}')[0])
+
+    def test_what_cannot_be_asked_or_read_refuses_nothing(self) -> None:
+        self.assertIsNone(self.answer("not json")[0])
+        problem, run = self.answer("{}", found=False)
+        self.assertIsNone(problem)
+        run.assert_not_called()
+
+    def test_another_backend_is_not_asked(self) -> None:
+        from foreman import model_check
+
+        with mock.patch.object(model_check.subprocess, "run") as run:
+            self.assertIsNone(model_check.check_model("codex", "o3"))
+        run.assert_not_called()
 
