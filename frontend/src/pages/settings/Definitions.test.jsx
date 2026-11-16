@@ -251,8 +251,11 @@ describe("Editing a workflow's steps", () => {
     expect(within(dialog).getByLabelText("Name of step 2")).toHaveValue("Test");
     expect(within(dialog).getByLabelText("Who does Test")).toHaveValue("_builtin:run_tests");
     const fails = within(dialog).getByLabelText("Test: when the tests fail, go to");
-    expect(within(fails).getByRole("option", { selected: true })).toHaveTextContent("Develop");
-    expect(within(dialog).getByLabelText("Test: when the tests fail, with its output")).toBeChecked();
+    // A route names the numbered step it goes to; the first step is where a task starts.
+    expect(within(fails).getByRole("option", { selected: true })).toHaveTextContent("go to 1 · Develop");
+    expect(steps[0]).toHaveTextContent("start");
+    expect(steps[1]).not.toHaveTextContent("start");
+    expect(within(dialog).getByLabelText("Test: when the tests fail, tell the next step what this step said")).toBeChecked();
     // The last step ends the workflow: nothing follows it.
     expect(within(dialog).queryByLabelText(/^Done: when/)).toBeNull();
   });
@@ -262,7 +265,7 @@ describe("Editing a workflow's steps", () => {
     fetchImpl.routes[`PUT ${WORKFLOW_URL}/development`] = definitionsPayload();
     fireEvent.click(within(dialog).getByRole("button", { name: "Remove Review" }));
     const passes = within(dialog).getByLabelText("Test: when the tests pass, go to");
-    const gate = within(passes).getByRole("option", { name: "Merge approval" });
+    const gate = within(passes).getByRole("option", { name: "go to 3 · Merge approval" });
     fireEvent.change(passes, { target: { value: gate.value } });
     fireEvent.change(within(dialog).getByLabelText("Name of step 1"), { target: { value: "Build" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
@@ -286,12 +289,19 @@ describe("Editing a workflow's steps", () => {
 
   it("moves a step and adds one", async () => {
     const { dialog } = await openSteps();
-    fireEvent.click(within(dialog).getByRole("button", { name: "Move Review earlier" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Move Review up" }));
     expect(within(dialog).getByLabelText("Name of step 2")).toHaveValue("Review");
-    expect(within(dialog).getByRole("button", { name: "Move Develop earlier" })).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "Move Develop up" })).toBeDisabled();
     fireEvent.click(within(dialog).getByRole("button", { name: "Add a step" }));
-    expect(within(dialog).getByLabelText("Name of step 7")).toHaveValue("");
-    expect(within(dialog).getByLabelText("Who does step 7")).toHaveValue("developer");
+    // It goes in before the step that marks the task done, and joins the sequence:
+    // the step before it now leads to it, and it leads to Done.
+    expect(within(dialog).getByLabelText("Name of step 6")).toHaveValue("");
+    expect(within(dialog).getByLabelText("Who does step 6")).toHaveValue("developer");
+    expect(within(dialog).getByLabelText("Name of step 7")).toHaveValue("Done");
+    const merged = within(dialog).getByLabelText("Merge: when it merges, go to");
+    expect(within(merged).getByRole("option", { selected: true })).toHaveTextContent("go to 6 · unnamed step");
+    const added = within(dialog).getByLabelText("step 6: when it says it is done, go to");
+    expect(within(added).getByRole("option", { selected: true })).toHaveTextContent("go to 7 · Done");
   });
 
   it("refuses two steps with the same name before asking the API", async () => {
