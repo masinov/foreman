@@ -555,7 +555,16 @@ describe("Overrides for this task", () => {
     const { section } = await overrides();
     expect(within(section).queryByLabelText(/plan approval/i)).toBeNull();
     expect(within(section).getByLabelText("Who decides merge approval")).toHaveValue("");
-    expect(within(section).getByLabelText("Model for develop")).toHaveValue("");
+    // A model is chosen from the ones the project has configured, not typed.
+    const develop = within(section).getByLabelText("Model for develop");
+    expect(develop.tagName).toBe("SELECT");
+    expect(develop).toHaveValue("");
+    await within(develop).findByRole("option", { name: "claude-opus-5-5" });
+    expect(within(develop).getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "No override",
+      "claude-sonnet-5-5",
+      "claude-opus-5-5",
+    ]);
     expect(within(section).getByLabelText("Model for review")).toBeInTheDocument();
     expect(within(section).queryByLabelText("Model for test")).toBeNull();
   });
@@ -564,14 +573,15 @@ describe("Overrides for this task", () => {
     const task = taskDetail({ executor_overrides: { ladder_start: 1, policy: { notification: "all" } } });
     const { section, fetchImpl } = await overrides(task);
     fireEvent.change(within(section).getByLabelText("Who decides merge approval"), { target: { value: "auto" } });
-    fireEvent.change(within(section).getByLabelText("Model for develop"), { target: { value: " opus-5-5 " } });
+    await within(within(section).getByLabelText("Model for develop")).findByRole("option", { name: "claude-opus-5-5" });
+    fireEvent.change(within(section).getByLabelText("Model for develop"), { target: { value: "claude-opus-5-5" } });
     fireEvent.click(within(section).getByRole("button", { name: "Save overrides" }));
     await waitFor(() => expect(calls(fetchImpl, "PATCH", PATCH)).toHaveLength(1));
     expect(calls(fetchImpl, "PATCH", PATCH)[0].body).toEqual({
       executor_overrides: {
         ladder_start: 1,
         policy: { notification: "all", merge_approval: "auto" },
-        models: { develop: "opus-5-5" },
+        models: { develop: "claude-opus-5-5" },
       },
     });
     await waitFor(() => expect(taskReads(fetchImpl)).toBeGreaterThan(1));
@@ -596,7 +606,8 @@ describe("Overrides for this task", () => {
     const routes = taskRoutes();
     routes[`PATCH ${PATCH}`] = reply(400, { error: "Unknown workflow step 'develop' in executor_overrides.models.", code: "validation_error" });
     const { section } = await overrides(taskDetail(), routes);
-    fireEvent.change(within(section).getByLabelText("Model for develop"), { target: { value: "x" } });
+    await within(within(section).getByLabelText("Model for develop")).findByRole("option", { name: "claude-opus-5-5" });
+    fireEvent.change(within(section).getByLabelText("Model for develop"), { target: { value: "claude-opus-5-5" } });
     fireEvent.click(within(section).getByRole("button", { name: "Save overrides" }));
     expect(await within(section).findByRole("alert")).toHaveTextContent("Unknown workflow step 'develop' in executor_overrides.models.");
   });
