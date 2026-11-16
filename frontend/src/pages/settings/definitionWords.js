@@ -59,8 +59,8 @@ export function outcomeWords(role, outcome) {
 }
 
 export const GATE_POLICY = {
-  merge_approval: "the project's “Approve merges” is a person",
-  plan_approval: "the project's “Approve plans” is a person",
+  merge_approval: "“Approve merges” is a person",
+  plan_approval: "“Approve plans” is a person",
 };
 
 /** An id from a name: lower case, underscores, starting with a letter. */

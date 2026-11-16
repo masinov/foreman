@@ -240,21 +240,16 @@
   line-height: var(--line-height-tight);
 }
 
-.steps-editor__start {
-  color: var(--color-text-quiet);
-  font-size: var(--font-size-table-header);
-}
-
 .steps-editor__moves {
   display: flex;
   gap: var(--space-1);
 }
 
-/* One way a step can end: the words, the step that follows, and whether
-   what was said goes with it, in the same three columns on every line. */
+/* One way a step can end: the words and where the task goes, in the same two
+   columns on every line. */
 .steps-editor__then {
   display: grid;
-  grid-template-columns: var(--steps-then-words) var(--steps-then-step) minmax(0, 1fr);
+  grid-template-columns: var(--steps-then-words) minmax(0, var(--steps-then-step));
   align-items: center;
   gap: var(--space-1) var(--space-2);
   padding-left: calc(var(--steps-number) + var(--space-2));
@@ -265,10 +260,6 @@
   display: contents;
 }
 
-/* A row with no tick after it: its choice may use the rest of the line. */
-.steps-editor__then--wide select {
-  grid-column: 2 / 4;
-}
 
 .definition__nowrap {
   white-space: nowrap;
