@@ -121,7 +121,8 @@ try {
         returnByValue: true,
         expression: `(() => {
           const l = [...document.querySelectorAll('label')].find((e) => e.textContent.trim().startsWith(${JSON.stringify(label)}));
-          const f = l && (document.getElementById(l.htmlFor) || l.querySelector('input, select, textarea'));
+          const f = (l && (document.getElementById(l.htmlFor) || l.querySelector('input, select, textarea')))
+            || [...document.querySelectorAll('input, select, textarea')].find((e) => (e.getAttribute('aria-label') || '').startsWith(${JSON.stringify(label)}));
           if (!f) return 'no field';
           f.focus();
           if (f.tagName === 'SELECT') {
