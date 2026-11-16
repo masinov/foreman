@@ -36,3 +36,5 @@ Filename format:
 | ADR-0021 | The Backlog Is A Place, Not A Sprint | accepted |
 | ADR-0022 | The Manager Proposes, A Person Confirms | accepted |
 | ADR-0023 | Agent Sandbox, First Cut | accepted |
+| ADR-0024 | A Project's Own Roles And Workflows Live In The Database | accepted |
+| ADR-0025 | The Engine Finishes A Sprint Only In An Autonomous Project | accepted |
