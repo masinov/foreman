@@ -20,7 +20,8 @@ work is coming.
 
 ## Decision
 
-The owner decided on 2026-11-16: the engine finishes a sprint only where the
+Decided on 2026-11-16 by Claude, who drives the finish plan; the owner has
+not yet confirmed it. The engine finishes a sprint only where the
 project's autonomy level is autonomous.
 
 1. **Autonomous.** A sprint whose tasks are all `done` or `cancelled` is

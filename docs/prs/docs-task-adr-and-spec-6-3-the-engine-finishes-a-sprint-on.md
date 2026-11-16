@@ -2,8 +2,8 @@
 
 ## Summary
 
-Sprint 60b. Records the owner's decision of 2026-11-16 before the code
-changes: the engine finishes a sprint only in an autonomous project.
+Sprint 60b. Records the decision of 2026-11-16 (made by Claude, who drives the
+finish plan; the owner has not yet confirmed it) before the code changes: the engine finishes a sprint only in an autonomous project.
 
 ## Scope
 
