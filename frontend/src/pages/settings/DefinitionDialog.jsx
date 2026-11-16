@@ -85,7 +85,6 @@ export function DefinitionDialog({
     <Dialog
       open={open}
       title={isNew ? `New ${kind}` : definition.name}
-      description={isNew ? `It starts as a copy of ${copyOf}.` : undefined}
       onClose={onClose}
       className="dialog--wide"
       footer={

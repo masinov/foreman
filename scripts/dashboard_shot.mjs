@@ -12,8 +12,12 @@
 //                          that accessible name or text (or starting with it)
 //   hover:<name>           move the pointer over it
 //   type:<label>=<value>   type into the field with that label
+//   set:<label>=<value>    replace what the field holds
+//   select:<label>=<text>  choose the option with that text
 //   wait:<ms>
 //
+// `--text` also prints what the page says after the steps (the open dialog,
+// or the page), which is how a control is checked without reading a picture.
 // `--scale=3` magnifies, which is how alignment is checked. Use it against a
 // copy of the database (`sqlite3 .foreman.db ".backup copy.db"`, then
 // `foreman dashboard --port 8081 --db copy.db`) when a step would change
@@ -74,7 +78,9 @@ const send = (method, params = {}) =>
   });
 
 const FIND = `(text) => {
-  const all = [...document.querySelectorAll('button, a, [role=menuitem], [role=tab], summary, label')];
+  const layers = [...document.querySelectorAll('[role=dialog], [role=menu]')];
+  const within = layers.length ? layers[layers.length - 1] : document;
+  const all = [...within.querySelectorAll('button, a, [role=menuitem], [role=tab], summary, label')];
   const name = (el) => (el.getAttribute('aria-label') || el.textContent || '').trim().replace(/\\s+/g, ' ');
   const el = all.find((e) => name(e) === text) || all.find((e) => name(e).startsWith(text));
   if (!el) return null;
@@ -108,6 +114,34 @@ try {
       await send("Input.dispatchMouseEvent", { type: "mousePressed", x: p.x, y: p.y, button: "left", clickCount: 1 });
       await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: p.x, y: p.y, button: "left", clickCount: 1 });
       await sleep(500);
+    } else if (kind === "set" || kind === "select") {
+      const [label, text] = value.split("=");
+      const { result } = await send("Runtime.evaluate", {
+        returnByValue: true,
+        expression: `(() => {
+          const l = [...document.querySelectorAll('label')].find((e) => e.textContent.trim().startsWith(${JSON.stringify(label)}));
+          const f = l && (document.getElementById(l.htmlFor) || l.querySelector('input, select, textarea'));
+          if (!f) return 'no field';
+          f.focus();
+          if (f.tagName === 'SELECT') {
+            const o = [...f.options].find((e) => e.textContent.trim() === ${JSON.stringify(text)} || e.value === ${JSON.stringify(text)});
+            if (!o) return 'no option';
+            const set = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set;
+            set.call(f, o.value);
+            f.dispatchEvent(new Event('change', { bubbles: true }));
+            return 'ok';
+          }
+          f.select();
+          return 'ok';
+        })()`,
+      });
+      if (result?.value !== "ok") throw new Error(`${step}: ${result?.value}`);
+      if (kind === "set") {
+        await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Delete", code: "Delete", windowsVirtualKeyCode: 46 });
+        await send("Input.dispatchKeyEvent", { type: "keyUp", key: "Delete", code: "Delete", windowsVirtualKeyCode: 46 });
+        if (text) await send("Input.insertText", { text });
+      }
+      await sleep(200);
     } else if (kind === "type") {
       const [label, text] = value.split("=");
       await send("Runtime.evaluate", {
@@ -116,6 +150,19 @@ try {
       await send("Input.insertText", { text });
       await sleep(200);
     } else throw new Error(`Unknown step ${step}`);
+  }
+  if (args.includes("--text")) {
+    const { result } = await send("Runtime.evaluate", {
+      returnByValue: true,
+      expression: `(() => {
+        const say = (el) => el.innerText.replace(/\\n{2,}/g, '\\n').trim();
+        const dialog = document.querySelector('[role=dialog], [role=menu]');
+        const notices = [...document.querySelectorAll('[role=alert], [role=status], .notice')].map(say).filter(Boolean);
+        return (notices.length ? 'NOTICES: ' + notices.join(' | ') + '\\n' : '')
+          + (dialog ? 'DIALOG: ' + say(dialog) : 'PAGE: ' + say(document.querySelector('main') || document.body)).slice(0, 1500);
+      })()`,
+    });
+    console.log(result?.value ?? "");
   }
   const shot = await send("Page.captureScreenshot", { format: "png" });
   writeFileSync(out, Buffer.from(shot.data, "base64"));

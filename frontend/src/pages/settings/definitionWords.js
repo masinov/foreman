@@ -36,7 +36,12 @@ export const originWords = (projectId) => (projectId ? ORIGIN : DEFAULT_ORIGIN);
 
 const OUTCOME = {
   "_builtin:run_tests": { success: "the tests pass", failure: "the tests fail" },
-  "_builtin:merge": { success: "it merges", conflict: "there is a conflict", failure: "the merge fails" },
+  "_builtin:merge": {
+    success: "it merges",
+    conflict: "there is a conflict",
+    failure: "the merge fails",
+    updated: "the branch was behind and was updated",
+  },
   "_builtin:human_gate": { approve: "the person approves", deny: "the person sends it back", steer: "the person steers" },
   "_builtin:mark_done": { success: "it is marked done" },
   agent: {

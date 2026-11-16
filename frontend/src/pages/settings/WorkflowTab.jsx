@@ -10,6 +10,7 @@ import { Table } from "../../ui/Table";
 import { ChangeWorkflowDialog } from "./ChangeWorkflowDialog";
 import { ORIGIN } from "./definitionWords";
 import { decider } from "./settingsWords";
+import { BLANK, StartFrom } from "./StartFrom";
 import { WorkflowEditor } from "./WorkflowEditor";
 import { REQUIREMENT_SOURCES, stepRows } from "./workflowWords";
 
@@ -99,8 +100,9 @@ export function WorkflowTab({ projectId }) {
     getProjectDefinitions(client, projectId, options),
   );
   const [changing, setChanging] = useState(false);
-  // null, "edit" or "new": the step editor, on this workflow or on a copy of it.
+  // null, or the step editor: `{ id }` on a workflow, `{ id, isNew }` on a new one started from it.
   const [editing, setEditing] = useState(null);
+  const [starting, setStarting] = useState(false);
 
   const error = workflow.error || settings.error;
   if (error && !(workflow.data && settings.data)) {
@@ -120,6 +122,11 @@ export function WorkflowTab({ projectId }) {
   };
   const rows = stepRows(definition, { decidedBy, defaultBranch: settings.data.default_branch });
   const own = definitions.data?.workflows.find((entry) => entry.id === definition.id) ?? null;
+  const edited = !editing
+    ? null
+    : editing.id === BLANK
+      ? definitions.data?.blank.workflow
+      : (definitions.data?.workflows.find((entry) => entry.id === editing.id) ?? null);
   const reloadAll = () => {
     workflow.reload();
     settings.reload();
@@ -139,10 +146,10 @@ export function WorkflowTab({ projectId }) {
           note={ORIGIN[own?.origin] || undefined}
           actions={
             <>
-              <Button disabled={!own} onClick={() => setEditing("edit")}>
+              <Button disabled={!own} onClick={() => setEditing({ id: definition.id })}>
                 Edit steps
               </Button>
-              <Button disabled={!own} onClick={() => setEditing("new")}>
+              <Button disabled={!definitions.data} onClick={() => setStarting(true)}>
                 New workflow
               </Button>
               <Button onClick={() => setChanging(true)}>Use another workflow</Button>
@@ -178,11 +185,21 @@ export function WorkflowTab({ projectId }) {
           reloadAll();
         }}
       />
+      <StartFrom
+        open={starting}
+        kind="workflow"
+        items={definitions.data?.workflows ?? []}
+        onClose={() => setStarting(false)}
+        onChosen={(id) => {
+          setStarting(false);
+          setEditing({ id, isNew: true });
+        }}
+      />
       <WorkflowEditor
-        open={Boolean(editing && own)}
+        open={Boolean(edited)}
         projectId={projectId}
-        workflow={own}
-        isNew={editing === "new"}
+        workflow={edited}
+        isNew={Boolean(editing?.isNew)}
         vocabulary={definitions.data?.vocabulary}
         onClose={() => setEditing(null)}
         onSaved={() => {

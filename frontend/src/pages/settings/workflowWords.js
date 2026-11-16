@@ -29,7 +29,12 @@ const OUTCOMES = {
     error: "it fails to run",
   },
   run_tests: { success: "the tests pass", failure: "the tests fail" },
-  merge: { success: "the merge succeeds", conflict: "the merge conflicts", failure: "the merge fails" },
+  merge: {
+    success: "the merge succeeds",
+    conflict: "the merge conflicts",
+    failure: "the merge fails",
+    updated: "the branch was behind and was updated",
+  },
   human_gate: { approve: "approved", deny: "denied", steer: "sent back" },
   default: { success: "it succeeds", failure: "it fails", done: "it is done" },
 };
