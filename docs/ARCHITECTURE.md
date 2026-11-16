@@ -622,14 +622,22 @@ again 300 ms after the last event about the task. Overview also holds
 `executor_overrides` (who decides at the workflow's gates, a model per agent
 step), keeping the keys the page does not edit.
 
-The manager side bar (`pages/manager/`) belongs to the shell, not to a page:
-`App` keeps it outside the keyed page, so an open conversation and a reply
-being written survive moving between project, sprint and task. Open or closed
-is kept in `localStorage` (`app/manager.js`). The project comes from the route
+The side bar belongs to the shell, not to a page. On a project's pages and a
+sprint it is the manager's (`pages/manager/`); on a task it is the task's
+agents' (`pages/task/AgentPanel.jsx`, ADR-0029): the steps oldest first, each
+opening onto what it said and did, a person's notes where they were said, and
+`TellAgent` at the bottom, the only place to tell an agent something. A
+running step is read again as it prints: `useLiveData` hands every event of
+the project's stream to `app/projectEvents.js`, and `useTaskPulse` turns the
+events about one task into a count that grows at most once a second.
+`App` keeps the manager outside the keyed page, so an open conversation and a
+reply being written survive moving between project and sprint. Open or closed
+is kept in `localStorage` (`app/manager.js`); a task with a step in progress
+opens the bar without being asked where it sits beside the page. The project comes from the route
 (`/projects/:id`) or from the sprint or task being shown. History is
 `GET /projects/{id}/meta/history`; a message is `POST .../meta/message`, read
 as newline-delimited JSON through `client.postLines`, with the page as
-`context` (`page`, `sprint_id`, `task_id`). The server puts that into the
+`context` (`page`, `sprint_id`). The server puts that into the
 turn's prompt (`meta_agent.describe_page_context`) and does not store it. The
 stream carries text, `tool_use`, `proposal`, `done` and `error`. A
 `proposal` line (or a `proposal_id` stored in a turn's `tool_uses`) renders

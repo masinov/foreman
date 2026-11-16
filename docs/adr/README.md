@@ -41,3 +41,4 @@ Filename format:
 | ADR-0026 | A Branch Is Current Before It Is Merged | accepted |
 | ADR-0027 | A Workflow Is Sound Before It Is Saved | accepted |
 | ADR-0028 | Foreman Starts Backlog Work, And Acceptance Is Its Permission | accepted |
+| ADR-0029 | On A Task Page The Side Bar Is The Task's Agents | accepted |

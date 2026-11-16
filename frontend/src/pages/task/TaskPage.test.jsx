@@ -524,7 +524,7 @@ describe("Overview", () => {
     expect(beside).toContainElement(screen.getByRole("heading", { name: "Overrides for this task" }));
   });
 
-  it("has no box for telling the agent something (that is on Activity) and no overrides on a finished task", async () => {
+  it("has no box for telling the agent something (that is in the side bar) and no overrides on a finished task", async () => {
     await renderTask(BASE, taskRoutes({ task: taskDetail({ status: "done", blocked_kind: null }) }));
     await screen.findByRole("region", { name: "Description" });
     expect(screen.queryByRole("form", { name: "Tell the agent" })).toBeNull();
@@ -939,29 +939,103 @@ describe("details beyond the usual", () => {
   });
 });
 
-describe("Telling a running agent something", () => {
+describe("The agent's side bar", () => {
   const working = () => [runItem("run-9", "develop", { status: "running", outcome: null, finished_at: null })];
+  const IN_PROGRESS = { status: "in_progress", blocked_kind: null };
+  const button = () => within(screen.getByRole("banner")).getByRole("button", { name: "Agent" });
+  const bar = () => screen.findByRole("complementary", { name: "Agent" });
+  const noBar = () => expect(screen.queryByRole("complementary", { name: "Agent" })).toBeNull();
 
-  async function open(runs) {
-    const routes = taskRoutes({ task: taskDetail({ status: "in_progress", blocked_kind: null }), runs });
+  beforeEach(() => window.localStorage.clear());
+
+  async function open(runs, task = IN_PROGRESS, path = BASE) {
+    const routes = taskRoutes({ task: taskDetail(task), runs });
     routes[outputUrl("run-9")] = outputPayload("run-9", "Reading the parser.");
-    const utils = await renderTask(`${BASE}/activity`, routes);
-    await screen.findByRole("table", { name: "Runs" });
-    return utils;
+    const utils = await renderTask(path, routes);
+    return { ...utils, panel: await bar() };
   }
 
-  it("is offered under the output of a step an agent is doing, and nowhere else", async () => {
-    await open(working());
-    const box = await screen.findByRole("form", { name: "Tell the agent" });
+  it("has the manager's place on a task page, closed until asked for when nothing runs", async () => {
+    await renderTask();
+    expect(within(screen.getByRole("banner")).queryByRole("button", { name: "Manager" })).toBeNull();
+    expect(button()).toHaveAttribute("aria-pressed", "false");
+    noBar();
+
+    fireEvent.click(button());
+    const panel = await bar();
+    expect(within(panel).getByRole("heading", { name: "Agent" })).toBeInTheDocument();
+    // Oldest first, and the last step an agent or the engine did is open.
+    const steps = await within(panel).findAllByRole("button", { expanded: false });
+    expect(steps.map((step) => step.textContent)).toEqual([expect.stringMatching(/^Test/)]);
+    expect(within(panel).getByRole("button", { expanded: true })).toHaveTextContent(/^ReviewApprove/);
+    expect(await within(panel).findByText("Reviewed the change.")).toBeInTheDocument();
+    expect(within(panel).queryByText("Ran 1221 tests")).toBeNull();
+
+    // Any step opens and closes.
+    fireEvent.click(steps[0]);
+    expect(await within(panel).findByText("Ran 1221 tests")).toBeInTheDocument();
+    fireEvent.click(button());
+    noBar();
+  });
+
+  it("is open without being asked while a step is in progress, on what that step is doing", async () => {
+    const routes = taskRoutes({ task: taskDetail(IN_PROGRESS), runs: working() });
+    // The step's own line says how it started; a person's words have their own place.
+    routes[outputUrl("run-9")] = outputPayload("run-9", "Reading the parser.", {
+      transcript: [
+        { at: "2026-11-11T08:00:00Z", kind: "workflow.step_started", text: "", data: { step: "develop" } },
+        { at: "2026-11-11T08:00:01Z", kind: "agent.started", text: "", data: { command: "claude --print" } },
+        { at: "2026-11-11T08:00:02Z", kind: "human.message", text: "", data: { text: "Mind the cache." } },
+        { at: "2026-11-11T08:00:03Z", kind: "agent.message", text: "", data: { phase: "assistant", text: "Reading the parser." } },
+      ],
+    });
+    await renderTask(BASE, routes);
+    const panel = await bar();
+    expect(panel).toHaveTextContent("Develop is running");
+    expect(await within(panel).findByText("Reading the parser.")).toBeInTheDocument();
+    const story = within(panel).getByRole("list", { name: "What develop did" });
+    expect(within(story).getAllByRole("listitem")).toHaveLength(1);
+    expect(button()).toHaveAttribute("aria-pressed", "true");
+    // Closed by the person, it stays closed on this task.
+    fireEvent.click(button());
+    noBar();
+  });
+
+  it("reads a running step again as it prints", async () => {
+    const { fetchImpl, panel } = await open(working());
+    await within(panel).findByText("Reading the parser.");
+    const reads = () => calls(fetchImpl, "GET", "/api/v1/runs/run-9/output").length;
+    const before = reads();
+    fetchImpl.routes[outputUrl("run-9")] = outputPayload("run-9", "Editing the parser.");
+    const source = fetchImpl.EventSource.sources.find((entry) => entry.url === "/api/v1/projects/foreman/stream");
+    source.emit({ type: "event", event: { id: "e1", event_type: "agent.message", task_id: "another-task" } });
+    source.emit({ type: "event", event: { id: "e2", event_type: "agent.message", task_id: TASK_ID } });
+    source.emit({ type: "event", event: { id: "e3", event_type: "agent.command", task_id: TASK_ID } });
+    expect(await within(panel).findByText("Editing the parser.", {}, { timeout: 3000 })).toBeInTheDocument();
+    expect(reads()).toBe(before + 1);
+  });
+
+  it("offers to interrupt a step an agent is doing, or to leave the note for its next step", async () => {
+    const { panel } = await open(working());
+    const box = within(panel).getByRole("form", { name: "Tell the agent" });
     expect(within(box).getByLabelText("Tell the agent (Develop is running)")).toBeInTheDocument();
     expect(within(box).getByRole("button", { name: "Interrupt and tell it now" })).toBeInTheDocument();
     expect(within(box).getByRole("button", { name: "Save for its next step" })).toBeInTheDocument();
+    // It is the only such box on the page, on every tab.
+    expect(screen.getAllByRole("form", { name: "Tell the agent" })).toHaveLength(1);
+  });
+
+  it("is the only box for it on the Activity tab too", async () => {
+    await open(working(), IN_PROGRESS, `${BASE}/activity`);
+    await screen.findByRole("table", { name: "Runs" });
+    expect(screen.getAllByRole("form", { name: "Tell the agent" })).toHaveLength(1);
+    expect(screen.queryByRole("list", { name: "Told the agent" })).toBeNull();
   });
 
   it("with no step in progress, a note can only be saved for the next one", async () => {
-    const { fetchImpl } = await open([runItem("run-9", "develop")]);
+    const { fetchImpl, panel } = await open([runItem("run-9", "develop")]);
     fetchImpl.routes[post("messages")] = { status: "recorded", message: "Recorded. The next agent step for this task will read it." };
-    const box = await screen.findByRole("form", { name: "Tell the agent" });
+    const box = within(panel).getByRole("form", { name: "Tell the agent" });
     expect(within(box).queryByRole("button", { name: "Interrupt and tell it now" })).toBeNull();
     fireEvent.click(within(box).getByRole("button", { name: "Save for the next step" }));
     expect(await within(box).findByRole("alert")).toHaveTextContent("Write what to tell it first.");
@@ -971,36 +1045,58 @@ describe("Telling a running agent something", () => {
     expect(calls(fetchImpl, "POST", `/api/v1/tasks/${TASK_ID}/messages`)[0].body).toEqual({ text: "Count skipped tests." });
   });
 
-  it("is not offered on a finished task", async () => {
-    const routes = taskRoutes({ task: taskDetail({ status: "done", blocked_kind: null }), runs: [runItem("run-9", "develop")] });
-    routes[outputUrl("run-9")] = outputPayload("run-9", "Done.");
-    await renderTask(`${BASE}/activity`, routes);
-    await screen.findByRole("table", { name: "Runs" });
-    expect(screen.queryByRole("form", { name: "Tell the agent" })).toBeNull();
+  it("takes a note before any agent has worked on the task", async () => {
+    await renderTask(BASE, taskRoutes({ task: taskDetail({ status: "todo", blocked_kind: null }), runs: [] }));
+    fireEvent.click(button());
+    const panel = await bar();
+    expect(await within(panel).findByText("No agent has worked on this task yet.")).toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: "Save for the next step" })).toBeInTheDocument();
   });
 
-  it("lists what the agent was told, newest first, and whether it was read", async () => {
-    const task = taskDetail({
-      status: "in_progress",
-      blocked_kind: null,
-      guidance: [
-        { event_id: "e1", text: "Earlier advice.", recorded_at: "2026-11-10T09:00:00Z", delivered: true, delivered_at: "2026-11-10T10:00:00Z", delivered_role: "developer", delivered_step: "develop" },
-        { event_id: "e2", text: "Newer advice.", recorded_at: "2026-11-11T09:00:00Z", delivered: false, delivered_at: null, delivered_role: null, delivered_step: null },
+  it("leaves out the runs that only record that the task was filed or planned", async () => {
+    const runs = [runItem("run-9", "develop"), runItem("run-file", "file", { backend: "engine", outcome: "file" })];
+    const { panel } = await open(runs);
+    const thread = within(panel).getByRole("list", { name: "Steps and what was said" });
+    expect(Array.from(thread.children).map((item) => item.textContent)).toEqual([expect.stringMatching(/^DevelopDone/)]);
+  });
+
+  it("shows a finished task's steps and takes no more notes", async () => {
+    const routes = taskRoutes({ task: taskDetail({ status: "done", blocked_kind: null }), runs: [runItem("run-9", "develop")] });
+    routes[outputUrl("run-9")] = outputPayload("run-9", "Done.");
+    await renderTask(BASE, routes);
+    fireEvent.click(button());
+    const panel = await bar();
+    expect(await within(panel).findByText("Done.")).toBeInTheDocument();
+    expect(within(panel).queryByRole("form", { name: "Tell the agent" })).toBeNull();
+  });
+
+  it("shows what a person said where it was said, and whether it was read", async () => {
+    const { panel } = await open(
+      [
+        runItem("run-9", "develop", { status: "running", outcome: null, finished_at: null, started_at: "2026-11-11T08:00:00Z" }),
+        runItem("run-8", "develop", { outcome: "error", started_at: "2026-11-10T09:30:00Z" }),
       ],
-    });
-    const routes = taskRoutes({ task, runs: working() });
-    routes[outputUrl("run-9")] = outputPayload("run-9", "Reading the parser.");
-    await renderTask(`${BASE}/activity`, routes);
-    const items = within(await screen.findByRole("list", { name: "Told the agent" })).getAllByRole("listitem");
-    expect(items[0]).toHaveTextContent("Newer advice.");
-    expect(items[0]).toHaveTextContent("Waiting for the next agent step");
-    expect(items[1]).toHaveTextContent(/Read by the agent at develop on 10 Nov/);
+      {
+        ...IN_PROGRESS,
+        guidance: [
+          { event_id: "e1", text: "Earlier advice.", recorded_at: "2026-11-10T09:00:00Z", delivered: true, delivered_at: "2026-11-10T10:00:00Z", delivered_role: "developer", delivered_step: "develop" },
+          { event_id: "e2", text: "Newer advice.", recorded_at: "2026-11-11T09:00:00Z", delivered: false, delivered_at: null, delivered_role: null, delivered_step: null },
+        ],
+      },
+    );
+    const thread = within(panel).getByRole("list", { name: "Steps and what was said" });
+    const order = Array.from(thread.children).map((item) => item.textContent);
+    expect(order).toHaveLength(4);
+    expect(order[0]).toMatch(/Earlier advice\.Read by the agent at develop on 10 Nov/);
+    expect(order[1]).toMatch(/^DevelopError/);
+    expect(order[2]).toMatch(/^DevelopRunning/);
+    expect(order[3]).toMatch(/Newer advice\.Waiting for the next agent step/);
   });
 
   it("interrupts the step with the note and says what is happening", async () => {
-    const { fetchImpl } = await open(working());
+    const { fetchImpl, panel } = await open(working());
     fetchImpl.routes[post("steer")] = { status: "interrupting", message: "Recorded. The develop step is being interrupted and starts again with this guidance." };
-    const box = await screen.findByRole("form", { name: "Tell the agent" });
+    const box = within(panel).getByRole("form", { name: "Tell the agent" });
     fireEvent.change(within(box).getByRole("textbox"), { target: { value: " Use the existing parser. " } });
     fireEvent.click(within(box).getByRole("button", { name: "Interrupt and tell it now" }));
 
@@ -1011,9 +1107,9 @@ describe("Telling a running agent something", () => {
   });
 
   it("saves the note for the next step without interrupting", async () => {
-    const { fetchImpl } = await open(working());
+    const { fetchImpl, panel } = await open(working());
     fetchImpl.routes[post("messages")] = { status: "recorded", message: "Recorded. The next agent step for this task will read it." };
-    const box = await screen.findByRole("form", { name: "Tell the agent" });
+    const box = within(panel).getByRole("form", { name: "Tell the agent" });
     fireEvent.change(within(box).getByRole("textbox"), { target: { value: "Later is fine." } });
     fireEvent.click(within(box).getByRole("button", { name: "Save for its next step" }));
 
@@ -1022,9 +1118,9 @@ describe("Telling a running agent something", () => {
   });
 
   it("shows the refusal when there is nothing to interrupt, and asks for words first", async () => {
-    const { fetchImpl } = await open(working());
+    const { fetchImpl, panel } = await open(working());
     fetchImpl.routes[post("steer")] = reply(400, { error: "No agent is running on this task, so there is nothing to interrupt.", code: "validation_error" });
-    const box = await screen.findByRole("form", { name: "Tell the agent" });
+    const box = within(panel).getByRole("form", { name: "Tell the agent" });
     fireEvent.click(within(box).getByRole("button", { name: "Interrupt and tell it now" }));
     expect(await within(box).findByRole("alert")).toHaveTextContent("Write what to tell it first.");
     fireEvent.change(within(box).getByRole("textbox"), { target: { value: "Stop." } });
@@ -1032,4 +1128,3 @@ describe("Telling a running agent something", () => {
     expect(await within(box).findByRole("alert")).toHaveTextContent("nothing to interrupt");
   });
 });
-

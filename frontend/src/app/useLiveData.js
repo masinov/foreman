@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 import { useDataRefresh } from "../api/ApiProvider";
 import { segment } from "../api/client";
 import { useEventStream } from "../api/useEventStream";
+import { publishProjectEvent } from "./projectEvents";
 
 // What an agent or a test run prints while it works. These arrive many times
 // a second and change nothing a list or a count shows; the task page follows
@@ -50,6 +51,7 @@ export function useLiveData({ projectId, poll = false }) {
   }, [projectId]);
 
   useEventStream(projectId ? `/projects/${segment(projectId)}/stream` : null, (event) => {
+    publishProjectEvent(event);
     if (CHATTER.has(event.event_type)) return;
     const now = Date.now();
     if (now - openedAt.current < REPLAY_MS) return;

@@ -21,7 +21,7 @@ have. It is never a literal string to render.
 | `02-project-sprints.html` | Project, Sprints tab: engine, needs you, the sprint queue |
 | `03-project-backlog.html` | The backlog (now a page of its own): filed work, accepted work, plan into a sprint |
 | `04-sprint-list.html` | Sprint, list view |
-| `05-task-overview.html` | Task, Overview tab, with the manager side bar open |
+| `05-task-overview.html` | Task, Overview tab, with the manager side bar open (superseded for the side bar: on a task it is the agents', ADR-0029) |
 | `06-manager-open.html` | Project page with the manager side bar open |
 | `07-sprint-board.html` | Sprint, board view |
 | `08-project-settings-workflow.html` | Project settings, Workflow |
@@ -51,9 +51,14 @@ Workspace / Project / Sprint / Task.
 - **Task** shows the pending decision first, then four tabs: Overview,
   Changes, Checks, Activity.
 - **Manager** is one conversation per project. It is a side bar on the
-  right of every page inside a project, toggled from the same place in the
-  top bar, and it stays open as you move. It proposes changes; nothing
+  right of a project's pages and its sprints, toggled from the same place in
+  the top bar, and it stays open as you move. It proposes changes; nothing
   happens until the person confirms.
+- **Agent** is the same side bar on a task page (ADR-0029, owner
+  2026-11-17): the conversation with the agents doing that task. Its steps
+  in order, what each said and did, followed as a running step prints, what
+  a person told them, and the box to tell the agent something. It opens by
+  itself while a step is in progress.
 - **Engine** is one per project. Its state and controls are on the project
   page; below project level they are in the top bar.
 - **Needs you** is one list of four kinds of item: accept filed work,

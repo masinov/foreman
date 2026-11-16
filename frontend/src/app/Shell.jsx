@@ -13,7 +13,7 @@ import { UserMenu } from "./UserMenu";
  * The manager side bar takes its own column when `manager` is given and
  * `managerOpen`; it is outside the page, so it stays put as pages change.
  */
-export function Shell({ topBarRight = null, manager = null, managerOpen = false, children }) {
+export function Shell({ topBarRight = null, manager = null, managerOpen = false, managerLabel = "Manager", children }) {
   return (
     <div className="shell">
       <a className="skip-link" href="#main">
@@ -36,7 +36,7 @@ export function Shell({ topBarRight = null, manager = null, managerOpen = false,
           {children}
         </main>
         {manager && managerOpen ? (
-          <aside className="manager-slot" aria-label="Manager" data-open="true">
+          <aside className="manager-slot" aria-label={managerLabel} data-open="true">
             {manager}
           </aside>
         ) : null}
