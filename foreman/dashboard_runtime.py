@@ -181,8 +181,8 @@ def dashboard_security_policy(
     """Decide what a bind host is allowed to expose.
 
     A non-loopback bind needs a shared token unless the operator explicitly
-    accepts an open network; the manager chat, which runs a full-access agent
-    on the server, stays loopback-only unless explicitly allowed.
+    accepts an open network; the manager chat, whose agent session reads the
+    repository and runs foreman commands on the server, stays loopback-only unless explicitly allowed.
     """
 
     loopback = is_loopback_host(host)
@@ -201,13 +201,14 @@ def dashboard_security_policy(
     manager_enabled = loopback or allow_remote_manager
     if not manager_enabled:
         notices.append(
-            "Manager chat disabled: it runs a full-access agent session on this host and "
-            "is loopback-only unless --allow-remote-manager is passed."
+            "Manager chat disabled: its agent session reads the repository and runs foreman commands on this "
+            "host, so it is loopback-only unless --allow-remote-manager is passed."
         )
     elif not loopback:
         notices.append(
             "WARNING: the manager chat is enabled on a non-loopback bind; every token "
-            "holder can run an agent with full access to the project repositories."
+            "holder can start an agent session that reads the project repositories and runs "
+            "foreman commands on this host."
         )
     return DashboardSecurity(
         host=host,

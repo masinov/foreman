@@ -616,8 +616,8 @@ def register_dashboard(subparsers: argparse._SubParsersAction) -> None:
         dest="allow_remote_manager",
         action="store_true",
         help=(
-            "Keep the manager chat enabled on a non-loopback bind. It runs a "
-            "full-access agent session on this host; off by default off-loopback."
+            "Keep the manager chat enabled on a non-loopback bind. Its agent "
+            "session reads the repository and runs foreman commands on this host; off by default off-loopback."
         ),
     )
     set_handler(dashboard_parser, handle_dashboard, "dashboard")
