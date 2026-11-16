@@ -57,33 +57,53 @@ class TaskReads:
         return task, project
 
     @staticmethod
-    def _branch_problem(task: Task, project: Project) -> str | None:
-        """Why this task has no branch to compare, or ``None`` when it has one."""
+    def _head(task: Task, project: Project) -> tuple[str | None, str | None]:
+        """The task's head commit, or why there is none: ``(sha, problem)``.
+
+        The branch's head while the branch exists. A merged task's branch may
+        be gone; the head its completion evidence recorded is used then.
+        """
 
         if not task.branch_name:
-            return "This task has no branch yet, so there are no changes to show."
+            return None, "This task has no branch yet, so there are no changes to show."
         try:
-            if not git.branch_exists(project.repo_path, task.branch_name):
-                return f"Branch {task.branch_name} no longer exists in the repository."
             if not git.branch_exists(project.repo_path, project.default_branch):
-                return f"The default branch {project.default_branch} does not exist."
+                return None, f"The default branch {project.default_branch} does not exist."
+            if git.branch_exists(project.repo_path, task.branch_name):
+                return git.head_sha(project.repo_path, f"refs/heads/{task.branch_name}"), None
+            recorded = task.completion_evidence.head_sha if task.completion_evidence else ""
+            if recorded and git.head_sha(project.repo_path, f"{recorded}^{{commit}}"):
+                return recorded, None
+        except (OSError, git.GitError):
+            return None, "The project repository could not be read."
+        return None, f"Branch {task.branch_name} no longer exists in the repository."
+
+    def _compared(self, task: Task, project: Project) -> tuple[str, str, str | None] | str:
+        """What to compare for this task: ``(base, head, landed)``, or why not.
+
+        Before the merge it is the branch against the default branch. After
+        it, that comparison is empty, so it is the merge commit against the
+        default branch as it was just before: what the task landed.
+        """
+
+        head, problem = self._head(task, project)
+        if head is None:
+            return str(problem)
+        try:
+            landed = git.landed_as(project.repo_path, head, project.default_branch)
         except (OSError, git.GitError):
             return "The project repository could not be read."
-        return None
+        if landed:
+            return f"{landed}^1", landed, landed
+        return project.default_branch, head, None
 
     def _changes(self, task: Task, project: Project) -> tuple[list[git.FileChange], str | None]:
-        problem = self._branch_problem(task, project)
-        if problem is not None:
-            return [], problem
+        compared = self._compared(task, project)
+        if isinstance(compared, str):
+            return [], compared
+        base, head, _ = compared
         try:
-            return (
-                git.branch_changes(
-                    project.repo_path,
-                    base_branch=project.default_branch,
-                    branch_name=str(task.branch_name),
-                ),
-                None,
-            )
+            return git.branch_changes(project.repo_path, base_branch=base, branch_name=head), None
         except (OSError, git.GitError):
             return [], "Git could not compare the task branch with the default branch."
 
@@ -104,15 +124,19 @@ class TaskReads:
             for c in changes
         ]
         base = head = None
-        if reason is None and task.branch_name:
+        merged_as = None
+        compared = self._compared(task, project)
+        if reason is None and not isinstance(compared, str):
+            base_ref, head_ref, merged_as = compared
             base = CommitRef(
                 branch=project.default_branch,
-                sha=git.merge_base(project.repo_path, project.default_branch, task.branch_name),
+                sha=(
+                    git.head_sha(project.repo_path, base_ref)
+                    if merged_as
+                    else git.merge_base(project.repo_path, base_ref, head_ref)
+                ),
             )
-            head = CommitRef(
-                branch=task.branch_name,
-                sha=git.head_sha(project.repo_path, f"refs/heads/{task.branch_name}"),
-            )
+            head = CommitRef(branch=task.branch_name, sha=git.head_sha(project.repo_path, head_ref))
         return TaskChanges(
             task_id=task.id,
             files=items,
@@ -123,6 +147,7 @@ class TaskReads:
             ),
             base=base,
             head=head,
+            merged_as=merged_as,
             empty_reason=reason if not items else None,
         )
 
@@ -135,12 +160,8 @@ class TaskReads:
             raise DashboardValidationError(
                 f"{path!r} is not one of the files this task changes."
             )
-        text = git.file_diff(
-            project.repo_path,
-            base_branch=project.default_branch,
-            branch_name=str(task.branch_name),
-            change=match,
-        )
+        base_ref, head_ref, _ = self._compared(task, project)  # a match means there is a comparison
+        text = git.file_diff(project.repo_path, base_branch=base_ref, branch_name=head_ref, change=match)
         return FileDiff(
             task_id=task.id,
             path=match.path,
@@ -160,14 +181,20 @@ class TaskReads:
         events = self.store.list_events(task_id=task.id)
         runs = {run.id: run for run in self.store.list_runs(task_id=task.id)}
 
-        live_head: str | None = None
         ahead = behind = None
+        merged_as = None
         state = "no_branch"
-        if self._branch_problem(task, project) is None and task.branch_name:
-            live_head = git.head_sha(project.repo_path, f"refs/heads/{task.branch_name}")
-            ahead = git.commits_ahead(project.repo_path, task.branch_name, project.default_branch)
-            behind = git.commits_behind(project.repo_path, task.branch_name, project.default_branch)
-            state = "behind" if behind else "current"
+        live_head, _ = self._head(task, project)
+        compared = self._compared(task, project)
+        if live_head and not isinstance(compared, str):
+            merged_as = compared[2]
+            if merged_as:
+                # Merged: how far the default branch has moved since says nothing about the task.
+                state = "merged"
+            else:
+                ahead = git.commits_ahead(project.repo_path, live_head, project.default_branch)
+                behind = git.commits_behind(project.repo_path, live_head, project.default_branch)
+                state = "behind" if behind else "current"
         changes, _ = self._changes(task, project)
 
         facts = ChecksFacts(
@@ -178,6 +205,7 @@ class TaskReads:
                 ahead=ahead,
                 behind=behind,
                 state=state,  # type: ignore[arg-type]
+                merged_as=merged_as,
             ),
             size=SizeFact(
                 files=len(changes),

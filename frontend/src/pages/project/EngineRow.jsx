@@ -42,7 +42,7 @@ function EngineSentence({ engine, emptySprint }) {
       </>
     );
   }
-  return "Nothing is being worked on. Decisions you make are carried out when it starts.";
+  return "Nothing is being worked on.";
 }
 
 /**

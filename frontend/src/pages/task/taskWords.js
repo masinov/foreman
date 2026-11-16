@@ -90,8 +90,8 @@ const PEOPLE = new Set(["human", "dashboard", "cli"]);
 /** Who did a run: the model, "engine" for the engine's own steps, "a person". */
 export function runBy(run) {
   const backend = run.backend ?? run.agent_backend;
-  if (backend === "builtin" || String(run.role_id || "").startsWith(BUILTIN)) return "engine";
   if (PEOPLE.has(backend) || run.role_id === "human") return "a person";
+  if (backend === "builtin" || String(run.role_id || "").startsWith(BUILTIN)) return "engine";
   return run.model || backend || "";
 }
 
@@ -212,6 +212,9 @@ export function testsWords(tests) {
 export function branchWords(branch) {
   const target = branch?.default_branch || "the default branch";
   if (!branch || branch.state === "no_branch") return { tone: "idle", word: "No branch to compare" };
+  if (branch.state === "merged") {
+    return { tone: "passed", word: `Merged into ${target}`, sha: shortSha(branch.merged_as) };
+  }
   if (branch.state === "behind") {
     return { tone: "attention", word: `${plural(branch.behind ?? 0, "commit")} behind ${target}` };
   }

@@ -455,7 +455,9 @@ bad one is a 400 `invalid_request` envelope (ADR-0019). Paged lists take
   started; the project page's finished-sprints list). Without parameters it
   returns every sprint as before. The backlog is never among them.
 
-The task page reads (sprint 58) are built by `foreman/dashboard_task_reads.py`
+A merged task's changes and size are those of the commit it landed as
+(`git.landed_as`), not an empty comparison with a default branch that already
+holds it. The task page reads (sprint 58) are built by `foreman/dashboard_task_reads.py`
 over `foreman/git.py`, with typed response models in
 `foreman/dashboard/task_models.py`. All are GETs under `/api/v1`.
 

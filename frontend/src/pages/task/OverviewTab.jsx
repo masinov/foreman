@@ -99,12 +99,10 @@ function noteState(note) {
 function Guidance({ task, onSaved }) {
   const client = useApiClient();
   const fieldId = useId();
-  const noteId = useId();
   const [text, setText] = useState("");
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState(null);
   const notes = [...(task.guidance ?? [])].reverse();
-  const finished = task.status === "done" || task.status === "cancelled";
 
   async function save(event) {
     event.preventDefault();
@@ -132,9 +130,6 @@ function Guidance({ task, onSaved }) {
         <h2 className="section-heading__title" id={`${fieldId}-heading`}>
           <label htmlFor={fieldId}>Guidance for the next agent step</label>
         </h2>
-        <span className="section-heading__note" id={noteId}>
-          {finished ? "The task is finished, so no agent step will read it." : "The next agent step for this task reads it."}
-        </span>
       </div>
       <form className="guidance" onSubmit={save} noValidate>
         <textarea
@@ -142,7 +137,6 @@ function Guidance({ task, onSaved }) {
           className="field__input field__input--multiline"
           rows={3}
           placeholder="Nothing written"
-          aria-describedby={noteId}
           value={text}
           onChange={(event) => setText(event.target.value)}
         />
@@ -382,17 +376,19 @@ export function OverviewTab({ task, checks, changed }) {
     (client, options) => getProjectWorkflow(client, task.project_id, options),
     { enabled: Boolean(task.project_id) },
   );
+  // Nothing reads guidance or an override once the task is finished.
+  const finished = task.status === "done" || task.status === "cancelled";
   return (
     <div className="task-overview">
       <div className="task-overview__main">
         <Steps task={task} workflow={workflow} />
         <ChecksSummary task={task} checks={checks} />
         <Filed task={task} />
-        <Guidance task={task} onSaved={() => changed(null)} />
+        {finished ? null : <Guidance task={task} onSaved={() => changed(null)} />}
       </div>
       <aside className="task-details" aria-label="Details and overrides">
         <Details task={task} workflow={workflow} />
-        <Overrides task={task} workflow={workflow.data} onSaved={() => changed(null)} />
+        {finished ? null : <Overrides task={task} workflow={workflow.data} onSaved={() => changed(null)} />}
       </aside>
     </div>
   );

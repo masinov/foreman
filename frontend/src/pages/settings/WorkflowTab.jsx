@@ -156,7 +156,6 @@ export function WorkflowTab({ projectId }) {
         <SectionHeading
           id="workflow-finishing"
           title="What finishing requires"
-          note="A fact is measured by the engine. A claim is what an agent reported."
         />
         {definition.requirements_enforced ? null : (
           <p className="notice">The completion guard is off for this project, so a merge is not held to these.</p>

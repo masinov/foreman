@@ -60,7 +60,7 @@ const COLUMNS = [
 
 function EmptyQueue({ active, planned }) {
   if (active.length === 0 && planned.length === 0) {
-    return <p className="empty">No sprint is active or planned. Foreman has nothing to run until a sprint is planned.</p>;
+    return <p className="empty">No sprint is active or planned.</p>;
   }
   // An active sprint with nothing planned after it needs no line of its own:
   // the queue shows one sprint, and that is the whole truth.
@@ -161,7 +161,6 @@ export function SprintsTab({ projectId, revision }) {
         <SectionHeading
           id="queue-title"
           title="Active and planned"
-          note="In the order they will run."
           actions={
             <Button icon="plus" onClick={() => setCreating(true)}>
               New sprint

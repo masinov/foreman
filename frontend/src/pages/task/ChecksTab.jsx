@@ -42,7 +42,7 @@ function factRows(facts) {
       check: "Branch",
       tone: branch.tone,
       result: branch.word,
-      detail: ahead ? `${ahead} commit${ahead === 1 ? "" : "s"} on the branch` : "",
+      detail: branch.sha ? <Mono>{branch.sha}</Mono> : ahead ? `${ahead} commit${ahead === 1 ? "" : "s"} on the branch` : "",
     },
     { key: "size", check: "Size of change", tone: "idle", result: sizeWords(facts.size), detail: "" },
   ];
@@ -100,14 +100,14 @@ export function ChecksTab({ checks }) {
   return (
     <div className="task-checks">
       <section className="task-section" aria-labelledby="task-facts">
-        <SectionHeading id="task-facts" title="Measured by the engine" note="Facts. The engine ran or read these itself." />
+        <SectionHeading id="task-facts" title="Measured by the engine" />
         <Table caption="Measured by the engine" columns={COLUMNS} rows={factRows(data.facts)} rowKey={(row) => row.key} />
       </section>
       <section className="task-section" aria-labelledby="task-claims">
         <SectionHeading
           id="task-claims"
           title="Reported by an agent"
-          note={`Claims. Read them as an opinion on the facts above.${judged ? ` Criteria judged by ${data.claims.judged_by}.` : ""}`}
+          note={judged ? `Criteria judged by ${data.claims.judged_by}` : undefined}
         />
         {claims.length ? (
           <Table caption="Reported by an agent" columns={COLUMNS} rows={claims} rowKey={(row) => row.key} />

@@ -76,7 +76,7 @@ export function PolicyRules({ rules, onChange, describedBy }) {
   return (
     <div className="rules" aria-describedby={describedBy}>
       {entries.length === 0 && !adding ? (
-        <span className="rules__none">None. A rule can send one kind of task to a different decider.</span>
+        <span className="rules__none">None</span>
       ) : null}
       {entries.length > 0 ? (
         <ul className="rules__list" aria-label="Exception rules">

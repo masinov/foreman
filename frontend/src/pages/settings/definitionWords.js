@@ -10,7 +10,7 @@ const sentence = (words) => {
 /** A role's tools in a few words. */
 export function toolsWords(tools) {
   if (tools.every) return "Every tool";
-  if (!tools.chosen.length) return "No tool";
+  if (!tools.chosen.length) return "No tools";
   return tools.chosen.join(", ");
 }
 

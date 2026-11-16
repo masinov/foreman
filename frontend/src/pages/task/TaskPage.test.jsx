@@ -7,6 +7,7 @@ import {
   changesPayload,
   CHECKS_URL,
   checksPayload,
+  COMMIT,
   diffPayload,
   diffUrl,
   outputPayload,
@@ -468,6 +469,13 @@ describe("Overview", () => {
     expect(beside).toContainElement(screen.getByRole("heading", { name: "Overrides for this task" }));
   });
 
+  it("offers no guidance and no overrides on a finished task", async () => {
+    await renderTask(BASE, taskRoutes({ task: taskDetail({ status: "done", blocked_kind: null }) }));
+    await screen.findByRole("region", { name: "Description" });
+    expect(screen.queryByRole("textbox", { name: "Guidance for the next agent step" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Overrides for this task" })).toBeNull();
+  });
+
   it("saves guidance through the messages endpoint and shows whether the agent read it", async () => {
     const task = taskDetail({
       guidance: [
@@ -511,6 +519,24 @@ describe("Overview", () => {
     const { fetchImpl } = await renderTask();
     await waitFor(() => expect(fetchImpl.EventSource.sources.length).toBeGreaterThan(0));
     expect(fetchImpl.EventSource.sources.map((entry) => entry.url)).toEqual(["/api/v1/projects/foreman/stream"]);
+  });
+});
+
+describe("a merged task", () => {
+  it("says it is merged and as which commit, not how far the default branch has moved", async () => {
+    const checks = checksPayload();
+    checks.facts.branch = { name: "foreman/for-14", default_branch: "main", ahead: null, behind: null, state: "merged", merged_as: COMMIT };
+    await renderTask(`${BASE}/checks`, taskRoutes({ task: taskDetail({ status: "done", blocked_kind: null }), checks }));
+    const facts = (await screen.findByRole("heading", { name: "Measured by the engine" })).closest("section");
+    expect(facts).toHaveTextContent("Merged into main");
+    expect(facts).toHaveTextContent(COMMIT.slice(0, 7));
+    expect(facts).not.toHaveTextContent("behind");
+  });
+
+  it("heads its changes with the commit it landed as", async () => {
+    const changes = changesPayload({ merged_as: COMMIT, head: { branch: "foreman/for-14", sha: COMMIT } });
+    await renderTask(`${BASE}/changes`, taskRoutes({ task: taskDetail({ status: "done", blocked_kind: null }), changes }));
+    expect(await screen.findByText(/Merged into main as/)).toBeInTheDocument();
   });
 });
 
@@ -711,7 +737,7 @@ describe("Checks", () => {
     expect(claims).toHaveTextContent("Clean change, tests cover it.");
     expect(claims).toHaveTextContent("Partly met");
     expect(claims).not.toHaveTextContent("Size of change");
-    expect(screen.getByText("Claims. Read them as an opinion on the facts above. Criteria judged by haiku-5-5.")).toBeInTheDocument();
+    expect(screen.getByText("Criteria judged by haiku-5-5")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Evidence files" })).toBeInTheDocument();
     expect(screen.getByText("None required by this workflow.")).toBeInTheDocument();
   });

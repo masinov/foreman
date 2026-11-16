@@ -39,7 +39,7 @@ describe("the backlog tab", () => {
     const filed = filedSection();
     expect(within(filed).getByRole("link", { name: FILED.title })).toHaveAttribute("href", "/dashboard/tasks/task-filed");
     expect(within(filed).getByText(/manager, 9 Nov/)).toBeInTheDocument();
-    expect(within(filed).getByText("Cannot be planned until accepted. This project sends these to a person.")).toBeInTheDocument();
+    expect(within(filed).getByText("Accepted by a person")).toBeInTheDocument();
 
     const accepted = acceptedSection();
     const rows = within(accepted).getAllByRole("row").slice(1);
@@ -53,7 +53,7 @@ describe("the backlog tab", () => {
   it("says who accepts when the project accepts filed work itself", async () => {
     await renderBacklog(backlogRoutes([...ACCEPTED], { triage: "auto" }));
     expect(
-      within(filedSection()).getByText("Cannot be planned until accepted. This project accepts filed work on its own."),
+      within(filedSection()).getByText("Accepted by Foreman"),
     ).toBeInTheDocument();
   });
 

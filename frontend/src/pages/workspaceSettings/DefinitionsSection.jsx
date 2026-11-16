@@ -73,7 +73,7 @@ function DefinitionDialog({ definition, onClose }) {
       title={definition ? (workflow ? definition.item.name : definition.item.name) : "Definition"}
       description={
         definition
-          ? `${workflow ? "Workflow" : "Role"} ${definition.item.id}. To change it, edit its file; the dashboard shows it as it is.`
+          ? `${workflow ? "Workflow" : "Role"} ${definition.item.id}, as shipped`
           : ""
       }
       onClose={onClose}
@@ -115,7 +115,6 @@ export function DefinitionsSection() {
       <SectionHeading
         id="defaults-title"
         title="Defaults for projects"
-        note="Every project starts from these. A project changes its own in its settings."
       />
       {[workflows.error, roles.error].filter(Boolean).map((message) => (
         <p key={message} className="notice notice--error" role="alert">

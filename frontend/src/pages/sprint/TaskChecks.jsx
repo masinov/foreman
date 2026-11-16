@@ -8,7 +8,9 @@ import { checksOf } from "./taskStage";
 export function TaskChecks({ task }) {
   const { parts, commit } = checksOf(task);
   const sha = shortSha(commit);
-  if (parts.length === 0 && !sha) return <span className="quiet">Not checked yet</span>;
+  if (parts.length === 0 && !sha) {
+    return task.status === "cancelled" ? null : <span className="quiet">Not checked yet</span>;
+  }
   return (
     <span className="checks">
       {parts.map((part, index) => (

@@ -74,7 +74,7 @@ export function AddFromBacklogDialog({ open, projectId, sprint, onClose, onPlann
           </p>
         ) : null}
         {list.items && items.length === 0 ? (
-          <p className="empty">Nothing is waiting to be planned. Accepted work appears here until it is planned into a sprint.</p>
+          <p className="empty">Nothing is waiting to be planned.</p>
         ) : null}
         {items.length > 0 ? (
           <ul className="choice-list">
