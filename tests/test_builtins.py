@@ -7,7 +7,7 @@ import tempfile
 import unittest
 
 from foreman.builtins import BuiltinExecutor
-from foreman.models import Project
+from foreman.models import Project, Task
 
 
 def _run(directory: Path, command: str, **settings: object):
@@ -94,3 +94,121 @@ class RunTestsReportTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MergeBranchBehindTests(unittest.TestCase):
+    """ADR-0026: the merge built-in does not merge a branch behind the default branch."""
+
+    def setUp(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        self.repo = root / "repo"
+        self.repo.mkdir()
+        self.worktree = root / "task-tree"
+        self.git(self.repo, "init")
+        self.git(self.repo, "checkout", "-b", "main")
+        self.git(self.repo, "config", "user.email", "t@example.com")
+        self.git(self.repo, "config", "user.name", "T")
+        self.write("base.txt", "base\n")
+        self.commit("chore: base")
+        self.git(self.repo, "worktree", "add", "-b", "feat/x", str(self.worktree))
+        self.write("feature.txt", "feature\n", self.worktree)
+        self.commit("feat: feature", self.worktree)
+        self.project = Project(
+            id="p",
+            name="P",
+            repo_path=str(self.repo),
+            workflow_id="development",
+            default_branch="main",
+            settings={"completion_guard_enabled": False},
+        )
+        self.task = Task(
+            id="t", sprint_id="s", project_id="p", title="T", status="in_progress",
+            branch_name="feat/x", worktree_path=str(self.worktree),
+        )
+
+    def git(self, cwd: Path, *args: str) -> str:
+        done = subprocess.run(
+            ["git", *args], cwd=cwd, capture_output=True, text=True, check=False
+        )
+        if done.returncode != 0:
+            raise AssertionError(f"git {args} failed: {done.stderr}")
+        return done.stdout.strip()
+
+    def write(self, name: str, text: str, where: Path | None = None) -> None:
+        (where or self.repo).joinpath(name).write_text(text, encoding="utf-8")
+
+    def commit(self, message: str, where: Path | None = None) -> None:
+        self.git(where or self.repo, "add", ".")
+        self.git(where or self.repo, "commit", "-m", message)
+
+    def merge(self):
+        return BuiltinExecutor().execute(
+            "_builtin:merge",
+            project=self.project,
+            task=self.task,
+            step_id="merge",
+            carried_output=None,
+            store=None,
+        )
+
+    def test_behind_branch_is_updated_in_its_worktree_and_not_merged(self) -> None:
+        self.write("other.txt", "other\n")
+        self.commit("feat: main moves")
+        main_head = self.git(self.repo, "rev-parse", "main")
+        checked_out = self.git(self.repo, "branch", "--show-current")
+
+        result = self.merge()
+
+        self.assertEqual(result.outcome, "updated")
+        self.assertEqual(self.git(self.repo, "rev-parse", "main"), main_head)
+        self.git(self.repo, "merge-base", "--is-ancestor", main_head, "feat/x")
+        self.assertEqual(self.git(self.repo, "branch", "--show-current"), checked_out)
+        self.assertEqual(self.git(self.worktree, "branch", "--show-current"), "feat/x")
+        self.assertFalse((self.repo / "feature.txt").exists())
+        event = next(e for e in result.events if e.event_type == "engine.branch_sync")
+        self.assertEqual(event.payload["step"], "merge")
+        self.assertEqual(event.payload["branch"], "feat/x")
+        self.assertEqual(event.payload["target"], "main")
+        self.assertEqual(event.payload["commits_behind"], 1)
+        self.assertIn("mode", event.payload)
+
+    def test_conflicting_behind_branch_gets_conflict_and_main_is_unchanged(self) -> None:
+        self.write("feature.txt", "main version\n")
+        self.commit("feat: main edits the same file")
+        main_head = self.git(self.repo, "rev-parse", "main")
+
+        result = self.merge()
+
+        self.assertEqual(result.outcome, "conflict")
+        self.assertIn("Merge conflict against 'main'.", result.detail)
+        self.assertEqual(self.git(self.repo, "rev-parse", "main"), main_head)
+        self.assertEqual(self.git(self.worktree, "status", "--porcelain"), "")
+
+    def test_branch_that_is_not_behind_merges_as_before(self) -> None:
+        result = self.merge()
+
+        self.assertEqual(result.outcome, "success")
+        self.assertFalse(
+            [e for e in result.events if e.event_type == "engine.branch_sync"]
+        )
+        self.assertEqual(self.git(self.repo, "show", "main:feature.txt"), "feature")
+
+
+class UpdatedOutcomeWiringTests(unittest.TestCase):
+    def test_outcome_is_named_everywhere_and_shipped_workflows_carry_it(self) -> None:
+        from foreman.dashboard_definitions import _OUTCOME_ORDER
+        from foreman.outcomes import CANONICAL_OUTCOMES, normalize_agent_outcome
+        from foreman.workflows import _BUILTIN_OUTCOMES, load_workflow
+
+        self.assertIn("updated", _BUILTIN_OUTCOMES["_builtin:merge"])
+        self.assertIn("updated", _OUTCOME_ORDER)
+        self.assertIn("updated", CANONICAL_OUTCOMES)
+        self.assertEqual(normalize_agent_outcome("updated"), "updated")
+        base = Path(__file__).resolve().parent.parent / "foreman" / "data" / "workflows"
+        for name in ("development", "development_tiered", "development_secure"):
+            workflow = load_workflow(base / f"{name}.toml")
+            transition = workflow.find_transition("merge", "updated")
+            self.assertIsNotNone(transition, name)
+            self.assertEqual(transition.to_step, "test", name)

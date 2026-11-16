@@ -14,6 +14,7 @@ ERROR = "error"
 KILLED = "killed"
 PAUSED = "paused"
 CONFLICT = "conflict"
+UPDATED = "updated"
 
 # Reviewer decisions
 APPROVE = "approve"
@@ -32,6 +33,7 @@ CANONICAL_OUTCOMES = frozenset({
     KILLED,
     PAUSED,
     CONFLICT,
+    UPDATED,
     APPROVE,
     DENY,
     STEER,
@@ -61,6 +63,8 @@ def normalize_agent_outcome(raw: str) -> str:
         return PAUSED
     if normalized == "conflict":
         return CONFLICT
+    if normalized == "updated":
+        return UPDATED
     if normalized in ("success", "succeeded"):
         return SUCCESS
 

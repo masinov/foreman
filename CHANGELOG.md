@@ -7,6 +7,10 @@ memory changes rather than versioned product releases.
 
 ## [Unreleased]
 
+### Sprint 60b — engine findings of the supervised run
+
+- A branch behind the default branch is updated and tested again before it is merged (ADR-0026). The merge step used to merge a branch without asking whether it contained the default branch's head, so what landed had not been tested or reviewed. Now it merges the default branch into the task branch in the task's own worktree, ends with the new outcome `updated` and an `engine.branch_sync` event (step `merge`), and the three shipped workflows send `updated` to the test step. A conflict gives `conflict` as before. A project's own workflow needs a `merge` + `completion:updated` transition, or the task blocks.
+
 ### Sprint 60 — what is there works and makes sense
 
 - Spec §6.3 and §6.4 revised, ADR-0025: the engine finishes a sprint only in an autonomous project. In a directed or supervised project a sprint whose tasks are all done or cancelled stays active until a person finishes it; a task added to it is run; a blocked task prevents completion at every level. Docs only; the code follows in sprint 60b.

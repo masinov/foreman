@@ -12,12 +12,14 @@ from typing import TYPE_CHECKING, Any, Callable
 from .context import context_directory, relative_project_path, write_project_context
 from .git import (
     GitMergeResult,
+    commits_behind,
     head_sha,
     is_worktree_clean,
     merge_branch,
     merge_preflight,
     push_branch,
     run_git,
+    sync_branch_with_base,
 )
 from .models import CompletionEvidence, Project, Task, utc_now_text
 from .notifications import resolve_notification_policy
@@ -297,6 +299,15 @@ class BuiltinExecutor:
                 },
             )
 
+        # What lands must be what was tested and reviewed (ADR-0026). A branch
+        # that lacks the default branch's head is brought up to date in the
+        # task's own worktree and goes back to the test step; it is not merged.
+        behind = commits_behind(project.repo_path, task.branch_name, project.default_branch)
+        if behind > 0:
+            return self._update_behind_branch(
+                project=project, task=task, task_dir=task_dir, behind=behind
+            )
+
         try:
             integration_path = WorktreeManager(project).ensure_integration()
         except WorktreeError as exc:
@@ -453,6 +464,89 @@ class BuiltinExecutor:
                         "branch": task.branch_name,
                         "error": result.detail,
                     },
+                ),
+            ),
+        )
+
+    def _update_behind_branch(
+        self,
+        *,
+        project: Project,
+        task: Task,
+        task_dir: Path | None,
+        behind: int,
+    ) -> BuiltinResult:
+        branch = task.branch_name or ""
+        if task_dir is None:
+            # The operator's checkout and the integration worktree are not
+            # places to update a task branch (ADR-0012).
+            return self._block_task(
+                task,
+                detail=(
+                    f"Branch {branch!r} is {behind} commit(s) behind "
+                    f"{project.default_branch!r} and the task has no worktree of its own "
+                    "to update it in."
+                ),
+                event_type="engine.merge_blocked",
+                payload={
+                    "branch": branch,
+                    "target": project.default_branch,
+                    "reason": "no_task_worktree",
+                    "commits_behind": behind,
+                },
+            )
+        sync = sync_branch_with_base(task_dir, branch, project.default_branch)
+        if sync.success:
+            return BuiltinResult(
+                outcome="updated",
+                detail=(
+                    f"Branch {branch!r} was {behind} commit(s) behind "
+                    f"{project.default_branch!r}; merged {project.default_branch!r} into it. "
+                    "It is tested again before it is merged."
+                ),
+                events=(
+                    BuiltinEventRecord(
+                        event_type="engine.branch_sync",
+                        payload={
+                            "step": "merge",
+                            "branch": branch,
+                            "target": project.default_branch,
+                            "mode": "merge_update",
+                            "commits_behind": behind,
+                            "detail": sync.detail,
+                        },
+                    ),
+                ),
+            )
+        if sync.conflict:
+            detail = (
+                f"Merge conflict against {project.default_branch!r}. Reconcile branch "
+                f"{branch!r} with the latest {project.default_branch!r}, then "
+                "complete another develop pass. Conflict-resolution changes must go back "
+                "through code review before merge.\n\n"
+                f"{sync.detail}"
+            )
+            return BuiltinResult(
+                outcome="conflict",
+                detail=detail,
+                events=(
+                    BuiltinEventRecord(
+                        event_type="engine.merge_conflict",
+                        payload={
+                            "branch": branch,
+                            "target": project.default_branch,
+                            "error": sync.detail,
+                        },
+                    ),
+                ),
+            )
+        return BuiltinResult(
+            outcome="failure",
+            detail=sync.detail,
+            events=(
+                BuiltinEventRecord(
+                    event_type="engine.merge_failed",
+                    payload={"branch": branch, "error": sync.detail},
                 ),
             ),
         )

@@ -16,7 +16,7 @@ from .data import WORKFLOWS_DIR
 # outcomes in TOML (``[completion] outcomes``); callers pass those through
 # ``role_outcomes`` so the validator never hardcodes role ids.
 _BUILTIN_OUTCOMES: dict[str, set[str]] = {
-    "_builtin:merge": {"success", "failure", "conflict"},
+    "_builtin:merge": {"success", "failure", "conflict", "updated"},
     "_builtin:run_tests": {"success", "failure"},
     "_builtin:mark_done": {"success"},
     # human_gate emits the human's decision (approve/deny/steer) as workflow outcome

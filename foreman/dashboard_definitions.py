@@ -38,7 +38,7 @@ ENGINE_STEPS: tuple[tuple[str, str], ...] = (
     ("_builtin:merge", "The merge"),
     ("_builtin:mark_done", "Mark the task done"),
 )
-_OUTCOME_ORDER = ("done", "success", "approve", "deny", "steer", "escalate", "failure", "conflict", "blocked", "error")
+_OUTCOME_ORDER = ("done", "success", "approve", "deny", "steer", "escalate", "failure", "conflict", "updated", "blocked", "error")
 _COMPLETION = "completion:"
 
 
