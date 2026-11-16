@@ -23,10 +23,10 @@ Current snapshot only. History up to 2026-09-08 (sprints 1 to 54) is in
   its first cut (ADR-0023), and three dashboard follow-ups landed. The
   engine fixes are covered by tests and have not been seen in a run of the
   engine.
-- Active sprint: **sprint 60 — Foreman knows who did what**
-  (`docs/sprints/current.md`): identity, roles and audit behind a seam, and
-  the manager chat through the runner. Scope agreed by the owner on
-  2026-11-16, who also allowed one supervised run of the engine (slice 1).
+- Active sprint: **sprint 60 — what is there works and makes sense**
+  (`docs/sprints/current.md`). Re-scoped by the owner on 2026-11-16: no
+  identity work; every screen and feature that exists must work and make
+  practical sense. One supervised run of the engine was done (FOR-44).
 - Nineteen tasks of sprint 58 were run by Foreman itself. On 2026-11-13 the
   owner asked for the engine to be stopped and the rest done by hand; it has
   been stopped since. What the engine did well and badly is in the archived
@@ -76,7 +76,9 @@ is no login.
   decided per slice; cost and safety observations from Foreman runs are
   recorded in the sprint doc.
 - No identity provider or notification channel is being chosen now. Login and
-  notification stay pluggable seams for adopters to fill.
+  notification stay pluggable seams for adopters to fill. Restated by the
+  owner on 2026-11-16: identity is built elsewhere and plugged in later; no
+  login, user or role-of-person work is planned here until the owner asks.
 - Codex stays in the tree but is treated as experimental until it has a
   shipped role, cost accounting and a real-binary smoke test.
 
