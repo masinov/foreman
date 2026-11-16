@@ -25,6 +25,7 @@ from .definitions import (
     save_role,
     save_workflow,
 )
+from .model_check import check_model
 from .outcomes import CANONICAL_OUTCOMES
 from .roles import KNOWN_TOOLS, RoleDefinition, load_role_text
 from .settings import settings_of
@@ -502,8 +503,12 @@ def save_from_dashboard(
     else:
         raise DefinitionError("Send either 'text' or 'fields'.")
 
-    save = save_role if kind == ROLE else save_workflow
-    saved = save(store, project_id, text, changed_by=changed_by, expected_id=definition_id)
+    if kind == ROLE:
+        saved = save_role(
+            store, project_id, text, changed_by=changed_by, expected_id=definition_id, check_model=check_model
+        )
+    else:
+        saved = save_workflow(store, project_id, text, changed_by=changed_by, expected_id=definition_id)
     return {"id": saved.id}
 
 

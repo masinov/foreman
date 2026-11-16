@@ -16,6 +16,7 @@ from ..definitions import (
     save_workflow,
 )
 from ..engine_control import default_command_requester
+from ..model_check import check_model
 from ..roles import RoleLoadError
 from ..store import ForemanStore
 from ..workflows import WorkflowLoadError
@@ -100,9 +101,13 @@ def handle_set(args: argparse.Namespace) -> int:
     if store is None:
         return 1
     with store:
-        save = save_role if args.kind == ROLE else save_workflow
         try:
-            saved = save(store, args.project_id, text, changed_by=default_command_requester())
+            if args.kind == ROLE:
+                saved = save_role(
+                    store, args.project_id, text, changed_by=default_command_requester(), check_model=check_model
+                )
+            else:
+                saved = save_workflow(store, args.project_id, text, changed_by=default_command_requester())
         except DefinitionError as exc:
             print(f"Not saved: {exc}", file=sys.stderr)
             return 1

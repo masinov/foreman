@@ -155,6 +155,8 @@ Foreman now has:
   `definitions` table, read through `foreman/definitions.py` (ADR-0024);
   `foreman/dashboard_definitions.py` turns one into the editor's form fields
   and the fields back into text,
+- `foreman/model_check.py`: asks the agent program whether it can run a
+  model, before a role is saved with it,
 - `foreman/planning.py`: the two planning requests to the manager (plan a
   sprint, split a task) and who confirms their proposals (ADR-0022,
   amendment of 2026-11-16),
