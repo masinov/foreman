@@ -1058,16 +1058,24 @@ def check_agent_signals(event, task, project):
 ### 6.3 Sprint Lifecycle
 
 - On project start, the orchestrator activates the first `planned` sprint.
-- A sprint completes when all its tasks are `done` or `cancelled`.
-- `blocked` tasks prevent sprint completion — they must be unblocked or
-  cancelled first.
+- A sprint is *resolved* when all its tasks are `done` or `cancelled`. Who
+  completes a resolved sprint depends on the project's autonomy level
+  (ADR-0025):
+  - **autonomous:** the engine completes it and activates the next `planned`
+    sprint, or stops if there is none.
+  - **directed and supervised:** the sprint stays `active`. The engine stops,
+    says once that the sprint is ready to be finished, and a person finishes
+    it (dashboard Finish sprint, `foreman sprint complete`, or a confirmed
+    `finish_sprint` proposal). A task added to a resolved, still active
+    sprint is run on the next pass.
+- `blocked` tasks prevent sprint completion at every level — they must be
+  unblocked or cancelled first.
 - Mid-sprint tasks created by agents belong to the current sprint.
-- After completion, the next `planned` sprint is activated, or the engine
-  stops.
 
 ### 6.4 Sprint Completion Actions
 
-When a sprint completes:
+When a sprint is completed, by the engine or by a person, these actions
+follow:
 1. Sprint status set to `completed`, `completed_at` recorded.
 2. Repo tagged: `checkpoint-YYYYMMDD-<sprint-slug>`.
 3. If `write_checkpoint_notes` is enabled, a checkpoint note is written
