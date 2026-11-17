@@ -913,9 +913,9 @@ describe("Activity", () => {
     fireEvent.click(screen.getByRole("button", { name: "Show the prompt this run was given" }));
     expect(screen.getByText("The prompt of run-3")).toBeInTheDocument();
 
-    // The caret says which run is shown below: down on that one, right on the others.
-    expect(rows[0].querySelector(".caret")).toHaveClass("caret--down");
-    expect(rows[1].querySelector(".caret")).toHaveClass("caret--right");
+    // No caret on a row: what a run shows is under the list, not under its row.
+    expect(table.querySelector(".caret")).toBeNull();
+    expect(rows[0]).toHaveClass("table__row--selected");
 
     // Pressing anywhere on a run's row picks it, not only its time.
     fireEvent.click(within(rows[1]).getAllByRole("cell")[1]);
@@ -924,7 +924,7 @@ describe("Activity", () => {
     expect(document.querySelector("#run-output").parentElement).toHaveTextContent(/by engine/);
     expect(within(rows[1]).getByRole("button")).toHaveAttribute("aria-pressed", "true");
     expect(rows[1]).toHaveClass("table__row--selected");
-    expect(rows[1].querySelector(".caret")).toHaveClass("caret--down");
+    expect(rows[0]).not.toHaveClass("table__row--selected");
     expect(calls(fetchImpl, "GET", outputUrl("run-2").slice(4))).toHaveLength(1);
 
     fireEvent.click(within(rows[0]).getByRole("button"));
