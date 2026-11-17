@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 
 import { createFakeFetch, renderApp, reply } from "../../testing/fakeApi";
@@ -514,3 +517,10 @@ describe("requests in Needs you", () => {
   });
 });
 
+describe("the Needs you surface", () => {
+  it("frames its rows by itself: the first and last cell add no room at the sides", () => {
+    const css = readFileSync(join(process.cwd(), "src", "styles", "lists.css"), "utf8");
+    expect(css).toMatch(/\.needs-you \.table td:first-child\s*\{\s*padding-left: 0;/);
+    expect(css).toMatch(/\.needs-you \.table td:last-child\s*\{\s*padding-right: 0;/);
+  });
+});
