@@ -620,6 +620,11 @@ count, and the project's `needs-you`; the breadcrumb's project switcher reads
 the server through `usePagedList`; the sprint queue is one unpaged read of the
 active and planned sprints.
 
+The addresses of one thing's tabs (a task's four, a project's two, a sprint's
+two views, the project settings' three) are one page: `app/pages.js` maps
+them to one component and `pageKey` gives them one key, so the head of the
+page stays mounted and is not read again when the tab changes.
+
 The task page (`pages/task/`) reads `GET /tasks/{id}`, `/checks` and
 `/changes` once for its head and decision, whichever tab is open; Overview
 adds the project's workflow (steps and who decides), Changes one file's diff

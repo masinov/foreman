@@ -52,6 +52,20 @@ function decision() {
 }
 
 describe("the task page header", () => {
+  it("stays in place when the tab changes: nothing above the tab is drawn or read again", async () => {
+    const { fetchImpl } = await renderTask();
+    const title = screen.getByRole("heading", { level: 1, name: TITLE });
+    const before = taskReads(fetchImpl);
+    for (const [tab, path] of [["Activity", `${BASE}/activity`], ["Checks", `${BASE}/checks`], ["Overview", BASE]]) {
+      fireEvent.click(within(screen.getByRole("navigation", { name: "Task" })).getByRole("link", { name: tab }));
+      await waitFor(() => expect(window.location.pathname).toBe(path));
+      // The same element, not a new one that looks the same.
+      expect(screen.getByRole("heading", { level: 1, name: TITLE })).toBe(title);
+    }
+    expect(taskReads(fetchImpl)).toBe(before);
+  });
+
+
   it.each([BASE, `${BASE}/changes`, `${BASE}/checks`, `${BASE}/activity`])("is the same at %s", async (path) => {
     await renderTask(path);
     expect(await screen.findByText("FOR-14 · fix · foreman/for-14 · b232eb1 · +118 −7")).toBeInTheDocument();

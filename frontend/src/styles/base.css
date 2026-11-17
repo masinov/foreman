@@ -8,6 +8,9 @@
 html {
   background: var(--color-ground);
   color-scheme: dark;
+  /* Room for the scrollbar whether or not this page needs one, so the
+     content does not shift when a shorter tab or page fits the window. */
+  scrollbar-gutter: stable;
 }
 
 body {
