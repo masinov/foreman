@@ -43,6 +43,18 @@
   padding-inline: 0;
 }
 
+/* Under a paged list: more of it, and the way back to its first page. */
+.list-pager {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-5);
+  margin-top: var(--space-2);
+}
+
+.list-pager .button {
+  padding-inline: 0;
+}
+
 .milestones__detail {
   color: var(--color-text-quiet);
 }
