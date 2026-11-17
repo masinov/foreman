@@ -468,18 +468,37 @@
   overflow: hidden;
 }
 
+/* Not one more line of the text above it: gold, a control's size and
+   weight, and a caret (owner, 2026-11-17). */
 .long-text__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
   margin-top: var(--space-1);
   padding: var(--space-1) 0;
   border: 0;
   background: transparent;
-  color: var(--color-text-secondary);
+  color: var(--color-gold);
   font: inherit;
+  font-size: var(--font-size-control);
+  font-weight: var(--font-weight-medium);
   cursor: pointer;
 }
 
 .long-text__toggle:hover {
-  color: var(--color-gold);
+  color: var(--color-text);
+}
+
+.long-text__caret {
+  width: 0;
+  height: 0;
+  border-inline: var(--caret-size) solid transparent;
+  border-top: var(--caret-size) solid currentColor;
+}
+
+.long-text__toggle--open .long-text__caret {
+  border-top: 0;
+  border-bottom: var(--caret-size) solid currentColor;
 }
 
 /* Disclosure: a closed line that opens in place */
