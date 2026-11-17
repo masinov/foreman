@@ -53,7 +53,9 @@
    own class so it wins over the surface's default padding whatever order the
    stylesheets load in. */
 .surface.needs-you__surface {
-  padding: 0 var(--space-4);
+  padding: 0;
+  /* A highlighted first or last row keeps the surface's rounded corners. */
+  overflow: hidden;
 }
 
 .surface.needs-you__surface--empty {
@@ -64,15 +66,16 @@
   white-space: nowrap;
 }
 
-/* The surface's padding is the frame at the sides too: the first and last
-   cell add none of their own, so a row's words start, and its button ends,
-   where the line between rows does (design 02-project-sprints). */
+/* The room at the sides belongs to the first and last cell, not to the
+   surface, so the line between rows runs from one edge of the surface to the
+   other, as it does in every other list (owner, 2026-11-17; the design drew
+   it stopping short). */
 .needs-you .table td:first-child {
-  padding-left: 0;
+  padding-left: var(--space-4);
 }
 
 .needs-you .table td:last-child {
-  padding-right: 0;
+  padding-right: var(--space-4);
 }
 
 /* Every row is one height, with or without a button in it. */
@@ -94,7 +97,7 @@
     flex-wrap: wrap;
     align-items: baseline;
     gap: var(--space-1) var(--space-3);
-    padding-block: var(--space-2);
+    padding: var(--space-2) var(--space-3);
   }
 
   .needs-you .table tbody tr + tr {
@@ -102,10 +105,21 @@
   }
 
   .needs-you .table tbody tr td,
-  .needs-you .table tbody tr + tr td {
+  .needs-you .table tbody tr + tr td,
+  .needs-you .table tbody tr td:first-child,
+  .needs-you .table tbody tr td:last-child {
     height: auto;
     padding: 0;
     border-top: 0;
+  }
+
+  /* The row is the block here, so the row is what lights up, edge to edge. */
+  .needs-you .table tbody tr:hover {
+    background-color: var(--color-row-hover-tinted);
+  }
+
+  .needs-you .table tbody tr:hover td {
+    background-color: transparent;
   }
 
   .needs-you .table .needs-you__title {
@@ -123,7 +137,7 @@
     order: 4;
   }
 
-  .surface.needs-you__surface {
+  .surface.needs-you__surface--empty {
     padding-inline: var(--space-3);
   }
 }

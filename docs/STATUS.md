@@ -84,6 +84,9 @@ is no login.
 
 ## Documented conflicts between spec, mockup and code
 
+- Design v7 draws the line between "Needs you" rows stopping short of the
+  tinted surface's edges. The dashboard runs it edge to edge, like every
+  other list (owner, 2026-11-17).
 - Design v7's `05-task-overview.html` shows the manager's side bar on a
   task page. Since ADR-0029 (owner, 2026-11-17) the side bar on a task is
   the conversation with the task's agents; the screen is not redrawn.

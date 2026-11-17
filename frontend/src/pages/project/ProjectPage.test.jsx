@@ -518,9 +518,10 @@ describe("requests in Needs you", () => {
 });
 
 describe("the Needs you surface", () => {
-  it("frames its rows by itself: the first and last cell add no room at the sides", () => {
+  it("runs the line between rows from edge to edge: the room at the sides is the cells'", () => {
     const css = readFileSync(join(process.cwd(), "src", "styles", "lists.css"), "utf8");
-    expect(css).toMatch(/\.needs-you \.table td:first-child\s*\{\s*padding-left: 0;/);
-    expect(css).toMatch(/\.needs-you \.table td:last-child\s*\{\s*padding-right: 0;/);
+    expect(css).toMatch(/\.surface\.needs-you__surface\s*\{\s*padding: 0;[^}]*overflow: hidden;/);
+    expect(css).toMatch(/\.needs-you \.table td:first-child\s*\{\s*padding-left: var\(--space-4\);/);
+    expect(css).toMatch(/\.needs-you \.table td:last-child\s*\{\s*padding-right: var\(--space-4\);/);
   });
 });
