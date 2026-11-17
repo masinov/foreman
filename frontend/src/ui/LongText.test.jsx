@@ -13,11 +13,14 @@ function heights(full, shown) {
 }
 
 describe("LongText", () => {
-  it("draws its control in gold, not in the colour of the text above it", () => {
-    const css = readFileSync(join(process.cwd(), "src", "styles", "ui.css"), "utf8");
-    const rule = css.slice(css.indexOf(".long-text__toggle {"), css.indexOf(".long-text__toggle:hover"));
-    expect(rule).toMatch(/color: var\(--color-gold\);/);
+  it("everything that opens more in place has one look: gold, a control's type, a caret", () => {
+    const styles = (name) => readFileSync(join(process.cwd(), "src", "styles", name), "utf8");
+    const css = styles("ui.css");
+    const rule = css.slice(css.indexOf(".expander,"), css.indexOf(".expander:hover"));
+    expect(rule).toMatch(/color: var\(--color-expander\);/);
+    expect(rule).toMatch(/font-size: var\(--font-size-control\);/);
     expect(rule).toMatch(/font-weight: var\(--font-weight-medium\);/);
+    expect(styles("tokens.css")).toMatch(/--color-expander: var\(--color-gold\);/);
   });
 
   afterEach(() => vi.restoreAllMocks());
@@ -38,12 +41,12 @@ describe("LongText", () => {
     expect(button).toHaveAttribute("aria-controls", text.id);
     expect(text).toHaveClass("long-text__text--folded");
     // A caret marks it as a control; it points the other way once open.
-    expect(button.querySelector(".long-text__caret")).not.toBeNull();
-    expect(button).not.toHaveClass("long-text__toggle--open");
+    expect(button).toHaveClass("expander");
+    expect(button.querySelector(".caret")).toHaveClass("caret--down");
 
     fireEvent.click(button);
     expect(text).not.toHaveClass("long-text__text--folded");
-    expect(button).toHaveClass("long-text__toggle--open");
+    expect(button.querySelector(".caret")).toHaveClass("caret--up");
     expect(screen.getByRole("button", { name: "Show less" })).toHaveAttribute("aria-expanded", "true");
 
     fireEvent.click(screen.getByRole("button", { name: "Show less" }));

@@ -468,67 +468,64 @@
   overflow: hidden;
 }
 
-/* Not one more line of the text above it: gold, a control's size and
-   weight, and a caret (owner, 2026-11-17). */
 .long-text__toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
   margin-top: var(--space-1);
   padding: var(--space-1) 0;
   border: 0;
   background: transparent;
-  color: var(--color-gold);
-  font: inherit;
-  font-size: var(--font-size-control);
-  font-weight: var(--font-weight-medium);
+  font-family: inherit;
   cursor: pointer;
 }
 
-.long-text__toggle:hover {
+/* Everything that opens more in place looks the same (owner, 2026-11-17):
+   the words under a folded text, a closed line, the button under a list that
+   shows the rest of it. Gold, in the size and weight of a control, with a
+   caret. Text here comes in both greys, so a grey control always sits next
+   to text of its own colour somewhere; gold never does. */
+.expander,
+.button.expander {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-expander);
+  font-size: var(--font-size-control);
+  font-weight: var(--font-weight-medium);
+}
+
+.expander:hover:not(:disabled),
+.button.expander:hover:not(:disabled) {
   color: var(--color-text);
 }
 
-.long-text__caret {
+.caret {
+  flex: none;
   width: 0;
   height: 0;
-  border-inline: var(--caret-size) solid transparent;
-  border-top: var(--caret-size) solid currentColor;
+  border: var(--caret-size) solid transparent;
 }
 
-.long-text__toggle--open .long-text__caret {
-  border-top: 0;
-  border-bottom: var(--caret-size) solid currentColor;
+.caret--down {
+  border-top-color: currentColor;
+  border-bottom-width: 0;
+}
+
+.caret--up {
+  border-bottom-color: currentColor;
+  border-top-width: 0;
+}
+
+.caret--right {
+  border-left-color: currentColor;
+  border-right-width: 0;
 }
 
 /* Disclosure: a closed line that opens in place */
 .disclosure__summary {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
   padding: var(--space-1) 0;
   border: 0;
   background: transparent;
-  color: var(--color-text-secondary);
-  font: inherit;
+  font-family: inherit;
   cursor: pointer;
-}
-
-.disclosure__summary:hover {
-  color: var(--color-text);
-}
-
-.disclosure__marker {
-  width: 0;
-  height: 0;
-  border-block: var(--caret-size) solid transparent;
-  border-left: var(--caret-size) solid var(--color-text-quiet);
-}
-
-.disclosure--open .disclosure__marker {
-  border-inline: var(--caret-size) solid transparent;
-  border-top: var(--caret-size) solid var(--color-text-quiet);
-  border-bottom: 0;
 }
 
 .disclosure__content {

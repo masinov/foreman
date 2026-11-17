@@ -4,6 +4,7 @@ import { getRunOutput, listTaskRuns } from "../../api/tasks";
 import { usePagedList } from "../../api/usePagedList";
 import { useResource } from "../../api/useResource";
 import { Button } from "../../ui/Button";
+import { Caret } from "../../ui/Caret";
 import { Disclosure } from "../../ui/Disclosure";
 import { Mono } from "../../ui/Mono";
 import { SectionHeading } from "../../ui/SectionHeading";
@@ -177,7 +178,8 @@ export function ActivityTab({ task, revision }) {
           <Table caption="Runs" columns={columns} rows={items} selected={(run) => run === selected} />
         ) : null}
         {runs.hasMore ? (
-          <Button variant="quiet" className="list-more" disabled={runs.loadingMore} onClick={() => runs.loadMore()}>
+          <Button variant="quiet" className="list-more expander" disabled={runs.loadingMore} onClick={() => runs.loadMore()}>
+            <Caret />
             Earlier
           </Button>
         ) : null}

@@ -7,6 +7,7 @@ import { useDelayedFlag, useResource } from "../../api/useResource";
 import { paths } from "../../app/paths";
 import { Link } from "../../app/router";
 import { Button } from "../../ui/Button";
+import { Caret } from "../../ui/Caret";
 import { Mono } from "../../ui/Mono";
 import { SectionHeading } from "../../ui/SectionHeading";
 import { StatusDot } from "../../ui/StatusDot";
@@ -188,7 +189,8 @@ export function SprintsTab({ projectId, revision }) {
         ) : null}
         {queue.data ? <EmptyQueue active={active} planned={planned} /> : null}
         {planned.length > PLANNED_CAP ? (
-          <Button variant="quiet" className="list-more" onClick={() => setAllPlanned((value) => !value)}>
+          <Button variant="quiet" className="list-more expander" onClick={() => setAllPlanned((value) => !value)}>
+            <Caret direction={allPlanned ? "up" : "down"} />
             {allPlanned ? "Show fewer" : `Show all ${planned.length} planned`}
           </Button>
         ) : null}

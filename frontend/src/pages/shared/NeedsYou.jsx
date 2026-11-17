@@ -10,6 +10,7 @@ import { usePagedList } from "../../api/usePagedList";
 import { paths } from "../../app/paths";
 import { Link } from "../../app/router";
 import { Button } from "../../ui/Button";
+import { Caret } from "../../ui/Caret";
 import { Mono } from "../../ui/Mono";
 import { SectionHeading } from "../../ui/SectionHeading";
 import { Surface } from "../../ui/Surface";
@@ -305,10 +306,11 @@ export function NeedsYou({ projectId = null, note, empty, onChanged }) {
           {total > NEEDS_YOU_CAP ? (
             <Button
               variant="quiet"
-              className="needs-you__more"
+              className="needs-you__more expander"
               disabled={list.loadingMore}
               onClick={() => (expanded ? setExpanded(false) : showAll())}
             >
+              <Caret direction={expanded ? "up" : "down"} />
               {expanded ? "Show fewer" : `Show all ${total}`}
             </Button>
           ) : null}
