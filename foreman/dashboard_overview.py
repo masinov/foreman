@@ -182,6 +182,11 @@ class WorkspaceReader:
             }
         if item.kind == "approve_merge" and task is not None:
             entry["evidence"] = _merge_facts(task)
+        if item.kind == "unblock" and task is not None:
+            entry["blocked"] = {
+                "reason": (task.blocked_reason or "").strip() or None,
+                "step": task.workflow_current_step,
+            }
         if item.count:
             entry["count"] = item.count
         return entry

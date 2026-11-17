@@ -184,7 +184,38 @@ describe("Needs you on the project page", () => {
     expect(await within(needsYou).findByText("FOR-207")).toBeInTheDocument();
   });
 
-  it("approves a merge and reloads; other kinds link to the task", async () => {
+  it("unblocks a blocked task from its row, and says a refusal", async () => {
+    const routes = projectRoutes();
+    let refuse = true;
+    routes["POST /api/v1/tasks/task-stuck/unblock"] = () => {
+      if (refuse) return reply(400, { error: "Task task-stuck is not blocked", code: "invalid_request" });
+      routes[PROJECT_NEEDS_YOU_URL] = { items: [], total: 0 };
+      return { id: "task-stuck", status: "todo" };
+    };
+    const { fetchImpl } = await renderProject("/dashboard/projects/foreman", routes);
+    const needsYou = screen.getByRole("region", { name: /Needs you/ });
+    const row = (await within(needsYou).findByText("FOR-15")).closest("tr");
+    expect(row).toHaveTextContent("Tests failed three times · at test");
+    fireEvent.click(within(row).getByRole("button", { name: "Unblock FOR-15" }));
+    expect(await within(needsYou).findByRole("alert")).toHaveTextContent("Task task-stuck is not blocked.");
+    refuse = false;
+    fireEvent.click(within(row).getByRole("button", { name: "Unblock FOR-15" }));
+    await waitFor(() => expect(within(needsYou).queryByText("FOR-15")).toBeNull());
+    expect(within(needsYou).getByRole("status")).toHaveTextContent("Unblocked FOR-15. It is back in the queue.");
+    const sent = calls(fetchImpl, "POST", "/api/v1/tasks/task-stuck/unblock");
+    expect(sent).toHaveLength(2);
+    expect(sent[1].body).toEqual({ note: null });
+  });
+
+  it("a blocked task with no reason recorded says so", async () => {
+    const routes = projectRoutes();
+    routes[PROJECT_NEEDS_YOU_URL] = { items: [{ ...UNBLOCK_ITEM, blocked: { reason: null, step: null } }], total: 1 };
+    await renderProject("/dashboard/projects/foreman", routes);
+    const needsYou = screen.getByRole("region", { name: /Needs you/ });
+    expect((await within(needsYou).findByText("FOR-15")).closest("tr")).toHaveTextContent("No reason recorded");
+  });
+
+  it("approves a merge and reloads", async () => {
     const routes = projectRoutes();
     routes["POST /api/v1/tasks/task-merge/approve"] = () => {
       routes[PROJECT_NEEDS_YOU_URL] = { items: [UNBLOCK_ITEM], total: 1 };
@@ -193,7 +224,6 @@ describe("Needs you on the project page", () => {
     const { fetchImpl } = await renderProject("/dashboard/projects/foreman", routes);
     const needsYou = screen.getByRole("region", { name: /Needs you/ });
     const unblock = (await within(needsYou).findByText("FOR-15")).closest("tr");
-    expect(within(unblock).queryByRole("button")).toBeNull();
     expect(within(unblock).getByRole("link", { name: UNBLOCK_ITEM.task_title })).toHaveAttribute(
       "href",
       "/dashboard/tasks/task-stuck",

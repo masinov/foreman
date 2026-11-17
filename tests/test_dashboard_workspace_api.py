@@ -143,6 +143,9 @@ class NeedsYouTests(WorkspaceApiCase):
              "reviewed_sha": "abc123", "head_sha": "abc123", "proof_status": "passed"},
         )
         self.assertNotIn("evidence", body["items"][0])
+        # A blocked task says why it is blocked and at which step it stopped.
+        self.assertEqual(body["items"][0]["blocked"], {"reason": "Loop limit", "step": "develop"})
+        self.assertNotIn("blocked", merge)
         self.assertEqual(self.get("/api/needs-you").json(), body)
 
     def test_one_project_only(self) -> None:
