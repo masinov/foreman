@@ -14,6 +14,7 @@ memory changes rather than versioned product releases.
 
 ### Sprint 60 — what is there works and makes sense
 
+- "Show all" and "Show less" under a long description or acceptance criteria are gold, in a control's size and weight, with a caret. They were in the text's own type and nearly its colour, and read as one more line of it.
 - The manager no longer fails when something it reads is long. Its output was read with a 64 KB limit per line, and one tool result is one line, so reading a 71 KB specification ended the turn with "Separator is not found, and chunk exceed the limit". Found on the first project that is not Foreman.
 - A task's actions are in plain sight (ADR-0030). Beside the title, what depends on the task's state is a button: Run next, Stop, or Reopen. Close ends a task by hand and asks how: "Not needed" (cancel) or "Already done" (mark done, with the reason). More now holds only Block, Split into smaller tasks and Delete; Unblock is no longer there a second time. A task the engine is running no longer offers Mark done, Cancel or Delete, which the API refused.
 - In "Needs you", a blocked task's row says why it is blocked and the step it stopped at, and has an Unblock button; it showed the sprint's name and had no button. Its kind reads "Blocked". `GET /needs-you` items of kind `unblock` carry `blocked` (`reason`, `step`).
