@@ -64,6 +64,17 @@
   white-space: nowrap;
 }
 
+/* The surface's padding is the frame at the sides too: the first and last
+   cell add none of their own, so a row's words start, and its button ends,
+   where the line between rows does (design 02-project-sprints). */
+.needs-you .table td:first-child {
+  padding-left: 0;
+}
+
+.needs-you .table td:last-child {
+  padding-right: 0;
+}
+
 /* Every row is one height, with or without a button in it. */
 .needs-you .table td {
   height: var(--needs-you-row-height);
