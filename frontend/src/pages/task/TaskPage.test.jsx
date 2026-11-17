@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 
 import { createFakeFetch, renderApp, reply } from "../../testing/fakeApi";
@@ -892,6 +895,13 @@ describe("Activity", () => {
 });
 
 describe("the page keeps its parts apart", () => {
+  it("gives every decision one shape: the question, then its facts on the line below", () => {
+    const css = readFileSync(resolve(process.cwd(), "src/styles/task.css"), "utf8");
+    const body = css.match(/\.decision__body\s*\{([^}]*)\}/)[1];
+    expect(body).toMatch(/flex-direction: column;/);
+    expect(body).not.toMatch(/flex-wrap/);
+  });
+
   it("reads checks and changes once on load", async () => {
     const { fetchImpl } = await renderTask();
     await screen.findByRole("region", { name: "Approve the merge into main?" });
