@@ -2,18 +2,21 @@ import React, { useState } from "react";
 
 import { useApiClient } from "../../api/ApiProvider";
 import { runTaskNext } from "../../api/engine";
-import { blockTask, cancelTask, completeTask, deleteTask, reopenTask, stopTask, unblockTask } from "../../api/tasks";
+import { blockTask, cancelTask, deleteTask, reopenTask, stopTask } from "../../api/tasks";
 import { ENGINE_STATES } from "../../api/workspace";
 import { askManager, splitTaskRequest } from "../../app/managerRequests";
 import { paths } from "../../app/paths";
 import { useNavigate } from "../../app/router";
+import { Button } from "../../ui/Button";
 import { Menu } from "../../ui/Menu";
 import { ReasonDialog } from "../shared/ReasonDialog";
 import { useProjectEngine } from "../shared/useProjectEngine";
+import { CloseTaskDialog } from "./CloseTaskDialog";
 
 /**
- * What a person can do to a task from the More menu, each with what will
- * happen in words. `done` is the sentence shown once the API accepted it.
+ * What a person can do to a task besides answering its question, each with
+ * what will happen in words. `done` is the sentence shown once the API
+ * accepted it. Closing a task has its own dialog (`CloseTaskDialog`).
  */
 export const TASK_ACTIONS = {
   run: {
@@ -34,6 +37,16 @@ export const TASK_ACTIONS = {
     run: (client, task) => stopTask(client, task.id),
     done: "Stop requested. The task is blocked when the engine acts on it.",
   },
+  reopen: {
+    label: "Reopen",
+    title: "Reopen this task",
+    effect: "The task goes back to the queue and its workflow starts again from the first step. Its branch is kept, and what was merged stays merged.",
+    confirm: "Reopen task",
+    doing: "Reopening…",
+    run: (client, task) => reopenTask(client, task.id),
+    done: "Reopened. The task is back in the queue.",
+  },
+  close: { label: "Close" },
   block: {
     label: "Block",
     title: "Block this task",
@@ -46,44 +59,11 @@ export const TASK_ACTIONS = {
     run: (client, task, text) => blockTask(client, task.id, text),
     done: "Blocked.",
   },
-  unblock: {
-    label: "Unblock",
-    title: "Unblock this task",
-    effect: "The task goes back to the queue and its workflow starts again from the first step. Its branch is kept.",
-    ask: "Guidance for the agent",
-    hint: "Optional. The next agent step reads it.",
-    required: false,
-    confirm: "Unblock task",
-    doing: "Unblocking…",
-    run: (client, task, text) => unblockTask(client, task.id, text),
-    done: "Unblocked. The task is back in the queue.",
-  },
-  complete: {
-    label: "Mark done",
-    title: "Mark this task done",
-    effect: "The task is marked done on your word. None of its remaining steps run and Foreman checks nothing: nothing is tested, reviewed or merged by this. Its branch and working copy stay as they are. It can be reopened.",
-    ask: "Why it is done",
-    hint: "For example where it was merged. Shown on the task.",
-    required: true,
-    confirm: "Mark done",
-    doing: "Marking done…",
-    run: (client, task, text) => completeTask(client, task.id, text),
-    done: "Marked done.",
-  },
-  reopen: {
-    label: "Reopen",
-    title: "Reopen this task",
-    effect: "The task goes back to the queue and its workflow starts again from the first step. Its branch is kept, and what was merged stays merged.",
-    confirm: "Reopen task",
-    doing: "Reopening…",
-    run: (client, task) => reopenTask(client, task.id),
-    done: "Reopened. The task is back in the queue.",
-  },
   split: {
     label: "Split into smaller tasks",
     title: "Split this task",
     effect:
-      "The manager reads the task and the code it touches, and proposes smaller tasks that together do what this one asks, with this one cancelled. You are taken to the sprint, where the proposal appears in the manager's side bar. Who confirms it is this project's \u201cApprove plans\u201d setting.",
+      "The manager reads the task and the code it touches, and proposes smaller tasks that together do what this one asks, with this one cancelled. You are taken to the sprint, where the proposal appears in the manager's side bar. Who confirms it is this project's “Approve plans” setting.",
     confirm: "Ask the manager",
     doing: "Asking…",
     run: async (client, task) => askManager(splitTaskRequest(task)),
@@ -113,50 +93,71 @@ const OPEN = new Set(["todo", "in_progress", "blocked"]);
 const CLOSED = new Set(["done", "cancelled"]);
 
 /**
- * The actions that exist for a task in its state, in menu order. `engine` is
- * the project's engine: Stop is a request to a running engine, so it exists
- * only while one is running this task; a task left part-way with no engine
- * on it can be asked to run next instead.
+ * The actions that exist for a task in its state: `{ buttons, more }`.
+ *
+ * `buttons` are in plain sight beside the title. They are what depends on
+ * the task's state (Run next, Stop, Reopen) and the one thing that is the
+ * same in every open state, ending the task by hand (Close). `more` is what
+ * is rare: Block, Split, Delete. Answering the task's question (approve,
+ * unblock, send back) is the decision's, not listed here.
+ *
+ * `engine` is the project's engine, null until it is known. Stop is a
+ * request to a running engine, so it exists only while one is running this
+ * task, and while it does the task can be neither closed nor deleted (the
+ * API refuses both until the step stops). Until the engine is known, a task
+ * in progress shows neither Run next nor Stop.
  */
-export function actionsFor(task, engine = null) {
+export function actionsFor(task, engine) {
   const planned = !task.in_backlog;
-  const engineOnIt = engine?.state === ENGINE_STATES.running && engine.task_id === task.id;
-  const names = [];
-  if (planned && (task.status === "todo" || (task.status === "in_progress" && !engineOnIt))) names.push("run");
-  if (task.status === "in_progress" && engineOnIt) names.push("stop");
-  if (planned && (task.status === "todo" || task.status === "in_progress")) names.push("block");
-  if (task.status === "blocked" && task.blocked_kind !== "gate") names.push("unblock");
-  if (planned && OPEN.has(task.status)) names.push("complete");
-  if (CLOSED.has(task.status)) names.push("reopen");
-  if (task.status === "todo" || task.status === "triage") names.push("split");
-  if (!CLOSED.has(task.status) && task.status !== "declined") names.push("cancel");
-  names.push("delete");
-  return names;
+  const inProgress = task.status === "in_progress";
+  const engineOnIt = inProgress && engine?.state === ENGINE_STATES.running && engine.task_id === task.id;
+  const engineKnown = !inProgress || Boolean(engine);
+  const buttons = [];
+  const more = [];
+  if (planned && engineKnown && (task.status === "todo" || (inProgress && !engineOnIt))) buttons.push("run");
+  if (engineOnIt) buttons.push("stop");
+  if (CLOSED.has(task.status)) buttons.push("reopen");
+  if (planned && engineKnown && OPEN.has(task.status) && !engineOnIt) buttons.push("close");
+  if (planned && (task.status === "todo" || inProgress)) more.push("block");
+  if (task.status === "todo" || task.status === "triage") more.push("split");
+  // In the backlog a task is declined from its decision; cancelling it is the rarer way out.
+  if (!planned && !CLOSED.has(task.status) && task.status !== "declined") more.push("cancel");
+  if (engineKnown && !engineOnIt) more.push("delete");
+  return { buttons, more };
 }
 
 /**
- * The More menu and the dialog that confirms the chosen action. `onDone(name,
- * sentence)` runs once the API accepted it.
+ * The task's actions beside its title: the buttons, the More menu and the
+ * dialog that confirms the chosen one. `onDone(name, sentence)` runs once the
+ * API accepted it.
  */
 export function TaskActions({ task, onDone }) {
   const client = useApiClient();
   const engine = useProjectEngine(task.project_id);
   const navigate = useNavigate();
   const [chosen, setChosen] = useState(null);
-  const action = chosen ? TASK_ACTIONS[chosen] : null;
+  const action = chosen && chosen !== "close" ? TASK_ACTIONS[chosen] : null;
+  const { buttons, more } = actionsFor(task, engine);
 
   return (
     <>
-      <Menu
-        label="Task actions"
-        trigger="More"
-        triggerClassName="menu__trigger--button"
-        items={actionsFor(task, engine).map((name) => ({
-          key: name,
-          label: TASK_ACTIONS[name].label,
-          onSelect: () => setChosen(name),
-        }))}
-      />
+      {buttons.map((name) => (
+        <Button key={name} onClick={() => setChosen(name)}>
+          {TASK_ACTIONS[name].label}
+        </Button>
+      ))}
+      {more.length ? (
+        <Menu
+          label="Task actions"
+          trigger="More"
+          triggerClassName="menu__trigger--button"
+          items={more.map((name) => ({
+            key: name,
+            label: TASK_ACTIONS[name].label,
+            onSelect: () => setChosen(name),
+          }))}
+        />
+      ) : null}
       <ReasonDialog
         open={Boolean(action)}
         title={action?.title}
@@ -177,6 +178,15 @@ export function TaskActions({ task, onDone }) {
             return;
           }
           onDone(name, TASK_ACTIONS[name].done);
+        }}
+      />
+      <CloseTaskDialog
+        open={chosen === "close"}
+        task={task}
+        onClose={() => setChosen(null)}
+        onDone={(sentence) => {
+          setChosen(null);
+          onDone("close", sentence);
         }}
       />
     </>

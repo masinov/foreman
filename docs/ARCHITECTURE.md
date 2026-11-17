@@ -437,7 +437,9 @@ bad one is a 400 `invalid_request` envelope (ADR-0019). Paged lists take
   `unblock`), `project_id`, `project_name`, `sprint_id`, `sprint_title`,
   `task_id`, `task_key`, `task_title`, `since`, and for `approve_merge` an
   `evidence` object (`tests_status`, `tested_sha`, `review_outcome`,
-  `reviewed_sha`, `head_sha`, `proof_status`; ADR-0018) or null. A gate whose
+  `reviewed_sha`, `head_sha`, `proof_status`; ADR-0018) or null, and for
+  `unblock` a `blocked` object (`reason`, `step`: why the task is blocked and
+  the step it stopped at; ADR-0030). A gate whose
   policy is `plan_approval` is `approve_plan`; every other human gate is
   `approve_merge`. A pending decision gate (a proposed sprint order) is a
   fifth kind, `settle_order`: it has no task (`task_id`, `task_key` and
@@ -506,6 +508,12 @@ over `foreman/git.py`, with typed response models in
   in `raw_entries`; `?raw=true` returns that stream instead. The prompt
   and the transcript are each capped at `cap_chars` (200,000 characters);
   `prompt_truncated` and `transcript_truncated` say when a cap applied.
+
+Beside a task's title are the actions that are not its decision
+(`pages/task/TaskActions.jsx`, ADR-0030): a button for what depends on its
+state (Run next, Stop, Reopen), Close (`CloseTaskDialog.jsx`: cancel or mark
+done), and a More menu for what is rare (Block, Split, Delete).
+`actionsFor(task, engine)` is the one place that says which exist.
 
 Two writes serve the task page's More menu and decision, in
 `foreman/dashboard/routers/tasks.py` over the shared mutation service:

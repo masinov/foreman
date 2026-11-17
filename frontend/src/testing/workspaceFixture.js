@@ -67,6 +67,7 @@ export const UNBLOCK_ITEM = {
   task_key: "FOR-15",
   task_title: "Send triage events through the dispatcher",
   since: on("11-10"),
+  blocked: { reason: "Tests failed three times", step: "test" },
 };
 
 export const ORDER_ITEM = {

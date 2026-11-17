@@ -25,6 +25,7 @@ import {
   taskRoutes,
 } from "../../testing/taskFixture";
 import { engine, workspacePayload } from "../../testing/workspaceFixture";
+import { actionsFor } from "./TaskActions";
 
 /** The More menu depends on the engine, which arrives with the workspace. */
 const engineKnown = () => screen.findByRole("button", { name: /^Engine/ });
@@ -382,10 +383,21 @@ describe("a task closed by hand", () => {
   });
 });
 
-describe("the More menu", () => {
+describe("the task's actions beside its title", () => {
   function openMore() {
     fireEvent.click(screen.getByRole("button", { name: "More" }));
     return screen.getByRole("menu", { name: "Task actions" });
+  }
+
+  /** The words of the buttons beside the title, in order, with the menu closed. */
+  const inPlainSight = () =>
+    [...document.querySelector(".task__actions").querySelectorAll("button")].map((button) => button.textContent);
+
+  /** Press an action where it is: a button beside the title, else an item of More. */
+  function choose(label) {
+    const button = within(document.querySelector(".task__actions")).queryByRole("button", { name: label });
+    if (button) fireEvent.click(button);
+    else fireEvent.click(within(openMore()).getByRole("menuitem", { name: label }));
   }
 
   /** The task's routes with the project's engine in `state`, on this task or on none. */
@@ -396,35 +408,47 @@ describe("the More menu", () => {
     return routes;
   }
 
+  // What depends on the task's state, and closing it, are buttons; More holds what is rare.
+  // A task the engine is running can be neither closed nor deleted: the API refuses both.
   it.each([
-    ["running", { status: "in_progress", workflow_current_step: "develop" }, "running", ["Stop", "Block", "Mark done", "Cancel", "Delete"]],
-    ["left part-way with no engine", { status: "in_progress", workflow_current_step: "merge" }, "not_running", ["Run next", "Block", "Mark done", "Cancel", "Delete"]],
-    ["queued", { status: "todo" }, "not_running", ["Run next", "Block", "Mark done", "Split into smaller tasks", "Cancel", "Delete"]],
-    ["blocked by the engine", { status: "blocked", blocked_kind: "engine" }, "not_running", ["Unblock", "Mark done", "Cancel", "Delete"]],
-    ["at a gate", {}, "not_running", ["Mark done", "Cancel", "Delete"]],
-    ["in the backlog", { status: "todo", in_backlog: true }, "not_running", ["Split into smaller tasks", "Cancel", "Delete"]],
-    ["done", { status: "done" }, "not_running", ["Reopen", "Delete"]],
-    ["cancelled", { status: "cancelled" }, "not_running", ["Reopen", "Delete"]],
-  ])("holds what exists for a task that is %s", async (_, fields, state, labels) => {
+    ["running", { status: "in_progress", workflow_current_step: "develop" }, "running", ["Stop"], ["Block"]],
+    ["left part-way with no engine", { status: "in_progress", workflow_current_step: "merge" }, "not_running", ["Run next", "Close"], ["Block", "Delete"]],
+    ["queued", { status: "todo" }, "not_running", ["Run next", "Close"], ["Block", "Split into smaller tasks", "Delete"]],
+    ["blocked by the engine", { status: "blocked", blocked_kind: "engine" }, "not_running", ["Close"], ["Delete"]],
+    ["at a gate", {}, "not_running", ["Close"], ["Delete"]],
+    ["in the backlog", { status: "todo", in_backlog: true }, "not_running", [], ["Split into smaller tasks", "Cancel", "Delete"]],
+    ["done", { status: "done" }, "not_running", ["Reopen"], ["Delete"]],
+    ["cancelled", { status: "cancelled" }, "not_running", ["Reopen"], ["Delete"]],
+  ])("shows what exists for a task that is %s", async (_, fields, state, buttons, more) => {
     await renderTask(BASE, withEngine(taskRoutes({ task: taskDetail(fields) }), state, state === "running"));
     await engineKnown();
-    expect(within(openMore()).getAllByRole("menuitem").map((item) => item.textContent)).toEqual(labels);
+    await waitFor(() => expect(inPlainSight()).toEqual(["Edit", ...buttons, "More"]));
+    expect(within(openMore()).getAllByRole("menuitem").map((item) => item.textContent)).toEqual(more);
+  });
+
+  it("offers neither Run next nor Stop for a task in progress until the engine is known", () => {
+    expect(actionsFor({ status: "in_progress", in_backlog: false }, null)).toEqual({ buttons: [], more: ["block"] });
+  });
+
+  it("answers a blocked task's question in its decision only, not in More as well", async () => {
+    await renderTask(BASE, taskRoutes({ task: taskDetail({ status: "blocked", blocked_kind: "engine", awaiting_human_gate: false }) }));
+    expect(within(decision()).getByRole("button", { name: "Unblock" })).toBeInTheDocument();
+    expect(within(openMore()).queryByRole("menuitem", { name: "Unblock" })).toBeNull();
   });
 
   it.each([
     ["Stop", "stop", { status: "in_progress" }, null, {}, "Stop requested. The task is blocked when the engine acts on it."],
     ["Block", "block", { status: "todo" }, "Why it is blocked", { reason: "Waiting for a key." }, "Blocked."],
-    ["Unblock", "unblock", { status: "blocked", blocked_kind: "engine" }, "Guidance for the agent", { note: "Waiting for a key." }, "Unblocked. The task is back in the queue."],
-    ["Mark done", "complete", { status: "todo" }, "Why it is done", { reason: "Waiting for a key." }, "Marked done."],
     ["Reopen", "reopen", { status: "done" }, null, {}, "Reopened. The task is back in the queue."],
-    ["Cancel", "cancel", { status: "todo" }, null, undefined, "Cancelled."],
+    ["Cancel", "cancel", { status: "todo", in_backlog: true }, null, undefined, "Cancelled."],
   ])("%s is confirmed, calls its endpoint, and shows a refusal", async (label, action, fields, ask, body, done) => {
     const routes = withEngine(taskRoutes({ task: taskDetail(fields) }), "running");
     let refuse = true;
     routes[post(action)] = () => (refuse ? reply(400, { error: `Cannot ${action} this task`, code: "invalid_request" }) : { ok: true });
     const { fetchImpl } = await renderTask(BASE, routes);
     await engineKnown();
-    fireEvent.click(within(openMore()).getByRole("menuitem", { name: label }));
+    if (label === "Stop") await screen.findByRole("button", { name: "Stop" });
+    choose(label);
     const dialog = screen.getByRole("dialog");
     expect(dialog).toHaveAccessibleDescription(/./);
     expect(postCalls(fetchImpl, action)).toHaveLength(0);
@@ -446,10 +470,63 @@ describe("the More menu", () => {
     const url = "POST /api/v1/projects/foreman/agent/start";
     routes[url] = { started: true };
     const { fetchImpl } = await renderTask(BASE, routes);
-    fireEvent.click(within(openMore()).getByRole("menuitem", { name: "Run next" }));
+    choose("Run next");
     fireEvent.click(within(screen.getByRole("dialog", { name: "Run this task next" })).getByRole("button", { name: "Run next" }));
     expect(await screen.findByText("Requested. The task starts when the engine picks the request up.")).toBeInTheDocument();
     expect(fetchImpl.calls.filter((call) => `${call.method} ${call.url}` === url)[0].body).toEqual({ task_id: TASK_ID });
+  });
+
+  describe("Close", () => {
+    async function openClose(routes = taskRoutes({ task: taskDetail({ status: "todo" }) })) {
+      const rendered = await renderTask(BASE, routes);
+      choose("Close");
+      return { ...rendered, dialog: screen.getByRole("dialog", { name: "Close this task" }) };
+    }
+
+    it("asks how the task ends, and calls nothing until that is said", async () => {
+      const { fetchImpl, dialog } = await openClose();
+      expect(dialog).toHaveAccessibleDescription(/./);
+      expect(within(dialog).getAllByRole("radio").map((radio) => radio.checked)).toEqual([false, false]);
+      expect(within(dialog).queryByLabelText("Why it is done")).toBeNull();
+      fireEvent.click(within(dialog).getByRole("button", { name: "Close task" }));
+      expect(within(dialog).getByRole("alert")).toHaveTextContent("Say how it ends.");
+      expect(postCalls(fetchImpl, "cancel")).toHaveLength(0);
+      expect(postCalls(fetchImpl, "complete")).toHaveLength(0);
+    });
+
+    it("as not needed, cancels the task, and shows a refusal", async () => {
+      const routes = taskRoutes({ task: taskDetail({ status: "todo" }) });
+      let refuse = true;
+      routes[post("cancel")] = () => (refuse ? reply(400, { error: "Cannot cancel this task", code: "invalid_request" }) : { ok: true });
+      const { fetchImpl, dialog } = await openClose(routes);
+      fireEvent.click(within(dialog).getByRole("radio", { name: /^Not needed/ }));
+      expect(within(dialog).queryByLabelText("Why it is done")).toBeNull();
+      const confirm = within(dialog).getByRole("button", { name: "Cancel task" });
+      fireEvent.click(confirm);
+      expect(await within(dialog).findByRole("alert")).toHaveTextContent("Cannot cancel this task.");
+      refuse = false;
+      fireEvent.click(confirm);
+      expect(await screen.findByText("Cancelled.")).toBeInTheDocument();
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(postCalls(fetchImpl, "cancel")).toHaveLength(2);
+      expect(postCalls(fetchImpl, "complete")).toHaveLength(0);
+    });
+
+    it("as already done, needs the reason, then marks the task done with it", async () => {
+      const routes = taskRoutes({ task: taskDetail({ status: "blocked", blocked_kind: "engine", awaiting_human_gate: false }) });
+      routes[post("complete")] = { ok: true };
+      const { fetchImpl, dialog } = await openClose(routes);
+      fireEvent.click(within(dialog).getByRole("radio", { name: /^Already done/ }));
+      const confirm = within(dialog).getByRole("button", { name: "Mark done" });
+      fireEvent.click(confirm);
+      expect(within(dialog).getByText("Why it is done is needed.")).toBeInTheDocument();
+      expect(postCalls(fetchImpl, "complete")).toHaveLength(0);
+      fireEvent.change(within(dialog).getByLabelText("Why it is done"), { target: { value: " Merged by hand in 721d877. " } });
+      fireEvent.click(confirm);
+      expect(await screen.findByText("Marked done.")).toBeInTheDocument();
+      expect(postCalls(fetchImpl, "complete")[0].body).toEqual({ reason: "Merged by hand in 721d877." });
+      expect(postCalls(fetchImpl, "cancel")).toHaveLength(0);
+    });
   });
 
   it("Block needs a reason before it calls anything", async () => {

@@ -66,6 +66,25 @@
   white-space: nowrap;
 }
 
+/* Why a task is blocked is a sentence someone wrote: it gets a share of the
+   row and is cut with an ellipsis, with the step it stopped at kept in view;
+   the whole of it is on the task. */
+.needs-you__blocked {
+  display: flex;
+  max-width: var(--needs-you-reason-width);
+}
+
+.needs-you__reason {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.needs-you__blocked .quiet {
+  flex: none;
+  white-space: pre;
+}
+
 /* The room at the sides belongs to the first and last cell, not to the
    surface, so the line between rows runs from one edge of the surface to the
    other, as it does in every other list (owner, 2026-11-17; the design drew
@@ -130,7 +149,14 @@
   .needs-you .table .needs-you__checked {
     flex: 1 1 auto;
     order: 3;
+    min-width: 0;
     white-space: normal;
+  }
+
+  /* Stacked, the reason is read whole and the step follows it in the line. */
+  .needs-you__blocked {
+    display: block;
+    max-width: none;
   }
 
   .needs-you .table .needs-you__action {
