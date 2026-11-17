@@ -7,7 +7,7 @@ import { useResource } from "../api/useResource";
 import { EngineMenu } from "../pages/shared/EngineMenu";
 import { NotFoundPage } from "../pages/status/NotFoundPage";
 import { RebuildingPage } from "../pages/status/RebuildingPage";
-import { BUILT_PAGES } from "./pages";
+import { BUILT_PAGES, pageKey } from "./pages";
 import { ManagerPanel } from "../pages/manager/ManagerPanel";
 import { AgentPanel } from "../pages/task/AgentPanel";
 import { useManagerOpen, useManagerTarget, useOverlay } from "./manager";
@@ -109,7 +109,7 @@ function SignedInApp() {
     page = <NotFoundPage />;
   } else if (BUILT_PAGES[route.name]) {
     const Page = BUILT_PAGES[route.name];
-    page = <Page params={params} />;
+    page = <Page params={params} routeName={route.name} />;
   } else {
     page = <RebuildingPage route={route} params={params} />;
   }
@@ -144,8 +144,9 @@ function SignedInApp() {
         ) : null
       }
     >
-      {/* A new key per address resets page state when the route changes. */}
-      <React.Fragment key={`${route.name}:${JSON.stringify(params)}`}>{page}</React.Fragment>
+      {/* A new key resets page state when the page changes; the tabs of one
+          page share a key, so its head stays put and is not loaded again. */}
+      <React.Fragment key={pageKey(route.name, params)}>{page}</React.Fragment>
     </Shell>
   );
 }
