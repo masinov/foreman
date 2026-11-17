@@ -105,10 +105,11 @@ function RunOutput({ run, pulse = 0 }) {
  * Activity: every run of the task, newest first, 25 at a time with Earlier,
  * and under the list what the picked run said and did.
  *
- * Picking is pressing a run's row. The picked row is shaded and its caret
- * points down at what it shows; the others point right. The newest run is
- * shown until a person picks one; after that the pick stays while newer
- * runs arrive above it.
+ * Picking is pressing a run's row. The picked row is shaded and its time is
+ * gold, as a picked file is on the Changes tab. A row has no caret: a caret
+ * says "this opens right under me", and what a run shows is under the whole
+ * list. The newest run is shown until a person picks one; after that the
+ * pick stays while newer runs arrive above it.
  *
  * While the task runs the list is read again in place (`revision` grows):
  * the rows stay on screen, a run that was not there opens into place, and
@@ -153,12 +154,11 @@ export function ActivityTab({ task, revision }) {
       render: (run) => (
         <button
           type="button"
-          className="file-pick run-pick"
+          className="file-pick"
           aria-pressed={run === selected}
           aria-label={`${humanize(run.step)}, ${formatDayTime(run.started_at) || "not started"}`}
           onClick={() => setPicked(run.id)}
         >
-          <Caret direction={run === selected ? "down" : "right"} />
           <Mono quiet>{formatDayTime(run.started_at) || "not started"}</Mono>
         </button>
       ),
