@@ -397,6 +397,13 @@
   white-space: nowrap;
 }
 
+/* A run's pick: the caret that says whether it is the one shown below, then when it ran. */
+.run-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
 /* A run's story: the time, then what happened. Rows are close together;
    what an agent said is the only text at full strength. */
 .run-story {
