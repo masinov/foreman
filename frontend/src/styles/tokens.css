@@ -19,6 +19,8 @@
   /* Meaning */
   --color-gold: #c9a55a;
   --color-gold-outline: #6d5a2f;
+  /* A control that opens more in place: its words and its caret. */
+  --color-expander: var(--color-gold);
   --color-green: #6fbf9d;
   --color-red: #e08a8a;
   --color-blue: #7fb4d2;

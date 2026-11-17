@@ -1,5 +1,7 @@
 import React, { useId, useState } from "react";
 
+import { Caret } from "./Caret";
+
 /**
  * A closed line that opens in place. The summary is a button carrying
  * aria-expanded; the content is rendered only while open, so what it loads
@@ -19,12 +21,12 @@ export function Disclosure({ summary, defaultOpen = false, onToggle, className =
     <div className={["disclosure", open ? "disclosure--open" : "", className].filter(Boolean).join(" ")}>
       <button
         type="button"
-        className="disclosure__summary"
+        className="disclosure__summary expander"
         aria-expanded={open}
         aria-controls={contentId}
         onClick={toggle}
       >
-        <span className="disclosure__marker" aria-hidden="true" />
+        <Caret direction={open ? "down" : "right"} />
         {summary}
       </button>
       <div className="disclosure__content" id={contentId} hidden={!open}>

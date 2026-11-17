@@ -9,6 +9,7 @@ import { useDelayedFlag, useResource } from "../../api/useResource";
 import { paths } from "../../app/paths";
 import { Link } from "../../app/router";
 import { Button } from "../../ui/Button";
+import { Caret } from "../../ui/Caret";
 import { Field } from "../../ui/Field";
 import { SectionHeading } from "../../ui/SectionHeading";
 import { Table } from "../../ui/Table";
@@ -341,7 +342,8 @@ export function BacklogTab({ projectId, revision, onChanged }) {
       ) : null}
 
       {list.hasMore ? (
-        <Button variant="quiet" className="list-more" disabled={list.loadingMore} onClick={() => list.loadMore()}>
+        <Button variant="quiet" className="list-more expander" disabled={list.loadingMore} onClick={() => list.loadMore()}>
+          <Caret />
           Show more
         </Button>
       ) : null}

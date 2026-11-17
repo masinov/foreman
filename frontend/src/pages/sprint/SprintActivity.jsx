@@ -4,6 +4,7 @@ import { useApiClient } from "../../api/ApiProvider";
 import { errorSentence } from "../../api/client";
 import { listSprintEvents, STEP_FINISHED } from "../../api/sprints";
 import { Button } from "../../ui/Button";
+import { Caret } from "../../ui/Caret";
 import { Mono } from "../../ui/Mono";
 import { SectionHeading } from "../../ui/SectionHeading";
 import { Table } from "../../ui/Table";
@@ -78,7 +79,8 @@ export function SprintActivity({ sprintId, tasks, revision }) {
         <Table caption="Finished steps" columns={columns} rows={state.events} hideHeader />
       ) : null}
       {state.hasMore ? (
-        <Button variant="quiet" className="list-more" disabled={state.loadingMore} onClick={loadEarlier}>
+        <Button variant="quiet" className="list-more expander" disabled={state.loadingMore} onClick={loadEarlier}>
+          <Caret />
           Earlier steps
         </Button>
       ) : null}

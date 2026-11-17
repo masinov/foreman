@@ -84,6 +84,11 @@ is no login.
 
 ## Documented conflicts between spec, mockup and code
 
+- Design v7 keeps gold for "needs you" and the primary decision. Controls
+  that open more in place ("Show all", "More details", "Finished sprints",
+  "Earlier") are gold too since 2026-11-17 (owner: one look for all of
+  them, grey or gold; gold chosen because text is in both greys). One
+  token, `--color-expander`, sets it.
 - Design v7 draws Edit and More beside a task's title, and in "Needs you"
   a button only on approve-merge rows, with the fourth kind named
   "unblock". Since ADR-0030 (owner, 2026-11-17) the title also has the
