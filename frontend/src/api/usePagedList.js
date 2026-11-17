@@ -17,7 +17,8 @@ const EMPTY = { items: null, total: null, meta: null, error: null, loading: fals
  * The first page (`pageSize` items) loads for each `key`; `loadMore(limit)`
  * appends the next `limit` (default `pageSize`) after what is loaded.
  *
- * Returns `{ items, total, meta, error, loading, loadingMore, hasMore, loadMore, reload }`.
+ * Returns `{ items, total, meta, error, loading, loadingMore, hasMore, expanded, loadMore, collapse, reload }`.
+ * `collapse()` goes back to the first page without asking the server; `expanded` says there is something to go back from.
  * A new key or `reload()` starts again from the first page; a response for
  * an older key or an earlier reload is ignored. `error` is a sentence.
  */
@@ -97,6 +98,13 @@ export function usePagedList(key, loadPage, { pageSize, enabled = true }) {
 
   const reload = useCallback(() => setReloads((count) => count + 1), []);
 
+  const collapse = useCallback(() => {
+    more.current?.abort();
+    setState((previous) =>
+      previous.items ? { ...previous, items: previous.items.slice(0, pageSize), loadingMore: false } : previous,
+    );
+  }, [pageSize]);
+
   const current = state.key === listKey ? state : { ...EMPTY, loading: enabled };
   return {
     items: current.items,
@@ -106,7 +114,9 @@ export function usePagedList(key, loadPage, { pageSize, enabled = true }) {
     loading: current.loading,
     loadingMore: current.loadingMore,
     hasMore: current.items !== null && current.total !== null && current.items.length < current.total,
+    expanded: current.items !== null && current.items.length > pageSize,
     loadMore,
+    collapse,
     reload,
   };
 }

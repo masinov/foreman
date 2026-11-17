@@ -398,6 +398,38 @@ describe("activity", () => {
     expect(screen.queryByRole("button", { name: "Earlier steps" })).toBeNull();
   });
 
+  it("goes back to the newest page with Show fewer, from the middle and from the end", async () => {
+    const page = (prefix, count) =>
+      Array.from({ length: count }, (_, index) => stepEvent(`${prefix}${index}`, "t-merge", "test", "success", "2025-11-11T10:00:00Z"));
+    const routes = sprintRoutes({ events });
+    routes[STEPS_URL] = { events: page("a", 25), has_more: true };
+    routes["GET /api/v1/sprints/sprint-56/events?type=workflow.step_completed&limit=25&before=a0"] = { events: page("b", 25), has_more: true };
+    routes["GET /api/v1/sprints/sprint-56/events?type=workflow.step_completed&limit=25&before=b0"] = { events: page("c", 4), has_more: false };
+    await renderSprint("/dashboard/sprints/sprint-56", routes);
+    const rowCount = () => within(screen.getByRole("table", { name: "Finished steps" })).getAllByRole("row").length - 1;
+    await waitFor(() => expect(rowCount()).toBe(25));
+    // Nothing to go back from on the first page.
+    expect(screen.queryByRole("button", { name: "Show fewer" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Earlier steps" }));
+    await waitFor(() => expect(rowCount()).toBe(50));
+    // In the middle: more, and the way back.
+    expect(screen.getByRole("button", { name: "Earlier steps" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Show fewer" }));
+    expect(rowCount()).toBe(25);
+    expect(screen.queryByRole("button", { name: "Show fewer" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Earlier steps" }));
+    await waitFor(() => expect(rowCount()).toBe(50));
+    fireEvent.click(screen.getByRole("button", { name: "Earlier steps" }));
+    await waitFor(() => expect(rowCount()).toBe(54));
+    // At the end: only the way back.
+    expect(screen.queryByRole("button", { name: "Earlier steps" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Show fewer" }));
+    expect(rowCount()).toBe(25);
+    expect(screen.getByRole("button", { name: "Earlier steps" })).toBeInTheDocument();
+  });
+
   it("says when no step has finished", async () => {
     await renderSprint();
     expect(await screen.findByText("No step has finished in this sprint yet.")).toBeInTheDocument();

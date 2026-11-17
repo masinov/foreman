@@ -5,7 +5,7 @@ import { BACKLOG_STATES, listBacklog, planBacklog } from "../../api/backlog";
 import { errorSentence } from "../../api/client";
 import { usePagedList } from "../../api/usePagedList";
 import { Button } from "../../ui/Button";
-import { Caret } from "../../ui/Caret";
+import { ListPager } from "../../ui/ListPager";
 import { Dialog } from "../../ui/Dialog";
 import { plural } from "../../ui/format";
 
@@ -95,12 +95,14 @@ export function AddFromBacklogDialog({ open, projectId, sprint, onClose, onPlann
             ))}
           </ul>
         ) : null}
-        {list.hasMore ? (
-          <Button variant="quiet" className="expander" disabled={list.loadingMore} onClick={() => list.loadMore()}>
-            <Caret />
-            Show more
-          </Button>
-        ) : null}
+        <ListPager
+          more="Show more"
+          loading={list.loadingMore}
+          hasMore={list.hasMore}
+          expanded={list.expanded}
+          onMore={() => list.loadMore()}
+          onFewer={list.collapse}
+        />
         {error ? (
           <p className="notice notice--error" role="alert">
             {error}

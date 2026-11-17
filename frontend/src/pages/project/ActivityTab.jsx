@@ -4,7 +4,7 @@ import { listMilestones, MILESTONE_FILTERS } from "../../api/milestones";
 import { useDelayedFlag } from "../../api/useResource";
 import { usePagedList } from "../../api/usePagedList";
 import { Button } from "../../ui/Button";
-import { Caret } from "../../ui/Caret";
+import { ListPager } from "../../ui/ListPager";
 import { SectionHeading } from "../../ui/SectionHeading";
 import { MilestoneTable } from "../shared/milestones";
 
@@ -63,12 +63,14 @@ export function ActivityTab({ projectId }) {
         <p className="empty">{EMPTY[filterKey]}</p>
       ) : null}
       {list.items && list.items.length > 0 ? <MilestoneTable caption="Milestones" items={list.items} /> : null}
-      {list.hasMore ? (
-        <Button variant="quiet" className="list-more expander" disabled={list.loadingMore} onClick={() => list.loadMore()}>
-          <Caret />
-          Earlier
-        </Button>
-      ) : null}
+      <ListPager
+        more="Earlier"
+        loading={list.loadingMore}
+        hasMore={list.hasMore}
+        expanded={list.expanded}
+        onMore={() => list.loadMore()}
+        onFewer={list.collapse}
+      />
     </section>
   );
 }

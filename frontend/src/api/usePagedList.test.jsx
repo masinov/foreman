@@ -27,6 +27,10 @@ function Probe({ load, pageSize = 3 }) {
       <span data-testid="total">{String(list.total)}</span>
       <span data-testid="error">{list.error ?? "no error"}</span>
       <span data-testid="more">{list.hasMore ? "more" : "end"}</span>
+      <span data-testid="expanded">{list.expanded ? "expanded" : "first page"}</span>
+      <button type="button" onClick={() => list.collapse()}>
+        Fewer
+      </button>
       <button type="button" onClick={() => list.loadMore()}>
         more
       </button>
@@ -61,6 +65,22 @@ describe("usePagedList", () => {
       { limit: 3, offset: 3, filter: "" },
       { limit: 10, offset: 6, filter: "" },
     ]);
+  });
+
+  it("goes back to the first page without asking again", async () => {
+    const calls = [];
+    renderWithApi(<Probe load={pager(calls)} />);
+    await waitFor(() => expect(screen.getByTestId("items").textContent).toBe("item-0,item-1,item-2"));
+    expect(screen.getByTestId("expanded").textContent).toBe("first page");
+    fireEvent.click(screen.getByRole("button", { name: /more/i }));
+    await waitFor(() => expect(screen.getByTestId("items").textContent.split(",")).toHaveLength(6));
+    expect(screen.getByTestId("expanded").textContent).toBe("expanded");
+    const asked = calls.length;
+    fireEvent.click(screen.getByRole("button", { name: "Fewer" }));
+    expect(screen.getByTestId("items").textContent).toBe("item-0,item-1,item-2");
+    expect(screen.getByTestId("expanded").textContent).toBe("first page");
+    expect(screen.getByTestId("more").textContent).toBe("more");
+    expect(calls).toHaveLength(asked);
   });
 
   it("starts again from the first page for a new key and on reload", async () => {

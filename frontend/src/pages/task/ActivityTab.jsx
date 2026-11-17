@@ -3,8 +3,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { getRunOutput, listTaskRuns } from "../../api/tasks";
 import { usePagedList } from "../../api/usePagedList";
 import { useResource } from "../../api/useResource";
-import { Button } from "../../ui/Button";
-import { Caret } from "../../ui/Caret";
+import { ListPager } from "../../ui/ListPager";
 import { Disclosure } from "../../ui/Disclosure";
 import { Mono } from "../../ui/Mono";
 import { SectionHeading } from "../../ui/SectionHeading";
@@ -213,12 +212,14 @@ export function ActivityTab({ task, revision }) {
             arrived={(run) => arrived.has(run.id)}
           />
         ) : null}
-        {runs.hasMore ? (
-          <Button variant="quiet" className="list-more expander" disabled={runs.loadingMore} onClick={() => runs.loadMore()}>
-            <Caret />
-            Earlier
-          </Button>
-        ) : null}
+        <ListPager
+          more="Earlier"
+          loading={runs.loadingMore}
+          hasMore={runs.hasMore}
+          expanded={runs.expanded}
+          onMore={() => runs.loadMore()}
+          onFewer={runs.collapse}
+        />
       </section>
       {selected ? <RunOutput key={selected.id} run={selected} pulse={selected.status === "running" ? pulse : 0} /> : null}
     </div>
