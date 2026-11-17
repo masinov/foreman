@@ -41,6 +41,12 @@ from .runner.env import agent_environment
 #: repository: where it puts a proposal document before proposing it.
 MANAGER_DRAFTS_DIR = ".foreman/manager"
 
+# The longest line of the manager's output that is read. Claude Code prints
+# one JSON object per line, and the result of a tool is inside it: reading a
+# 71 KB specification is one line longer than asyncio's 64 KB default, which
+# ended the turn with "Separator is not found, and chunk exceed the limit".
+MANAGER_STREAM_LINE_LIMIT = 64 * 1024 * 1024
+
 #: The manager's whole tool set (ADR-0022, ADR-0023).
 MANAGER_TOOLS: tuple[str, ...] = ("Read", "Grep", "Glob", "Bash", "Write")
 
@@ -428,6 +434,7 @@ async def _run_claude(
             stderr=asyncio.subprocess.PIPE,
             cwd=repo_path,
             env=manager_process_env(env),
+            limit=MANAGER_STREAM_LINE_LIMIT,
         )
     except (OSError, FileNotFoundError) as exc:
         yield {"type": "error", "message": f"Failed to start Claude Code: {exc}"}

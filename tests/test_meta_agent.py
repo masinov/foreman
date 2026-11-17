@@ -1,10 +1,11 @@
-"""Tests for the store-backed meta-agent service (no live subprocess)."""
+"""Tests for the store-backed meta-agent service (no live Claude Code)."""
 
 from __future__ import annotations
 
 import asyncio
 import json
 import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -29,6 +30,37 @@ def _drain(agen) -> list[dict]:
 
     raw = asyncio.run(run())
     return [json.loads(line) for line in raw if line.strip()]
+
+
+class LongOutputLineTests(unittest.TestCase):
+    """A tool result is one line of the manager's output, however long."""
+
+    def test_a_line_longer_than_asyncios_default_is_read(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            # Stands in for Claude Code: one assistant line holding 300,000
+            # characters (a large file read back), then the result line.
+            fake = Path(tmp) / "claude"
+            fake.write_text(
+                f"#!{sys.executable}\n"
+                "import json, sys\n"
+                "sys.stdin.read()\n"
+                "text = 'x' * 300_000\n"
+                "print(json.dumps({'type': 'assistant', 'message': {'content': [{'type': 'text', 'text': text}]}}))\n"
+                "print(json.dumps({'type': 'result', 'session_id': 's-1'}))\n"
+            )
+            fake.chmod(0o755)
+
+            async def run() -> list[dict]:
+                return [
+                    event
+                    async for event in meta_agent._run_claude(
+                        None, "hello", repo_path=tmp, executable=str(fake), model=None
+                    )
+                ]
+
+            events = asyncio.run(run())
+        self.assertEqual([event["type"] for event in events], ["text_delta", "session"])
+        self.assertEqual(len(events[0]["text"]), 300_000)
 
 
 class StateHeaderTests(unittest.TestCase):
