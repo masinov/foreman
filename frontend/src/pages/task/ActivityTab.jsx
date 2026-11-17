@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { getRunOutput, listTaskRuns } from "../../api/tasks";
 import { usePagedList } from "../../api/usePagedList";
@@ -102,20 +102,48 @@ function RunOutput({ run, pulse = 0 }) {
 }
 
 /**
- * Activity: every run of the task, newest first, 25 at a time with Earlier.
- * Selecting a run shows its output and the prompt it was given; the newest
- * is selected until another is picked.
+ * Activity: every run of the task, newest first, 25 at a time with Earlier,
+ * and under the list what the picked run said and did.
+ *
+ * Picking is pressing a run's row. The picked row is shaded and its caret
+ * points down at what it shows; the others point right. The newest run is
+ * shown until a person picks one; after that the pick stays while newer
+ * runs arrive above it.
+ *
+ * While the task runs the list is read again in place (`revision` grows):
+ * the rows stay on screen, a run that was not there opens into place, and
+ * what is shown under the list is left alone unless it is the run that
+ * changed.
  */
 export function ActivityTab({ task, revision }) {
   const pulse = useTaskPulse(task.id, task.status === "in_progress");
-  const runs = usePagedList(
-    ["task-runs", task.id, revision],
-    (client, options) => listTaskRuns(client, task.id, options),
-    { pageSize: RUNS_PAGE },
-  );
+  const runs = usePagedList(["task-runs", task.id], (client, options) => listTaskRuns(client, task.id, options), {
+    pageSize: RUNS_PAGE,
+  });
+  const reloadRuns = runs.reload;
+  const mounted = useRef(false);
+  useEffect(() => {
+    // The first reading is the list's own; later changes of `revision` read it again.
+    if (mounted.current) reloadRuns();
+    mounted.current = true;
+  }, [revision, reloadRuns]);
+
   const [picked, setPicked] = useState(null);
   const items = runs.items ?? [];
   const selected = items.find((run) => run.id === picked) ?? items[0] ?? null;
+
+  // The runs that were not in the list the last time it was drawn.
+  const known = useRef(null);
+  const [arrived, setArrived] = useState(() => new Set());
+  useLayoutEffect(() => {
+    if (!runs.items) return;
+    const ids = runs.items.map((run) => run.id);
+    if (known.current) {
+      const fresh = ids.filter((id) => !known.current.has(id));
+      if (fresh.length) setArrived(new Set(fresh));
+    }
+    known.current = new Set(ids);
+  }, [runs.items]);
 
   const columns = [
     {
@@ -125,11 +153,12 @@ export function ActivityTab({ task, revision }) {
       render: (run) => (
         <button
           type="button"
-          className="file-pick"
+          className="file-pick run-pick"
           aria-pressed={run === selected}
           aria-label={`${humanize(run.step)}, ${formatDayTime(run.started_at) || "not started"}`}
           onClick={() => setPicked(run.id)}
         >
+          <Caret direction={run === selected ? "down" : "right"} />
           <Mono quiet>{formatDayTime(run.started_at) || "not started"}</Mono>
         </button>
       ),
@@ -175,7 +204,14 @@ export function ActivityTab({ task, revision }) {
         ) : null}
         {runs.items && items.length === 0 ? <p className="empty">Nothing has run on this task yet.</p> : null}
         {items.length ? (
-          <Table caption="Runs" columns={columns} rows={items} selected={(run) => run === selected} />
+          <Table
+            caption="Runs"
+            columns={columns}
+            rows={items}
+            selected={(run) => run === selected}
+            onRowClick={(run) => setPicked(run.id)}
+            arrived={(run) => arrived.has(run.id)}
+          />
         ) : null}
         {runs.hasMore ? (
           <Button variant="quiet" className="list-more expander" disabled={runs.loadingMore} onClick={() => runs.loadMore()}>

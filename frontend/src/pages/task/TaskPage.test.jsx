@@ -913,12 +913,53 @@ describe("Activity", () => {
     fireEvent.click(screen.getByRole("button", { name: "Show the prompt this run was given" }));
     expect(screen.getByText("The prompt of run-3")).toBeInTheDocument();
 
-    fireEvent.click(within(rows[1]).getByRole("button"));
+    // The caret says which run is shown below: down on that one, right on the others.
+    expect(rows[0].querySelector(".caret")).toHaveClass("caret--down");
+    expect(rows[1].querySelector(".caret")).toHaveClass("caret--right");
+
+    // Pressing anywhere on a run's row picks it, not only its time.
+    fireEvent.click(within(rows[1]).getAllByRole("cell")[1]);
     expect(await screen.findByText("Ran 1221 tests")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Test" })).toBeInTheDocument();
     expect(document.querySelector("#run-output").parentElement).toHaveTextContent(/by engine/);
     expect(within(rows[1]).getByRole("button")).toHaveAttribute("aria-pressed", "true");
+    expect(rows[1]).toHaveClass("table__row--selected");
+    expect(rows[1].querySelector(".caret")).toHaveClass("caret--down");
     expect(calls(fetchImpl, "GET", outputUrl("run-2").slice(4))).toHaveLength(1);
+
+    fireEvent.click(within(rows[0]).getByRole("button"));
+    expect(await screen.findByText("Reviewed the change.")).toBeInTheDocument();
+  });
+
+  it("reads the list again in place when a step is registered: rows stay, the new one opens, the pick is kept", async () => {
+    const routes = taskRoutes({
+      task: taskDetail({ status: "in_progress", workflow_current_step: "merge", awaiting_human_gate: false, gate_policy: null, blocked_kind: null }),
+    });
+    const { fetchImpl } = await renderTask(`${BASE}/activity`, routes);
+    const table = await screen.findByRole("table", { name: "Runs" });
+    const firstRow = within(table).getAllByRole("row")[1];
+    // The person goes back to the earlier run.
+    fireEvent.click(within(table).getAllByRole("row")[2]);
+    expect(await screen.findByText("Ran 1221 tests")).toBeInTheDocument();
+    const shown = document.querySelector("#run-output");
+
+    // A new step is registered while they read.
+    const before = fetchImpl.routes[RUNS_URL];
+    fetchImpl.routes[RUNS_URL] = { ...before, runs: [runItem("run-9", "merge", { backend: "builtin", model: null }), ...before.runs], total: before.total + 1 };
+    fetchImpl.routes[outputUrl("run-9")] = outputPayload("run-9", "Merged.");
+    const source = fetchImpl.EventSource.sources.find((entry) => entry.url === "/api/v1/sprints/sprint-56/stream");
+    source.emit({ type: "event", event: { id: "e20", task_id: TASK_ID } });
+    await waitFor(() => expect(within(screen.getByRole("table", { name: "Runs" })).getAllByRole("row")).toHaveLength(4), { timeout: 3000 });
+
+    const rows = within(screen.getByRole("table", { name: "Runs" })).getAllByRole("row").slice(1);
+    // The row that was there is the same element, the new one is marked as arrived, and nothing went blank.
+    expect(rows[1]).toBe(firstRow);
+    expect(rows[0]).toHaveClass("table__row--arrived");
+    expect(rows[1]).not.toHaveClass("table__row--arrived");
+    // What the person picked is still what is shown, untouched.
+    expect(document.querySelector("#run-output")).toBe(shown);
+    expect(screen.getByRole("heading", { name: "Test" })).toBeInTheDocument();
+    expect(rows[2]).toHaveClass("table__row--selected");
   });
 
   it("pages 25 runs at a time with Earlier", async () => {
