@@ -115,9 +115,8 @@ class WorkflowExecutionTests(OrchestratorTestCase):
             self.assertIn("workflow.transition", event_types)
             self.assertNotIn("workflow.no_transition", event_types)
 
-        # The work landed on the default branch, and the operator's checkout
-        # was never touched to get it there: it is still on `main`, and its
-        # working tree still holds only what it held before the run.
+        # The work landed on the default branch. The operator's checkout is
+        # still on `main`, and its files followed the merge (ADR-0031).
         merged = self.git(repo_path, "ls-tree", "-r", "--name-only", "main").stdout
         self.assertIn("feature.txt", merged)
         self.assertIn("ready.txt", merged)
@@ -125,7 +124,8 @@ class WorkflowExecutionTests(OrchestratorTestCase):
             self.git(repo_path, "branch", "--show-current").stdout.strip(),
             "main",
         )
-        self.assertFalse((repo_path / "feature.txt").is_file())
+        self.assertTrue((repo_path / "feature.txt").is_file())
+        self.assertEqual(self.git(repo_path, "status", "--porcelain").stdout.strip(), "")
 
     def test_secure_workflow_runs_through_security_review_and_finishes_task(self) -> None:
         repo_path, db_path = self.create_workspace()

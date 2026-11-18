@@ -18,6 +18,8 @@ memory changes rather than versioned product releases.
 
 ### Sprint 60 — what is there works and makes sense
 
+- A project's folder on the default branch follows each merge (ADR-0031, amends ADR-0012). Before, the engine moved `main` under it and left its files at the commit before, so git listed the merged work as staged deletions (found on Assay). After a merge, `_builtin:merge` brings that checkout to the merge commit with `git read-tree -m -u` from the commit its index still shows, keeping untracked files and unstaged edits and refusing where it would overwrite one. It records `engine.checkout_updated` or `engine.checkout_behind` (with the reason). A checkout on another branch is untouched.
+
 - Block exists only for a task that has not started (owner, 2026-11-18; ADR-0030 amended). A started task is stopped or closed. The task page no longer offers Block on a task in progress, so a running task has no More; `POST /tasks/{id}/block`, `foreman task block` and the manager's `block_task` refuse any status but `todo`.
 
 - A list that shows more on request can be put back: "Show fewer" appears beside "Earlier steps" once more than the first page is shown, and alone at the end of the list. It applies to the activity of a sprint, a project and a task, the backlog, finished sprints and the dialog that adds backlog tasks to a sprint. There was no way back short of reloading the page.

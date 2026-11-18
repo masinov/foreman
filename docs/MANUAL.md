@@ -1551,8 +1551,16 @@ See [ADR-0011](adr/ADR-0011-resident-engine-and-project-lock.md).
 
 ## 24. Worktrees
 
-**Foreman never changes what is checked out in your repository.** Every task
-runs in its own git worktree that Foreman creates, owns, and deletes.
+**Foreman never changes which branch is checked out in your repository.**
+Every task runs in its own git worktree that Foreman creates, owns, and
+deletes.
+
+If your checkout is on the default branch, each merge brings its files
+along, as a fast-forward `git pull` would (ADR-0031). Your untracked files
+and unstaged edits are kept. Where the update would overwrite one, or you
+have staged changes, your checkout is left as it is, and the task's activity
+says "The project's folder still shows an older main" with the reason. A
+checkout on any other branch is never touched.
 
 ```
 <repo>/.foreman/worktrees/FOR-102/       # one per task, on the task branch

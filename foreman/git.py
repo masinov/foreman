@@ -211,6 +211,81 @@ def merge_in_progress(repo_path: str | Path) -> bool:
     return result.returncode == 0
 
 
+#: How far back the branch's first-parent history is searched for the commit
+#: a checkout still shows. A checkout further behind than this is left alone.
+FOLLOW_SEARCH_DEPTH = 1000
+
+
+@dataclass(frozen=True, slots=True)
+class CheckoutFollow:
+    """What :func:`follow_branch_in_checkout` did to one checkout.
+
+    ``state`` is ``other_branch`` (the checkout is not on the branch; nothing
+    to do), ``current`` (its files already show the branch's head),
+    ``updated`` (its files were brought from ``from_sha`` to the head) or
+    ``left`` (they were not, for ``reason``).
+    """
+
+    state: str
+    from_sha: str | None = None
+    reason: str = ""
+
+
+def follow_branch_in_checkout(repo_path: str | Path, branch: str, sha: str) -> CheckoutFollow:
+    """Bring a checkout that has ``branch`` checked out up to ``sha`` (ADR-0031).
+
+    A merge in another worktree moves the branch under a checkout sitting on
+    it: its files go on describing the commit before, and git reports the
+    merged work as staged deletions. This does what a fast-forward pull would
+    have done there. The commit the checkout shows is found by its index: the
+    index must equal the tree of a commit in the branch's first-parent
+    history, so anything staged that was never committed makes it ``left``.
+    ``git read-tree -m -u`` then moves index and files from that commit to
+    ``sha``; it keeps a person's untracked files and unstaged edits and
+    refuses, changing nothing, where the update would overwrite one.
+    """
+
+    if worktree_branch(repo_path) != branch:
+        return CheckoutFollow("other_branch")
+    if merge_in_progress(repo_path):
+        return CheckoutFollow("left", reason="a merge is in progress there")
+    index_tree = run_git(repo_path, "write-tree", check=False)
+    if index_tree.returncode != 0:
+        return CheckoutFollow("left", reason="its index has unresolved conflicts")
+    target_tree = run_git(repo_path, "rev-parse", f"{sha}^{{tree}}", check=False)
+    if target_tree.returncode != 0:
+        return CheckoutFollow("left", reason=f"commit {sha} is not in that repository")
+    if index_tree.stdout == target_tree.stdout:
+        return CheckoutFollow("current")
+    history = run_git(
+        repo_path,
+        "log",
+        "--first-parent",
+        f"-n{FOLLOW_SEARCH_DEPTH}",
+        "--format=%H %T",
+        sha,
+        check=False,
+    )
+    shown = next(
+        (
+            commit
+            for commit, _, tree in (line.partition(" ") for line in history.stdout.splitlines())
+            if tree == index_tree.stdout
+        ),
+        None,
+    )
+    if shown is None:
+        return CheckoutFollow(
+            "left",
+            reason=f"it holds staged changes that are not a commit of {branch}",
+        )
+    moved = run_git(repo_path, "read-tree", "-m", "-u", shown, sha, check=False)
+    if moved.returncode != 0:
+        detail = moved.stderr or moved.stdout or "git read-tree failed"
+        return CheckoutFollow("left", from_sha=shown, reason=detail)
+    return CheckoutFollow("updated", from_sha=shown)
+
+
 def commits_behind(repo_path: str | Path, branch_name: str, base_branch: str) -> int:
     """Return how many commits ``base_branch`` has that ``branch_name`` lacks.
 

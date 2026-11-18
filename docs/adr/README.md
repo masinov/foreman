@@ -43,3 +43,4 @@ Filename format:
 | ADR-0028 | Foreman Starts Backlog Work, And Acceptance Is Its Permission | accepted |
 | ADR-0029 | On A Task Page The Side Bar Is The Task's Agents | accepted |
 | ADR-0030 | A Task's Answers Are In Plain Sight | accepted |
+| ADR-0031 | A Checkout On The Default Branch Follows The Merge | accepted |
