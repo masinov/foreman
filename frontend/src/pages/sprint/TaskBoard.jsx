@@ -86,15 +86,18 @@ function Count({ column }) {
 function Column({ column, folded, onToggle, busy, onApprove }) {
   const bodyId = useId();
   if (folded) {
-    // The whole strip opens it: the name, read downwards, and the count.
+    // The whole strip opens it: the caret, then the name read downwards with
+    // its count after it, as in an open column's heading.
     return (
       <section className="board__column board__column--folded" aria-label={column.label}>
         <button type="button" className="board__unfold" aria-expanded="false" aria-label={`Show ${column.label}`} onClick={onToggle}>
           <span className="board__folded-head">
             <Caret direction="right" />
+          </span>
+          <span className="board__folded-name">
+            {column.label}
             <Count column={column} />
           </span>
-          <span className="board__folded-name">{column.label}</span>
         </button>
       </section>
     );
