@@ -1,69 +1,21 @@
-import { useApiClient } from "../../api/ApiProvider";
-import { errorSentence } from "../../api/client";
-import React, { useId, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 
-import { getRunOutput, listTaskRuns, sendGuidance, steerTask } from "../../api/tasks";
+import { getRunOutput, listTaskRuns } from "../../api/tasks";
 import { usePagedList } from "../../api/usePagedList";
 import { useResource } from "../../api/useResource";
-import { Button } from "../../ui/Button";
+import { ListPager } from "../../ui/ListPager";
 import { Disclosure } from "../../ui/Disclosure";
 import { Mono } from "../../ui/Mono";
 import { SectionHeading } from "../../ui/SectionHeading";
 import { Table } from "../../ui/Table";
-import { LongText } from "../../ui/LongText";
-import { formatClock, formatDay, formatDayTime, formatDuration, formatMoney, humanize, plural, shortSha } from "../../ui/format";
+import { formatDayTime, formatDuration, formatMoney, humanize, plural, shortSha } from "../../ui/format";
 import { narrate } from "./runWords";
+import { RunLine, withDays } from "./RunStory";
 import { runBy, runResult, runSeconds } from "./taskWords";
+import { useTaskPulse } from "./useTaskPulse";
 
 // Design README: activity 25 at a time.
 export const RUNS_PAGE = 25;
-
-/** The story with a line naming the day wherever it changes from the day the run started. */
-function withDays(lines, startedAt) {
-  const out = [];
-  let day = formatDay(startedAt);
-  for (const line of lines) {
-    const lineDay = formatDay(line.at);
-    if (lineDay && day && lineDay !== day) out.push({ day: lineDay });
-    if (lineDay) day = lineDay;
-    out.push(line);
-  }
-  return out;
-}
-
-/** One line of the story: when, what happened in words, and what it ran or said. */
-function RunLine({ line }) {
-  const tone = line.tone ? ` tone-${line.tone}` : "";
-  if (line.day) {
-    // A run can be touched again on a later day; the times alone would not say so.
-    return <li className="run-line run-line--day">{line.day}</li>;
-  }
-  return (
-    <li className="run-line">
-      <Mono quiet className="run-line__at">
-        {formatClock(line.at)}
-      </Mono>
-      <div className="run-line__what">
-        {line.says || line.mono ? (
-          <p className="run-line__head">
-            {line.says ? <span className={`run-line__says${tone}`}>{line.says}</span> : null}
-            {line.says && line.mono ? " " : null}
-            {line.mono ? <Mono className="run-line__mono">{line.mono}</Mono> : null}
-          </p>
-        ) : null}
-        {line.body ? (
-          line.output ? (
-            <pre className="run-output__text run-line__output">{line.body}</pre>
-          ) : line.prose ? (
-            <LongText>{line.body}</LongText>
-          ) : (
-            <pre className={line.clamp ? "run-output__text run-line__result" : "run-output__text"}>{line.body}</pre>
-          )
-        ) : null}
-      </div>
-    </li>
-  );
-}
 
 /** The agent's stream as the CLI wrote it, read only when someone opens it. */
 function RawOutput({ run }) {
@@ -88,8 +40,13 @@ function RawOutput({ run }) {
   );
 }
 
-function RunOutput({ run }) {
+function RunOutput({ run, pulse = 0 }) {
   const output = useResource(["run-output", run.id], (client, options) => getRunOutput(client, run.id, options));
+  const reload = output.reload;
+  // `pulse` grows while this run is in progress and printing.
+  useEffect(() => {
+    if (pulse) reload();
+  }, [pulse, reload]);
   const by = runBy(run);
   const data = output.data;
   const lines = data ? withDays(narrate(data.transcript), run.started_at) : [];
@@ -144,90 +101,49 @@ function RunOutput({ run }) {
 }
 
 /**
- * Activity: every run of the task, newest first, 25 at a time with Earlier.
- * Selecting a run shows its output and the prompt it was given; the newest
- * is selected until another is picked.
+ * Activity: every run of the task, newest first, 25 at a time with Earlier,
+ * and under the list what the picked run said and did.
+ *
+ * Picking is pressing a run's row. The picked row is shaded and its time is
+ * gold, as a picked file is on the Changes tab. A row has no caret: a caret
+ * says "this opens right under me", and what a run shows is under the whole
+ * list. The newest run is shown until a person picks one; after that the
+ * pick stays while newer runs arrive above it.
+ *
+ * While the task runs the list is read again in place (`revision` grows):
+ * the rows stay on screen, a run that was not there opens into place, and
+ * what is shown under the list is left alone unless it is the run that
+ * changed.
  */
-/**
- * Something to tell the agent whose step is running, under what it is doing.
- * "Interrupt and tell it now" stops the step and starts it again with the
- * note; "Save for its next step" leaves the step alone and the note waits.
- */
-function TellAgent({ task, run, onSent }) {
-  const client = useApiClient();
-  const fieldId = useId();
-  const [text, setText] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState(null);
-
-  async function send(request) {
-    if (!text.trim()) {
-      setNotice({ error: true, text: "Write what to tell it first." });
-      return;
-    }
-    setBusy(true);
-    setNotice(null);
-    try {
-      const result = await request(client, task.id, text.trim());
-      setText("");
-      setNotice({ error: false, text: result?.message || "Recorded." });
-      onSent?.();
-    } catch (error) {
-      setNotice({ error: true, text: errorSentence(error) });
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <form
-      className="guidance tell-agent"
-      aria-label="Tell the agent"
-      onSubmit={(event) => {
-        event.preventDefault();
-        send(steerTask);
-      }}
-      noValidate
-    >
-      <label className="field__label" htmlFor={fieldId}>
-        Tell the agent ({humanize(run.step)} is running)
-      </label>
-      <textarea
-        id={fieldId}
-        className="field__input field__input--multiline"
-        rows={2}
-        value={text}
-        onChange={(event) => setText(event.target.value)}
-      />
-      <div className="guidance__actions">
-        <Button type="submit" disabled={busy}>
-          Interrupt and tell it now
-        </Button>
-        <Button variant="quiet" disabled={busy} onClick={() => send(sendGuidance)}>
-          Save for its next step
-        </Button>
-        {notice ? (
-          <span className={notice.error ? "notice notice--error" : "notice"} role={notice.error ? "alert" : "status"}>
-            {notice.text}
-          </span>
-        ) : null}
-      </div>
-    </form>
-  );
-}
-
-/** A step an agent is doing right now. */
-const agentAtWork = (run) => run.status === "running" && !String(run.role_id || "").startsWith("_builtin:");
-
 export function ActivityTab({ task, revision }) {
-  const runs = usePagedList(
-    ["task-runs", task.id, revision],
-    (client, options) => listTaskRuns(client, task.id, options),
-    { pageSize: RUNS_PAGE },
-  );
+  const pulse = useTaskPulse(task.id, task.status === "in_progress");
+  const runs = usePagedList(["task-runs", task.id], (client, options) => listTaskRuns(client, task.id, options), {
+    pageSize: RUNS_PAGE,
+  });
+  const reloadRuns = runs.reload;
+  const mounted = useRef(false);
+  useEffect(() => {
+    // The first reading is the list's own; later changes of `revision` read it again.
+    if (mounted.current) reloadRuns();
+    mounted.current = true;
+  }, [revision, reloadRuns]);
+
   const [picked, setPicked] = useState(null);
   const items = runs.items ?? [];
   const selected = items.find((run) => run.id === picked) ?? items[0] ?? null;
+
+  // The runs that were not in the list the last time it was drawn.
+  const known = useRef(null);
+  const [arrived, setArrived] = useState(() => new Set());
+  useLayoutEffect(() => {
+    if (!runs.items) return;
+    const ids = runs.items.map((run) => run.id);
+    if (known.current) {
+      const fresh = ids.filter((id) => !known.current.has(id));
+      if (fresh.length) setArrived(new Set(fresh));
+    }
+    known.current = new Set(ids);
+  }, [runs.items]);
 
   const columns = [
     {
@@ -287,16 +203,25 @@ export function ActivityTab({ task, revision }) {
         ) : null}
         {runs.items && items.length === 0 ? <p className="empty">Nothing has run on this task yet.</p> : null}
         {items.length ? (
-          <Table caption="Runs" columns={columns} rows={items} selected={(run) => run === selected} />
+          <Table
+            caption="Runs"
+            columns={columns}
+            rows={items}
+            selected={(run) => run === selected}
+            onRowClick={(run) => setPicked(run.id)}
+            arrived={(run) => arrived.has(run.id)}
+          />
         ) : null}
-        {runs.hasMore ? (
-          <Button variant="quiet" className="list-more" disabled={runs.loadingMore} onClick={() => runs.loadMore()}>
-            Earlier
-          </Button>
-        ) : null}
+        <ListPager
+          more="Earlier"
+          loading={runs.loadingMore}
+          hasMore={runs.hasMore}
+          expanded={runs.expanded}
+          onMore={() => runs.loadMore()}
+          onFewer={runs.collapse}
+        />
       </section>
-      {selected ? <RunOutput key={selected.id} run={selected} /> : null}
-      {selected && agentAtWork(selected) ? <TellAgent task={task} run={selected} onSent={() => runs.reload?.()} /> : null}
+      {selected ? <RunOutput key={selected.id} run={selected} pulse={selected.status === "running" ? pulse : 0} /> : null}
     </div>
   );
 }

@@ -198,3 +198,92 @@
   border-top: var(--line-width) solid var(--color-line-row-tinted);
 }
 
+/* The conversation with a task's agents: the same side bar on a task page. */
+.agent__thread {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.agent__step {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/* One line per step: which, how it ended, then who, how long and the cost. */
+.agent__step-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-2);
+  width: 100%;
+  padding: var(--space-1) 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-bottom: var(--line-width) solid var(--color-line-row);
+  cursor: pointer;
+}
+
+.agent__step-head:hover .agent__step-name,
+.agent__step-head:focus-visible .agent__step-name {
+  color: var(--color-gold);
+}
+
+.agent__step-name {
+  font-weight: var(--font-weight-strong);
+}
+
+.agent__step-facts {
+  margin-left: auto;
+  color: var(--color-text-quiet);
+  font-size: var(--font-size-control);
+}
+
+.agent__step-body {
+  min-width: 0;
+}
+
+/* In the side bar there is no room for the time beside every line. */
+.agent__story .run-line {
+  display: block;
+}
+
+.agent__story .run-line__at {
+  display: none;
+}
+
+.agent__said {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-tinted);
+  border-radius: var(--radius);
+}
+
+.agent__said-who {
+  color: var(--color-text-quiet);
+  font-size: var(--font-size-control);
+}
+
+.agent__said-text {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+/* A long command is three lines here; the Activity tab has all of it. */
+.agent__story .run-line__head {
+  display: -webkit-box;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}

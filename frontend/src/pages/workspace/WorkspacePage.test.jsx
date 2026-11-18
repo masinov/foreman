@@ -47,9 +47,10 @@ describe("WorkspacePage", () => {
       "/dashboard/tasks/task-merge",
     );
     const unblock = within(needsYou).getByText("FOR-15").closest("tr");
-    expect(within(unblock).getByText("Unblock")).toBeInTheDocument();
-    expect(within(unblock).getByText("Sprint 56: engine truthfulness")).toBeInTheDocument();
-    expect(within(unblock).queryByRole("button")).toBeNull();
+    expect(within(unblock).getByText("Blocked")).toBeInTheDocument();
+    // What a person weighs before unblocking: why it is blocked and where it stopped.
+    expect(unblock).toHaveTextContent("Tests failed three times · at test");
+    expect(within(unblock).getByRole("button", { name: "Unblock FOR-15" })).toHaveClass("button--gold-outline");
 
     const projects = await waitFor(() => {
       const section = projectsSection();

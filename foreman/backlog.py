@@ -68,6 +68,28 @@ def serialize_backlog_task(
     }
 
 
+def foreman_and_the_backlog(store: ForemanStore, project: Project) -> dict[str, Any]:
+    """What Foreman may do with this project's backlog on its own (ADR-0028).
+
+    ``starts``: whether it starts accepted backlog work itself. ``limit`` and
+    ``started``: how many it may start per sprint and how many it has in the
+    active sprint (``started`` is null with no active sprint). ``ready``: how
+    many accepted tasks it could start next.
+    """
+
+    from .engine.limits import resolve_project_settings
+    from .engine.selection import backlog_ready_for_foreman, pulled_task_ids
+
+    settings = resolve_project_settings(project)
+    sprint = store.get_active_sprint(project.id)
+    return {
+        "starts": settings.task_selection_mode == "autonomous",
+        "limit": settings.max_autonomous_tasks,
+        "started": len(pulled_task_ids(store, sprint)) if sprint is not None else None,
+        "ready": len(backlog_ready_for_foreman(store, project)),
+    }
+
+
 def read_backlog(
     store: ForemanStore,
     project: Project,
@@ -106,6 +128,7 @@ def read_backlog(
         "project_id": project.id,
         "backlog_id": backlog.id if backlog is not None else None,
         "triage": PolicyMatrix.for_project(project).resolve("triage").value,
+        "foreman": foreman_and_the_backlog(store, project),
         "counts": {state: counts[status] for state, status in BACKLOG_STATES.items()},
         "tasks": [serialize_backlog_task(task, origins.get(task.id)) for task in tasks],
         "total": total,

@@ -1,6 +1,9 @@
 import { queryString, segment } from "./client";
 
-/** The states a backlog task is in (ADR-0021): filed, accepted or declined. */
+/**
+ * The states a backlog task is in (ADR-0021, ADR-0028): `filed` is a request, work an
+ * agent or another system filed that no person has accepted; `accepted` is backlog work.
+ */
 export const BACKLOG_STATES = {
   filed: "filed",
   accepted: "accepted",
@@ -12,8 +15,10 @@ export const TASK_TYPES = ["feature", "fix", "refactor", "docs", "spike", "chore
 
 /**
  * One page of a project's backlog as `{ items, total, meta }`. `meta` is
- * `{ counts, triage }`: how many tasks are in each state across the whole
- * backlog, and who accepts filed work in this project (`human` or `auto`).
+ * `{ counts, triage, foreman }`: how many tasks are in each state across the
+ * whole backlog, who accepts requests in this project (`human` or `auto`),
+ * and what Foreman may do with the backlog on its own (ADR-0028): `starts`,
+ * `limit`, `started` in the active sprint (null with none), `ready`.
  * `q` matches on the server; without `statuses` the API lists filed and
  * accepted work, filed first.
  */
@@ -22,7 +27,11 @@ export function listBacklog(client, projectId, { statuses = [], q, limit, offset
   return client.get(`/projects/${segment(projectId)}/backlog${query}`, options).then((payload) => ({
     items: payload?.tasks ?? [],
     total: payload?.total ?? 0,
-    meta: { counts: payload?.counts ?? {}, triage: payload?.triage ?? "human" },
+    meta: {
+      counts: payload?.counts ?? {},
+      triage: payload?.triage ?? "human",
+      foreman: payload?.foreman ?? { starts: false, limit: 0, started: null, ready: 0 },
+    },
   }));
 }
 

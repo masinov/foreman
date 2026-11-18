@@ -236,20 +236,6 @@ def render_sprint_context(
                 carried_output or "(none)",
             ]
         )
-        if settings_of(project).task_selection_mode == "autonomous":
-            # Only autonomous projects carry the self-selection contract; a
-            # directed task has its title, branch, and criteria already.
-            lines.extend(
-                [
-                    "",
-                    "### Autonomous Signal Contract",
-                    "You choose what this task is. In the first developer step, name it",
-                    "by emitting signal.task_started with: title, criteria (the acceptance",
-                    "criteria you will meet), and task_type. The engine has already put",
-                    "you on this task's branch in its own worktree; stay on it.",
-                ]
-            )
-
         if active_lease is not None:
             lines.extend(
                 [

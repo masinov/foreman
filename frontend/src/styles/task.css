@@ -26,7 +26,35 @@
 
 .task__actions {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-2);
+}
+
+/* The ways to close a task, in its dialog: a choice of one, each with what it does. */
+.close-ways {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.close-ways .field__label {
+  padding: 0;
+}
+
+.close-ways__way {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.close-ways__words {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
 /* The decision: the one tinted surface on this page. */
@@ -37,15 +65,14 @@
   gap: var(--space-3) var(--space-6);
 }
 
-/* The question and its facts share a line when they fit, and the facts drop
-   to a second line when they do not (a merge has more of them than an
-   acceptance). */
+/* Every decision has the same shape whatever it asks and however wide the
+   window is: the question on its own line, its facts on the line below, the
+   buttons to the right. */
 .decision__body {
   display: flex;
   flex: 999 1 var(--column-min-width);
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-1) var(--space-5);
+  flex-direction: column;
+  gap: var(--space-1);
   min-width: 0;
 }
 
@@ -64,6 +91,10 @@
   padding: 0;
   list-style: none;
   color: var(--color-text-secondary);
+}
+
+.decision__sprint {
+  width: auto;
 }
 
 .decision__actions {
@@ -134,10 +165,9 @@
   gap: var(--space-2);
 }
 
-/* Under a running step's output, where what the agent is doing is in view. */
+/* The box at the bottom of the conversation with a task's agents. */
 .tell-agent {
-  padding-top: var(--space-3);
-  border-top: var(--line-width) solid var(--color-line-structural);
+  gap: var(--space-2);
 }
 
 .guidance__actions {

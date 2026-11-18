@@ -34,7 +34,7 @@ Current snapshot only. History up to 2026-09-08 (sprints 1 to 54) is in
 - `main` is pushed to `origin/main`. Work happens on short branches from
   `main`; the operator checkout stays off `main` (the `_integration` worktree
   holds it).
-- Schema version 28. 1520 Python tests, 416 frontend tests. The built bundle
+- Schema version 28. 1540 Python tests, 441 frontend tests. The built bundle
   is not in git; `foreman dashboard` builds it when it is missing or stale.
 - A task whose work was finished outside the engine is closed with
   `foreman task done <id> --reason ...` (Mark done in the task's More menu);
@@ -84,6 +84,23 @@ is no login.
 
 ## Documented conflicts between spec, mockup and code
 
+- Design v7 keeps gold for "needs you" and the primary decision. Controls
+  that open more in place ("Show all", "More details", "Finished sprints",
+  "Earlier") are gold too since 2026-11-17 (owner: one look for all of
+  them, grey or gold; gold chosen because text is in both greys). One
+  token, `--color-expander`, sets it.
+- Design v7 draws Edit and More beside a task's title, and in "Needs you"
+  a button only on approve-merge rows, with the fourth kind named
+  "unblock". Since ADR-0030 (owner, 2026-11-17) the title also has the
+  state's button (Run next, Stop or Reopen) and Close, More holds only
+  Block, Split and Delete, and a blocked task's row reads "Blocked", says
+  why, and has Unblock.
+- Design v7 draws the line between "Needs you" rows stopping short of the
+  tinted surface's edges. The dashboard runs it edge to edge, like every
+  other list (owner, 2026-11-17).
+- Design v7's `05-task-overview.html` shows the manager's side bar on a
+  task page. Since ADR-0029 (owner, 2026-11-17) the side bar on a task is
+  the conversation with the task's agents; the screen is not redrawn.
 - Shipped workflows test before review and gate the merge behind a
   policy-governed human gate; spec §5 shows review first.
 - `_builtin:mark_done` terminates a workflow with no outbound transition.
@@ -136,8 +153,8 @@ is no login.
 
 ## Validation baseline
 
-- `./venv/bin/python -m unittest discover -s tests` (1520 tests)
-- `npm --prefix frontend run lint`, `npm --prefix frontend test` (416 tests) and `npm --prefix frontend run build`
+- `./venv/bin/python -m unittest discover -s tests` (1540 tests)
+- `npm --prefix frontend run lint`, `npm --prefix frontend test` (441 tests) and `npm --prefix frontend run build`
 - `ruff check foreman tests scripts` (pyflakes and syntax rules)
 - `./venv/bin/python scripts/validate_repo_memory.py`
 - CI runs all of the above; its Python job builds the frontend first, since

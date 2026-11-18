@@ -6,6 +6,8 @@ import { useResource } from "../../api/useResource";
 import { paths } from "../../app/paths";
 import { Link } from "../../app/router";
 import { Button } from "../../ui/Button";
+import { Caret } from "../../ui/Caret";
+import { ListPager } from "../../ui/ListPager";
 import { Disclosure } from "../../ui/Disclosure";
 import { Field } from "../../ui/Field";
 import { Mono } from "../../ui/Mono";
@@ -75,23 +77,26 @@ function FinishedList({ projectId }) {
       ) : null}
       {list.items && list.items.length === 0 ? <p className="empty">No finished sprint matches “{q}”.</p> : null}
       {list.items && list.items.length > 0 ? <Table caption="Finished sprints" columns={COLUMNS} rows={list.items} /> : null}
-      {list.hasMore ? (
-        <div className="finished__more">
-          <Button className="list-more" disabled={list.loadingMore} onClick={() => list.loadMore()}>
-            Show {Math.min(FINISHED_PAGE, list.total - list.items.length)} more
+      <ListPager
+        more={`Show ${Math.min(FINISHED_PAGE, (list.total ?? 0) - (list.items?.length ?? 0))} more`}
+        loading={list.loadingMore}
+        hasMore={list.hasMore}
+        expanded={list.expanded}
+        onMore={() => list.loadMore()}
+        onFewer={list.collapse}
+      >
+        {(list.total ?? 0) - (list.items?.length ?? 0) > FINISHED_PAGE ? (
+          <Button
+            variant="quiet"
+            className="expander"
+            disabled={list.loadingMore}
+            onClick={() => list.loadMore(Math.min(list.total - list.items.length, MAX_PAGE))}
+          >
+            <Caret />
+            Show all {list.total}
           </Button>
-          {list.total - list.items.length > FINISHED_PAGE ? (
-            <Button
-              variant="quiet"
-              className="list-more"
-              disabled={list.loadingMore}
-              onClick={() => list.loadMore(Math.min(list.total - list.items.length, MAX_PAGE))}
-            >
-              Show all {list.total}
-            </Button>
-          ) : null}
-        </div>
-      ) : null}
+        ) : null}
+      </ListPager>
     </div>
   );
 }

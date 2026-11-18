@@ -43,6 +43,18 @@
   padding-inline: 0;
 }
 
+/* Under a paged list: more of it, and the way back to its first page. */
+.list-pager {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-5);
+  margin-top: var(--space-2);
+}
+
+.list-pager .button {
+  padding-inline: 0;
+}
+
 .milestones__detail {
   color: var(--color-text-quiet);
 }
@@ -53,7 +65,9 @@
    own class so it wins over the surface's default padding whatever order the
    stylesheets load in. */
 .surface.needs-you__surface {
-  padding: 0 var(--space-4);
+  padding: 0;
+  /* A highlighted first or last row keeps the surface's rounded corners. */
+  overflow: hidden;
 }
 
 .surface.needs-you__surface--empty {
@@ -62,6 +76,37 @@
 
 .needs-you__checked {
   white-space: nowrap;
+}
+
+/* Why a task is blocked is a sentence someone wrote: it gets a share of the
+   row and is cut with an ellipsis, with the step it stopped at kept in view;
+   the whole of it is on the task. */
+.needs-you__blocked {
+  display: flex;
+  max-width: var(--needs-you-reason-width);
+}
+
+.needs-you__reason {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.needs-you__blocked .quiet {
+  flex: none;
+  white-space: pre;
+}
+
+/* The room at the sides belongs to the first and last cell, not to the
+   surface, so the line between rows runs from one edge of the surface to the
+   other, as it does in every other list (owner, 2026-11-17; the design drew
+   it stopping short). */
+.needs-you .table td:first-child {
+  padding-left: var(--space-4);
+}
+
+.needs-you .table td:last-child {
+  padding-right: var(--space-4);
 }
 
 /* Every row is one height, with or without a button in it. */
@@ -83,7 +128,7 @@
     flex-wrap: wrap;
     align-items: baseline;
     gap: var(--space-1) var(--space-3);
-    padding-block: var(--space-2);
+    padding: var(--space-2) var(--space-3);
   }
 
   .needs-you .table tbody tr + tr {
@@ -91,10 +136,21 @@
   }
 
   .needs-you .table tbody tr td,
-  .needs-you .table tbody tr + tr td {
+  .needs-you .table tbody tr + tr td,
+  .needs-you .table tbody tr td:first-child,
+  .needs-you .table tbody tr td:last-child {
     height: auto;
     padding: 0;
     border-top: 0;
+  }
+
+  /* The row is the block here, so the row is what lights up, edge to edge. */
+  .needs-you .table tbody tr:hover {
+    background-color: var(--color-row-hover-tinted);
+  }
+
+  .needs-you .table tbody tr:hover td {
+    background-color: transparent;
   }
 
   .needs-you .table .needs-you__title {
@@ -105,14 +161,21 @@
   .needs-you .table .needs-you__checked {
     flex: 1 1 auto;
     order: 3;
+    min-width: 0;
     white-space: normal;
+  }
+
+  /* Stacked, the reason is read whole and the step follows it in the line. */
+  .needs-you__blocked {
+    display: block;
+    max-width: none;
   }
 
   .needs-you .table .needs-you__action {
     order: 4;
   }
 
-  .surface.needs-you__surface {
+  .surface.needs-you__surface--empty {
     padding-inline: var(--space-3);
   }
 }

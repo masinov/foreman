@@ -249,6 +249,11 @@
   background: var(--color-selected);
 }
 
+/* The whole row picks, not only the control in it. */
+.table__row--pickable {
+  cursor: pointer;
+}
+
 .table__placeholder-bar {
   display: block;
   width: var(--placeholder-bar-width);
@@ -473,43 +478,61 @@
   padding: var(--space-1) 0;
   border: 0;
   background: transparent;
-  color: var(--color-text-secondary);
-  font: inherit;
+  font-family: inherit;
   cursor: pointer;
 }
 
-.long-text__toggle:hover {
-  color: var(--color-gold);
+/* Everything that opens more in place looks the same (owner, 2026-11-17):
+   the words under a folded text, a closed line, the button under a list that
+   shows the rest of it. Gold, in the size and weight of a control, with a
+   caret. Text here comes in both greys, so a grey control always sits next
+   to text of its own colour somewhere; gold never does. */
+.expander,
+.button.expander {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-expander);
+  font-size: var(--font-size-control);
+  font-weight: var(--font-weight-medium);
+}
+
+.expander:hover:not(:disabled),
+.button.expander:hover:not(:disabled) {
+  color: var(--color-text);
+}
+
+.caret {
+  flex: none;
+  width: 0;
+  height: 0;
+  border: var(--caret-size) solid transparent;
+}
+
+.caret--down {
+  border-top-color: currentColor;
+  border-bottom-width: 0;
+}
+
+.caret--up {
+  border-bottom-color: currentColor;
+  border-top-width: 0;
+}
+
+/* As wide as the other two, so the words beside it do not move when it turns. */
+.caret--right {
+  margin-inline: calc(var(--caret-size) / 2);
+  border-left-color: currentColor;
+  border-right-width: 0;
 }
 
 /* Disclosure: a closed line that opens in place */
 .disclosure__summary {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
   padding: var(--space-1) 0;
   border: 0;
   background: transparent;
-  color: var(--color-text-secondary);
-  font: inherit;
+  font-family: inherit;
   cursor: pointer;
-}
-
-.disclosure__summary:hover {
-  color: var(--color-text);
-}
-
-.disclosure__marker {
-  width: 0;
-  height: 0;
-  border-block: var(--caret-size) solid transparent;
-  border-left: var(--caret-size) solid var(--color-text-quiet);
-}
-
-.disclosure--open .disclosure__marker {
-  border-inline: var(--caret-size) solid transparent;
-  border-top: var(--caret-size) solid var(--color-text-quiet);
-  border-bottom: 0;
 }
 
 .disclosure__content {

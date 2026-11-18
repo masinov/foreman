@@ -55,7 +55,8 @@ class ProposalCase(unittest.TestCase):
         self.proposals = Proposals(self.store, via="cli", actor="manager-test")
 
     def file(self, title: str, *, accept: bool = False) -> Task:
-        task = Mutations(self.store, via="cli").file_task(self.project, title=title).task
+        # Filed by an agent: what a person files is never a request (ADR-0028).
+        task = Mutations(self.store, via="engine", actor="agent:developer", role="developer").file_task(self.project, title=title).task
         if accept:
             task = Mutations(self.store, via="cli").accept_task(task)
         return task
@@ -190,8 +191,8 @@ class CreateTests(ProposalCase):
         self.assertEqual(self.store.get_task(filed.id).status, "triage")
         self.assertEqual(proposal.names["tasks"][filed.id]["title"], "Filed")
         self.assertEqual(len(proposal.leaves), 1)
-        # In the other order the plan is refused: the task is not accepted yet.
-        with self.assertRaisesRegex(ProposalError, "Operation 1 .*accept it before planning"):
+        # Planning a request is its acceptance, so accepting it afterwards is refused.
+        with self.assertRaisesRegex(ProposalError, "Operation 2 .*only tasks in triage"):
             self.propose(
                 {"kind": "plan_tasks", "task_ids": [filed.id], "sprint_id": "s2"},
                 {"kind": "accept_task", "task_id": filed.id},
@@ -289,7 +290,7 @@ class CreateRefusalTests(ProposalCase):
             ("add_task", "Unsupported task type: nonsense", {"kind": "add_task", "sprint_id": "s2", "title": "X", "task_type": "nonsense"}),
             ("accept_task", "only tasks in triage", {"kind": "accept_task", "task_id": "todo1"}),
             ("decline_task", "already declined", {"kind": "decline_task", "task_id": declined.id}),
-            ("plan_tasks", "accept it before planning", {"kind": "plan_tasks", "task_ids": [filed.id], "sprint_id": "s2"}),
+            ("plan_tasks", "only backlog work can be planned", {"kind": "plan_tasks", "task_ids": [declined.id], "sprint_id": "s2"}),
             ("unplan_task", "only a task that has not started", {"kind": "unplan_task", "task_id": "running"}),
             ("edit_task", "Unsupported task type: nonsense", {"kind": "edit_task", "task_id": "todo1", "task_type": "nonsense"}),
             ("block_task", "cannot be blocked from status done", {"kind": "block_task", "task_id": "done1", "reason": "x"}),

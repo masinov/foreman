@@ -243,6 +243,7 @@ export function ChangesTab({ task, changes }) {
             rows={shown.files}
             rowKey={(file) => file.path}
             selected={(file) => file === selected}
+            onRowClick={(file) => setPicked(file.path)}
             hideHeader
           />
         </div>

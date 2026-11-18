@@ -437,7 +437,9 @@ bad one is a 400 `invalid_request` envelope (ADR-0019). Paged lists take
   `unblock`), `project_id`, `project_name`, `sprint_id`, `sprint_title`,
   `task_id`, `task_key`, `task_title`, `since`, and for `approve_merge` an
   `evidence` object (`tests_status`, `tested_sha`, `review_outcome`,
-  `reviewed_sha`, `head_sha`, `proof_status`; ADR-0018) or null. A gate whose
+  `reviewed_sha`, `head_sha`, `proof_status`; ADR-0018) or null, and for
+  `unblock` a `blocked` object (`reason`, `step`: why the task is blocked and
+  the step it stopped at; ADR-0030). A gate whose
   policy is `plan_approval` is `approve_plan`; every other human gate is
   `approve_merge`. A pending decision gate (a proposed sprint order) is a
   fifth kind, `settle_order`: it has no task (`task_id`, `task_key` and
@@ -506,6 +508,12 @@ over `foreman/git.py`, with typed response models in
   in `raw_entries`; `?raw=true` returns that stream instead. The prompt
   and the transcript are each capped at `cap_chars` (200,000 characters);
   `prompt_truncated` and `transcript_truncated` say when a cap applied.
+
+Beside a task's title are the actions that are not its decision
+(`pages/task/TaskActions.jsx`, ADR-0030): a button for what depends on its
+state (Run next, Stop, Reopen), Close (`CloseTaskDialog.jsx`: cancel or mark
+done), and a More menu for what is rare (Block, Split, Delete).
+`actionsFor(task, engine)` is the one place that says which exist.
 
 Two writes serve the task page's More menu and decision, in
 `foreman/dashboard/routers/tasks.py` over the shared mutation service:
@@ -612,6 +620,11 @@ count, and the project's `needs-you`; the breadcrumb's project switcher reads
 the server through `usePagedList`; the sprint queue is one unpaged read of the
 active and planned sprints.
 
+The addresses of one thing's tabs (a task's four, a project's two, a sprint's
+two views, the project settings' three) are one page: `app/pages.js` maps
+them to one component and `pageKey` gives them one key, so the head of the
+page stays mounted and is not read again when the tab changes.
+
 The task page (`pages/task/`) reads `GET /tasks/{id}`, `/checks` and
 `/changes` once for its head and decision, whichever tab is open; Overview
 adds the project's workflow (steps and who decides), Changes one file's diff
@@ -622,14 +635,22 @@ again 300 ms after the last event about the task. Overview also holds
 `executor_overrides` (who decides at the workflow's gates, a model per agent
 step), keeping the keys the page does not edit.
 
-The manager side bar (`pages/manager/`) belongs to the shell, not to a page:
-`App` keeps it outside the keyed page, so an open conversation and a reply
-being written survive moving between project, sprint and task. Open or closed
-is kept in `localStorage` (`app/manager.js`). The project comes from the route
+The side bar belongs to the shell, not to a page. On a project's pages and a
+sprint it is the manager's (`pages/manager/`); on a task it is the task's
+agents' (`pages/task/AgentPanel.jsx`, ADR-0029): the steps oldest first, each
+opening onto what it said and did, a person's notes where they were said, and
+`TellAgent` at the bottom, the only place to tell an agent something. A
+running step is read again as it prints: `useLiveData` hands every event of
+the project's stream to `app/projectEvents.js`, and `useTaskPulse` turns the
+events about one task into a count that grows at most once a second.
+`App` keeps the manager outside the keyed page, so an open conversation and a
+reply being written survive moving between project and sprint. Open or closed
+is kept in `localStorage` (`app/manager.js`); a task with a step in progress
+opens the bar without being asked where it sits beside the page. The project comes from the route
 (`/projects/:id`) or from the sprint or task being shown. History is
 `GET /projects/{id}/meta/history`; a message is `POST .../meta/message`, read
 as newline-delimited JSON through `client.postLines`, with the page as
-`context` (`page`, `sprint_id`, `task_id`). The server puts that into the
+`context` (`page`, `sprint_id`). The server puts that into the
 turn's prompt (`meta_agent.describe_page_context`) and does not store it. The
 stream carries text, `tool_use`, `proposal`, `done` and `error`. A
 `proposal` line (or a `proposal_id` stored in a turn's `tool_uses`) renders
@@ -764,9 +785,10 @@ The current CLI watch baseline now includes:
   task-bound orchestrator run instead of a pure project-level event.
 - product-facing CLI surfaces now ship as explicit commands rather than a
   generic stub handler.
-- `task_selection_mode="autonomous"` now creates placeholder tasks within the
-  active sprint, while `autonomy_level` separately governs sprint-to-sprint
-  advancement behavior.
+- `task_selection_mode="autonomous"` lets Foreman start accepted backlog work
+  on its own once nothing planned can run, up to `max_autonomous_tasks` per
+  sprint (`foreman/engine/selection.py`, ADR-0028); `autonomy_level` separately
+  governs who finishes a sprint. The earlier placeholder tasks are gone.
 - `session_persistence` is a role-level policy with scope `task + role +
   backend`, and fresh orchestrator invocations now reload the last compatible
   persisted session from SQLite for persistent roles.
@@ -803,15 +825,10 @@ The following items were implemented as hardening before the 1.0 release:
 - After every agent step: default branch HEAD must not have changed unless `_builtin:merge`
 - `engine.branch_violation` is emitted on invariant failure
 
-**Autonomous contract (Item 5)**
-- In autonomous mode the agent names its task with `signal.task_started`
-  (title, criteria, task type). The engine gives the task its branch and
-  worktree as in directed mode.
-- A missing signal emits `workflow.autonomous_contract_missing` once and the
-  workflow continues (spec §6.2, degraded path); with the completion guard
-  on, the merge is what stops a task that has no acceptance criteria.
-- A reported task type or branch that cannot be accepted is refused with
-  `signal.rejected` naming the field; the rest of the signal is applied.
+**Autonomous contract (Item 5)** (removed by ADR-0028)
+- `signal.task_started` and the placeholder task it named are gone. An agent
+  that finds work files it with `signal.task_created`; nothing an agent sends
+  changes a task's title, type, branch or acceptance criteria.
 
 **Signal validation (Items 6–7)**
 - `foreman/runner/signals.py` now emits `signal.invalid` or `signal.unknown` instead of silently dropping bad signals

@@ -60,12 +60,19 @@ describe("the page around project settings", () => {
 describe("General: every field reads its real value", () => {
   it("shows what the API says each setting is", async () => {
     await renderGeneral();
-    expect(screen.getByLabelText("Accept filed work")).toHaveValue("human");
     expect(screen.getByLabelText("Approve plans")).toHaveValue("human");
     expect(screen.getByLabelText("Approve merges")).toHaveValue("auto");
     expect(screen.getByLabelText("Approve merges").selectedOptions[0]).toHaveTextContent("Foreman");
-    expect(screen.getByLabelText("Foreman picks its own tasks")).toHaveValue("directed");
+    expect(screen.getByLabelText("Foreman starts backlog work")).toHaveValue("directed");
+    // What only matters once Foreman starts backlog work is not asked before.
+    expect(screen.queryByLabelText("At most, per sprint")).toBeNull();
+    expect(screen.queryByLabelText("Requests from agents and other systems")).toBeNull();
+    fireEvent.change(screen.getByLabelText("Foreman starts backlog work"), { target: { value: "autonomous" } });
     expect(screen.getByLabelText("At most, per sprint")).toHaveValue("5");
+    expect(screen.getByLabelText("Requests from agents and other systems")).toHaveValue("human");
+    expect(screen.getByLabelText("Requests from agents and other systems").selectedOptions[0]).toHaveTextContent(
+      "A person accepts them",
+    );
     expect(screen.getByLabelText("Spend per task")).toHaveValue("");
     expect(screen.getByLabelText("Spend per sprint")).toHaveValue("12.5");
     expect(screen.getByLabelText("Time per task")).toHaveValue("");
@@ -221,6 +228,7 @@ describe("General: Save and Discard", () => {
 
   it("does not send a value it can see is not a number", async () => {
     const fetchImpl = await renderGeneral();
+    fireEvent.change(screen.getByLabelText("Foreman starts backlog work"), { target: { value: "autonomous" } });
     fireEvent.change(screen.getByLabelText("At most, per sprint"), { target: { value: "lots" } });
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     expect(await screen.findByText("Enter a whole number.")).toBeInTheDocument();

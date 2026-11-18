@@ -595,7 +595,10 @@ class Mutations:
         else:
             target = self.store.ensure_backlog(project.id, created_at=now.isoformat())
         triage = PolicyMatrix.for_project(project).resolve("triage", task_type=task_type)
-        filed = triage.value == "human" and not accept
+        # A request is work someone other than a person filed, where the
+        # project wants a person to say yes first (ADR-0028). What a person
+        # files is that person's decision already.
+        filed = triage.value == "human" and not accept and self.role != "human"
         source = dict(source or {})
         task = Task(
             id=slug_id("task", clean_title, self.store.get_task),
@@ -627,7 +630,7 @@ class Mutations:
             created_by=task.created_by,
             status=task.status,
             triage=triage.as_dict(),
-            accepted_by_filer=True if accept and triage.value == "human" else None,
+            accepted_by_filer=True if triage.value == "human" and not filed else None,
             **dict(event_payload or {}),
         )
         if filed:
@@ -684,11 +687,18 @@ class Mutations:
         sprint: Sprint | None = None,
         new_sprint_title: str | None = None,
         new_sprint_goal: str | None = None,
+        pulled: bool = False,
     ) -> PlannedTasks:
-        """Plan accepted backlog tasks into a sprint, all or none.
+        """Plan backlog tasks into a sprint, all or none.
 
         The sprint is either ``sprint`` (planned or active) or a new planned
         sprint titled ``new_sprint_title``, created in the same transaction.
+
+        A person may plan a request (a filed task nobody has accepted): putting
+        it in a sprint is the yes. Foreman, acting by policy (``via`` is
+        ``policy``), may only plan accepted work. ``pulled`` marks the engine
+        taking backlog work on its own (ADR-0028): it is recorded as
+        ``engine.task_pulled``, which is what the limit per sprint counts.
         """
 
         title = (new_sprint_title or "").strip()
@@ -705,20 +715,22 @@ class Mutations:
             if task.project_id != project_id:
                 raise MutationError("Every task planned together must belong to one project.")
         backlog = self.store.get_backlog(project_id)
+        by_policy = self.via == "policy"
         for task in tasks:
             if backlog is None or task.sprint_id != backlog.id:
                 raise MutationError(
                     f"Task {task.id} is not in the backlog (it is in sprint {task.sprint_id})."
                 )
-            if task.status == "triage":
+            if task.status == "triage" and by_policy:
                 raise MutationError(
-                    f"Task {task.id} is filed but not accepted; accept it before planning it."
+                    f"Task {task.id} is a request no person has accepted; Foreman may not start it."
                 )
-            if task.status != "todo":
+            if task.status not in ("todo", "triage"):
                 raise MutationError(
-                    f"Task {task.id} is {task.status}; only accepted tasks can be planned."
+                    f"Task {task.id} is {task.status}; only backlog work can be planned."
                 )
         assert backlog is not None
+        requests = {task.id for task in tasks if task.status == "triage"}
 
         created: Sprint | None = None
         if sprint is not None:
@@ -740,7 +752,7 @@ class Mutations:
             self.store.move_tasks_to_sprint(
                 [task.id for task in tasks],
                 from_sprint_id=backlog.id,
-                from_statuses=("todo",),
+                from_statuses=("todo", "triage"),
                 to_sprint_id=target.id,
                 new_sprint=created,
             )
@@ -751,13 +763,17 @@ class Mutations:
         for task in tasks:
             fresh = self.store.get_task(task.id)
             assert fresh is not None
+            if fresh.id in requests:
+                fresh.status = "todo"
+                self.store.save_task(fresh)
             self._audit(
                 fresh,
-                "human.task_planned",
+                "engine.task_pulled" if pulled else "human.task_planned",
                 step="plan",
                 sprint_id=target.id,
                 sprint_title=target.title,
                 new_sprint=True if created is not None else None,
+                accepted=True if fresh.id in requests else None,
             )
             planned.append(fresh)
         return PlannedTasks(sprint=target, tasks=tuple(planned), created_sprint=created is not None)

@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 
 import { createFakeFetch, renderApp, reply } from "../../testing/fakeApi";
@@ -22,6 +25,7 @@ import {
   taskRoutes,
 } from "../../testing/taskFixture";
 import { engine, workspacePayload } from "../../testing/workspaceFixture";
+import { actionsFor } from "./TaskActions";
 
 /** The More menu depends on the engine, which arrives with the workspace. */
 const engineKnown = () => screen.findByRole("button", { name: /^Engine/ });
@@ -48,6 +52,20 @@ function decision() {
 }
 
 describe("the task page header", () => {
+  it("stays in place when the tab changes: nothing above the tab is drawn or read again", async () => {
+    const { fetchImpl } = await renderTask();
+    const title = screen.getByRole("heading", { level: 1, name: TITLE });
+    const before = taskReads(fetchImpl);
+    for (const [tab, path] of [["Activity", `${BASE}/activity`], ["Checks", `${BASE}/checks`], ["Overview", BASE]]) {
+      fireEvent.click(within(screen.getByRole("navigation", { name: "Task" })).getByRole("link", { name: tab }));
+      await waitFor(() => expect(window.location.pathname).toBe(path));
+      // The same element, not a new one that looks the same.
+      expect(screen.getByRole("heading", { level: 1, name: TITLE })).toBe(title);
+    }
+    expect(taskReads(fetchImpl)).toBe(before);
+  });
+
+
   it.each([BASE, `${BASE}/changes`, `${BASE}/checks`, `${BASE}/activity`])("is the same at %s", async (path) => {
     await renderTask(path);
     expect(await screen.findByText("FOR-14 · fix · foreman/for-14 · b232eb1 · +118 −7")).toBeInTheDocument();
@@ -217,8 +235,8 @@ describe("the decision", () => {
     expect(postCalls(fetchImpl, "approve")).toHaveLength(1);
   });
 
-  it("asks to accept filed work; Accept calls accept and Decline calls decline with the reason", async () => {
-    const task = taskDetail({
+  const request = (fields = {}) =>
+    taskDetail({
       status: "triage",
       in_backlog: true,
       awaiting_human_gate: false,
@@ -227,17 +245,43 @@ describe("the decision", () => {
       workflow_current_step: null,
       source: { system: "github", external_ref: "#42", url: "https://example.test/42", reporter: "ana" },
       runs: [],
+      ...fields,
     });
+  const SPRINTS_URL = "GET /api/v1/projects/foreman/sprints?status=active&status=planned&order=queue";
+  const PLAN = "/api/v1/projects/foreman/backlog/plan";
+
+  function backlogTaskRoutes(task) {
     const routes = taskRoutes({ task });
-    routes[post("accept")] = task;
+    routes[SPRINTS_URL] = {
+      sprints: [
+        { id: "sprint-56", title: "Sprint 56: engine truthfulness", status: "active" },
+        { id: "sprint-57", title: "Sprint 57: next", status: "planned" },
+      ],
+      total: 2,
+    };
+    return routes;
+  }
+
+  it("a backlog task is planned into a sprint from its own page, or declined with a reason", async () => {
+    const task = request();
+    const routes = backlogTaskRoutes(task);
+    routes[`POST ${PLAN}`] = { sprint: { id: "sprint-57", title: "Sprint 57: next" }, created_sprint: false, task_ids: [TASK_ID] };
     routes[post("decline")] = task;
     const { fetchImpl } = await renderTask(BASE, routes);
-    const region = await screen.findByRole("region", { name: "Accept this task?" });
+    const region = await screen.findByRole("region", { name: "A request: plan it into a sprint?" });
     expect(region).toHaveTextContent("Filed by ana via github on 10 Nov");
     expect(within(region).getByRole("link", { name: "#42" })).toHaveAttribute("href", "https://example.test/42");
-    fireEvent.click(within(region).getByRole("button", { name: "Accept" }));
-    expect(await screen.findByText("Accepted. It can be planned into a sprint.")).toBeInTheDocument();
-    expect(postCalls(fetchImpl, "accept")).toHaveLength(1);
+    // Where a person plans everything there is nothing to accept.
+    expect(within(region).queryByRole("button", { name: /Accept/ })).toBeNull();
+
+    const sprint = within(region).getByRole("combobox", { name: "Sprint to plan it into" });
+    await within(sprint).findByRole("option", { name: "Sprint 57: next (planned)" });
+    // The sprint that is running is the one offered first.
+    expect(sprint).toHaveValue("sprint-56");
+    fireEvent.change(sprint, { target: { value: "sprint-57" } });
+    fireEvent.click(within(region).getByRole("button", { name: "Plan" }));
+    expect(await screen.findByText("Planned into Sprint 57: next.")).toBeInTheDocument();
+    expect(calls(fetchImpl, "POST", PLAN)[0].body).toEqual({ task_ids: [TASK_ID], sprint_id: "sprint-57" });
 
     fireEvent.click(within(region).getByRole("button", { name: "Decline" }));
     const dialog = screen.getByRole("dialog", { name: "Decline this task" });
@@ -245,6 +289,35 @@ describe("the decision", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Decline" }));
     expect(await screen.findByText("Declined.")).toBeInTheDocument();
     expect(postCalls(fetchImpl, "decline")[0].body).toEqual({ reason: "Out of scope." });
+  });
+
+  it("a request can be accepted where Foreman starts backlog work on its own", async () => {
+    const task = request({ foreman_starts_backlog_work: true });
+    const routes = backlogTaskRoutes(task);
+    routes[post("accept")] = task;
+    const { fetchImpl } = await renderTask(BASE, routes);
+    const region = await screen.findByRole("region", { name: "A request: plan it into a sprint?" });
+    fireEvent.click(within(region).getByRole("button", { name: "Accept: Foreman may start it" }));
+    expect(await screen.findByText("Accepted. Foreman may start it.")).toBeInTheDocument();
+    expect(postCalls(fetchImpl, "accept")).toHaveLength(1);
+  });
+
+  it("backlog work that is not a request is planned the same way, with no Accept", async () => {
+    const task = request({ status: "todo", foreman_starts_backlog_work: true, source: null });
+    await renderTask(BASE, backlogTaskRoutes(task));
+    const region = await screen.findByRole("region", { name: "Plan this into a sprint?" });
+    expect(within(region).queryByRole("button", { name: /Accept/ })).toBeNull();
+    expect(within(region).getByRole("button", { name: "Plan" })).toBeInTheDocument();
+  });
+
+  it("a request another system filed straight into a sprint is still accepted there", async () => {
+    const task = request({ in_backlog: false });
+    const routes = taskRoutes({ task });
+    routes[post("accept")] = task;
+    const { fetchImpl } = await renderTask(BASE, routes);
+    const region = await screen.findByRole("region", { name: "Accept this task?" });
+    fireEvent.click(within(region).getByRole("button", { name: "Accept" }));
+    await waitFor(() => expect(postCalls(fetchImpl, "accept")).toHaveLength(1));
   });
 
   it("says why a task is blocked; Unblock and Send back call unblock", async () => {
@@ -324,10 +397,21 @@ describe("a task closed by hand", () => {
   });
 });
 
-describe("the More menu", () => {
+describe("the task's actions beside its title", () => {
   function openMore() {
     fireEvent.click(screen.getByRole("button", { name: "More" }));
     return screen.getByRole("menu", { name: "Task actions" });
+  }
+
+  /** The words of the buttons beside the title, in order, with the menu closed. */
+  const inPlainSight = () =>
+    [...document.querySelector(".task__actions").querySelectorAll("button")].map((button) => button.textContent);
+
+  /** Press an action where it is: a button beside the title, else an item of More. */
+  function choose(label) {
+    const button = within(document.querySelector(".task__actions")).queryByRole("button", { name: label });
+    if (button) fireEvent.click(button);
+    else fireEvent.click(within(openMore()).getByRole("menuitem", { name: label }));
   }
 
   /** The task's routes with the project's engine in `state`, on this task or on none. */
@@ -338,35 +422,47 @@ describe("the More menu", () => {
     return routes;
   }
 
+  // What depends on the task's state, and closing it, are buttons; More holds what is rare.
+  // A task the engine is running can be neither closed nor deleted: the API refuses both.
   it.each([
-    ["running", { status: "in_progress", workflow_current_step: "develop" }, "running", ["Stop", "Block", "Mark done", "Cancel", "Delete"]],
-    ["left part-way with no engine", { status: "in_progress", workflow_current_step: "merge" }, "not_running", ["Run next", "Block", "Mark done", "Cancel", "Delete"]],
-    ["queued", { status: "todo" }, "not_running", ["Run next", "Block", "Mark done", "Split into smaller tasks", "Cancel", "Delete"]],
-    ["blocked by the engine", { status: "blocked", blocked_kind: "engine" }, "not_running", ["Unblock", "Mark done", "Cancel", "Delete"]],
-    ["at a gate", {}, "not_running", ["Mark done", "Cancel", "Delete"]],
-    ["in the backlog", { status: "todo", in_backlog: true }, "not_running", ["Split into smaller tasks", "Cancel", "Delete"]],
-    ["done", { status: "done" }, "not_running", ["Reopen", "Delete"]],
-    ["cancelled", { status: "cancelled" }, "not_running", ["Reopen", "Delete"]],
-  ])("holds what exists for a task that is %s", async (_, fields, state, labels) => {
+    ["running", { status: "in_progress", workflow_current_step: "develop" }, "running", ["Stop"], ["Block"]],
+    ["left part-way with no engine", { status: "in_progress", workflow_current_step: "merge" }, "not_running", ["Run next", "Close"], ["Block", "Delete"]],
+    ["queued", { status: "todo" }, "not_running", ["Run next", "Close"], ["Block", "Split into smaller tasks", "Delete"]],
+    ["blocked by the engine", { status: "blocked", blocked_kind: "engine" }, "not_running", ["Close"], ["Delete"]],
+    ["at a gate", {}, "not_running", ["Close"], ["Delete"]],
+    ["in the backlog", { status: "todo", in_backlog: true }, "not_running", [], ["Split into smaller tasks", "Cancel", "Delete"]],
+    ["done", { status: "done" }, "not_running", ["Reopen"], ["Delete"]],
+    ["cancelled", { status: "cancelled" }, "not_running", ["Reopen"], ["Delete"]],
+  ])("shows what exists for a task that is %s", async (_, fields, state, buttons, more) => {
     await renderTask(BASE, withEngine(taskRoutes({ task: taskDetail(fields) }), state, state === "running"));
     await engineKnown();
-    expect(within(openMore()).getAllByRole("menuitem").map((item) => item.textContent)).toEqual(labels);
+    await waitFor(() => expect(inPlainSight()).toEqual(["Edit", ...buttons, "More"]));
+    expect(within(openMore()).getAllByRole("menuitem").map((item) => item.textContent)).toEqual(more);
+  });
+
+  it("offers neither Run next nor Stop for a task in progress until the engine is known", () => {
+    expect(actionsFor({ status: "in_progress", in_backlog: false }, null)).toEqual({ buttons: [], more: ["block"] });
+  });
+
+  it("answers a blocked task's question in its decision only, not in More as well", async () => {
+    await renderTask(BASE, taskRoutes({ task: taskDetail({ status: "blocked", blocked_kind: "engine", awaiting_human_gate: false }) }));
+    expect(within(decision()).getByRole("button", { name: "Unblock" })).toBeInTheDocument();
+    expect(within(openMore()).queryByRole("menuitem", { name: "Unblock" })).toBeNull();
   });
 
   it.each([
     ["Stop", "stop", { status: "in_progress" }, null, {}, "Stop requested. The task is blocked when the engine acts on it."],
     ["Block", "block", { status: "todo" }, "Why it is blocked", { reason: "Waiting for a key." }, "Blocked."],
-    ["Unblock", "unblock", { status: "blocked", blocked_kind: "engine" }, "Guidance for the agent", { note: "Waiting for a key." }, "Unblocked. The task is back in the queue."],
-    ["Mark done", "complete", { status: "todo" }, "Why it is done", { reason: "Waiting for a key." }, "Marked done."],
     ["Reopen", "reopen", { status: "done" }, null, {}, "Reopened. The task is back in the queue."],
-    ["Cancel", "cancel", { status: "todo" }, null, undefined, "Cancelled."],
+    ["Cancel", "cancel", { status: "todo", in_backlog: true }, null, undefined, "Cancelled."],
   ])("%s is confirmed, calls its endpoint, and shows a refusal", async (label, action, fields, ask, body, done) => {
     const routes = withEngine(taskRoutes({ task: taskDetail(fields) }), "running");
     let refuse = true;
     routes[post(action)] = () => (refuse ? reply(400, { error: `Cannot ${action} this task`, code: "invalid_request" }) : { ok: true });
     const { fetchImpl } = await renderTask(BASE, routes);
     await engineKnown();
-    fireEvent.click(within(openMore()).getByRole("menuitem", { name: label }));
+    if (label === "Stop") await screen.findByRole("button", { name: "Stop" });
+    choose(label);
     const dialog = screen.getByRole("dialog");
     expect(dialog).toHaveAccessibleDescription(/./);
     expect(postCalls(fetchImpl, action)).toHaveLength(0);
@@ -388,10 +484,63 @@ describe("the More menu", () => {
     const url = "POST /api/v1/projects/foreman/agent/start";
     routes[url] = { started: true };
     const { fetchImpl } = await renderTask(BASE, routes);
-    fireEvent.click(within(openMore()).getByRole("menuitem", { name: "Run next" }));
+    choose("Run next");
     fireEvent.click(within(screen.getByRole("dialog", { name: "Run this task next" })).getByRole("button", { name: "Run next" }));
     expect(await screen.findByText("Requested. The task starts when the engine picks the request up.")).toBeInTheDocument();
     expect(fetchImpl.calls.filter((call) => `${call.method} ${call.url}` === url)[0].body).toEqual({ task_id: TASK_ID });
+  });
+
+  describe("Close", () => {
+    async function openClose(routes = taskRoutes({ task: taskDetail({ status: "todo" }) })) {
+      const rendered = await renderTask(BASE, routes);
+      choose("Close");
+      return { ...rendered, dialog: screen.getByRole("dialog", { name: "Close this task" }) };
+    }
+
+    it("asks how the task ends, and calls nothing until that is said", async () => {
+      const { fetchImpl, dialog } = await openClose();
+      expect(dialog).toHaveAccessibleDescription(/./);
+      expect(within(dialog).getAllByRole("radio").map((radio) => radio.checked)).toEqual([false, false]);
+      expect(within(dialog).queryByLabelText("Why it is done")).toBeNull();
+      fireEvent.click(within(dialog).getByRole("button", { name: "Close task" }));
+      expect(within(dialog).getByRole("alert")).toHaveTextContent("Say how it ends.");
+      expect(postCalls(fetchImpl, "cancel")).toHaveLength(0);
+      expect(postCalls(fetchImpl, "complete")).toHaveLength(0);
+    });
+
+    it("as not needed, cancels the task, and shows a refusal", async () => {
+      const routes = taskRoutes({ task: taskDetail({ status: "todo" }) });
+      let refuse = true;
+      routes[post("cancel")] = () => (refuse ? reply(400, { error: "Cannot cancel this task", code: "invalid_request" }) : { ok: true });
+      const { fetchImpl, dialog } = await openClose(routes);
+      fireEvent.click(within(dialog).getByRole("radio", { name: /^Not needed/ }));
+      expect(within(dialog).queryByLabelText("Why it is done")).toBeNull();
+      const confirm = within(dialog).getByRole("button", { name: "Cancel task" });
+      fireEvent.click(confirm);
+      expect(await within(dialog).findByRole("alert")).toHaveTextContent("Cannot cancel this task.");
+      refuse = false;
+      fireEvent.click(confirm);
+      expect(await screen.findByText("Cancelled.")).toBeInTheDocument();
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(postCalls(fetchImpl, "cancel")).toHaveLength(2);
+      expect(postCalls(fetchImpl, "complete")).toHaveLength(0);
+    });
+
+    it("as already done, needs the reason, then marks the task done with it", async () => {
+      const routes = taskRoutes({ task: taskDetail({ status: "blocked", blocked_kind: "engine", awaiting_human_gate: false }) });
+      routes[post("complete")] = { ok: true };
+      const { fetchImpl, dialog } = await openClose(routes);
+      fireEvent.click(within(dialog).getByRole("radio", { name: /^Already done/ }));
+      const confirm = within(dialog).getByRole("button", { name: "Mark done" });
+      fireEvent.click(confirm);
+      expect(within(dialog).getByText("Why it is done is needed.")).toBeInTheDocument();
+      expect(postCalls(fetchImpl, "complete")).toHaveLength(0);
+      fireEvent.change(within(dialog).getByLabelText("Why it is done"), { target: { value: " Merged by hand in 721d877. " } });
+      fireEvent.click(confirm);
+      expect(await screen.findByText("Marked done.")).toBeInTheDocument();
+      expect(postCalls(fetchImpl, "complete")[0].body).toEqual({ reason: "Merged by hand in 721d877." });
+      expect(postCalls(fetchImpl, "cancel")).toHaveLength(0);
+    });
   });
 
   it("Block needs a reason before it calls anything", async () => {
@@ -469,40 +618,20 @@ describe("Overview", () => {
     expect(beside).toContainElement(screen.getByRole("heading", { name: "Overrides for this task" }));
   });
 
-  it("offers no guidance and no overrides on a finished task", async () => {
+  it("has no box for telling the agent something (that is in the side bar) and no overrides on a finished task", async () => {
     await renderTask(BASE, taskRoutes({ task: taskDetail({ status: "done", blocked_kind: null }) }));
     await screen.findByRole("region", { name: "Description" });
-    expect(screen.queryByRole("textbox", { name: "Guidance for the next agent step" })).toBeNull();
+    expect(screen.queryByRole("form", { name: "Tell the agent" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "Overrides for this task" })).toBeNull();
   });
 
-  it("saves guidance through the messages endpoint and shows whether the agent read it", async () => {
-    const task = taskDetail({
-      guidance: [
-        { event_id: "e1", text: "Earlier advice.", recorded_at: "2026-11-10T09:00:00Z", delivered: true, delivered_at: "2026-11-10T10:00:00Z", delivered_role: "developer", delivered_step: "develop" },
-        { event_id: "e2", text: "Newer advice.", recorded_at: "2026-11-11T09:00:00Z", delivered: false, delivered_at: null, delivered_role: null, delivered_step: null },
-      ],
-    });
-    const routes = taskRoutes({ task });
-    routes[post("messages")] = { status: "recorded", message: "Recorded. The next agent step for this task will read it." };
-    const { fetchImpl } = await renderTask(BASE, routes);
-    const notes = await screen.findByRole("list", { name: "Guidance written" });
-    const items = within(notes).getAllByRole("listitem");
-    expect(items[0]).toHaveTextContent("Newer advice.");
-    expect(items[0]).toHaveTextContent("Waiting for the next agent step");
-    expect(items[1]).toHaveTextContent(/Read by the agent at develop on 10 Nov/);
-
-    const field = screen.getByRole("textbox", { name: "Guidance for the next agent step" });
-    fireEvent.click(screen.getByRole("button", { name: "Save guidance" }));
-    expect(screen.getByRole("alert")).toHaveTextContent("Write the guidance first.");
-    fireEvent.change(field, { target: { value: "Count skipped tests." } });
-    const before = taskReads(fetchImpl);
-    fireEvent.click(screen.getByRole("button", { name: "Save guidance" }));
-    expect(await screen.findByText("Recorded. The next agent step for this task will read it.")).toBeInTheDocument();
-    expect(postCalls(fetchImpl, "messages")[0].body).toEqual({ text: "Count skipped tests." });
-    expect(field).toHaveValue("");
-    await waitFor(() => expect(taskReads(fetchImpl)).toBeGreaterThan(before));
+  it("has no box for telling the agent something on a task that is not finished either", async () => {
+    await renderTask(BASE);
+    await screen.findByRole("region", { name: "Description" });
+    expect(screen.queryByRole("form", { name: "Tell the agent" })).toBeNull();
+    expect(screen.queryByText("Guidance for the next agent step")).toBeNull();
   });
+
 
   it("refreshes from the sprint stream while a step runs", async () => {
     const { fetchImpl } = await renderTask(BASE, taskRoutes({ task: taskDetail({ status: "in_progress", workflow_current_step: "develop", awaiting_human_gate: false, gate_policy: null, blocked_kind: null }) }));
@@ -784,12 +913,53 @@ describe("Activity", () => {
     fireEvent.click(screen.getByRole("button", { name: "Show the prompt this run was given" }));
     expect(screen.getByText("The prompt of run-3")).toBeInTheDocument();
 
-    fireEvent.click(within(rows[1]).getByRole("button"));
+    // No caret on a row: what a run shows is under the list, not under its row.
+    expect(table.querySelector(".caret")).toBeNull();
+    expect(rows[0]).toHaveClass("table__row--selected");
+
+    // Pressing anywhere on a run's row picks it, not only its time.
+    fireEvent.click(within(rows[1]).getAllByRole("cell")[1]);
     expect(await screen.findByText("Ran 1221 tests")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Test" })).toBeInTheDocument();
     expect(document.querySelector("#run-output").parentElement).toHaveTextContent(/by engine/);
     expect(within(rows[1]).getByRole("button")).toHaveAttribute("aria-pressed", "true");
+    expect(rows[1]).toHaveClass("table__row--selected");
+    expect(rows[0]).not.toHaveClass("table__row--selected");
     expect(calls(fetchImpl, "GET", outputUrl("run-2").slice(4))).toHaveLength(1);
+
+    fireEvent.click(within(rows[0]).getByRole("button"));
+    expect(await screen.findByText("Reviewed the change.")).toBeInTheDocument();
+  });
+
+  it("reads the list again in place when a step is registered: rows stay, the new one opens, the pick is kept", async () => {
+    const routes = taskRoutes({
+      task: taskDetail({ status: "in_progress", workflow_current_step: "merge", awaiting_human_gate: false, gate_policy: null, blocked_kind: null }),
+    });
+    const { fetchImpl } = await renderTask(`${BASE}/activity`, routes);
+    const table = await screen.findByRole("table", { name: "Runs" });
+    const firstRow = within(table).getAllByRole("row")[1];
+    // The person goes back to the earlier run.
+    fireEvent.click(within(table).getAllByRole("row")[2]);
+    expect(await screen.findByText("Ran 1221 tests")).toBeInTheDocument();
+    const shown = document.querySelector("#run-output");
+
+    // A new step is registered while they read.
+    const before = fetchImpl.routes[RUNS_URL];
+    fetchImpl.routes[RUNS_URL] = { ...before, runs: [runItem("run-9", "merge", { backend: "builtin", model: null }), ...before.runs], total: before.total + 1 };
+    fetchImpl.routes[outputUrl("run-9")] = outputPayload("run-9", "Merged.");
+    const source = fetchImpl.EventSource.sources.find((entry) => entry.url === "/api/v1/sprints/sprint-56/stream");
+    source.emit({ type: "event", event: { id: "e20", task_id: TASK_ID } });
+    await waitFor(() => expect(within(screen.getByRole("table", { name: "Runs" })).getAllByRole("row")).toHaveLength(4), { timeout: 3000 });
+
+    const rows = within(screen.getByRole("table", { name: "Runs" })).getAllByRole("row").slice(1);
+    // The row that was there is the same element, the new one is marked as arrived, and nothing went blank.
+    expect(rows[1]).toBe(firstRow);
+    expect(rows[0]).toHaveClass("table__row--arrived");
+    expect(rows[1]).not.toHaveClass("table__row--arrived");
+    // What the person picked is still what is shown, untouched.
+    expect(document.querySelector("#run-output")).toBe(shown);
+    expect(screen.getByRole("heading", { name: "Test" })).toBeInTheDocument();
+    expect(rows[2]).toHaveClass("table__row--selected");
   });
 
   it("pages 25 runs at a time with Earlier", async () => {
@@ -857,6 +1027,13 @@ describe("Activity", () => {
 });
 
 describe("the page keeps its parts apart", () => {
+  it("gives every decision one shape: the question, then its facts on the line below", () => {
+    const css = readFileSync(resolve(process.cwd(), "src/styles/task.css"), "utf8");
+    const body = css.match(/\.decision__body\s*\{([^}]*)\}/)[1];
+    expect(body).toMatch(/flex-direction: column;/);
+    expect(body).not.toMatch(/flex-wrap/);
+  });
+
   it("reads checks and changes once on load", async () => {
     const { fetchImpl } = await renderTask();
     await screen.findByRole("region", { name: "Approve the merge into main?" });
@@ -904,34 +1081,164 @@ describe("details beyond the usual", () => {
   });
 });
 
-describe("Telling a running agent something", () => {
+describe("The agent's side bar", () => {
   const working = () => [runItem("run-9", "develop", { status: "running", outcome: null, finished_at: null })];
+  const IN_PROGRESS = { status: "in_progress", blocked_kind: null };
+  const button = () => within(screen.getByRole("banner")).getByRole("button", { name: "Agent" });
+  const bar = () => screen.findByRole("complementary", { name: "Agent" });
+  const noBar = () => expect(screen.queryByRole("complementary", { name: "Agent" })).toBeNull();
 
-  async function open(runs) {
-    const routes = taskRoutes({ task: taskDetail({ status: "in_progress", blocked_kind: null }), runs });
+  beforeEach(() => window.localStorage.clear());
+
+  async function open(runs, task = IN_PROGRESS, path = BASE) {
+    const routes = taskRoutes({ task: taskDetail(task), runs });
     routes[outputUrl("run-9")] = outputPayload("run-9", "Reading the parser.");
-    const utils = await renderTask(`${BASE}/activity`, routes);
-    await screen.findByRole("table", { name: "Runs" });
-    return utils;
+    const utils = await renderTask(path, routes);
+    return { ...utils, panel: await bar() };
   }
 
-  it("is offered under the output of a step an agent is doing, and nowhere else", async () => {
-    await open(working());
-    const box = await screen.findByRole("form", { name: "Tell the agent" });
+  it("has the manager's place on a task page, closed until asked for when nothing runs", async () => {
+    await renderTask();
+    expect(within(screen.getByRole("banner")).queryByRole("button", { name: "Manager" })).toBeNull();
+    expect(button()).toHaveAttribute("aria-pressed", "false");
+    noBar();
+
+    fireEvent.click(button());
+    const panel = await bar();
+    expect(within(panel).getByRole("heading", { name: "Agent" })).toBeInTheDocument();
+    // Oldest first, and the last step an agent or the engine did is open.
+    const steps = await within(panel).findAllByRole("button", { expanded: false });
+    expect(steps.map((step) => step.textContent)).toEqual([expect.stringMatching(/^Test/)]);
+    expect(within(panel).getByRole("button", { expanded: true })).toHaveTextContent(/^ReviewApprove/);
+    expect(await within(panel).findByText("Reviewed the change.")).toBeInTheDocument();
+    expect(within(panel).queryByText("Ran 1221 tests")).toBeNull();
+
+    // Any step opens and closes.
+    fireEvent.click(steps[0]);
+    expect(await within(panel).findByText("Ran 1221 tests")).toBeInTheDocument();
+    fireEvent.click(button());
+    noBar();
+  });
+
+  it("is open without being asked while a step is in progress, on what that step is doing", async () => {
+    const routes = taskRoutes({ task: taskDetail(IN_PROGRESS), runs: working() });
+    // The step's own line says how it started; a person's words have their own place.
+    routes[outputUrl("run-9")] = outputPayload("run-9", "Reading the parser.", {
+      transcript: [
+        { at: "2026-11-11T08:00:00Z", kind: "workflow.step_started", text: "", data: { step: "develop" } },
+        { at: "2026-11-11T08:00:01Z", kind: "agent.started", text: "", data: { command: "claude --print" } },
+        { at: "2026-11-11T08:00:02Z", kind: "human.message", text: "", data: { text: "Mind the cache." } },
+        { at: "2026-11-11T08:00:03Z", kind: "agent.message", text: "", data: { phase: "assistant", text: "Reading the parser." } },
+      ],
+    });
+    await renderTask(BASE, routes);
+    const panel = await bar();
+    expect(panel).toHaveTextContent("Develop is running");
+    expect(await within(panel).findByText("Reading the parser.")).toBeInTheDocument();
+    const story = within(panel).getByRole("list", { name: "What develop did" });
+    expect(within(story).getAllByRole("listitem")).toHaveLength(1);
+    expect(button()).toHaveAttribute("aria-pressed", "true");
+    // Closed by the person, it stays closed on this task.
+    fireEvent.click(button());
+    noBar();
+  });
+
+  it("reads a running step again as it prints", async () => {
+    const { fetchImpl, panel } = await open(working());
+    await within(panel).findByText("Reading the parser.");
+    const reads = () => calls(fetchImpl, "GET", "/api/v1/runs/run-9/output").length;
+    const before = reads();
+    fetchImpl.routes[outputUrl("run-9")] = outputPayload("run-9", "Editing the parser.");
+    const source = fetchImpl.EventSource.sources.find((entry) => entry.url === "/api/v1/projects/foreman/stream");
+    source.emit({ type: "event", event: { id: "e1", event_type: "agent.message", task_id: "another-task" } });
+    source.emit({ type: "event", event: { id: "e2", event_type: "agent.message", task_id: TASK_ID } });
+    source.emit({ type: "event", event: { id: "e3", event_type: "agent.command", task_id: TASK_ID } });
+    expect(await within(panel).findByText("Editing the parser.", {}, { timeout: 3000 })).toBeInTheDocument();
+    expect(reads()).toBe(before + 1);
+  });
+
+  it("offers to interrupt a step an agent is doing, or to leave the note for its next step", async () => {
+    const { panel } = await open(working());
+    const box = within(panel).getByRole("form", { name: "Tell the agent" });
     expect(within(box).getByLabelText("Tell the agent (Develop is running)")).toBeInTheDocument();
     expect(within(box).getByRole("button", { name: "Interrupt and tell it now" })).toBeInTheDocument();
     expect(within(box).getByRole("button", { name: "Save for its next step" })).toBeInTheDocument();
+    // It is the only such box on the page, on every tab.
+    expect(screen.getAllByRole("form", { name: "Tell the agent" })).toHaveLength(1);
   });
 
-  it("is not offered when the step has ended or the engine is doing it", async () => {
-    await open([runItem("run-9", "develop")]);
-    expect(screen.queryByRole("form", { name: "Tell the agent" })).toBeNull();
+  it("is the only box for it on the Activity tab too", async () => {
+    await open(working(), IN_PROGRESS, `${BASE}/activity`);
+    await screen.findByRole("table", { name: "Runs" });
+    expect(screen.getAllByRole("form", { name: "Tell the agent" })).toHaveLength(1);
+    expect(screen.queryByRole("list", { name: "Told the agent" })).toBeNull();
+  });
+
+  it("with no step in progress, a note can only be saved for the next one", async () => {
+    const { fetchImpl, panel } = await open([runItem("run-9", "develop")]);
+    fetchImpl.routes[post("messages")] = { status: "recorded", message: "Recorded. The next agent step for this task will read it." };
+    const box = within(panel).getByRole("form", { name: "Tell the agent" });
+    expect(within(box).queryByRole("button", { name: "Interrupt and tell it now" })).toBeNull();
+    fireEvent.click(within(box).getByRole("button", { name: "Save for the next step" }));
+    expect(await within(box).findByRole("alert")).toHaveTextContent("Write what to tell it first.");
+    fireEvent.change(within(box).getByRole("textbox", { name: "Tell the agent" }), { target: { value: "Count skipped tests." } });
+    fireEvent.click(within(box).getByRole("button", { name: "Save for the next step" }));
+    expect(await within(box).findByRole("status")).toHaveTextContent("The next agent step for this task will read it.");
+    expect(calls(fetchImpl, "POST", `/api/v1/tasks/${TASK_ID}/messages`)[0].body).toEqual({ text: "Count skipped tests." });
+  });
+
+  it("takes a note before any agent has worked on the task", async () => {
+    await renderTask(BASE, taskRoutes({ task: taskDetail({ status: "todo", blocked_kind: null }), runs: [] }));
+    fireEvent.click(button());
+    const panel = await bar();
+    expect(await within(panel).findByText("No agent has worked on this task yet.")).toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: "Save for the next step" })).toBeInTheDocument();
+  });
+
+  it("leaves out the runs that only record that the task was filed or planned", async () => {
+    const runs = [runItem("run-9", "develop"), runItem("run-file", "file", { backend: "engine", outcome: "file" })];
+    const { panel } = await open(runs);
+    const thread = within(panel).getByRole("list", { name: "Steps and what was said" });
+    expect(Array.from(thread.children).map((item) => item.textContent)).toEqual([expect.stringMatching(/^DevelopDone/)]);
+  });
+
+  it("shows a finished task's steps and takes no more notes", async () => {
+    const routes = taskRoutes({ task: taskDetail({ status: "done", blocked_kind: null }), runs: [runItem("run-9", "develop")] });
+    routes[outputUrl("run-9")] = outputPayload("run-9", "Done.");
+    await renderTask(BASE, routes);
+    fireEvent.click(button());
+    const panel = await bar();
+    expect(await within(panel).findByText("Done.")).toBeInTheDocument();
+    expect(within(panel).queryByRole("form", { name: "Tell the agent" })).toBeNull();
+  });
+
+  it("shows what a person said where it was said, and whether it was read", async () => {
+    const { panel } = await open(
+      [
+        runItem("run-9", "develop", { status: "running", outcome: null, finished_at: null, started_at: "2026-11-11T08:00:00Z" }),
+        runItem("run-8", "develop", { outcome: "error", started_at: "2026-11-10T09:30:00Z" }),
+      ],
+      {
+        ...IN_PROGRESS,
+        guidance: [
+          { event_id: "e1", text: "Earlier advice.", recorded_at: "2026-11-10T09:00:00Z", delivered: true, delivered_at: "2026-11-10T10:00:00Z", delivered_role: "developer", delivered_step: "develop" },
+          { event_id: "e2", text: "Newer advice.", recorded_at: "2026-11-11T09:00:00Z", delivered: false, delivered_at: null, delivered_role: null, delivered_step: null },
+        ],
+      },
+    );
+    const thread = within(panel).getByRole("list", { name: "Steps and what was said" });
+    const order = Array.from(thread.children).map((item) => item.textContent);
+    expect(order).toHaveLength(4);
+    expect(order[0]).toMatch(/Earlier advice\.Read by the agent at develop on 10 Nov/);
+    expect(order[1]).toMatch(/^DevelopError/);
+    expect(order[2]).toMatch(/^DevelopRunning/);
+    expect(order[3]).toMatch(/Newer advice\.Waiting for the next agent step/);
   });
 
   it("interrupts the step with the note and says what is happening", async () => {
-    const { fetchImpl } = await open(working());
+    const { fetchImpl, panel } = await open(working());
     fetchImpl.routes[post("steer")] = { status: "interrupting", message: "Recorded. The develop step is being interrupted and starts again with this guidance." };
-    const box = await screen.findByRole("form", { name: "Tell the agent" });
+    const box = within(panel).getByRole("form", { name: "Tell the agent" });
     fireEvent.change(within(box).getByRole("textbox"), { target: { value: " Use the existing parser. " } });
     fireEvent.click(within(box).getByRole("button", { name: "Interrupt and tell it now" }));
 
@@ -942,9 +1249,9 @@ describe("Telling a running agent something", () => {
   });
 
   it("saves the note for the next step without interrupting", async () => {
-    const { fetchImpl } = await open(working());
+    const { fetchImpl, panel } = await open(working());
     fetchImpl.routes[post("messages")] = { status: "recorded", message: "Recorded. The next agent step for this task will read it." };
-    const box = await screen.findByRole("form", { name: "Tell the agent" });
+    const box = within(panel).getByRole("form", { name: "Tell the agent" });
     fireEvent.change(within(box).getByRole("textbox"), { target: { value: "Later is fine." } });
     fireEvent.click(within(box).getByRole("button", { name: "Save for its next step" }));
 
@@ -953,9 +1260,9 @@ describe("Telling a running agent something", () => {
   });
 
   it("shows the refusal when there is nothing to interrupt, and asks for words first", async () => {
-    const { fetchImpl } = await open(working());
+    const { fetchImpl, panel } = await open(working());
     fetchImpl.routes[post("steer")] = reply(400, { error: "No agent is running on this task, so there is nothing to interrupt.", code: "validation_error" });
-    const box = await screen.findByRole("form", { name: "Tell the agent" });
+    const box = within(panel).getByRole("form", { name: "Tell the agent" });
     fireEvent.click(within(box).getByRole("button", { name: "Interrupt and tell it now" }));
     expect(await within(box).findByRole("alert")).toHaveTextContent("Write what to tell it first.");
     fireEvent.change(within(box).getByRole("textbox"), { target: { value: "Stop." } });
@@ -963,4 +1270,3 @@ describe("Telling a running agent something", () => {
     expect(await within(box).findByRole("alert")).toHaveTextContent("nothing to interrupt");
   });
 });
-

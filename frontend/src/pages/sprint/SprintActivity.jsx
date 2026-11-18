@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useApiClient } from "../../api/ApiProvider";
 import { errorSentence } from "../../api/client";
 import { listSprintEvents, STEP_FINISHED } from "../../api/sprints";
-import { Button } from "../../ui/Button";
+import { ListPager } from "../../ui/ListPager";
 import { Mono } from "../../ui/Mono";
 import { SectionHeading } from "../../ui/SectionHeading";
 import { Table } from "../../ui/Table";
@@ -54,6 +54,12 @@ export function SprintActivity({ sprintId, tasks, revision }) {
     }
   }, [client, sprintId, state.events]);
 
+  // Back to the newest page; the steps let go of are asked for again by "Earlier steps".
+  const showFewer = useCallback(() => {
+    generation.current += 1;
+    setState((previous) => ({ ...previous, events: previous.events.slice(0, STEPS_PAGE), hasMore: true, loadingMore: false }));
+  }, []);
+
   const keys = new Map(tasks.map((task) => [task.id, task.task_key || task.title]));
   const columns = [
     { key: "when", header: "When", className: "steps__when", render: (event) => <Mono quiet>{formatDayTime(event.timestamp)}</Mono> },
@@ -77,11 +83,14 @@ export function SprintActivity({ sprintId, tasks, revision }) {
       {state.events && state.events.length > 0 ? (
         <Table caption="Finished steps" columns={columns} rows={state.events} hideHeader />
       ) : null}
-      {state.hasMore ? (
-        <Button variant="quiet" className="list-more" disabled={state.loadingMore} onClick={loadEarlier}>
-          Earlier steps
-        </Button>
-      ) : null}
+      <ListPager
+        more="Earlier steps"
+        loading={state.loadingMore}
+        hasMore={state.hasMore}
+        expanded={(state.events?.length ?? 0) > STEPS_PAGE}
+        onMore={loadEarlier}
+        onFewer={showFewer}
+      />
     </section>
   );
 }

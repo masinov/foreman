@@ -14,9 +14,13 @@ describe("Disclosure", () => {
     const button = screen.getByRole("button", { name: "Finished sprints 3" });
     expect(button).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByText("Sprint 55")).toBeNull();
+    // The look of everything that opens more in place; the caret turns down once open.
+    expect(button).toHaveClass("expander");
+    expect(button.querySelector(".caret")).toHaveClass("caret--right");
 
     fireEvent.click(button);
     expect(button).toHaveAttribute("aria-expanded", "true");
+    expect(button.querySelector(".caret")).toHaveClass("caret--down");
     expect(screen.getByText("Sprint 55")).toBeInTheDocument();
     expect(document.getElementById(button.getAttribute("aria-controls"))).toContainElement(screen.getByText("Sprint 55"));
     expect(onToggle).toHaveBeenLastCalledWith(true);

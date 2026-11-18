@@ -58,29 +58,22 @@ function SettingsLayout({ projectId, children }) {
   );
 }
 
-/** /dashboard/projects/{id}/settings: General. */
-export function ProjectSettingsGeneralPage({ params }) {
-  return (
-    <SettingsLayout projectId={params.projectId}>
-      <GeneralTab projectId={params.projectId} />
-    </SettingsLayout>
-  );
-}
+// The tab each of the settings' addresses shows.
+const TABS = {
+  "project-settings": GeneralTab,
+  "project-settings-workflow": WorkflowTab,
+  "project-settings-roles": RolesTab,
+};
 
-/** /dashboard/projects/{id}/settings/workflow: Workflow. */
-export function ProjectSettingsWorkflowPage({ params }) {
+/**
+ * /dashboard/projects/{id}/settings and its /workflow and /roles: one page.
+ * The head and the tab bar stay as they are when the tab changes.
+ */
+export function ProjectSettingsPage({ params, routeName }) {
+  const Tab = TABS[routeName] ?? GeneralTab;
   return (
     <SettingsLayout projectId={params.projectId}>
-      <WorkflowTab projectId={params.projectId} />
-    </SettingsLayout>
-  );
-}
-
-/** /dashboard/projects/{id}/settings/roles: Roles. */
-export function ProjectSettingsRolesPage({ params }) {
-  return (
-    <SettingsLayout projectId={params.projectId}>
-      <RolesTab projectId={params.projectId} />
+      <Tab projectId={params.projectId} />
     </SettingsLayout>
   );
 }

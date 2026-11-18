@@ -46,10 +46,6 @@ a,
   animation: slide-in var(--motion-enter) ease-out;
 }
 
-.disclosure__marker {
-  transition: transform var(--motion-fast) ease;
-}
-
 @keyframes breathe {
   0%,
   100% {
@@ -58,6 +54,25 @@ a,
 
   50% {
     opacity: 0.35;
+  }
+}
+
+/* Arriving in a list: a row that was not there a moment ago opens into
+   place, so what is under the list is pushed down, not knocked down. What a
+   picked row shows under the list fades in when it changes. */
+.table__row--arrived td {
+  animation: row-arrive var(--motion-enter) ease-out;
+}
+
+.run-output {
+  animation: appear var(--motion-enter) ease-out;
+}
+
+@keyframes row-arrive {
+  from {
+    padding-block: 0;
+    line-height: 0;
+    opacity: 0;
   }
 }
 

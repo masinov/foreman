@@ -1,21 +1,17 @@
-import React, { useId, useState } from "react";
+import React from "react";
 
-import { useApiClient } from "../../api/ApiProvider";
-import { errorSentence } from "../../api/client";
 import { getProjectWorkflow } from "../../api/projects";
 import { getSprint } from "../../api/sprints";
-import { sendGuidance } from "../../api/tasks";
 import { useResource } from "../../api/useResource";
 import { paths } from "../../app/paths";
 import { Link } from "../../app/router";
-import { Button } from "../../ui/Button";
 import { Disclosure } from "../../ui/Disclosure";
 import { LongText } from "../../ui/LongText";
 import { Mono } from "../../ui/Mono";
 import { SectionHeading } from "../../ui/SectionHeading";
 import { StatusDot } from "../../ui/StatusDot";
 import { Table } from "../../ui/Table";
-import { formatDay, formatDayTime, formatMoney, formatTokens, humanize, plural } from "../../ui/format";
+import { formatDay, formatMoney, formatTokens, humanize, plural } from "../../ui/format";
 import { useProjectEngine } from "../shared/useProjectEngine";
 import { stageOf } from "../sprint/taskStage";
 import { Overrides } from "./Overrides";
@@ -89,88 +85,6 @@ function ChecksSummary({ task, checks }) {
 }
 
 /** Whether the agent has read a note, in words. */
-function noteState(note) {
-  if (!note.delivered) return { tone: "attention", word: "Waiting for the next agent step" };
-  const step = note.delivered_step ? humanize(note.delivered_step).toLowerCase() : "";
-  const when = formatDayTime(note.delivered_at);
-  return { tone: "passed", word: ["Read by the agent", step ? `at ${step}` : "", when ? `on ${when}` : ""].filter(Boolean).join(" ") };
-}
-
-function Guidance({ task, onSaved }) {
-  const client = useApiClient();
-  const fieldId = useId();
-  const [text, setText] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [notice, setNotice] = useState(null);
-  const notes = [...(task.guidance ?? [])].reverse();
-
-  async function save(event) {
-    event.preventDefault();
-    if (!text.trim()) {
-      setNotice({ error: true, text: "Write the guidance first." });
-      return;
-    }
-    setSaving(true);
-    setNotice(null);
-    try {
-      const result = await sendGuidance(client, task.id, text.trim());
-      setText("");
-      setNotice({ error: false, text: result?.message || "Saved." });
-      onSaved();
-    } catch (error) {
-      setNotice({ error: true, text: errorSentence(error) });
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <section className="task-section" aria-labelledby={`${fieldId}-heading`}>
-      <div className="section-heading">
-        <h2 className="section-heading__title" id={`${fieldId}-heading`}>
-          <label htmlFor={fieldId}>Guidance for the next agent step</label>
-        </h2>
-      </div>
-      <form className="guidance" onSubmit={save} noValidate>
-        <textarea
-          id={fieldId}
-          className="field__input field__input--multiline"
-          rows={3}
-          placeholder="Nothing written"
-          value={text}
-          onChange={(event) => setText(event.target.value)}
-        />
-        <div className="guidance__actions">
-          <Button type="submit" disabled={saving}>
-            {saving ? "Saving…" : "Save guidance"}
-          </Button>
-          {notice ? (
-            <span className={notice.error ? "notice notice--error" : "notice"} role={notice.error ? "alert" : "status"}>
-              {notice.text}
-            </span>
-          ) : null}
-        </div>
-      </form>
-      {notes.length ? (
-        <ul className="guidance__notes" aria-label="Guidance written">
-          {notes.map((note) => {
-            const state = noteState(note);
-            return (
-              <li key={note.event_id} className="guidance__note">
-                <p className="guidance__text">{note.text}</p>
-                <span className="guidance__meta">
-                  <StatusDot tone={state.tone}>{state.word}</StatusDot>
-                  <span className="quiet">Written {formatDayTime(note.recorded_at)}</span>
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-      ) : null}
-    </section>
-  );
-}
-
 function SprintLink({ task }) {
   const sprint = useResource(
     ["sprint", task.sprint_id],
@@ -384,7 +298,6 @@ export function OverviewTab({ task, checks, changed }) {
         <Steps task={task} workflow={workflow} />
         <ChecksSummary task={task} checks={checks} />
         <Filed task={task} />
-        {finished ? null : <Guidance task={task} onSaved={() => changed(null)} />}
       </div>
       <aside className="task-details" aria-label="Details and overrides">
         <Details task={task} workflow={workflow} />

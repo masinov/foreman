@@ -39,7 +39,7 @@ const CALLS = {
 };
 
 const DONE_WORDS = {
-  [DECISIONS.accept]: { approve: "Accepted. It can be planned into a sprint.", sendBack: "Declined." },
+  [DECISIONS.accept]: { approve: "Accepted. It runs with the rest of the sprint.", sendBack: "Declined." },
   [DECISIONS.unblock]: {
     approve: "Unblocked. The task is back in the queue.",
     sendBack: "Unblocked with guidance. The task is back in the queue.",

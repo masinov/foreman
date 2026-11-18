@@ -1,9 +1,16 @@
 import React, { useId, useLayoutEffect, useRef, useState } from "react";
 
+import { Caret } from "./Caret";
+
 /**
  * Text as it was written, line breaks kept. Text longer than a dozen lines
  * is folded to that height with a "Show all" under it, so a long text does
  * not push the rest of the page out of reach. Short text gets no control.
+ *
+ * The control must not read as one more line of the text above it: it has
+ * the look of everything that opens more in place (`expander` in ui.css),
+ * with a caret that points down while there is more to show and up once it
+ * is all shown.
  */
 export function LongText({ children, className = "" }) {
   const ref = useRef(null);
@@ -36,11 +43,12 @@ export function LongText({ children, className = "" }) {
       {folds ? (
         <button
           type="button"
-          className="long-text__toggle"
+          className="long-text__toggle expander"
           aria-expanded={open}
           aria-controls={id}
           onClick={() => setOpen(!open)}
         >
+          <Caret direction={open ? "up" : "down"} />
           {open ? "Show less" : "Show all"}
         </button>
       ) : null}

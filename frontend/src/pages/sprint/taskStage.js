@@ -41,6 +41,13 @@ export function stageOf(task, engine = null) {
     return { tone: "attention", word: "Blocked", group: GROUPS.needsYou };
   }
   if (task.status === "triage") {
+    // In the backlog a request waits for a person only where Foreman would
+    // otherwise start it (ADR-0028); elsewhere it is backlog work like any other.
+    if (task.in_backlog) {
+      return task.foreman_starts_backlog_work
+        ? { tone: "attention", word: "A request, not accepted", group: GROUPS.needsYou }
+        : { tone: "idle", word: "In the backlog", group: GROUPS.queued };
+    }
     return { tone: "attention", word: "Waiting to be accepted", group: GROUPS.needsYou };
   }
   if (task.status === "in_progress") {
@@ -56,6 +63,8 @@ export function stageOf(task, engine = null) {
   }
   if (task.status === "done") return { tone: "passed", word: "Done", group: GROUPS.finished };
   if (task.status === "cancelled") return { tone: "idle", word: "Cancelled", group: GROUPS.finished };
+  // In the backlog nothing is queued: it runs once it is in a sprint.
+  if (task.in_backlog) return { tone: "idle", word: "In the backlog", group: GROUPS.queued };
   return { tone: "idle", word: "Queued", group: GROUPS.queued };
 }
 

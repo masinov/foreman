@@ -59,3 +59,19 @@ describe("route table", () => {
     expect(matchRoute("/dashboard/legacy/projects/p").route.name).toBe("not-found");
   });
 });
+
+describe("pageKey", () => {
+  it("is the same for the tabs of one thing and different for another thing or page", async () => {
+    const { pageKey } = await import("./pages");
+    const task = { taskId: "t-1" };
+    expect(pageKey("task-activity", task)).toBe(pageKey("task", task));
+    expect(pageKey("task-changes", task)).toBe(pageKey("task-checks", task));
+    expect(pageKey("task", { taskId: "t-2" })).not.toBe(pageKey("task", task));
+    expect(pageKey("project-activity", { projectId: "p" })).toBe(pageKey("project", { projectId: "p" }));
+    expect(pageKey("sprint-board", { sprintId: "s" })).toBe(pageKey("sprint", { sprintId: "s" }));
+    expect(pageKey("project-settings-roles", { projectId: "p" })).toBe(pageKey("project-settings", { projectId: "p" }));
+    // The backlog and the settings are pages of their own, not tabs of the project.
+    expect(pageKey("project-backlog", { projectId: "p" })).not.toBe(pageKey("project", { projectId: "p" }));
+    expect(pageKey("project-settings", { projectId: "p" })).not.toBe(pageKey("project", { projectId: "p" }));
+  });
+});

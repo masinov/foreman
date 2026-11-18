@@ -33,19 +33,23 @@ function rowKeys() {
 }
 
 describe("the sprint page head", () => {
-  it("shows title, goal, state, counts, spend and the selection setting", async () => {
+  it("shows title, goal, state, counts and spend", async () => {
     await renderSprint();
     expect(screen.getByText("What the engine records is what happened.")).toBeInTheDocument();
     const summary = screen.getByText("State").closest("dl");
     expect(summary).toHaveTextContent(/State\s*Active since 11 Nov/);
     expect(summary).toHaveTextContent("1 need you · 1 in progress · 2 to do · 1 done");
     expect(summary).toHaveTextContent("$1.31 · 28.5K tokens");
-    expect(summary).toHaveTextContent(/Foreman picks its own tasks\s*Off/);
+    // Nothing about Foreman starting tasks where a person plans them all.
+    expect(summary).not.toHaveTextContent(/Foreman/);
   });
 
-  it("says On when the project lets Foreman pick its own tasks", async () => {
-    await renderSprint("/dashboard/sprints/sprint-56", sprintRoutes({ sprint: sprintPayload({ picks_own_tasks: true }) }));
-    expect(screen.getByText("Foreman picks its own tasks").closest("div")).toHaveTextContent("On");
+  it("says how many tasks Foreman started itself where the project lets it", async () => {
+    await renderSprint(
+      "/dashboard/sprints/sprint-56",
+      sprintRoutes({ sprint: sprintPayload({ picks_own_tasks: true, started_by_foreman: 2, foreman_limit: 5 }) }),
+    );
+    expect(screen.getByText("Started by Foreman").closest("div")).toHaveTextContent("2 of 5");
   });
 
   it("puts the project, with what needs you, in the breadcrumb", async () => {
@@ -392,6 +396,38 @@ describe("activity", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Earlier steps" }));
     await waitFor(() => expect(within(screen.getByRole("table", { name: "Finished steps" })).getAllByRole("row")).toHaveLength(5));
     expect(screen.queryByRole("button", { name: "Earlier steps" })).toBeNull();
+  });
+
+  it("goes back to the newest page with Show fewer, from the middle and from the end", async () => {
+    const page = (prefix, count) =>
+      Array.from({ length: count }, (_, index) => stepEvent(`${prefix}${index}`, "t-merge", "test", "success", "2025-11-11T10:00:00Z"));
+    const routes = sprintRoutes({ events });
+    routes[STEPS_URL] = { events: page("a", 25), has_more: true };
+    routes["GET /api/v1/sprints/sprint-56/events?type=workflow.step_completed&limit=25&before=a0"] = { events: page("b", 25), has_more: true };
+    routes["GET /api/v1/sprints/sprint-56/events?type=workflow.step_completed&limit=25&before=b0"] = { events: page("c", 4), has_more: false };
+    await renderSprint("/dashboard/sprints/sprint-56", routes);
+    const rowCount = () => within(screen.getByRole("table", { name: "Finished steps" })).getAllByRole("row").length - 1;
+    await waitFor(() => expect(rowCount()).toBe(25));
+    // Nothing to go back from on the first page.
+    expect(screen.queryByRole("button", { name: "Show fewer" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Earlier steps" }));
+    await waitFor(() => expect(rowCount()).toBe(50));
+    // In the middle: more, and the way back.
+    expect(screen.getByRole("button", { name: "Earlier steps" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Show fewer" }));
+    expect(rowCount()).toBe(25);
+    expect(screen.queryByRole("button", { name: "Show fewer" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Earlier steps" }));
+    await waitFor(() => expect(rowCount()).toBe(50));
+    fireEvent.click(screen.getByRole("button", { name: "Earlier steps" }));
+    await waitFor(() => expect(rowCount()).toBe(54));
+    // At the end: only the way back.
+    expect(screen.queryByRole("button", { name: "Earlier steps" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Show fewer" }));
+    expect(rowCount()).toBe(25);
+    expect(screen.getByRole("button", { name: "Earlier steps" })).toBeInTheDocument();
   });
 
   it("says when no step has finished", async () => {

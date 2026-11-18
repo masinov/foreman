@@ -37,6 +37,12 @@ function Text({ value, onChange, narrow = true, wide = false, ...controlProps })
   );
 }
 
+// Who lets Foreman start a request: a person accepting it first, or nobody.
+const REQUESTS = [
+  { value: "human", word: "A person accepts them" },
+  { value: "auto", word: "Foreman may start them" },
+];
+
 const TASK_PICKING = [
   { value: "directed", word: "Off" },
   { value: "autonomous", word: "On" },
@@ -150,7 +156,6 @@ function GeneralForm({ projectId, settings, onSaved }) {
         id="settings-who"
         title="Who decides"
       >
-        {choiceRow("triage", "Accept filed work", DECIDERS, "Work filed by another system or an agent")}
         {choiceRow("plan_approval", "Approve plans", DECIDERS, "A plan the manager proposes")}
         {choiceRow("merge_approval", "Approve merges", DECIDERS, "After tests and review")}
         <SettingRow label="Exceptions" error={errors.policy_rules} group>
@@ -167,13 +172,18 @@ function GeneralForm({ projectId, settings, onSaved }) {
       <SettingsSection id="settings-pick" title="Task picking">
         {choiceRow(
           "task_selection_mode",
-          "Foreman picks its own tasks",
+          "Foreman starts backlog work",
           TASK_PICKING,
           draft.task_selection_mode === "autonomous"
-            ? "On: it may create tasks of its own in the active sprint"
-            : "Off: it runs only the tasks planned into the active sprint",
+            ? "On: after what you planned, it takes the next task from the backlog"
+            : "Off: it runs only what is planned into the active sprint",
         )}
-        {textRow("max_autonomous_tasks", "At most, per sprint", "tasks it may add on its own")}
+        {draft.task_selection_mode === "autonomous" ? (
+          <>
+            {textRow("max_autonomous_tasks", "At most, per sprint", "backlog tasks it may start on its own")}
+            {choiceRow("triage", "Requests from agents and other systems", REQUESTS, "Before Foreman may start one")}
+          </>
+        ) : null}
       </SettingsSection>
 
       <SettingsSection id="settings-limits" title="Limits">

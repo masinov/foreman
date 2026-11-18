@@ -4,17 +4,18 @@ import { useApiClient } from "../../api/ApiProvider";
 import { errorSentence } from "../../api/client";
 import { GATE_RESOLUTIONS, resolveGate } from "../../api/gates";
 import { listNeedsYou, NEEDS_YOU_KINDS } from "../../api/needsYou";
-import { approveTask } from "../../api/tasks";
+import { approveTask, unblockTask } from "../../api/tasks";
 import { useDelayedFlag } from "../../api/useResource";
 import { usePagedList } from "../../api/usePagedList";
 import { paths } from "../../app/paths";
 import { Link } from "../../app/router";
 import { Button } from "../../ui/Button";
+import { Caret } from "../../ui/Caret";
 import { Mono } from "../../ui/Mono";
 import { SectionHeading } from "../../ui/SectionHeading";
 import { Surface } from "../../ui/Surface";
 import { Table } from "../../ui/Table";
-import { humanize, shortSha } from "../../ui/format";
+import { humanize, plural, shortSha } from "../../ui/format";
 
 // Design README: Needs you shows at most 5, with a way to see the rest.
 export const NEEDS_YOU_CAP = 5;
@@ -23,13 +24,14 @@ const MAX_PAGE = 200;
 
 const KIND_WORDS = {
   [NEEDS_YOU_KINDS.acceptFiledWork]: "Accept filed work",
+  [NEEDS_YOU_KINDS.answerRequests]: "Answer requests",
   [NEEDS_YOU_KINDS.approvePlan]: "Approve plan",
   [NEEDS_YOU_KINDS.approveMerge]: "Approve merge",
-  [NEEDS_YOU_KINDS.unblock]: "Unblock",
+  [NEEDS_YOU_KINDS.unblock]: "Blocked",
   [NEEDS_YOU_KINDS.settleOrder]: "Settle sprint order",
 };
 
-const itemId = (item) => item.gate?.id ?? item.task_id;
+const itemId = (item) => item.gate?.id ?? item.task_id ?? `${item.kind}:${item.project_id}`;
 const itemName = (item) => item.task_key || item.task_title || "the sprint order";
 
 // The same words and colours as a task's checks in the sprint list: a word
@@ -84,18 +86,38 @@ function OrderProposal({ gate }) {
   );
 }
 
+/** Why a task is blocked and the step it stopped at: what a person weighs before unblocking it. */
+function BlockedFacts({ blocked }) {
+  const reason = blocked?.reason || "No reason recorded";
+  const step = blocked?.step ? ` · at ${humanize(blocked.step).toLowerCase()}` : "";
+  return (
+    <span className="needs-you__blocked" title={`${reason}${step}`}>
+      <span className="needs-you__reason">{reason}</span>
+      {step ? <span className="quiet">{step}</span> : null}
+    </span>
+  );
+}
+
 function Detail({ item }) {
   if (item.gate) return <OrderProposal gate={item.gate} />;
   if (item.kind === NEEDS_YOU_KINDS.approveMerge) return <MergeFacts evidence={item.evidence} />;
+  if (item.kind === NEEDS_YOU_KINDS.unblock) return <BlockedFacts blocked={item.blocked} />;
+  if (item.kind === NEEDS_YOU_KINDS.answerRequests) return <span className="quiet">Backlog</span>;
   return <span className="quiet">{item.sprint_title || ""}</span>;
 }
 
 /**
  * Needs you: the one tinted surface. Without `projectId` it spans every
- * project and names each item's project. An approve-merge item has an
- * outlined Approve; every other kind links to its task.
+ * project and names each item's project.
  *
- * `onChanged` runs after an approval, for whatever else on the page counts
+ * A row carries the main button of its task's decision when the row can show
+ * what that decision weighs (ADR-0030): a merge shows its tests, review and
+ * commit and has Approve; a blocked task shows why it is blocked and where
+ * it stopped and has Unblock; a proposed sprint order shows the order and
+ * has Accept and Reject. A plan has to be read, and requests are several, so
+ * those rows only link to where they are decided.
+ *
+ * `onChanged` runs after a decision, for whatever else on the page counts
  * what waits.
  */
 export function NeedsYou({ projectId = null, note, empty, onChanged }) {
@@ -130,6 +152,12 @@ export function NeedsYou({ projectId = null, note, empty, onChanged }) {
     decide(item, async () => {
       const result = await approveTask(client, item.task_id);
       return { text: result?.message || `Approved ${itemName(item)}.` };
+    });
+
+  const unblock = (item) =>
+    decide(item, async () => {
+      await unblockTask(client, item.task_id, null);
+      return { text: `Unblocked ${itemName(item)}. It is back in the queue.` };
     });
 
   const settleOrder = (item, resolution) =>
@@ -169,7 +197,11 @@ export function NeedsYou({ projectId = null, note, empty, onChanged }) {
       header: "Title",
       className: "needs-you__title",
       render: (item) =>
-        item.gate ? (
+        item.kind === NEEDS_YOU_KINDS.answerRequests ? (
+          <Link className="row-link" href={paths.projectBacklog(item.project_id)}>
+            {plural(item.count ?? 0, "request")} from agents and other systems
+          </Link>
+        ) : item.gate ? (
           <Link className="row-link" href={paths.sprint(item.sprint_id)}>
             {item.gate.conflict_description}
           </Link>
@@ -210,17 +242,33 @@ export function NeedsYou({ projectId = null, note, empty, onChanged }) {
             </span>
           );
         }
-        return item.kind === NEEDS_YOU_KINDS.approveMerge ? (
-          <Button
-            variant="gold-outline"
-            inRow
-            disabled={approvingId !== null}
-            aria-label={`Approve ${itemName(item)}`}
-            onClick={() => approve(item)}
-          >
-            {approvingId === item.task_id ? "Approving…" : "Approve"}
-          </Button>
-        ) : null;
+        if (item.kind === NEEDS_YOU_KINDS.approveMerge) {
+          return (
+            <Button
+              variant="gold-outline"
+              inRow
+              disabled={approvingId !== null}
+              aria-label={`Approve ${itemName(item)}`}
+              onClick={() => approve(item)}
+            >
+              {approvingId === item.task_id ? "Approving…" : "Approve"}
+            </Button>
+          );
+        }
+        if (item.kind === NEEDS_YOU_KINDS.unblock) {
+          return (
+            <Button
+              variant="gold-outline"
+              inRow
+              disabled={approvingId !== null}
+              aria-label={`Unblock ${itemName(item)}`}
+              onClick={() => unblock(item)}
+            >
+              {approvingId === item.task_id ? "Unblocking…" : "Unblock"}
+            </Button>
+          );
+        }
+        return null;
       },
     },
   ].filter(Boolean);
@@ -258,10 +306,11 @@ export function NeedsYou({ projectId = null, note, empty, onChanged }) {
           {total > NEEDS_YOU_CAP ? (
             <Button
               variant="quiet"
-              className="needs-you__more"
+              className="needs-you__more expander"
               disabled={list.loadingMore}
               onClick={() => (expanded ? setExpanded(false) : showAll())}
             >
+              <Caret direction={expanded ? "up" : "down"} />
               {expanded ? "Show fewer" : `Show all ${total}`}
             </Button>
           ) : null}

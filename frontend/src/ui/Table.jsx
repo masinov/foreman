@@ -8,7 +8,9 @@ import React from "react";
  * `columns` are `{ key, header, render(row), className?, numeric? }`; a
  * numeric column is set to the right, header and figures alike. `selected(row)`
  * marks the row a person picked (its control says so to assistive
- * technology; the row is shaded). While
+ * technology; the row is shaded). With `onRowClick(row)` the whole row
+ * picks, not only its control. `arrived(row)` marks a row that was not in
+ * the list a moment ago, which opens into place instead of jumping in. While
  * `placeholderRows` is a number, that many placeholder rows stand in for the
  * data (callers show them only after 200 ms of loading).
  *
@@ -24,6 +26,8 @@ export function Table({
   rows = [],
   rowKey = (row) => row.id,
   selected = null,
+  onRowClick = null,
+  arrived = null,
   tinted = false,
   hideHeader = false,
   placeholderRows = null,
@@ -56,7 +60,19 @@ export function Table({
                 </tr>
               ))
             : rows.map((row) => (
-                <tr key={rowKey(row)} className={selected?.(row) ? "table__row--selected" : undefined}>
+                <tr
+                  key={rowKey(row)}
+                  className={
+                    [
+                      selected?.(row) ? "table__row--selected" : "",
+                      onRowClick ? "table__row--pickable" : "",
+                      arrived?.(row) ? "table__row--arrived" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ") || undefined
+                  }
+                  onClick={onRowClick ? () => onRowClick(row) : undefined}
+                >
                   {columns.map((column) => (
                     <td key={column.key} className={cellClass(column)}>
                       {column.render(row)}

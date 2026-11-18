@@ -55,22 +55,22 @@ const PROJECT_PAGES = {
 };
 
 /**
- * The page the person is on, for "You are on: ...": a project's tab, a
- * sprint's title, a task's key. Null until a sprint or task has loaded, and
- * for workspace pages (they have no manager).
+ * The page the person is on, for "You are on: ...": a project's tab or a
+ * sprint's title. Null until a sprint has loaded, and for pages the manager
+ * is not on (the workspace's; a task's, where the side bar is its agents').
  */
-export function youAreOn(route, { sprint = null, task = null } = {}) {
+export function youAreOn(route, { sprint = null } = {}) {
   if (route.level === "project") return PROJECT_PAGES[route.name] || null;
   if (route.level === "sprint") return sprint?.title || null;
-  if (route.level === "task") return task ? task.task_key || task.title || null : null;
   return null;
 }
 
 /**
- * What the manager needs from the route: the project the page is in, the
- * "You are on" label and the context sent with a message. A sprint or task
- * page learns its project from the sprint or task. `hasManager` is false on
- * workspace pages.
+ * What the side bar needs from the route: the project the page is in and,
+ * for the manager, the "You are on" label and the context sent with a
+ * message. A sprint or task page learns its project from the sprint or task.
+ * On a task page the side bar is the task's agents' and `task` is that task.
+ * `hasManager` (a side bar at all) is false on workspace pages.
  */
 export function useManagerTarget(route, params) {
   const sprintId = route.level === "sprint" ? params.sprintId : null;
@@ -88,11 +88,10 @@ export function useManagerTarget(route, params) {
   else if (sprintId) projectId = sprint?.project_id || null;
   else if (taskId) projectId = task?.project_id || null;
 
-  const page = youAreOn(route, { sprint, task });
+  const page = youAreOn(route, { sprint });
   const context = { page: page || undefined };
   if (sprintId) context.sprint_id = sprintId;
-  if (taskId) context.task_id = taskId;
-  return { hasManager, projectId, page, context };
+  return { hasManager, projectId, page, context, task: taskId && task?.id === taskId ? task : null };
 }
 
 /**

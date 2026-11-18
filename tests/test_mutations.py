@@ -268,7 +268,9 @@ class BacklogMutationsTests(unittest.TestCase):
         self.mutations = Mutations(self.store, via="cli", actor="alice")
 
     def file(self, title: str = "Fix the thing", **fields: object) -> Task:
-        return self.mutations.file_task(self.project, title=title, **fields).task  # type: ignore[arg-type]
+        # Filed by an agent: what a person files is never a request (ADR-0028).
+        agent = Mutations(self.store, via="engine", actor="agent:developer", role="developer")
+        return agent.file_task(self.project, title=title, **fields).task  # type: ignore[arg-type]
 
     def accepted(self, title: str) -> Task:
         return self.mutations.accept_task(self.file(title))
@@ -276,9 +278,11 @@ class BacklogMutationsTests(unittest.TestCase):
     def events(self, task_id: str, event_type: str):
         return [e for e in self.store.list_events(task_id=task_id) if e.event_type == event_type]
 
-    def assert_audited(self, task_id: str, event_type: str, **payload: object) -> None:
+    def assert_audited(
+        self, task_id: str, event_type: str, *, by: tuple[str, str] = ("cli", "alice"), **payload: object
+    ) -> None:
         (event,) = self.events(task_id, event_type)
-        self.assertEqual((event.payload["via"], event.payload["by"]), ("cli", "alice"))
+        self.assertEqual((event.payload["via"], event.payload["by"]), by)
         for key, value in payload.items():
             self.assertEqual(event.payload[key], value, key)
 
@@ -295,8 +299,10 @@ class BacklogMutationsTests(unittest.TestCase):
         self.assertEqual(first.status, "triage")  # the default triage policy is `human`
         self.assertEqual(first.task_type, "fix")
         self.assertTrue(first.task_key)
-        self.assertEqual(first.created_by, "alice")
-        self.assert_audited(first.id, "backlog.task_filed", status="triage", sprint_id=backlog.id)
+        self.assertEqual(first.created_by, "agent:developer")
+        self.assert_audited(
+            first.id, "backlog.task_filed", by=("engine", "agent:developer"), status="triage", sprint_id=backlog.id
+        )
         self.assertEqual(self.events(first.id, "backlog.task_filed")[0].payload["triage"]["value"], "human")
         # A filed task waits for a person: one attention turn.
         (attention,) = self.events(first.id, "engine.attention_needed")
@@ -313,8 +319,8 @@ class BacklogMutationsTests(unittest.TestCase):
         self.assertTrue(self.store.get_sprint(feature.sprint_id).is_backlog)
         self.assertEqual(self.events(feature.id, "engine.attention_needed"), [])
 
-    def test_a_person_may_file_work_already_accepted(self) -> None:
-        task = self.file("Mine", accept=True)
+    def test_what_a_person_files_is_never_a_request(self) -> None:
+        task = self.mutations.file_task(self.project, title="Mine").task
 
         self.assertEqual(task.status, "todo")
         self.assert_audited(task.id, "backlog.task_filed", status="todo", accepted_by_filer=True)
@@ -373,9 +379,11 @@ class BacklogMutationsTests(unittest.TestCase):
 
     def test_a_filed_task_in_a_sprint_is_declined_into_the_backlog(self) -> None:
         # Intake may still file into a named sprint (ADR-0013).
-        task = self.mutations.file_task(
+        intake = Mutations(self.store, via="api", actor="api:pagerduty", role="api")
+        task = intake.file_task(
             self.project, title="Filed into s2", into=self.store.get_sprint("s2")
         ).task
+        self.assertEqual(task.status, "triage")
         self.assertEqual(task.sprint_id, "s2")
 
         self.mutations.decline_task(task)
@@ -423,13 +431,36 @@ class BacklogMutationsTests(unittest.TestCase):
         self.assertEqual(self.store.get_task(task.id).sprint_id, sprint.id)
         self.assert_audited(task.id, "human.task_planned", sprint_id=sprint.id, new_sprint=True)
 
-    def test_planning_a_filed_task_is_refused_and_nothing_moves(self) -> None:
-        accepted, filed = self.accepted("Ready"), self.file("Not yet")
+    def test_a_person_planning_a_request_accepts_it(self) -> None:
+        accepted, request = self.accepted("Ready"), self.file("Not yet")
+        self.assertEqual(request.status, "triage")
+
+        planned = self.mutations.plan_tasks([accepted, request], sprint=self.store.get_sprint("s2"))
+
+        self.assertEqual([task.status for task in planned.tasks], ["todo", "todo"])
+        self.assertEqual({task.sprint_id for task in planned.tasks}, {"s2"})
+        self.assert_audited(request.id, "human.task_planned", sprint_id="s2", accepted=True)
+        self.assertNotIn("accepted", self.events(accepted.id, "human.task_planned")[0].payload)
+
+    def test_foreman_may_not_plan_a_request_no_person_has_accepted(self) -> None:
+        accepted, request = self.accepted("Ready"), self.file("Not yet")
+        foreman = Mutations(self.store, via="policy", actor="foreman")
 
         with self.assertRaises(MutationError) as caught:
-            self.mutations.plan_tasks([accepted, filed], new_sprint_title="Never made")
+            foreman.plan_tasks([accepted, request], sprint=self.store.get_sprint("s2"), pulled=True)
 
-        self.assertIn("accept it before planning", str(caught.exception))
+        self.assertIn("no person has accepted", str(caught.exception))
+        self.assertTrue(self.store.get_sprint(self.store.get_task(accepted.id).sprint_id).is_backlog)
+        self.assertEqual(self.events(accepted.id, "engine.task_pulled"), [])
+
+    def test_planning_work_that_is_declined_is_refused_and_nothing_moves(self) -> None:
+        accepted = self.accepted("Ready")
+        declined = self.mutations.decline_task(self.file("No"))
+
+        with self.assertRaises(MutationError) as caught:
+            self.mutations.plan_tasks([accepted, declined], new_sprint_title="Never made")
+
+        self.assertIn("only backlog work can be planned", str(caught.exception))
         self.assertTrue(self.store.get_sprint(self.store.get_task(accepted.id).sprint_id).is_backlog)
         self.assertNotIn("Never made", [s.title for s in self.store.list_sprints("p1")])
         self.assertEqual(self.events(accepted.id, "human.task_planned"), [])

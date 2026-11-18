@@ -21,6 +21,7 @@ from typing import Any, Callable, Sequence
 from urllib.parse import urlsplit
 
 from .dashboard_overview import MILESTONE_KINDS, WorkspaceReader
+from .engine.selection import pulled_task_ids
 from .engine_control import (
     EngineStateView,
     ServeSpawner,
@@ -765,9 +766,19 @@ class DashboardService:
             "picks_own_tasks": bool(
                 project and resolve_project_settings(project).task_selection_mode == "autonomous"
             ),
+            # The tasks Foreman took from the backlog into this sprint on its
+            # own, against the limit per sprint (ADR-0028).
+            "started_by_foreman": len(pulled_task_ids(self.store, sprint)),
+            "foreman_limit": resolve_project_settings(project).max_autonomous_tasks if project else None,
             "task_counts": self.store.task_counts(sprint_id=sprint.id),
             "totals": self.store.run_totals(sprint_id=sprint.id),
         }
+
+    def _starts_backlog_work(self, project_id: str) -> bool:
+        from .dashboard_overview import foreman_starts_backlog_work
+
+        project = self.store.get_project(project_id)
+        return bool(project and foreman_starts_backlog_work(project))
 
     def create_sprint(
         self,
@@ -1066,8 +1077,10 @@ class DashboardService:
             "task_key": task.task_key,
             "title": task.title,
             "status": task.status,
-            # In the backlog: filed, accepted or declined, never run (ADR-0021).
+            # In the backlog: a request, backlog work or declined (ADR-0021, ADR-0028).
             "in_backlog": sprint is not None and sprint.is_backlog,
+            # Whether accepting a request has an effect in this project.
+            "foreman_starts_backlog_work": self._starts_backlog_work(task.project_id),
             "task_type": task.task_type,
             "description": task.description,
             "priority": task.priority,

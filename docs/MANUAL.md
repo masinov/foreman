@@ -275,13 +275,12 @@ foreman backlog plan <project-id> <task-id>... --new-sprint TITLE [--goal G]
 foreman backlog unplan <task-id>      # a task that has not started goes back
 ```
 
-`add` files under the project's `triage` policy (§14): `human` leaves it filed
-and asks a person, `auto` accepts it. `--accept` files it already accepted.
-Only accepted tasks can be planned, into a planned or active sprint, or into a
-new planned sprint created by the same command; if one task cannot be planned,
-none are. A declined task is kept and shows with `--status declined`. A task an
-agent creates with the `task_created` signal is filed here too, never into the
-sprint it is running in.
+`add` files backlog work: what a person files is never a request. Work an
+agent (`signal.task_created`) or another system (intake) files follows the
+project's `triage` policy (§14): `human` makes it a request, `auto` makes it
+backlog work at once. `backlog accept` turns a request into backlog work,
+which matters where Foreman starts backlog work itself; `backlog plan` puts
+a request or backlog work into a sprint, and planning a request accepts it.
 
 `task unblock` refuses a task parked at a human gate (use `foreman approve` or
 `foreman deny` for those) and clears the engine's dead letters — see
@@ -929,10 +928,14 @@ Two related knobs:
   - `autonomous` — completes the resolved sprint (`engine.sprint_completed`),
     activates the next planned sprint and keeps going; when there is none it
     stops `idle` with the `sprint_resolved` turn.
-- **`task_selection_mode`** setting (`directed` / `autonomous`): in
-  `autonomous` mode the engine may select and start orchestrator-created tasks,
-  which must satisfy the autonomous contract (emit `signal.task_started` with
-  title, branch, and acceptance criteria) or they are blocked.
+- **`task_selection_mode`** setting (`directed` / `autonomous`; in the
+  dashboard, "Foreman starts backlog work: Off / On"): what a person planned
+  into the active sprint always runs first. In `autonomous` mode, when nothing
+  planned can run, the engine takes the next accepted backlog task into the
+  active sprint itself (higher priority first, then the order filed), up to
+  `max_autonomous_tasks` per sprint. It never takes a request, which is work
+  an agent or another system filed that no person has accepted, and it
+  invents no tasks (ADR-0028).
 
 When a sprint resolves and the engine stops (a directed or supervised sprint
 left active, or an autonomous project with no further sprint), it raises a
@@ -1343,8 +1346,8 @@ Events are the append-only truth of what happened. Families:
   key, the sprint it landed in, and the filing token's `token_id` and
   `token_name` — never the secret.
 - **`gate.*`** — `cost_exceeded`, `time_exceeded`.
-- **`signal.*`** — agent-emitted signals the engine consumes: `task_started`,
-  `task_created`, `blocker`.
+- **`signal.*`** — agent-emitted signals the engine consumes: `task_created`,
+  `blocker`.
 
 ---
 

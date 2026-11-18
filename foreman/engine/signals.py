@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from ..git import GitError, branch_exists, run_git
 from ..models import TASK_COMPLEXITIES, TASK_TYPES, Project, Run, Task
 from ..mutations import Mutations
 from ..roles import RoleDefinition
@@ -38,34 +37,6 @@ class SignalHandler:
         self.records = records
         self.leases = leases
         self.tasks = tasks
-
-    def autonomous_gap_recorded(self, task: Task) -> bool:
-        """True when this task's missing task_started was already recorded."""
-
-        return any(
-            event.event_type == "workflow.autonomous_contract_missing"
-            for event in self.store.list_events(task_id=task.id)
-        )
-
-    def signalled_branch_problem(self, project: Project, branch: str) -> str | None:
-        """Say why a branch an agent reported cannot become the task's branch."""
-
-        if branch == project.default_branch:
-            return (
-                f"{branch!r} is the default branch; a task's work reaches it only "
-                "through the merge step."
-            )
-        try:
-            valid = run_git(
-                project.repo_path, "check-ref-format", "--branch", branch, check=False
-            )
-        except (GitError, OSError) as exc:
-            return f"The branch name {branch!r} could not be checked: {exc}"
-        if valid.returncode != 0:
-            return f"{branch!r} is not a valid branch name."
-        if not branch_exists(project.repo_path, branch):
-            return f"Branch {branch!r} does not exist in the repository."
-        return None
 
     def emit_agent_events(
         self,
@@ -132,47 +103,6 @@ class SignalHandler:
                     role_id=role_id,
                 )
                 return
-        if event_record.event_type == "signal.task_started":
-            task.title = optional_string(payload.get("title")) or task.title
-            task.acceptance_criteria = (
-                optional_string(payload.get("criteria")) or task.acceptance_criteria
-            )
-            # The type and the branch are checked before they are stored: a
-            # type Foreman does not know breaks branch naming and the merge
-            # guard, and the branch decides which worktree later steps use
-            # and what gets merged.
-            refused: dict[str, str] = {}
-            task_type = optional_string(payload.get("task_type"))
-            if task_type and task_type != task.task_type:
-                if task_type in TASK_TYPES:
-                    task.task_type = task_type
-                else:
-                    refused["task_type"] = (
-                        f"{task_type!r} is not a task type "
-                        f"(expected one of: {', '.join(TASK_TYPES)})."
-                    )
-            branch = optional_string(payload.get("branch"))
-            if branch and branch != task.branch_name:
-                problem = self.signalled_branch_problem(project, branch)
-                if problem is None:
-                    task.branch_name = branch
-                else:
-                    refused["branch"] = problem
-            self.tasks.save(task, include_definition=True)
-            for field_name, reason in refused.items():
-                self.records.emit_event(
-                    run,
-                    "signal.rejected",
-                    {
-                        "signal": "task_started",
-                        "role_id": role_id,
-                        "field": field_name,
-                        "reason": reason,
-                    },
-                    role_id=role_id,
-                )
-            return
-
         if event_record.event_type == "signal.task_created":
             # Follow-up work an agent finds goes to the backlog, filed under
             # the project's triage policy like any other filed work. It never

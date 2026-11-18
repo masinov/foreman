@@ -9,14 +9,12 @@ from .base import AgentEvent
 
 SIGNAL_PREFIX = "FOREMAN_SIGNAL:"
 _SIGNAL_TYPES = {
-    "task_started": "signal.task_started",
     "task_created": "signal.task_created",
     "progress": "signal.progress",
     "blocker": "signal.blocker",
 }
 
 # Canonical signal type names.
-SIGNAL_TASK_STARTED = "signal.task_started"
 SIGNAL_TASK_CREATED = "signal.task_created"
 SIGNAL_PROGRESS = "signal.progress"
 SIGNAL_BLOCKER = "signal.blocker"
@@ -153,12 +151,7 @@ def _unknown_event(signal_type: str, payload: dict[str, Any], timestamp: str | N
 def _validate_payload(signal_type: str, payload: dict[str, Any]) -> AgentEvent | None:
     """Return an error event if the payload fails validation, else None."""
 
-    if signal_type == SIGNAL_TASK_STARTED:
-        error = validate_task_started_payload(payload)
-        if error:
-            return _invalid_event(error, None)
-
-    elif signal_type == SIGNAL_TASK_CREATED:
+    if signal_type == SIGNAL_TASK_CREATED:
         error = validate_task_created_payload(payload)
         if error:
             return _invalid_event(error, None)
@@ -173,30 +166,6 @@ def _validate_payload(signal_type: str, payload: dict[str, Any]) -> AgentEvent |
         if error:
             return _invalid_event(error, None)
 
-    return None
-
-
-def validate_task_started_payload(payload: dict[str, Any]) -> str | None:
-    """Validate signal.task_started payload.
-
-    Required: title (non-placeholder), branch, criteria.
-    Optional: task_type.
-    Returns None if valid, or an error string if invalid.
-    """
-    title = payload.get("title")
-    if not title or title == "[autonomous] new task":
-        return "task_started missing required 'title'"
-    branch = payload.get("branch")
-    if not branch:
-        return "task_started missing required 'branch'"
-    criteria = payload.get("criteria")
-    if not criteria:
-        return "task_started missing required 'criteria'"
-    task_type = payload.get("task_type")
-    if task_type is not None:
-        valid_types = {"feature", "fix", "refactor", "docs", "spike", "chore"}
-        if task_type not in valid_types:
-            return f"task_started has invalid task_type {task_type!r}"
     return None
 
 

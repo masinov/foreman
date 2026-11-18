@@ -46,7 +46,6 @@ from .output_contract import (
 from .prompts import PromptBuilder
 from .records import RunRecords, new_id
 from .results import AgentExecutionResult
-from .selection import AUTONOMOUS_PLACEHOLDER_TITLE
 from .signals import SignalHandler
 from .task_worktrees import TaskWorktrees
 from .task_writes import TaskWrites
@@ -986,34 +985,6 @@ class WorkflowRunner:
         settings: ProjectSettings,
     ) -> None:
         """Record that a step finished, and what follows from it for the task."""
-
-        # ── Autonomous mode: an agent that never named its task ──
-        # The agent is asked to report what it chose to work on with
-        # signal.task_started. If it has not after a step that may send
-        # that signal, the task goes on as it is (spec §6.2: degraded but
-        # functional). The gap is recorded once, and what is recorded for
-        # the task is read from the store, so a restart changes nothing.
-        if (
-            settings.task_selection_mode == "autonomous"
-            and task.created_by == "orchestrator"
-            and task.title == AUTONOMOUS_PLACEHOLDER_TITLE
-            and step_def.role in self.roles
-            and "task_started" in self.roles[step_def.role].signals
-            and not self.signals.autonomous_gap_recorded(task)
-        ):
-            self.records.emit_event(
-                run,
-                "workflow.autonomous_contract_missing",
-                {
-                    "task_id": task.id,
-                    "step": step,
-                    "reason": (
-                        "The agent did not send signal.task_started, so the task "
-                        "has no title or acceptance criteria of its own. The "
-                        "workflow continues; review judges what the agent did."
-                    ),
-                },
-            )
 
         self.records.emit_event(
             run,
