@@ -282,3 +282,46 @@ turn with Foreman approving plans against the real manager (tests only).
    a planning step and a gate governed by `plan_approval`: the pair is kept
    under `tests/fixtures/definitions/`, where the engine's gate tests use
    it, and a project can save it as its own.
+
+## Amendment, 2026-11-18: what Assay showed about the conversation
+
+Assay was the first project outside Foreman whose manager planned through the
+dashboard. Four things went wrong there, and each is now decided as follows.
+
+1. **One message at a time, and a reply is seen while it is written.** The
+   message and an empty reply marked `in_progress` are stored together
+   before the model is asked (`start_meta_reply`). The reply is saved at
+   most once a second while it grows, and its final text and tool uses
+   replace it when the turn ends. While a reply is in progress, another
+   message, a supervision turn and clearing the conversation are all
+   refused with "The manager is still answering another message in this
+   project." The side bar shows such a reply with its cursor, whoever sent
+   the message. It reads the conversation again every 1.5 s while one is
+   being written and every 5 s otherwise. A dashboard that starts marks any
+   reply still `in_progress` as interrupted: replies are written by the
+   dashboard process, so such a reply was left by one that stopped.
+   Before this, a turn sent from elsewhere showed only the question for its
+   eight minutes, and two messages could run in one session at once.
+2. **The manager's process ends with its turn.** However the reading of its
+   output ends (a finished reply, a line that could not be read, a cancelled
+   request), the process is killed and reaped. Before this, a turn that
+   failed on an over-long line left the process running, and it went on to
+   store a proposal for a turn that was already over.
+3. **Clearing a conversation declines its waiting proposals.** A proposal is
+   shown beside the reply it came with, and nowhere else. Clearing the
+   conversation used to leave such proposals waiting where nobody could
+   see them. Now the person clearing declines them: they are recorded as
+   `declined` by that person, with the sentence "Declined when the
+   conversation it was made in was cleared." The dialog names how many
+   (`waiting_proposals` in the history response), and the API returns
+   `declined_proposals`.
+4. **`ref` names what any operation creates.** `create_sprint` and
+   `file_task` take a `ref`, as `add_task` already did. A later operation
+   of the same proposal may use a ref wherever it takes a sprint id or a
+   task id, including `task_ids`, `waits_for` and `depends_on_task_ids`. A
+   ref used twice is refused. A proposal can therefore create a sprint and
+   add tasks to it, or file tasks and plan them into it. Before this, that
+   took two proposals and two confirmations. The card names a created
+   sprint or task by its title, through `names`, which now carries an entry
+   per ref marked `new`.
+

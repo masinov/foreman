@@ -13,8 +13,8 @@ function RowText({ row }) {
     <>
       {row.task ? (
         <>
-          <Mono>{row.task.key}</Mono>
-          {row.task.title ? ` ${row.task.title}` : null}
+          {row.task.key ? <Mono>{row.task.key}</Mono> : null}
+          {row.task.title ? `${row.task.key ? " " : ""}${row.task.title}` : null}
         </>
       ) : null}
       {row.task && row.text ? " " : null}

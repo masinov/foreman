@@ -7,10 +7,16 @@ import { useResource } from "../../api/useResource";
 
 const STOPPED_EARLY = "The reply stopped before it was finished.";
 
+// While the side bar is open the conversation is read again now and then, so
+// a message sent from elsewhere (another person, another window) and its
+// reply appear; while such a reply is being written, often enough to see it grow.
+export const POLL_IDLE_MS = 5000;
+export const POLL_ANSWERING_MS = 1500;
+
 /**
  * A stored turn as the panel shows it. `tool_uses` also carries an
- * `interrupted` marker and, for each proposal made in the turn, its
- * `proposal_id`.
+ * `interrupted` marker, an `in_progress` one while the reply is still being
+ * written, and, for each proposal made in the turn, its `proposal_id`.
  */
 function fromStored(turn) {
   const uses = Array.isArray(turn.tool_uses) ? turn.tool_uses : [];
@@ -21,7 +27,7 @@ function fromStored(turn) {
     text: turn.text || "",
     tools: uses.map((use) => use?.name).filter(Boolean),
     proposals: uses.map((use) => use?.proposal_id).filter(Boolean),
-    state: uses.some((use) => use?.interrupted) ? "interrupted" : "done",
+    state: uses.some((use) => use?.in_progress) ? "streaming" : uses.some((use) => use?.interrupted) ? "interrupted" : "done",
     error: null,
   };
 }
@@ -51,14 +57,38 @@ export function useConversation(projectId, context, { onSettled } = {}) {
   contextRef.current = context;
   const settledRef = useRef(onSettled);
   settledRef.current = onSettled;
+  // Earlier pages the person asked for, kept when the latest page is read again.
+  const older = useRef({ turns: [], hasMore: false });
   const streaming = turns.some((turn) => turn.state === "streaming");
+  const writingHere = turns.some((turn) => !turn.id && turn.state === "streaming");
+  const answeringElsewhere = turns.some((turn) => turn.id && turn.state === "streaming");
 
-  // The first page of history replaces whatever was shown for another project.
+  // The latest page of history replaces what is shown, after the earlier
+  // pages the person loaded. Not while a reply is written here or a failed
+  // one waits to be retried: those are shown as they arrived.
   useEffect(() => {
     if (!history.data) return;
-    setTurns((current) => (current.length === 0 || current.every((turn) => turn.id) ? (history.data.turns || []).map(fromStored) : current));
-    setHasMore(Boolean(history.data.has_more));
+    const page = (history.data.turns || []).map(fromStored);
+    const ids = new Set(page.map((turn) => turn.id));
+    setTurns((current) => {
+      const last = current[current.length - 1];
+      if (current.some((turn) => !turn.id && turn.state === "streaming") || (last && !last.id && last.state === "failed")) return current;
+      return [...older.current.turns.filter((turn) => !ids.has(turn.id)), ...page];
+    });
+    setHasMore(older.current.turns.length ? older.current.hasMore : Boolean(history.data.has_more));
   }, [history.data]);
+
+  const reloadHistory = history.reload;
+  useEffect(() => {
+    if (!projectId || writingHere) return undefined;
+    const id = setInterval(
+      () => {
+        if (document.visibilityState === "visible") reloadHistory();
+      },
+      answeringElsewhere ? POLL_ANSWERING_MS : POLL_IDLE_MS,
+    );
+    return () => clearInterval(id);
+  }, [projectId, writingHere, answeringElsewhere, reloadHistory]);
 
   useEffect(() => () => controller.current?.abort(), []);
 
@@ -69,7 +99,9 @@ export function useConversation(projectId, context, { onSettled } = {}) {
     setOlderError(null);
     try {
       const page = await getManagerHistory(client, projectId, { before: oldest.id });
-      setTurns((current) => [...(page.turns || []).map(fromStored), ...current]);
+      const earlier = (page.turns || []).map(fromStored);
+      older.current = { turns: [...earlier, ...older.current.turns], hasMore: Boolean(page.has_more) };
+      setTurns((current) => [...earlier, ...current]);
       setHasMore(Boolean(page.has_more));
     } catch (error) {
       setOlderError(errorSentence(error));
@@ -137,10 +169,13 @@ export function useConversation(projectId, context, { onSettled } = {}) {
   }, [turns, streaming, run]);
 
   const clear = useCallback(async () => {
-    await clearManagerSession(client, projectId);
+    const cleared = await clearManagerSession(client, projectId);
     controller.current?.abort();
+    older.current = { turns: [], hasMore: false };
     setTurns([]);
     setHasMore(false);
+    // Its waiting proposals were declined with it: what the page shows changed.
+    if (cleared?.declined_proposals?.length) settledRef.current?.();
   }, [client, projectId]);
 
   return {
@@ -154,6 +189,8 @@ export function useConversation(projectId, context, { onSettled } = {}) {
     loading: history.loading && turns.length === 0,
     loadError: history.data ? null : history.error,
     reloadHistory: history.reload,
+    // Proposals still waiting for an answer; clearing the conversation declines them.
+    waitingProposals: history.data?.waiting_proposals || 0,
     failed: turns[turns.length - 1]?.state === "failed",
     send,
     retry,

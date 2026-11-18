@@ -284,6 +284,41 @@ describe("the conversation", () => {
     expect(within(panel()).getByText(/No conversation yet/)).toBeInTheDocument();
   });
 
+  it("shows a reply being written for a message sent elsewhere, and holds the composer until it ends", async () => {
+    const fetchImpl = await openAt("/dashboard/projects/foreman", projectRoutes(), {
+      turns: [turn("t1", "user", "Plan the first sprint."), turn("t2", "assistant", "Reading the spec", [{ name: "Read" }, { in_progress: true }])],
+      has_more: false,
+    });
+    const thread = within(panel()).getByRole("log");
+    expect(await within(thread).findByText("Reading the spec")).toBeInTheDocument();
+    expect(within(thread).getByText("Ran Read.")).toBeInTheDocument();
+    expect(document.querySelector(".manager__cursor")).not.toBeNull();
+    expect(within(panel()).getByRole("button", { name: "Replying" })).toBeDisabled();
+    expect(within(panel()).getByRole("button", { name: "Start a new conversation" })).toBeDisabled();
+
+    // The reply ends; the side bar reads the conversation again and shows it.
+    fetchImpl.routes[HISTORY] = {
+      turns: [turn("t1", "user", "Plan the first sprint."), turn("t2", "assistant", "Here is the plan.", [{ name: "Read" }])],
+      has_more: false,
+    };
+    expect(await within(thread).findByText("Here is the plan.", {}, { timeout: 4000 })).toBeInTheDocument();
+    expect(document.querySelector(".manager__cursor")).toBeNull();
+    expect(within(panel()).getByRole("button", { name: "Send" })).toBeInTheDocument();
+  });
+
+  it("says that clearing declines the proposals still waiting", async () => {
+    await openAt("/dashboard/projects/foreman", projectRoutes(), {
+      turns: [turn("t1", "user", "Plan it."), turn("t2", "assistant", "Proposed.", [{ proposal_id: "prop-1" }])],
+      has_more: false,
+      waiting_proposals: 1,
+    });
+    await within(panel()).findByText("Proposed.");
+    fireEvent.click(within(panel()).getByRole("button", { name: "Start a new conversation" }));
+    expect(screen.getByRole("dialog", { name: "Start a new conversation?" })).toHaveTextContent(
+      "1 proposal still waiting for your answer is declined.",
+    );
+  });
+
   it("closes from the panel", async () => {
     await openAt("/dashboard/projects/foreman", projectRoutes());
     fireEvent.click(within(panel()).getByRole("button", { name: "Close" }));

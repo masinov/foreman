@@ -215,7 +215,11 @@ export function ManagerPanel({ projectId, projectName, page, context, onClose })
       <ReasonDialog
         open={asking}
         title="Start a new conversation?"
-        effect={`This clears the conversation with the manager for ${projectName || "this project"}: ${plural(turns.length, "message")}. The manager will not remember it.`}
+        effect={`This clears the conversation with the manager for ${projectName || "this project"}: ${plural(turns.length, "message")}. The manager will not remember it.${
+          conversation.waitingProposals
+            ? ` ${plural(conversation.waitingProposals, "proposal")} still waiting for your answer ${conversation.waitingProposals === 1 ? "is" : "are"} declined.`
+            : ""
+        }`}
         confirm="Start a new conversation"
         doing="Clearing"
         run={conversation.clear}

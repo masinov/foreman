@@ -151,6 +151,9 @@ def create_dashboard_app(
     init_store = ForemanStore(db_path)
     try:
         init_store.initialize()
+        # Manager replies are written by the dashboard process: one still in
+        # progress now was left by a dashboard that stopped mid-reply.
+        init_store.close_unfinished_meta_replies()
     finally:
         init_store.close()
 

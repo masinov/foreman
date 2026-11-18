@@ -59,7 +59,7 @@ class AddTaskTests(ProposalCase):
         self.assertEqual(new.depends_on_task_ids, ["old"])
 
     def test_two_tasks_with_one_name_are_refused(self) -> None:
-        with self.assertRaisesRegex(ProposalError, "Two tasks in this proposal are called 'a'"):
+        with self.assertRaisesRegex(ProposalError, "two things in this proposal are called 'a'"):
             self.propose(add("One", ref="a"), add("Two", ref="a"))
 
     def test_waiting_for_a_name_nothing_has_is_refused(self) -> None:

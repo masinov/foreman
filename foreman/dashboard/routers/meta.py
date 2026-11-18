@@ -20,6 +20,15 @@ from ..context import (
 )
 
 
+def _refuse_while_answering(store: Any, project_id: str) -> None:
+    """One message at a time: refuse a new one, or clearing, mid-reply."""
+
+    from ...meta_agent import MANAGER_BUSY
+
+    if store.meta_reply_in_progress(project_id):
+        raise DashboardValidationError(MANAGER_BUSY)
+
+
 def build_router(ctx: ApiContext) -> APIRouter:
     """Return the routes for this resource, bound to one dashboard's context."""
 
@@ -51,6 +60,7 @@ def build_router(ctx: ApiContext) -> APIRouter:
             found = store.get_project(project_id)
             if found is None:
                 raise DashboardNotFoundError(f"Project not found: {project_id}")
+            _refuse_while_answering(store, project_id)
             if plan is not None:
                 # Refused here, before a turn starts: a sprint with no goal
                 # or a task already underway is not something to plan.
@@ -103,22 +113,28 @@ def build_router(ctx: ApiContext) -> APIRouter:
             turns, has_more = meta_get_history(
                 store, project_id, limit=limit, before_id=before
             )
+            # Clearing the conversation declines these; the dialog says how many.
+            _, waiting = store.page_proposals(project_id, states=["proposed"], limit=0)
         return {
             "project_id": project_id,
             "turns": turns,
             "has_more": has_more,
+            "waiting_proposals": waiting,
         }
 
     @router.delete("/projects/{project_id}/meta/session")
-    def clear_meta_session(project_id: str) -> dict[str, Any]:
+    def clear_meta_session(project_id: str, requested_by: str | None = None) -> dict[str, Any]:
         from ...meta_agent import clear_session as meta_clear_session
 
         ctx.require_manager()
         with open_store(ctx.db_path) as store:
             if store.get_project(project_id) is None:
                 raise DashboardNotFoundError(f"Project not found: {project_id}")
-            meta_clear_session(store, project_id)
-        return {"project_id": project_id, "cleared": True}
+            _refuse_while_answering(store, project_id)
+            declined = meta_clear_session(
+                store, project_id, via="dashboard", actor=(requested_by or "").strip() or None
+            )
+        return {"project_id": project_id, "cleared": True, "declined_proposals": declined}
 
     @router.post("/projects/{project_id}/meta/supervise")
     async def meta_supervise(project_id: str, request: Request):
@@ -136,6 +152,7 @@ def build_router(ctx: ApiContext) -> APIRouter:
             project = store.get_project(project_id)
             if project is None:
                 raise DashboardNotFoundError(f"Project not found: {project_id}")
+            _refuse_while_answering(store, project_id)
             event = store.get_event(event_id)
             if (
                 event is None

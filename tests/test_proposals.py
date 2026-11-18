@@ -456,6 +456,60 @@ class ConfirmTests(ProposalCase):
         self.assertIsNone(self.store.get_task("todo1").worktree_path)
 
 
+class RefTests(ProposalCase):
+    """What a proposal creates is named by its ref by later operations (ADR-0022)."""
+
+    def test_a_sprint_is_created_and_tasks_are_added_to_it_in_one_proposal(self) -> None:
+        proposal = self.propose(
+            {"kind": "create_sprint", "title": "Sprint 3", "goal": "Thin slice.", "ref": "s3"},
+            {"kind": "add_task", "sprint_id": "s3", "title": "Package", "ref": "pkg"},
+            {"kind": "add_task", "sprint_id": "s3", "title": "Tokens", "waits_for": ["pkg"]},
+        )
+        # The card names the new sprint and task by what they will be called.
+        self.assertEqual(proposal.names["sprints"]["s3"]["title"], "Sprint 3")
+        self.assertTrue(proposal.names["sprints"]["s3"]["new"])
+        self.assertEqual(proposal.names["tasks"]["pkg"]["title"], "Package")
+
+        confirmed = Proposals(self.store, via="dashboard", actor="ada").confirm(proposal.id)
+
+        self.assertEqual(confirmed.state, "confirmed")
+        sprint_id = confirmed.outcome["applied"][0]["sprint_id"]
+        package, tokens = (self.store.get_task(step["task_id"]) for step in confirmed.outcome["applied"][1:])
+        self.assertEqual((package.sprint_id, tokens.sprint_id), (sprint_id, sprint_id))
+        self.assertEqual(tokens.depends_on_task_ids, [package.id])
+
+    def test_filed_tasks_are_planned_into_a_created_sprint_in_one_proposal(self) -> None:
+        proposal = self.propose(
+            {"kind": "create_sprint", "title": "Sprint 3", "ref": "next"},
+            {"kind": "file_task", "title": "One", "accept": True, "ref": "one"},
+            {"kind": "file_task", "title": "Two", "accept": True, "ref": "two"},
+            {"kind": "plan_tasks", "task_ids": ["one", "two"], "sprint_id": "next"},
+            {"kind": "edit_task", "task_id": "two", "depends_on_task_ids": ["one"]},
+        )
+
+        confirmed = Proposals(self.store, via="dashboard", actor="ada").confirm(proposal.id)
+
+        self.assertEqual(confirmed.state, "confirmed")
+        sprint_id = confirmed.outcome["applied"][0]["sprint_id"]
+        one, two = confirmed.outcome["applied"][1]["task_id"], confirmed.outcome["applied"][2]["task_id"]
+        self.assertEqual(confirmed.outcome["applied"][3]["task_ids"], [one, two])
+        self.assertEqual(self.store.get_task(two).sprint_id, sprint_id)
+        self.assertEqual(self.store.get_task(two).depends_on_task_ids, [one])
+
+    def test_a_ref_used_twice_or_before_it_exists_is_refused(self) -> None:
+        with self.assertRaisesRegex(ProposalError, "two things in this proposal are called 'x'"):
+            self.propose(
+                {"kind": "create_sprint", "title": "A", "ref": "x"},
+                {"kind": "file_task", "title": "B", "ref": "x"},
+            )
+        with self.assertRaisesRegex(ProposalError, "there is no sprint later"):
+            self.propose(
+                {"kind": "add_task", "sprint_id": "later", "title": "Too soon"},
+                {"kind": "create_sprint", "title": "Later", "ref": "later"},
+            )
+        self.assertEqual(self.count_proposals(), 0)
+
+
 class ProposalApiTests(ProposalCase):
     def setUp(self) -> None:
         super().setUp()

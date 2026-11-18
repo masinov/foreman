@@ -29,12 +29,15 @@ import asyncio
 import json
 import os
 import shutil
+import sqlite3
 import sys
+import time
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from typing import Any
 
-from .proposals import MANAGER_SESSION_ENV, MANAGER_TURN_ENV, OPERATION_KINDS
+from .proposals import MANAGER_SESSION_ENV, MANAGER_TURN_ENV, OPERATION_KINDS, Proposals
+from .store.meta import REPLY_IN_PROGRESS, REPLY_INTERRUPTED
 from .runner.env import agent_environment
 
 #: The one folder a manager session can write to, relative to the project's
@@ -173,9 +176,26 @@ def describe_page_context(context: Any) -> str | None:
     return "The person is looking at the dashboard (" + "; ".join(parts) + ")."
 
 
-def clear_session(store: Any, project_id: str) -> None:
-    """Delete the persisted session row and all turns for one project."""
+def clear_session(store: Any, project_id: str, *, via: str, actor: str | None = None) -> list[str]:
+    """Forget a project's conversation; return the proposals declined with it.
+
+    A proposal is shown beside the reply it came with, and nowhere else. Once
+    the conversation is gone nothing would show one still waiting, so it is
+    declined with the conversation, by the person clearing it, rather than
+    left where nobody can answer it.
+    """
+    pending, _ = store.page_proposals(project_id, states=["proposed"])
+    proposals = Proposals(store, via=via, actor=actor)
+    declined: list[str] = []
+    for proposal in pending:
+        proposals.decline(proposal.id, sentence=CLEARED_PROPOSAL)
+        declined.append(proposal.id)
     store.clear_meta_session(project_id)
+    return declined
+
+
+#: What a proposal declined because its conversation was cleared says.
+CLEARED_PROPOSAL = "Declined when the conversation it was made in was cleared. Nothing was changed."
 
 
 # ---------------------------------------------------------------------------
@@ -353,16 +373,15 @@ def build_operating_contract(project: Any) -> str:
             f"  foreman proposal create {pid} --json {MANAGER_DRAFTS_DIR}/<name>.json",
             "",
             f"Operation kinds: {kinds}.",
-            "  create_sprint {title, goal?}",
+            "  create_sprint {title, goal?, ref?}",
             "  edit_sprint {sprint_id, title?, goal?}",
             "  activate_sprint {sprint_id} | finish_sprint {sprint_id}",
             "  file_task {title, task_type?, description?, acceptance_criteria?,",
-            "             priority?, complexity?, accept?}  (into the backlog)",
+            "             priority?, complexity?, accept?, ref?}  (into the backlog)",
             "  add_task {sprint_id, title, task_type?, description?,",
             "            acceptance_criteria?, priority?, complexity?, ref?, waits_for?}",
-            "            (straight into a planned or active sprint. `ref` is a name",
-            "            you give it; a later add_task in the same proposal lists",
-            "            refs or task ids in `waits_for` to start after them)",
+            "            (straight into a planned or active sprint; `waits_for`",
+            "            lists the tasks it starts after)",
             "  accept_task {task_id} | decline_task {task_id, reason?}",
             "  plan_tasks {task_ids, sprint_id} or {task_ids, new_sprint: {title, goal?}}",
             "  unplan_task {task_id}",
@@ -377,6 +396,11 @@ def build_operating_contract(project: Any) -> str:
             "  reopen_task {task_id}  (a done or cancelled task, back to the queue)",
             "  send_back {task_id, guidance}  (a task waiting at a gate, or blocked)",
             "  approve_gate {task_id}",
+            "`ref` is a name you give what an operation creates (a sprint or a",
+            "task), which has no id until the proposal is confirmed. A later",
+            "operation of the same proposal may use it wherever it takes a sprint",
+            "id or a task id: create a sprint and add_task into it, or file tasks",
+            "and plan_tasks them, in one proposal.",
             "",
             "The command checks every operation against the project as it is now,",
             "in order, and stores nothing if one is refused; it prints why. Fix the",
@@ -455,54 +479,88 @@ async def _run_claude(
         yield {"type": "error", "message": f"Failed to write prompt: {exc}"}
         return
 
-    async for raw_line in proc.stdout:
-        line = raw_line.decode("utf-8", errors="replace").strip()
-        if not line:
-            continue
-        try:
-            event = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(event, dict):
-            continue
-
-        event_type = str(event.get("type", ""))
-
-        if event_type == "assistant":
-            message_obj = event.get("message", event)
-            content = message_obj.get("content", [])
-            if not isinstance(content, list):
+    # However the reading ends (the reply finished, a line that could not be
+    # read, the person's request cancelled), the process ends with it. Left
+    # running, it would go on working, and storing proposals, for a turn that
+    # is already over.
+    try:
+        async for raw_line in proc.stdout:
+            line = raw_line.decode("utf-8", errors="replace").strip()
+            if not line:
                 continue
-            for block in content:
-                if not isinstance(block, dict):
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(event, dict):
+                continue
+
+            event_type = str(event.get("type", ""))
+
+            if event_type == "assistant":
+                message_obj = event.get("message", event)
+                content = message_obj.get("content", [])
+                if not isinstance(content, list):
                     continue
-                if block.get("type") == "text":
-                    text = str(block.get("text", ""))
-                    if text:
-                        yield {"type": "text_delta", "text": text}
-                elif block.get("type") == "tool_use":
-                    yield {
-                        "type": "tool_use",
-                        "name": str(block.get("name", "tool")),
-                        "input": block.get("input") or {},
-                    }
+                for block in content:
+                    if not isinstance(block, dict):
+                        continue
+                    if block.get("type") == "text":
+                        text = str(block.get("text", ""))
+                        if text:
+                            yield {"type": "text_delta", "text": text}
+                    elif block.get("type") == "tool_use":
+                        yield {
+                            "type": "tool_use",
+                            "name": str(block.get("name", "tool")),
+                            "input": block.get("input") or {},
+                        }
 
-        elif event_type == "result":
-            sid = event.get("session_id")
-            if sid:
-                yield {"type": "session", "session_id": str(sid)}
-            if bool(event.get("is_error")):
-                result_text = str(event.get("result") or "Claude Code returned an error.")
-                yield {"type": "error", "message": result_text}
-                await proc.wait()
-                return
+            elif event_type == "result":
+                sid = event.get("session_id")
+                if sid:
+                    yield {"type": "session", "session_id": str(sid)}
+                if bool(event.get("is_error")):
+                    result_text = str(event.get("result") or "Claude Code returned an error.")
+                    yield {"type": "error", "message": result_text}
+                    return
 
-    await proc.wait()
+        await proc.wait()
+    finally:
+        await _end_process(proc)
+
+
+async def _end_process(proc: asyncio.subprocess.Process) -> None:
+    """Kill the manager's process if it is still running, and reap it."""
+
+    if proc.returncode is None:
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            pass
+    try:
+        await asyncio.wait_for(proc.wait(), timeout=PROCESS_REAP_SECONDS)
+    except (asyncio.TimeoutError, ProcessLookupError):
+        pass
 
 
 # ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
+
+#: How long a killed manager process is waited for before the turn ends anyway.
+PROCESS_REAP_SECONDS = 5.0
+
+#: How often, at most, a reply is saved while it is written, so anyone else
+#: looking at the conversation sees it grow.
+REPLY_SAVE_SECONDS = 1.0
+
+#: Said when a message arrives while the manager is still answering another.
+MANAGER_BUSY = (
+    "The manager is still answering another message in this project. "
+    "Wait for that reply to finish."
+)
+
 
 def manager_session_env(project_id: str, turn_id: str, db_path: str | None) -> dict[str, str]:
     """The environment that marks a Claude Code process as a manager session.
@@ -576,17 +634,19 @@ async def process_message(
     session_id = store.get_meta_session(project_id)
     is_first_turn = session_id is None
 
-    # Persist the user turn up front so it survives a mid-stream failure.
+    # The message and an empty reply marked in progress are stored before the
+    # model is asked: the message survives a failure, and anyone else looking
+    # at the conversation sees that it is being answered.
     user_tool_uses: list[dict[str, Any]] = []
     if consumed_event_id:
         user_tool_uses.append({"consumed_event_id": consumed_event_id})
-    user_turn_id = store.append_meta_turn(
-        project_id,
-        role="user",
-        text=message,
-        tool_uses=user_tool_uses,
-        origin=origin,
+    started = store.start_meta_reply(
+        project_id, text=message, tool_uses=user_tool_uses, origin=origin
     )
+    if started is None:
+        yield json.dumps({"type": "error", "message": MANAGER_BUSY}) + "\n"
+        return
+    user_turn_id, reply_turn_id = started
 
     state_header = build_state_header(store, project)
     parts = [state_header, "---"]
@@ -609,6 +669,23 @@ async def process_message(
     new_session_id = session_id
     session_env = manager_session_env(project_id, user_turn_id, getattr(store, "db_path", None))
     announced: set[str] = set()
+
+    saved_at = 0.0
+
+    def save_progress() -> None:
+        """Save the reply as it stands, at most every REPLY_SAVE_SECONDS."""
+        nonlocal saved_at
+        now = time.monotonic()
+        if now - saved_at < REPLY_SAVE_SECONDS:
+            return
+        saved_at = now
+        try:
+            store.update_meta_turn(
+                reply_turn_id, text=assistant_text, tool_uses=[*tool_uses, REPLY_IN_PROGRESS]
+            )
+        except sqlite3.Error:
+            # Only what others see while the reply is written; its end is saved.
+            pass
 
     def new_proposals() -> list[str]:
         """Proposals made in this turn and not announced yet, oldest first."""
@@ -645,6 +722,7 @@ async def process_message(
                 yield json.dumps({"type": "error", "message": event["message"]}) + "\n"
             for proposal_id in new_proposals():
                 yield json.dumps({"type": "proposal", "proposal_id": proposal_id}) + "\n"
+            save_progress()
         for proposal_id in new_proposals():
             yield json.dumps({"type": "proposal", "proposal_id": proposal_id}) + "\n"
         if after_turn is not None and not interrupted:
@@ -667,14 +745,8 @@ async def process_message(
             pass
         persisted_tool_uses = list(tool_uses)
         if interrupted:
-            persisted_tool_uses.append({"interrupted": True})
-        store.append_meta_turn(
-            project_id,
-            role="assistant",
-            text=assistant_text,
-            tool_uses=persisted_tool_uses,
-            origin=origin,
-        )
+            persisted_tool_uses.append(REPLY_INTERRUPTED)
+        store.update_meta_turn(reply_turn_id, text=assistant_text, tool_uses=persisted_tool_uses)
 
     if not interrupted:
         yield json.dumps({"type": "done", "session_id": new_session_id}) + "\n"
