@@ -49,6 +49,8 @@ engine. Nothing new is added until that holds.
 | 9 | A second supervised run with several tasks | done | Foreman, watched by Claude | 2026-11-16, DB sprint `sprint-60b-engine-findings-of-the-supervised-run`: 4 tasks, 45 runs, $2.19, all merged and pushed by the engine. Seen against real agents: a plan made from the dashboard button and revised in the manager chat; a send-back at merge approval with a note the developer followed; a merge conflict between two tasks of the run sent back to develop and reconciled; two tasks in progress at once. Not seen: Run next, the new behind-branch path (the running engine was the old code) |
 | 10 | The manager chat works for a person who is not on the machine (it is off on a network bind today) and FOR-43 if the owner accepts it | todo | Claude | |
 | 11 | Close the sprint: checkpoint, archive | todo | Claude | `docs/checkpoints/`, `docs/sprints/archive/` |
+| 12 | Fix the Foreman faults found by running Assay, the first outside project | done | Claude | 2026-11-18: `fix/checkout-follows-merges` (ADR-0031: a project folder on the default branch follows each merge); `fix/new-project-defaults` (merges wait for a person, workers on `claude-sonnet-5-5`); `fix/manager-faults-from-assay` (ADR-0022 amendment: a reply is seen while it is written, one message at a time; the manager's process ends with its turn; clearing declines waiting proposals; `ref` on `create_sprint` and `file_task`) |
+| 13 | Block only before a task starts (owner, 2026-11-18) | done | Claude | `fix/block-only-before-start`, ADR-0030 amended |
 
 ### The supervised run (slice 1, 2026-11-16)
 
