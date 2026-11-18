@@ -152,6 +152,8 @@
   --needs-you-reason-width: 320px;
   /* Every open column is this wide, as Trello's lists are; past the page the board scrolls. */
   --board-column-width: 272px;
+  /* How far into the board a cut-off edge fades. */
+  --board-fade-width: 48px;
   /* A folded column: its name, read downwards, and its count. */
   --board-column-folded-width: 32px;
   --settings-label-width: 240px;

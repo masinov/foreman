@@ -1,4 +1,4 @@
-import React, { useCallback, useId, useState } from "react";
+import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 
 import { paths } from "../../app/paths";
 import { Link } from "../../app/router";
@@ -49,6 +49,51 @@ function useFolding(projectId) {
     [projectId],
   );
   return [isFolded, toggle];
+}
+
+// The board is never taller than what is left of the window below where it
+// starts, so its sideways scrollbar is in view without scrolling down; a
+// column with more cards than that scrolls them itself. A short window
+// still gets a usable board.
+const BOARD_MIN_HEIGHT = 320;
+const BOARD_BOTTOM_GAP = 16;
+
+/**
+ * Keep the board within the window: its height limit, and whether columns
+ * are cut off on either side (for the fade at that edge).
+ */
+function useBoardFit(ref, contentKey) {
+  const [fit, setFit] = useState({ height: null, left: false, right: false, bar: 0 });
+  const measure = useCallback(() => {
+    const board = ref.current;
+    if (!board) return;
+    const top = board.getBoundingClientRect().top + window.scrollY;
+    const height = Math.max(BOARD_MIN_HEIGHT, window.innerHeight - top - BOARD_BOTTOM_GAP);
+    const left = board.scrollLeft > 1;
+    const right = board.scrollLeft + board.clientWidth < board.scrollWidth - 1;
+    const bar = board.offsetHeight - board.clientHeight;
+    setFit((current) =>
+      current.height === height && current.left === left && current.right === right && current.bar === bar
+        ? current
+        : { height, left, right, bar },
+    );
+  }, [ref]);
+
+  useLayoutEffect(measure, [measure, contentKey]);
+  useEffect(() => {
+    const board = ref.current;
+    if (!board) return undefined;
+    window.addEventListener("resize", measure);
+    board.addEventListener("scroll", measure, { passive: true });
+    const observer = typeof ResizeObserver === "function" ? new ResizeObserver(measure) : null;
+    observer?.observe(board);
+    return () => {
+      window.removeEventListener("resize", measure);
+      board.removeEventListener("scroll", measure);
+      observer?.disconnect();
+    };
+  }, [ref, measure]);
+  return fit;
 }
 
 function Card({ task, busy, onApprove }) {
@@ -132,24 +177,44 @@ function Column({ column, folded, onToggle, busy, onApprove }) {
  * The engine moves the cards; nothing here is draggable. A column folds to
  * a narrow strip with its name and count; an empty one starts folded, and a
  * person's own choice is remembered per project.
+ *
+ * The board fits in the window: a column with more cards than fit scrolls
+ * them under its heading, so the sideways scrollbar stays in view; an edge
+ * where columns are cut off fades out (owner, 2026-11-18).
  */
 export function TaskBoard({ projectId, tasks, workflow, busy, onApprove }) {
   const columns = boardColumns(tasks, workflow);
   const cancelled = tasks.filter((task) => task.status === "cancelled").length;
   const [isFolded, toggle] = useFolding(projectId || "");
+  const boardRef = useRef(null);
+  const frameRef = useRef(null);
+  const layout = columns.map((column) => `${column.key}:${column.tasks.length}:${isFolded(column) ? 1 : 0}`).join(",");
+  const fit = useBoardFit(boardRef, layout);
+  const frameClass = ["board-frame", fit.left ? "board-frame--cut-left" : "", fit.right ? "board-frame--cut-right" : ""]
+    .filter(Boolean)
+    .join(" ");
+  // Measured values reach the stylesheet as custom properties on the frame.
+  useLayoutEffect(() => {
+    const frame = frameRef.current;
+    if (!frame) return;
+    if (fit.height) frame.style.setProperty("--board-height", `${fit.height}px`);
+    frame.style.setProperty("--board-scrollbar", `${fit.bar}px`);
+  }, [fit.height, fit.bar]);
   return (
     <>
-      <div className="board">
-        {columns.map((column) => (
-          <Column
-            key={column.key}
-            column={column}
-            folded={isFolded(column)}
-            onToggle={() => toggle(column)}
-            busy={busy}
-            onApprove={onApprove}
-          />
-        ))}
+      <div className={frameClass} ref={frameRef}>
+        <div className="board" ref={boardRef}>
+          {columns.map((column) => (
+            <Column
+              key={column.key}
+              column={column}
+              folded={isFolded(column)}
+              onToggle={() => toggle(column)}
+              busy={busy}
+              onApprove={onApprove}
+            />
+          ))}
+        </div>
       </div>
       {cancelled > 0 ? (
         <p className="quiet">{plural(cancelled, "cancelled task")} not shown on the board.</p>

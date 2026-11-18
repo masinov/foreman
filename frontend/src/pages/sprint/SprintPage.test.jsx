@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 
 import { createFakeFetch, renderApp, reply } from "../../testing/fakeApi";
@@ -221,6 +224,18 @@ describe("the board", () => {
     expect(screen.getAllByRole("button", { name: /^Approve/ })).toHaveLength(1);
     fireEvent.click(within(merge).getByRole("button", { name: "Approve FOR-14" }));
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Approved FOR-14."));
+  });
+
+  it("fits in the window: a long column scrolls its cards under its heading", async () => {
+    await renderBoard();
+    await screen.findByRole("region", { name: "Queued" });
+    // The board sets its height limit from where it starts in the window.
+    expect(document.querySelector(".board-frame").style.getPropertyValue("--board-height")).toMatch(/px$/);
+    const css = readFileSync(join(process.cwd(), "src", "styles", "sprint.css"), "utf8");
+    const rule = (selector) => css.match(new RegExp(`\\n${selector.replace(/[.-]/g, "\\$&")} \\{([^}]*)\\}`))?.[1] ?? "";
+    expect(rule(".board__column")).toContain("max-height: var(--board-height, none)");
+    expect(rule(".board__cards")).toContain("overflow-y: auto");
+    expect(rule(".board")).toContain("overflow-y: hidden");
   });
 
   it("has nothing to drag", async () => {
