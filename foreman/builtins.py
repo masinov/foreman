@@ -11,8 +11,11 @@ from typing import TYPE_CHECKING, Any, Callable
 
 from .context import context_directory, relative_project_path, write_project_context
 from .git import (
+    CheckoutFollow,
+    GitError,
     GitMergeResult,
     commits_behind,
+    follow_branch_in_checkout,
     head_sha,
     is_worktree_clean,
     merge_branch,
@@ -373,8 +376,9 @@ class BuiltinExecutor:
                     ),
                 )
 
-        # The merge lands in Foreman's own integration worktree; the
-        # operator's checkout only ever sees the default-branch ref move.
+        # The merge lands in Foreman's own integration worktree. A person's
+        # checkout sitting on the default branch is then brought along, the
+        # way a fast-forward pull would (ADR-0031).
         result: GitMergeResult = merge_branch(
             integration_path,
             source_branch=task.branch_name,
@@ -393,6 +397,9 @@ class BuiltinExecutor:
                 )
             ]
             detail = result.detail
+            followed = _follow_operator_checkout(project, result.sha)
+            if followed is not None:
+                events.append(followed)
             remote = settings_of(project).merge_push_remote
             if remote:
                 # The merge is done whatever the push does: a remote that is
@@ -931,6 +938,43 @@ def _task_dir(project: Project, task: Task) -> Path:
 
     worktree = _task_worktree(project, task, None)
     return worktree if worktree is not None else Path(project.repo_path)
+
+
+def _follow_operator_checkout(project: Project, sha: str | None) -> BuiltinEventRecord | None:
+    """Bring the project's own checkout to the merge, and say what happened.
+
+    Nothing is said when that checkout is on another branch or already shows
+    the merge. A checkout that could not be brought along is reported, not an
+    error: the merge is done whatever happens there.
+    """
+
+    if not sha:
+        return None
+    try:
+        followed = follow_branch_in_checkout(project.repo_path, project.default_branch, sha)
+    except (GitError, OSError) as exc:
+        followed = CheckoutFollow("left", reason=str(exc))
+    if followed.state == "updated":
+        return BuiltinEventRecord(
+            event_type="engine.checkout_updated",
+            payload={
+                "path": str(project.repo_path),
+                "branch": project.default_branch,
+                "from_sha": followed.from_sha,
+                "sha": sha,
+            },
+        )
+    if followed.state == "left":
+        return BuiltinEventRecord(
+            event_type="engine.checkout_behind",
+            payload={
+                "path": str(project.repo_path),
+                "branch": project.default_branch,
+                "sha": sha,
+                "reason": followed.reason,
+            },
+        )
+    return None
 
 
 def _task_worktree(

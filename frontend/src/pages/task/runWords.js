@@ -180,6 +180,10 @@ export function sayEntry(entry) {
       return { says: `Pushed ${d.branch} to ${d.remote}` };
     case "engine.push_failed":
       return { says: `Merged, but not pushed to ${d.remote}`, body: d.error || "", tone: "failed" };
+    case "engine.checkout_updated":
+      return { says: `Brought the project's folder to ${d.branch} at ${shortSha(d.sha)}`, mono: d.path };
+    case "engine.checkout_behind":
+      return { says: `The project's folder still shows an older ${d.branch}`, mono: d.path, body: d.reason || "", tone: "failed", clamp: true };
     case "engine.merge_conflict":
       return { says: `Merge conflict with ${d.target}`, body: d.error || "", tone: "failed", clamp: true };
     case "engine.merge_failed":

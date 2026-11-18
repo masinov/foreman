@@ -6,6 +6,8 @@
 - Amended: 2026-09-05 — added the `max_live_worktrees` disk-use policy, the
   `worktree_setup_command` per-worktree environment, and the dashboard prune
   control.
+- Amended: 2026-11-18 by ADR-0031 — a checkout on the default branch is
+  brought to each merge when that loses nothing.
 
 ## Context
 
@@ -108,8 +110,9 @@ there is not on the branch, so merging would silently drop it.
 | Changed by the engine | refs — the default branch advances when a task merges; task branches appear and move |
 | Written by the engine | the context projection under `context_dir` (default `.foreman/`), the worktrees under `worktree_root` |
 
-An operator sitting *on* the default branch when a task merges sees the ref
-move under them, exactly as `git fetch` would move a remote-tracking branch —
+*Superseded for this case by ADR-0031: such a checkout is now brought to
+the merge when nothing of the person's would be lost.* An operator sitting
+*on* the default branch when a task merges sees the ref move under them, exactly as `git fetch` would move a remote-tracking branch —
 their files are untouched but now describe an older commit. That is the
 irreducible consequence of advancing a branch someone has checked out, and it
 is strictly better than the previous behaviour, which changed the files too.

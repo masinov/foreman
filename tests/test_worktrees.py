@@ -1066,7 +1066,7 @@ class EngineWorktreeIsolationTests(unittest.TestCase):
         store.save_task(task)
         return project, task
 
-    def test_a_full_task_never_moves_the_operator_checkout(self) -> None:
+    def test_a_full_task_brings_the_operator_checkout_on_main_along(self) -> None:
         repo, db_path = self.workspace()
         head_before = git(repo, "rev-parse", "HEAD").stdout.strip()
         with ForemanStore(db_path) as store:
@@ -1083,12 +1083,35 @@ class EngineWorktreeIsolationTests(unittest.TestCase):
             )
             self.assertEqual(store.get_task(task.id).status, "done")
 
-        # The operator's checkout is still on `main` with the working tree it
-        # started with; only the ref moved under it.
+        # The operator's checkout is still on `main`, and its files show the
+        # merge, as a fast-forward pull would have left them (ADR-0031).
         self.assertEqual(git(repo, "branch", "--show-current").stdout.strip(), "main")
-        self.assertFalse((repo / "feature.py").exists())
         self.assertNotEqual(git(repo, "rev-parse", "main").stdout.strip(), head_before)
-        self.assertIn("feature.py", git(repo, "ls-tree", "-r", "--name-only", "main").stdout)
+        self.assertTrue((repo / "feature.py").is_file())
+        self.assertEqual(git(repo, "status", "--porcelain").stdout.strip(), "")
+        with ForemanStore(db_path) as store:
+            updated = [
+                event
+                for event in store.list_events(task_id=task.id)
+                if event.event_type == "engine.checkout_updated"
+            ]
+        self.assertEqual(len(updated), 1)
+        self.assertEqual(updated[0].payload["from_sha"], head_before)
+
+    def test_an_operator_checkout_on_its_own_branch_is_not_touched(self) -> None:
+        repo, db_path = self.workspace()
+        git(repo, "checkout", "-b", "operator")
+        with ForemanStore(db_path) as store:
+            project, task = self.seed(store, repo)
+            runner = _ScriptedRunner([_developer_commits, _reviewer_approves])
+            ForemanOrchestrator(store, agent_runners={"claude_code": runner}).run_project(project.id)
+            self.assertEqual(store.get_task(task.id).status, "done")
+            kinds = {event.event_type for event in store.list_events(task_id=task.id)}
+
+        self.assertEqual(git(repo, "branch", "--show-current").stdout.strip(), "operator")
+        self.assertFalse((repo / "feature.py").exists())
+        self.assertNotIn("engine.checkout_updated", kinds)
+        self.assertNotIn("engine.checkout_behind", kinds)
 
     def test_agent_steps_and_the_test_command_run_in_the_task_worktree(self) -> None:
         repo, db_path = self.workspace()
@@ -1167,9 +1190,8 @@ class EngineWorktreeIsolationTests(unittest.TestCase):
             self.assertEqual(
                 git(integration, "branch", "--show-current").stdout.strip(), "main"
             )
-            # The integration tree, not the operator's, carries the merge result.
+            # The merge itself happens in the integration tree.
             self.assertTrue((integration / "feature.py").is_file())
-            self.assertFalse((repo / "feature.py").exists())
 
     def test_the_merge_is_backed_by_tests_and_review_of_the_head_commit(self) -> None:
         repo, db_path = self.workspace()

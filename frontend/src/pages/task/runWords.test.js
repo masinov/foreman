@@ -22,6 +22,22 @@ describe("what a run recorded, in words", () => {
     });
   });
 
+  it("says whether the project's folder was brought to the merge", () => {
+    expect(sayEntry(entry("engine.checkout_updated", { path: "/p/assay", branch: "main", sha: "e63280b1c2d3", from_sha: "a1" }))).toEqual({
+      says: "Brought the project's folder to main at e63280b",
+      mono: "/p/assay",
+    });
+    expect(
+      sayEntry(entry("engine.checkout_behind", { path: "/p/assay", branch: "main", sha: "e63280b1", reason: "it holds staged changes that are not a commit of main" })),
+    ).toEqual({
+      says: "The project's folder still shows an older main",
+      mono: "/p/assay",
+      body: "it holds staged changes that are not a commit of main",
+      tone: "failed",
+      clamp: true,
+    });
+  });
+
   it("says how a step went, with the colour of its outcome", () => {
     expect(sayEntry(entry("engine.test_run", { exit_code: 0, duration_seconds: 187.1, head_sha: "c52648ddceab" }))).toEqual({
       says: "Tests passed in 187.1 s at c52648d",
