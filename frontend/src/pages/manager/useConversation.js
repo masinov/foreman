@@ -60,19 +60,21 @@ export function useConversation(projectId, context, { onSettled } = {}) {
   // Earlier pages the person asked for, kept when the latest page is read again.
   const older = useRef({ turns: [], hasMore: false });
   const streaming = turns.some((turn) => turn.state === "streaming");
-  const writingHere = turns.some((turn) => !turn.id && turn.state === "streaming");
-  const answeringElsewhere = turns.some((turn) => turn.id && turn.state === "streaming");
+  const writingHere = turns.some((turn) => turn.local && turn.state === "streaming");
+  const answeringElsewhere = turns.some((turn) => !turn.local && turn.state === "streaming");
 
   // The latest page of history replaces what is shown, after the earlier
-  // pages the person loaded. Not while a reply is written here or a failed
-  // one waits to be retried: those are shown as they arrived.
+  // pages the person loaded. What this side bar sent stays as it arrived
+  // until a page holds it: while its reply is written, while a failed one
+  // waits to be retried, and against a page read before it was sent.
   useEffect(() => {
     if (!history.data) return;
     const page = (history.data.turns || []).map(fromStored);
     const ids = new Set(page.map((turn) => turn.id));
     setTurns((current) => {
       const last = current[current.length - 1];
-      if (current.some((turn) => !turn.id && turn.state === "streaming") || (last && !last.id && last.state === "failed")) return current;
+      const unsettled = current.some((turn) => turn.local && (turn.state === "streaming" || !turn.id || !ids.has(turn.id)));
+      if (unsettled || (last?.local && last.state === "failed")) return current;
       return [...older.current.turns.filter((turn) => !ids.has(turn.id)), ...page];
     });
     setHasMore(older.current.turns.length ? older.current.hasMore : Boolean(history.data.has_more));
@@ -116,8 +118,9 @@ export function useConversation(projectId, context, { onSettled } = {}) {
       const replyKey = `reply-${counter.current}`;
       const update = (change) =>
         setTurns((current) => current.map((turn) => (turn.key === replyKey ? { ...turn, ...change(turn) } : turn)));
-      const sent = { key: `sent-${counter.current}`, role: "user", text, plan, tools: [], proposals: [], state: "done", error: null };
-      const reply = { key: replyKey, role: "assistant", text: "", tools: [], proposals: [], state: "streaming", error: null };
+      const sentKey = `sent-${counter.current}`;
+      const sent = { key: sentKey, local: true, role: "user", text, plan, tools: [], proposals: [], state: "done", error: null };
+      const reply = { key: replyKey, local: true, role: "assistant", text: "", tools: [], proposals: [], state: "streaming", error: null };
       setTurns((current) => [...current.slice(0, current.length - replacing), sent, reply]);
 
       const abort = new AbortController();
@@ -125,7 +128,13 @@ export function useConversation(projectId, context, { onSettled } = {}) {
       let finished = false;
       try {
         for await (const line of sendManagerMessage(client, projectId, text, contextRef.current, { signal: abort.signal }, plan)) {
-          if (line.type === "text_delta" && typeof line.text === "string") {
+          if (line.type === "turn") {
+            setTurns((current) =>
+              current.map((turn) =>
+                turn.key === sentKey ? { ...turn, id: line.message_id } : turn.key === replyKey ? { ...turn, id: line.reply_id } : turn,
+              ),
+            );
+          } else if (line.type === "text_delta" && typeof line.text === "string") {
             update((turn) => ({ text: turn.text + line.text }));
           } else if (line.type === "tool_use" && line.name) {
             update((turn) => ({ tools: [...turn.tools, line.name] }));

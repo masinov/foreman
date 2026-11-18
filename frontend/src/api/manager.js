@@ -2,6 +2,7 @@ import { segment } from "./client";
 
 // The manager: one conversation per project. History is read from the API;
 // a message streams its reply as lines of `{type, ...}`:
+//   turn       {message_id, reply_id}   the stored ids of the message and its reply
 //   text_delta {text}   a piece of the reply, in order
 //   tool_use   {name}   the manager ran something
 //   proposal   {proposal_id}   the manager proposed a change (ADR-0022)

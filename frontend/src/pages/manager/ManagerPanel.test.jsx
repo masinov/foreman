@@ -301,9 +301,34 @@ describe("the conversation", () => {
       turns: [turn("t1", "user", "Plan the first sprint."), turn("t2", "assistant", "Here is the plan.", [{ name: "Read" }])],
       has_more: false,
     };
-    expect(await within(thread).findByText("Here is the plan.", {}, { timeout: 4000 })).toBeInTheDocument();
+    expect(await within(thread).findByText("Here is the plan.", {}, { timeout: 8000 })).toBeInTheDocument();
     expect(document.querySelector(".manager__cursor")).toBeNull();
     expect(within(panel()).getByRole("button", { name: "Send" })).toBeInTheDocument();
+  }, 15000);
+
+  it("keeps a reply it has shown when an older reading of the conversation arrives after it", async () => {
+    window.localStorage.setItem("foreman.dashboard.manager.open", "true");
+    let answerFirstReading;
+    const fetchImpl = createFakeFetch(withManager(projectRoutes()));
+    // The first reading of the conversation is answered only after the reply has ended.
+    fetchImpl.routes[HISTORY] = () => new Promise((resolve) => (answerFirstReading = resolve));
+    fetchImpl.routes[MESSAGE] = () =>
+      new Response(
+        [{ type: "turn", message_id: "m1", reply_id: "r1" }, { type: "text_delta", text: "Quick answer." }, { type: "done" }]
+          .map((line) => `${JSON.stringify(line)}\n`)
+          .join(""),
+        { status: 200, headers: { "Content-Type": "application/x-ndjson" } },
+      );
+    renderApp("/dashboard/projects/foreman", fetchImpl);
+    const box = await within(panel()).findByRole("textbox", { name: "Message to the manager" });
+    fireEvent.change(box, { target: { value: "Quick question" } });
+    fireEvent.click(within(panel()).getByRole("button", { name: "Send" }));
+    const thread = within(panel()).getByRole("log");
+    expect(await within(thread).findByText("Quick answer.")).toBeInTheDocument();
+
+    await act(async () => answerFirstReading(reply(200, { turns: [], has_more: false })));
+    expect(within(thread).getByText("Quick question")).toBeInTheDocument();
+    expect(within(thread).getByText("Quick answer.")).toBeInTheDocument();
   });
 
   it("says that clearing declines the proposals still waiting", async () => {

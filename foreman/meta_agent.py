@@ -647,6 +647,9 @@ async def process_message(
         yield json.dumps({"type": "error", "message": MANAGER_BUSY}) + "\n"
         return
     user_turn_id, reply_turn_id = started
+    # The stored ids of this message and its reply, so a client showing the
+    # reply as it streams knows which turns of the history they are.
+    yield json.dumps({"type": "turn", "message_id": user_turn_id, "reply_id": reply_turn_id}) + "\n"
 
     state_header = build_state_header(store, project)
     parts = [state_header, "---"]
