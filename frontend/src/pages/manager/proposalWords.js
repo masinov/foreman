@@ -22,7 +22,8 @@ const TASK_FIELDS = {
 
 function taskOf(names, taskId) {
   const known = names?.tasks?.[taskId];
-  return { key: known?.key || taskId, title: known?.title || "" };
+  // A task the proposal creates has no key yet: it is named by its title.
+  return { key: known?.key || (known?.new ? "" : taskId), title: known?.title || "" };
 }
 
 // What a gate decides, by its policy, as the object of "approve".
@@ -74,9 +75,10 @@ function rowsOf(operation, names) {
     case "add_task": {
       // Everything a person confirms is on the card: what the task is and what will prove it.
       const size = operation.complexity ? `, ${operation.complexity}` : "";
-      const after = (operation.waits_for || []).length ? `, after ${list(operation.waits_for)}` : "";
-      const name = operation.ref ? ` (${operation.ref})` : "";
-      const rows = [{ term: "Add", text: `${operation.title}${name}, to ${sprint}${size}${after}` }];
+      const after = (operation.waits_for || []).length
+        ? `, after ${list(operation.waits_for.map((taskId) => taskOf(names, taskId).title || taskId))}`
+        : "";
+      const rows = [{ term: "Add", text: `${operation.title}, to ${sprint}${size}${after}` }];
       if (operation.description) rows.push({ term: "What", text: operation.description });
       if (operation.acceptance_criteria) rows.push({ term: "Done when", text: operation.acceptance_criteria });
       return rows;

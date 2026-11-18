@@ -63,6 +63,70 @@ class LongOutputLineTests(unittest.TestCase):
         self.assertEqual(len(events[0]["text"]), 300_000)
 
 
+class ProcessEndsWithTheReadingTests(unittest.TestCase):
+    """A manager process never outlives the turn that started it."""
+
+    def test_the_process_is_killed_when_the_reading_stops_early(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            pid_file = Path(tmp) / "pid"
+            # Says one thing, then keeps working as a real session would.
+            fake = Path(tmp) / "claude"
+            fake.write_text(
+                f"#!{sys.executable}\n"
+                "import json, os, sys, time\n"
+                "sys.stdin.read()\n"
+                f"open({str(pid_file)!r}, 'w').write(str(os.getpid()))\n"
+                "print(json.dumps({'type': 'assistant', 'message': {'content': [{'type': 'text', 'text': 'hi'}]}}), flush=True)\n"
+                "time.sleep(60)\n"
+            )
+            fake.chmod(0o755)
+
+            async def run() -> None:
+                stream = meta_agent._run_claude(None, "hello", repo_path=tmp, executable=str(fake), model=None)
+                first = await stream.__anext__()
+                self.assertEqual(first["type"], "text_delta")
+                # The turn stops reading: a failure, or the request cancelled.
+                await stream.aclose()
+
+            asyncio.run(run())
+            pid = int(pid_file.read_text())
+        with self.assertRaises(ProcessLookupError):
+            os.kill(pid, 0)
+
+
+class ReplyInProgressStoreTests(unittest.TestCase):
+    def setUp(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.store = ForemanStore(Path(tmp.name) / "foreman.db")
+        self.addCleanup(self.store.close)
+        self.store.initialize()
+        self.store.save_project(Project(id="p", name="P", repo_path=tmp.name, workflow_id="development"))
+
+    def test_one_message_is_answered_at_a_time(self) -> None:
+        started = self.store.start_meta_reply("p", text="first")
+        self.assertIsNotNone(started)
+        self.assertTrue(self.store.meta_reply_in_progress("p"))
+        self.assertIsNone(self.store.start_meta_reply("p", text="second"))
+        turns, _ = self.store.list_meta_turns("p")
+        self.assertEqual([(t["role"], t["text"]) for t in turns], [("user", "first"), ("assistant", "")])
+        self.assertEqual(turns[1]["tool_uses"], [{"in_progress": True}])
+
+        self.store.update_meta_turn(started[1], text="done", tool_uses=[])
+        self.assertFalse(self.store.meta_reply_in_progress("p"))
+        self.assertIsNotNone(self.store.start_meta_reply("p", text="second"))
+
+    def test_a_reply_a_stopped_dashboard_left_is_marked_cut_short(self) -> None:
+        _, reply = self.store.start_meta_reply("p", text="first")
+        self.store.update_meta_turn(reply, text="half", tool_uses=[{"name": "Bash"}, {"in_progress": True}])
+
+        self.assertEqual(self.store.close_unfinished_meta_replies(), 1)
+
+        turns, _ = self.store.list_meta_turns("p")
+        self.assertEqual(turns[1]["tool_uses"], [{"name": "Bash"}, {"interrupted": True}])
+        self.assertFalse(self.store.meta_reply_in_progress("p"))
+
+
 class StateHeaderTests(unittest.TestCase):
     """build_state_header pins a compact, fixed format with truncation rules."""
 
@@ -433,6 +497,56 @@ class ProcessMessagePersistenceTests(unittest.TestCase):
             self.assertEqual([t["role"] for t in turns], ["user", "assistant"])
             self.assertEqual(turns[1]["text"], "partial")
             self.assertIn({"interrupted": True}, turns[1]["tool_uses"])
+
+    def test_the_reply_is_stored_while_it_is_written(self) -> None:
+        seen: list = []
+
+        def look(_env):
+            # Someone else reads the conversation while the manager works.
+            with self._open() as other:
+                turns, _ = other.list_meta_turns("proj-1")
+            seen.append((turns[-1]["text"], turns[-1]["tool_uses"]))
+            return None
+
+        meta_agent._run_claude = self._fake_run([look, {"type": "text_delta", "text": "Hello"}, look])
+        with self._open() as store:
+            project = store.get_project("proj-1")
+            _drain(meta_agent.process_message("proj-1", "hi", store=store, project=project))
+
+        self.assertEqual(seen[0], ("", [{"in_progress": True}]))
+        self.assertEqual(seen[1], ("Hello", [{"in_progress": True}]))
+        with self._open() as store:
+            turns, _ = store.list_meta_turns("proj-1")
+            self.assertEqual((turns[-1]["text"], turns[-1]["tool_uses"]), ("Hello", []))
+
+    def test_a_message_while_a_reply_is_in_progress_is_refused(self) -> None:
+        with self._open() as store:
+            store.start_meta_reply("proj-1", text="first")
+            project = store.get_project("proj-1")
+            events = _drain(meta_agent.process_message("proj-1", "second", store=store, project=project))
+            turns, _ = store.list_meta_turns("proj-1")
+        self.assertEqual(events, [{"type": "error", "message": meta_agent.MANAGER_BUSY}])
+        self.assertEqual([t["text"] for t in turns], ["first", ""])
+
+    def test_clearing_declines_the_proposals_still_waiting(self) -> None:
+        with self._open() as store:
+            store.save_sprint(Sprint(id="s", project_id="proj-1", title="S", status="planned"))
+            project = store.get_project("proj-1")
+            proposal = Proposals(store, via="cli").create(
+                project,
+                reason="Because.",
+                operations=[{"kind": "edit_sprint", "sprint_id": "s", "goal": "G."}],
+                proposed_by=MANAGER,
+            )
+            store.start_meta_reply("proj-1", text="first")
+
+            declined = meta_agent.clear_session(store, "proj-1", via="dashboard", actor="ada")
+
+            self.assertEqual(declined, [proposal.id])
+            stored = store.get_proposal(proposal.id)
+            self.assertEqual((stored.state, stored.decided_by), ("declined", "ada"))
+            self.assertEqual(stored.outcome["sentence"], meta_agent.CLEARED_PROPOSAL)
+            self.assertEqual(store.list_meta_turns("proj-1")[0], [])
 
     def test_model_setting_passed_to_backend(self) -> None:
         with self._open() as store:

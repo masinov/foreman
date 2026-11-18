@@ -18,6 +18,12 @@ memory changes rather than versioned product releases.
 
 ### Sprint 60 — what is there works and makes sense
 
+- The manager's conversation, after what went wrong on Assay (ADR-0022 amendment, 2026-11-18):
+  - **A reply is seen while it is written, by anyone looking.** The message and an empty reply marked `in_progress` are stored before the model is asked, and the reply is saved as it grows. While a reply is in progress, a new message, a supervision turn and clearing are refused. The side bar shows the reply with its cursor and reads the conversation again every 1.5 s while it is written (every 5 s otherwise). A dashboard that starts marks a reply left in progress as interrupted.
+  - **The manager's process is killed when its turn ends.** A turn that failed on a long line used to leave it running, and it stored a proposal afterwards.
+  - **Clearing the conversation declines its waiting proposals**, recorded as the person's decision. The dialog says how many. They used to stay waiting where nothing showed them.
+  - **`ref` on `create_sprint` and `file_task`.** A later operation may name either by its ref wherever it takes a sprint or task id. One proposal can now create a sprint and fill it, where it took two confirmations.
+
 - A new project starts with `merge_approval = human` and workers on `claude-sonnet-5-5` (found on Assay). `foreman init` gave `claude-sonnet-4-6`, an id no longer offered, and no merge policy, so the built-in `auto` merged without a person. A project added from the dashboard had no settings at all. Both now use `new_project_settings()`. Re-running `foreman init` on an existing project still sets no policy, and the built-in default of the matrix (ADR-0014) is unchanged.
 
 - A project's folder on the default branch follows each merge (ADR-0031, amends ADR-0012). Before, the engine moved `main` under it and left its files at the commit before, so git listed the merged work as staged deletions (found on Assay). After a merge, `_builtin:merge` brings that checkout to the merge commit with `git read-tree -m -u` from the commit its index still shows, keeping untracked files and unstaged edits and refusing where it would overwrite one. It records `engine.checkout_updated` or `engine.checkout_behind` (with the reason). A checkout on another branch is untouched.

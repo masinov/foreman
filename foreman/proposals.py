@@ -101,7 +101,13 @@ _TASK_EDITS = (
 OPERATION_KINDS: dict[str, OperationKind] = {
     spec.kind: spec
     for spec in (
-        OperationKind("create_sprint", "create a sprint", (_req("title", "words"), _opt("goal", "text"))),
+        OperationKind(
+            "create_sprint",
+            "create a sprint",
+            # ``ref``: a name later operations of the same proposal use for
+            # this sprint, which has no id until the proposal is confirmed.
+            (_req("title", "words"), _opt("goal", "text"), _opt("ref", "words")),
+        ),
         OperationKind(
             "edit_sprint",
             "edit a sprint",
@@ -121,6 +127,7 @@ OPERATION_KINDS: dict[str, OperationKind] = {
                 _opt("priority", "int"),
                 _opt("complexity", "words"),
                 _opt("accept", "bool"),
+                _opt("ref", "words"),
             ),
         ),
         OperationKind(
@@ -344,15 +351,29 @@ def apply_operation(
     if refs is None:
         refs = {}
 
+    # A sprint or task id may be the ``ref`` an earlier operation of the same
+    # proposal gave what it created.
     def task(task_id: str):
-        return _task(store, project, task_id, where, index, kind)
+        return _task(store, project, refs.get(task_id, task_id), where, index, kind)
 
     def sprint(sprint_id: str):
-        return _sprint(store, project, sprint_id, where, index, kind)
+        return _sprint(store, project, refs.get(sprint_id, sprint_id), where, index, kind)
+
+    def name_created(created_id: str) -> None:
+        name = operation.get("ref")
+        if name:
+            refs[name] = created_id
+
+    name = operation.get("ref")
+    if name and name in refs:
+        raise ProposalError(
+            f"{where}: two things in this proposal are called {name!r}.", index=index, kind=kind
+        )
 
     try:
         if kind == "create_sprint":
             created = mutations.create_sprint(project, title=operation["title"], goal=operation.get("goal"))
+            name_created(created.id)
             result["sprint_id"] = created.id
         elif kind == "edit_sprint":
             changes = {name: operation[name] for name in ("title", "goal") if name in operation}
@@ -371,12 +392,10 @@ def apply_operation(
                 complexity=operation.get("complexity"),
                 accept=bool(operation.get("accept", False)),
             )
+            name_created(filed.task.id)
             result["task_id"] = filed.task.id
         elif kind == "add_task":
             target_sprint = sprint(operation["sprint_id"])
-            name = operation.get("ref")
-            if name and name in refs:
-                raise MutationError(f"Two tasks in this proposal are called {name!r}.")
             filed = mutations.file_task(
                 project,
                 title=operation["title"],
@@ -391,8 +410,7 @@ def apply_operation(
             waits_for = [refs.get(item, item) for item in operation.get("waits_for", [])]
             if waits_for:
                 mutations.edit_task(task(filed.task.id), {"depends_on_task_ids": waits_for})
-            if name:
-                refs[name] = filed.task.id
+            name_created(filed.task.id)
             result["task_id"] = filed.task.id
             result["sprint_id"] = target_sprint.id
         elif kind == "accept_task":
@@ -416,7 +434,9 @@ def apply_operation(
         elif kind == "unplan_task":
             result["task_id"] = mutations.unplan_task(task(operation["task_id"])).id
         elif kind == "edit_task":
-            changes = {name: operation[name] for name in OPERATION_KINDS[kind].one_of if name in operation}
+            changes = {field: operation[field] for field in OPERATION_KINDS[kind].one_of if field in operation}
+            if "depends_on_task_ids" in changes:
+                changes["depends_on_task_ids"] = [refs.get(item, item) for item in changes["depends_on_task_ids"]]
             target = task(operation["task_id"])
             mutations.edit_task(target, changes)
             result["task_id"] = target.id
@@ -498,11 +518,22 @@ def _names(store: ForemanStore, project: Project, operations: Sequence[Mapping[s
     sprints: dict[str, Any] = {}
     task_ids: list[str] = list(leaves)
     sprint_ids: list[str] = []
+    # What the proposal creates has no id yet: it is named by its ``ref``.
+    for operation in operations:
+        name = operation.get("ref")
+        if not name:
+            continue
+        if operation["kind"] == "create_sprint":
+            sprints[name] = {"title": operation["title"], "status": "planned", "backlog": False, "new": True}
+        elif operation["kind"] in ("file_task", "add_task"):
+            tasks[name] = {"key": None, "title": operation["title"], "status": None, "sprint_id": None, "new": True}
     for operation in operations:
         named_tasks, named_sprints = _named_ids(operation)
         task_ids += named_tasks
         sprint_ids += named_sprints
     for task_id in task_ids:
+        if task_id in tasks:
+            continue
         found = store.get_task(task_id)
         if found is not None and found.project_id == project.id:
             tasks[task_id] = {
@@ -516,6 +547,8 @@ def _names(store: ForemanStore, project: Project, operations: Sequence[Mapping[s
                 tasks[task_id]["gate"] = gate
             sprint_ids.append(found.sprint_id)
     for sprint_id in sprint_ids:
+        if sprint_id in sprints:
+            continue
         found = store.get_sprint(sprint_id)
         if found is not None and found.project_id == project.id:
             sprints[sprint_id] = {
@@ -654,11 +687,11 @@ class Proposals:
             self.store.save_proposal(proposal)
         return proposal
 
-    def decline(self, proposal_id: str) -> Proposal:
+    def decline(self, proposal_id: str, *, sentence: str = "Declined. Nothing was changed.") -> Proposal:
         """Record that a person declined a proposal. Nothing else changes."""
 
         proposal = self._require_open(proposal_id)
-        self._decide(proposal, "declined", {"applied": [], "sentence": "Declined. Nothing was changed."})
+        self._decide(proposal, "declined", {"applied": [], "sentence": sentence})
         return proposal
 
     def _decide(self, proposal: Proposal, state: str, outcome: dict[str, Any]) -> None:

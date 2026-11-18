@@ -3676,6 +3676,33 @@ class DashboardMetaAgentTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 404)
 
+    def test_a_reply_in_progress_holds_new_messages_and_clearing(self):
+        """While the manager answers, another message or a clear is refused."""
+        project = self._seed()
+        app = create_dashboard_app(str(self.db_path))
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        store.start_meta_reply(project.id, text="first")
+        store.close()
+
+        async def send(method, url, **kwargs):
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+                return await client.request(method, url, **kwargs)
+
+        message = asyncio.run(send("POST", f"/api/projects/{project.id}/meta/message", json={"message": "second"}))
+        self.assertEqual(message.status_code, 400)
+        self.assertIn("still answering", message.json()["error"])
+        clear = asyncio.run(send("DELETE", f"/api/projects/{project.id}/meta/session"))
+        self.assertEqual(clear.status_code, 400)
+        history = asyncio.run(send("GET", f"/api/projects/{project.id}/meta/history")).json()
+        self.assertEqual(history["turns"][-1]["tool_uses"], [{"in_progress": True}])
+        self.assertEqual(history["waiting_proposals"], 0)
+
+        # A dashboard that starts again finds the reply cut short, not still going.
+        reopened = self._request("GET", f"/api/projects/{project.id}/meta/history").json()
+        self.assertEqual(reopened["turns"][-1]["tool_uses"], [{"interrupted": True}])
+
     def test_meta_history_reflects_cleared_session(self):
         """After clearing session, persisted history returns empty list again."""
         project = self._seed()

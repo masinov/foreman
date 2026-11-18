@@ -854,9 +854,17 @@ interactively, promotes plans into tasks, and assigns them to cheaper workers.
   nothing itself (ADR-0022): it proposes with `foreman proposal create`, and a
   person confirms. Inside its session (`FOREMAN_MANAGER_SESSION` is set) every
   other state-changing `foreman` command is refused.
-- The user turn is persisted *before* the model is invoked; the assistant turn
-  is persisted in a `finally` path (flagged `interrupted` on crash) so a turn is
-  never silently dropped.
+- The person's message and an empty reply marked `in_progress` are stored
+  *before* the model is invoked. The reply is saved as it grows (at most once a
+  second), so anyone with the side bar open sees it being written, and is
+  completed when the turn ends, flagged `interrupted` if it broke off. A
+  dashboard that starts marks a reply left `in_progress` as interrupted
+  (ADR-0022, 2026-11-18).
+- One message at a time: while a reply is being written, another message,
+  a supervision turn and clearing the conversation are refused.
+- The manager's process is killed when its turn ends, however it ends.
+- **Start a new conversation** forgets the conversation and declines the
+  proposals still waiting in the project. The dialog says how many.
 - The manager model is set by the `meta_agent_model` project setting (`--model`;
   empty → harness default).
 
@@ -888,7 +896,10 @@ A proposal is a reason and an ordered list of operations: `create_sprint`,
 `edit_sprint`, `activate_sprint`, `finish_sprint`, `file_task`, `accept_task`,
 `decline_task`, `plan_tasks`, `unplan_task`, `edit_task`, `block_task`,
 `unblock_task`, `cancel_task`, `send_back`, `approve_gate` (ADR-0022 lists the
-fields).
+fields). `create_sprint`, `file_task` and `add_task` take a `ref`, a name that
+later operations of the same proposal use wherever they take a sprint or task
+id. One proposal can create a sprint and add tasks to it, or file tasks and
+plan them into it.
 
 ```bash
 foreman proposal create <project> --json proposal.json   # or --json - for stdin
@@ -1283,7 +1294,7 @@ which token filed each task.
 | `POST /api/projects/{id}/worktrees/prune` | remove done, cancelled, and unclaimed trees (§24) |
 | `POST /api/projects/{id}/meta/message` | one manager chat turn (NDJSON stream) |
 | `GET /api/projects/{id}/meta/history` | paginated chat history (`limit`/`before`/`has_more`) |
-| `DELETE /api/projects/{id}/meta/session` | clear the manager session |
+| `DELETE /api/projects/{id}/meta/session` | clear the manager session; declines the proposals still waiting (`declined_proposals`) |
 | `GET /api/projects/{id}/proposals` | the manager's proposals, newest first (`state`, `limit`, `offset`) |
 | `GET /api/proposals/{id}` · `POST /api/proposals/{id}/confirm\|decline` | read, apply or decline one proposal |
 | `POST /api/projects/{id}/meta/supervise` | run one supervision turn from an attention event |
@@ -1586,10 +1597,9 @@ absolute path puts it on another filesystem).
 Never touched: your current branch, your index, your working-tree files, your
 stash. Changed: **refs** — the default branch advances when a task merges, and
 task branches appear and move. If you are sitting *on* the default branch when
-a task merges, the ref moves under you exactly as a `git fetch` would move a
-remote-tracking branch; your files are untouched but now describe an older
-commit, so `git status` will show them as behind. `git checkout <branch>` or
-`git reset --hard <branch>` when you want to catch up.
+a task merges, your files are brought to the merge as a fast-forward pull would
+bring them (ADR-0031); where that would overwrite something of yours, they are
+left as they were and the task's activity says why.
 
 ### Lifecycle
 
@@ -1906,7 +1916,7 @@ See [ADR-0013](adr/ADR-0013-intake-endpoint-and-api-tokens.md) and
 | A task's tests pass in your checkout but fail in its worktree | The tree has its own environment now. Something your checkout has is missing from `worktree_setup_command` — or the tree is correct and your checkout is stale. |
 | `engine.worktree_limit_exceeded` in the event stream | Every reclaim candidate had uncommitted work, so the cap yielded rather than destroying it. Finish or cancel those tasks, or raise `max_live_worktrees` (§24). |
 | A paused task's worktree disappeared | It was reclaimed under `max_live_worktrees`. Nothing was lost — the tree was clean, so its branch has everything, and the next visit recreates it (§24). |
-| Your checkout suddenly shows a large uncommitted diff | You are sitting on the default branch and a task merged into it, so the ref moved under you. `git checkout main` (or `git reset --hard main`) to catch up; your files were never modified. |
+| Your checkout suddenly shows a large uncommitted diff | You are sitting on the default branch, a task merged into it, and your checkout could not be brought along (the task's activity says "The project's folder still shows an older main" and why: usually staged changes). Commit or unstage them, then `git merge --ff-only main` or `git reset --hard main` if nothing of yours is in it. |
 | Intake answers 401 with a token you just created | The dashboard's shared token was sent instead of the project API token — intake takes only the `fmn_…` secret from `foreman token create`. |
 | Intake answers 403 | The token is live but belongs to another project (or lacks `intake`). `foreman token list <project>` shows which project's tokens exist. |
 | A route other than intake answers 403 with "only valid on … /intake" | An `fmn_…` API token was sent to a dashboard route. Use the dashboard token there. |

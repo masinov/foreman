@@ -4,8 +4,10 @@ const names = {
   tasks: {
     t1: { key: "FOR-1", title: "One" },
     t2: { key: "FOR-2", title: "Two", gate: { step: "merge_approval", policy: "merge_approval", approve_to: "merge", deny_to: "develop" } },
+    // Created by the same proposal, named by its ref.
+    schema: { key: null, title: "Schema", new: true },
   },
-  sprints: { s1: { title: "Sprint 1" }, s2: { title: "Sprint 2" } },
+  sprints: { s1: { title: "Sprint 1" }, s2: { title: "Sprint 2" }, next: { title: "Sprint 3", new: true } },
 };
 
 const rows = (operations, leaves = []) =>
@@ -21,8 +23,11 @@ describe("a proposal in words", () => {
     [{ kind: "file_task", title: "New" }, [["File", null, "New, in the backlog", false]]],
     [
       { kind: "add_task", sprint_id: "s2", title: "API", ref: "api", complexity: "small", waits_for: ["schema"], description: "Add the route.", acceptance_criteria: "It answers 200." },
-      [["Add", null, "API (api), to Sprint 2, small, after schema", false], ["What", null, "Add the route.", false], ["Done when", null, "It answers 200.", false]],
+      [["Add", null, "API, to Sprint 2, small, after Schema", false], ["What", null, "Add the route.", false], ["Done when", null, "It answers 200.", false]],
     ],
+    [{ kind: "add_task", sprint_id: "next", title: "Tokens", waits_for: ["t1"] }, [["Add", null, "Tokens, to Sprint 3, after One", false]]],
+    [{ kind: "plan_tasks", task_ids: ["schema"], sprint_id: "next" }, [["Into", null, "Sprint 3", false], ["Plan in", null, "Schema", false]]],
+    [{ kind: "accept_task", task_id: "schema" }, [["Accept", " Schema", null, false]]],
     [{ kind: "add_task", sprint_id: "s2", title: "Schema" }, [["Add", null, "Schema, to Sprint 2", false]]],
     [{ kind: "accept_task", task_id: "t1" }, [["Accept", "FOR-1 One", null, false]]],
     [{ kind: "decline_task", task_id: "t1", reason: "No." }, [["Decline", "FOR-1 One", null, false], ["Why", null, "No.", false]]],
