@@ -92,7 +92,7 @@
 }
 
 /* Board */
-/* A column with cards is wide enough to read them. A folded one is a strip
+/* An open column has one width, as Trello's lists do. A folded one is a strip
    with its name read downwards and its count; an empty column starts folded.
    Past the page's width the board scrolls. */
 .board {
@@ -104,11 +104,10 @@
 
 .board__column {
   display: flex;
-  flex: 1 1 var(--board-column-width);
+  flex: 0 0 var(--board-column-width);
   flex-direction: column;
   gap: var(--space-2);
-  min-width: var(--board-column-width);
-  max-width: var(--board-column-max-width);
+  min-width: 0;
 }
 
 .board__column--folded {
