@@ -99,7 +99,9 @@ is no login.
   downwards, and its count; the count is gold when a task in it needs you.
   An empty column starts folded, and a person's own fold or open is
   remembered per project in their browser (owner, 2026-11-18: a long workflow
-  made the board unreadable). This is the same feature as Jira's open request
+  made the board unreadable). Open columns share the row as drawn, but none
+  grows past 320px, so a column open on its own does not stretch across the
+  page. This is the same feature as Jira's open request
   JRACLOUD-85706, and Trello, YouTrack and Linear have it.
 - Design v7 keeps gold for "needs you" and the primary decision. Controls
   that open more in place ("Show all", "More details", "Finished sprints",
