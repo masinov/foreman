@@ -1642,6 +1642,10 @@ class ForemanCLISmokeTests(unittest.TestCase):
             project.settings["test_command"],
             "./venv/bin/python -m unittest discover -s tests",
         )
+        # A new project's merges wait for a person, and its workers run on a
+        # model the dashboard offers.
+        self.assertEqual(project.settings["merge_approval"], "human")
+        self.assertEqual(project.settings["default_model"], "claude-sonnet-5-5")
 
     def test_init_command_defaults_to_repo_local_db_when_db_is_omitted(self) -> None:
         temp_dir = tempfile.TemporaryDirectory()

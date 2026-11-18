@@ -98,5 +98,20 @@ class ScaffoldGenerationTests(unittest.TestCase):
         )
 
 
+class NewProjectDefaultsTests(unittest.TestCase):
+    def test_the_default_worker_model_is_one_the_dashboard_offers(self) -> None:
+        from foreman.dashboard_definitions import _KNOWN_MODELS
+        from foreman.scaffold import DEFAULT_DEFAULT_MODEL
+
+        self.assertIn(DEFAULT_DEFAULT_MODEL, _KNOWN_MODELS)
+
+    def test_a_new_project_waits_for_a_person_at_the_merge(self) -> None:
+        from foreman.scaffold import default_project_settings, new_project_settings
+
+        self.assertEqual(new_project_settings()["merge_approval"], "human")
+        # Re-running `foreman init` on a project fills in only these, which set no policy.
+        self.assertNotIn("merge_approval", default_project_settings())
+
+
 if __name__ == "__main__":
     unittest.main()

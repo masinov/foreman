@@ -58,7 +58,7 @@ from .models import (
     Task,
 )
 from .policy import PolicyMatrix, describe_resolution
-from .scaffold import generate_project_id
+from .scaffold import generate_project_id, new_project_settings
 from .settings import (
     HOST_LEVEL_SETTINGS,
     ProjectSettings,
@@ -494,6 +494,7 @@ class DashboardService:
             name=name,
             repo_path=repo_path,
             workflow_id=workflow_id,
+            settings=new_project_settings(),
         )
         self.store.save_project(project)
         return {
