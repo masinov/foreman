@@ -156,7 +156,7 @@ class CreateTests(ProposalCase):
             "plan_tasks": {"kind": "plan_tasks", "task_ids": [accepted.id], "sprint_id": "s2"},
             "unplan_task": {"kind": "unplan_task", "task_id": "todo1"},
             "edit_task": {"kind": "edit_task", "task_id": "running", "title": "Renamed", "priority": 2},
-            "block_task": {"kind": "block_task", "task_id": "running", "reason": "Wait for the spec."},
+            "block_task": {"kind": "block_task", "task_id": "todo1", "reason": "Wait for the spec."},
             "unblock_task": {"kind": "unblock_task", "task_id": "blocked1"},
             "cancel_task": {"kind": "cancel_task", "task_id": "todo1"},
             "complete_task": {"kind": "complete_task", "task_id": "blocked1", "reason": "Merged by hand."},
@@ -370,7 +370,8 @@ class ConfirmTests(ProposalCase):
         self.assertEqual(
             failed.outcome["sentence"],
             "Operation 2 of 3 (block a task) was refused: Task todo1 cannot be blocked from "
-            "status cancelled. Nothing was applied.",
+            "status cancelled; only a task that has not started can be. Stop or close a started "
+            "task. Nothing was applied.",
         )
         self.assertEqual(self.snapshot(), before)
         self.assertEqual(self.store.get_task(filed.id).status, "triage")

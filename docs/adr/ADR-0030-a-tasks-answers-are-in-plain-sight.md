@@ -60,7 +60,11 @@ Delete were offered and the API refuses all three until the step stops.
   a blocked task; it names the kind "unblock". Recorded in `docs/STATUS.md`.
 - The order beside the title is Edit, the state's button, Close, More. Edit
   and More do not move between states.
-- Block on a running task overlaps with Stop (Stop ends the step now, Block
-  waits for the step to end). Left as it is; the owner has not decided.
+- Block on a running task overlapped with Stop (Stop ends the step now,
+  Block waited for the step to end). Decided by the owner on 2026-11-18:
+  Block exists only for a task that has not started (`todo`, planned); a
+  started task has Stop and Close. The API, the CLI and the manager's
+  `block_task` refuse any other status, and a running task's More is gone
+  (it held only Block).
 - In the backlog, Decline (in the decision) and Cancel (in More) both say
   "not this". Left as it is.

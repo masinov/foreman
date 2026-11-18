@@ -240,7 +240,7 @@ foreman task override <task-id> \
 foreman task list <project-id>
 foreman task show <task-id>           # task + worktree + recent runs + events
 foreman task accept <task-id>         # triage → todo
-foreman task block <task-id>
+foreman task block <task-id> --reason "..."  # only a task that has not started; a started one is stopped or closed
 foreman task unblock <task-id>
 foreman task done <task-id> --reason "..."   # finished outside the engine; nothing is checked
 foreman task reopen <task-id>         # done or cancelled → todo, workflow from the start

@@ -200,14 +200,21 @@ class Mutations:
         return task
 
     def block_task(self, task: Task, reason: str) -> Task:
-        """Park a task. An engine running it stops when its current step ends."""
+        """Park a task that has not started.
 
-        if task.status in _RESOLVED_TASK_STATUSES or task.status == "declined":
-            raise MutationError(f"Task {task.id} cannot be blocked from status {task.status}.")
+        A started task is stopped (the engine ends its step and blocks it) or
+        closed; blocking it as well would be a third way to say the same.
+        """
+
         if self._in_backlog(task):
             raise MutationError(
                 f"Task {task.id} is in the backlog, where nothing runs; there is nothing "
                 "to block. Decline it, or plan it into a sprint first."
+            )
+        if task.status != "todo":
+            raise MutationError(
+                f"Task {task.id} cannot be blocked from status {task.status}; only a task "
+                "that has not started can be. Stop or close a started task."
             )
         from_status = task.status
         task.status = "blocked"
