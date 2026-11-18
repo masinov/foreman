@@ -7,6 +7,10 @@ memory changes rather than versioned product releases.
 
 ## [Unreleased]
 
+### Sprint 60c — defaults from a terminal
+
+- `foreman role` and `foreman workflow` (`list`, `show`, `set`, `reset`) take `--workspace` in place of a project to work on the workspace's default roles and workflows (ADR-0024 amendment). Naming a project works as before; naming both or neither is refused. A role saved as a workspace default still goes through the model check, and a refused save prints why and exits 1.
+
 ### Sprint 60b — engine findings of the supervised run
 
 - The developer prompts forbid the system Python where the repository names a virtual environment. The fixed line "Use only ./venv/bin/python and ./venv/bin/pip" is replaced by the prompt variable `{environment_rules}`: when `AGENTS.md` names `./venv` or `.venv`, it forbids `python`, `python3` and `pip` from the system for anything, one-off scripts included, and names that environment's binaries; otherwise the prompt says nothing about Python. A role text without the placeholder still renders.

@@ -279,6 +279,73 @@ class CliTests(_Workspace):
         self.assertIn("Not saved:", err)
         self.assertIn("unknown role 'nobody'", err)
 
+    def test_the_workspace_form_of_each_role_command(self) -> None:
+        path = Path(self._temp.name) / "reviewer.toml"
+        path.write_text(reviewer_on("claude-opus-5-5"), encoding="utf-8")
+
+        code, out, _ = self.run_cli("role", "set", "--workspace", "--file", str(path))
+        self.assertEqual(code, 0)
+        self.assertIn("Saved role code_reviewer for the workspace.", out)
+        self.assertEqual(project_definitions(self.store, "p1").roles["code_reviewer"].agent.model, "claude-opus-5-5")
+        self.assertIn(("claude_code", "claude-opus-5-5"), self.asked)
+
+        _, listing, _ = self.run_cli("role", "list", "--workspace")
+        self.assertIn("Roles of the workspace", listing)
+        self.assertIn("code_reviewer | Code Reviewer | changed for the workspace", listing)
+        self.assertIn("developer | Developer | shipped", listing)
+
+        _, shown, _ = self.run_cli("role", "show", "--workspace", "code_reviewer")
+        self.assertIn('model = "claude-opus-5-5"', shown)
+
+        code, out, _ = self.run_cli("role", "reset", "--workspace", "code_reviewer")
+        self.assertEqual(code, 0)
+        self.assertIn("The workspace uses the shipped role code_reviewer again.", out)
+        self.assertEqual(self.store.current_definitions(None), [])
+
+    def test_the_workspace_form_of_each_workflow_command(self) -> None:
+        path = Path(self._temp.name) / "wf.toml"
+        path.write_text(workflow_called("house"), encoding="utf-8")
+
+        code, out, _ = self.run_cli("workflow", "set", "--workspace", "--file", str(path))
+        self.assertEqual(code, 0)
+        self.assertIn("Saved workflow house for the workspace.", out)
+
+        _, listing, _ = self.run_cli("workflow", "list", "--workspace")
+        self.assertIn("house | ", listing)
+        self.assertIn("the workspace's own", listing)
+        _, shown, _ = self.run_cli("workflow", "show", "--workspace", "house")
+        self.assertIn('id = "house"', shown)
+        _, p1, _ = self.run_cli("workflow", "list", "p1")
+        self.assertIn("house | ", p1)
+
+        code, out, _ = self.run_cli("workflow", "reset", "--workspace", "house")
+        self.assertEqual(code, 0)
+        self.assertIn("Removed workflow house from the workspace.", out)
+        self.assertEqual(self.store.current_definitions(None), [])
+
+    def test_a_refused_workspace_save_says_why_and_exits_non_zero(self) -> None:
+        self.unknown_models.add("minimax")
+        path = Path(self._temp.name) / "reviewer.toml"
+        path.write_text(reviewer_on("minimax"), encoding="utf-8")
+
+        code, _, err = self.run_cli("role", "set", "--workspace", "--file", str(path))
+
+        self.assertEqual(code, 1)
+        self.assertIn("Not saved:", err)
+        self.assertIn("minimax", err)
+        self.assertEqual(self.store.current_definitions(None), [])
+
+    def test_a_refused_workspace_reset_exits_non_zero(self) -> None:
+        code, _, err = self.run_cli("role", "reset", "--workspace", "code_reviewer")
+        self.assertEqual(code, 1)
+        self.assertIn("The workspace keeps no role of its own", err)
+
+    def test_a_project_and_the_workspace_are_not_both_given_or_both_left_out(self) -> None:
+        for argv in (("role", "list"), ("role", "list", "p1", "--workspace")):
+            code, _, err = self.run_cli(*argv)
+            self.assertEqual(code, 1)
+            self.assertIn("--workspace", err)
+
     def test_a_manager_session_may_read_definitions_and_not_change_them(self) -> None:
         self.assertLessEqual({"role list", "role show", "workflow list", "workflow show"}, MANAGER_SESSION_COMMANDS)
         self.assertFalse({"role set", "role reset", "workflow set", "workflow reset"} & MANAGER_SESSION_COMMANDS)
