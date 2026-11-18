@@ -151,7 +151,8 @@
   --needs-you-row-height: 42px;
   --needs-you-reason-width: 320px;
   --board-column-width: 220px;
-  --board-column-empty-width: 88px;
+  /* A folded column: its name, read downwards, and its count. */
+  --board-column-folded-width: 32px;
   --settings-label-width: 240px;
   --checks-check-width: 160px;
   --checks-result-width: 220px;
