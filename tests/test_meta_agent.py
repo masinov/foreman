@@ -511,8 +511,14 @@ class ProcessMessagePersistenceTests(unittest.TestCase):
         meta_agent._run_claude = self._fake_run([look, {"type": "text_delta", "text": "Hello"}, look])
         with self._open() as store:
             project = store.get_project("proj-1")
-            _drain(meta_agent.process_message("proj-1", "hi", store=store, project=project))
+            events = _drain(meta_agent.process_message("proj-1", "hi", store=store, project=project))
 
+        # The stream first names the stored turns it is writing.
+        with self._open() as store:
+            turns, _ = store.list_meta_turns("proj-1")
+        self.assertEqual(
+            events[0], {"type": "turn", "message_id": turns[0]["id"], "reply_id": turns[1]["id"]}
+        )
         self.assertEqual(seen[0], ("", [{"in_progress": True}]))
         self.assertEqual(seen[1], ("Hello", [{"in_progress": True}]))
         with self._open() as store:
@@ -617,7 +623,7 @@ class ManagerProposalStreamTests(ProcessMessagePersistenceTests):
         parsed = events
         self.assertIn({"type": "proposal", "proposal_id": self.proposal_id}, parsed)
         self.assertEqual(
-            [event["type"] for event in parsed], ["text_delta", "tool_use", "proposal", "done"]
+            [event["type"] for event in parsed], ["turn", "text_delta", "tool_use", "proposal", "done"]
         )
         self.assertIn({"proposal_id": self.proposal_id}, turns[1]["tool_uses"])
         self.assertEqual(proposal.state, "proposed")
