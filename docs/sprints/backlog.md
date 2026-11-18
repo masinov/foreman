@@ -29,6 +29,20 @@ work after that.
    reads CI checks on a task's branch, which is the pull-request
    integration of Phase 5. A release can be code, an image or a trained
    model; in each case Foreman records where it came from.
+4. **Workflows above the task: a sprint workflow (owner's question,
+   2026-11-18; leads into 3).**
+   - **Today:** workflows are per task only. A sprint's life is fixed in
+     code (`foreman/engine/sprints.py`, ADR-0025): activated, its tasks run,
+     finished by a person or by the engine. A run must belong to a task.
+   - **The idea:** a declarative sprint workflow with steps before its tasks
+     (plan, plan gate) and after them. After them come checks on the
+     integrated `main`, a release gate, the release pipeline, its
+     observation, and notes.
+   - **The loop it allows:** a failing sprint-level check files fix tasks
+     into the same sprint, and the sprint runs again until its checks pass.
+     No task workflow can express that.
+   - **Further out:** recurring and event-triggered loops at project level,
+     which create tasks or sprints and stop there.
 
 ## Carried engineering items (from sprints 56 and 57)
 

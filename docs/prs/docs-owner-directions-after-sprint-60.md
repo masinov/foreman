@@ -2,7 +2,7 @@
 
 ## Summary
 
-- Records three product directions the owner gave on 2026-11-18 in the
+- Records the product directions the owner gave on 2026-11-18 in the
   backlog: a central server with remote workers, shared compute through a
   cluster manager, and releases through existing CI/CD.
 
