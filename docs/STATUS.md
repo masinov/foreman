@@ -3,7 +3,7 @@
 Current snapshot only. History up to 2026-09-08 (sprints 1 to 54) is in
 `docs/checkpoints/status-history-through-2026-09-08.md`.
 
-## Where the project is (2026-11-16)
+## Where the project is (2026-11-18)
 
 - Driving document: `docs/reviews/2026-11-10-full-review-and-finish-plan.md`
   (full review of engine, runner, dashboard, frontend and UX, with a six-phase
@@ -34,8 +34,18 @@ Current snapshot only. History up to 2026-09-08 (sprints 1 to 54) is in
 - `main` is pushed to `origin/main`. Work happens on short branches from
   `main`; the operator checkout stays off `main` (the `_integration` worktree
   holds it).
-- Schema version 28. 1540 Python tests, 441 frontend tests. The built bundle
+- Schema version 28. 1568 Python tests, 447 frontend tests. The built bundle
   is not in git; `foreman dashboard` builds it when it is missing or stale.
+- Foreman's own project in its database is clean (2026-11-18). Sprint 60c is
+  completed: FOR-42 is closed as already done (its work was in `main` at
+  `721d877`), and FOR-49 was brought up to date with `main` by hand and
+  merged at `de26c2d`. No Foreman task is open, and the 57 merged remote
+  branches are deleted.
+- **Assay** (`../assay`) is the first outside project run through Foreman.
+  Its sprint 1 (ASS-1 to ASS-9) is merged. The six Foreman faults it showed
+  are fixed (slice 12 of `docs/sprints/current.md`). Its engine
+  (`foreman serve assay`) was started before those fixes and runs the old
+  code until it is restarted.
 - A task whose work was finished outside the engine is closed with
   `foreman task done <id> --reason ...` (Mark done in the task's More menu);
   `foreman task reopen` undoes it. FOR-38 was closed that way.
