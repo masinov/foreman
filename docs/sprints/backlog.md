@@ -1,5 +1,35 @@
 # Backlog
 
+## Owner directions, 2026-11-18: after sprint 60 and the base work
+
+Recorded so they are not lost. Each one gets an ADR before any code. Sprint
+60 and the remaining base work come first. Feature 1 is the next line of
+work after that.
+
+1. **One central Foreman server, with workers on other machines.**
+   - A worker program on each machine connects out to the server, keeps a
+     clone per project and a working copy per task, and runs agent and test
+     steps there. It streams events back and pushes the task's branch.
+   - A project or step names a machine, or states requirements such as OS
+     and installed software. A task stays on the machine that holds its
+     agent session.
+   - The setting is multi-user and multi-project, and identity is needed.
+   - First case: a BricsCAD MCP server developed on a Windows machine.
+2. **Shared compute, through a cluster manager, only when configured.**
+   Foreman does not manage shared GPUs and CPUs: the company's people use
+   them too. A project can point Foreman at a cluster manager, such as Ray,
+   and a task's agent or a workflow step then submits jobs with resource
+   requests. Foreman records each job on the task (waiting, where, how
+   long, log, result) and enforces limits on it.
+3. **Releases and deployment, through existing CI/CD.** Foreman does not
+   build or deploy. It decides when a version is cut, under a policy gate
+   such as merge approval. It starts the CI/CD pipeline (GitLab CI, GitHub
+   Actions, and so on), follows it, and shows its stages, artifacts and
+   environments on the sprint. It reacts to a failure. The same connector
+   reads CI checks on a task's branch, which is the pull-request
+   integration of Phase 5. A release can be code, an image or a trained
+   model; in each case Foreman records where it came from.
+
 ## Carried engineering items (from sprints 56 and 57)
 
 - `resume_human_gate` and `_run_leased_task` are still on the orchestrator;
