@@ -183,6 +183,10 @@ class RepoPathValidationTests(unittest.TestCase):
                 (repo_dir / ".git").mkdir(parents=True)
                 created = service.create_project(name="Real", repo_path=str(repo_dir), workflow_id="development")
                 self.assertEqual(created["repo_path"], str(repo_dir))
+                # It starts with the same settings `foreman init` gives a new project.
+                settings = store.get_project(created["id"]).settings
+                self.assertEqual(settings["merge_approval"], "human")
+                self.assertEqual(settings["default_model"], "claude-sonnet-5-5")
 
 
 if __name__ == "__main__":

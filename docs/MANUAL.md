@@ -955,7 +955,7 @@ person do this?":
 | --- | --- | --- | --- |
 | `triage` | `auto`, `human` | `human` | whether work filed through the intake API (§25) is runnable on arrival, or waits in `triage` for a person |
 | `plan_approval` | `auto`, `human` | `human` | who confirms a plan the manager proposes (Plan this sprint, Split into smaller tasks), and a workflow gate that names it |
-| `merge_approval` | `auto`, `human` | `auto` | the merge gate every shipped workflow ends in |
+| `merge_approval` | `auto`, `human` | `auto` (a new project is created with `human`) | the merge gate every shipped workflow ends in |
 | `notification` | `none`, `attention`, `all` | `attention` | how much a project wants to be told: nothing, attention turns and human gates, or those plus task completions |
 
 Each decision is resolved from three layers, **most specific first**:

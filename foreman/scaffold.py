@@ -16,9 +16,15 @@ DEFAULT_CONTEXT_DIR = ".foreman"
 DEFAULT_DB_FILENAME = ".foreman.db"
 DEFAULT_TEST_COMMAND = "./venv/bin/python -m unittest discover -s tests"
 DEFAULT_DEFAULT_BRANCH = "main"
-DEFAULT_DEFAULT_MODEL = "claude-sonnet-4-6"
+DEFAULT_DEFAULT_MODEL = "claude-sonnet-5-5"
 DEFAULT_WORKFLOW_ID = "development"
 DEFAULT_TASK_SELECTION_MODE = "directed"
+
+#: What a new project starts with where the policy matrix's built-in default
+#: (ADR-0014) would let the engine act alone: a merge into the default branch
+#: waits for a person until the project's settings say otherwise. Applied to
+#: new projects only, so re-running `foreman init` changes no project's policy.
+NEW_PROJECT_POLICY: dict[str, str] = {"merge_approval": "human"}
 
 ArtifactAction = Literal["created", "updated", "unchanged"]
 
@@ -59,6 +65,19 @@ def default_project_settings(
         "max_infra_retries": 3,
         "write_pr_summaries": False,
         "write_checkpoint_notes": False,
+    }
+
+
+def new_project_settings(
+    *,
+    test_command: str | None = None,
+    default_model: str | None = None,
+) -> dict[str, Any]:
+    """Return the settings a project starts with, from a terminal or the dashboard."""
+
+    return {
+        **default_project_settings(test_command=test_command, default_model=default_model),
+        **NEW_PROJECT_POLICY,
     }
 
 

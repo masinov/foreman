@@ -15,6 +15,7 @@ from ..scaffold import (
     DEFAULT_WORKFLOW_ID,
     ScaffoldError,
     default_project_settings,
+    new_project_settings,
     resolve_spec_path,
     scaffold_repository,
 )
@@ -97,9 +98,12 @@ def handle_init(args: argparse.Namespace) -> int:
             print(f"Failed to initialize project: {exc}", file=sys.stderr)
             return 1
 
-        settings = dict(existing.settings) if existing is not None else {}
-        for key, value in default_project_settings(test_command=test_command).items():
-            settings.setdefault(key, value)
+        if existing is None:
+            settings = new_project_settings(test_command=test_command)
+        else:
+            settings = dict(existing.settings)
+            for key, value in default_project_settings(test_command=test_command).items():
+                settings.setdefault(key, value)
         settings["test_command"] = test_command
 
         project = Project(
