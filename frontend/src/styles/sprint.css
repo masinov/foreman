@@ -108,6 +108,7 @@
   flex-direction: column;
   gap: var(--space-2);
   min-width: var(--board-column-width);
+  max-width: var(--board-column-max-width);
 }
 
 .board__column--folded {
