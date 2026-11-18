@@ -50,7 +50,7 @@ export const TASK_ACTIONS = {
   block: {
     label: "Block",
     title: "Block this task",
-    effect: "The task is parked. If a step is running, the engine stops when that step ends. It waits in Needs you until someone unblocks it.",
+    effect: "The task is parked before it starts. It waits in Needs you until someone unblocks it.",
     ask: "Why it is blocked",
     hint: "Shown on the task and in Needs you.",
     required: true,
@@ -99,7 +99,8 @@ const CLOSED = new Set(["done", "cancelled"]);
  * the task's state (Run next, Stop, Reopen) and the one thing that is the
  * same in every open state, ending the task by hand (Close). `more` is what
  * is rare: Block, Split, Delete. Answering the task's question (approve,
- * unblock, send back) is the decision's, not listed here.
+ * unblock, send back) is the decision's, not listed here. Block exists only
+ * for a task that has not started: a started one has Stop and Close.
  *
  * `engine` is the project's engine, null until it is known. Stop is a
  * request to a running engine, so it exists only while one is running this
@@ -118,7 +119,7 @@ export function actionsFor(task, engine) {
   if (engineOnIt) buttons.push("stop");
   if (CLOSED.has(task.status)) buttons.push("reopen");
   if (planned && engineKnown && OPEN.has(task.status) && !engineOnIt) buttons.push("close");
-  if (planned && (task.status === "todo" || inProgress)) more.push("block");
+  if (planned && task.status === "todo") more.push("block");
   if (task.status === "todo" || task.status === "triage") more.push("split");
   // In the backlog a task is declined from its decision; cancelling it is the rarer way out.
   if (!planned && !CLOSED.has(task.status) && task.status !== "declined") more.push("cancel");

@@ -84,8 +84,8 @@ class MutationsTests(unittest.TestCase):
         with self.assertRaises(MutationError):
             self.mutations.accept_task(self.task(status="todo"))
 
-    def test_a_resolved_task_cannot_be_blocked(self) -> None:
-        for status in ("done", "cancelled"):
+    def test_only_a_task_that_has_not_started_can_be_blocked(self) -> None:
+        for status in ("done", "cancelled", "in_progress", "blocked"):
             with self.subTest(status=status), self.assertRaises(MutationError):
                 self.mutations.block_task(self.task(f"t-{status}", status=status), "why")
 

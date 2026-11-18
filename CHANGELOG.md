@@ -18,6 +18,8 @@ memory changes rather than versioned product releases.
 
 ### Sprint 60 — what is there works and makes sense
 
+- Block exists only for a task that has not started (owner, 2026-11-18; ADR-0030 amended). A started task is stopped or closed. The task page no longer offers Block on a task in progress, so a running task has no More; `POST /tasks/{id}/block`, `foreman task block` and the manager's `block_task` refuse any status but `todo`.
+
 - A list that shows more on request can be put back: "Show fewer" appears beside "Earlier steps" once more than the first page is shown, and alone at the end of the list. It applies to the activity of a sprint, a project and a task, the backlog, finished sprints and the dialog that adds backlog tasks to a sprint. There was no way back short of reloading the page.
 - A task's Activity tab: pressing anywhere on a run's row shows that run under the list (only its time could be pressed); the picked row is shaded and its time is gold. A pick stays while newer runs arrive. The list is read again in place while the task runs: it was emptied and drawn again on every event, taking what was shown under it with it. A run that was not in the list opens into place, and what a picked run shows fades in. A file's row in the Changes tab is pressed the same way.
 - Changing tab no longer redraws the page. Each tab of a task, a project, a sprint and the project settings was mounted as a new page, so the head went blank, the task (with its checks and changes) was read again, and then the tab's own data arrived: two redraws. The tabs of one thing are now one page and only what is under the tab bar changes.

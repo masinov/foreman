@@ -425,8 +425,8 @@ describe("the task's actions beside its title", () => {
   // What depends on the task's state, and closing it, are buttons; More holds what is rare.
   // A task the engine is running can be neither closed nor deleted: the API refuses both.
   it.each([
-    ["running", { status: "in_progress", workflow_current_step: "develop" }, "running", ["Stop"], ["Block"]],
-    ["left part-way with no engine", { status: "in_progress", workflow_current_step: "merge" }, "not_running", ["Run next", "Close"], ["Block", "Delete"]],
+    ["running", { status: "in_progress", workflow_current_step: "develop" }, "running", ["Stop"], []],
+    ["left part-way with no engine", { status: "in_progress", workflow_current_step: "merge" }, "not_running", ["Run next", "Close"], ["Delete"]],
     ["queued", { status: "todo" }, "not_running", ["Run next", "Close"], ["Block", "Split into smaller tasks", "Delete"]],
     ["blocked by the engine", { status: "blocked", blocked_kind: "engine" }, "not_running", ["Close"], ["Delete"]],
     ["at a gate", {}, "not_running", ["Close"], ["Delete"]],
@@ -436,12 +436,12 @@ describe("the task's actions beside its title", () => {
   ])("shows what exists for a task that is %s", async (_, fields, state, buttons, more) => {
     await renderTask(BASE, withEngine(taskRoutes({ task: taskDetail(fields) }), state, state === "running"));
     await engineKnown();
-    await waitFor(() => expect(inPlainSight()).toEqual(["Edit", ...buttons, "More"]));
-    expect(within(openMore()).getAllByRole("menuitem").map((item) => item.textContent)).toEqual(more);
+    await waitFor(() => expect(inPlainSight()).toEqual(["Edit", ...buttons, ...(more.length ? ["More"] : [])]));
+    if (more.length) expect(within(openMore()).getAllByRole("menuitem").map((item) => item.textContent)).toEqual(more);
   });
 
   it("offers neither Run next nor Stop for a task in progress until the engine is known", () => {
-    expect(actionsFor({ status: "in_progress", in_backlog: false }, null)).toEqual({ buttons: [], more: ["block"] });
+    expect(actionsFor({ status: "in_progress", in_backlog: false }, null)).toEqual({ buttons: [], more: [] });
   });
 
   it("answers a blocked task's question in its decision only, not in More as well", async () => {
