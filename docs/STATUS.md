@@ -106,12 +106,19 @@ is no login.
   starts (owner's choice in the board lab, 2026-11-18). A column with more
   cards scrolls them under its heading, and an edge where columns are cut
   off fades out. The design draws the board growing with its tallest column.
-  Each column is a panel in the tinted tone, with its cards one step lighter
-  (`--color-board-card`). The design draws no column panels, and in the
-  design the tinted tone means "act here". The owner chose panels over an
-  outline because no other component has an outline. The board's scrollbars
-  are thin and grey in the app's look; a column's scrollbar sits in the
-  panel's margin. This is the same feature as Jira's open request
+  Each column is a panel, with its cards one step lighter
+  (`--color-panel-item`). The drawings show no column panels; the design
+  README's rule for panels was revised to include them (below). A column's
+  scrollbar sits in the panel's margin.
+- The design README's "Look" was revised by the owner on 2026-11-18. A
+  tinted panel now holds a group of things one may act on: Needs you, the
+  decision, a board column, a manager's proposal. Before, the tinted
+  surface meant "act here", and only Needs you and the decision had it.
+  The proposal card lost its outline and is a panel. The manager side bar
+  has the page's ground instead of the bar tone, so a panel in it shows. Every scrollbar in the
+  app, the page's own included, is thin and grey. The drawings were not
+  redrawn: they show the outlined proposal card and the browser's
+  scrollbars. This is the same feature as Jira's open request
   JRACLOUD-85706, and Trello, YouTrack and Linear have it.
 - Design v7 keeps gold for "needs you" and the primary decision. Controls
   that open more in place ("Show all", "More details", "Finished sprints",

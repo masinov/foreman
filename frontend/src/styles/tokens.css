@@ -8,12 +8,14 @@
   --color-ground: #0c0c0e;
   --color-bar: #101013;
   --color-inset: #101013;
+  /* A panel: a group of things one may act on (Needs you, a task's
+     decision, a board column, a manager's proposal). What needs the person
+     is said in gold, not by the panel (owner, 2026-11-18). */
   --color-tinted: #131317;
   --color-selected: #1b1b20;
-  /* A card on a board column's panel: one step above the panel (the tinted
-     tone). Its own token, so a card never reads as selected (owner,
-     2026-11-18, chosen in the board lab). */
-  --color-board-card: #1b1b20;
+  /* A thing that sits on a panel as an object of its own (a board card):
+     one step above the panel. Its own token, so it never reads as selected. */
+  --color-panel-item: #1b1b20;
 
   /* Text */
   --color-text: #dedcd8;
@@ -158,7 +160,7 @@
   --board-column-width: 272px;
   /* How far into the board a cut-off edge fades. */
   --board-fade-width: 24px;
-  /* Scrollbars in the app's own look: thin, a grey thumb, no track. */
+  /* Every scrollbar in the app (base.css): thin, a grey thumb, no track. */
   --scrollbar-size: 8px;
   --color-scrollbar-thumb: #2e2e35;
   --color-scrollbar-thumb-hover: #4a4a52;

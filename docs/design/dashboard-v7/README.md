@@ -78,8 +78,10 @@ Workspace / Project / Sprint / Task.
 |---|---|
 | Ground | `#0c0c0e` |
 | Bar and inset surface | `#101013` |
-| Tinted surface (something to act on) | `#131317` |
+| Panel (a group of things to act on) | `#131317` |
 | Selected | `#1b1b20` |
+| Item on a panel (a board card) | `#1b1b20`, its own token |
+| Scrollbar thumb, and on hover | `#2e2e35`, `#4a4a52` |
 | Text | `#dedcd8` |
 | Secondary text | `#a3a19c` |
 | Quiet text | `#85837e` |
@@ -103,8 +105,19 @@ Workspace / Project / Sprint / Task.
   the top bar, under a tab row and around the manager side bar. A table has
   one line under its column headers and faint lines between rows, none
   above the first row or below the last. Sections are separated by space.
-- **One tinted surface means "act here":** Needs you, and the decision on
-  the task page. Nothing else is boxed.
+- **A panel holds a group of things one may act on:** Needs you, the
+  decision on the task page, each column of a sprint's board, a manager's
+  proposal. It is the tinted tone with the 3px radius, and has no outline.
+  A thing that sits on a panel as an object of its own (a board card) is
+  one step lighter. What needs the person is said in gold, not by the
+  panel. Nothing else is boxed: settings, tables, lists and activity are
+  lines and space. (Revised by the owner on 2026-11-18. Before, the tinted
+  surface meant "act here" and only Needs you and the decision had it.)
+- **Scrollbars** are thin (8px), a grey thumb with no track, everywhere,
+  the page's own included.
+- **The manager side bar** has the page's ground, not the bar tone, so a
+  panel in it reads as it does on the page. Its structural line sets it
+  apart.
 - **Status** is a 6px dot and a word, never a pill.
 - **Lists are capped:** Needs you 5, planned sprints 5, finished sprints 10,
   backlog 25, activity 25, each with a way to see the rest.

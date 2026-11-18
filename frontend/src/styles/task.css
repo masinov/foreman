@@ -57,7 +57,7 @@
   min-width: 0;
 }
 
-/* The decision: the one tinted surface on this page. */
+/* The decision: the one panel on this page. */
 .decision {
   display: flex;
   flex-wrap: wrap;
