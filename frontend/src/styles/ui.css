@@ -526,6 +526,12 @@
   border-right-width: 0;
 }
 
+.caret--left {
+  margin-inline: calc(var(--caret-size) / 2);
+  border-right-color: currentColor;
+  border-left-width: 0;
+}
+
 /* Disclosure: a closed line that opens in place */
 .disclosure__summary {
   padding: var(--space-1) 0;

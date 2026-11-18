@@ -92,8 +92,9 @@
 }
 
 /* Board */
-/* A column with cards is wide enough to read them; an empty one takes only
-   the room its name needs. Past the page's width the board scrolls. */
+/* A column with cards is wide enough to read them. A folded one is a strip
+   with its name read downwards and its count; an empty column starts folded.
+   Past the page's width the board scrolls. */
 .board {
   display: flex;
   align-items: flex-start;
@@ -109,9 +110,76 @@
   min-width: var(--board-column-width);
 }
 
-.board__column--empty {
-  flex: 0 0 auto;
-  min-width: var(--board-column-empty-width);
+.board__column--folded {
+  flex: 0 0 var(--board-column-folded-width);
+  min-width: var(--board-column-folded-width);
+}
+
+.board__cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* The heading's caret folds the column; it sits at the heading's end. */
+.board__fold,
+.board__unfold {
+  font: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.board__fold {
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  margin-left: auto;
+  padding: var(--space-1);
+  color: var(--color-expander);
+}
+
+.board__fold:hover {
+  color: var(--color-text);
+}
+
+.board__unfold {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 0;
+  color: var(--color-expander);
+  font-size: var(--font-size-control);
+  font-weight: var(--font-weight-medium);
+}
+
+/* Caret and count on one line, ruled where the open columns' headings are. */
+.board__folded-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: var(--space-1);
+  width: 100%;
+  padding-bottom: var(--space-1);
+  border-bottom: var(--line-width) solid var(--color-line-header);
+  line-height: calc(var(--font-size-control) * var(--line-height-body));
+  white-space: nowrap;
+}
+
+.board__unfold:hover {
+  color: var(--color-text);
+}
+
+.board__folded-name {
+  writing-mode: vertical-rl;
+  white-space: nowrap;
+  color: var(--color-text-secondary);
+}
+
+.board__unfold:hover .board__folded-name {
+  color: var(--color-text);
 }
 
 .board__heading {
@@ -134,12 +202,6 @@
 
 .board__count--attention {
   color: var(--color-gold);
-}
-
-.board__none {
-  padding-block: var(--space-1);
-  font-size: var(--font-size-control);
-  color: var(--color-text-quiet);
 }
 
 .board-card {

@@ -145,6 +145,8 @@ describe("the list", () => {
 });
 
 describe("the board", () => {
+  beforeEach(() => window.localStorage.clear());
+
   async function renderBoard(routes) {
     await renderSprint("/dashboard/sprints/sprint-56/board", routes);
   }
@@ -172,7 +174,7 @@ describe("the board", () => {
     expect(within(screen.getByRole("region", { name: "Write up" })).getByText("FOR-1")).toBeInTheDocument();
   });
 
-  it("puts each task in its column with a count, and says None for an empty one", async () => {
+  it("puts each task in its column with a count, and folds an empty one to its name and count", async () => {
     await renderBoard();
     const queued = await screen.findByRole("region", { name: "Queued" });
     expect(within(queued).getByText("2")).toBeInTheDocument();
@@ -182,7 +184,33 @@ describe("the board", () => {
     expect(within(merge).getByText("FOR-14")).toBeInTheDocument();
     expect(merge).toHaveTextContent("tests · review · b232eb1");
     expect(within(screen.getByRole("region", { name: "Done" })).getByText("FOR-10")).toBeInTheDocument();
-    expect(within(screen.getByRole("region", { name: "Develop" })).getByText("None")).toBeInTheDocument();
+    const develop = screen.getByRole("region", { name: "Develop" });
+    expect(within(develop).getByRole("button", { name: "Show Develop" })).toHaveAttribute("aria-expanded", "false");
+    expect(develop).toHaveTextContent("0");
+  });
+
+  it("folds and opens a column, and remembers the choice for the project", async () => {
+    await renderBoard();
+    const queued = await screen.findByRole("region", { name: "Queued" });
+    fireEvent.click(within(queued).getByRole("button", { name: "Fold Queued" }));
+    const folded = screen.getByRole("region", { name: "Queued" });
+    expect(within(folded).queryByText("FOR-17")).toBeNull();
+    expect(folded).toHaveTextContent("2");
+    expect(JSON.parse(window.localStorage.getItem("foreman.dashboard.board.folded.foreman"))).toEqual({ queued: true });
+
+    // An empty column opens on request, and stays open while it is empty.
+    fireEvent.click(screen.getByRole("button", { name: "Show Develop" }));
+    expect(within(screen.getByRole("region", { name: "Develop" })).getByRole("button", { name: "Fold Develop" })).toBeInTheDocument();
+    fireEvent.click(within(folded).getByRole("button", { name: "Show Queued" }));
+    expect(within(screen.getByRole("region", { name: "Queued" })).getByText("FOR-17")).toBeInTheDocument();
+  });
+
+  it("shows on a folded column that a task in it needs you", async () => {
+    window.localStorage.setItem("foreman.dashboard.board.folded.foreman", JSON.stringify({ "step:merge_approval": true }));
+    await renderBoard();
+    const merge = await screen.findByRole("region", { name: "Merge approval" });
+    expect(within(merge).queryByText("FOR-14")).toBeNull();
+    expect(merge.querySelector(".board__count--attention")).toHaveTextContent("1");
   });
 
   it("approves from a card and reloads", async () => {

@@ -152,7 +152,7 @@ export function SprintLayout({ sprintId, view }) {
           <TaskList tasks={taskList} engine={engine} busy={approving} onApprove={approve} />
         ) : null}
         {tasks.data && taskList.length > 0 && view === VIEWS.board && workflow.data ? (
-          <TaskBoard tasks={taskList} workflow={workflow.data} busy={approving} onApprove={approve} />
+          <TaskBoard projectId={projectId} tasks={taskList} workflow={workflow.data} busy={approving} onApprove={approve} />
         ) : null}
       </section>
       <SprintActivity sprintId={sprintId} tasks={taskList} revision={revision} />

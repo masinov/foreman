@@ -18,6 +18,8 @@ memory changes rather than versioned product releases.
 
 ### Sprint 60 — what is there works and makes sense
 
+- A sprint's board folds its columns (owner, 2026-11-18). A folded column is a narrow strip with its name and count, and the count is gold when a task in it needs you. The caret at the end of a column's heading folds it, and the strip opens it again. An empty column starts folded, so a finished sprint shows Done with the steps beside it as strips. A person's own choice is remembered per project in their browser. "None" under an empty column is gone.
+
 - The manager's conversation, after what went wrong on Assay (ADR-0022 amendment, 2026-11-18):
   - **A reply is seen while it is written, by anyone looking.** The message and an empty reply marked `in_progress` are stored before the model is asked, and the reply is saved as it grows. While a reply is in progress, a new message, a supervision turn and clearing are refused. The side bar shows the reply with its cursor and reads the conversation again every 1.5 s while it is written (every 5 s otherwise). A dashboard that starts marks a reply left in progress as interrupted.
   - **The manager's process is killed when its turn ends.** A turn that failed on a long line used to leave it running, and it stored a proposal afterwards.
