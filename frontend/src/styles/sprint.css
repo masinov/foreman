@@ -91,13 +91,14 @@
   white-space: nowrap;
 }
 
-/* Board */
-/* An open column has one width, as Trello's lists do. A folded one is a strip
-   with its name read downwards and its count; an empty column starts folded.
-   Past the page's width the board scrolls. */
-/* The board fits in the window (TaskBoard sets --board-height): a column
-   with more cards than fit scrolls them under its heading, so the sideways
-   scrollbar is always in view. */
+/* Board (chosen in the board lab with the owner, 2026-11-18) */
+/* Each column is a panel, as Trello's lists are: tinted, with its cards one
+   step lighter, so a column cut at an edge reads as cut. An open column has
+   one width; a folded one is a strip with its name read downwards and its
+   count, and an empty column starts folded. The board is a little taller
+   than the room left in the window (TaskBoard sets --board-height); a
+   column with more cards scrolls them under its heading. Past the page's
+   width the board scrolls sideways. */
 .board-frame {
   position: relative;
 }
@@ -105,9 +106,45 @@
 .board {
   display: flex;
   align-items: flex-start;
-  gap: var(--space-4);
+  gap: var(--space-2);
   overflow-x: auto;
   overflow-y: hidden;
+}
+
+/* The board's and each column's scrollbars, in the app's own look. Chromium
+   and Safari read the ::-webkit- rules; Firefox reads scrollbar-color, kept
+   apart because Chromium would let it override them. */
+.board::-webkit-scrollbar,
+.board__cards::-webkit-scrollbar {
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
+}
+
+.board::-webkit-scrollbar-track,
+.board::-webkit-scrollbar-corner,
+.board__cards::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.board::-webkit-scrollbar-thumb,
+.board__cards::-webkit-scrollbar-thumb {
+  background: var(--color-scrollbar-thumb);
+  background-clip: padding-box;
+  border: calc(var(--scrollbar-size) / 4) solid transparent;
+  border-radius: var(--scrollbar-size);
+}
+
+.board::-webkit-scrollbar-thumb:hover,
+.board__cards::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-scrollbar-thumb-hover);
+}
+
+@supports (-moz-appearance: none) {
+  .board,
+  .board__cards {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-scrollbar-thumb) transparent;
+  }
 }
 
 /* An edge where columns are cut off fades out, above the scrollbar. */
@@ -139,21 +176,30 @@
   gap: var(--space-2);
   min-width: 0;
   max-height: var(--board-height, none);
+  padding: var(--space-2);
+  border-radius: var(--radius);
+  background: var(--color-tinted);
 }
 
 .board__column--folded {
   flex: 0 0 var(--board-column-folded-width);
   min-width: var(--board-column-folded-width);
+  padding-inline: 0;
 }
 
+/* A column's scrollbar sits in the panel's margin to the right of its cards,
+   not against them; room for it is always kept, so the cards line up with
+   the heading whether or not the column scrolls. */
 .board__cards {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
   gap: var(--space-2);
   min-height: 0;
+  margin-right: calc(-1 * var(--space-2));
   overflow-y: auto;
   overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 /* The heading's caret folds the column; it sits at the heading's end. */
@@ -249,7 +295,7 @@
   gap: var(--space-1);
   padding: var(--cell-padding-block) var(--cell-padding-inline);
   border-radius: var(--radius);
-  background: var(--color-tinted);
+  background: var(--color-board-card);
 }
 
 .board-card--done {

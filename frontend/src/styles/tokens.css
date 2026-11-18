@@ -10,6 +10,10 @@
   --color-inset: #101013;
   --color-tinted: #131317;
   --color-selected: #1b1b20;
+  /* A card on a board column's panel: one step above the panel (the tinted
+     tone). Its own token, so a card never reads as selected (owner,
+     2026-11-18, chosen in the board lab). */
+  --color-board-card: #1b1b20;
 
   /* Text */
   --color-text: #dedcd8;
@@ -153,7 +157,11 @@
   /* Every open column is this wide, as Trello's lists are; past the page the board scrolls. */
   --board-column-width: 272px;
   /* How far into the board a cut-off edge fades. */
-  --board-fade-width: 48px;
+  --board-fade-width: 24px;
+  /* Scrollbars in the app's own look: thin, a grey thumb, no track. */
+  --scrollbar-size: 8px;
+  --color-scrollbar-thumb: #2e2e35;
+  --color-scrollbar-thumb-hover: #4a4a52;
   /* A folded column: its name, read downwards, and its count. */
   --board-column-folded-width: 32px;
   --settings-label-width: 240px;

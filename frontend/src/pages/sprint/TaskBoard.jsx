@@ -51,12 +51,13 @@ function useFolding(projectId) {
   return [isFolded, toggle];
 }
 
-// The board is never taller than what is left of the window below where it
-// starts, so its sideways scrollbar is in view without scrolling down; a
-// column with more cards than that scrolls them itself. A short window
-// still gets a usable board.
-const BOARD_MIN_HEIGHT = 320;
+// The board is a little taller than what is left of the window below where
+// it starts (owner, 2026-11-18): a short scroll of the page brings its
+// sideways scrollbar into view, and a column with more cards than that
+// scrolls them itself. A short window still gets a usable board.
+const BOARD_MIN_HEIGHT = 400;
 const BOARD_BOTTOM_GAP = 16;
+const BOARD_EXTRA_HEIGHT = 160;
 
 /**
  * Keep the board within the window: its height limit, and whether columns
@@ -68,7 +69,7 @@ function useBoardFit(ref, contentKey) {
     const board = ref.current;
     if (!board) return;
     const top = board.getBoundingClientRect().top + window.scrollY;
-    const height = Math.max(BOARD_MIN_HEIGHT, window.innerHeight - top - BOARD_BOTTOM_GAP);
+    const height = Math.max(BOARD_MIN_HEIGHT, window.innerHeight - top - BOARD_BOTTOM_GAP + BOARD_EXTRA_HEIGHT);
     const left = board.scrollLeft > 1;
     const right = board.scrollLeft + board.clientWidth < board.scrollWidth - 1;
     const bar = board.offsetHeight - board.clientHeight;

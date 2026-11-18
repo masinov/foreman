@@ -102,10 +102,16 @@ is no login.
   made the board unreadable). The design's open columns share the row's
   width; on the dashboard every open column is 272px wide, as Trello's lists
   are, and the board scrolls sideways past the page (owner, 2026-11-18).
-  The board is never taller than the window below where it starts. A column
-  with more cards scrolls them under its heading, so the sideways scrollbar
-  is always in view. An edge where columns are cut off fades out. The design
-  draws the board growing with its tallest column. This is the same feature as Jira's open request
+  The board is 160px taller than the room left in the window below where it
+  starts (owner's choice in the board lab, 2026-11-18). A column with more
+  cards scrolls them under its heading, and an edge where columns are cut
+  off fades out. The design draws the board growing with its tallest column.
+  Each column is a panel in the tinted tone, with its cards one step lighter
+  (`--color-board-card`). The design draws no column panels, and in the
+  design the tinted tone means "act here". The owner chose panels over an
+  outline because no other component has an outline. The board's scrollbars
+  are thin and grey in the app's look; a column's scrollbar sits in the
+  panel's margin. This is the same feature as Jira's open request
   JRACLOUD-85706, and Trello, YouTrack and Linear have it.
 - Design v7 keeps gold for "needs you" and the primary decision. Controls
   that open more in place ("Show all", "More details", "Finished sprints",
