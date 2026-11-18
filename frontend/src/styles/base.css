@@ -13,6 +13,38 @@ html {
   scrollbar-gutter: stable;
 }
 
+/* One scrollbar for the whole app, the page's own included: thin, a grey
+   thumb that lightens on hover, no track (owner, 2026-11-18). Chromium and
+   Safari read the ::-webkit- rules; Firefox reads scrollbar-color, kept
+   apart because Chromium would let it override them. */
+::-webkit-scrollbar {
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-scrollbar-thumb);
+  background-clip: padding-box;
+  border: calc(var(--scrollbar-size) / 4) solid transparent;
+  border-radius: var(--scrollbar-size);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-scrollbar-thumb-hover);
+}
+
+@supports (-moz-appearance: none) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-scrollbar-thumb) transparent;
+  }
+}
+
 body {
   margin: 0;
   background: var(--color-ground);

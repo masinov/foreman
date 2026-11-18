@@ -68,7 +68,7 @@
   color: var(--color-text-quiet);
 }
 
-/* Surface: the one tinted "act here" box */
+/* Surface: a panel holding a group of things one may act on (tokens.css) */
 .surface {
   background: var(--color-tinted);
   border-radius: var(--radius);

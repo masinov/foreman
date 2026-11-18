@@ -112,7 +112,9 @@
   flex: 0 0 var(--manager-width);
   align-self: stretch;
   min-width: 0;
-  background: var(--color-bar);
+  /* The page's own ground, so a panel in it (a proposal, a note) reads the
+     same as on the page; its line sets it apart (owner, 2026-11-18). */
+  background: var(--color-ground);
   border-left: var(--line-width) solid var(--color-line-structural);
 }
 

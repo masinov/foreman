@@ -111,41 +111,7 @@
   overflow-y: hidden;
 }
 
-/* The board's and each column's scrollbars, in the app's own look. Chromium
-   and Safari read the ::-webkit- rules; Firefox reads scrollbar-color, kept
-   apart because Chromium would let it override them. */
-.board::-webkit-scrollbar,
-.board__cards::-webkit-scrollbar {
-  width: var(--scrollbar-size);
-  height: var(--scrollbar-size);
-}
 
-.board::-webkit-scrollbar-track,
-.board::-webkit-scrollbar-corner,
-.board__cards::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.board::-webkit-scrollbar-thumb,
-.board__cards::-webkit-scrollbar-thumb {
-  background: var(--color-scrollbar-thumb);
-  background-clip: padding-box;
-  border: calc(var(--scrollbar-size) / 4) solid transparent;
-  border-radius: var(--scrollbar-size);
-}
-
-.board::-webkit-scrollbar-thumb:hover,
-.board__cards::-webkit-scrollbar-thumb:hover {
-  background-color: var(--color-scrollbar-thumb-hover);
-}
-
-@supports (-moz-appearance: none) {
-  .board,
-  .board__cards {
-    scrollbar-width: thin;
-    scrollbar-color: var(--color-scrollbar-thumb) transparent;
-  }
-}
 
 /* An edge where columns are cut off fades out, above the scrollbar. */
 .board-frame--cut-left::before,
@@ -295,7 +261,7 @@
   gap: var(--space-1);
   padding: var(--cell-padding-block) var(--cell-padding-inline);
   border-radius: var(--radius);
-  background: var(--color-board-card);
+  background: var(--color-panel-item);
 }
 
 .board-card--done {

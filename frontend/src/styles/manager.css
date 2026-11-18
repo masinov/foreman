@@ -130,12 +130,13 @@
 }
 
 /* A proposal: what will be created, changed and left, then Not now / Confirm. */
+/* A proposal is a panel, like Needs you and a task's decision; its lines are
+   the ones drawn inside a panel. */
 .proposal {
   display: flex;
   flex-direction: column;
-  border: var(--line-width) solid var(--color-border-control);
   border-radius: var(--radius);
-  background: var(--color-ground);
+  background: var(--color-tinted);
 }
 
 .proposal__head {
