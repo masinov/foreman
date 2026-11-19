@@ -122,8 +122,8 @@ Base work that this framing makes necessary:
   the agent step's corrective retry repeats its first attempt (done in
   sprint 61, slice 3: it sends the correction alone).
 - (Done in sprint 61, slice 2.) The lease fencing token is unchecked on writes.
-- A stale `running` agent run is reset to the entry step, not resumed in
-  place.
+- (Done in sprint 61, slice 3.) A stale `running` agent run is reset to the
+  entry step, not resumed in place.
 - `--json` on the remaining read commands; response models on the API.
 - Python `Enum` classes for statuses.
 

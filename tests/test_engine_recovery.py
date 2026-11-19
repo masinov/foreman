@@ -387,6 +387,117 @@ class RecoveryAndLeaseTests(OrchestratorTestCase):
             self.assertIsNotNone(test_run.duration_ms)
             self.assertGreaterEqual(test_run.duration_ms, 0)
 
+    def test_a_stale_run_resumes_its_step_in_place_rather_than_the_task(self) -> None:
+        # The engine died while the reviewer ran. The task resumes at review
+        # with what it carried; the developer is not run again.
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+            task.status = "in_progress"
+            task.branch_name = "feat/task-1-implement-orchestrator-loop"
+            task.started_at = "2026-03-30T12:20:00Z"
+            task.workflow_current_step = "review"
+            task.workflow_carried_output = "Implemented the loop."
+            task.step_visit_counts = {"develop": 1, "test": 1, "review": 1}
+            store.save_task(task)
+            stale_run = Run(
+                id="run-stale",
+                task_id=task.id,
+                project_id=project.id,
+                role_id="code_reviewer",
+                workflow_step="review",
+                agent_backend="claude_code",
+                session_id="session-of-the-dead-review",
+                status="running",
+                started_at="2026-03-30T12:20:00Z",
+                created_at="2026-03-30T12:20:00Z",
+            )
+            store.save_run(stale_run)
+            seen: list[str | None] = []
+
+            def reviewer(*, task: Task, prompt: str, carried_output: str | None):
+                seen.append(carried_output)
+                return AgentExecutionResult(outcome="approve", detail="APPROVE")
+
+            sessions: list[str | None] = []
+
+            class SessionRecording(ScriptedAgentExecutor):
+                def execute(self, **kwargs):
+                    sessions.append(kwargs.get("session_id"))
+                    return super().execute(**kwargs)
+
+            executor = SessionRecording({("code_reviewer", 1): reviewer})
+            orchestrator = ForemanOrchestrator(
+                store, roles=self.roles, workflows=self.workflows, agent_executor=executor
+            )
+            self.addCleanup(orchestrator.close)
+
+            orchestrator.run_project(project.id)
+
+            self.assertEqual(store.get_run(stale_run.id).status, "failed")
+            self.assertNotIn("developer", executor.call_counts)
+            self.assertEqual(executor.call_counts["code_reviewer"], 1)
+            self.assertEqual(seen, ["Implemented the loop."])
+            agent_runs = [
+                run for run in store.list_runs(task_id=task.id)
+                if run.agent_backend == "claude_code" and run.id != stale_run.id
+            ]
+            self.assertEqual([run.workflow_step for run in agent_runs], ["review"])
+            # A reviewer keeps no session (its role says so): it reviews afresh.
+            self.assertEqual(sessions, [None])
+            self.assertEqual(store.get_task(task.id).step_visit_counts["review"], 2)
+
+    def test_a_stale_developer_run_resumes_its_session(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+            task.status = "in_progress"
+            task.branch_name = "feat/task-1-implement-orchestrator-loop"
+            task.started_at = "2026-03-30T12:20:00Z"
+            task.workflow_current_step = "develop"
+            task.step_visit_counts = {"develop": 1}
+            store.save_task(task)
+            store.save_run(
+                Run(
+                    id="run-stale",
+                    task_id=task.id,
+                    project_id=project.id,
+                    role_id="developer",
+                    workflow_step="develop",
+                    agent_backend="claude_code",
+                    session_id="session-of-the-dead-developer",
+                    status="running",
+                    started_at="2026-03-30T12:20:00Z",
+                    created_at="2026-03-30T12:20:00Z",
+                )
+            )
+            sessions: list[str | None] = []
+
+            class SessionRecording(ScriptedAgentExecutor):
+                def execute(self, **kwargs):
+                    sessions.append(kwargs.get("session_id"))
+                    return super().execute(**kwargs)
+
+            def developer(*, task: Task, prompt: str, carried_output: str | None):
+                return AgentExecutionResult(outcome="blocked", detail="Stopping here.")
+
+            executor = SessionRecording({("developer", 1): developer})
+            orchestrator = ForemanOrchestrator(
+                store, roles=self.roles, workflows=self.workflows, agent_executor=executor
+            )
+            self.addCleanup(orchestrator.close)
+
+            orchestrator.run_project(project.id)
+
+            self.assertEqual(sessions, ["session-of-the-dead-developer"])
+            self.assertEqual(store.get_task(task.id).step_visit_counts["develop"], 2)
+
     def test_stale_run_recovery_does_not_cost_the_engine_its_own_lease(self) -> None:
         """``run_task`` recovers stale runs while holding the lease it just took."""
 
