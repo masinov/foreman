@@ -9,8 +9,10 @@ from typing import Any
 from ...definitions.workflows import WorkflowStep
 from ...domain.guidance import (
     GUIDANCE_DELIVERED_EVENT,
+    guidance_notes,
     pending_guidance,
     prompt_with_guidance,
+    prompt_with_guidance_as_context,
 )
 from ...domain.models import Project, Run, Task
 from ...domain.outcomes import (
@@ -72,14 +74,22 @@ class AgentSteps(WorkflowRunnerBase):
             carried_output,
             context_projection=context_projection,
         )
-        # Notes a person wrote for this task since the last agent step
-        # go into this prompt, and are marked delivered once the run
-        # that carries them exists.
-        # A step that was killed (an interruption, a shutdown) starts again
-        # with whatever guidance it had been given, as well as any since.
+        # Notes are for the agent doing the work. A role that does not decide
+        # gets the notes written since it last ran, and they are marked
+        # delivered once the run that carries them exists. A step that was
+        # killed (an interruption, a shutdown) starts again with whatever
+        # guidance it had been given, as well as any since. A reviewer is
+        # shown every note as context and is delivered none.
         killed = {earlier.id for earlier in self.store.list_runs(task_id=task.id, status="killed")}
-        guidance = pending_guidance(self.store.list_events(task_id=task.id), void_runs=killed)
-        prompt = prompt_with_guidance(prompt, guidance)
+        task_events = self.store.list_events(task_id=task.id)
+        if role.completion.output.extract_decision:
+            guidance = []
+            prompt = prompt_with_guidance_as_context(
+                prompt, guidance_notes(task_events, void_runs=killed)
+            )
+        else:
+            guidance = pending_guidance(task_events, void_runs=killed)
+            prompt = prompt_with_guidance(prompt, guidance)
         model_selection = resolve_step_model_selection(
             task=task,
             role=role,

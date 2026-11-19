@@ -544,8 +544,8 @@ Two writes serve the task page's More menu and decision, in
 `foreman/api/routers/tasks.py` over the shared mutation service:
 `POST /tasks/{id}/block` (`reason`, required) parks a task, and
 `POST /tasks/{id}/unblock` (`note`, optional) returns a blocked task to the
-queue and, when a note is given, records it as guidance for the next agent
-step after the unblock succeeded. A task at a workflow gate is refused
+queue and, when a note is given, records it as guidance for the developer's
+next step (ADR-0033) after the unblock succeeded. A task at a workflow gate is refused
 (approve or deny it instead). `GET /tasks/{id}` carries `created_at`.
 
 ### Inspection and dashboard surfaces

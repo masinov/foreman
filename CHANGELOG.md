@@ -18,6 +18,8 @@ memory changes rather than versioned product releases.
 
 ### Sprint 60 — what is there works and makes sense
 
+- A note is for the developer (ADR-0033, sprint 60 decision 6). A note written on a task is delivered only to the agent doing the work, at its next step. A reviewer is shown every note as context, with whether the developer has had it, and is never delivered one; before, a note written while a task waited for review went to the reviewer as instructions. The task page says "Save for the developer".
+
 - The test command is edited in the dashboard (Project settings, General, Tests), the owner's decision (ADR-0017 amendment). It is no longer a host-level setting; the others stay terminal-only. An edit that empties it is refused, since the test step fails without one.
 
 - The five longest modules are split by concern (ADR-0032): `engine/builtins` (run tests, merge, the completion guard, mark done), `engine/orchestrator` (a project pass, one task, resuming from a gate), `engine/workflow_runner` (the loop, checks, built-in steps, agent steps, transitions), `engine/resident` (the loop, the command table, waiting, `serve_project`) and `cli/tasks` (by kind of command). Each class is put together from its parts and imported from where it was. No behaviour changed. The longest module is now the append-only migrations list.

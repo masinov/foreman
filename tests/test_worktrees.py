@@ -1227,7 +1227,7 @@ class EngineWorktreeIsolationTests(unittest.TestCase):
             self.assertEqual(len(recorded), 1)
             self.assertEqual(recorded[0].payload["head_sha"], evidence.head_sha)
 
-    def test_guidance_reaches_the_next_agent_step_once_and_is_marked_delivered(self) -> None:
+    def test_guidance_reaches_the_developer_once_and_the_reviewer_sees_it_as_context(self) -> None:
         repo, db_path = self.workspace()
         with ForemanStore(db_path) as store:
             project, task = self.seed(store, repo)
@@ -1277,8 +1277,11 @@ class EngineWorktreeIsolationTests(unittest.TestCase):
             self.assertEqual(len(prompts), 2)
             self.assertIn("## Guidance from a person", prompts[0])
             self.assertIn("Name the function feature_flag.", prompts[0])
-            # Delivered once: the reviewer's prompt does not repeat it.
-            self.assertNotIn("Name the function feature_flag.", prompts[1])
+            # Delivered once, to the developer. The reviewer is shown it as
+            # what the developer was told, not as guidance for itself.
+            self.assertNotIn("## Guidance from a person", prompts[1])
+            self.assertIn("## What a person told the developer", prompts[1])
+            self.assertIn("given to the developer) Name the function feature_flag.", prompts[1])
             delivered = [
                 event
                 for event in store.list_events(task_id=task.id)
