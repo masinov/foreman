@@ -18,6 +18,8 @@ memory changes rather than versioned product releases.
 
 ### Sprint 60 — what is there works and makes sense
 
+- A finished sprint can be reopened ("Reopen sprint" on the sprint page, or `foreman sprint activate`), when no other sprint is active; a cancelled one cannot (sprint 60 decision 8, ADR-0025 amendment). In the backlog, Decline is the one way to say "we won't do this": an accepted backlog task's More menu offers Decline where it offered Cancel. The API still cancels a backlog task, since a confirmed split cancels the task it replaces.
+
 - "Finish sprints: A person / Foreman" in Project settings, beside "Approve merges" (sprint 60 decision 5, ADR-0025 amendment). With Foreman, the engine finishes a sprint once every task is done or cancelled and starts the next one. The setting is `sprint_completion` (`human` by default); the autonomy level, which nothing could set, no longer decides it.
 
 - The "Developer (worker fleet)" role is removed (sprint 60 decision 3). No workflow used it; it only pointed a developer at another model endpoint, which any role does with `[agent.env]` (MANUAL §9).

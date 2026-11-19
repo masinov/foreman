@@ -225,6 +225,10 @@ foreman sprint list <project-id>
 foreman sprint complete <sprint-id>
 ```
 
+`sprint activate` also reopens a finished sprint (the dashboard's "Reopen
+sprint"), when no other sprint is active. A cancelled sprint cannot be
+reopened.
+
 ### Tasks
 
 ```bash

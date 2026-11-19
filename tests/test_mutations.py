@@ -236,6 +236,20 @@ class MutationsTests(unittest.TestCase):
         with self.assertRaises(MutationError):
             self.mutations.transition_sprint(self.store.get_sprint("s1"), "active")
 
+    def test_a_finished_sprint_can_be_reopened_and_a_cancelled_one_cannot(self) -> None:
+        # The owner, 2026-11-18 (sprint 60 decision 8).
+        finished = self.mutations.transition_sprint(self.store.get_sprint("s1"), "completed")
+        self.assertIsNotNone(finished.completed_at)
+
+        reopened = self.mutations.transition_sprint(self.store.get_sprint("s1"), "active")
+
+        self.assertEqual(reopened.status, "active")
+        self.assertIsNone(self.store.get_sprint("s1").completed_at)
+        self.assertIsNotNone(self.store.get_sprint("s1").started_at)
+        self.mutations.transition_sprint(self.store.get_sprint("s1"), "cancelled")
+        with self.assertRaises(MutationError):
+            self.mutations.transition_sprint(self.store.get_sprint("s1"), "active")
+
     def test_a_sprint_with_unresolved_tasks_cannot_be_completed(self) -> None:
         self.task("open", status="todo")
         self.task("finished", status="done")

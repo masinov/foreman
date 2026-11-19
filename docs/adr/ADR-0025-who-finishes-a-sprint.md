@@ -67,3 +67,10 @@ only when it is `auto`. The autonomy level no longer decides it; its
 remaining meaning is "directed", where the manager may only recommend. A
 sprint is not a task, so no task override or per-type rule applies to this
 setting.
+
+## Amendment, 2026-11-19: a finished sprint can be reopened
+
+Reopening, left undecided above, is allowed (the owner): a completed sprint
+may go back to `active` when no other sprint is, from the sprint page
+("Reopen sprint") or with `foreman sprint activate`. Its finish time is
+cleared and its start time kept. A cancelled sprint stays closed.

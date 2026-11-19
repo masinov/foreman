@@ -17,7 +17,9 @@ from .base import _RESOLVED_TASK_STATUSES, MutationBase, MutationError, slug_id
 SPRINT_TRANSITIONS: dict[str, tuple[SprintStatus, ...]] = {
     "planned": ("active", "cancelled"),
     "active": ("completed", "cancelled"),
-    "completed": (),
+    # A finished sprint may be reopened (owner, 2026-11-18); a cancelled one
+    # may not.
+    "completed": ("active",),
     "cancelled": (),
 }
 
