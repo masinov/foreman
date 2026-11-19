@@ -3,7 +3,7 @@
 Current snapshot only. History up to 2026-09-08 (sprints 1 to 54) is in
 `docs/checkpoints/status-history-through-2026-09-08.md`.
 
-## Where the project is (2026-11-18)
+## Where the project is (2026-11-19)
 
 - Driving document: `docs/reviews/2026-11-10-full-review-and-finish-plan.md`
   (full review of engine, runner, dashboard, frontend and UX, with a six-phase
@@ -23,10 +23,13 @@ Current snapshot only. History up to 2026-09-08 (sprints 1 to 54) is in
   its first cut (ADR-0023), and three dashboard follow-ups landed. The
   engine fixes are covered by tests and have not been seen in a run of the
   engine.
-- Active sprint: **sprint 60 — what is there works and makes sense**
-  (`docs/sprints/current.md`). Re-scoped by the owner on 2026-11-16: no
-  identity work; every screen and feature that exists must work and make
-  practical sense. One supervised run of the engine was done (FOR-44).
+- Sprint 60 (what is there works and makes sense) closed on 2026-11-19
+  (`docs/checkpoints/2026-11-19-sprint-60-closed.md`).
+- **The roadmap from 2026-11-19** is at the top of `docs/ROADMAP.md`: nine
+  stages, from the core proven to memory. The decisions about the manager
+  and people are in `docs/sprints/backlog.md`.
+- Active sprint: **sprint 61 — the core, proven** (stage 1,
+  `docs/sprints/current.md`).
 - Nineteen tasks of sprint 58 were run by Foreman itself. On 2026-11-13 the
   owner asked for the engine to be stopped and the rest done by hand; it has
   been stopped since. What the engine did well and badly is in the archived
@@ -95,10 +98,10 @@ is no login.
 - Claude drives the work. Whether a slice runs by hand or through Foreman is
   decided per slice; cost and safety observations from Foreman runs are
   recorded in the sprint doc.
-- No identity provider or notification channel is being chosen now. Login and
-  notification stay pluggable seams for adopters to fill. Restated by the
-  owner on 2026-11-16: identity is built elsewhere and plugged in later; no
-  login, user or role-of-person work is planned here until the owner asks.
+- No notification channel is being chosen now. On identity the owner
+  decided on 2026-11-19 that Foreman gets a simple identity system of its
+  own (roadmap stage 2), which a company-wide one can replace later. This
+  supersedes the 2026-11-16 line that no login or user work was planned.
 - Codex stays in the tree but is treated as experimental until it has a
   shipped role, cost accounting and a real-binary smoke test.
 
