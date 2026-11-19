@@ -35,7 +35,7 @@ the second.
 | # | Slice | Status | Executed by | Deliverable |
 |---|-------|--------|-------------|-------------|
 | 1 | Outcome numbers per project, role and model: tasks that passed first time, send-backs, a person's interventions, cost per merged task | done | Claude | `feat/outcome-numbers`: ADR-0034, `foreman outcomes` with `--json`, `GET /api/v1/projects/{id}/outcomes`. The dashboard's place is the owner's to agree |
-| 2 | The lease fencing token is checked on writes: a holder whose lease was taken over cannot write | todo | Claude | Store and engine change with a test that fails without it |
+| 2 | The lease fencing token is checked on writes: a holder whose lease was taken over cannot write | done | Claude | `fix/lease-fencing-on-writes`: ADR-0011 amendment; `FencedWriteError`; a lifecycle test that fails without the fence |
 | 3 | The carried engine items: `resume_human_gate` and `_run_leased_task` leave the orchestrator; the agent step's corrective retry sends the correction rather than the first prompt again; a stale `running` agent run is resumed in place | todo | Claude | One branch per item, each with a test |
 | 4 | The seven functions over 200 lines split (ADR-0032's list) | todo | Claude | No behaviour change; ADR-0032's "not settled" list updated |
 | 5 | The CLI's reads go through services; `--json` on the remaining read commands; response models on the API; statuses as Python enums | todo | Claude | `tests/test_layers.py` extended to reads |

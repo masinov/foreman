@@ -7,6 +7,16 @@ class ForemanError(Exception):
     """Base exception for Foreman runtime failures."""
 
 
+class FencedWriteError(ForemanError):
+    """A write made under a task lease that a newer lease has replaced.
+
+    Every lease on a task carries a fencing number, one higher than the
+    lease before it. A holder writes the task only while no lease with a
+    higher number exists: once another engine has taken the task over, the
+    old holder's writes are refused, however late they arrive.
+    """
+
+
 class EngineCommandInterrupt(BaseException):
     """Raised inside the orchestrator to stop the running step for a command.
 

@@ -89,7 +89,7 @@ these parts of `foreman/engine/`, each taking only what it uses:
 |---|---|
 | `errors`, `results` | what the engine raises and returns |
 | `limits`, `model_selection` | validated settings, ceilings, which model a step runs on |
-| `leasing` (`TaskLeases`) | lease tokens and heartbeats for the tasks in hand |
+| `leasing` (`TaskLeases`) | lease tokens, fencing numbers and heartbeats for the tasks in hand; every task write carries the fencing number, and a write under a replaced lease is refused (ADR-0011 amendment) |
 | `history.records` (`RunRecords`) | the writer of runs, events and attention turns (below the engine, so `mutations` writes gate decisions through it too) |
 | `task_writes` (`TaskWrites`) | writing a task without overwriting an operator |
 | `selection` (`TaskSelector`) | directed and autonomous task selection |
