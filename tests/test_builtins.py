@@ -6,8 +6,8 @@ import subprocess
 import tempfile
 import unittest
 
-from foreman.builtins import BuiltinExecutor
-from foreman.models import Project, Task
+from foreman.engine.builtins import BuiltinExecutor
+from foreman.domain.models import Project, Task
 
 
 def _run(directory: Path, command: str, **settings: object):
@@ -199,8 +199,8 @@ class MergeBranchBehindTests(unittest.TestCase):
 class UpdatedOutcomeWiringTests(unittest.TestCase):
     def test_outcome_is_named_everywhere_and_shipped_workflows_carry_it(self) -> None:
         from foreman.dashboard_definitions import _OUTCOME_ORDER
-        from foreman.outcomes import CANONICAL_OUTCOMES, normalize_agent_outcome
-        from foreman.workflows import _BUILTIN_OUTCOMES, load_workflow
+        from foreman.domain.outcomes import CANONICAL_OUTCOMES, normalize_agent_outcome
+        from foreman.definitions.workflows import _BUILTIN_OUTCOMES, load_workflow
 
         self.assertIn("updated", _BUILTIN_OUTCOMES["_builtin:merge"])
         self.assertIn("updated", _OUTCOME_ORDER)

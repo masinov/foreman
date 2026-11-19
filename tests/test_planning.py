@@ -9,7 +9,7 @@ import httpx
 
 from foreman import meta_agent
 from foreman.dashboard.app import create_dashboard_app
-from foreman.models import Sprint
+from foreman.domain.models import Sprint
 from foreman.planning import (
     PlanningError,
     does_only_what_was_asked,
@@ -298,7 +298,7 @@ class RemovedWorkflowTests(ProposalCase):
     """Migration 26: a project that was on the architect workflow."""
 
     def migrate(self) -> None:
-        from foreman.migrations import MIGRATIONS
+        from foreman.store.migrations import MIGRATIONS
 
         version, _, sql = next(m for m in MIGRATIONS if m[0] == 26)
         self.store._connection.executescript(sql)

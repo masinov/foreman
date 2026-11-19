@@ -16,7 +16,7 @@ from pathlib import Path
 
 import httpx
 
-from foreman.api_tokens import (
+from foreman.domain.api_tokens import (
     INTAKE_SCOPE,
     TOKEN_PREFIX,
     ApiTokenError,
@@ -32,7 +32,7 @@ from foreman.dashboard_service import (
     DashboardService,
     DashboardValidationError,
 )
-from foreman.models import NotificationDestination, Project, Sprint, Task
+from foreman.domain.models import NotificationDestination, Project, Sprint, Task
 from foreman.store import ForemanStore
 
 from tests.test_cli import cli_argv, cli_env
@@ -175,7 +175,7 @@ class IntakeMigrationTests(unittest.TestCase):
     """Migration 17 must reach a database that stopped at version 16."""
 
     def test_applies_cleanly_to_a_version_16_database(self) -> None:
-        from foreman.migrations import MIGRATIONS
+        from foreman.store.migrations import MIGRATIONS
         from foreman.store import _SCHEMA_MIGRATIONS_DDL
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -875,7 +875,7 @@ class IntakeTriagePolicyTests(unittest.TestCase):
             self.api.accept_task(result["id"])
 
     def test_the_engine_never_selects_a_triaged_task(self) -> None:
-        from foreman.orchestrator import ForemanOrchestrator
+        from foreman.engine.orchestrator import ForemanOrchestrator
 
         self._project({})
         self.store.save_sprint(

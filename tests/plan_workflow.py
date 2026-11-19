@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from foreman.definitions import save_role, save_workflow
+from foreman.definitions.layers import save_role, save_workflow
 
 PLAN_WORKFLOW = "development_with_architect"
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "definitions"

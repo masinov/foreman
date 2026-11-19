@@ -5,8 +5,8 @@ from __future__ import annotations
 import argparse
 import sys
 
-from ..roles import RoleLoadError, default_roles_dir, load_roles
-from ..workflows import WorkflowLoadError, default_workflows_dir, load_workflows
+from ..definitions.roles import RoleLoadError, default_roles_dir, load_roles
+from ..definitions.workflows import WorkflowLoadError, default_workflows_dir, load_workflows
 
 from .common import (
     print_lines,

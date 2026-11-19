@@ -20,9 +20,9 @@ import time
 import unittest
 from pathlib import Path
 
-from foreman.builtins import BuiltinExecutor
-from foreman.models import Project, Sprint, Task
-from foreman.orchestrator import ForemanOrchestrator, LeaseLostError
+from foreman.engine.builtins import BuiltinExecutor
+from foreman.domain.models import Project, Sprint, Task
+from foreman.engine.orchestrator import ForemanOrchestrator, LeaseLostError
 from foreman.runner import AgentRunConfig, ClaudeCodeRunner, CodexRunner, InfrastructureError
 from foreman.runner.base import AgentEvent
 from foreman.runner.codex import _JsonRpcClient

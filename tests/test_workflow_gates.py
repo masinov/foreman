@@ -13,17 +13,17 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from foreman.models import Project, Sprint, Task, validate_executor_overrides
-from foreman.orchestrator import ForemanOrchestrator
-from foreman.roles import default_roles_dir, load_role, load_roles
+from foreman.domain.models import Project, Sprint, Task, validate_executor_overrides
+from foreman.engine.orchestrator import ForemanOrchestrator
+from foreman.definitions.roles import default_roles_dir, load_role, load_roles
 from foreman.runner import AgentRunConfig
 from foreman.runner.base import AgentEvent
-from foreman.settings import ProjectSettings, SettingsError
+from foreman.domain.settings import ProjectSettings, SettingsError
 from foreman.store import ForemanStore
-from foreman.workflows import load_workflow
+from foreman.definitions.workflows import load_workflow
 
 from plan_workflow import ARCHITECT_TOML, PLAN_WORKFLOW_TOML
-from foreman.workflows import WorkflowLoadError, default_workflows_dir, load_workflows
+from foreman.definitions.workflows import WorkflowLoadError, default_workflows_dir, load_workflows
 
 
 def _shipped_workflows():

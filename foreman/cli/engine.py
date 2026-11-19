@@ -9,17 +9,17 @@ from pathlib import Path
 import sys
 
 from ..dashboard_runtime import DEFAULT_FRONTEND_DEV_URL, run_dashboard_server
-from ..engine_control import (
+from ..engine.control import (
     default_command_requester,
     describe_engine,
 )
-from ..engine_lock import EngineBusyError, EngineLock
-from ..errors import EngineCommandInterrupt
-from ..logs import configure_json_logging
-from ..models import EngineCommand
-from ..orchestrator import ForemanOrchestrator, OrchestratorError
+from ..engine.lock import EngineBusyError, EngineLock
+from ..domain.errors import EngineCommandInterrupt
+from ..engine.logs import configure_json_logging
+from ..domain.models import EngineCommand
+from ..engine.orchestrator import ForemanOrchestrator, OrchestratorError
 from ..runner.process import EngineShutdown, install_shutdown_handlers
-from ..serve import DEFAULT_POLL_SECONDS, ResidentEngine, serve_project
+from ..engine.resident import DEFAULT_POLL_SECONDS, ResidentEngine, serve_project
 from ..notifications import (
     NotificationDeliveryWorker,
 )
@@ -165,7 +165,7 @@ def handle_serve(args: argparse.Namespace) -> int:
     """Handle ``foreman serve``.
 
     Thin by design: everything about the loop, the lock, and the waiting lives
-    in ``foreman.serve``. This function resolves arguments, turns on JSON
+    in ``foreman.engine.resident``. This function resolves arguments, turns on JSON
     logging (the resident engine has no terminal to print to), and maps the
     result to an exit code.
     """

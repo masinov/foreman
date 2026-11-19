@@ -6,7 +6,7 @@ import json
 import sqlite3
 from typing import Any, Sequence
 
-from ..models import Proposal
+from ..domain.models import Proposal
 from .base import StoreBase
 
 _COLUMNS = (

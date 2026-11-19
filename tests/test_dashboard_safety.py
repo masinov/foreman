@@ -20,7 +20,7 @@ from foreman.cli import build_parser
 from foreman.dashboard_backend import create_dashboard_app
 from foreman.dashboard_runtime import dashboard_security_policy, is_loopback_host
 from foreman.dashboard_service import DashboardService, DashboardValidationError
-from foreman.models import Project, Sprint
+from foreman.domain.models import Project, Sprint
 from foreman.store import ForemanStore
 
 

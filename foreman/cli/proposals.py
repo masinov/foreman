@@ -8,8 +8,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from ..engine_control import default_command_requester
-from ..models import PROPOSAL_STATES
+from ..engine.control import default_command_requester
+from ..domain.models import PROPOSAL_STATES
 from ..proposals import (
     MANAGER,
     OPERATION_KINDS,

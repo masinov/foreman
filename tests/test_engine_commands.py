@@ -14,8 +14,8 @@ import sqlite3
 import tempfile
 import unittest
 
-from foreman.migrations import MIGRATIONS
-from foreman.models import (
+from foreman.store.migrations import MIGRATIONS
+from foreman.domain.models import (
     ENGINE_COMMAND_STATUSES,
     ENGINE_COMMANDS,
     ENGINE_COMMANDS_NEEDING_A_RESIDENT_ENGINE,

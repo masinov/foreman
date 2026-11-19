@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from foreman.outcomes import (
+from foreman.domain.outcomes import (
     APPROVE,
     BLOCKED,
     CANCELLED,

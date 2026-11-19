@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from ..models import Project, Task, TokenUsage, utc_now_text
-from ..roles import RoleDefinition
+from ..domain.models import Project, Task, TokenUsage, utc_now_text
+from ..definitions.roles import RoleDefinition
 from .errors import QuotaPauseError
 
 

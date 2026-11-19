@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
-from .roles import RoleDefinition
-from .workflows import WorkflowDefinition
+from .definitions.roles import RoleDefinition
+from .definitions.workflows import WorkflowDefinition
 
 BUILTIN_PREFIX = "_builtin:"
 _RUN_TESTS = "_builtin:run_tests"

@@ -17,7 +17,7 @@ from foreman import meta_agent
 from foreman.cli import build_parser
 from foreman.cli.parser import MANAGER_SESSION_COMMANDS
 from foreman.proposals import MANAGER, OPERATION_KINDS, Proposals
-from foreman.models import Project, Sprint, Task, Event
+from foreman.domain.models import Project, Sprint, Task, Event
 from foreman.store import ForemanStore
 
 
@@ -186,7 +186,7 @@ class StateHeaderTests(unittest.TestCase):
         self.store.save_task(
             Task(id="task-2", sprint_id="sp-2", project_id="proj-1", title="T")
         )
-        from foreman.models import Run
+        from foreman.domain.models import Run
 
         self.store.save_run(
             Run(

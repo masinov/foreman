@@ -10,9 +10,9 @@ from string import Formatter
 from typing import Any
 
 from ._toml import TOMLDecodeError, load_toml_file, load_toml_text
-from .outcomes import CANONICAL_OUTCOMES
-from .errors import ForemanError
-from .data import ROLES_DIR
+from ..domain.outcomes import CANONICAL_OUTCOMES
+from ..domain.errors import ForemanError
+from ..data import ROLES_DIR
 
 _FORMATTER = Formatter()
 

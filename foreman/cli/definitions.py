@@ -6,7 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from ..definitions import (
+from ..definitions.layers import (
     ROLE,
     WORKFLOW,
     DefinitionError,
@@ -15,11 +15,11 @@ from ..definitions import (
     save_role,
     save_workflow,
 )
-from ..engine_control import default_command_requester
-from ..model_check import check_model
-from ..roles import RoleLoadError
+from ..engine.control import default_command_requester
+from ..runner.model_check import check_model
+from ..definitions.roles import RoleLoadError
 from ..store import ForemanStore
-from ..workflows import WorkflowLoadError
+from ..definitions.workflows import WorkflowLoadError
 from .common import print_lines, resolve_db_path_or_print, set_handler
 
 

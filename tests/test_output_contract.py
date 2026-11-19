@@ -15,15 +15,20 @@ import textwrap
 import unittest
 from pathlib import Path
 
-from foreman.models import Project, Run, Sprint, Task
+from foreman.domain.models import Project, Run, Sprint, Task
 from foreman.engine.output_contract import extract_decision_output, with_retry_instruction
-from foreman.orchestrator import ForemanOrchestrator
-from foreman.roles import RoleLoadError, default_roles_dir, load_role, load_roles
+from foreman.engine.orchestrator import ForemanOrchestrator
+from foreman.definitions.roles import RoleLoadError, default_roles_dir, load_role, load_roles
 from foreman.runner import AgentRunConfig, ClaudeCodeRunner
 from foreman.runner.base import AgentEvent
 from foreman.runner.signals import extract_signal_events
 from foreman.store import ForemanStore
-from foreman.workflows import WorkflowLoadError, default_workflows_dir, load_workflow, load_workflows
+from foreman.definitions.workflows import (
+    WorkflowLoadError,
+    default_workflows_dir,
+    load_workflow,
+    load_workflows,
+)
 
 
 class DecisionGrammarTests(unittest.TestCase):

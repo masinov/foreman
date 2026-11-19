@@ -32,7 +32,7 @@ import shutil
 import subprocess
 from typing import TYPE_CHECKING
 
-from .errors import ForemanError
+from ..domain.errors import ForemanError
 from .git import (
     GitError,
     branch_exists,
@@ -41,11 +41,11 @@ from .git import (
     run_git,
     worktree_branch,
 )
-from .models import Project, Task
-from .settings import ProjectSettings, SettingsError, settings_of
+from ..domain.models import Project, Task
+from ..domain.settings import ProjectSettings, SettingsError, settings_of
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
-    from .store import ForemanStore
+    from ..store import ForemanStore
 
 #: Directory (relative to the repository root) holding per-task worktrees when
 #: the project does not override ``worktree_root``.

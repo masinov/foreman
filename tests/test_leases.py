@@ -7,14 +7,14 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from foreman.leases import (
+from foreman.domain.leases import (
     compute_lease_expiry,
     generate_lease_token,
     is_lease_expired,
     is_lease_stale,
     validate_lease_holder,
 )
-from foreman.models import Lease
+from foreman.domain.models import Lease
 from foreman.store import ForemanStore
 
 
@@ -681,8 +681,8 @@ class TaskLeaseHeartbeatTests(unittest.TestCase):
     def setUp(self) -> None:
         import time
 
-        from foreman.models import Project, Sprint, Task
-        from foreman.task_lease import TaskLeaseHeartbeat
+        from foreman.domain.models import Project, Sprint, Task
+        from foreman.engine.leasing import TaskLeaseHeartbeat
 
         self.time = time
         self.TaskLeaseHeartbeat = TaskLeaseHeartbeat

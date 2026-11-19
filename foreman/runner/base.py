@@ -9,8 +9,8 @@ import re
 import time
 from typing import Any, Protocol
 
-from ..errors import ForemanError
-from ..models import utc_now_text
+from ..domain.errors import ForemanError
+from ..domain.models import utc_now_text
 
 
 @dataclass(slots=True)

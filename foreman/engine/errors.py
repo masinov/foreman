@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ..errors import ForemanError
+from ..domain.errors import ForemanError
 
 
 class OrchestratorError(ForemanError):

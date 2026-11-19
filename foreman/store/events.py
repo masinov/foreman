@@ -6,7 +6,7 @@ import sqlite3
 from collections.abc import Sequence
 from typing import Any
 
-from ..models import (
+from ..domain.models import (
     Event,
 )
 

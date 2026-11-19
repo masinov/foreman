@@ -5,12 +5,12 @@ from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import unittest
-from foreman.models import Event, Run, Sprint, Task
+from foreman.domain.models import Event, Run, Sprint, Task
 from foreman.engine.results import AgentExecutionResult
-from foreman.orchestrator import ForemanOrchestrator
-from foreman.git import current_branch
+from foreman.engine.orchestrator import ForemanOrchestrator
+from foreman.repo.git import current_branch
 from foreman.store import ForemanStore
-from foreman.workflows import (
+from foreman.definitions.workflows import (
     WorkflowDefinition,
     WorkflowFallback,
     WorkflowStep,

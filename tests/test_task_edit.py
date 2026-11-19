@@ -13,7 +13,7 @@ import httpx
 
 from foreman.cli import main
 from foreman.dashboard_backend import create_dashboard_app
-from foreman.models import Project, Sprint, Task
+from foreman.domain.models import Project, Sprint, Task
 from foreman.mutations import MutationError, Mutations
 from foreman.store import ForemanStore
 

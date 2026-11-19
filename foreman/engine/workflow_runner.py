@@ -15,20 +15,32 @@ from dataclasses import replace
 import time
 from typing import Any
 
-from ..builtins import BuiltinEventRecord, BuiltinExecutor
-from ..errors import EngineCommandInterrupt
+from .builtins import BuiltinEventRecord, BuiltinExecutor
+from ..domain.errors import EngineCommandInterrupt
 from ..runner.process import EngineShutdown
-from ..context import ProjectContextProjection, build_project_context, relative_project_path
-from ..git import GitError, branch_exists, head_sha, task_commits_on_default_branch, worktree_branch
-from ..guidance import GUIDANCE_DELIVERED_EVENT, pending_guidance, prompt_with_guidance
-from ..models import CompletionEvidence, HumanGateDecision, Project, Run, Task, utc_now_text
-from ..outcomes import APPROVE, BLOCKED, ERROR, normalize_agent_outcome, normalize_reviewer_decision
-from ..policy import PolicyMatrix, describe_resolution
-from ..roles import RoleDefinition
-from ..settings import ProjectSettings
+from ..repo.context import ProjectContextProjection, build_project_context, relative_project_path
+from ..repo.git import (
+    GitError,
+    branch_exists,
+    head_sha,
+    task_commits_on_default_branch,
+    worktree_branch,
+)
+from ..domain.guidance import GUIDANCE_DELIVERED_EVENT, pending_guidance, prompt_with_guidance
+from ..domain.models import CompletionEvidence, HumanGateDecision, Project, Run, Task, utc_now_text
+from ..domain.outcomes import (
+    APPROVE,
+    BLOCKED,
+    ERROR,
+    normalize_agent_outcome,
+    normalize_reviewer_decision,
+)
+from ..domain.policy import PolicyMatrix, describe_resolution
+from ..definitions.roles import RoleDefinition
+from ..domain.settings import ProjectSettings
 from ..store import ForemanStore
-from ..workflows import WorkflowDefinition, WorkflowStep
-from ..worktrees import WorktreeError
+from ..definitions.workflows import WorkflowDefinition, WorkflowStep
+from ..repo.worktrees import WorktreeError
 from .agent_step import AgentStepRunner
 from .branch_sync import context_mirror_dirs, prepare_task_branch_for_step, task_working_dir
 from .errors import LeaseLostError, OrchestratorError, QuotaPauseError, TaskCancelledError

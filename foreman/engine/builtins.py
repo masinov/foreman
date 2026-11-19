@@ -9,8 +9,8 @@ import subprocess
 import time
 from typing import TYPE_CHECKING, Any, Callable
 
-from .context import context_directory, relative_project_path, write_project_context
-from .git import (
+from ..repo.context import context_directory, relative_project_path, write_project_context
+from ..repo.git import (
     CheckoutFollow,
     GitError,
     GitMergeResult,
@@ -24,18 +24,18 @@ from .git import (
     run_git,
     sync_branch_with_base,
 )
-from .models import CompletionEvidence, Project, Task, utc_now_text
-from .notifications import resolve_notification_policy
-from .runner.process import ManagedProcess
-from .engine.evidence import EvidenceBuilder
-from .definitions import project_definitions
-from .settings import settings_of
-from .worktrees import WorktreeError, WorktreeManager
+from ..domain.models import CompletionEvidence, Project, Task, utc_now_text
+from ..notifications import resolve_notification_policy
+from ..runner.process import ManagedProcess
+from .evidence import EvidenceBuilder
+from ..definitions.layers import project_definitions
+from ..domain.settings import settings_of
+from ..repo.worktrees import WorktreeError, WorktreeManager
 
 DEFAULT_TEST_TIMEOUT_SECONDS = 1800
 
 if TYPE_CHECKING:
-    from .store import ForemanStore
+    from ..store import ForemanStore
 
 
 @dataclass(slots=True)

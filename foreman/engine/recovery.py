@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import datetime, timezone
 
-from ..models import Lease, Project, Run, Task, utc_now_text
+from ..domain.models import Lease, Project, Run, Task, utc_now_text
 from ..store import ForemanStore
 from .errors import LeaseLostError
 from .leasing import TaskLeases

@@ -4,9 +4,9 @@ from __future__ import annotations
 from pathlib import Path
 import tempfile
 import unittest
-from foreman.models import Project, Sprint, Task
+from foreman.domain.models import Project, Sprint, Task
 from foreman.engine.errors import OrchestratorError
-from foreman.orchestrator import ForemanOrchestrator
+from foreman.engine.orchestrator import ForemanOrchestrator
 from foreman.store import ForemanStore
 
 from engine_support import (

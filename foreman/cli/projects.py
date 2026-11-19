@@ -6,9 +6,9 @@ import argparse
 from pathlib import Path
 import sys
 
-from ..models import Project, utc_now_text
-from ..roles import RoleLoadError, default_roles_dir, load_roles
-from ..scaffold import (
+from ..domain.models import Project, utc_now_text
+from ..definitions.roles import RoleLoadError, default_roles_dir, load_roles
+from ..repo.scaffold import (
     DEFAULT_DB_FILENAME,
     DEFAULT_DEFAULT_BRANCH,
     DEFAULT_TEST_COMMAND,
@@ -19,10 +19,10 @@ from ..scaffold import (
     resolve_spec_path,
     scaffold_repository,
 )
-from ..policy import POLICY_DECISIONS, PolicyMatrix
-from ..settings import ProjectSettings, SettingsError, settings_of
+from ..domain.policy import POLICY_DECISIONS, PolicyMatrix
+from ..domain.settings import ProjectSettings, SettingsError, settings_of
 from ..store import ForemanStore
-from ..workflows import WorkflowLoadError, default_workflows_dir, load_workflows
+from ..definitions.workflows import WorkflowLoadError, default_workflows_dir, load_workflows
 
 from .common import (
     CliResolutionError,

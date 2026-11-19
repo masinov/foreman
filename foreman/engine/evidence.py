@@ -4,7 +4,7 @@
 ``CompletionEvidence``: which commit is the branch head, whether the tests
 passed and on which commit, what each reviewer decided and on which commit,
 and what a judge model said about each acceptance criterion. It decides
-nothing about the workflow; the merge guard in ``foreman.builtins`` does.
+nothing about the workflow; the merge guard in ``foreman.engine.builtins`` does.
 """
 
 from __future__ import annotations
@@ -12,10 +12,10 @@ from __future__ import annotations
 from collections.abc import Mapping
 import subprocess
 
-from ..git import GitError, head_sha
-from ..judge import NOT_JUDGED, judge_criteria, truncate_diff
-from ..models import CompletionEvidence, Project, Run, Task
-from ..roles import RoleDefinition
+from ..repo.git import GitError, head_sha
+from .judge import NOT_JUDGED, judge_criteria, truncate_diff
+from ..domain.models import CompletionEvidence, Project, Run, Task
+from ..definitions.roles import RoleDefinition
 from ..store import ForemanStore
 
 

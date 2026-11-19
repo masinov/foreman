@@ -1,6 +1,6 @@
 """The Foreman engine: what runs a task through its workflow.
 
-``foreman.orchestrator.ForemanOrchestrator`` is the entry point. The modules
+``foreman.engine.orchestrator.ForemanOrchestrator`` is the entry point. The modules
 here hold the parts of it that stand on their own:
 
 - ``errors`` and ``results``: what the engine raises and returns.

@@ -7,11 +7,11 @@ from pathlib import Path
 from unittest.mock import patch
 import unittest
 
-from foreman.roles import default_roles_dir, load_roles
-from foreman.orchestrator import ForemanOrchestrator
+from foreman.definitions.roles import default_roles_dir, load_roles
+from foreman.engine.orchestrator import ForemanOrchestrator
 from foreman.runner.base import AgentRunConfig
 from foreman.runner.claude_code import ClaudeCodeRunner
-from foreman.settings import HOST_LEVEL_SETTINGS, ProjectSettings, SettingsError
+from foreman.domain.settings import HOST_LEVEL_SETTINGS, ProjectSettings, SettingsError
 from foreman.store import ForemanStore
 
 from engine_support import OrchestratorTestCase, ScriptedNativeRunner

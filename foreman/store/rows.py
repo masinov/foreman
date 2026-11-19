@@ -7,7 +7,7 @@ import re
 import sqlite3
 from typing import Any
 
-from ..models import (
+from ..domain.models import (
     ApiToken,
     CompletionEvidence,
     DecisionGate,

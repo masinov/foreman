@@ -12,8 +12,8 @@ class PackagedDataTests(unittest.TestCase):
     def test_roles_workflows_and_templates_live_in_the_package(self) -> None:
         import foreman
         from foreman.data import ROLES_DIR, TEMPLATES_DIR, WORKFLOWS_DIR
-        from foreman.roles import default_roles_dir, load_roles
-        from foreman.workflows import default_workflows_dir, load_workflows
+        from foreman.definitions.roles import default_roles_dir, load_roles
+        from foreman.definitions.workflows import default_workflows_dir, load_workflows
 
         package_dir = Path(foreman.__file__).resolve().parent
         for directory in (ROLES_DIR, WORKFLOWS_DIR, TEMPLATES_DIR):
@@ -29,7 +29,7 @@ class PackagedDataTests(unittest.TestCase):
         import fnmatch
 
         import foreman
-        from foreman._toml import load_toml_file
+        from foreman.definitions._toml import load_toml_file
 
         repo_root = Path(foreman.__file__).resolve().parent.parent
         pyproject = load_toml_file(repo_root / "pyproject.toml")
@@ -49,7 +49,7 @@ class PackagedDataTests(unittest.TestCase):
 
     def test_the_version_is_stated_once(self) -> None:
         import foreman
-        from foreman._toml import load_toml_file
+        from foreman.definitions._toml import load_toml_file
 
         repo_root = Path(foreman.__file__).resolve().parent.parent
         pyproject = load_toml_file(repo_root / "pyproject.toml")

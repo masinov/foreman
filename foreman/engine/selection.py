@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 
-from ..models import Project, Sprint, Task
+from ..domain.models import Project, Sprint, Task
 from ..store import ForemanStore
 from .errors import OrchestratorError
 from .leasing import TaskLeases

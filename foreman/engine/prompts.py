@@ -6,10 +6,10 @@ import re
 from collections.abc import Callable
 from pathlib import Path
 
-from ..context import ProjectContextProjection, build_project_context
-from ..git import GitError, changed_files, recent_commits, status_text
-from ..models import CompletionEvidence, Project, Run, Task
-from ..roles import RoleDefinition
+from ..repo.context import ProjectContextProjection, build_project_context
+from ..repo.git import GitError, changed_files, recent_commits, status_text
+from ..domain.models import CompletionEvidence, Project, Run, Task
+from ..definitions.roles import RoleDefinition
 from ..store import ForemanStore
 from .branch_sync import task_working_dir
 from .evidence import EvidenceBuilder, branch_diff_content

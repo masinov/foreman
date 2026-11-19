@@ -10,52 +10,59 @@ from typing import Any
 from uuid import uuid4
 
 from .builtins import BuiltinExecutor
-from .definitions import project_definitions
-from .context import (
+from ..definitions.layers import project_definitions
+from ..repo.context import (
     build_project_context,
 )
-from .engine.errors import (
+from .errors import (
     LeaseLostError,
     OrchestratorError,
     QuotaPauseError,
     TaskExecutionError,
 )
-from .engine.agent_step import DEFAULT_NATIVE_STEP_HEARTBEAT_SECONDS, AgentStepRunner
-from .engine.branch_sync import (
+from .agent_step import DEFAULT_NATIVE_STEP_HEARTBEAT_SECONDS, AgentStepRunner
+from .branch_sync import (
     context_mirror_dirs,
 )
-from .engine.evidence import EvidenceBuilder
-from .engine.leasing import TASK_LEASE_HEARTBEAT_SECONDS, TaskLeases
-from .engine.limits import (
+from .evidence import EvidenceBuilder
+from .leasing import TASK_LEASE_HEARTBEAT_SECONDS, TaskLeases
+from .limits import (
     resolve_project_settings,
 )
-from .engine.prompts import PromptBuilder
-from .engine.records import RunRecords, new_id
-from .engine.task_worktrees import TaskWorktrees
-from .engine.workflow_runner import WorkflowRunner
-from .engine.retention import Retention
-from .engine.sprints import SprintFlow
-from .engine.task_writes import TaskWrites
-from .engine.recovery import Recovery
-from .engine.selection import TaskSelector
-from .engine.signals import SignalHandler
-from .engine.results import (
+from .prompts import PromptBuilder
+from .records import RunRecords, new_id
+from .task_worktrees import TaskWorktrees
+from .workflow_runner import WorkflowRunner
+from .retention import Retention
+from .sprints import SprintFlow
+from .task_writes import TaskWrites
+from .recovery import Recovery
+from .selection import TaskSelector
+from .signals import SignalHandler
+from .results import (
     AgentExecutor,
     HumanGateResumeResult,
     ProjectRunResult,
     quota_run_result,
 )
-from .errors import EngineCommandInterrupt
+from ..domain.errors import EngineCommandInterrupt
 from .logs import get_logger
-from .models import CompletionEvidence, Event, HumanGateDecision, Project, Task, utc_now_text
-from .notifications import NotificationDispatcher
-from .outcomes import APPROVE, DENY
-from .runner import ClaudeCodeRunner, CodexRunner
-from .runner.base import AgentRunner as NativeAgentRunner
-from .runner.process import EngineShutdown
-from .roles import RoleDefinition, default_roles_dir, load_roles
-from .store import ForemanStore
-from .workflows import WorkflowDefinition, default_workflows_dir, load_workflows
+from ..domain.models import (
+    CompletionEvidence,
+    Event,
+    HumanGateDecision,
+    Project,
+    Task,
+    utc_now_text,
+)
+from ..notifications import NotificationDispatcher
+from ..domain.outcomes import APPROVE, DENY
+from ..runner import ClaudeCodeRunner, CodexRunner
+from ..runner.base import AgentRunner as NativeAgentRunner
+from ..runner.process import EngineShutdown
+from ..definitions.roles import RoleDefinition, default_roles_dir, load_roles
+from ..store import ForemanStore
+from ..definitions.workflows import WorkflowDefinition, default_workflows_dir, load_workflows
 
 _LOGGER = get_logger("orchestrator")
 

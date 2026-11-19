@@ -4,9 +4,9 @@ from __future__ import annotations
 from pathlib import Path
 import tempfile
 import unittest
-from foreman.models import Project, Run, Sprint, Task
+from foreman.domain.models import Project, Run, Sprint, Task
 from foreman.engine.results import AgentEventRecord
-from foreman.orchestrator import ForemanOrchestrator
+from foreman.engine.orchestrator import ForemanOrchestrator
 from foreman.store import ForemanStore
 
 

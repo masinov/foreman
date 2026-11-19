@@ -9,7 +9,7 @@ import sys
 from typing import Sequence
 
 from .. import __version__
-from ..errors import ForemanError
+from ..domain.errors import ForemanError
 from ..proposals import manager_session
 from . import (
     backlog,

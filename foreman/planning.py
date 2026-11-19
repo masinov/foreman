@@ -22,9 +22,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Mapping
 
-from .errors import ForemanError
-from .models import Project, Proposal
-from .policy import PolicyMatrix
+from .domain.errors import ForemanError
+from .domain.models import Project, Proposal
+from .domain.policy import PolicyMatrix
 from .proposals import Proposals
 
 PLAN_SPRINT = "plan_sprint"

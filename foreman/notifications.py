@@ -50,8 +50,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Mapping, Protocol, TYPE_CHECKING
 from uuid import uuid4
 
-from .models import Event, NotificationDelivery, NotificationDestination, Project, Task
-from .policy import POLICY_DEFAULTS, POLICY_VALUES, PolicyMatrix
+from .domain.models import Event, NotificationDelivery, NotificationDestination, Project, Task
+from .domain.policy import POLICY_DEFAULTS, POLICY_VALUES, PolicyMatrix
 
 if TYPE_CHECKING:  # pragma: no cover - import cycle broken for type checking
     from .store import ForemanStore

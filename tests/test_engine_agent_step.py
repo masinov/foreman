@@ -4,10 +4,10 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 import unittest
-from foreman.models import Task
+from foreman.domain.models import Task
 from foreman.engine.results import AgentExecutionResult
-from foreman.orchestrator import ForemanOrchestrator
-from foreman.git import current_branch
+from foreman.engine.orchestrator import ForemanOrchestrator
+from foreman.repo.git import current_branch
 from foreman.runner.base import AgentEvent, AgentRunConfig, InfrastructureError, NoTurnError, PreflightError
 from foreman.store import ForemanStore
 

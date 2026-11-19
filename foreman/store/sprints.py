@@ -5,8 +5,8 @@ from __future__ import annotations
 
 from typing import Sequence
 
-from ..errors import ForemanError
-from ..models import (
+from ..domain.errors import ForemanError
+from ..domain.models import (
     BACKLOG_GOAL,
     BACKLOG_TITLE,
     Sprint,

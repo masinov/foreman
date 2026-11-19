@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from foreman.models import Event, Project, Run, Sprint, Task
+from foreman.domain.models import Event, Project, Run, Sprint, Task
 from foreman.store import ForemanStore
 
 

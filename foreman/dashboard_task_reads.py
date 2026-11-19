@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from . import git
+from .repo import git
 from .dashboard.task_models import (
     DIFF_CAP_CHARS,
     OUTPUT_CAP_CHARS,
@@ -33,7 +33,7 @@ from .dashboard.task_models import (
     TranscriptEntry,
 )
 from .dashboard_service import DashboardNotFoundError, DashboardValidationError
-from .models import Event, Project, Run, Task
+from .domain.models import Event, Project, Run, Task
 from .store import ForemanStore
 
 _SUMMARY_CAP = 2000

@@ -15,9 +15,9 @@ import os
 from typing import Any
 
 from . import __version__
-from .api_tokens import API_TOKEN_SCOPES, ApiTokenError
+from .domain.api_tokens import API_TOKEN_SCOPES, ApiTokenError
 from .dashboard_service import DashboardNotFoundError, DashboardValidationError
-from .models import ApiToken, NotificationDestination
+from .domain.models import ApiToken, NotificationDestination
 from .notifications import DESTINATION_KINDS, NotificationError, add_destination
 from .runner.discovery import describe_runners
 from .store import ForemanStore
@@ -63,7 +63,7 @@ def describe_machine(*, db_path: str, address: str) -> dict[str, Any]:
 def describe_runner_backends() -> dict[str, Any]:
     """The agent backends found on this machine and the models roles ask for."""
 
-    from .roles import RoleLoadError, load_roles
+    from .definitions.roles import RoleLoadError, load_roles
 
     try:
         roles = load_roles()

@@ -6,7 +6,7 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
-from ..models import Project, Sprint
+from ..domain.models import Project, Sprint
 from ..store import ForemanStore
 from .records import RunRecords
 

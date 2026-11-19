@@ -7,7 +7,7 @@ import tempfile
 import textwrap
 import unittest
 
-from foreman.roles import (
+from foreman.definitions.roles import (
     PromptRenderError,
     RoleLoadError,
     default_roles_dir,

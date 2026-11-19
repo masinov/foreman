@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 import unittest
-from foreman.models import Project, Run, Sprint, Task
+from foreman.domain.models import Project, Run, Sprint, Task
 from foreman.engine.results import AgentEventRecord, AgentExecutionResult
-from foreman.orchestrator import ForemanOrchestrator
+from foreman.engine.orchestrator import ForemanOrchestrator
 from foreman.store import ForemanStore
 
 from engine_support import (

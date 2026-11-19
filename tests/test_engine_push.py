@@ -7,9 +7,9 @@ import subprocess
 import unittest
 
 from foreman.engine.results import AgentExecutionResult
-from foreman.models import Task
-from foreman.orchestrator import ForemanOrchestrator
-from foreman.settings import HOST_LEVEL_SETTINGS, ProjectSettings, SettingsError
+from foreman.domain.models import Task
+from foreman.engine.orchestrator import ForemanOrchestrator
+from foreman.domain.settings import HOST_LEVEL_SETTINGS, ProjectSettings, SettingsError
 from foreman.store import ForemanStore
 
 from engine_support import OrchestratorTestCase, ScriptedAgentExecutor

@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 import unittest
 
-from foreman.orchestrator import ForemanOrchestrator
+from foreman.engine.orchestrator import ForemanOrchestrator
 from foreman.runner.base import AgentEvent, AgentRunConfig
 from foreman.store import ForemanStore
 

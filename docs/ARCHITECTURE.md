@@ -38,21 +38,35 @@ The spec defines four layers that should remain explicit:
 3. Workflow Engine
 4. Orchestrator
 
-The current codebase maps closely onto that split:
+### Package layers (ADR-0032)
 
-- `foreman/store/` and `foreman/models.py` own persisted state,
-- `foreman/roles.py` and `foreman/workflows.py` own declarative configuration,
-- `foreman/orchestrator.py` and `foreman/engine/` own workflow execution and
-  durable transitions,
-- `foreman/worktrees.py` owns the git working trees a task executes in,
-- `foreman/runner/` owns backend-specific transport and event normalization,
-- `foreman/cli/`, `foreman/dashboard_runtime.py`,
-  `foreman/dashboard_service.py`, `foreman/dashboard/`, and
-  `frontend/` expose inspection and control surfaces.
+The backend is a stack of layers. A module imports only from its own layer
+and the layers below it. `.importlinter` states the stack, and CI runs
+`lint-imports` to hold it. The contract is exhaustive: a module at the root
+of `foreman/` belongs to no layer and fails the check.
+
+| Layer | Package | Spec layer |
+|---|---|---|
+| entry | `__main__`, `cli/` | |
+| HTTP | `api/` (today `dashboard/` and the root `dashboard_*` modules) | |
+| services | `services/` (today `dashboard_service` and its siblings, `backlog`) | |
+| manager | `manager/` (today `meta_agent`, `proposals`, `planning`, `digest`) | |
+| engine | `engine/` | Orchestrator, Workflow Engine |
+| changes | `mutations/` (today `mutations.py`) | |
+| parts | `definitions/`, `repo/`, `notifications/` (today `notifications.py`), `runner/` | Role System; Agent Runner |
+| store | `store/` | |
+| domain | `domain/`, `data/` | |
+
+The "today" entries are the modules slices 2 to 5 of ADR-0032 still have to
+move. Until then the contract lists them by their current names, and it
+names one exception: `mutations` imports the orchestrator to record a gate
+decision.
+
+`frontend/` is the dashboard's browser code (ADR-0020).
 
 ### Engine and store layout (sprint 57)
 
-`ForemanOrchestrator` (`foreman/orchestrator.py`) is the entry point: it runs
+`ForemanOrchestrator` (`foreman/engine/orchestrator.py`) is the entry point: it runs
 a project pass, runs one task under a lease, resumes a human gate, and walks a
 task through its workflow one step at a time. The step loop reads as its
 phases: worktree check, limits, branch refresh, the step itself (human gate,
@@ -152,10 +166,10 @@ Foreman now has:
 
 - shipped `foreman/data/roles/*.toml` and `foreman/data/workflows/*.toml` defaults,
   with a project's own roles and workflows over them: TOML text in the
-  `definitions` table, read through `foreman/definitions.py` (ADR-0024);
+  `definitions` table, read through `foreman/definitions/layers.py` (ADR-0024);
   `foreman/dashboard_definitions.py` turns one into the editor's form fields
   and the fields back into text,
-- `foreman/model_check.py`: asks the agent program whether it can run a
+- `foreman/runner/model_check.py`: asks the agent program whether it can run a
   model, before a role is saved with it,
 - `foreman/planning.py`: the two planning requests to the manager (plan a
   sprint, split a task) and who confirms their proposals (ADR-0022,
@@ -186,19 +200,19 @@ The current runtime supports:
 
 ADR-0011 is the active contract for engine residency and concurrency.
 
-- `foreman/engine_lock.py` — `EngineLock`, a lease-backed context manager
+- `foreman/engine/lock.py` — `EngineLock`, a lease-backed context manager
   (`resource_type="engine"`, `resource_id=<project id>`) that enforces one
   engine per project. Both `foreman run` and `foreman serve` hold it for the
   duration of their work; a second engine is refused with the holder named.
   Renewal runs on a daemon timer thread with its **own** `ForemanStore`
   connection, deliberately independent of agent output.
-- `foreman/serve.py` — `ResidentEngine`, the loop: one `run_project` pass per
+- `foreman/engine/resident.py` — `ResidentEngine`, the loop: one `run_project` pass per
   iteration, an idle wait on `PRAGMA data_version` or the poll interval,
   per-task failure isolation with a doubling backoff, and a clean SIGTERM stop.
   `serve_project()` composes the lock and the loop; the CLI handler stays thin
   (arguments, exit codes, messages) and the loop is unit-testable without a
   subprocess.
-- `foreman/logs.py` — JSON-lines process logging on stderr. The resident engine
+- `foreman/engine/logs.py` — JSON-lines process logging on stderr. The resident engine
   has no terminal, so this is its operator surface; the orchestrator mirrors
   every persisted event to the same logger, at the level
   `event_log_level()` assigns its family (narrative at INFO, agent output
@@ -215,7 +229,7 @@ engine. Anything that wants to steer one — the CLI, the dashboard, the intake
 API — inserts a row; the engine holding the project lock consumes it. The row
 is also the audit trail: who asked, when, and what the engine did about it.
 
-- `foreman/models.py` — the `EngineCommand` dataclass, the command and status
+- `foreman/domain/models.py` — the `EngineCommand` dataclass, the command and status
   vocabularies, and `EngineLockView`, a token-free read of the engine lease.
   The view deliberately omits `lease_token`: operator surfaces need to know who
   holds a project, not the secret that would let them release it.
@@ -224,12 +238,12 @@ is also the audit trail: who asked, when, and what the engine did about it.
   `next_pending_engine_command`, `mark_engine_command`, and `get_engine_lock`.
   The insert commits on its own connection, which is what makes an idle
   engine's `PRAGMA data_version` wait notice a command without polling a table.
-- `foreman/errors.py` — `EngineCommandInterrupt`, a `BaseException` so the
+- `foreman/domain/errors.py` — `EngineCommandInterrupt`, a `BaseException` so the
   orchestrator's defensive `except Exception` fallbacks cannot turn an
   operator's `pause` into a failed agent outcome. It lives in `errors.py`
-  because the orchestrator must catch it and `foreman/serve.py` imports the
+  because the orchestrator must catch it and `foreman/engine/resident.py` imports the
   orchestrator.
-- `foreman/orchestrator.py` — the `command_poll` seam, called before every
+- `foreman/engine/orchestrator.py` — the `command_poll` seam, called before every
   workflow step (immediately after the resume point is persisted, so an
   interrupt always leaves a correct resume point) and on every `agent.tick`
   while a runner streams. `_execute_agent_step_guarded` settles an interrupted
@@ -237,14 +251,14 @@ is also the audit trail: who asked, when, and what the engine did about it.
   `stop_task()` and `release_task()` are the two task-state seams a command
   needs; `record_engine_event()` anchors `engine.command_applied` /
   `engine.command_rejected` on a system run.
-- `foreman/serve.py` — the command state machine: startup rejection of
+- `foreman/engine/resident.py` — the command state machine: startup rejection of
   commands addressed to an engine that is no longer resident, a drain before
   every pass, the paused state, and settlement of an interrupt once the stack
   has unwound. Policy lives here, next to the loop state it changes, rather
   than in the orchestrator.
 - `foreman/cli/` — `foreman engine status|pause|resume|shutdown|run-task|
   stop-task`, which read the lock view and enqueue commands.
-- `foreman/engine_control.py` — the read-side derivations every surface needs
+- `foreman/engine/control.py` — the read-side derivations every surface needs
   over the lock view and the command log, plus the local `foreman serve`
   bootstrap. It exists so the CLI and the dashboard cannot answer "is an
   engine resident", "is it paused", or "why is this task blocked" differently
@@ -284,7 +298,7 @@ engine the same way every other surface does (ADR-0002 amendment):
 
 ### One worktree per task
 
-`foreman/worktrees.py` is the only module that constructs a working-tree path.
+`foreman/repo/worktrees.py` is the only module that constructs a working-tree path.
 `WorktreeManager` is bound to a project and owns the layout under
 `worktree_root` (default `<repo>/.foreman/worktrees`):
 
@@ -338,7 +352,7 @@ The CLI and the dashboard both assume a person and a sprint.
 `POST /api/projects/{id}/intake` is the door for everything else — an incident
 tracker, a chat bot, a CI job (ADR-0013).
 
-- `foreman/api_tokens.py` — the only module that mints or hashes a token
+- `foreman/domain/api_tokens.py` — the only module that mints or hashes a token
   secret, plus the scope vocabulary. Secrets are `fmn_` + 32 random bytes;
   only their SHA-256 is persisted, so the store, the CLI, and the HTTP layer
   share one definition of what a token is and none of them can leak one.
@@ -473,7 +487,7 @@ bad one is a 400 `invalid_request` envelope (ADR-0019). Paged lists take
 A merged task's changes and size are those of the commit it landed as
 (`git.landed_as`), not an empty comparison with a default branch that already
 holds it. The task page reads (sprint 58) are built by `foreman/dashboard_task_reads.py`
-over `foreman/git.py`, with typed response models in
+over `foreman/repo/git.py`, with typed response models in
 `foreman/dashboard/task_models.py`. All are GETs under `/api/v1`.
 
 - `GET /tasks/{id}/changes` returns `files` (`path`, `status` of `added`,
@@ -743,7 +757,7 @@ The current CLI watch baseline now includes:
 - every shipped workflow tests before it reviews and ends in a
   `merge_approval` human gate; an `auto` gate policy produces a run row, an
   event, and a `policy:<name>` decision record.
-- where a person is required is one policy matrix (`foreman/policy.py`,
+- where a person is required is one policy matrix (`foreman/domain/policy.py`,
   ADR-0014): `triage`, `plan_approval`, `merge_approval`, and `notification`,
   each resolved as task override, then a rule for the task's type
   (`policy_rules`), then the project default. Nothing else resolves a policy —
@@ -835,7 +849,7 @@ The following items were implemented as hardening before the 1.0 release:
 - `signal.task_created` assigns `order_index` from `store.next_task_order_index()` and emits `engine.task_created`
 
 **Outcome normalization (Item 8)**
-- `foreman/outcomes.py` defines canonical constants: DONE, CANCELLED, BLOCKED, SUCCESS, FAILURE, ERROR, KILLED, PAUSED, APPROVE, DENY, STEER
+- `foreman/domain/outcomes.py` defines canonical constants: DONE, CANCELLED, BLOCKED, SUCCESS, FAILURE, ERROR, KILLED, PAUSED, APPROVE, DENY, STEER
 - All orchestrator step results and reviewer decisions are normalized before transition lookup
 
 **Completion evidence (Items 9–10, 18)**
@@ -864,7 +878,7 @@ The following items were implemented as hardening before the 1.0 release:
 - Called at workflow load time
 
 **Settings validation (Item 20)**
-- `foreman/settings.py` provides `ProjectSettings.from_raw()` with per-field validation
+- `foreman/domain/settings.py` provides `ProjectSettings.from_raw()` with per-field validation
 - Invalid project settings raise `SettingsError` at parse time
 
 **Context projection (Item 21)**

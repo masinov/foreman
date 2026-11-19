@@ -5,10 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from .models import Lease, Project, Sprint, Task
-from .settings import settings_of
+from ..domain.models import Lease, Project, Sprint, Task
+from ..domain.settings import settings_of
 from .scaffold import DEFAULT_CONTEXT_DIR
-from .store import ForemanStore
+from ..store import ForemanStore
 
 
 @dataclass(slots=True)

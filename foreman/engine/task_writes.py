@@ -7,7 +7,7 @@ what a person changed between steps.
 
 from __future__ import annotations
 
-from ..models import Task
+from ..domain.models import Task
 from ..store import ForemanStore
 from .errors import OrchestratorError, TaskCancelledError
 

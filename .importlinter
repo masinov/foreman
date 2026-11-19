@@ -1,0 +1,26 @@
+[importlinter]
+root_package = foreman
+
+[importlinter:contract:layers]
+name = Foreman's layers: each imports only the ones below it (ADR-0032)
+type = layers
+containers = foreman
+exhaustive = true
+exhaustive_ignores =
+    dashboard_frontend_dist
+layers =
+    __main__
+    cli
+    dashboard : dashboard_backend : dashboard_runtime : dashboard_guard : dashboard_access : dashboard_task_reads
+    dashboard_service : dashboard_overview : dashboard_workflow_reads : dashboard_definitions : backlog
+    meta_agent : planning : digest : proposals
+    engine
+    mutations
+    definitions | repo | notifications | runner
+    store
+    domain | data
+ignore_imports =
+    # A person's gate decision is recorded by the orchestrator; it moves below
+    # the engine in the next slice. The list only shrinks: an entry that no
+    # longer matches an import fails the check.
+    foreman.mutations -> foreman.engine.orchestrator

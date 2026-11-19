@@ -6,8 +6,13 @@ import sqlite3
 from typing import Sequence
 from uuid import uuid4
 
-from ..api_tokens import ApiTokenError, hash_token_secret, mint_token_secret, normalize_scopes
-from ..models import (
+from ..domain.api_tokens import (
+    ApiTokenError,
+    hash_token_secret,
+    mint_token_secret,
+    normalize_scopes,
+)
+from ..domain.models import (
     ApiToken,
     utc_now_text,
 )

@@ -23,8 +23,11 @@ repo-memory validation and code-level regression coverage:
 - `./venv/bin/python -m unittest discover -s tests -v`
 - `./venv/bin/ruff check foreman tests scripts` (install with
   `./venv/bin/pip install -e ".[dev]"`)
+- `./venv/bin/lint-imports`: the layers contract in `.importlinter`
+  (ADR-0032). A module imports only from its own layer and the ones below;
+  it needs Python 3.11 or later
 
-CI (`.github/workflows/ci.yml`) runs the suite, ruff, the repo-memory
+CI (`.github/workflows/ci.yml`) runs the suite, ruff, the layers contract, the repo-memory
 validation, and the frontend tests and build. The built bundle under
 `foreman/dashboard_frontend_dist` is not in git: the Python job builds it
 before the tests, and the tests that serve it skip when it is absent.

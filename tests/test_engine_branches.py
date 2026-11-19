@@ -3,11 +3,11 @@
 from __future__ import annotations
 import subprocess
 import unittest
-from foreman.models import Task
+from foreman.domain.models import Task
 from foreman.engine.branch_sync import prepare_task_branch_for_step
 from foreman.engine.results import AgentExecutionResult
-from foreman.orchestrator import ForemanOrchestrator
-from foreman.git import current_branch
+from foreman.engine.orchestrator import ForemanOrchestrator
+from foreman.repo.git import current_branch
 from foreman.store import ForemanStore
 
 from engine_support import (
@@ -408,7 +408,7 @@ class BranchAndMergeTests(OrchestratorTestCase):
             self.assertIsNone(again_event)
 
     def test_develop_visit_resumes_on_a_branch_with_an_unconcluded_merge(self) -> None:
-        from foreman.git import checkout_branch, merge_in_progress
+        from foreman.repo.git import checkout_branch, merge_in_progress
 
         repo_path, db_path = self.create_workspace()
         self.initialize_repo(repo_path)
@@ -565,7 +565,7 @@ class BranchAndMergeTests(OrchestratorTestCase):
             self.assertEqual(len(violations[0].payload["commits"]), 1)
 
     def test_commits_a_refresh_brought_in_from_the_default_branch_are_not_the_tasks_own(self) -> None:
-        from foreman.git import head_sha, task_commits_on_default_branch
+        from foreman.repo.git import head_sha, task_commits_on_default_branch
 
         repo_path, _ = self.create_workspace()
         self.initialize_repo(repo_path)

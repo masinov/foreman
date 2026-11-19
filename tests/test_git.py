@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 import unittest
 
-from foreman.git import (
+from foreman.repo.git import (
     GitError,
     branch_exists,
     commits_behind,

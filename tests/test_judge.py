@@ -7,7 +7,7 @@ from unittest import mock
 
 import httpx
 
-from foreman.judge import (
+from foreman.engine.judge import (
     CriteriaJudgment,
     unverified_checklist,
     judge_criteria,

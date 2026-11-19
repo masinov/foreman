@@ -27,7 +27,7 @@ try:
 except ImportError as exc:  # pragma: no cover - exercised in minimal envs.
     raise unittest.SkipTest("pytest package not installed") from exc
 
-from foreman.models import Project, Sprint, Task
+from foreman.domain.models import Project, Sprint, Task
 from foreman.store import ForemanStore
 
 # ---------------------------------------------------------------------------

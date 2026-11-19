@@ -11,7 +11,15 @@ import unittest
 import httpx
 
 from foreman.dashboard.app import create_dashboard_app
-from foreman.models import CompletionEvidence, DecisionGate, Event, Project, Run, Sprint, Task
+from foreman.domain.models import (
+    CompletionEvidence,
+    DecisionGate,
+    Event,
+    Project,
+    Run,
+    Sprint,
+    Task,
+)
 from foreman.store import ForemanStore
 
 from plan_workflow import PLAN_WORKFLOW, install_plan_workflow

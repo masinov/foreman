@@ -3,10 +3,10 @@
 from __future__ import annotations
 from datetime import datetime, timezone
 import unittest
-from foreman.models import Event, Run, Task
+from foreman.domain.models import Event, Run, Task
 from foreman.engine.errors import OrchestratorError
 from foreman.engine.results import AgentExecutionResult
-from foreman.orchestrator import ForemanOrchestrator
+from foreman.engine.orchestrator import ForemanOrchestrator
 from foreman.runner.process import EngineShutdown
 from foreman.store import ForemanStore
 
@@ -428,7 +428,7 @@ class RecoveryAndLeaseTests(OrchestratorTestCase):
         """Recovery must force-expire the active task lease so the next
         orchestrator can acquire it without waiting for ``expires_at``.
         """
-        from foreman.leases import generate_lease_token
+        from foreman.domain.leases import generate_lease_token
 
         repo_path, db_path = self.create_workspace()
         self.initialize_repo(repo_path)
@@ -520,7 +520,7 @@ class RecoveryAndLeaseTests(OrchestratorTestCase):
         """``engine.crash_recovery`` events must not leak ``lease_token``;
         lease tokens are secrets and must not be persisted in event history.
         """
-        from foreman.leases import generate_lease_token
+        from foreman.domain.leases import generate_lease_token
 
         repo_path, db_path = self.create_workspace()
         self.initialize_repo(repo_path)
@@ -588,7 +588,7 @@ class RecoveryAndLeaseTests(OrchestratorTestCase):
         """A run whose task lease is held by a different orchestrator must
         not be considered stale while that holder is heartbeating.
         """
-        from foreman.leases import generate_lease_token
+        from foreman.domain.leases import generate_lease_token
 
         repo_path, db_path = self.create_workspace()
         self.initialize_repo(repo_path)

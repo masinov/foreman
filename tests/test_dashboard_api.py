@@ -14,7 +14,7 @@ from foreman.dashboard.app import ROUTERS, _is_intake_path, create_dashboard_app
 from foreman.dashboard.context import API_PREFIXES, ApiContext
 from foreman.dashboard.streaming import event_stream_response
 from foreman.dashboard_service import DashboardService
-from foreman.models import Event, Project, Run, Sprint, Task
+from foreman.domain.models import Event, Project, Run, Sprint, Task
 from foreman.store import ForemanStore
 
 

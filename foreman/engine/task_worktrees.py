@@ -9,9 +9,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ..models import Project, Task
+from ..domain.models import Project, Task
 from ..store import ForemanStore
-from ..worktrees import WorktreeError, WorktreeManager, enforce_worktree_limit, task_slug
+from ..repo.worktrees import WorktreeError, WorktreeManager, enforce_worktree_limit, task_slug
 from .errors import OrchestratorError
 from .records import RunRecords
 from .task_writes import TaskWrites

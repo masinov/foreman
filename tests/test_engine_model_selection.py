@@ -4,9 +4,9 @@ from __future__ import annotations
 from dataclasses import replace
 import unittest
 from foreman.engine.output_contract import extract_completion_output, extract_decision_output
-from foreman.models import Project, Task
-from foreman.orchestrator import ForemanOrchestrator
-from foreman.roles import default_roles_dir, load_roles
+from foreman.domain.models import Project, Task
+from foreman.engine.orchestrator import ForemanOrchestrator
+from foreman.definitions.roles import default_roles_dir, load_roles
 
 
 

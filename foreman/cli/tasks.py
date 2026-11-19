@@ -6,13 +6,13 @@ import argparse
 import json
 import sys
 
-from ..engine_control import (
+from ..definitions.gate_steps import (
     blocked_kind,
     resolve_gate_steps,
 )
-from ..models import GATE_POLICY_NAMES, TASK_COMPLEXITIES, TASK_TYPES, Task
+from ..domain.models import GATE_POLICY_NAMES, TASK_COMPLEXITIES, TASK_TYPES, Task
 from ..mutations import MutationError
-from ..policy import POLICY_VALUES, is_valid_value
+from ..domain.policy import POLICY_VALUES, is_valid_value
 from ..store import ForemanStore
 
 from .common import (

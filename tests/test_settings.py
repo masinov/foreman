@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from foreman.settings import (
+from foreman.domain.settings import (
     SettingsError,
     ProjectSettings,
     _validate_non_negative_float,

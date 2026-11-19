@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import unittest
 
-from foreman.models import Task, validate_executor_overrides
-from foreman.policy import (
+from foreman.domain.models import Task, validate_executor_overrides
+from foreman.domain.policy import (
     GATE_DECISIONS,
     POLICY_DECISIONS,
     POLICY_DEFAULTS,
@@ -20,7 +20,7 @@ from foreman.policy import (
     describe_resolution,
     is_valid_value,
 )
-from foreman.settings import ProjectSettings, SettingsError
+from foreman.domain.settings import ProjectSettings, SettingsError
 
 
 def _task(**kwargs) -> Task:

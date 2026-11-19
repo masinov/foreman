@@ -10,7 +10,7 @@ import unittest
 import httpx
 
 from foreman.dashboard.app import create_dashboard_app
-from foreman.models import Project
+from foreman.domain.models import Project
 from foreman.store import ForemanStore
 
 
@@ -88,7 +88,7 @@ class SteerTaskApiTests(EngineCommandApiTests):
     """POST /tasks/{id}/steer: guidance an agent reads now, by interrupting its step."""
 
     def running_task(self, *, agent: bool = True) -> None:
-        from foreman.models import Run, Sprint, Task
+        from foreman.domain.models import Run, Sprint, Task
 
         self.store.save_sprint(Sprint(id="s1", project_id="p1", title="S", status="active"))
         self.store.save_task(

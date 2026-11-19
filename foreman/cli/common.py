@@ -9,19 +9,19 @@ from pathlib import Path
 import sys
 from typing import Any, Callable, Sequence
 
-from ..engine_control import (
+from ..engine.control import (
     default_command_requester,
 )
-from ..models import Event, Project, Sprint, Task
-from ..roles import RoleLoadError
-from ..definitions import project_definitions
+from ..domain.models import Event, Project, Sprint, Task
+from ..definitions.roles import RoleLoadError
+from ..definitions.layers import project_definitions
 from ..mutations import Mutations
-from ..scaffold import (
+from ..repo.scaffold import (
     DEFAULT_DB_FILENAME,
     generate_project_id,
 )
 from ..store import ForemanStore
-from ..workflows import WorkflowLoadError
+from ..definitions.workflows import WorkflowLoadError
 
 
 #: Exit code of ``foreman run`` when the pass stopped because the agent backend's

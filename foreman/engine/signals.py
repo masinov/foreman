@@ -9,9 +9,9 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from ..models import TASK_COMPLEXITIES, TASK_TYPES, Project, Run, Task
+from ..domain.models import TASK_COMPLEXITIES, TASK_TYPES, Project, Run, Task
 from ..mutations import Mutations
-from ..roles import RoleDefinition
+from ..definitions.roles import RoleDefinition
 from ..store import ForemanStore
 from .coerce import optional_string
 from .leasing import TaskLeases
