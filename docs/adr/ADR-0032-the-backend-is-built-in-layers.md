@@ -169,14 +169,21 @@ These are known and not hidden by the contract:
   store and does not call the services, whose answers are shaped for the
   API. Two surfaces reading the same rows can still show them differently;
   they can no longer change them differently.
-- **Some functions are long.** The five long modules are split by concern
-  (below), but seven functions are still over 200 lines:
-  `AgentStepRunner.execute_native` (301), `AgentSteps._run_agent_step`
-  (299), `ResidentEngineBase.run` (276), `create_dashboard_app` (262),
-  `EvidenceBuilder.build` (246), `MergeStep._merge` (213) and
-  `register_task` (218, which only declares arguments). The engine's are
-  each one step of its control flow. Splitting them changes how that flow
-  reads, and needs its own slice with tests aimed at each branch.
+- **Some functions were long.** The five long modules are split by
+  concern (below), and on 2026-11-19 (sprint 61, slice 4) the seven
+  functions over 200 lines were split into named parts with no change in
+  behaviour: `AgentStepRunner.execute_native` (a run config, the stream
+  loop, and `_NativeRunTally`, which folds the events into the result),
+  `AgentSteps._run_agent_step` (the prompt with its notes, opening the run,
+  the session, one `_execute_and_record` shared by the first attempt and
+  the corrective retry, the settled outcome), `ResidentEngineBase.run`
+  (`_ServeLoop` state, one turn, one pass, after a pass),
+  `create_dashboard_app` (store preparation, access checks, the error
+  envelope, routers, frontend routes), `EvidenceBuilder.build` (git
+  position, branch changes, test facts, review facts, criteria),
+  `MergeStep._merge` (the completion guard, a landed merge, a merge that
+  did not land) and `register_task` (one function per subcommand). No
+  function in `foreman/` is over 200 lines now.
 - Import order is sorted (`ruff`'s `I` rule) only in the modules this
   refactor touched. The rule is not on for the whole repository yet.
 

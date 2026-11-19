@@ -135,27 +135,8 @@ def create_dashboard_app(
     ``Host`` header unchecked.
     """
 
-    # The API does not depend on the bundle: it is built, not committed
-    # (ADR-0020), so the app starts without it and the shell route says so.
-    if frontend_mode == "dist":
-        pass
-    elif frontend_mode == "dev":
-        if frontend_dev_url is None:
-            raise RuntimeError("Frontend dev mode requires a frontend dev URL.")
-        frontend_dev_url = normalize_frontend_dev_url(frontend_dev_url)
-    else:
-        raise RuntimeError(
-            f"Unsupported dashboard frontend mode: {frontend_mode}. Expected `dist` or `dev`."
-        )
-
-    init_store = ForemanStore(db_path)
-    try:
-        init_store.initialize()
-        # Manager replies are written by the dashboard process: one still in
-        # progress now was left by a dashboard that stopped mid-reply.
-        init_store.close_unfinished_meta_replies()
-    finally:
-        init_store.close()
+    frontend_dev_url = _checked_frontend_mode(frontend_mode, frontend_dev_url)
+    _prepare_store(db_path)
 
     app = FastAPI(
         title="Foreman Dashboard API",
@@ -184,6 +165,49 @@ def create_dashboard_app(
             allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
             allow_headers=["Authorization", "Content-Type", TOKEN_HEADER],
         )
+
+    _add_access_checks(app, guard_origins)
+    _add_error_envelope(app)
+    _add_routers(app, db_path, manager_enabled=manager_enabled, auth_token=auth_token)
+    _add_frontend_routes(app, frontend_mode, frontend_dev_url)
+    return app
+
+
+def _checked_frontend_mode(frontend_mode: str, frontend_dev_url: str | None) -> str | None:
+    """Refuse an unknown frontend mode; return the dev server's URL, normalised."""
+
+    # The API does not depend on the bundle: it is built, not committed
+    # (ADR-0020), so the app starts without it and the shell route says so.
+    if frontend_mode == "dist":
+        return frontend_dev_url
+    if frontend_mode == "dev":
+        if frontend_dev_url is None:
+            raise RuntimeError("Frontend dev mode requires a frontend dev URL.")
+        return normalize_frontend_dev_url(frontend_dev_url)
+    raise RuntimeError(
+        f"Unsupported dashboard frontend mode: {frontend_mode}. Expected `dist` or `dev`."
+    )
+
+
+def _prepare_store(db_path: str) -> None:
+    """Bring the database to the current schema before the first request."""
+
+    init_store = ForemanStore(db_path)
+    try:
+        init_store.initialize()
+        # Manager replies are written by the dashboard process: one still in
+        # progress now was left by a dashboard that stopped mid-reply.
+        init_store.close_unfinished_meta_replies()
+    finally:
+        init_store.close()
+
+
+def _add_access_checks(app: FastAPI, guard_origins: tuple[str, ...]) -> None:
+    """Which credential opens which route, and refusing foreign browser requests.
+
+    Starlette runs the middleware added last first, so the browser check
+    runs before the credential check.
+    """
 
     @app.middleware("http")
     async def require_dashboard_token(request: Request, call_next):
@@ -254,6 +278,10 @@ def create_dashboard_app(
                 return JSONResponse(_error_body(violation, "forbidden"), status_code=403)
         return await call_next(request)
 
+
+def _add_error_envelope(app: FastAPI) -> None:
+    """Every error inside the API answers with the same envelope (ADR-0019)."""
+
     @app.exception_handler(StarletteHTTPException)
     async def handle_http_error(request: Request, exc: StarletteHTTPException) -> Response:
         # An unknown route or a method the route does not take. Inside the
@@ -316,6 +344,12 @@ def create_dashboard_app(
     async def handle_forbidden(_: Request, exc: DashboardForbiddenError) -> JSONResponse:
         return JSONResponse(_error_body(str(exc), "forbidden"), status_code=403)
 
+
+def _add_routers(
+    app: FastAPI, db_path: str, *, manager_enabled: bool, auth_token: str | None
+) -> None:
+    """Mount every router under every prefix the API is served under."""
+
     context = ApiContext(
         db_path=db_path,
         manager_enabled=bool(manager_enabled),
@@ -325,6 +359,9 @@ def create_dashboard_app(
         for module in ROUTERS:
             app.include_router(module.build_router(context), prefix=prefix)
 
+
+def _add_frontend_routes(app: FastAPI, frontend_mode: str, frontend_dev_url: str | None) -> None:
+    """The dashboard shell and its assets, or redirects to the dev server."""
 
     def _resolve_asset_path(asset_path: str) -> Path | None:
         candidate = (DASHBOARD_ASSETS_DIR / asset_path).resolve()
@@ -371,8 +408,6 @@ def create_dashboard_app(
                 status_code=503,
             )
         return HTMLResponse(DASHBOARD_INDEX_PATH.read_text(encoding="utf-8"))
-
-    return app
 
 
 def create_dashboard_app_from_env() -> FastAPI:

@@ -11,10 +11,11 @@ in ``foreman.engine.builtins.completion`` does.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 import subprocess
 
 from ..repo.git import GitError, head_sha
-from ..domain.models import CompletionEvidence, Project, Run, Task
+from ..domain.models import CompletionEvidence, Event, Project, Run, Task
 from ..definitions.roles import RoleDefinition
 from ..store import ForemanStore
 
@@ -23,6 +24,120 @@ from ..store import ForemanStore
 CRITERION_COVERED = "covered"
 #: A criterion no approving review covers yet.
 CRITERION_UNVERIFIED = "unverified"
+
+
+@dataclass(frozen=True, slots=True)
+class _GitPosition:
+    base: str = ""
+    head: str = ""
+    merge_base: str = ""
+    commit_count: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class _TestFacts:
+    command: str
+    passed: bool
+    detail: str
+    exit_code: int | None
+    tested_sha: str
+    duration_seconds: float | None
+    status: str
+
+
+@dataclass(frozen=True, slots=True)
+class _ReviewFacts:
+    outcome: str
+    sha: str
+    security_outcome: str
+    security_sha: str
+
+
+def _git_position(project: Project, task: Task) -> _GitPosition:
+    """The default branch's head, the task branch's head, their merge base and distance."""
+
+    base = head = merge_base = ""
+    commit_count = 0
+    try:
+        base = head_sha(project.repo_path, f"refs/heads/{project.default_branch}") or ""
+        if task.branch_name:
+            head = head_sha(project.repo_path, f"refs/heads/{task.branch_name}") or ""
+            merge_base_result = subprocess.run(
+                ["git", "merge-base", project.default_branch, task.branch_name],
+                cwd=project.repo_path,
+                capture_output=True,
+                text=True,
+            )
+            merge_base = merge_base_result.stdout.strip()
+            commit_count_result = subprocess.run(
+                ["git", "rev-list", "--count", f"{project.default_branch}..{task.branch_name}"],
+                cwd=project.repo_path,
+                capture_output=True,
+                text=True,
+            )
+            if commit_count_result.returncode == 0:
+                commit_count = int(commit_count_result.stdout.strip())
+    except (FileNotFoundError, GitError, OSError, ValueError):
+        pass
+    return _GitPosition(base, head, merge_base, commit_count)
+
+
+def _branch_changes(project: Project, task: Task) -> tuple[tuple[str, ...], int, str]:
+    """The files the branch changes, its context lines and its diff stat."""
+
+    if task.branch_name:
+        diff_text = branch_numstat(project.repo_path, project.default_branch, task.branch_name)
+        if diff_text:
+            return parse_numstat(diff_text)
+    return (), 0, ""
+
+
+def _test_facts(events: list[Event], head: str) -> _TestFacts:
+    """What the test step ran, whether it passed, and whether that was of the head."""
+
+    command = detail = tested_sha = ""
+    passed = False
+    exit_code: int | None = None
+    duration_seconds: float | None = None
+    test_events = [e for e in events if e.event_type in ("engine.test_run", "engine.test_output")]
+    for event in sorted(test_events, key=lambda e: e.timestamp):
+        payload = event.payload
+        if event.event_type == "engine.test_run":
+            command = payload.get("command", "")
+            exit_code = payload.get("exit_code")
+            passed = exit_code == 0
+            tested_sha = str(payload.get("head_sha") or "")
+            duration = payload.get("duration_seconds")
+            duration_seconds = float(duration) if isinstance(duration, (int, float)) else None
+        elif event.event_type == "engine.test_output":
+            if payload.get("exit_code") == 0:
+                passed = True
+            detail = payload.get("output", "")
+
+    # A test run on a commit that is no longer the branch head says nothing
+    # about the head. Runs recorded before the commit was captured carry no
+    # SHA and are taken at face value.
+    if not command:
+        status = "not_run"
+    elif tested_sha and head and tested_sha != head:
+        status = "stale"
+    else:
+        status = "passed" if passed else "failed"
+    return _TestFacts(command, passed, detail, exit_code, tested_sha, duration_seconds, status)
+
+
+def _criteria_checklist(criteria_text: str, *, covered: bool, reviewed_sha: str) -> list[dict[str, str]]:
+    """One row per acceptance criterion: covered by the approving review, or not yet."""
+
+    return [
+        {
+            "criterion": criterion,
+            "status": CRITERION_COVERED if covered else CRITERION_UNVERIFIED,
+            "evidence": f"Code review approved {reviewed_sha[:8]}." if covered and reviewed_sha else "",
+        }
+        for criterion in (c.strip() for c in criteria_text.split("\n"))
+        if criterion
+    ]
 
 
 class EvidenceBuilder:
@@ -48,158 +163,38 @@ class EvidenceBuilder:
         criteria judge was removed on 2026-11-19 (ADR-0010 amendment).
         """
         runs = self.store.list_runs(task_id=task.id)
+        events = self.store.list_events(task_id=task.id)
+        git = _git_position(project, task)
+        changed_files, diff_context_lines, branch_diff_stat = _branch_changes(project, task)
+        tests = _test_facts(events, git.head)
+        review = self._review_facts(runs, events)
 
-        # Git positional reference
-        base_sha = ""
-        head_sha_val = ""
-        merge_base_sha_val = ""
-        commit_count = 0
-        try:
-            base_sha = head_sha(project.repo_path, f"refs/heads/{project.default_branch}") or ""
-            if task.branch_name:
-                head_sha_val = head_sha(project.repo_path, f"refs/heads/{task.branch_name}") or ""
-                merge_base_result = subprocess.run(
-                    ["git", "merge-base", project.default_branch, task.branch_name],
-                    cwd=project.repo_path,
-                    capture_output=True,
-                    text=True,
-                )
-                merge_base_sha_val = merge_base_result.stdout.strip()
-                commit_count_result = subprocess.run(
-                    ["git", "rev-list", "--count", f"{project.default_branch}..{task.branch_name}"],
-                    cwd=project.repo_path,
-                    capture_output=True,
-                    text=True,
-                )
-                if commit_count_result.returncode == 0:
-                    commit_count = int(commit_count_result.stdout.strip())
-        except (FileNotFoundError, GitError, OSError, ValueError):
-            pass
-
-        # Changed files from git diff
-        changed_files: tuple[str, ...] = ()
-        diff_context_lines = 0
-        branch_diff_stat = ""
-        if task.branch_name:
-            diff_text = branch_numstat(
-                project.repo_path,
-                project.default_branch,
-                task.branch_name,
-            )
-            if diff_text:
-                changed_files, diff_context_lines, branch_diff_stat = parse_numstat(
-                    diff_text,
-                )
-
-        # Agent output summaries
-        agent_outputs = summarize_agent_outputs(runs)
-
-        # Built-in test results
-        test_events = [
-            event
-            for event in self.store.list_events(task_id=task.id)
-            if event.event_type in ("engine.test_run", "engine.test_output")
-        ]
-        builtin_test_passed = False
-        builtin_test_result = ""
-        builtin_test_detail = ""
-        test_exit_code: int | None = None
-        tested_sha = ""
-        test_duration_seconds: float | None = None
-        for event in sorted(test_events, key=lambda e: e.timestamp):
-            payload = event.payload
-            if event.event_type == "engine.test_run":
-                builtin_test_result = payload.get("command", "")
-                test_exit_code = payload.get("exit_code")
-                builtin_test_passed = test_exit_code == 0
-                tested_sha = str(payload.get("head_sha") or "")
-                duration = payload.get("duration_seconds")
-                test_duration_seconds = (
-                    float(duration) if isinstance(duration, (int, float)) else None
-                )
-            elif event.event_type == "engine.test_output":
-                if payload.get("exit_code") == 0:
-                    builtin_test_passed = True
-                builtin_test_detail = payload.get("output", "")
-
-        # A test run on a commit that is no longer the branch head says
-        # nothing about the head. Runs recorded before the commit was captured
-        # carry no SHA and are taken at face value.
-        if not builtin_test_result:
-            tests_status = "not_run"
-        elif tested_sha and head_sha_val and tested_sha != head_sha_val:
-            tests_status = "stale"
-        else:
-            tests_status = "passed" if builtin_test_passed else "failed"
-
-        # Reviewer outcomes from completed decision-role runs. Roles declare
-        # whether their decision is a code review or a security review, so any
-        # reviewer (triage, frontier, a custom QA role) counts by contract.
-        review_outcome = ""
-        reviewed_sha = ""
-        security_review_outcome = ""
-        security_reviewed_sha = ""
-        reviewed_sha_by_run = {
-            event.run_id: str(event.payload.get("head_sha") or "")
-            for event in self.store.list_events(task_id=task.id)
-            if event.event_type == "engine.review_recorded"
-        }
-        review_kind_by_role = {
-            role_id: role.completion.review_kind
-            for role_id, role in self.roles.items()
-            if role.completion.output.extract_decision
-        }
-        reviewer_runs = [
-            r for r in runs
-            if r.status == "completed" and r.role_id in review_kind_by_role
-        ]
-        for run in sorted(reviewer_runs, key=lambda r: r.completed_at or "", reverse=True):
-            kind = review_kind_by_role[run.role_id]
-            if kind == "code" and not review_outcome:
-                review_outcome = run.outcome or ""
-                reviewed_sha = reviewed_sha_by_run.get(run.id, "")
-            if kind == "security" and not security_review_outcome:
-                security_review_outcome = run.outcome or ""
-                security_reviewed_sha = reviewed_sha_by_run.get(run.id, "")
-
-        review_approved = review_outcome == "approve"
         failure_reasons: list[str] = []
         outstanding: list[str] = []
-
-        if tests_status == "failed":
-            failure_reasons.append(f"Tests failed (exit code {test_exit_code}).")
-        elif tests_status == "stale":
+        if tests.status == "failed":
+            failure_reasons.append(f"Tests failed (exit code {tests.exit_code}).")
+        elif tests.status == "stale":
             failure_reasons.append(
-                f"Tests ran on {tested_sha[:8]}; the branch is now at {head_sha_val[:8]}."
+                f"Tests ran on {tests.tested_sha[:8]}; the branch is now at {git.head[:8]}."
             )
-        elif tests_status == "not_run":
+        elif tests.status == "not_run":
             outstanding.append("Tests have not run.")
 
+        review_approved = review.outcome == "approve"
         review_is_stale = bool(
-            review_approved and reviewed_sha and head_sha_val and reviewed_sha != head_sha_val
+            review_approved and review.sha and git.head and review.sha != git.head
         )
         if review_is_stale:
             failure_reasons.append(
-                f"Code review approved {reviewed_sha[:8]}; the branch is now at "
-                f"{head_sha_val[:8]}."
+                f"Code review approved {review.sha[:8]}; the branch is now at "
+                f"{git.head[:8]}."
             )
 
         # An approving code review of the branch head covers the acceptance
         # criteria; until there is one they are not counted as met.
         criteria_text = task.acceptance_criteria or ""
-        criteria_list = [c.strip() for c in criteria_text.split("\n") if c.strip()]
-        criteria_count = len(criteria_list)
         covered = review_approved and not review_is_stale
-        criteria_checklist: list[dict[str, str]] = [
-            {
-                "criterion": criterion,
-                "status": CRITERION_COVERED if covered else CRITERION_UNVERIFIED,
-                "evidence": f"Code review approved {reviewed_sha[:8]}." if covered and reviewed_sha else "",
-            }
-            for criterion in criteria_list
-        ]
-        criteria_addressed = criteria_count if covered else 0
-        criteria_partially_addressed = 0
+        criteria_checklist = _criteria_checklist(criteria_text, covered=covered, reviewed_sha=review.sha)
         if criteria_checklist and not review_approved:
             outstanding.append("Acceptance criteria are covered once code review approves.")
         # Implementation tasks require acceptance criteria
@@ -217,34 +212,67 @@ class EvidenceBuilder:
             task_id=task.id,
             task_title=task.title,
             acceptance_criteria=criteria_text,
-            criteria_count=criteria_count,
-            criteria_addressed=criteria_addressed,
-            criteria_partially_addressed=criteria_partially_addressed,
+            criteria_count=len(criteria_checklist),
+            criteria_addressed=len(criteria_checklist) if covered else 0,
+            criteria_partially_addressed=0,
             changed_files=changed_files,
             diff_context_lines=diff_context_lines,
             branch_diff_stat=branch_diff_stat,
-            agent_outputs=agent_outputs,
-            builtin_test_result=builtin_test_result,
-            builtin_test_passed=builtin_test_passed,
-            builtin_test_detail=builtin_test_detail,
-            base_sha=base_sha,
-            head_sha=head_sha_val,
-            merge_base_sha=merge_base_sha_val,
-            commit_count=commit_count,
-            test_command=builtin_test_result,
-            test_exit_code=test_exit_code,
-            tests_status=tests_status,
-            tested_sha=tested_sha,
-            test_duration_seconds=test_duration_seconds,
-            review_outcome=review_outcome,
-            reviewed_sha=reviewed_sha,
-            security_review_outcome=security_review_outcome,
-            security_reviewed_sha=security_reviewed_sha,
+            agent_outputs=summarize_agent_outputs(runs),
+            builtin_test_result=tests.command,
+            builtin_test_passed=tests.passed,
+            builtin_test_detail=tests.detail,
+            base_sha=git.base,
+            head_sha=git.head,
+            merge_base_sha=git.merge_base,
+            commit_count=git.commit_count,
+            test_command=tests.command,
+            test_exit_code=tests.exit_code,
+            tests_status=tests.status,
+            tested_sha=tests.tested_sha,
+            test_duration_seconds=tests.duration_seconds,
+            review_outcome=review.outcome,
+            reviewed_sha=review.sha,
+            security_review_outcome=review.security_outcome,
+            security_reviewed_sha=review.security_sha,
             criteria_checklist=tuple(criteria_checklist),
             proof_status=proof_status,
             failure_reasons=tuple(failure_reasons),
             outstanding=tuple(outstanding),
         )
+
+    def _review_facts(self, runs: list[Run], events: list[Event]) -> _ReviewFacts:
+        """The latest code and security decisions, and the commits they were of.
+
+        Roles declare whether their decision is a code review or a security
+        review, so any reviewer (triage, frontier, a custom QA role) counts
+        by contract.
+        """
+
+        reviewed_sha_by_run = {
+            event.run_id: str(event.payload.get("head_sha") or "")
+            for event in events
+            if event.event_type == "engine.review_recorded"
+        }
+        review_kind_by_role = {
+            role_id: role.completion.review_kind
+            for role_id, role in self.roles.items()
+            if role.completion.output.extract_decision
+        }
+        reviewer_runs = [
+            r for r in runs
+            if r.status == "completed" and r.role_id in review_kind_by_role
+        ]
+        outcome = sha = security_outcome = security_sha = ""
+        for run in sorted(reviewer_runs, key=lambda r: r.completed_at or "", reverse=True):
+            kind = review_kind_by_role[run.role_id]
+            if kind == "code" and not outcome:
+                outcome = run.outcome or ""
+                sha = reviewed_sha_by_run.get(run.id, "")
+            if kind == "security" and not security_outcome:
+                security_outcome = run.outcome or ""
+                security_sha = reviewed_sha_by_run.get(run.id, "")
+        return _ReviewFacts(outcome, sha, security_outcome, security_sha)
 
     def branch_head(self, project: Project, task: Task) -> str:
         """Return the task branch's head commit, or "" when it cannot be read."""

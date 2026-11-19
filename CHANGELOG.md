@@ -9,6 +9,7 @@ memory changes rather than versioned product releases.
 
 ### Sprint 61 — the core, proven
 
+- The seven functions over 200 lines are split into named parts, with no change in behaviour (ADR-0032): the agent step and its corrective retry now share one execute-and-record, the native runner's stream is folded by one tally, and the resident engine's loop keeps its state in one object. No function in `foreman/` is over 200 lines.
 - A run left `running` by an engine that died is recovered at its step, not at the start of the task. The task keeps its step, what that step was handed and its visit counts; the step runs again, and a developer resumes the session the dead run recorded (a reviewer, which keeps no session, reviews afresh). It used to be reset to the entry step with its counts cleared, so an engine that died during review had the developer do the task again.
 
 - A corrective retry (a developer that ended without its completion marker, a reviewer whose verdict was malformed or that approved a cut diff unread) resumes the agent's session and now sends the correction alone. It used to send the whole first prompt again with the correction after it, into a session that already held it, and the developer started the task over.

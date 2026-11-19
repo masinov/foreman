@@ -218,85 +218,20 @@ class AgentStepRunner:
                 visit_count=task.step_visit_counts.get(workflow_step, 1) or 1,
             )
         model = model or ""
-        try:
-            resolved_env = resolve_env(role.agent.env)
-        except PreflightError as exc:
-            return AgentExecutionResult(
-                outcome=ERROR,
-                detail=str(exc),
-                status="failed",
-                model=model or None,
-                events=(
-                    AgentEventRecord(
-                        event_type="agent.error",
-                        payload={
-                            "error": str(exc),
-                            "preflight_failed": True,
-                        },
-                    ),
-                ),
-                failure_type="preflight",
-            )
-        # What the backend already counted for the session being resumed; the
-        # runner takes it off, so this run is charged only for itself.
-        session_baseline_usd = (
-            self.records.store.latest_session_cost(
-                session_id=session_id, agent_backend=role.agent.backend
-            )
-            if session_id
-            else 0.0
+        config = self._native_config(
+            role=role, project=project, task=task, prompt=prompt, session_id=session_id, model=model
         )
-        config = AgentRunConfig(
-            backend=role.agent.backend,
-            model=model or None,
-            prompt=prompt,
-            # The agent edits its task's own worktree, never the operator's
-            # checkout.
-            working_dir=task_working_dir(project, task),
-            session_id=session_id,
-            permission_mode=role.agent.permission_mode,
-            disallowed_tools=role.agent.tools.disallowed,
-            allowed_tools=role.agent.tools.allowed,
-            no_tools=role.agent.tools.none,
-            extra_flags=role.agent.flags,
-            # What the project passes through from the host, then what the
-            # role sets; the runner adds both to the short list of host
-            # variables every agent gets (ADR-0023).
-            env={
-                **passthrough_env(resolve_project_settings(project).agent_env_passthrough),
-                **resolved_env,
-            },
-            timeout_seconds=project_timeout_seconds(
-                project,
-                role_timeout_minutes=role.completion.timeout_minutes,
-            ),
-            max_cost_usd=run_cost_ceiling(project, role.completion.max_cost_usd),
-            session_cost_baseline_usd=session_baseline_usd,
-        )
-        max_retries = resolve_project_settings(project).max_infra_retries
+        if isinstance(config, AgentExecutionResult):
+            return config
 
-        events: list[AgentEventRecord] = []
-        message_fragments: list[str] = []
-        final_message = ""
-        saw_final_phase = False
-        seen_signals: set[str] = set()
-        final_status = "failed"
-        outcome = "error"
-        detail = ""
-        final_session_id = session_id
-        cost_usd = 0.0
-        session_cost_usd: float | None = None
-        aborted_cost_usd = 0.0
-        token_count = 0
-        token_usage: TokenUsage | None = None
-        duration_ms: int | None = None
-        failure_type: str | None = None
-        retry_after: str | None = None
-
-        retry_kwargs: dict[str, Any] = {"max_retries": max_retries}
+        retry_kwargs: dict[str, Any] = {
+            "max_retries": resolve_project_settings(project).max_infra_retries
+        }
         if self.runner_sleep is not None:
             retry_kwargs["sleep"] = self.runner_sleep
 
+        tally = _NativeRunTally(role=role, session_id=session_id)
+        seen_signals: set[str] = set()
         # Heartbeat the task lease while the native runner streams so a long
         # run keeps the lease alive between steps. We track the last heartbeat
         # wall-clock time and only renew once the configured interval has
@@ -304,11 +239,7 @@ class AgentStepRunner:
         heartbeat_interval = self.heartbeat_seconds
         last_heartbeat: datetime | None = None
 
-        for event in run_with_retry(
-            runner,
-            config,
-            **retry_kwargs,
-        ):
+        for event in run_with_retry(runner, config, **retry_kwargs):
             now = self.utc_now()
             if (
                 heartbeat_interval > 0
@@ -340,159 +271,200 @@ class AgentStepRunner:
                 payload=dict(event.payload),
                 timestamp=event.timestamp,
             )
-            events.append(event_record)
+            tally.events.append(event_record)
             if event_recorder is not None:
                 event_recorder(event_record)
-            if event.event_type == "agent.message":
-                text = optional_string(event.payload.get("text"))
-                if text and (not message_fragments or message_fragments[-1] != text):
-                    message_fragments.append(text)
-                if text:
-                    phase = optional_string(event.payload.get("phase"))
-                    if phase in FINAL_MESSAGE_PHASES:
-                        final_message = text
-                        saw_final_phase = True
-                    elif not saw_final_phase:
-                        final_message = text
-                continue
+            tally.absorb(event.event_type, event.payload)
 
-            if event.event_type == "agent.infra_error":
-                # The attempt that just failed was charged for; keep its cost
-                # on the books and start the next attempt's count from zero.
-                aborted_cost_usd += coerce_float_value(
-                    event.payload.get("cost_usd"), default=cost_usd
-                )
-                cost_usd = 0.0
-                token_count = 0
-                dropped = optional_string(event.payload.get("dropped_session_id"))
-                if dropped and final_session_id == dropped:
-                    final_session_id = None
-                continue
+        return tally.result(model=model or None, events_streamed=event_recorder is not None)
 
-            if event.event_type == "agent.cost_update":
-                cost_usd = coerce_float_value(
-                    event.payload.get("cumulative_usd"),
-                    default=cost_usd,
-                )
-                token_count = coerce_int_value(
-                    event.payload.get("cumulative_tokens"),
-                    default=token_count,
-                )
-                continue
+    def _native_config(
+        self,
+        *,
+        role: RoleDefinition,
+        project: Project,
+        task: Task,
+        prompt: str,
+        session_id: str | None,
+        model: str,
+    ) -> AgentRunConfig | AgentExecutionResult:
+        """What the runner is started with, or the failed result of a role that cannot start."""
 
-            if event.event_type == "agent.completed":
-                final_session_id = (
-                    optional_string(event.payload.get("session_id")) or final_session_id
-                )
-                cost_usd = coerce_float_value(
-                    event.payload.get("cost_usd"),
-                    default=cost_usd,
-                )
-                session_cost_usd = _reported_session_cost(event.payload, session_cost_usd)
-                token_count = coerce_int_value(
-                    event.payload.get("token_count"),
-                    default=token_count,
-                )
-                token_usage = TokenUsage.from_mapping(event.payload.get("token_usage")) or token_usage
-                duration_ms = coerce_int_value(
-                    event.payload.get("duration_ms"),
-                    default=duration_ms,
-                )
-                outcome, detail = extract_completion_output(
-                    role,
-                    final_message,
-                    transcript="\n\n".join(message_fragments),
-                )
-                final_status = "completed"
-                continue
+        try:
+            resolved_env = resolve_env(role.agent.env)
+        except PreflightError as exc:
+            return AgentExecutionResult(
+                outcome=ERROR,
+                detail=str(exc),
+                status="failed",
+                model=model or None,
+                events=(
+                    AgentEventRecord(
+                        event_type="agent.error",
+                        payload={
+                            "error": str(exc),
+                            "preflight_failed": True,
+                        },
+                    ),
+                ),
+                failure_type="preflight",
+            )
+        # What the backend already counted for the session being resumed; the
+        # runner takes it off, so this run is charged only for itself.
+        session_baseline_usd = (
+            self.records.store.latest_session_cost(
+                session_id=session_id, agent_backend=role.agent.backend
+            )
+            if session_id
+            else 0.0
+        )
+        return AgentRunConfig(
+            backend=role.agent.backend,
+            model=model or None,
+            prompt=prompt,
+            # The agent edits its task's own worktree, never the operator's
+            # checkout.
+            working_dir=task_working_dir(project, task),
+            session_id=session_id,
+            permission_mode=role.agent.permission_mode,
+            disallowed_tools=role.agent.tools.disallowed,
+            allowed_tools=role.agent.tools.allowed,
+            no_tools=role.agent.tools.none,
+            extra_flags=role.agent.flags,
+            # What the project passes through from the host, then what the
+            # role sets; the runner adds both to the short list of host
+            # variables every agent gets (ADR-0023).
+            env={
+                **passthrough_env(resolve_project_settings(project).agent_env_passthrough),
+                **resolved_env,
+            },
+            timeout_seconds=project_timeout_seconds(
+                project,
+                role_timeout_minutes=role.completion.timeout_minutes,
+            ),
+            max_cost_usd=run_cost_ceiling(project, role.completion.max_cost_usd),
+            session_cost_baseline_usd=session_baseline_usd,
+        )
 
-            if event.event_type == "agent.session":
-                final_session_id = (
-                    optional_string(event.payload.get("session_id")) or final_session_id
-                )
-                continue
 
-            if event.event_type == "agent.killed":
-                gate_type = optional_string(event.payload.get("gate_type")) or "gate"
-                final_status = "timeout" if gate_type == "time" else "killed"
-                outcome = "error"
-                detail = (
-                    optional_string(event.payload.get("reason"))
-                    or "Agent run was killed by a gate."
-                )
-                # A backend that stops a run at its budget reports what the
-                # run cost; a kill must not erase that from the books.
-                final_session_id = (
-                    optional_string(event.payload.get("session_id")) or final_session_id
-                )
-                cost_usd = coerce_float_value(event.payload.get("cost_usd"), default=cost_usd)
-                session_cost_usd = _reported_session_cost(event.payload, session_cost_usd)
-                token_count = coerce_int_value(
-                    event.payload.get("token_count"), default=token_count
-                )
-                token_usage = TokenUsage.from_mapping(event.payload.get("token_usage")) or token_usage
-                duration_ms = coerce_int_value(
-                    event.payload.get("duration_ms"), default=duration_ms
-                )
-                continue
+class _NativeRunTally:
+    """What one native run's stream adds up to: its messages, totals and ending."""
 
-            if event.event_type == "agent.error":
-                final_session_id = (
-                    optional_string(event.payload.get("session_id")) or final_session_id
-                )
-                cost_usd = coerce_float_value(
-                    event.payload.get("cost_usd"),
-                    default=cost_usd,
-                )
-                session_cost_usd = _reported_session_cost(event.payload, session_cost_usd)
-                token_count = coerce_int_value(
-                    event.payload.get("token_count"),
-                    default=token_count,
-                )
-                token_usage = TokenUsage.from_mapping(event.payload.get("token_usage")) or token_usage
-                duration_ms = coerce_int_value(
-                    event.payload.get("duration_ms"),
-                    default=duration_ms,
-                )
-                final_status = "failed"
-                failure_type = _failure_type_for_error(event.payload)
-                retry_after = optional_string(event.payload.get("retry_after"))
-                detail = (
-                    optional_string(event.payload.get("error"))
-                    or "\n\n".join(message_fragments)
-                    or "Agent execution failed."
-                )
+    def __init__(self, *, role: RoleDefinition, session_id: str | None) -> None:
+        self.role = role
+        self.events: list[AgentEventRecord] = []
+        self.message_fragments: list[str] = []
+        self.final_message = ""
+        self.saw_final_phase = False
+        self.final_status = "failed"
+        self.outcome = "error"
+        self.detail = ""
+        self.session_id = session_id
+        self.cost_usd = 0.0
+        self.session_cost_usd: float | None = None
+        self.aborted_cost_usd = 0.0
+        self.token_count = 0
+        self.token_usage: TokenUsage | None = None
+        self.duration_ms: int | None = None
+        self.failure_type: str | None = None
+        self.retry_after: str | None = None
 
-        if not detail:
-            detail = "\n\n".join(message_fragments).strip()
+    def absorb(self, event_type: str, payload: Mapping[str, Any]) -> None:
+        """Fold one persisted stream event into the run's totals and ending."""
+
+        if event_type == "agent.message":
+            text = optional_string(payload.get("text"))
+            if text and (not self.message_fragments or self.message_fragments[-1] != text):
+                self.message_fragments.append(text)
+            if text:
+                phase = optional_string(payload.get("phase"))
+                if phase in FINAL_MESSAGE_PHASES:
+                    self.final_message = text
+                    self.saw_final_phase = True
+                elif not self.saw_final_phase:
+                    self.final_message = text
+        elif event_type == "agent.infra_error":
+            # The attempt that just failed was charged for; keep its cost on
+            # the books and start the next attempt's count from zero.
+            self.aborted_cost_usd += coerce_float_value(
+                payload.get("cost_usd"), default=self.cost_usd
+            )
+            self.cost_usd = 0.0
+            self.token_count = 0
+            dropped = optional_string(payload.get("dropped_session_id"))
+            if dropped and self.session_id == dropped:
+                self.session_id = None
+        elif event_type == "agent.cost_update":
+            self.cost_usd = coerce_float_value(payload.get("cumulative_usd"), default=self.cost_usd)
+            self.token_count = coerce_int_value(
+                payload.get("cumulative_tokens"), default=self.token_count
+            )
+        elif event_type == "agent.completed":
+            self._take_totals(payload)
+            self.outcome, self.detail = extract_completion_output(
+                self.role,
+                self.final_message,
+                transcript="\n\n".join(self.message_fragments),
+            )
+            self.final_status = "completed"
+        elif event_type == "agent.session":
+            self.session_id = optional_string(payload.get("session_id")) or self.session_id
+        elif event_type == "agent.killed":
+            gate_type = optional_string(payload.get("gate_type")) or "gate"
+            self.final_status = "timeout" if gate_type == "time" else "killed"
+            self.outcome = "error"
+            self.detail = optional_string(payload.get("reason")) or "Agent run was killed by a gate."
+            # A backend that stops a run at its budget reports what the run
+            # cost; a kill must not erase that from the books.
+            self._take_totals(payload)
+        elif event_type == "agent.error":
+            self._take_totals(payload)
+            self.final_status = "failed"
+            self.failure_type = _failure_type_for_error(payload)
+            self.retry_after = optional_string(payload.get("retry_after"))
+            self.detail = (
+                optional_string(payload.get("error"))
+                or "\n\n".join(self.message_fragments)
+                or "Agent execution failed."
+            )
+
+    def _take_totals(self, payload: Mapping[str, Any]) -> None:
+        """The session, cost, tokens and duration a terminal event reports."""
+
+        self.session_id = optional_string(payload.get("session_id")) or self.session_id
+        self.cost_usd = coerce_float_value(payload.get("cost_usd"), default=self.cost_usd)
+        self.session_cost_usd = _reported_session_cost(payload, self.session_cost_usd)
+        self.token_count = coerce_int_value(payload.get("token_count"), default=self.token_count)
+        self.token_usage = TokenUsage.from_mapping(payload.get("token_usage")) or self.token_usage
+        self.duration_ms = coerce_int_value(payload.get("duration_ms"), default=self.duration_ms)
+
+    def result(self, *, model: str | None, events_streamed: bool) -> AgentExecutionResult:
+        detail = self.detail or "\n\n".join(self.message_fragments).strip()
         if not detail:
             detail = "Agent execution finished without output."
-
         # Each agent.infra_error means run_with_retry aborted an attempt and
         # replayed the step; surface that as the run's retry count so partial
         # duplicate transcripts are diagnosable.
         infra_retry_count = sum(
-            1 for record in events if record.event_type == "agent.infra_error"
+            1 for record in self.events if record.event_type == "agent.infra_error"
         )
-
         return AgentExecutionResult(
-            outcome=outcome,
+            outcome=self.outcome,
             detail=detail,
-            status=final_status,
-            session_id=final_session_id,
-            cost_usd=cost_usd + aborted_cost_usd,
-            session_cost_usd=session_cost_usd,
-            token_count=token_count,
-            token_usage=token_usage,
-            duration_ms=duration_ms,
-            model=model or None,
-            events=tuple(events),
-            events_streamed=event_recorder is not None,
+            status=self.final_status,
+            session_id=self.session_id,
+            cost_usd=self.cost_usd + self.aborted_cost_usd,
+            session_cost_usd=self.session_cost_usd,
+            token_count=self.token_count,
+            token_usage=self.token_usage,
+            duration_ms=self.duration_ms,
+            model=model,
+            events=tuple(self.events),
+            events_streamed=events_streamed,
             retry_count=infra_retry_count,
-            failure_type=failure_type,
-            retry_after=retry_after,
+            failure_type=self.failure_type,
+            retry_after=self.retry_after,
         )
-
 
 def _reported_session_cost(payload: Mapping[str, Any], current: float | None) -> float | None:
     """The session's running total a terminal event carries, if it carries one."""

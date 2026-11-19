@@ -68,6 +68,119 @@ def _follow_operator_checkout(project: Project, sha: str | None) -> BuiltinEvent
     return None
 
 
+def _merge_failed(branch: str, error: str) -> BuiltinResult:
+    return BuiltinResult(
+        outcome="failure",
+        detail=error,
+        events=(
+            BuiltinEventRecord(
+                event_type="engine.merge_failed",
+                payload={"branch": branch, "error": error},
+            ),
+        ),
+    )
+
+
+def _landed(
+    project: Project, task: Task, integration_path: Path, result: GitMergeResult
+) -> BuiltinResult:
+    """A merge that landed: bring a person's checkout along and push when asked."""
+
+    events = [
+        BuiltinEventRecord(
+            event_type="engine.merge",
+            payload={
+                "branch": task.branch_name,
+                "target": project.default_branch,
+                "worktree": str(integration_path),
+                "sha": result.sha,
+            },
+        )
+    ]
+    detail = result.detail
+    followed = _follow_operator_checkout(project, result.sha)
+    if followed is not None:
+        events.append(followed)
+    remote = settings_of(project).merge_push_remote
+    if remote:
+        # The merge is done whatever the push does: a remote that is
+        # down or refuses must not send finished work back to develop.
+        pushed = push_branch(
+            integration_path, remote=remote, branch=project.default_branch
+        )
+        if pushed.returncode == 0:
+            events.append(
+                BuiltinEventRecord(
+                    event_type="engine.push",
+                    payload={
+                        "remote": remote,
+                        "branch": project.default_branch,
+                        "sha": result.sha,
+                    },
+                )
+            )
+            detail = f"{detail}\nPushed {project.default_branch} to {remote}."
+        else:
+            error = pushed.stderr or pushed.stdout or "git push failed"
+            events.append(
+                BuiltinEventRecord(
+                    event_type="engine.push_failed",
+                    payload={
+                        "remote": remote,
+                        "branch": project.default_branch,
+                        "sha": result.sha,
+                        "error": error,
+                    },
+                )
+            )
+            detail = (
+                f"{detail}\nMerged, but not pushed: pushing "
+                f"{project.default_branch} to {remote} failed. {error}"
+            )
+    return BuiltinResult(outcome="success", detail=detail, events=tuple(events))
+
+
+def _not_landed(project: Project, task: Task, result: GitMergeResult) -> BuiltinResult:
+    """A conflict goes back to develop; any other failure fails the step."""
+
+    if result.conflict:
+        detail = (
+            f"Merge conflict against {project.default_branch!r}. Reconcile branch "
+            f"{task.branch_name!r} with the latest {project.default_branch!r}, then "
+            "complete another develop pass. Conflict-resolution changes must go back "
+            "through code review before merge.\n\n"
+            f"{result.detail}"
+        )
+        return BuiltinResult(
+            outcome="conflict",
+            detail=detail,
+            events=(
+                BuiltinEventRecord(
+                    event_type="engine.merge_conflict",
+                    payload={
+                        "branch": task.branch_name,
+                        "target": project.default_branch,
+                        "error": result.detail,
+                    },
+                ),
+            ),
+        )
+
+    return BuiltinResult(
+        outcome="failure",
+        detail=result.detail,
+        events=(
+            BuiltinEventRecord(
+                event_type="engine.merge_failed",
+                payload={
+                    "branch": task.branch_name,
+                    "error": result.detail,
+                },
+            ),
+        ),
+    )
+
+
 class MergeStep(BuiltinExecutorBase):
     """Merging a task's branch."""
 
@@ -81,17 +194,7 @@ class MergeStep(BuiltinExecutorBase):
         working_dir: Path | None = None,
     ) -> BuiltinResult:
         if not task.branch_name:
-            detail = "Task branch is not set."
-            return BuiltinResult(
-                outcome="failure",
-                detail=detail,
-                events=(
-                    BuiltinEventRecord(
-                        event_type="engine.merge_failed",
-                        payload={"branch": "", "error": detail},
-                    ),
-                ),
-            )
+            return _merge_failed("", "Task branch is not set.")
 
         # Work the developer left uncommitted in the task's own tree is not on
         # the branch, so merging would silently drop it. Refuse instead.
@@ -124,16 +227,7 @@ class MergeStep(BuiltinExecutorBase):
         try:
             integration_path = WorktreeManager(project).ensure_integration()
         except WorktreeError as exc:
-            return BuiltinResult(
-                outcome="failure",
-                detail=str(exc),
-                events=(
-                    BuiltinEventRecord(
-                        event_type="engine.merge_failed",
-                        payload={"branch": task.branch_name, "error": str(exc)},
-                    ),
-                ),
-            )
+            return _merge_failed(task.branch_name, str(exc))
 
         # Run full merge preflight in the integration worktree: the tree the
         # merge will actually happen in is the one that has to be clean.
@@ -155,36 +249,11 @@ class MergeStep(BuiltinExecutorBase):
             )
 
         if settings_of(project).completion_guard_enabled:
-            evidence = self._build_completion_evidence(
-                project=project,
-                task=task,
-                store=store,
-                evidence_builder=evidence_builder,
+            refused = self._guard_completion(
+                project=project, task=task, store=store, evidence_builder=evidence_builder
             )
-            task.completion_evidence = evidence
-            if evidence is None:
-                return self._block_task(
-                    task,
-                    detail="Completion evidence could not be built. Cannot merge.",
-                    event_type="engine.completion_guard",
-                    payload={"error": "evidence_build_failed"},
-                )
-            block_reason = self._completion_guard_block_reason(task, evidence, project, store)
-            if block_reason is not None:
-                task.status = "blocked"
-                task.blocked_reason = block_reason
-                task.workflow_current_step = None
-                task.workflow_carried_output = None
-                return BuiltinResult(
-                    outcome="blocked",
-                    detail=block_reason,
-                    events=(
-                        BuiltinEventRecord(
-                            event_type="engine.completion_guard",
-                            payload=_completion_guard_payload(evidence),
-                        ),
-                    ),
-                )
+            if refused is not None:
+                return refused
 
         # The merge lands in Foreman's own integration worktree. A person's
         # checkout sitting on the default branch is then brought along, the
@@ -195,95 +264,50 @@ class MergeStep(BuiltinExecutorBase):
             target_branch=project.default_branch,
         )
         if result.success:
-            events = [
-                BuiltinEventRecord(
-                    event_type="engine.merge",
-                    payload={
-                        "branch": task.branch_name,
-                        "target": project.default_branch,
-                        "worktree": str(integration_path),
-                        "sha": result.sha,
-                    },
-                )
-            ]
-            detail = result.detail
-            followed = _follow_operator_checkout(project, result.sha)
-            if followed is not None:
-                events.append(followed)
-            remote = settings_of(project).merge_push_remote
-            if remote:
-                # The merge is done whatever the push does: a remote that is
-                # down or refuses must not send finished work back to develop.
-                pushed = push_branch(
-                    integration_path, remote=remote, branch=project.default_branch
-                )
-                if pushed.returncode == 0:
-                    events.append(
-                        BuiltinEventRecord(
-                            event_type="engine.push",
-                            payload={
-                                "remote": remote,
-                                "branch": project.default_branch,
-                                "sha": result.sha,
-                            },
-                        )
-                    )
-                    detail = f"{detail}\nPushed {project.default_branch} to {remote}."
-                else:
-                    error = pushed.stderr or pushed.stdout or "git push failed"
-                    events.append(
-                        BuiltinEventRecord(
-                            event_type="engine.push_failed",
-                            payload={
-                                "remote": remote,
-                                "branch": project.default_branch,
-                                "sha": result.sha,
-                                "error": error,
-                            },
-                        )
-                    )
-                    detail = (
-                        f"{detail}\nMerged, but not pushed: pushing "
-                        f"{project.default_branch} to {remote} failed. {error}"
-                    )
-            return BuiltinResult(outcome="success", detail=detail, events=tuple(events))
+            return _landed(project, task, integration_path, result)
+        return _not_landed(project, task, result)
 
-        if result.conflict:
-            detail = (
-                f"Merge conflict against {project.default_branch!r}. Reconcile branch "
-                f"{task.branch_name!r} with the latest {project.default_branch!r}, then "
-                "complete another develop pass. Conflict-resolution changes must go back "
-                "through code review before merge.\n\n"
-                f"{result.detail}"
+    def _guard_completion(
+        self,
+        *,
+        project: Project,
+        task: Task,
+        store: ForemanStore | None,
+        evidence_builder: Callable[[Task, Project], CompletionEvidence | None] | None,
+    ) -> BuiltinResult | None:
+        """Build the task's evidence and refuse the merge when it falls short."""
+
+        evidence = self._build_completion_evidence(
+            project=project,
+            task=task,
+            store=store,
+            evidence_builder=evidence_builder,
+        )
+        task.completion_evidence = evidence
+        if evidence is None:
+            return self._block_task(
+                task,
+                detail="Completion evidence could not be built. Cannot merge.",
+                event_type="engine.completion_guard",
+                payload={"error": "evidence_build_failed"},
             )
+        block_reason = self._completion_guard_block_reason(task, evidence, project, store)
+        if block_reason is not None:
+            task.status = "blocked"
+            task.blocked_reason = block_reason
+            task.workflow_current_step = None
+            task.workflow_carried_output = None
             return BuiltinResult(
-                outcome="conflict",
-                detail=detail,
+                outcome="blocked",
+                detail=block_reason,
                 events=(
                     BuiltinEventRecord(
-                        event_type="engine.merge_conflict",
-                        payload={
-                            "branch": task.branch_name,
-                            "target": project.default_branch,
-                            "error": result.detail,
-                        },
+                        event_type="engine.completion_guard",
+                        payload=_completion_guard_payload(evidence),
                     ),
                 ),
             )
-
-        return BuiltinResult(
-            outcome="failure",
-            detail=result.detail,
-            events=(
-                BuiltinEventRecord(
-                    event_type="engine.merge_failed",
-                    payload={
-                        "branch": task.branch_name,
-                        "error": result.detail,
-                    },
-                ),
-            ),
-        )
+        return None
 
     def _update_behind_branch(
         self,

@@ -3,9 +3,10 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import Any
 
+from ...definitions.roles import RoleDefinition
 from ...definitions.workflows import WorkflowStep
 from ...domain.guidance import (
     GUIDANCE_DELIVERED_EVENT,
@@ -23,7 +24,8 @@ from ...domain.outcomes import (
 from ...repo.context import build_project_context
 from ..branch_sync import context_mirror_dirs
 from ..errors import OrchestratorError, QuotaPauseError
-from ..model_selection import resolve_step_model_selection
+from ..model_selection import ModelSelection, resolve_step_model_selection
+from ..results import AgentExecutionResult
 from ..output_contract import (
     UNREAD_APPROVAL_DETAIL,
     approved_without_reading,
@@ -31,6 +33,18 @@ from ..output_contract import (
     with_retry_instruction,
 )
 from .base import WorkflowRunnerBase
+
+
+@dataclass(frozen=True, slots=True)
+class _Attempt:
+    """What every attempt at one agent step shares."""
+
+    role: RoleDefinition
+    project: Project
+    task: Task
+    step: str
+    carried_output: str | None
+    model: str | None
 
 
 class AgentSteps(WorkflowRunnerBase):
@@ -67,29 +81,7 @@ class AgentSteps(WorkflowRunnerBase):
             carried_output=carried_output,
             mirror_dirs=context_mirror_dirs(project, task),
         )
-        prompt = self.prompts.build(
-            role,
-            project,
-            task,
-            carried_output,
-            context_projection=context_projection,
-        )
-        # Notes are for the agent doing the work. A role that does not decide
-        # gets the notes written since it last ran, and they are marked
-        # delivered once the run that carries them exists. A step that was
-        # killed (an interruption, a shutdown) starts again with whatever
-        # guidance it had been given, as well as any since. A reviewer is
-        # shown every note as context and is delivered none.
-        killed = {earlier.id for earlier in self.store.list_runs(task_id=task.id, status="killed")}
-        task_events = self.store.list_events(task_id=task.id)
-        if role.completion.output.extract_decision:
-            guidance = []
-            prompt = prompt_with_guidance_as_context(
-                prompt, guidance_notes(task_events, void_runs=killed)
-            )
-        else:
-            guidance = pending_guidance(task_events, void_runs=killed)
-            prompt = prompt_with_guidance(prompt, guidance)
+        prompt, guidance = self._prompt_with_notes(role, project, task, carried_output, context_projection)
         model_selection = resolve_step_model_selection(
             task=task,
             role=role,
@@ -97,7 +89,105 @@ class AgentSteps(WorkflowRunnerBase):
             step_id=step,
             visit_count=visit_count,
         )
-        model = model_selection.model or ""
+        run = self._open_agent_run(
+            role,
+            project,
+            task,
+            step=step,
+            visit_count=visit_count,
+            prompt=prompt,
+            guidance=guidance,
+            model_selection=model_selection,
+            context_projection=context_projection,
+            branch_sync_event=branch_sync_event,
+        )
+        session_key = (role.id, role.agent.backend)
+        session_id = self._step_session(role, task, session_ids, session_key)
+        attempt = _Attempt(
+            role=role,
+            project=project,
+            task=task,
+            step=step,
+            carried_output=carried_output,
+            model=model_selection.model,
+        )
+        result = self._execute_and_record(attempt, run, prompt, session_id)
+        run, result = self._corrective_retry(
+            attempt,
+            run,
+            result,
+            prompt=prompt,
+            session_id=session_id,
+            visit_count=visit_count,
+            context_projection=context_projection,
+        )
+        if result.failure_type == "quota":
+            self.pause_for_quota(
+                project,
+                task,
+                run,
+                step=step,
+                carried_output=carried_output,
+                result=result,
+            )
+            raise QuotaPauseError(
+                task.id,
+                retry_after=result.retry_after,
+                detail=result.detail,
+            )
+        if role.agent.session_persistence and result.session_id:
+            session_ids[session_key] = result.session_id
+        return run, self._settled_outcome(role, project, task, run, result), result.detail
+
+    def _prompt_with_notes(
+        self,
+        role: RoleDefinition,
+        project: Project,
+        task: Task,
+        carried_output: str | None,
+        context_projection: Any,
+    ) -> tuple[str, list[Any]]:
+        """The step's prompt, and the notes it delivers to the agent.
+
+        Notes are for the agent doing the work. A role that does not decide
+        gets the notes written since it last ran, and they are marked
+        delivered once the run that carries them exists. A step that was
+        killed (an interruption, a shutdown) starts again with whatever
+        guidance it had been given, as well as any since. A reviewer is
+        shown every note as context and is delivered none.
+        """
+
+        prompt = self.prompts.build(
+            role,
+            project,
+            task,
+            carried_output,
+            context_projection=context_projection,
+        )
+        killed = {earlier.id for earlier in self.store.list_runs(task_id=task.id, status="killed")}
+        task_events = self.store.list_events(task_id=task.id)
+        if role.completion.output.extract_decision:
+            notes = guidance_notes(task_events, void_runs=killed)
+            return prompt_with_guidance_as_context(prompt, notes), []
+        guidance = pending_guidance(task_events, void_runs=killed)
+        return prompt_with_guidance(prompt, guidance), guidance
+
+    def _open_agent_run(
+        self,
+        role: RoleDefinition,
+        project: Project,
+        task: Task,
+        *,
+        step: str,
+        visit_count: int,
+        prompt: str,
+        guidance: list[Any],
+        model_selection: ModelSelection,
+        context_projection: Any,
+        branch_sync_event: tuple[str, dict[str, Any]] | None,
+    ) -> Run:
+        """Create the step's run and record what it is started with."""
+
         run = self.records.create_running_run(
             task,
             role_id=role.id,
@@ -159,28 +249,57 @@ class AgentSteps(WorkflowRunnerBase):
         if branch_sync_event is not None:
             event_type, payload = branch_sync_event
             self.records.emit_event(run, event_type, payload)
-        session_key = (role.id, role.agent.backend)
-        session_id: str | None = None
-        if role.agent.session_persistence:
-            session_id = session_ids.get(session_key)
-            if session_id is None:
-                session_id = self.store.get_latest_session_id(
-                    task_id=task.id,
-                    role_id=role.id,
-                    agent_backend=role.agent.backend,
-                )
-                if session_id:
-                    session_ids[session_key] = session_id
+        return run
+
+    def _step_session(
+        self,
+        role: RoleDefinition,
+        task: Task,
+        session_ids: dict[tuple[str, str], str],
+        session_key: tuple[str, str],
+    ) -> str | None:
+        """The session a role that keeps one resumes: this pass's, else the task's latest."""
+
+        if not role.agent.session_persistence:
+            return None
+        session_id = session_ids.get(session_key)
+        if session_id is None:
+            session_id = self.store.get_latest_session_id(
+                task_id=task.id,
+                role_id=role.id,
+                agent_backend=role.agent.backend,
+            )
+            if session_id:
+                session_ids[session_key] = session_id
+        return session_id
+
+    def _execute_and_record(
+        self,
+        attempt: _Attempt,
+        run: Run,
+        prompt: str,
+        session_id: str | None,
+        *,
+        reread_prompt: str | None = None,
+    ) -> AgentExecutionResult:
+        """Run the role once under *run* and complete the run with what it did.
+
+        ``reread_prompt`` is the first attempt's prompt on a retry: a role
+        asked to read that approves a cut diff unread again stops the task
+        for a person.
+        """
+
+        role, project, task = attempt.role, attempt.project, attempt.task
         result = self.agent_steps.execute_guarded(
             run=run,
             role=role,
             project=project,
             task=task,
-            workflow_step=step,
+            workflow_step=attempt.step,
             prompt=prompt,
             session_id=session_id,
-            carried_output=carried_output,
-            model=model_selection.model,
+            carried_output=attempt.carried_output,
+            model=attempt.model,
             event_recorder=lambda event_record: self.signals.persist_agent_event(
                 run,
                 task,
@@ -191,12 +310,16 @@ class AgentSteps(WorkflowRunnerBase):
         )
         if not result.events_streamed:
             self.signals.emit_agent_events(run, task, project, role.id, result.events)
+        if reread_prompt is not None and approved_without_reading(role, reread_prompt, result):
+            # Asked to read, it approved unread again. That is not a review;
+            # the task stops for a person.
+            result = replace(result, outcome=ERROR, detail=UNREAD_APPROVAL_DETAIL)
         self.records.complete_run(
             run,
             status=result.status,
             outcome=result.outcome,
             detail=result.detail,
-            model=result.model or model or None,
+            model=result.model or attempt.model or None,
             session_id=result.session_id,
             cost_usd=result.cost_usd,
             session_cost_usd=result.session_cost_usd,
@@ -207,140 +330,98 @@ class AgentSteps(WorkflowRunnerBase):
             failure_type=result.failure_type,
             commit_sha=self._branch_commit(project, task),
         )
-        retry_reason = (
-            None
-            if result.failure_type == "quota"
-            else contract_retry_reason(role, result)
-        )
-        if (
-            retry_reason is None
-            and result.failure_type != "quota"
-            and approved_without_reading(role, prompt, result)
-        ):
-            retry_reason = "approved_unread"
-        if retry_reason is not None:
-            self.records.emit_event(
-                run,
-                "engine.output_contract_retry",
-                {
-                    "step": step,
-                    "role_id": role.id,
-                    "reason": retry_reason,
-                    "retry_attempt": 1,
-                },
-            )
-            retry_session_id = result.session_id or session_id
-            retry_prompt = with_retry_instruction(
-                prompt,
-                role,
-                retry_reason,
-                resumes_session=bool(retry_session_id),
-            )
-            retry_run = self.records.create_running_run(
-                task,
-                role_id=role.id,
-                workflow_step=step,
-                agent_backend=role.agent.backend,
-                model=model or None,
-                branch_name=task.branch_name,
-                prompt_text=retry_prompt,
-            )
-            self.write_runtime_context(
-                retry_run,
-                project,
-                context_projection=context_projection,
-            )
-            self.records.emit_event(
-                retry_run,
-                "workflow.step_started",
-                {
-                    "step": step,
-                    "visit_count": visit_count,
-                    "retry_attempt": 1,
-                },
-            )
-            retry_result = self.agent_steps.execute_guarded(
-                run=retry_run,
-                role=role,
-                project=project,
-                task=task,
-                workflow_step=step,
-                prompt=retry_prompt,
-                session_id=retry_session_id,
-                carried_output=carried_output,
-                model=model_selection.model,
-                event_recorder=lambda event_record: self.signals.persist_agent_event(
-                    retry_run,
-                    task,
-                    project,
-                    role.id,
-                    event_record,
-                ),
-            )
-            if not retry_result.events_streamed:
-                self.signals.emit_agent_events(
-                    retry_run,
-                    task,
-                    project,
-                    role.id,
-                    retry_result.events,
-                )
-            if approved_without_reading(role, prompt, retry_result):
-                # Asked to read, it approved unread again. That is not a
-                # review; the task stops for a person.
-                retry_result = replace(
-                    retry_result, outcome=ERROR, detail=UNREAD_APPROVAL_DETAIL
-                )
-            self.records.complete_run(
-                retry_run,
-                status=retry_result.status,
-                outcome=retry_result.outcome,
-                detail=retry_result.detail,
-                model=retry_result.model or model or None,
-                session_id=retry_result.session_id,
-                cost_usd=retry_result.cost_usd,
-                session_cost_usd=retry_result.session_cost_usd,
-                token_count=retry_result.token_count,
-                token_usage=retry_result.token_usage,
-                duration_ms=retry_result.duration_ms,
-                retry_count=retry_result.retry_count,
-                failure_type=retry_result.failure_type,
-                commit_sha=self._branch_commit(project, task),
-            )
-            run = retry_run
-            result = retry_result
+        return result
+
+    def _corrective_retry(
+        self,
+        attempt: _Attempt,
+        run: Run,
+        result: AgentExecutionResult,
+        *,
+        prompt: str,
+        session_id: str | None,
+        visit_count: int,
+        context_projection: Any,
+    ) -> tuple[Run, AgentExecutionResult]:
+        """Ask once more when the answer broke the output contract; else keep it."""
+
+        role = attempt.role
         if result.failure_type == "quota":
-            self.pause_for_quota(
-                project,
-                task,
-                run,
-                step=step,
-                carried_output=carried_output,
-                result=result,
-            )
-            raise QuotaPauseError(
-                task.id,
-                retry_after=result.retry_after,
-                detail=result.detail,
-            )
-        if role.agent.session_persistence and result.session_id:
-            session_ids[session_key] = result.session_id
-        if role.completion.output.extract_decision:
-            outcome = normalize_reviewer_decision(result.outcome)
-            # A decision is about the commit the reviewer saw. Record
-            # it, so evidence can tell an approval of the head commit
-            # from an approval of an earlier one.
-            self.records.emit_event(
-                run,
-                "engine.review_recorded",
-                {
-                    "role": role.id,
-                    "review_kind": role.completion.review_kind,
-                    "outcome": outcome,
-                    "head_sha": self.evidence.branch_head(project, task),
-                },
-            )
-        else:
-            outcome = normalize_agent_outcome(result.outcome)
-        detail = result.detail
-        return run, outcome, detail
+            return run, result
+        retry_reason = contract_retry_reason(role, result)
+        if retry_reason is None and approved_without_reading(role, prompt, result):
+            retry_reason = "approved_unread"
+        if retry_reason is None:
+            return run, result
+        self.records.emit_event(
+            run,
+            "engine.output_contract_retry",
+            {
+                "step": attempt.step,
+                "role_id": role.id,
+                "reason": retry_reason,
+                "retry_attempt": 1,
+            },
+        )
+        retry_session_id = result.session_id or session_id
+        retry_prompt = with_retry_instruction(
+            prompt,
+            role,
+            retry_reason,
+            resumes_session=bool(retry_session_id),
+        )
+        retry_run = self.records.create_running_run(
+            attempt.task,
+            role_id=role.id,
+            workflow_step=attempt.step,
+            agent_backend=role.agent.backend,
+            model=attempt.model or None,
+            branch_name=attempt.task.branch_name,
+            prompt_text=retry_prompt,
+        )
+        self.write_runtime_context(
+            retry_run,
+            attempt.project,
+            context_projection=context_projection,
+        )
+        self.records.emit_event(
+            retry_run,
+            "workflow.step_started",
+            {
+                "step": attempt.step,
+                "visit_count": visit_count,
+                "retry_attempt": 1,
+            },
+        )
+        retry_result = self._execute_and_record(
+            attempt, retry_run, retry_prompt, retry_session_id, reread_prompt=prompt
+        )
+        return retry_run, retry_result
+
+    def _settled_outcome(
+        self,
+        role: RoleDefinition,
+        project: Project,
+        task: Task,
+        run: Run,
+        result: AgentExecutionResult,
+    ) -> str:
+        """The step's outcome in the workflow's words; a decision records its commit."""
+
+        if not role.completion.output.extract_decision:
+            return normalize_agent_outcome(result.outcome)
+        outcome = normalize_reviewer_decision(result.outcome)
+        # A decision is about the commit the reviewer saw. Record it, so
+        # evidence can tell an approval of the head commit from an approval
+        # of an earlier one.
+        self.records.emit_event(
+            run,
+            "engine.review_recorded",
+            {
+                "role": role.id,
+                "review_kind": role.completion.review_kind,
+                "outcome": outcome,
+                "head_sha": self.evidence.branch_head(project, task),
+            },
+        )
+        return outcome
