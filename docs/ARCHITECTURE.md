@@ -81,7 +81,9 @@ task through its workflow one step at a time. The step loop reads as its
 phases: worktree check, limits, branch refresh, the step itself (human gate,
 built-in, or agent), the record of what happened, and the transition.
 
-It composes these parts of `foreman/engine/`, each taking only what it uses:
+`orchestrator`, `workflow_runner`, `builtins` and `resident` are packages,
+each class put together from a part per concern (ADR-0032). It composes
+these parts of `foreman/engine/`, each taking only what it uses:
 
 | Module | What it owns |
 |---|---|

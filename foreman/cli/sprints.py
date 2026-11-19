@@ -7,7 +7,6 @@ import sys
 
 from ..mutations import MutationError
 from ..store import ForemanStore
-
 from .common import (
     DB_OPTION_NOTE,
     add_db_option,

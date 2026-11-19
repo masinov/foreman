@@ -18,7 +18,8 @@ import unittest
 
 from foreman.store.migrations import MIGRATIONS
 from foreman.domain.models import Event, Project, Run, Sprint, Task
-from foreman.engine.orchestrator import ForemanOrchestrator, OrchestratorError
+from foreman.engine.orchestrator import ForemanOrchestrator
+from foreman.engine.errors import OrchestratorError
 from foreman.runner.base import AgentEvent, AgentRunConfig
 from foreman.store import ForemanStore
 from foreman.repo.git import is_worktree_clean

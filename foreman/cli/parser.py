@@ -14,8 +14,8 @@ from ..manager.proposals import manager_session
 from . import (
     backlog,
     catalog,
-    definitions,
     db,
+    definitions,
     engine,
     gates,
     monitor,
@@ -23,9 +23,11 @@ from . import (
     projects,
     proposals,
     sprints,
-    tasks,
     tokens,
     worktree,
+)
+from .tasks import (
+    register as tasks,
 )
 
 #: What a manager session may run (ADR-0022): commands that only read, and

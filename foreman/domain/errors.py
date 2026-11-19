@@ -18,8 +18,8 @@ class EngineCommandInterrupt(BaseException):
     — the run is settled as ``killed`` and the task keeps its resume point —
     and the resident engine settles the command once the stack has unwound.
 
-    It lives here rather than in ``foreman.engine.resident`` because the orchestrator
-    must catch it and ``foreman.engine.resident`` imports the orchestrator.
+    It lives here rather than in ``foreman.engine.resident.base`` because the orchestrator
+    must catch it and ``foreman.engine.resident.base`` imports the orchestrator.
     """
 
     def __init__(self, command: object, *, task_id: str | None = None) -> None:

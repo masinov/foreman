@@ -1,0 +1,441 @@
+"""The step loop and what it reads and writes between steps.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Mapping
+from typing import Any
+
+from ...definitions.roles import RoleDefinition
+from ...definitions.workflows import WorkflowDefinition
+from ...domain.errors import EngineCommandInterrupt
+from ...domain.models import CompletionEvidence, Project, Run, Task
+from ...domain.outcomes import (
+    ERROR,
+)
+from ...history.records import RunRecords
+from ...repo.context import ProjectContextProjection, relative_project_path
+from ...repo.git import (
+    head_sha,
+    task_commits_on_default_branch,
+)
+from ...runner.process import EngineShutdown
+from ...store import ForemanStore
+from ..agent_step import AgentStepRunner
+from ..branch_sync import prepare_task_branch_for_step
+from ..builtins import BuiltinExecutor
+from ..errors import (
+    LeaseLostError,
+    OrchestratorError,
+    QuotaPauseError,
+    TaskCancelledError,
+)
+from ..evidence import EvidenceBuilder
+from ..leasing import TaskLeases
+from ..limits import resolve_project_settings
+from ..prompts import PromptBuilder
+from ..results import AgentExecutionResult
+from ..signals import SignalHandler
+from ..task_worktrees import TaskWorktrees
+from ..task_writes import TaskWrites
+
+
+class WorkflowRunnerBase:
+    """The loop: a check, the step, the record, the transition."""
+
+    def __init__(
+        self,
+        store: ForemanStore,
+        *,
+        roles: Mapping[str, RoleDefinition],
+        records: RunRecords,
+        leases: TaskLeases,
+        tasks: TaskWrites,
+        task_worktrees: TaskWorktrees,
+        prompts: PromptBuilder,
+        agent_steps: AgentStepRunner,
+        signals: SignalHandler,
+        evidence: EvidenceBuilder,
+        builtin_executor: BuiltinExecutor,
+        poll_commands: Callable[[str], None],
+        build_evidence: Callable[[Task, Project], CompletionEvidence | None],
+    ) -> None:
+        self.store = store
+        self.roles = roles
+        self.records = records
+        self.leases = leases
+        self.tasks = tasks
+        self.task_worktrees = task_worktrees
+        self.prompts = prompts
+        self.agent_steps = agent_steps
+        self.signals = signals
+        self.evidence = evidence
+        self.builtin_executor = builtin_executor
+        self._poll_commands = poll_commands
+        #: The engine's entry point for building evidence (see ``PromptBuilder``).
+        self.build_completion_evidence = build_evidence
+
+    def pause_for_quota(
+        self,
+        project: Project,
+        task: Task,
+        run: Run,
+        *,
+        step: str,
+        carried_output: str | None,
+        result: AgentExecutionResult,
+    ) -> None:
+        """Park one task at its current step until the backend quota resets.
+
+        The visit that hit the quota did no work, so it is not charged against
+        the step-visit budget; the task keeps ``in_progress`` with its resume
+        point persisted the way a human gate persists it, and its lease is
+        released so the next pass (this engine or another) can resume it.
+        """
+
+        counts = dict(task.step_visit_counts)
+        if counts.get(step, 0) > 0:
+            counts[step] -= 1
+        task.step_visit_counts = counts
+        task.status = "in_progress"
+        task.blocked_reason = None
+        task.workflow_current_step = step
+        task.workflow_carried_output = carried_output
+        self.tasks.save(task)
+        self.records.emit_event(
+            run,
+            "engine.quota_exhausted",
+            {
+                "step": step,
+                "role_id": run.role_id,
+                "retry_after": result.retry_after,
+                "error": result.detail,
+            },
+        )
+        self.leases.release(task, project)
+
+    def run_from_step(
+        self,
+        project: Project,
+        workflow: WorkflowDefinition,
+        task: Task,
+        *,
+        step: str,
+        carried_output: str | None,
+        only_roles: frozenset[str] | None = None,
+    ) -> Task:
+        """Execute a workflow from one step until completion or a block.
+
+        With ``only_roles`` the task is carried only through steps of those
+        roles and left resumable at the first step of any other.
+        """
+
+        try:
+            return self._run_workflow_steps(
+                project,
+                workflow,
+                task,
+                step=step,
+                carried_output=carried_output,
+                only_roles=only_roles,
+            )
+        except TaskCancelledError:
+            # An operator cancelled the task while a step was running or
+            # between two writes. Their decision stands: settle what the
+            # engine left open and walk away without touching the task.
+            return self._abandon_cancelled_task(project, task)
+        except (
+            EngineCommandInterrupt,
+            EngineShutdown,
+            KeyboardInterrupt,
+            LeaseLostError,
+            QuotaPauseError,
+        ):
+            # Each of these settles its own run on the way out.
+            raise
+        except Exception as exc:
+            # Anything else escaped between a run being opened and closed (a
+            # git failure in a built-in, an unknown built-in, a bookkeeping
+            # error). Left ``running``, the run made the task refuse to start
+            # again until the stale-run window passed.
+            self._settle_open_runs(task.id, detail=f"Step failed with an engine error: {exc}")
+            raise
+
+    def _settle_open_runs(self, task_id: str, *, detail: str) -> None:
+        """Mark every run still ``running`` for a task as failed."""
+
+        for run in self.store.list_runs(task_id=task_id, status="running"):
+            self.records.complete_run(
+                run,
+                status="failed",
+                outcome=ERROR,
+                detail=detail,
+                session_id=self.records.session_id_from_events(run) or run.session_id,
+                failure_type="infrastructure",
+            )
+
+    def _abandon_cancelled_task(self, project: Project, task: Task) -> Task:
+        """Close the engine's open work on a task an operator cancelled."""
+
+        for run in self.store.list_runs(task_id=task.id):
+            if run.status == "running":
+                self.records.complete_run(
+                    run,
+                    status="killed",
+                    outcome=ERROR,
+                    detail="Task was cancelled while this step was running.",
+                    session_id=run.session_id,
+                )
+        self.leases.release(task, project)
+        refreshed = self.store.get_task(task.id)
+        if refreshed is None:
+            raise OrchestratorError(f"Task {task.id!r} disappeared during execution.")
+        return refreshed
+
+    def _run_workflow_steps(
+        self,
+        project: Project,
+        workflow: WorkflowDefinition,
+        task: Task,
+        *,
+        step: str,
+        carried_output: str | None,
+        only_roles: frozenset[str] | None = None,
+    ) -> Task:
+        """Run a task through its workflow from ``step`` until it stops.
+
+        One pass of the loop is one step: check the task is still the
+        engine's to work on, check its worktree and its limits, refresh its
+        branch, run the step, record what happened, and follow the
+        transition. Each of those is a method below.
+        """
+
+        current_task = self.store.get_task(task.id) or task
+        current_step = step
+        session_ids: dict[tuple[str, str], str] = {}
+
+        while current_step is not None:
+            # A step only starts for a task that is still the engine's to
+            # work on. A person may have cancelled or blocked it, and an
+            # agent may have reported a blocker during the previous step.
+            stored = self.tasks.adopt_operator_changes(current_task)
+            if stored.status == "cancelled":
+                raise TaskCancelledError(current_task.id)
+            if stored.status == "blocked":
+                current_task.status = stored.status
+                current_task.blocked_reason = stored.blocked_reason
+                self.leases.release(current_task, project)
+                return stored
+
+            step_def = workflow.get_step(current_step)
+            if step_def is None:
+                raise OrchestratorError(
+                    f"Workflow {workflow.id!r} is missing step {current_step!r}."
+                )
+            if only_roles is not None and step_def.role not in only_roles:
+                # Not this caller's step to run. The task waits here, as it
+                # would after a deferred decision, for the engine's queue.
+                current_task.workflow_current_step = current_step
+                current_task.workflow_carried_output = carried_output
+                self.tasks.save(current_task)
+                self.leases.release(current_task, project)
+                return current_task
+
+            default_branch = project.default_branch
+            original_default_sha = head_sha(project.repo_path, f"refs/heads/{default_branch}")
+            refreshed_default_sha: str | None = None
+            # The merge and mark-done steps work in the integration tree; every
+            # other step works in the task's own.
+            uses_task_tree = bool(current_task.branch_name) and step_def.role not in {
+                "_builtin:merge",
+                "_builtin:mark_done",
+            }
+
+            if uses_task_tree:
+                problem = self._task_worktree_problem(project, current_task)
+                if problem is not None:
+                    self._block_at_step(
+                        current_task,
+                        current_step,
+                        detail=problem,
+                        event_type="engine.branch_violation",
+                        payload={"branch": current_task.branch_name, "detail": problem},
+                        clear_resume_point=True,
+                    )
+                    break
+
+            visit_count = current_task.step_visit_counts.get(current_step, 0) + 1
+            current_task.step_visit_counts[current_step] = visit_count
+            self.tasks.save(current_task)
+
+            settings = resolve_project_settings(project)
+            limit = self._limit_reached(current_task, current_step, visit_count, settings)
+            if limit is not None:
+                self._block_at_step(current_task, current_step, **limit)
+                break
+
+            branch_sync_event: tuple[str, dict[str, Any]] | None = None
+            if uses_task_tree:
+                (
+                    carried_output,
+                    branch_sync_event,
+                ) = prepare_task_branch_for_step(
+                    project=project,
+                    task=current_task,
+                    step=current_step,
+                    carried_output=carried_output,
+                )
+                # What the refresh may just have merged into the task branch.
+                refreshed_default_sha = head_sha(
+                    project.repo_path, f"refs/heads/{default_branch}"
+                )
+
+            current_task.workflow_current_step = current_step
+            current_task.workflow_carried_output = carried_output
+            self.tasks.save(current_task)
+
+            # Poll *after* the resume point is persisted: an interrupt here
+            # must leave the task resumable at the step it was about to run,
+            # not at the one it already finished.
+            self._poll_commands(current_task.id)
+
+            if step_def.role == "_builtin:human_gate":
+                executed = self._run_human_gate_step(
+                    project,
+                    current_task,
+                    step_def,
+                    step=current_step,
+                    visit_count=visit_count,
+                    carried_output=carried_output,
+                )
+                if executed is None:
+                    # Waiting for a person: the task is paused, not finished.
+                    return current_task
+            elif step_def.role.startswith("_builtin:"):
+                executed = self._run_builtin_step(
+                    project,
+                    current_task,
+                    step_def,
+                    step=current_step,
+                    visit_count=visit_count,
+                    carried_output=carried_output,
+                )
+            else:
+                executed = self._run_agent_step(
+                    project,
+                    current_task,
+                    step_def,
+                    step=current_step,
+                    visit_count=visit_count,
+                    carried_output=carried_output,
+                    branch_sync_event=branch_sync_event,
+                    session_ids=session_ids,
+                )
+            run, outcome, detail = executed
+
+            self._record_step_completed(
+                run, project, current_task, step_def, current_step, outcome, settings
+            )
+
+            # After every step: the task's own work must not be on the default
+            # branch before the merge step puts it there. The default branch
+            # itself may move (an operator commits, another task merges); that
+            # is none of this task's business. ADR-0012.
+            leaked_commits: tuple[str, ...] = ()
+            if step_def.role != "_builtin:merge" and current_task.branch_name:
+                leaked_commits = task_commits_on_default_branch(
+                    project.repo_path,
+                    task_branch=current_task.branch_name,
+                    default_branch=default_branch,
+                    default_shas_seen=(original_default_sha, refreshed_default_sha),
+                )
+            if leaked_commits:
+                leak_detail = (
+                    f"{len(leaked_commits)} commit(s) from task branch "
+                    f"{current_task.branch_name!r} are on {default_branch!r} before the "
+                    f"merge step (first: {leaked_commits[0][:12]}). The task's work must "
+                    "reach the default branch only through the workflow's merge."
+                )
+                self._block_at_step(
+                    current_task,
+                    current_step,
+                    detail=leak_detail,
+                    event_type="engine.branch_violation",
+                    payload={
+                        "branch": default_branch,
+                        "detail": leak_detail,
+                        "commits": list(leaked_commits[:20]),
+                    },
+                    clear_resume_point=True,
+                )
+                break
+
+            current_step, carried_output = self._follow_transition(
+                project,
+                workflow,
+                current_task,
+                run,
+                step=current_step,
+                outcome=outcome,
+                detail=detail,
+            )
+
+            # Renew lease after each step (heartbeat during workflow execution).
+            if current_step is not None:
+                self.leases.renew(current_task, project)
+
+        # Every path that parks a task leaves it ``blocked``: a gate, a loop
+        # or cost limit, a failed guard. A parked task is not being worked on,
+        # so nothing may keep holding (and heartbeating) its lease.
+        if current_task.status == "blocked":
+            self.leases.release(current_task, project)
+
+        return current_task
+
+    def _block_at_step(
+        self,
+        task: Task,
+        step: str,
+        *,
+        detail: str,
+        event_type: str,
+        payload: dict[str, Any],
+        attention_trigger: str | None = None,
+        clear_resume_point: bool = False,
+    ) -> None:
+        """Park a task as blocked at a step, with a system run saying why.
+
+        ``clear_resume_point`` is for a state the task cannot simply be
+        resumed from (its branch or worktree is wrong); a limit leaves the
+        resume point so raising the limit lets the task carry on.
+        """
+
+        run = self.records.create_system_run(
+            task,
+            workflow_step=step,
+            outcome="blocked",
+            detail=detail,
+            attention_trigger=attention_trigger,
+        )
+        self.records.emit_event(run, event_type, payload)
+        task.status = "blocked"
+        task.blocked_reason = detail
+        if clear_resume_point:
+            task.workflow_current_step = None
+            task.workflow_carried_output = None
+        self.tasks.save(task)
+
+    def write_runtime_context(
+        self,
+        run: Run,
+        project: Project,
+        *,
+        context_projection: ProjectContextProjection,
+    ) -> None:
+        context_projection.write()
+        for path in context_projection.written_paths:
+            self.records.emit_event(
+                run,
+                "engine.context_write",
+                {"path": relative_project_path(project, path)},
+            )

@@ -465,7 +465,8 @@ class BuiltinTranscriptLoggingTests(RepoTestCase):
             created_at="2026-04-24T18:00:00Z",
         )
 
-        from foreman.engine.builtins import BuiltinEventRecord, BuiltinExecutor
+        from foreman.engine.builtins.base import BuiltinEventRecord
+        from foreman.engine.builtins import BuiltinExecutor
 
         recorded: list[BuiltinEventRecord] = []
         executor = BuiltinExecutor()
@@ -536,7 +537,7 @@ class BuiltinTranscriptLoggingTests(RepoTestCase):
             store.save_task(task)
             store.save_run(run)
 
-            from foreman.engine.builtins import BuiltinEventRecord
+            from foreman.engine.builtins.base import BuiltinEventRecord
 
             orchestrator = ForemanOrchestrator(store)
             orchestrator.runner.persist_builtin_event(

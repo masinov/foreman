@@ -3,11 +3,19 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 import sys
+from pathlib import Path
 
-from ..domain.models import Project
 from ..definitions.roles import RoleLoadError, default_roles_dir, load_roles
+from ..definitions.workflows import (
+    WorkflowLoadError,
+    default_workflows_dir,
+    load_workflows,
+)
+from ..domain.models import Project
+from ..domain.policy import POLICY_DECISIONS, PolicyMatrix
+from ..domain.settings import settings_of
+from ..mutations.projects import SettingError
 from ..repo.scaffold import (
     DEFAULT_DB_FILENAME,
     DEFAULT_DEFAULT_BRANCH,
@@ -19,16 +27,13 @@ from ..repo.scaffold import (
     resolve_spec_path,
     scaffold_repository,
 )
-from ..domain.policy import POLICY_DECISIONS, PolicyMatrix
-from ..domain.settings import settings_of
 from ..store import ForemanStore
-from ..definitions.workflows import WorkflowLoadError, default_workflows_dir, load_workflows
-
 from .common import (
-    CliResolutionError,
     DB_OPTION_NOTE,
+    CliResolutionError,
     add_db_option,
     add_json_option,
+    cli_mutations,
     format_run_totals,
     format_setting_value,
     format_task_counts,
@@ -40,8 +45,6 @@ from .common import (
     role_outcomes,
     set_handler,
 )
-from .common import cli_mutations
-from ..mutations.projects import SettingError
 
 
 def handle_init(args: argparse.Namespace) -> int:

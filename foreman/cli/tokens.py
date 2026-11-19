@@ -7,7 +7,6 @@ import sys
 
 from ..domain.api_tokens import API_TOKEN_SCOPES, ApiTokenError
 from ..store import ForemanStore
-
 from .common import (
     DB_OPTION_NOTE,
     add_db_option,

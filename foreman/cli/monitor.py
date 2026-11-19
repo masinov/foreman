@@ -3,20 +3,19 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
 import sys
 import time
+from dataclasses import dataclass
 from typing import Callable
 
-from ..services.sprints import STREAM_POLL_INTERVAL_SECONDS
 from ..definitions.gate_steps import (
     blocked_kind,
     blocked_kind_counts,
     resolve_gate_steps,
 )
 from ..domain.models import Event
+from ..services.sprints import STREAM_POLL_INTERVAL_SECONDS
 from ..store import ForemanStore
-
 from .common import (
     DB_OPTION_NOTE,
     add_db_option,
@@ -36,7 +35,6 @@ from .common import (
     token_split_parts,
     truncate_text,
 )
-
 
 BOARD_STATUS_SECTIONS: tuple[tuple[str, str], ...] = (
     ("triage", "Triage"),

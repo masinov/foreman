@@ -5,9 +5,9 @@ from __future__ import annotations
 import argparse
 import sys
 
-from ..services.backlog import BACKLOG_PAGE_LIMIT, BacklogQueryError, read_backlog
 from ..domain.models import BACKLOG_STATES, TASK_COMPLEXITIES, TASK_TYPES
 from ..mutations import MutationError
+from ..services.backlog import BACKLOG_PAGE_LIMIT, BacklogQueryError, read_backlog
 from ..store import ForemanStore
 from .common import (
     DB_OPTION_NOTE,
@@ -22,7 +22,7 @@ from .common import (
     set_handler,
     truncate_text,
 )
-from .tasks import handle_task_accept
+from .tasks.lifecycle import handle_task_accept
 
 #: Section headings, in the order the list shows them (the design's words).
 _SECTIONS: tuple[tuple[str, str], ...] = (
