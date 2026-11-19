@@ -126,8 +126,14 @@ Base work that this framing makes necessary:
 - (Done in sprint 61, slice 2.) The lease fencing token is unchecked on writes.
 - (Done in sprint 61, slice 3.) A stale `running` agent run is reset to the
   entry step, not resumed in place.
-- `--json` on the remaining read commands; response models on the API.
-- Python `Enum` classes for statuses.
+- (Done in sprint 61, slice 5.) `--json` on the remaining read commands.
+- Response models on the API: not done. About 80 routes; the schema pages
+  are off (ADR-0019) until the typed contract exists, so this is one slice
+  of its own, best done with the central server's API (roadmap stage 6).
+- Python `Enum` classes for statuses: decided against in sprint 61. Every
+  status has a `Literal` type, a vocabulary tuple the code checks, and a
+  database CHECK constraint (sprint 56); an `Enum` adds nothing without a
+  type checker in CI.
 
 ## Found while Foreman built sprint 58 (2026-11-12 and 13)
 

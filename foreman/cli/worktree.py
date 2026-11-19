@@ -7,14 +7,17 @@ import sys
 
 from ..repo.worktrees import (
     WorktreeError,
-    WorktreeManager,
     prune_project_worktrees,
     worktree_root,
 )
+from ..services import Services
+from ..services.errors import InvalidRequestError
 from ..store import ForemanStore
 from .common import (
     DB_OPTION_NOTE,
     add_db_option,
+    add_json_option,
+    print_json,
     print_lines,
     resolve_db_path_or_print,
     resolve_project_or_print,
@@ -35,41 +38,36 @@ def handle_worktree_list(args: argparse.Namespace) -> int:
         if project is None:
             return 1
         db_path = store.db_path
-        tasks_by_path = {
-            task.worktree_path: task
-            for task in store.list_tasks(project_id=project.id)
-            if task.worktree_path
-        }
         try:
-            entries = WorktreeManager(project).list()
-        except WorktreeError as exc:
+            listing = Services(store).worktrees.list_worktrees(project.id)
+        except InvalidRequestError as exc:
             print(str(exc), file=sys.stderr)
             return 1
+    if args.as_json:
+        print_json(listing)
+        return 0
 
     lines = [
         "Worktrees",
         f"Database: {db_path}",
         f"Project: {project.id} | {project.name}",
-        f"Root: {worktree_root(project)}",
+        f"Root: {listing['root']}",
     ]
-    if not entries:
+    if not listing["worktrees"]:
         lines.append("- none")
-    else:
-        for entry in entries:
-            parts = [entry.slug, f"branch={entry.branch or 'detached'}"]
-            if entry.is_integration:
-                parts.append("role=integration")
-            task = tasks_by_path.get(str(entry.path))
-            if task is not None:
-                parts.append(f"task={task.task_key or task.id}")
-                parts.append(f"status={task.status}")
-            if not entry.exists:
-                parts.append("missing=true")
-            lines.append(f"- {' | '.join(parts)}")
-            lines.append(f"  {entry.path}")
+    for entry in listing["worktrees"]:
+        parts = [entry["slug"], f"branch={entry['branch'] or 'detached'}"]
+        if entry["is_integration"]:
+            parts.append("role=integration")
+        if entry["task_key"] is not None:
+            parts.append(f"task={entry['task_key']}")
+            parts.append(f"status={entry['task_status']}")
+        if not entry["exists"]:
+            parts.append("missing=true")
+        lines.append(f"- {' | '.join(parts)}")
+        lines.append(f"  {entry['path']}")
     print_lines(*lines)
     return 0
-
 
 def handle_worktree_prune(args: argparse.Namespace) -> int:
     """Handle ``foreman worktree prune``."""
@@ -125,6 +123,7 @@ def register_worktree(subparsers: argparse._SubParsersAction) -> None:
         worktree_list,
         help_text=f"Path to the SQLite store containing the project. {DB_OPTION_NOTE}",
     )
+    add_json_option(worktree_list)
     set_handler(worktree_list, handle_worktree_list, "worktree list")
 
     worktree_prune = worktree_commands.add_parser(

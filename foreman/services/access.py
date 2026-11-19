@@ -23,6 +23,7 @@ from ..notifications.destinations import (
     NotificationError,
     add_destination,
 )
+from ..notifications.policy import resolve_notification_policy
 from ..runner.discovery import describe_runners
 from ..store import ForemanStore
 from .errors import InvalidRequestError, NotFoundError
@@ -203,3 +204,69 @@ def delete_channel(store: ForemanStore, channel_id: str) -> dict[str, Any]:
         raise NotFoundError(f"Notification channel not found: {channel_id}")
     store.delete_notification_destination(destination.id)
     return {"id": destination.id, "removed": True}
+
+
+def _require_project(store: ForemanStore, project_id: str):
+    project = store.get_project(project_id)
+    if project is None:
+        raise NotFoundError(f"Unknown project: {project_id}")
+    return project
+
+
+def project_tokens(store: ForemanStore, project_id: str) -> dict[str, Any]:
+    """One project's API tokens in the order they were made, secrets never included."""
+
+    project = _require_project(store, project_id)
+    names = {project.id: project.name}
+    return {
+        "project": {"id": project.id, "name": project.name},
+        "tokens": [_token_payload(token, names) for token in store.list_api_tokens(project.id)],
+    }
+
+
+def project_channels(store: ForemanStore, project_id: str) -> dict[str, Any]:
+    """One project's notification destinations, its policy and its delivery counts."""
+
+    project = _require_project(store, project_id)
+    names = {project.id: project.name}
+    return {
+        "project": {"id": project.id, "name": project.name},
+        "notification": resolve_notification_policy(project),
+        "channels": [
+            _channel_payload(destination, names)
+            for destination in store.list_notification_destinations(project.id)
+        ],
+        "deliveries": store.count_notification_deliveries(project.id),
+    }
+
+
+def project_deliveries(
+    store: ForemanStore, project_id: str, *, status: str | None = None, limit: int | None = None
+) -> dict[str, Any]:
+    """One project's notification deliveries, newest first."""
+
+    project = _require_project(store, project_id)
+    names = {
+        destination.id: destination.name
+        for destination in store.list_notification_destinations(project.id)
+    }
+    return {
+        "project": {"id": project.id, "name": project.name},
+        "deliveries": [
+            {
+                "id": delivery.id,
+                "kind": delivery.kind,
+                "status": delivery.status,
+                "destination_id": delivery.destination_id,
+                "destination_name": names.get(delivery.destination_id, delivery.destination_id),
+                "attempts": delivery.attempts,
+                "max_attempts": delivery.max_attempts,
+                "next_attempt_at": delivery.next_attempt_at,
+                "delivered_at": delivery.delivered_at,
+                "last_error": delivery.last_error,
+            }
+            for delivery in store.list_notification_deliveries(
+                project.id, status=status, limit=limit
+            )
+        ],
+    }

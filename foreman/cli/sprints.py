@@ -6,8 +6,10 @@ import argparse
 import sys
 
 from ..mutations import MutationError
+from ..services import Services
 from ..store import ForemanStore
 from .common import (
+    read_or_print,
     DB_OPTION_NOTE,
     add_db_option,
     add_json_option,
@@ -88,63 +90,31 @@ def handle_sprint_activate(args: argparse.Namespace) -> int:
 def handle_sprint_list(args: argparse.Namespace) -> int:
     """Handle ``foreman sprint list``."""
 
-    db_path = resolve_db_path_or_print(args.db)
-    if db_path is None:
+    listing = read_or_print(args, lambda store: Services(store).reports.sprints(args.project_id))
+    if listing is None:
         return 1
+    if getattr(args, "as_json", False):
+        print_json({key: value for key, value in listing.items() if key != "project_name"})
+        return 0
 
-    with ForemanStore(db_path) as store:
-        store.initialize()
-        project = resolve_project_or_print(store, args.project_id)
-        if project is None:
-            return 1
-        sprints = store.list_sprints(project.id)
-        db_path = store.db_path
-        if getattr(args, "as_json", False):
-            print_json(
-                {
-                    "database": str(db_path),
-                    "project_id": project.id,
-                    "sprints": [
-                        {
-                            "id": sprint.id,
-                            "title": sprint.title,
-                            "goal": sprint.goal,
-                            "status": sprint.status,
-                            "order_index": sprint.order_index,
-                            "started_at": sprint.started_at,
-                            "completed_at": sprint.completed_at,
-                            "task_counts": store.task_counts(sprint_id=sprint.id),
-                            "run_totals": store.run_totals(
-                                project_id=project.id, sprint_id=sprint.id
-                            ),
-                        }
-                        for sprint in sprints
-                    ],
-                }
-            )
-            return 0
-
-        lines = [
-            "Sprints",
-            f"Database: {db_path}",
-            f"Project: {project.id} | {project.name}",
-        ]
-        if not sprints:
-            lines.append("No sprints are defined for this project.")
-        else:
-            for sprint in sprints:
-                counts = store.task_counts(sprint_id=sprint.id)
-                totals = store.run_totals(project_id=project.id, sprint_id=sprint.id)
-                lines.append(
-                    f"{sprint.id} | status={sprint.status} | order={sprint.order_index} | title={sprint.title}"
-                )
-                lines.append(
-                    f"goal={sprint.goal or 'n/a'} | {format_task_counts(counts)} | {format_run_totals(totals)}"
-                )
+    lines = [
+        "Sprints",
+        f"Database: {listing['database']}",
+        f"Project: {listing['project_id']} | {listing['project_name']}",
+    ]
+    if not listing["sprints"]:
+        lines.append("No sprints are defined for this project.")
+    for sprint in listing["sprints"]:
+        lines.append(
+            f"{sprint['id']} | status={sprint['status']} | order={sprint['order_index']} | title={sprint['title']}"
+        )
+        lines.append(
+            f"goal={sprint['goal'] or 'n/a'} | {format_task_counts(sprint['task_counts'])} | "
+            f"{format_run_totals(sprint['run_totals'])}"
+        )
 
     print_lines(*lines)
     return 0
-
 
 def handle_sprint_complete(args: argparse.Namespace) -> int:
     """Handle ``foreman sprint complete``."""

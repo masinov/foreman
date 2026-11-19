@@ -225,6 +225,7 @@ class SprintService(Service):
                     "blocked_reason": task.blocked_reason,
                     "acceptance_criteria": task.acceptance_criteria,
                     "workflow_current_step": task.workflow_current_step,
+                    "step_visit_counts": dict(task.step_visit_counts),
                     "awaiting_human_gate": self._at_human_gate(task, gates),
                     "gate_policy": self._gate_policy(task, gates),
                     "blocked_kind": blocked_kind(task, gates),

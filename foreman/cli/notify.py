@@ -27,11 +27,15 @@ from ..notifications.transport import (
     build_payload,
     build_transport,
 )
+from ..services.access import project_channels, project_deliveries
 from ..store import ForemanStore
 from .common import (
     DB_OPTION_NOTE,
     add_db_option,
+    add_json_option,
+    print_json,
     print_lines,
+    read_or_print,
     resolve_db_path_or_print,
     resolve_project_or_print,
     set_handler,
@@ -87,43 +91,36 @@ def handle_notify_add(args: argparse.Namespace) -> int:
 def handle_notify_list(args: argparse.Namespace) -> int:
     """Handle ``foreman notify list``."""
 
-    db_path = resolve_db_path_or_print(args.db)
-    if db_path is None:
+    listing = read_or_print(args, lambda store: project_channels(store, args.project_id))
+    if listing is None:
         return 1
+    if args.as_json:
+        print_json(listing)
+        return 0
 
-    with ForemanStore(db_path) as store:
-        store.initialize()
-        project = resolve_project_or_print(store, args.project_id)
-        if project is None:
-            return 1
-        destinations = store.list_notification_destinations(project.id)
-        counts = store.count_notification_deliveries(project.id)
-        policy = resolve_notification_policy(project)
-
+    project, counts = listing["project"], listing["deliveries"]
     lines = [
         "Notification destinations",
-        f"Project: {project.id} | {project.name}",
-        f"Policy: notification={policy}",
+        f"Project: {project['id']} | {project['name']}",
+        f"Policy: notification={listing['notification']}",
     ]
-    if not destinations:
+    if not listing["channels"]:
         lines.append("- none")
-    else:
-        for destination in destinations:
-            state = "enabled" if destination.enabled else "disabled"
-            lines.append(
-                f"- {destination.id} | {destination.name} | {destination.kind} | {state}"
-            )
-            lines.append(
-                f"  target={destination.target}"
-                f" | signed={'yes' if destination.config.get('secret_env') else 'no'}"
-            )
+    for destination in listing["channels"]:
+        state = "enabled" if destination["enabled"] else "disabled"
+        lines.append(
+            f"- {destination['id']} | {destination['name']} | {destination['kind']} | {state}"
+        )
+        lines.append(
+            f"  target={destination['target']}"
+            f" | signed={'yes' if destination['signed'] else 'no'}"
+        )
     lines.append(
         f"Deliveries: {counts['pending']} pending | {counts['delivered']} delivered"
         f" | {counts['failed']} failed"
     )
     print_lines(*lines)
     return 0
-
 
 def handle_notify_remove(args: argparse.Namespace) -> int:
     """Handle ``foreman notify remove``."""
@@ -208,45 +205,40 @@ def handle_notify_test(args: argparse.Namespace) -> int:
 def handle_notify_deliveries(args: argparse.Namespace) -> int:
     """Handle ``foreman notify deliveries``."""
 
-    db_path = resolve_db_path_or_print(args.db)
-    if db_path is None:
+    listing = read_or_print(
+        args,
+        lambda store: project_deliveries(
+            store, args.project_id, status=args.status, limit=args.limit
+        ),
+    )
+    if listing is None:
         return 1
+    if args.as_json:
+        print_json(listing)
+        return 0
 
-    with ForemanStore(db_path) as store:
-        store.initialize()
-        project = resolve_project_or_print(store, args.project_id)
-        if project is None:
-            return 1
-        deliveries = store.list_notification_deliveries(
-            project.id, status=args.status, limit=args.limit
-        )
-        names = {
-            destination.id: destination.name
-            for destination in store.list_notification_destinations(project.id)
-        }
-
+    project = listing["project"]
     lines = [
         "Notification deliveries",
-        f"Project: {project.id} | {project.name}",
+        f"Project: {project['id']} | {project['name']}",
     ]
-    if not deliveries:
+    if not listing["deliveries"]:
         lines.append("- none")
-    for delivery in deliveries:
+    for delivery in listing["deliveries"]:
         lines.append(
-            f"- {delivery.id} | {delivery.kind} | {delivery.status}"
-            f" | {names.get(delivery.destination_id, delivery.destination_id)}"
+            f"- {delivery['id']} | {delivery['kind']} | {delivery['status']}"
+            f" | {delivery['destination_name']}"
         )
-        detail = f"  attempts={delivery.attempts}/{delivery.max_attempts}"
-        if delivery.status == "pending":
-            detail += f" | next={delivery.next_attempt_at}"
-        if delivery.status == "delivered":
-            detail += f" | delivered={delivery.delivered_at}"
+        detail = f"  attempts={delivery['attempts']}/{delivery['max_attempts']}"
+        if delivery["status"] == "pending":
+            detail += f" | next={delivery['next_attempt_at']}"
+        if delivery["status"] == "delivered":
+            detail += f" | delivered={delivery['delivered_at']}"
         lines.append(detail)
-        if delivery.last_error:
-            lines.append(f"  error={delivery.last_error}")
+        if delivery["last_error"]:
+            lines.append(f"  error={delivery['last_error']}")
     print_lines(*lines)
     return 0
-
 
 def _resolve_destination_or_print(
     store: ForemanStore, project: Project, reference: str
@@ -341,6 +333,7 @@ def register_notify(subparsers: argparse._SubParsersAction) -> None:
         notify_list,
         help_text=f"Path to the SQLite store containing the project. {DB_OPTION_NOTE}",
     )
+    add_json_option(notify_list)
     set_handler(notify_list, handle_notify_list, "notify list")
 
     notify_remove = notify_commands.add_parser(
@@ -387,5 +380,6 @@ def register_notify(subparsers: argparse._SubParsersAction) -> None:
         notify_deliveries,
         help_text=f"Path to the SQLite store containing the project. {DB_OPTION_NOTE}",
     )
+    add_json_option(notify_deliveries)
     set_handler(notify_deliveries, handle_notify_deliveries, "notify deliveries")
 

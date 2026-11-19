@@ -18,6 +18,7 @@ One service per area, each in its own module:
 - ``worktrees``: a project's task worktrees,
 - ``definitions``: roles and workflows (ADR-0024),
 - ``outcomes``: how well a project's agents do (ADR-0034),
+- ``reports``: the terminal's status, board, history, transcript and cost,
 - ``workspace``: the reads across every project.
 
 ``task_reads`` (a task's changes, checks and runs), ``workflow_reads``,
@@ -39,6 +40,7 @@ from .engine import EngineService
 from .intake import IntakeService
 from .outcomes import OutcomeService
 from .projects import ProjectService
+from .reports import ReportService
 from .proposals import ProposalService
 from .sprints import SprintService
 from .tasks import TaskService
@@ -72,3 +74,4 @@ class Services:
         self.worktrees = WorktreeService(store, **clock)
         self.workspace = WorkspaceService(store, **clock)
         self.outcomes = OutcomeService(store, **clock)
+        self.reports = ReportService(store, **clock)

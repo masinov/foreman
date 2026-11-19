@@ -6,11 +6,15 @@ import argparse
 import sys
 
 from ..domain.api_tokens import API_TOKEN_SCOPES, ApiTokenError
+from ..services.access import project_tokens
 from ..store import ForemanStore
 from .common import (
     DB_OPTION_NOTE,
     add_db_option,
+    add_json_option,
+    print_json,
     print_lines,
+    read_or_print,
     resolve_db_path_or_print,
     resolve_project_or_print,
     set_handler,
@@ -56,34 +60,29 @@ def handle_token_create(args: argparse.Namespace) -> int:
 def handle_token_list(args: argparse.Namespace) -> int:
     """Handle ``foreman token list``."""
 
-    db_path = resolve_db_path_or_print(args.db)
-    if db_path is None:
+    listing = read_or_print(args, lambda store: project_tokens(store, args.project_id))
+    if listing is None:
         return 1
+    if args.as_json:
+        print_json(listing)
+        return 0
 
-    with ForemanStore(db_path) as store:
-        store.initialize()
-        project = resolve_project_or_print(store, args.project_id)
-        if project is None:
-            return 1
-        tokens = store.list_api_tokens(project.id)
-
+    project = listing["project"]
     lines = [
         "API tokens",
-        f"Project: {project.id} | {project.name}",
+        f"Project: {project['id']} | {project['name']}",
     ]
-    if not tokens:
+    if not listing["tokens"]:
         lines.append("- none")
-    else:
-        for token in tokens:
-            state = "active" if token.is_active else f"revoked {token.revoked_at}"
-            lines.append(f"- {token.id} | {token.name} | {state}")
-            lines.append(
-                f"  scopes={', '.join(token.scopes)} | created={token.created_at}"
-                f" | last_used={token.last_used_at or 'never'}"
-            )
+    for token in listing["tokens"]:
+        state = "active" if token["active"] else f"revoked {token['revoked_at']}"
+        lines.append(f"- {token['id']} | {token['name']} | {state}")
+        lines.append(
+            f"  scopes={', '.join(token['scopes'])} | created={token['created_at']}"
+            f" | last_used={token['last_used_at'] or 'never'}"
+        )
     print_lines(*lines)
     return 0
-
 
 def handle_token_revoke(args: argparse.Namespace) -> int:
     """Handle ``foreman token revoke``."""
@@ -159,6 +158,7 @@ def register_token(subparsers: argparse._SubParsersAction) -> None:
         token_list,
         help_text=f"Path to the SQLite store containing the project. {DB_OPTION_NOTE}",
     )
+    add_json_option(token_list)
     set_handler(token_list, handle_token_list, "token list")
 
     token_revoke = token_commands.add_parser(

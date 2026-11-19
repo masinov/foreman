@@ -20,6 +20,7 @@ from ..mutations import Mutations
 from ..repo.scaffold import (
     DEFAULT_DB_FILENAME,
 )
+from ..services.errors import InvalidRequestError, NotFoundError
 from ..store import ForemanStore
 
 #: Exit code of ``foreman run`` when the pass stopped because the agent backend's
@@ -458,3 +459,18 @@ def token_split_parts(usage: dict[str, int] | None) -> list[str]:
     ]
 
 
+def read_or_print(
+    args: argparse.Namespace, read: Callable[[ForemanStore], dict[str, Any]]
+) -> dict[str, Any] | None:
+    """Run one service read against the store, or print what was not found and return None."""
+
+    db_path = resolve_db_path_or_print(args.db)
+    if db_path is None:
+        return None
+    with ForemanStore(db_path) as store:
+        store.initialize()
+        try:
+            return read(store)
+        except (NotFoundError, InvalidRequestError) as exc:
+            print(str(exc), file=sys.stderr)
+            return None

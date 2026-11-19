@@ -27,8 +27,10 @@ from ..repo.scaffold import (
     resolve_spec_path,
     scaffold_repository,
 )
+from ..services import Services
 from ..store import ForemanStore
 from .common import (
+    read_or_print,
     DB_OPTION_NOTE,
     CliResolutionError,
     add_db_option,
@@ -153,112 +155,76 @@ def handle_init(args: argparse.Namespace) -> int:
 def handle_projects(args: argparse.Namespace) -> int:
     """Handle ``foreman projects``."""
 
-    db_path = resolve_db_path_or_print(args.db)
-    if db_path is None:
+    listing = read_or_print(args, lambda store: Services(store).reports.projects())
+    if listing is None:
         return 1
+    if getattr(args, "as_json", False):
+        print_json({**listing, "projects": [
+            {key: value for key, value in row.items() if key != "active_sprint_title"}
+            for row in listing["projects"]
+        ]})
+        return 0
 
-    with ForemanStore(db_path) as store:
-        store.initialize()
-        projects = store.list_projects()
-        if getattr(args, "as_json", False):
-            print_json(
-                {
-                    "database": str(store.db_path),
-                    "projects": [
-                        {
-                            "id": project.id,
-                            "name": project.name,
-                            "repo_path": project.repo_path,
-                            "workflow_id": project.workflow_id,
-                            "default_branch": project.default_branch,
-                            "active_sprint_id": getattr(
-                                store.get_active_sprint(project.id), "id", None
-                            ),
-                            "task_counts": store.task_counts(project.id),
-                        }
-                        for project in projects
-                    ],
-                }
-            )
-            return 0
-
-        lines = ["Projects", f"Database: {store.db_path}"]
-        if not projects:
-            lines.extend(
-                [
-                    "No projects are tracked yet.",
-                    f"Use `foreman init <repo_path> --name <name> --spec <path>` to create the default `{DEFAULT_DB_FILENAME}`, or pass `--db PATH` to inspect another store.",
-                ]
-            )
-        else:
-            for project in projects:
-                active_sprint = store.get_active_sprint(project.id)
-                task_counts = store.task_counts(project.id)
-                active_sprint_label = active_sprint.title if active_sprint else "none"
-                lines.append(
-                    f"{project.id} | {project.name} | workflow={project.workflow_id} | active_sprint={active_sprint_label}"
-                )
-                lines.append(
-                    f"repo={project.repo_path} | "
-                    f"triage={task_counts['triage']} "
-                    f"todo={task_counts['todo']} "
-                    f"in_progress={task_counts['in_progress']} "
-                    f"blocked={task_counts['blocked']} "
-                    f"done={task_counts['done']} "
-                    f"cancelled={task_counts['cancelled']}"
-                )
+    lines = ["Projects", f"Database: {listing['database']}"]
+    if not listing["projects"]:
+        lines.extend(
+            [
+                "No projects are tracked yet.",
+                f"Use `foreman init <repo_path> --name <name> --spec <path>` to create the default `{DEFAULT_DB_FILENAME}`, or pass `--db PATH` to inspect another store.",
+            ]
+        )
+    for project in listing["projects"]:
+        task_counts = project["task_counts"]
+        lines.append(
+            f"{project['id']} | {project['name']} | workflow={project['workflow_id']} | "
+            f"active_sprint={project['active_sprint_title'] or 'none'}"
+        )
+        lines.append(
+            f"repo={project['repo_path']} | "
+            f"triage={task_counts['triage']} "
+            f"todo={task_counts['todo']} "
+            f"in_progress={task_counts['in_progress']} "
+            f"blocked={task_counts['blocked']} "
+            f"done={task_counts['done']} "
+            f"cancelled={task_counts['cancelled']}"
+        )
 
     print_lines(*lines)
     return 0
-
 
 def handle_project(args: argparse.Namespace) -> int:
     """Handle ``foreman project``."""
 
-    db_path = resolve_db_path_or_print(args.db)
-    if db_path is None:
+    project = read_or_print(args, lambda store: Services(store).reports.project(args.project_id))
+    if project is None:
         return 1
+    if args.as_json:
+        print_json(project)
+        return 0
 
-    with ForemanStore(db_path) as store:
-        store.initialize()
-        project = resolve_project_or_print(store, args.project_id)
-        if project is None:
-            return 1
-
-        active_sprint = store.get_active_sprint(project.id)
-        task_counts = store.task_counts(project_id=project.id)
-        totals = store.run_totals(project_id=project.id)
-        project_sprints = store.list_sprints(project.id)
-        db_path = store.db_path
-
+    active = project["active_sprint"]
     lines = [
         "Project",
-        f"Database: {db_path}",
-        f"Project: {project.id} | {project.name}",
-        f"Repo: {project.repo_path}",
-        f"Spec: {project.spec_path or 'n/a'}",
+        f"Database: {project['database']}",
+        f"Project: {project['id']} | {project['name']}",
+        f"Repo: {project['repo_path']}",
+        f"Spec: {project['spec_path'] or 'n/a'}",
         (
-            f"Workflow: {project.workflow_id} | methodology={project.methodology} | "
-            f"default_branch={project.default_branch}"
+            f"Workflow: {project['workflow_id']} | methodology={project['methodology']} | "
+            f"default_branch={project['default_branch']}"
         ),
-        (
-            f"Active sprint: {active_sprint.id} | {active_sprint.title}"
-            if active_sprint is not None
-            else "Active sprint: none"
-        ),
-        f"Sprints: {len(project_sprints)}",
-        format_task_counts(task_counts),
-        format_run_totals(totals),
+        f"Active sprint: {active['id']} | {active['title']}" if active else "Active sprint: none",
+        f"Sprints: {project['sprint_count']}",
+        format_task_counts(project["task_counts"]),
+        format_run_totals(project["totals"]),
         "Settings:",
     ]
-    if not project.settings:
+    if not project["settings"]:
         lines.append("- none")
-    else:
-        for key in sorted(project.settings):
-            lines.append(f"- {key}={format_setting_value(project.settings[key])}")
+    for key in sorted(project["settings"]):
+        lines.append(f"- {key}={format_setting_value(project['settings'][key])}")
     print_lines(*lines)
     return 0
-
 
 def handle_config(args: argparse.Namespace) -> int:
     """Handle ``foreman config``."""
@@ -389,6 +355,7 @@ def register_project(subparsers: argparse._SubParsersAction) -> None:
         project_parser,
         help_text=f"Path to the SQLite store containing the project. {DB_OPTION_NOTE}",
     )
+    add_json_option(project_parser)
     set_handler(project_parser, handle_project, "project")
 
 
