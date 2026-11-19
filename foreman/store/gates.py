@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json as _json
 
 from ..domain.models import (
     DecisionGate,
@@ -9,7 +10,6 @@ from ..domain.models import (
     MergeWaiver,
     utc_now_text,
 )
-
 from .base import (
     StoreBase,
     retried_on_lock,
@@ -27,8 +27,6 @@ class GateStore(StoreBase):
     @retried_on_lock
     def save_decision_gate(self, gate: DecisionGate) -> DecisionGate:
         """Insert or update a decision gate record."""
-        import json as _json
-
         with self._connection:
             self._connection.execute(
                 """

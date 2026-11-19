@@ -76,10 +76,11 @@ Rules that follow:
 integrate before building). It needs Python 3.11 or later, so CI runs it on
 the 3.12 job only. The 3.10 job runs only the tests.
 
-## How it is reached
+## How it was reached
 
-The refactor changes no behaviour and no API. It lands as short branches,
-each with the full suite and CI green before the next one starts:
+The refactor changed no behaviour and no API. It landed as five short
+branches on 2026-11-19, each with the full suite and CI green before the
+next one started:
 
 1. `refactor/layers-first-moves`: the contract, `domain/`, `repo/`,
    `definitions/`, the engine's root modules into `engine/`, three lease
@@ -147,8 +148,34 @@ collectors filter on that name.
 | `dashboard_overview`, `dashboard_task_reads`, `dashboard_workflow_reads`, `dashboard_definitions`, `dashboard_access`, `backlog` | `services/workspace`, `task_reads`, `workflow_reads`, `definition_forms`, `access`, `backlog` |
 | `dashboard/task_models` | `services/task_models`: the shape of the task reads, which the services build |
 
+## Where things went (slice 5)
+
+| Before | After |
+|---|---|
+| `notifications` (one module of 760 lines) | `notifications/`: `policy` (whether to speak), `destinations` (where), `transport` (the payload and the webhook), `delivery` (the queue and the worker) |
+| 45 imports inside functions | 3, each a late load of something heavy or platform-specific (`uvicorn`, `httpx`, `ctypes`). The rest are at the top of their module |
+| four `if TYPE_CHECKING:` imports "to break a cycle" | real imports: none of them was a cycle once the layers were in place |
+
 Older ADRs name the paths of their day and are left as written. This table
 and its successors in later slices translate them.
+
+## What the layers do not settle yet
+
+These are known and not hidden by the contract:
+
+- **The CLI does not call the services.** It calls `foreman.mutations` for
+  changes and the store for reads, and a few commands (`foreman project
+  set`, `foreman gate`, `foreman notify`, `foreman sprint`, `foreman task`,
+  `foreman worktree`) still write rows with the store directly. Each is
+  allowed by the stack, which lets a layer reach anything below it. Moving
+  each command onto its service is the next slice.
+- **Some modules are long, each within one concern:**
+  `engine/workflow_runner` (1,175 lines), `engine/resident` (1,091),
+  `engine/builtins` (1,048), `cli/tasks` (921), `engine/orchestrator`
+  (898). Splitting them needs the same care as `Mutations` (a part per
+  concern), and is not a layering fault.
+- Import order is sorted (`ruff`'s `I` rule) only in the modules this
+  refactor touched. The rule is not on for the whole repository yet.
 
 ## Consequences
 

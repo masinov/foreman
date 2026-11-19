@@ -33,18 +33,25 @@ without a subprocess. The CLI handler only parses arguments and maps
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import logging
 import time
 import traceback
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Callable
 
-from .lock import EngineBusyError, EngineLock
 from ..domain.errors import EngineCommandInterrupt
+from ..domain.models import (
+    ENGINE_COMMANDS_NEEDING_A_RESIDENT_ENGINE,
+    EngineCommand,
+    Task,
+)
 from ..history.logs import get_logger, log_event
-from ..domain.models import ENGINE_COMMANDS_NEEDING_A_RESIDENT_ENGINE, EngineCommand, Task
-from ..notifications import NotificationDeliveryWorker
+from ..notifications.delivery import NotificationDeliveryWorker
+from ..runner.process import EngineShutdown, terminate_all
+from ..store import ForemanStore
+from .control import engine_is_paused
+from .lock import EngineBusyError, EngineLock
 from .orchestrator import (
     ForemanOrchestrator,
     LeaseLostError,
@@ -52,8 +59,6 @@ from .orchestrator import (
     ProjectRunResult,
     TaskExecutionError,
 )
-from ..runner.process import EngineShutdown, terminate_all
-from ..store import ForemanStore
 
 #: How long an idle pass waits before running another pass anyway.
 DEFAULT_POLL_SECONDS = 5.0
@@ -978,7 +983,6 @@ class ResidentEngine:
 def _standing_pause(store: ForemanStore, project_id: str) -> bool:
     """True when the project's last applied pause/resume was a pause."""
 
-    from .control import engine_is_paused
 
     return engine_is_paused(store, project_id)
 

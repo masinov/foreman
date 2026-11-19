@@ -3,16 +3,16 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
 
+from ..domain.leases import compute_lease_expiry, is_lease_expired
 from ..domain.models import (
     EngineLockView,
     Lease,
     utc_now_text,
 )
-
 from .base import (
     ENGINE_RESOURCE_TYPE,
     StoreBase,
@@ -122,8 +122,6 @@ class LeaseStore(StoreBase):
 
         The fencing_token is auto-incremented: new leases get MAX(existing) + 1.
         """
-        from ..domain.leases import compute_lease_expiry
-
         now = utc_now_text()
         expires_at = compute_lease_expiry(duration_seconds)
 
@@ -196,8 +194,6 @@ class LeaseStore(StoreBase):
         Returns the renewed Lease on success.
         Returns None if: no active lease, holder_id mismatch, or token mismatch.
         """
-        from ..domain.leases import compute_lease_expiry, is_lease_expired
-
         now = utc_now_text()
         expires_at = compute_lease_expiry(duration_seconds)
 
@@ -304,8 +300,6 @@ class LeaseStore(StoreBase):
 
         Returns the number of leases expired.
         """
-        from datetime import timedelta
-
         conditions = ["status = 'active'"]
         params: list[Any] = []
 

@@ -9,21 +9,26 @@ from typing import Any
 from ..definitions.gate_steps import (
     blocked_kind,
 )
+from ..definitions.layers import project_definitions
+from ..definitions.roles import RoleLoadError
+from ..definitions.workflows import WorkflowLoadError
 from ..domain.guidance import guidance_notes
 from ..domain.models import (
+    TASK_COMPLEXITIES,
+    TASK_TYPES,
     Event,
     Task,
 )
 from ..domain.policy import PolicyMatrix, describe_resolution
 from ..mutations import MutationError
-from .views import task_source
 from .base import Service
 from .errors import (
     ActionFailedError,
-    NotFoundError,
     InvalidRequestError,
+    NotFoundError,
 )
-from .views import stable_slug
+from .views import stable_slug, task_source
+from .workspace import foreman_starts_backlog_work
 
 
 def _serialize_completion_evidence(evidence: "Any") -> dict[str, Any] | None:
@@ -105,8 +110,6 @@ class TaskService(Service):
         }
 
     def _starts_backlog_work(self, project_id: str) -> bool:
-        from .workspace import foreman_starts_backlog_work
-
         project = self.store.get_project(project_id)
         return bool(project and foreman_starts_backlog_work(project))
 
@@ -219,7 +222,6 @@ class TaskService(Service):
         ids (validated to exist in the same project).
         """
 
-        from ..domain.models import TASK_COMPLEXITIES, TASK_TYPES
 
         sprint = self._require_sprint(sprint_id)
         if not title.strip():
@@ -314,9 +316,6 @@ class TaskService(Service):
     def _project_workflow_step_ids(self, project_id: str) -> set[str] | None:
         """Return the workflow step ids for a project, or ``None`` if unresolved."""
 
-        from ..definitions.layers import project_definitions
-        from ..definitions.roles import RoleLoadError
-        from ..definitions.workflows import WorkflowLoadError
 
         project = self.store.get_project(project_id)
         if project is None:

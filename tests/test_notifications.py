@@ -30,24 +30,30 @@ from foreman.domain.models import (
     Sprint,
     Task,
 )
-from foreman.notifications import (
+from foreman.notifications.policy import (
     ATTENTION,
-    _iso,
-    DEFAULT_MAX_ATTEMPTS,
     HUMAN_GATE,
-    NotificationDeliveryWorker,
-    NotificationDispatcher,
-    NotificationError,
     TASK_COMPLETED,
-    TransportError,
-    WebhookTransport,
-    build_payload,
     kind_for_event,
     notify_decision,
     policy_allows,
     resolve_notification_policy,
+)
+from foreman.notifications.delivery import (
+    _iso,
+    DEFAULT_MAX_ATTEMPTS,
+    NotificationDeliveryWorker,
+    NotificationDispatcher,
     retry_delay_seconds,
+)
+from foreman.notifications.destinations import (
+    NotificationError,
     validate_target,
+)
+from foreman.notifications.transport import (
+    TransportError,
+    WebhookTransport,
+    build_payload,
 )
 from foreman.engine.orchestrator import ForemanOrchestrator
 from foreman.runner import AgentRunConfig

@@ -29,9 +29,11 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
+from ..definitions.gate_steps import HUMAN_GATE_ROLE
+from ..definitions.layers import project_definitions
 from ..domain.errors import ForemanError
 from ..domain.models import PROPOSAL_STATES, Project, Proposal
-from ..mutations import Mutations, MutationError
+from ..mutations import MutationError, Mutations
 from ..store import ForemanStore
 
 #: Default page size for a project's proposals.
@@ -480,8 +482,6 @@ def _gate_of(store: ForemanStore, project: Project, task: Any) -> dict[str, Any]
 
     if task.status != "blocked" or not task.workflow_current_step:
         return None
-    from ..definitions.gate_steps import HUMAN_GATE_ROLE
-    from ..definitions.layers import project_definitions
 
     try:
         workflow = project_definitions(store, project.id).workflows.get(project.workflow_id)

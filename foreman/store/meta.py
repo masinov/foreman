@@ -2,20 +2,19 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
 import json
+import json as _json
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
 
 from ..domain.models import (
     utc_now_text,
 )
-
 from .base import (
     StoreBase,
     retried_on_lock,
 )
-
 
 #: In a reply's tool uses while the manager is still writing it. The turn's
 #: end replaces it with the final tool uses; a dashboard that stopped first
@@ -68,8 +67,6 @@ class MetaSessionStore(StoreBase):
         created_at: str | None = None,
     ) -> str:
         """Append one conversation turn and return its generated id."""
-        import json as _json
-
         turn_id = uuid4().hex
         now = created_at or utc_now_text()
         with self._connection:
@@ -185,8 +182,6 @@ class MetaSessionStore(StoreBase):
         turn (older history), supporting cursor-based "load older" paging that
         mirrors the sprint-event endpoint.
         """
-        import json as _json
-
         params: list[Any] = [project_id]
         cursor_clause = ""
         if before_id is not None:

@@ -24,7 +24,7 @@ from ..domain.models import (
     Task,
 )
 from ..domain.policy import PolicyMatrix
-from ..notifications import NotificationDispatcher
+from ..notifications.delivery import NotificationDispatcher
 from ..repo.worktrees import WorktreeError, WorktreeManager
 from ..store import ForemanStore
 

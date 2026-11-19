@@ -11,7 +11,8 @@ from typing import Any
 from uuid import uuid4
 
 from ..domain.models import Event, Project, Run, Task, TokenUsage, utc_now_text
-from ..notifications import NotificationDispatcher, resolve_notification_policy
+from ..notifications.delivery import NotificationDispatcher
+from ..notifications.policy import resolve_notification_policy
 from ..store import ForemanStore
 from .logs import compact_payload, event_log_level, get_logger, log_event
 

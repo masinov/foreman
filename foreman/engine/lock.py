@@ -29,8 +29,9 @@ from typing import Callable
 
 from ..domain.errors import ForemanError
 from ..domain.leases import generate_lease_token
-from ..history.logs import get_logger, log_event
 from ..domain.models import Lease
+from ..history.logs import get_logger, log_event
+from ..runner.process import terminate_all
 from ..store import ENGINE_RESOURCE_TYPE, ForemanStore
 
 __all__ = [
@@ -95,7 +96,6 @@ def stop_engine_on_lock_loss(lock: "EngineLock") -> None:
     persisted step, exactly as it does for a shutdown signal.
     """
 
-    from ..runner.process import terminate_all
 
     try:
         terminate_all(grace_seconds=2.0)

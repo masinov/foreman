@@ -20,15 +20,17 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
 
 from ..domain.errors import ForemanError
 from ..domain.models import utc_now_text
+from ..store import ForemanStore
 from .roles import RoleDefinition, RoleLoadError, load_role_text, load_roles
-from .workflows import WorkflowDefinition, WorkflowLoadError, load_workflow_text, load_workflows
-
-if TYPE_CHECKING:
-    from ..store import ForemanStore
+from .workflows import (
+    WorkflowDefinition,
+    WorkflowLoadError,
+    load_workflow_text,
+    load_workflows,
+)
 
 ROLE = "role"
 WORKFLOW = "workflow"

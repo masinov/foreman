@@ -19,11 +19,12 @@ from ..domain.models import (
     Task,
 )
 from ..domain.policy import PolicyMatrix
-from ..engine.selection import pulled_task_ids
+from ..engine.limits import resolve_project_settings
+from ..engine.selection import backlog_ready_for_foreman, pulled_task_ids
 from ..mutations import MutationError
 from ..store import ForemanStore
 from .base import Service
-from .errors import NotFoundError, InvalidRequestError
+from .errors import InvalidRequestError, NotFoundError
 from .tasks import TaskService
 from .views import task_source
 
@@ -76,8 +77,6 @@ def foreman_and_the_backlog(store: ForemanStore, project: Project) -> dict[str, 
     many accepted tasks it could start next.
     """
 
-    from ..engine.limits import resolve_project_settings
-    from ..engine.selection import backlog_ready_for_foreman
 
     settings = resolve_project_settings(project)
     sprint = store.get_active_sprint(project.id)

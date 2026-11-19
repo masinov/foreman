@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING
+from uuid import uuid4
 
-if TYPE_CHECKING:
-    from .models import Lease
+from .models import Lease
 
 DEFAULT_LEASE_DURATION_SECONDS = 300.0
 
@@ -16,8 +15,6 @@ def generate_lease_token() -> str:
 
     Uses UUID4 hex (32 characters) for uniqueness.
     """
-    from uuid import uuid4
-
     return uuid4().hex
 
 

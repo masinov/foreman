@@ -18,6 +18,8 @@ memory changes rather than versioned product releases.
 
 ### Sprint 60 — what is there works and makes sense
 
+- The backend in layers, slice 5 (ADR-0032), the last of the plan. `notifications` is a package split by concern (`policy`, `destinations`, `transport`, `delivery`). Of the 45 imports placed inside functions, three are left, each a late load of something heavy or platform-specific; the four `TYPE_CHECKING` guards are plain imports. Nothing but `__init__` and `__main__` is at the root of `foreman/`. ADR-0032 lists what the layers do not settle yet: the CLI does not go through the services, and five modules are still long.
+
 - The backend in layers, slice 4 (ADR-0032). `DashboardService`, one class of 2,408 lines, is eleven services in `foreman/services/`, one per area, put together by `Services`. The six `dashboard_*` modules and `backlog` joined them, and `foreman/dashboard/` is `foreman/api/`. The import shim `dashboard_backend` is gone. The services' errors lost their `Dashboard` prefix (`NotFoundError`, `InvalidRequestError`, and so on), since the CLI meets them too. The bundle helpers are `api/assets`, so `api/runtime` and `api/app` no longer import each other. No behaviour or API changed.
 
 - The backend in layers, slice 3 (ADR-0032): the manager's modules are one package, `foreman/manager/` (`agent`, which was `meta_agent`, `proposals`, `planning`, `digest`). The manager chat's routes import them at the top of the module, as every other route does.

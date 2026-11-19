@@ -54,12 +54,15 @@ of `foreman/` belongs to no layer and fails the check.
 | engine | `engine/` | Orchestrator, Workflow Engine |
 | changes | `mutations/`: a part per area (`tasks`, `gates`, `backlog`, `sprints`) over `base`, composed into `Mutations` | |
 | history | `history/`: `RunRecords`, the one writer of runs and events, and the JSON-lines process log | |
-| parts | `definitions/`, `repo/`, `notifications/` (today `notifications.py`), `runner/` | Role System; Agent Runner |
+| parts | `definitions/`, `repo/`, `notifications/` (`policy`, `destinations`, `transport`, `delivery`), `runner/` | Role System; Agent Runner |
 | store | `store/` | |
 | domain | `domain/`, `data/` | |
 
-The "today" entry is the module slice 5 of ADR-0032 still has to move. Until then the contract lists them by their current names. It names no
-exception.
+Nothing but `__init__` and `__main__` is at the root of `foreman/`, and the
+contract names no exception. Imports are at the top of their module. The
+only ones inside a function load something heavy or platform-specific when
+that path runs: `uvicorn` (starting the server), `httpx` (the judge's one
+call), `ctypes` (Linux process control).
 
 A person's gate decision and the engine's are written by the same two
 functions in `mutations/gates.py`: `find_gate_stop` checks the task waits at

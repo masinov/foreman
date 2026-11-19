@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import json as _json
 import re
 import sqlite3
+from dataclasses import asdict
 from typing import Any
 
 from ..domain.models import (
@@ -20,9 +22,9 @@ from ..domain.models import (
     NotificationDestination,
     Project,
     Run,
-    TokenUsage,
     Sprint,
     Task,
+    TokenUsage,
 )
 
 
@@ -59,7 +61,6 @@ def _serialize_evidence(evidence: Any) -> str:
     if isinstance(evidence, dict):
         return _json_dumps(evidence)
     try:
-        from dataclasses import asdict
         if isinstance(evidence, CompletionEvidence):
             return _json_dumps(asdict(evidence))
         return _json_dumps(asdict(evidence))
@@ -228,8 +229,6 @@ def _row_to_event(row: sqlite3.Row) -> Event:
 
 
 def _row_to_gate(row: sqlite3.Row) -> DecisionGate:
-    import json as _json
-
     raw = row["suggested_order"]
     try:
         suggested_order = _json.loads(raw) if raw else []

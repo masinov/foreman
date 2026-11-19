@@ -15,12 +15,17 @@ import os
 from typing import Any
 
 from .. import __version__
+from ..definitions.roles import RoleLoadError, load_roles
 from ..domain.api_tokens import API_TOKEN_SCOPES, ApiTokenError
-from .errors import NotFoundError, InvalidRequestError
 from ..domain.models import ApiToken, NotificationDestination
-from ..notifications import DESTINATION_KINDS, NotificationError, add_destination
+from ..notifications.destinations import (
+    DESTINATION_KINDS,
+    NotificationError,
+    add_destination,
+)
 from ..runner.discovery import describe_runners
 from ..store import ForemanStore
+from .errors import InvalidRequestError, NotFoundError
 
 #: Who acts when nothing authenticates the dashboard.
 LOCAL_OPERATOR = "Local operator"
@@ -63,7 +68,6 @@ def describe_machine(*, db_path: str, address: str) -> dict[str, Any]:
 def describe_runner_backends() -> dict[str, Any]:
     """The agent backends found on this machine and the models roles ask for."""
 
-    from ..definitions.roles import RoleLoadError, load_roles
 
     try:
         roles = load_roles()
