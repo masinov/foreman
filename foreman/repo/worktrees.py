@@ -831,4 +831,11 @@ def prune_project_worktrees(
             continue
         manager.remove_path(entry.path)
         removed.append(entry)
+    # Forget the paths that no longer exist, so no task goes on naming a
+    # directory a person cannot open.
+    removed_paths = {str(entry.path) for entry in removed}
+    for task in store.list_tasks(project_id=project.id):
+        if task.worktree_path and task.worktree_path in removed_paths:
+            task.worktree_path = None
+            store.save_task(task)
     return tuple(removed), tuple(kept)

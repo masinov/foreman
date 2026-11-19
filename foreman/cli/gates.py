@@ -4,11 +4,8 @@ from __future__ import annotations
 
 import argparse
 import sys
-from uuid import uuid4
 
-from ..domain.models import MergeWaiver, utc_now_text
 from ..engine.orchestrator import ForemanOrchestrator, OrchestratorError
-from ..repo.git import head_sha
 from ..store import ForemanStore
 from .common import (
     DB_OPTION_NOTE,
@@ -17,6 +14,9 @@ from .common import (
     resolve_db_path_or_print,
     set_handler,
 )
+from .common import cli_mutations
+from ..mutations import MutationError
+from ..mutations.gates import MERGE_WAIVER_TYPES
 
 
 def handle_approve(args: argparse.Namespace) -> int:
@@ -39,16 +39,10 @@ def handle_waive_merge(args: argparse.Namespace) -> int:
         return 1
 
 
-    waiver_types = {
-        "missing_acceptance_criteria",
-        "incomplete_criteria",
-        "no_code_delta",
-        "docs_only_impl_task",
-    }
-    if args.waiver_type not in waiver_types:
+    if args.waiver_type not in MERGE_WAIVER_TYPES:
         print(
             f"Invalid waiver type {args.waiver_type!r}. "
-            f"Must be one of: {', '.join(sorted(waiver_types))}",
+            f"Must be one of: {', '.join(sorted(MERGE_WAIVER_TYPES))}",
             file=sys.stderr,
         )
         return 1
@@ -66,37 +60,20 @@ def handle_waive_merge(args: argparse.Namespace) -> int:
             )
             return 1
 
-        # Get branch info for the waiver
-        branch_name = task.branch_name or "unknown"
-        project = store.get_project(args.project_id)
-        if project is None:
+        if store.get_project(args.project_id) is None:
             print(f"Project not found: {args.project_id}", file=sys.stderr)
             return 1
-
-        # Get current HEAD SHA
         try:
-            head_sha_val = head_sha(project.repo_path, f"refs/heads/{branch_name}") or ""
-            base_sha = head_sha(project.repo_path, f"refs/heads/{project.default_branch}") or ""
-        except Exception as e:
-            print(f"Failed to get branch SHA: {e}", file=sys.stderr)
+            waiver = cli_mutations(store).waive_merge(
+                task,
+                waiver_type=args.waiver_type,
+                reason=args.reason,
+                approved_by=args.approved_by,
+            )
+        except MutationError as exc:
+            print(str(exc), file=sys.stderr)
             return 1
-
-        now = utc_now_text()
-        waiver = MergeWaiver(
-            id=f"waiver-{uuid4().hex[:12]}",
-            task_id=task.id,
-            project_id=args.project_id,
-            waiver_type=args.waiver_type,
-            reason=args.reason,
-            approved_by=args.approved_by or "human",
-            approved_at=now,
-            branch_name=branch_name,
-            head_sha=head_sha_val,
-            base_sha=base_sha,
-            expires_at=None,
-            revoked_at=None,
-        )
-        store.save_merge_waiver(waiver)
+        branch_name, head_sha_val = waiver.branch_name, waiver.head_sha
 
     print_lines(
         "Waiver created",

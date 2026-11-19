@@ -11,7 +11,6 @@ from ..definitions.gate_steps import (
 from ..domain.models import (
     TASK_COMPLEXITIES,
     TASK_TYPES,
-    Task,
 )
 from ..engine.limits import resolve_project_settings
 from ..engine.selection import pulled_task_ids
@@ -19,7 +18,7 @@ from ..mutations import MutationError
 from ..store.overview import SPRINT_LIST_ORDERS, SPRINT_LIST_STATUSES
 from .base import Service
 from .errors import InvalidRequestError, NotFoundError
-from .views import stable_slug, task_source
+from .views import task_source
 
 ACTIVITY_EVENT_LIMIT = 50
 
@@ -167,46 +166,26 @@ class SprintService(Service):
             sprint = self._mutations().create_sprint(project, title=title, goal=goal)
         except MutationError as exc:
             raise InvalidRequestError(str(exc)) from exc
-        sprint_id = sprint.id
-        now = sprint.created_at
-
         created_tasks = []
+        mutations = self._mutations()
         for i, task_data in enumerate(initial_tasks or []):
             task_title = str(task_data.get("title", "")).strip()
             if not task_title:
                 continue
             task_type = str(task_data.get("task_type", "feature"))
-            if task_type not in TASK_TYPES:
-                task_type = "feature"
-            task_id = f"task-{stable_slug(task_title)}"
-            dedup = 2
-            while self.store.get_task(task_id) is not None:
-                task_id = f"task-{stable_slug(task_title)}-{dedup}"
-                dedup += 1
-            acceptance_criteria = task_data.get("acceptance_criteria") or None
-            if acceptance_criteria:
-                acceptance_criteria = str(acceptance_criteria).strip() or None
-            description = task_data.get("description") or None
-            if description:
-                description = str(description).strip() or None
             complexity = task_data.get("complexity") or None
-            if complexity is not None and complexity not in TASK_COMPLEXITIES:
-                complexity = None
-            task = Task(
-                id=task_id,
-                sprint_id=sprint_id,
-                project_id=project_id,
+            task = mutations.add_task(
+                sprint,
                 title=task_title,
-                task_type=task_type,
-                acceptance_criteria=acceptance_criteria,
-                description=description,
-                complexity=complexity,
+                task_type=task_type if task_type in TASK_TYPES else "feature",
+                acceptance_criteria=str(task_data.get("acceptance_criteria") or "") or None,
+                description=str(task_data.get("description") or "") or None,
+                complexity=complexity if complexity in TASK_COMPLEXITIES else None,
                 order_index=i,
-                created_by="human",
-                created_at=now,
             )
-            self.store.save_task(task)
-            created_tasks.append({"id": task.id, "task_key": task.task_key, "title": task.title, "task_type": task.task_type})
+            created_tasks.append(
+                {"id": task.id, "task_key": task.task_key, "title": task.title, "task_type": task.task_type}
+            )
 
         return {
             "id": sprint.id,

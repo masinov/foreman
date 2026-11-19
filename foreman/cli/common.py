@@ -7,7 +7,7 @@ import json
 import os
 from pathlib import Path
 import sys
-from typing import Any, Callable, Sequence
+from typing import Any, Callable
 
 from ..engine.control import (
     default_command_requester,
@@ -18,7 +18,6 @@ from ..definitions.layers import project_definitions
 from ..mutations import Mutations
 from ..repo.scaffold import (
     DEFAULT_DB_FILENAME,
-    generate_project_id,
 )
 from ..store import ForemanStore
 from ..definitions.workflows import WorkflowLoadError
@@ -371,26 +370,6 @@ def parse_config_assignment(raw_assignment: str) -> tuple[str, Any]:
     return key, parse_config_value(raw_value)
 
 
-def allocate_entity_id(
-    prefix: str,
-    title: str,
-    *,
-    exists: Callable[[str], object | None],
-) -> str:
-    base_slug = generate_project_id(title, title)
-    candidate = base_slug if base_slug.startswith(f"{prefix}-") else f"{prefix}-{base_slug}"
-    suffix = 2
-    while exists(candidate) is not None:
-        suffixed = f"{base_slug}-{suffix}"
-        candidate = suffixed if suffixed.startswith(f"{prefix}-") else f"{prefix}-{suffixed}"
-        suffix += 1
-    return candidate
-
-
-def next_order_index(values: Sequence[int]) -> int:
-    return max(values, default=-1) + 1
-
-
 def resolve_project_or_print(store: ForemanStore, project_id: str) -> Project | None:
     project = store.get_project(project_id)
     if project is None:
@@ -480,21 +459,3 @@ def token_split_parts(usage: dict[str, int] | None) -> list[str]:
     ]
 
 
-def allocate_project_id(
-    store: ForemanStore,
-    name: str,
-    repo_path: Path,
-    existing: Project | None,
-) -> str:
-    if existing is not None:
-        return existing.id
-
-    base_id = generate_project_id(name, repo_path)
-    candidate = base_id
-    suffix = 2
-    while True:
-        stored = store.get_project(candidate)
-        if stored is None or stored.repo_path == str(repo_path):
-            return candidate
-        candidate = f"{base_id}-{suffix}"
-        suffix += 1

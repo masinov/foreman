@@ -4,7 +4,7 @@ done and reopen, delete, edit, and guidance for its next step.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -13,11 +13,12 @@ from ..domain.models import (
     TASK_COMPLEXITIES,
     TASK_TYPES,
     Event,
+    Sprint,
     Task,
     validate_executor_overrides,
 )
 from .backlog import PLANNABLE_SPRINT_STATUSES
-from .base import _RESOLVED_TASK_STATUSES, MutationBase, MutationError
+from .base import _RESOLVED_TASK_STATUSES, MutationBase, MutationError, slug_id
 
 #: Task fields a person may edit, and the statuses whose edits an agent must
 #: hear about (they are recorded as ``human.task_edited``).
@@ -361,3 +362,71 @@ class TaskMutations(MutationBase):
         if not clean:
             raise MutationError("Guidance text is required.")
         return self._audit(task, "human.message", step="message", text=clean)
+
+    def add_task(
+        self,
+        sprint: Sprint,
+        *,
+        title: str,
+        task_type: str = "feature",
+        description: str | None = None,
+        acceptance_criteria: str | None = None,
+        complexity: str | None = None,
+        depends_on: Sequence[str] = (),
+        order_index: int | None = None,
+    ) -> Task:
+        """Add a task to the end of a sprint's queue.
+
+        Work for the backlog is filed with ``file_task`` (ADR-0021); a sprint's
+        own task is added here, from ``foreman task add``, the dashboard and a
+        new sprint's first tasks alike. ``depends_on`` names tasks of the same
+        project.
+        """
+
+        if sprint.is_backlog:
+            raise MutationError(
+                f"{sprint.id} is the backlog, not a sprint. File work into it with "
+                f"`foreman backlog add {sprint.project_id}`."
+            )
+        clean = (title or "").strip()
+        if not clean:
+            raise MutationError("Task title is required.")
+        if task_type not in TASK_TYPES:
+            raise MutationError(
+                f"Unsupported task type: {task_type}. Expected one of: {', '.join(TASK_TYPES)}."
+            )
+        if complexity is not None and complexity not in TASK_COMPLEXITIES:
+            raise MutationError(
+                f"Unsupported complexity: {complexity}. "
+                f"Expected one of: {', '.join(TASK_COMPLEXITIES)}."
+            )
+        depends_on_ids: list[str] = []
+        for raw in depends_on:
+            dep_id = str(raw).strip()
+            if not dep_id:
+                continue
+            dependency = self.store.get_task(dep_id)
+            if dependency is None or dependency.project_id != sprint.project_id:
+                raise MutationError(
+                    f"Dependency task {dep_id} not found in project {sprint.project_id}."
+                )
+            if dep_id not in depends_on_ids:
+                depends_on_ids.append(dep_id)
+        if order_index is None:
+            existing = self.store.list_tasks(sprint_id=sprint.id)
+            order_index = max((item.order_index for item in existing), default=-1) + 1
+        task = Task(
+            id=slug_id("task", clean, self.store.get_task),
+            sprint_id=sprint.id,
+            project_id=sprint.project_id,
+            title=clean,
+            task_type=task_type,  # type: ignore[arg-type]
+            acceptance_criteria=(acceptance_criteria or "").strip() or None,
+            description=(description or "").strip() or None,
+            complexity=complexity,
+            depends_on_task_ids=depends_on_ids,
+            order_index=order_index,
+            created_by=self.role,
+            created_at=self._now().isoformat(),
+        )
+        return self.store.save_task(task)

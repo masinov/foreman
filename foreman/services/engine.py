@@ -29,8 +29,8 @@ from ..store import ForemanStore
 from .base import Service
 from .errors import (
     ActionFailedError,
-    NotFoundError,
     InvalidRequestError,
+    NotFoundError,
 )
 from .views import serialize_engine_state
 
@@ -115,10 +115,10 @@ class EngineService(Service):
                 raise InvalidRequestError(
                     "No active or planned sprint. Add a sprint to the queue before running."
                 )
-            now = self._now().isoformat()
-            next_sprint.status = "active"
-            next_sprint.started_at = now
-            self.store.save_sprint(next_sprint)
+            try:
+                self._mutations(requested_by).transition_sprint(next_sprint, "active")
+            except MutationError as exc:
+                raise InvalidRequestError(str(exc)) from exc
 
         who = self._requester(requested_by)
         commands: list[EngineCommand] = []
