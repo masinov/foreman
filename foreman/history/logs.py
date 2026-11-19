@@ -22,7 +22,7 @@ import json
 import logging
 import sys
 from datetime import datetime, timezone
-from typing import Any, IO, Mapping
+from typing import IO, Any, Mapping
 
 DEFAULT_LOGGER_NAME = "foreman"
 

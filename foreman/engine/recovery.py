@@ -15,7 +15,7 @@ from ..store import ForemanStore
 from .errors import LeaseLostError
 from .leasing import TaskLeases
 from .limits import active_run_recovery_timeout_seconds
-from .records import RunRecords
+from ..history.records import RunRecords
 from .task_writes import TaskWrites
 
 #: A lease whose heartbeat is older than this no longer vouches for its holder.

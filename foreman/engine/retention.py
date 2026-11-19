@@ -9,7 +9,7 @@ from ..domain.models import Project
 from ..domain.settings import ProjectSettings
 from ..store import ForemanStore
 from .limits import resolve_project_settings
-from .records import RunRecords
+from ..history.records import RunRecords
 
 
 class Retention:

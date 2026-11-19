@@ -19,7 +19,7 @@ from foreman.engine.lock import (
     EngineLockLostError,
 )
 import foreman
-from foreman.engine.logs import (
+from foreman.history.logs import (
     AGENT_LIFECYCLE_EVENT_TYPES,
     HIGH_VOLUME_EVENT_TYPES,
     JsonLinesFormatter,

@@ -51,6 +51,7 @@ The stack, top to bottom (`.importlinter`):
 | manager | `manager/` | the project manager agent (ADR-0022): its session, its proposals, planning and the attention digest |
 | engine | `engine/` | what runs the work: the orchestrator, the resident engine (`resident`), the project lock, the step loop, built-in steps, agent steps, leases held, gates, evidence |
 | changes | `mutations/` | the rules for a change a person or a policy makes, each written with its audit event. The engine uses them when it acts by policy (planning backlog work, filing a follow-up) |
+| history | `history/` | the runs and events of the work, written once, and their mirror in the process log. The engine and the rules for a person's change both write through it |
 | parts | `definitions/`, `repo/`, `notifications/`, `runner/` | roles and workflows and which steps are gates; git, a worktree per task, the context projection and the scaffold; telling people; agent programs. These four do not import each other |
 | store | `store/` | SQLite: the connection, the migrations, a part per aggregate |
 | domain | `domain/`, `data/` | the model, its rules and errors, with no I/O; the shipped TOML and templates |
@@ -117,6 +118,15 @@ collectors filter on that name.
 | `engine_lock` | `engine/lock` |
 | `task_lease` | merged into `engine/leasing` |
 | `model_check` | `runner/model_check` |
+
+## Where things went (slice 2)
+
+| Before | After |
+|---|---|
+| `mutations` (one class of 1,100 lines) | `mutations/`: `base` (`MutationBase`, `MutationError`, the audit event), `tasks`, `gates`, `backlog`, `sprints`; `Mutations` in `mutations/__init__` composes them, as `ForemanStore` composes the store's parts |
+| `engine/records` | `history/records` |
+| `engine/logs` | `history/logs` |
+| the gate decision in `ForemanOrchestrator.resume_human_gate` | `mutations/gates`: `find_gate_stop`, `record_gate_decision`. The orchestrator calls them; `Mutations.decide_gate` no longer imports the engine |
 
 Older ADRs name the paths of their day and are left as written. This table
 and its successors in later slices translate them.

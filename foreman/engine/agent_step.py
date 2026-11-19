@@ -28,7 +28,7 @@ from .leasing import TaskLeases
 from .limits import project_timeout_seconds, resolve_project_settings, run_cost_ceiling
 from .model_selection import resolve_step_model
 from .output_contract import FINAL_MESSAGE_PHASES, extract_completion_output
-from .records import RunRecords
+from ..history.records import RunRecords
 from .results import AgentEventRecord, AgentExecutionResult, AgentExecutor
 
 #: How often a silent agent step renews its lease and polls for commands.

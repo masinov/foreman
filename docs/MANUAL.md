@@ -467,7 +467,7 @@ Mirrored engine events are levelled by family: `engine.*`, `workflow.*`,
 (`agent.raw_output`, `agent.prompt`, `agent.tool_use`, `agent.tool_result`,
 `agent.cost_update`, `agent.tick`) is **DEBUG**, so a resident engine's own
 lifecycle is not buried in agent chatter. Every event is still persisted in
-full either way; the mapping lives in `foreman.engine.logs.event_log_level`.
+full either way; the mapping lives in `foreman.history.logs.event_log_level`.
 
 `--once` runs exactly one pass and exits, for cron-style deployment and for
 tests. Retention pruning and crash recovery run at startup and after any pass

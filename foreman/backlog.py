@@ -1,6 +1,6 @@
 """Reading a project's backlog (ADR-0021), for the API and the CLI alike.
 
-Changes to the backlog go through ``foreman.mutations``; this module only
+Changes to the backlog go through ``foreman.mutations.base``; this module only
 reads it, so ``GET /projects/{id}/backlog`` and ``foreman backlog list
 --json`` return the same document.
 """

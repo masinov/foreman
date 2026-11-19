@@ -52,15 +52,22 @@ of `foreman/` belongs to no layer and fails the check.
 | services | `services/` (today `dashboard_service` and its siblings, `backlog`) | |
 | manager | `manager/` (today `meta_agent`, `proposals`, `planning`, `digest`) | |
 | engine | `engine/` | Orchestrator, Workflow Engine |
-| changes | `mutations/` (today `mutations.py`) | |
+| changes | `mutations/`: a part per area (`tasks`, `gates`, `backlog`, `sprints`) over `base`, composed into `Mutations` | |
+| history | `history/`: `RunRecords`, the one writer of runs and events, and the JSON-lines process log | |
 | parts | `definitions/`, `repo/`, `notifications/` (today `notifications.py`), `runner/` | Role System; Agent Runner |
 | store | `store/` | |
 | domain | `domain/`, `data/` | |
 
-The "today" entries are the modules slices 2 to 5 of ADR-0032 still have to
-move. Until then the contract lists them by their current names, and it
-names one exception: `mutations` imports the orchestrator to record a gate
-decision.
+The "today" entries are the modules slices 3 to 5 of ADR-0032 still have to
+move. Until then the contract lists them by their current names. It names no
+exception.
+
+A person's gate decision and the engine's are written by the same two
+functions in `mutations/gates.py`: `find_gate_stop` checks the task waits at
+a human gate with a way out for the decision, and `record_gate_decision`
+writes its run, events and row and moves the task on. The orchestrator calls
+them and then runs the next step itself when it can; a person's decision
+leaves the task at that step for the engine (ADR-0011).
 
 `frontend/` is the dashboard's browser code (ADR-0020).
 
@@ -79,7 +86,7 @@ It composes these parts of `foreman/engine/`, each taking only what it uses:
 | `errors`, `results` | what the engine raises and returns |
 | `limits`, `model_selection` | validated settings, ceilings, which model a step runs on |
 | `leasing` (`TaskLeases`) | lease tokens and heartbeats for the tasks in hand |
-| `records` (`RunRecords`) | the only writer of runs, events and attention turns |
+| `history.records` (`RunRecords`) | the writer of runs, events and attention turns (below the engine, so `mutations` writes gate decisions through it too) |
 | `task_writes` (`TaskWrites`) | writing a task without overwriting an operator |
 | `selection` (`TaskSelector`) | directed and autonomous task selection |
 | `recovery` (`Recovery`) | orphaned tasks and stale runs after a crash |
@@ -212,7 +219,7 @@ ADR-0011 is the active contract for engine residency and concurrency.
   `serve_project()` composes the lock and the loop; the CLI handler stays thin
   (arguments, exit codes, messages) and the loop is unit-testable without a
   subprocess.
-- `foreman/engine/logs.py` — JSON-lines process logging on stderr. The resident engine
+- `foreman/history/logs.py` — JSON-lines process logging on stderr. The resident engine
   has no terminal, so this is its operator surface; the orchestrator mirrors
   every persisted event to the same logger, at the level
   `event_log_level()` assigns its family (narrative at INFO, agent output
@@ -391,7 +398,7 @@ counted, activated or advanced into, and a trigger keeps it `planned`
 whoever writes. A backlog task is `triage` (filed), `todo` (accepted) or
 `declined`.
 
-- `foreman/mutations.py`: `file_task` (triage policy decides filed or
+- `foreman/mutations/backlog.py`: `file_task` (triage policy decides filed or
   accepted, one attention turn when filed), `accept_task`, `decline_task`,
   `plan_tasks` (into a planned or active sprint, or a new planned sprint, all
   or none in one transaction), `unplan_task`. Each writes an audit event

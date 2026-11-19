@@ -1,7 +1,7 @@
 """Changes the manager proposes and a person confirms (ADR-0022).
 
 A proposal is an ordered list of operations from a fixed vocabulary, each of
-which is one operation of the mutation service (``foreman.mutations``), with
+which is one operation of the mutation service (``foreman.mutations.base``), with
 a one-paragraph reason. Nothing in it happens until a person confirms it.
 
 - ``Proposals.create`` checks the shape of every operation, that every task

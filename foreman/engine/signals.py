@@ -15,7 +15,7 @@ from ..definitions.roles import RoleDefinition
 from ..store import ForemanStore
 from .coerce import optional_string
 from .leasing import TaskLeases
-from .records import RunRecords
+from ..history.records import RunRecords
 from .results import AgentEventRecord
 from .task_writes import TaskWrites
 
