@@ -4,6 +4,13 @@ A note is a ``human.message`` event. It is *recorded* when saved and
 *delivered* when the engine has put it into the prompt of an agent step, which
 it marks with a ``human.message_delivered`` event naming the notes, the role
 and the step. Nothing is called delivered before that event exists.
+
+A note is for the agent doing the work, the developer (the owner,
+2026-11-19). It is delivered only to a role that does not decide: a reviewer,
+whose run ends in a decision, is not steered by notes meant for the
+developer. A reviewer is shown every note as context instead
+(``prompt_with_guidance_as_context``), so it reviews the work as the person
+asked for it, and nothing is marked delivered by that.
 """
 
 from __future__ import annotations
@@ -92,4 +99,29 @@ def prompt_with_guidance(prompt: str, notes: list[GuidanceNote]) -> str:
     for note in notes:
         body = note.text.replace("\n", "\n  ")
         lines.append(f"- ({note.recorded_at}) {body}")
+    return f"{prompt.rstrip()}\n\n" + "\n".join(lines) + "\n"
+
+
+def prompt_with_guidance_as_context(prompt: str, notes: list[GuidanceNote]) -> str:
+    """Append a task's notes to a reviewer's prompt as what the developer was told.
+
+    Each note says whether the developer has had it yet. They are context for
+    the review, not instructions to the reviewer.
+    """
+
+    if not notes:
+        return prompt
+    lines = [
+        "## What a person told the developer",
+        "",
+        "A person overseeing this task wrote these notes for the developer. They",
+        "are not instructions to you. Review the work against the task as these",
+        "notes changed it. A note the developer has not had yet cannot be in the",
+        "work; if it is not, say so rather than treating it as a fault.",
+        "",
+    ]
+    for note in notes:
+        body = note.text.replace("\n", "\n  ")
+        state = "given to the developer" if note.delivered else "not given to the developer yet"
+        lines.append(f"- ({note.recorded_at}, {state}) {body}")
     return f"{prompt.rstrip()}\n\n" + "\n".join(lines) + "\n"

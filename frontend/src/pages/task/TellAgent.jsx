@@ -11,7 +11,7 @@ export const agentAtWork = (run) => run.status === "running" && !String(run.role
 
 /** Whether an agent step has been given a note, in words. */
 export function noteState(note) {
-  if (!note.delivered) return { tone: "attention", word: "Waiting for the next agent step" };
+  if (!note.delivered) return { tone: "attention", word: "Waiting for the developer's next step" };
   const step = note.delivered_step ? humanize(note.delivered_step).toLowerCase() : "";
   const when = formatDayTime(note.delivered_at);
   return { tone: "passed", word: ["Read by the agent", step ? `at ${step}` : "", when ? `on ${when}` : ""].filter(Boolean).join(" ") };
@@ -21,10 +21,14 @@ export function noteState(note) {
  * The one place to tell a task's agent something: the bottom of the
  * conversation with it, in the task's side bar.
  *
+ * A note is for the developer (the agent doing the work); a reviewer sees
+ * notes as context, not as instructions (the owner, 2026-11-19).
+ *
  * `running` is the agent step in progress, if there is one. Then there are
  * two ways to send: "Interrupt and tell it now" stops that step and starts
- * it again with the note; "Save for its next step" leaves it alone. With no
- * step in progress the note can only wait for the next one.
+ * it again with the note; "Save for the developer" leaves it alone, and the
+ * developer reads it on its next step. With no step in progress the note
+ * can only wait for that.
  */
 export function TellAgent({ task, running, onSent }) {
   const client = useApiClient();
@@ -79,12 +83,12 @@ export function TellAgent({ task, running, onSent }) {
               Interrupt and tell it now
             </Button>
             <Button variant="quiet" disabled={busy} onClick={() => send(sendGuidance)}>
-              Save for its next step
+              Save for the developer
             </Button>
           </>
         ) : (
           <Button type="submit" disabled={busy}>
-            Save for the next step
+            Save for the developer
           </Button>
         )}
         {notice ? (

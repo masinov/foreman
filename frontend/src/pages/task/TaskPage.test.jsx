@@ -1162,7 +1162,7 @@ describe("The agent's side bar", () => {
     const box = within(panel).getByRole("form", { name: "Tell the agent" });
     expect(within(box).getByLabelText("Tell the agent (Develop is running)")).toBeInTheDocument();
     expect(within(box).getByRole("button", { name: "Interrupt and tell it now" })).toBeInTheDocument();
-    expect(within(box).getByRole("button", { name: "Save for its next step" })).toBeInTheDocument();
+    expect(within(box).getByRole("button", { name: "Save for the developer" })).toBeInTheDocument();
     // It is the only such box on the page, on every tab.
     expect(screen.getAllByRole("form", { name: "Tell the agent" })).toHaveLength(1);
   });
@@ -1179,10 +1179,10 @@ describe("The agent's side bar", () => {
     fetchImpl.routes[post("messages")] = { status: "recorded", message: "Recorded. The next agent step for this task will read it." };
     const box = within(panel).getByRole("form", { name: "Tell the agent" });
     expect(within(box).queryByRole("button", { name: "Interrupt and tell it now" })).toBeNull();
-    fireEvent.click(within(box).getByRole("button", { name: "Save for the next step" }));
+    fireEvent.click(within(box).getByRole("button", { name: "Save for the developer" }));
     expect(await within(box).findByRole("alert")).toHaveTextContent("Write what to tell it first.");
     fireEvent.change(within(box).getByRole("textbox", { name: "Tell the agent" }), { target: { value: "Count skipped tests." } });
-    fireEvent.click(within(box).getByRole("button", { name: "Save for the next step" }));
+    fireEvent.click(within(box).getByRole("button", { name: "Save for the developer" }));
     expect(await within(box).findByRole("status")).toHaveTextContent("The next agent step for this task will read it.");
     expect(calls(fetchImpl, "POST", `/api/v1/tasks/${TASK_ID}/messages`)[0].body).toEqual({ text: "Count skipped tests." });
   });
@@ -1192,7 +1192,7 @@ describe("The agent's side bar", () => {
     fireEvent.click(button());
     const panel = await bar();
     expect(await within(panel).findByText("No agent has worked on this task yet.")).toBeInTheDocument();
-    expect(within(panel).getByRole("button", { name: "Save for the next step" })).toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: "Save for the developer" })).toBeInTheDocument();
   });
 
   it("leaves out the runs that only record that the task was filed or planned", async () => {
@@ -1232,7 +1232,7 @@ describe("The agent's side bar", () => {
     expect(order[0]).toMatch(/Earlier advice\.Read by the agent at develop on 10 Nov/);
     expect(order[1]).toMatch(/^DevelopError/);
     expect(order[2]).toMatch(/^DevelopRunning/);
-    expect(order[3]).toMatch(/Newer advice\.Waiting for the next agent step/);
+    expect(order[3]).toMatch(/Newer advice\.Waiting for the developer.s next step/);
   });
 
   it("interrupts the step with the note and says what is happening", async () => {
@@ -1253,7 +1253,7 @@ describe("The agent's side bar", () => {
     fetchImpl.routes[post("messages")] = { status: "recorded", message: "Recorded. The next agent step for this task will read it." };
     const box = within(panel).getByRole("form", { name: "Tell the agent" });
     fireEvent.change(within(box).getByRole("textbox"), { target: { value: "Later is fine." } });
-    fireEvent.click(within(box).getByRole("button", { name: "Save for its next step" }));
+    fireEvent.click(within(box).getByRole("button", { name: "Save for the developer" }));
 
     await waitFor(() => expect(calls(fetchImpl, "POST", `/api/v1/tasks/${TASK_ID}/messages`)).toHaveLength(1));
     expect(calls(fetchImpl, "POST", `/api/v1/tasks/${TASK_ID}/steer`)).toHaveLength(0);

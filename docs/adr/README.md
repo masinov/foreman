@@ -45,3 +45,4 @@ Filename format:
 | ADR-0030 | A Task's Answers Are In Plain Sight | accepted |
 | ADR-0031 | A Checkout On The Default Branch Follows The Merge | accepted |
 | ADR-0032 | The Backend Is Built In Layers, And A Test Holds Them | accepted |
+| ADR-0033 | A Note Is For The Developer | accepted |

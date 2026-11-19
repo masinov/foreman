@@ -49,7 +49,7 @@ export function decisionOf(task, checks) {
       label: "Send back",
       title: "Send back",
       ask: "Guidance for the agent",
-      hint: "What should change. The agent reads it on its next step.",
+      hint: "What should change. The developer reads it on its next step.",
       required: true,
       effect: "The task goes back to the step the workflow names for a refusal, with this guidance.",
     };
@@ -76,7 +76,7 @@ export function decisionOf(task, checks) {
       label: "Send back",
       title: "Send back with guidance",
       ask: "Guidance for the agent",
-      hint: "What should change. The agent reads it on its next step.",
+      hint: "What should change. The developer reads it on its next step.",
       required: true,
       effect: "The task goes back to the queue and its workflow starts again from the first step, with this guidance.",
     },
