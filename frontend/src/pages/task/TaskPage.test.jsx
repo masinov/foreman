@@ -430,7 +430,7 @@ describe("the task's actions beside its title", () => {
     ["queued", { status: "todo" }, "not_running", ["Run next", "Close"], ["Block", "Split into smaller tasks", "Delete"]],
     ["blocked by the engine", { status: "blocked", blocked_kind: "engine" }, "not_running", ["Close"], ["Delete"]],
     ["at a gate", {}, "not_running", ["Close"], ["Delete"]],
-    ["in the backlog", { status: "todo", in_backlog: true }, "not_running", [], ["Split into smaller tasks", "Cancel", "Delete"]],
+    ["in the backlog", { status: "todo", in_backlog: true }, "not_running", [], ["Split into smaller tasks", "Decline", "Delete"]],
     ["done", { status: "done" }, "not_running", ["Reopen"], ["Delete"]],
     ["cancelled", { status: "cancelled" }, "not_running", ["Reopen"], ["Delete"]],
   ])("shows what exists for a task that is %s", async (_, fields, state, buttons, more) => {
@@ -454,7 +454,7 @@ describe("the task's actions beside its title", () => {
     ["Stop", "stop", { status: "in_progress" }, null, {}, "Stop requested. The task is blocked when the engine acts on it."],
     ["Block", "block", { status: "todo" }, "Why it is blocked", { reason: "Waiting for a key." }, "Blocked."],
     ["Reopen", "reopen", { status: "done" }, null, {}, "Reopened. The task is back in the queue."],
-    ["Cancel", "cancel", { status: "todo", in_backlog: true }, null, undefined, "Cancelled."],
+    ["Decline", "decline", { status: "todo", in_backlog: true }, "Why it is declined", { reason: "Waiting for a key." }, "Declined."],
   ])("%s is confirmed, calls its endpoint, and shows a refusal", async (label, action, fields, ask, body, done) => {
     const routes = withEngine(taskRoutes({ task: taskDetail(fields) }), "running");
     let refuse = true;

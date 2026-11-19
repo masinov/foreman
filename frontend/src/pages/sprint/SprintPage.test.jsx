@@ -300,12 +300,12 @@ describe("edit and the state action", () => {
     await waitFor(() => expect(calls(fetchImpl, "PATCH", "/api/v1/sprints/sprint-56")[0].body).toEqual({ status: "active" }));
   });
 
-  it("shows a finished sprint with no state action and no Add from backlog", async () => {
+  it("offers to reopen a finished sprint, and no Add from backlog", async () => {
     await renderSprint(
       "/dashboard/sprints/sprint-56",
       sprintRoutes({ sprint: sprintPayload({ status: "completed", completed_at: "2025-01-02T10:00:00Z" }) }),
     );
-    expect(screen.queryByRole("button", { name: /sprint$/ })).toBeNull();
+    expect(screen.getAllByRole("button", { name: /sprint$/ }).map((button) => button.textContent)).toEqual(["Reopen sprint"]);
     expect(screen.queryByRole("button", { name: "Add from backlog" })).toBeNull();
     expect(screen.getByText(/Finished 2 Jan 2025/)).toBeInTheDocument();
   });

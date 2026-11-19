@@ -18,6 +18,7 @@ import { EditSprintDialog } from "./EditSprintDialog";
 const STATE_ACTIONS = {
   [SPRINT_STATUSES.planned]: { label: "Activate sprint", doing: "Activating…", target: SPRINT_STATUSES.active },
   [SPRINT_STATUSES.active]: { label: "Finish sprint", doing: "Finishing…", target: SPRINT_STATUSES.completed },
+  [SPRINT_STATUSES.completed]: { label: "Reopen sprint", doing: "Reopening…", target: SPRINT_STATUSES.active },
 };
 
 /**

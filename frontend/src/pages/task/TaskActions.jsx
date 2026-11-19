@@ -2,7 +2,8 @@ import React, { useState } from "react";
 
 import { useApiClient } from "../../api/ApiProvider";
 import { runTaskNext } from "../../api/engine";
-import { blockTask, cancelTask, deleteTask, reopenTask, stopTask } from "../../api/tasks";
+import { declineTask } from "../../api/backlog";
+import { blockTask, deleteTask, reopenTask, stopTask } from "../../api/tasks";
 import { ENGINE_STATES } from "../../api/workspace";
 import { askManager, splitTaskRequest } from "../../app/managerRequests";
 import { paths } from "../../app/paths";
@@ -69,14 +70,17 @@ export const TASK_ACTIONS = {
     run: async (client, task) => askManager(splitTaskRequest(task)),
     done: "Asked. The proposal appears in the manager's side bar.",
   },
-  cancel: {
-    label: "Cancel",
-    title: "Cancel this task",
-    effect: "The task is marked cancelled and its worktree is removed. Its history stays. Nothing runs it again unless it is reopened.",
-    confirm: "Cancel task",
-    doing: "Cancelling…",
-    run: (client, task) => cancelTask(client, task.id),
-    done: "Cancelled.",
+  decline: {
+    label: "Decline",
+    title: "Decline this task",
+    ask: "Why it is declined",
+    hint: "Optional. Kept with the task in the backlog.",
+    required: false,
+    effect: "The task stays in the backlog, marked declined. Nothing runs it.",
+    confirm: "Decline task",
+    doing: "Declining…",
+    run: (client, task, text) => declineTask(client, task.id, { reason: text }),
+    done: "Declined.",
   },
   delete: {
     label: "Delete",
@@ -121,8 +125,9 @@ export function actionsFor(task, engine) {
   if (planned && engineKnown && OPEN.has(task.status) && !engineOnIt) buttons.push("close");
   if (planned && task.status === "todo") more.push("block");
   if (task.status === "todo" || task.status === "triage") more.push("split");
-  // In the backlog a task is declined from its decision; cancelling it is the rarer way out.
-  if (!planned && !CLOSED.has(task.status) && task.status !== "declined") more.push("cancel");
+  // In the backlog, "we won't do this" is Decline, the one way (owner,
+  // 2026-11-18): a filed task has it in its decision, an accepted one here.
+  if (!planned && task.status === "todo") more.push("decline");
   if (engineKnown && !engineOnIt) more.push("delete");
   return { buttons, more };
 }
