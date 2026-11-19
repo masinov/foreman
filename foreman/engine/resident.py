@@ -10,7 +10,7 @@ another one.
 Three properties make it safe to leave running unattended:
 
 * **One engine per project.** The whole loop runs inside an
-  :class:`~foreman.engine_lock.EngineLock`, so a second ``serve`` or a
+  :class:`~foreman.engine.lock.EngineLock`, so a second ``serve`` or a
   ``run`` on the same project is refused rather than allowed to race.
 * **A failed task cannot stop the service.** A task whose execution raises is
   parked as ``blocked`` with an attention turn and the loop continues after a
@@ -40,11 +40,11 @@ import traceback
 from dataclasses import dataclass, field
 from typing import Callable
 
-from .engine_lock import EngineBusyError, EngineLock
-from .errors import EngineCommandInterrupt
+from .lock import EngineBusyError, EngineLock
+from ..domain.errors import EngineCommandInterrupt
 from .logs import get_logger, log_event
-from .models import ENGINE_COMMANDS_NEEDING_A_RESIDENT_ENGINE, EngineCommand, Task
-from .notifications import NotificationDeliveryWorker
+from ..domain.models import ENGINE_COMMANDS_NEEDING_A_RESIDENT_ENGINE, EngineCommand, Task
+from ..notifications import NotificationDeliveryWorker
 from .orchestrator import (
     ForemanOrchestrator,
     LeaseLostError,
@@ -52,8 +52,8 @@ from .orchestrator import (
     ProjectRunResult,
     TaskExecutionError,
 )
-from .runner.process import EngineShutdown, terminate_all
-from .store import ForemanStore
+from ..runner.process import EngineShutdown, terminate_all
+from ..store import ForemanStore
 
 #: How long an idle pass waits before running another pass anyway.
 DEFAULT_POLL_SECONDS = 5.0
@@ -559,7 +559,7 @@ class ResidentEngine:
         """Command hook the orchestrator calls before a step and on every tick.
 
         Returns normally to let the step continue. Raises
-        :class:`~foreman.errors.EngineCommandInterrupt` when the command needs
+        :class:`~foreman.domain.errors.EngineCommandInterrupt` when the command needs
         the running step stopped; the orchestrator settles the run as
         ``killed`` on the way out and :meth:`_settle_interrupt` finishes the
         command once the stack has unwound.
@@ -978,7 +978,7 @@ class ResidentEngine:
 def _standing_pause(store: ForemanStore, project_id: str) -> bool:
     """True when the project's last applied pause/resume was a pause."""
 
-    from .engine_control import engine_is_paused
+    from .control import engine_is_paused
 
     return engine_is_paused(store, project_id)
 
@@ -1018,7 +1018,7 @@ def serve_project(
 ) -> ServeResult:
     """Acquire the project engine lock and run the resident engine under it.
 
-    Raises :class:`~foreman.engine_lock.EngineBusyError` when another engine
+    Raises :class:`~foreman.engine.lock.EngineBusyError` when another engine
     holds the lock; the lock is released on every other exit path, including an
     unhandled error.
     """

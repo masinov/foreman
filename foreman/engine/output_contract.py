@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import re
 
-from ..outcomes import APPROVE, DONE, ERROR
-from ..roles import RoleDefinition
+from ..domain.outcomes import APPROVE, DONE, ERROR
+from ..definitions.roles import RoleDefinition
 from .results import AgentExecutionResult
 
 

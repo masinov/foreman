@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from ..models import Project
-from ..settings import ProjectSettings, SettingsError, settings_of
+from ..domain.models import Project
+from ..domain.settings import ProjectSettings, SettingsError, settings_of
 from .errors import OrchestratorError
 
 

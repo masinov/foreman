@@ -4,11 +4,11 @@ from __future__ import annotations
 from pathlib import Path
 import tempfile
 import unittest
-from foreman.models import Project, Sprint, Task
-from foreman.orchestrator import ForemanOrchestrator
-from foreman.roles import default_roles_dir, load_roles
+from foreman.domain.models import Project, Sprint, Task
+from foreman.engine.orchestrator import ForemanOrchestrator
+from foreman.definitions.roles import default_roles_dir, load_roles
 from foreman.store import ForemanStore
-from foreman.workflows import (
+from foreman.definitions.workflows import (
     default_workflows_dir,
     load_workflows,
 )
@@ -249,7 +249,7 @@ class SprintAdvancementTests(unittest.TestCase):
         import re
         root = Path(__file__).resolve().parent.parent / "foreman"
         hits = []
-        for path in [*(root / "engine").glob("*.py"), root / "orchestrator.py"]:
+        for path in (root / "engine").glob("*.py"):
             for line in path.read_text().splitlines():
                 if re.search(r"""\.status\s*=\s*["']completed["']""", line) and "sprint" in line:
                     hits.append((path.name, line.strip()))

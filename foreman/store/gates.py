@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 
-from ..models import (
+from ..domain.models import (
     DecisionGate,
     HumanGateDecision,
     MergeWaiver,

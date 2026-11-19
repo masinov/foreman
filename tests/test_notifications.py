@@ -20,8 +20,8 @@ import urllib.error
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from foreman.migrations import MIGRATIONS
-from foreman.models import (
+from foreman.store.migrations import MIGRATIONS
+from foreman.domain.models import (
     Event,
     NotificationDelivery,
     NotificationDestination,
@@ -49,10 +49,10 @@ from foreman.notifications import (
     retry_delay_seconds,
     validate_target,
 )
-from foreman.orchestrator import ForemanOrchestrator
+from foreman.engine.orchestrator import ForemanOrchestrator
 from foreman.runner import AgentRunConfig
 from foreman.runner.base import AgentEvent
-from foreman.settings import ProjectSettings, SettingsError
+from foreman.domain.settings import ProjectSettings, SettingsError
 from foreman.store import ForemanStore
 
 from test_cli import cli_argv, cli_env
@@ -914,7 +914,7 @@ class ServeDeliveryTests(unittest.TestCase):
     """The resident engine is what works the retry schedule."""
 
     def test_each_pass_drains_what_is_due(self) -> None:
-        from foreman.serve import ResidentEngine
+        from foreman.engine.resident import ResidentEngine
 
         store = ForemanStore(":memory:")
         self.addCleanup(store.close)
@@ -930,7 +930,7 @@ class ServeDeliveryTests(unittest.TestCase):
             command_poll = None
 
             def run_project(self, project_id, *, task_id=None, maintenance=True):
-                from foreman.orchestrator import ProjectRunResult
+                from foreman.engine.orchestrator import ProjectRunResult
 
                 return ProjectRunResult(
                     project_id=project_id,

@@ -49,6 +49,14 @@ Current snapshot only. History up to 2026-09-08 (sprints 1 to 54) is in
 - A task whose work was finished outside the engine is closed with
   `foreman task done <id> --reason ...` (Mark done in the task's More menu);
   `foreman task reopen` undoes it. FOR-38 was closed that way.
+- **The backend is being laid out in layers** (ADR-0032, slice 14 of
+  `docs/sprints/current.md`, owner, 2026-11-19). `.importlinter` states the
+  stack and CI holds it. It lands in five branches that change no behaviour.
+  Until the last one, part of the root of `foreman/` (`mutations`, the
+  manager's modules, the `dashboard_` modules, `notifications`) is still
+  there under its old name. A branch opened before a slice merged must be
+  rebased onto it. After each merge the live dashboard and any resident
+  engine must be restarted, because the module paths changed.
 
 ## What sprint 56 changed for an operator
 
@@ -192,6 +200,8 @@ is no login.
 - `./venv/bin/python -m unittest discover -s tests` (1540 tests)
 - `npm --prefix frontend run lint`, `npm --prefix frontend test` (441 tests) and `npm --prefix frontend run build`
 - `ruff check foreman tests scripts` (pyflakes and syntax rules)
+- `lint-imports`: the layers contract in `.importlinter` (ADR-0032; needs
+  Python 3.11, so CI runs it on the 3.12 job)
 - `./venv/bin/python scripts/validate_repo_memory.py`
 - CI runs all of the above; its Python job builds the frontend first, since
   the bundle is not in git (`.github/workflows/ci.yml`).

@@ -16,13 +16,13 @@ import tempfile
 import time
 import unittest
 
-from foreman.migrations import MIGRATIONS
-from foreman.models import Event, Project, Run, Sprint, Task
-from foreman.orchestrator import ForemanOrchestrator, OrchestratorError
+from foreman.store.migrations import MIGRATIONS
+from foreman.domain.models import Event, Project, Run, Sprint, Task
+from foreman.engine.orchestrator import ForemanOrchestrator, OrchestratorError
 from foreman.runner.base import AgentEvent, AgentRunConfig
 from foreman.store import ForemanStore
-from foreman.git import is_worktree_clean
-from foreman.worktrees import (
+from foreman.repo.git import is_worktree_clean
+from foreman.repo.worktrees import (
     DEFAULT_WORKTREE_ROOT,
     INTEGRATION_WORKTREE_NAME,
     SETUP_MARKER_NAME,

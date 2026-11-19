@@ -147,9 +147,9 @@ Four subsystems (preserved from the spec — do not collapse them):
 | Subsystem | Module | Responsibility |
 |---|---|---|
 | **Agent Runner** | `foreman/runner/` | Launch a native `claude`/`codex` process, normalize its stream into `AgentEvent`s, retry on infrastructure errors. |
-| **Role System** | `foreman/roles.py`, `foreman/data/roles/*.toml` | Declarative agent identity: backend, model(s), tools, prompt template, env. |
-| **Workflow Engine** | `foreman/workflows.py`, `foreman/data/workflows/*.toml` | The state machine: steps, outcomes, transitions, gates, fallback. |
-| **Orchestrator** | `foreman/orchestrator.py`, `foreman/engine/` | Ties it together: selects tasks, builds prompts, runs steps, resolves transitions, enforces gates, persists everything. |
+| **Role System** | `foreman/definitions/roles.py`, `foreman/data/roles/*.toml` | Declarative agent identity: backend, model(s), tools, prompt template, env. |
+| **Workflow Engine** | `foreman/definitions/workflows.py`, `foreman/data/workflows/*.toml` | The state machine: steps, outcomes, transitions, gates, fallback. |
+| **Orchestrator** | `foreman/engine/orchestrator.py`, `foreman/engine/` | Ties it together: selects tasks, builds prompts, runs steps, resolves transitions, enforces gates, persists everything. |
 
 A single step executes like this:
 
@@ -467,7 +467,7 @@ Mirrored engine events are levelled by family: `engine.*`, `workflow.*`,
 (`agent.raw_output`, `agent.prompt`, `agent.tool_use`, `agent.tool_result`,
 `agent.cost_update`, `agent.tick`) is **DEBUG**, so a resident engine's own
 lifecycle is not buried in agent chatter. Every event is still persisted in
-full either way; the mapping lives in `foreman.logs.event_log_level`.
+full either way; the mapping lives in `foreman.engine.logs.event_log_level`.
 
 `--once` runs exactly one pass and exits, for cron-style deployment and for
 tests. Retention pruning and crash recovery run at startup and after any pass
@@ -645,7 +645,7 @@ message = "Unhandled workflow outcome. Requires human review."
 ### Outcomes
 
 Agent/builtin terminal results normalize to a canonical set
-(`foreman/outcomes.py`): `success`, `failure`, `error`, `killed`, `paused`,
+(`foreman/domain/outcomes.py`): `success`, `failure`, `error`, `killed`, `paused`,
 `conflict`, `done`, plus reviewer decisions `approve`, `deny`, `steer`,
 `escalate`. Transitions are keyed `completion:<outcome>`. Unknown agent
 outcomes normalize to `error` (deterministic fallback).
@@ -959,7 +959,7 @@ left active, or an autonomous project with no further sprint), it raises a
 ### The policy matrix
 
 Autonomy in Foreman is a policy, not a mode. One matrix
-(`foreman/policy.py`, ADR-0014) answers every question of the form "does a
+(`foreman/domain/policy.py`, ADR-0014) answers every question of the form "does a
 person do this?":
 
 | Decision | Values | Default | What it governs |
@@ -1111,7 +1111,7 @@ fifteen minutes when the backend did not say) before running the next pass.
 ## 16. Project settings reference
 
 Set with `foreman config <project-id> --set key=value` (or the dashboard
-settings endpoint). Validated by `foreman/settings.py`: an invalid value is
+settings endpoint). Validated by `foreman/domain/settings.py`: an invalid value is
 rejected at `--set` time and by the dashboard endpoint, and `foreman run`
 refuses to start a project whose stored settings fail validation, naming the
 offending value, rather than running on silent defaults.
@@ -1365,7 +1365,7 @@ Events are the append-only truth of what happened. Families:
 ## 20. Database & migrations
 
 The schema evolves through an **append-only** migration ledger
-(`foreman/migrations.py`): a list of `(version, description, sql)` tuples applied
+(`foreman/store/migrations.py`): a list of `(version, description, sql)` tuples applied
 in order and tracked in `schema_migrations`. Never renumber or rewrite a landed
 migration.
 

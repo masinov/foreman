@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from ..models import Sprint
+from ..domain.models import Sprint
 from ..mutations import MutationError
 from ..store import ForemanStore
 

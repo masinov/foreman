@@ -22,13 +22,13 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from .errors import ForemanError
-from .models import utc_now_text
+from ..domain.errors import ForemanError
+from ..domain.models import utc_now_text
 from .roles import RoleDefinition, RoleLoadError, load_role_text, load_roles
 from .workflows import WorkflowDefinition, WorkflowLoadError, load_workflow_text, load_workflows
 
 if TYPE_CHECKING:
-    from .store import ForemanStore
+    from ..store import ForemanStore
 
 ROLE = "role"
 WORKFLOW = "workflow"

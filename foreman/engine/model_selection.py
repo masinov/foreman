@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..models import Project, Task
-from ..roles import RoleDefinition
+from ..domain.models import Project, Task
+from ..definitions.roles import RoleDefinition
 from .limits import resolve_project_settings
 
 

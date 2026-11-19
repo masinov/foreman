@@ -7,7 +7,7 @@ import sqlite3
 import tempfile
 import unittest
 
-from foreman.models import Event, Project, Run, Sprint, Task, utc_now_text
+from foreman.domain.models import Event, Project, Run, Sprint, Task, utc_now_text
 from foreman.store import ForemanStore
 
 
@@ -1041,7 +1041,7 @@ if __name__ == "__main__":
 
 class RunCommitTests(unittest.TestCase):
     def test_a_run_keeps_the_commit_it_left(self) -> None:
-        from foreman.models import Run
+        from foreman.domain.models import Run
 
         with tempfile.TemporaryDirectory() as tmp:
             with ForemanStore(Path(tmp) / "foreman.db") as store:
@@ -1061,7 +1061,7 @@ class RunCommitTests(unittest.TestCase):
 
 class TokenUsageTests(unittest.TestCase):
     def test_a_run_keeps_its_token_split_and_totals_sum_it(self) -> None:
-        from foreman.models import Run, TokenUsage
+        from foreman.domain.models import Run, TokenUsage
 
         with tempfile.TemporaryDirectory() as tmp:
             with ForemanStore(Path(tmp) / "foreman.db") as store:
@@ -1095,7 +1095,7 @@ class TokenUsageTests(unittest.TestCase):
                 self.assertEqual(store.task_run_totals(project_id="p")[0]["token_usage"], expected)
 
     def test_usage_from_a_payload_ignores_junk(self) -> None:
-        from foreman.models import TokenUsage
+        from foreman.domain.models import TokenUsage
 
         self.assertIsNone(TokenUsage.from_mapping(None))
         usage = TokenUsage.from_mapping({"input": 3, "output": "x", "cache_read": -4, "cache_creation": True})

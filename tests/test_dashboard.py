@@ -18,9 +18,9 @@ from foreman.dashboard_service import (
     DashboardValidationError,
 )
 from foreman.dashboard_backend import create_dashboard_app
-from foreman.engine_control import ServeSpawn
-from foreman.leases import generate_lease_token
-from foreman.models import Event, Project, Run, Sprint, Task
+from foreman.engine.control import ServeSpawn
+from foreman.domain.leases import generate_lease_token
+from foreman.domain.models import Event, Project, Run, Sprint, Task
 from foreman.store import ENGINE_RESOURCE_TYPE, ForemanStore
 
 from plan_workflow import install_plan_workflow
@@ -419,7 +419,7 @@ class DashboardBackendTests(unittest.TestCase):
         self.assertIn("no agent step will read it", result["message"])
 
     def test_task_detail_lists_guidance_with_its_delivery_state(self):
-        from foreman.models import Event
+        from foreman.domain.models import Event
 
         task = Task(
             id="task-guidance-open",
@@ -1641,7 +1641,7 @@ class DashboardSprintTaskBacklogTests(unittest.TestCase):
 
         import subprocess
 
-        from foreman.worktrees import WorktreeManager
+        from foreman.repo.worktrees import WorktreeManager
 
         temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(temp_dir.cleanup)
@@ -1818,7 +1818,7 @@ class DashboardSprintTaskBacklogTests(unittest.TestCase):
 
     def test_cancel_task_refuses_a_task_a_resident_engine_is_running(self):
         """A live agent step protects the task from a cancel underneath the engine."""
-        from foreman.models import Run
+        from foreman.domain.models import Run
 
         project_id, _, task = self._seed_active()
         store = ForemanStore(self.db_path)
@@ -2019,7 +2019,7 @@ class DashboardSprintTaskBacklogTests(unittest.TestCase):
 
     def test_get_task_serializes_completion_evidence(self):
         """GET /api/tasks/{id} surfaces completion evidence (proof, tests, review, judge)."""
-        from foreman.models import CompletionEvidence
+        from foreman.domain.models import CompletionEvidence
 
         store = ForemanStore(self.db_path)
         store.initialize()
@@ -3130,14 +3130,14 @@ class DashboardRolesTests(unittest.TestCase):
         import shutil
         from unittest import mock
 
-        from foreman.roles import default_roles_dir
+        from foreman.definitions.roles import default_roles_dir
 
         cls.temp_dir = tempfile.TemporaryDirectory()
         cls.db_path = Path(cls.temp_dir.name) / "foreman.db"
         # PATCH rewrites role files; work on a copy, never the shipped roles.
         cls.roles_dir = Path(cls.temp_dir.name) / "roles"
         shutil.copytree(default_roles_dir(), cls.roles_dir)
-        cls._roles_patch = mock.patch("foreman.roles.default_roles_dir", return_value=cls.roles_dir)
+        cls._roles_patch = mock.patch("foreman.definitions.roles.default_roles_dir", return_value=cls.roles_dir)
         cls._roles_patch.start()
 
     @classmethod

@@ -31,7 +31,7 @@ def describe_runners(
 ) -> list[dict[str, Any]]:
     """Describe each backend: where its program is, and the models roles use on it.
 
-    ``roles`` are role definitions (``foreman.roles.RoleDefinition``). A backend
+    ``roles`` are role definitions (``foreman.definitions.roles.RoleDefinition``). A backend
     is "found" when its executable resolves on ``PATH``; nothing is launched.
     """
 

@@ -5,8 +5,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import datetime, timedelta
 
-from ..models import Project
-from ..settings import ProjectSettings
+from ..domain.models import Project
+from ..domain.settings import ProjectSettings
 from ..store import ForemanStore
 from .limits import resolve_project_settings
 from .records import RunRecords

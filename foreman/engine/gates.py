@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from ..models import Project, Task
-from ..policy import GATE_DECISIONS, PolicyMatrix
-from ..workflows import WorkflowDefinition, WorkflowStep
+from ..domain.models import Project, Task
+from ..domain.policy import GATE_DECISIONS, PolicyMatrix
+from ..definitions.workflows import WorkflowDefinition, WorkflowStep
 
 
 def gate_policy_decision(

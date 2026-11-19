@@ -13,13 +13,13 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
-from foreman.models import Project, Run, Sprint, Task
+from foreman.domain.models import Project, Run, Sprint, Task
 from foreman.engine.results import AgentExecutionResult
-from foreman.orchestrator import ForemanOrchestrator
+from foreman.engine.orchestrator import ForemanOrchestrator
 from foreman.runner.base import AgentEvent, AgentRunConfig
-from foreman.roles import default_roles_dir, load_role, load_roles
+from foreman.definitions.roles import default_roles_dir, load_role, load_roles
 from foreman.store import ForemanStore
-from foreman.workflows import (
+from foreman.definitions.workflows import (
     default_workflows_dir,
     load_workflow,
     load_workflows,

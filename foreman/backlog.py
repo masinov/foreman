@@ -10,9 +10,9 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from .errors import ForemanError
-from .models import BACKLOG_STATES, Project, Task
-from .policy import PolicyMatrix
+from .domain.errors import ForemanError
+from .domain.models import BACKLOG_STATES, Project, Task
+from .domain.policy import PolicyMatrix
 from .store import ForemanStore
 
 #: Default page size: the design caps the backlog list at 25.

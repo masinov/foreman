@@ -8,8 +8,8 @@ import os
 import re
 from typing import Any, Literal
 
-from .errors import ForemanError
-from .data import TEMPLATES_DIR
+from ..domain.errors import ForemanError
+from ..data import TEMPLATES_DIR
 
 _TEMPLATES_DIR = TEMPLATES_DIR
 DEFAULT_CONTEXT_DIR = ".foreman"

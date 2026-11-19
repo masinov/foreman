@@ -7,7 +7,7 @@ import sys
 from typing import Sequence
 from uuid import uuid4
 
-from ..models import Event, NotificationDelivery, NotificationDestination, Project
+from ..domain.models import Event, NotificationDelivery, NotificationDestination, Project
 from ..notifications import (
     ATTENTION,
     DESTINATION_KINDS,

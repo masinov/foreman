@@ -26,9 +26,9 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from .engine_control import blocked_kind, resolve_gate_steps
-from .errors import ForemanError
-from .models import (
+from .definitions.gate_steps import blocked_kind, resolve_gate_steps
+from .domain.errors import ForemanError
+from .domain.models import (
     TASK_COMPLEXITIES,
     TASK_TYPES,
     Event,
@@ -40,10 +40,10 @@ from .models import (
     validate_executor_overrides,
 )
 from .notifications import NotificationDispatcher
-from .policy import PolicyDecision, PolicyMatrix
+from .domain.policy import PolicyDecision, PolicyMatrix
 from .store import ForemanStore
 from .store.sprints import StaleTaskError
-from .worktrees import WorktreeError, WorktreeManager
+from .repo.worktrees import WorktreeError, WorktreeManager
 
 #: Where a sprint may go from each status.
 SPRINT_TRANSITIONS: dict[str, tuple[SprintStatus, ...]] = {
@@ -497,7 +497,7 @@ class Mutations:
         for the project's engine to run (ADR-0011); nothing runs here.
         """
 
-        from .orchestrator import ForemanOrchestrator, OrchestratorError
+        from .engine.orchestrator import ForemanOrchestrator, OrchestratorError
 
         if outcome not in GATE_OUTCOMES:
             raise MutationError(f"Unknown gate decision: {outcome}.")

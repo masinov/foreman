@@ -4,8 +4,8 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 import unittest
-from foreman.models import CompletionEvidence, Event, Project, Run, Sprint, Task
-from foreman.orchestrator import ForemanOrchestrator
+from foreman.domain.models import CompletionEvidence, Event, Project, Run, Sprint, Task
+from foreman.engine.orchestrator import ForemanOrchestrator
 from foreman.store import ForemanStore
 
 from engine_support import (
@@ -173,7 +173,7 @@ class CompletionGuardTests(RepoTestCase):
         self.git(repo_path, "checkout", "main")
         self.seed_passing_completion_evidence(store, project, task)
 
-        from foreman.builtins import BuiltinExecutor
+        from foreman.engine.builtins import BuiltinExecutor
 
         task.status = "in_progress"
         executor = BuiltinExecutor()
@@ -209,7 +209,7 @@ class CompletionGuardTests(RepoTestCase):
         self.commit_all(repo_path, "docs: outline auth approach")
         self.git(repo_path, "checkout", "main")
 
-        from foreman.builtins import BuiltinExecutor
+        from foreman.engine.builtins import BuiltinExecutor
 
         task.status = "in_progress"
         executor = BuiltinExecutor()
@@ -247,7 +247,7 @@ class CompletionGuardTests(RepoTestCase):
         self.commit_all(repo_path, "docs: scheduler design doc")
         self.git(repo_path, "checkout", "main")
 
-        from foreman.builtins import BuiltinExecutor
+        from foreman.engine.builtins import BuiltinExecutor
 
         task.status = "in_progress"
         executor = BuiltinExecutor()
@@ -289,7 +289,7 @@ class CompletionGuardTests(RepoTestCase):
         self.commit_all(repo_path, "feat: partial auth implementation")
         self.git(repo_path, "checkout", "main")
 
-        from foreman.builtins import BuiltinExecutor
+        from foreman.engine.builtins import BuiltinExecutor
 
         task.status = "in_progress"
         executor = BuiltinExecutor()
@@ -326,7 +326,7 @@ class CompletionGuardTests(RepoTestCase):
         self.commit_all(repo_path, "docs: outline auth module")
         self.git(repo_path, "checkout", "main")
 
-        from foreman.builtins import BuiltinExecutor
+        from foreman.engine.builtins import BuiltinExecutor
 
         task.status = "in_progress"
         executor = BuiltinExecutor()
@@ -361,8 +361,8 @@ class CompletionGuardTests(RepoTestCase):
             acceptance_criteria="Add auth module",
         )
 
-        from foreman.builtins import BuiltinExecutor
-        from foreman.worktrees import WorktreeManager
+        from foreman.engine.builtins import BuiltinExecutor
+        from foreman.repo.worktrees import WorktreeManager
 
         worktree = WorktreeManager(project).ensure(task)
         task.worktree_path = str(worktree)
@@ -402,7 +402,7 @@ class CompletionGuardTests(RepoTestCase):
         self.git(repo_path, "checkout", "-b", task.branch_name)
         self.git(repo_path, "checkout", "main")
 
-        from foreman.builtins import BuiltinExecutor
+        from foreman.engine.builtins import BuiltinExecutor
 
         task.status = "in_progress"
         executor = BuiltinExecutor()
@@ -691,7 +691,7 @@ class MarkDoneCompletionGuardTests(RepoTestCase):
         self.git(repo_path, "checkout", "main")
         self.seed_passing_completion_evidence(store, project, task)
 
-        from foreman.builtins import BuiltinExecutor
+        from foreman.engine.builtins import BuiltinExecutor
 
         task.status = "in_progress"
         executor = BuiltinExecutor()
@@ -728,7 +728,7 @@ class MarkDoneCompletionGuardTests(RepoTestCase):
         self.commit_all(repo_path, "docs: outline auth approach")
         self.git(repo_path, "checkout", "main")
 
-        from foreman.builtins import BuiltinExecutor
+        from foreman.engine.builtins import BuiltinExecutor
 
         task.status = "in_progress"
         executor = BuiltinExecutor()
@@ -766,7 +766,7 @@ class MarkDoneCompletionGuardTests(RepoTestCase):
         self.commit_all(repo_path, "docs: scheduler design doc")
         self.git(repo_path, "checkout", "main")
 
-        from foreman.builtins import BuiltinExecutor
+        from foreman.engine.builtins import BuiltinExecutor
 
         task.status = "in_progress"
         executor = BuiltinExecutor()
@@ -808,7 +808,7 @@ class MarkDoneCompletionGuardTests(RepoTestCase):
         self.commit_all(repo_path, "feat: partial auth implementation")
         self.git(repo_path, "checkout", "main")
 
-        from foreman.builtins import BuiltinExecutor
+        from foreman.engine.builtins import BuiltinExecutor
 
         task.status = "in_progress"
         executor = BuiltinExecutor()
@@ -845,7 +845,7 @@ class MarkDoneCompletionGuardTests(RepoTestCase):
         self.commit_all(repo_path, "docs: outline auth module")
         self.git(repo_path, "checkout", "main")
 
-        from foreman.builtins import BuiltinExecutor
+        from foreman.engine.builtins import BuiltinExecutor
 
         task.status = "in_progress"
         executor = BuiltinExecutor()
@@ -890,7 +890,7 @@ class MarkDoneCompletionGuardTests(RepoTestCase):
         self.commit_all(repo_path, "docs: outline")
         self.git(repo_path, "checkout", "main")
 
-        from foreman.builtins import BuiltinExecutor
+        from foreman.engine.builtins import BuiltinExecutor
 
         task.status = "in_progress"
         executor = BuiltinExecutor()
@@ -928,7 +928,7 @@ class MarkDoneCompletionGuardTests(RepoTestCase):
         self.commit_all(repo_path, "docs: write auth docs")
         self.git(repo_path, "checkout", "main")
 
-        from foreman.builtins import BuiltinExecutor
+        from foreman.engine.builtins import BuiltinExecutor
 
         task.status = "in_progress"
         executor = BuiltinExecutor()
@@ -958,8 +958,8 @@ class MarkDoneCompletionGuardTests(RepoTestCase):
             acceptance_criteria="Add auth module",
         )
 
-        from foreman.builtins import BuiltinExecutor
-        from foreman.worktrees import WorktreeManager
+        from foreman.engine.builtins import BuiltinExecutor
+        from foreman.repo.worktrees import WorktreeManager
 
         worktree = WorktreeManager(project).ensure(task)
         task.worktree_path = str(worktree)
@@ -999,7 +999,7 @@ class MarkDoneCompletionGuardTests(RepoTestCase):
         self.git(repo_path, "checkout", "-b", task.branch_name)
         self.git(repo_path, "checkout", "main")
 
-        from foreman.builtins import BuiltinExecutor
+        from foreman.engine.builtins import BuiltinExecutor
 
         task.status = "in_progress"
         executor = BuiltinExecutor()
@@ -1052,7 +1052,7 @@ class MarkDoneCompletionGuardTests(RepoTestCase):
             )
         )
 
-        from foreman.builtins import BuiltinExecutor
+        from foreman.engine.builtins import BuiltinExecutor
 
         task.status = "in_progress"
         executor = BuiltinExecutor()

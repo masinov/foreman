@@ -6,7 +6,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from foreman.models import Project, Run, Sprint, Task
+from foreman.domain.models import Project, Run, Sprint, Task
 from foreman.mutations import MutationError, Mutations
 from foreman.store import ENGINE_RESOURCE_TYPE, ForemanStore
 

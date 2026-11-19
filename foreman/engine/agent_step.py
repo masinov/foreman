@@ -13,10 +13,10 @@ from datetime import datetime
 import json
 from typing import Any
 
-from ..errors import EngineCommandInterrupt
-from ..models import Project, Run, Task, TokenUsage
-from ..outcomes import ERROR
-from ..roles import RoleDefinition
+from ..domain.errors import EngineCommandInterrupt
+from ..domain.models import Project, Run, Task, TokenUsage
+from ..domain.outcomes import ERROR
+from ..definitions.roles import RoleDefinition
 from ..runner import AgentRunConfig, PreflightError, run_with_retry
 from ..runner.base import AgentRunner as NativeAgentRunner
 from ..runner.env import passthrough_env, resolve_env

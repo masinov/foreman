@@ -21,18 +21,18 @@ from foreman.dashboard_definitions import (
     workflow_text_from_fields,
 )
 from foreman.data import ROLES_DIR, WORKFLOWS_DIR
-from foreman.definitions import (
+from foreman.definitions.layers import (
     DefinitionError,
     project_definitions,
     remove_definition,
     save_role,
     save_workflow,
 )
-from foreman.engine_control import resolve_gate_steps
-from foreman.models import Project
-from foreman.orchestrator import ForemanOrchestrator
-from foreman.roles import RoleLoadError, load_role_text, load_roles
-from foreman.workflows import load_workflow_text
+from foreman.definitions.gate_steps import resolve_gate_steps
+from foreman.domain.models import Project
+from foreman.engine.orchestrator import ForemanOrchestrator
+from foreman.definitions.roles import RoleLoadError, load_role_text, load_roles
+from foreman.definitions.workflows import load_workflow_text
 from foreman.store import ForemanStore
 
 
@@ -720,7 +720,7 @@ class ModelCheckProgramTests(unittest.TestCase):
     """What is asked of the agent program, and how its answer is read."""
 
     def answer(self, stdout: str, *, found: bool = True):
-        from foreman import model_check
+        from foreman.runner import model_check
 
         done = mock.Mock(stdout=stdout)
         with (
@@ -751,7 +751,7 @@ class ModelCheckProgramTests(unittest.TestCase):
         run.assert_not_called()
 
     def test_another_backend_is_not_asked(self) -> None:
-        from foreman import model_check
+        from foreman.runner import model_check
 
         with mock.patch.object(model_check.subprocess, "run") as run:
             self.assertIsNone(model_check.check_model("codex", "o3"))

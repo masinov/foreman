@@ -7,7 +7,7 @@ import json
 from typing import Any
 from uuid import uuid4
 
-from ..models import (
+from ..domain.models import (
     utc_now_text,
 )
 

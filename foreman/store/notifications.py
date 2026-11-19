@@ -6,7 +6,7 @@ import sqlite3
 from typing import Any
 from uuid import uuid4
 
-from ..models import (
+from ..domain.models import (
     NotificationDelivery,
     NotificationDestination,
     utc_now_text,

@@ -11,10 +11,10 @@ import unittest
 import httpx
 
 from foreman import __version__
-from foreman.api_tokens import hash_token_secret
+from foreman.domain.api_tokens import hash_token_secret
 from foreman.dashboard.app import create_dashboard_app
-from foreman.models import Project
-from foreman.roles import load_roles
+from foreman.domain.models import Project
+from foreman.definitions.roles import load_roles
 from foreman.runner.discovery import describe_runners
 from foreman.store import ForemanStore
 

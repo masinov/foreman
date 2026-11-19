@@ -6,8 +6,8 @@ from pathlib import Path
 import subprocess
 import unittest
 
-from foreman.models import Task
-from foreman.orchestrator import MERGE_STEP_ROLES, ForemanOrchestrator
+from foreman.domain.models import Task
+from foreman.engine.orchestrator import MERGE_STEP_ROLES, ForemanOrchestrator
 from foreman.runner.base import AgentEvent, AgentRunConfig
 from foreman.store import ForemanStore
 

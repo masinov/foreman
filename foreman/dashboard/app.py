@@ -25,7 +25,7 @@ from ..dashboard_runtime import (
     dashboard_assets_present,
     normalize_frontend_dev_url,
 )
-from ..api_tokens import looks_like_api_token
+from ..domain.api_tokens import looks_like_api_token
 from ..dashboard_guard import browser_request_violation
 from ..dashboard_service import (
     DashboardActionError,

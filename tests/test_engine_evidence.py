@@ -3,8 +3,8 @@
 from __future__ import annotations
 from pathlib import Path
 import unittest
-from foreman.models import CompletionEvidence, Event, Project, Run, Sprint, Task
-from foreman.orchestrator import ForemanOrchestrator
+from foreman.domain.models import CompletionEvidence, Event, Project, Run, Sprint, Task
+from foreman.engine.orchestrator import ForemanOrchestrator
 from foreman.store import ForemanStore
 
 from engine_support import (

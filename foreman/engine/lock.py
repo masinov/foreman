@@ -27,11 +27,11 @@ import logging
 import threading
 from typing import Callable
 
-from .errors import ForemanError
-from .leases import generate_lease_token
+from ..domain.errors import ForemanError
+from ..domain.leases import generate_lease_token
 from .logs import get_logger, log_event
-from .models import Lease
-from .store import ENGINE_RESOURCE_TYPE, ForemanStore
+from ..domain.models import Lease
+from ..store import ENGINE_RESOURCE_TYPE, ForemanStore
 
 __all__ = [
     "DEFAULT_HEARTBEAT_SECONDS",
@@ -95,7 +95,7 @@ def stop_engine_on_lock_loss(lock: "EngineLock") -> None:
     persisted step, exactly as it does for a shutdown signal.
     """
 
-    from .runner.process import terminate_all
+    from ..runner.process import terminate_all
 
     try:
         terminate_all(grace_seconds=2.0)

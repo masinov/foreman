@@ -12,7 +12,7 @@ import threading
 import time
 import unittest
 
-from foreman.models import Event, Project, Run, Sprint, Task
+from foreman.domain.models import Event, Project, Run, Sprint, Task
 from foreman.store import ForemanStore
 
 from plan_workflow import install_plan_workflow
@@ -931,7 +931,7 @@ class ForemanCLISmokeTests(unittest.TestCase):
         task_id: str,
         status: str,
     ) -> tuple[Task, Path]:
-        from foreman.worktrees import WorktreeManager
+        from foreman.repo.worktrees import WorktreeManager
 
         task = Task(
             id=task_id,
@@ -1015,7 +1015,7 @@ class ForemanCLISmokeTests(unittest.TestCase):
         self.assertNotIn("Worktree:", after.stdout)
 
     def test_task_cancel_refuses_a_task_a_resident_engine_is_running(self) -> None:
-        from foreman.models import Run
+        from foreman.domain.models import Run
 
         store, db_path = self.create_store()
         project = Project(
@@ -2558,7 +2558,7 @@ class EngineCommandCliTests(unittest.TestCase):
                 self.assertIn(queued[0].id, result.stdout)
 
     def test_the_requester_defaults_to_the_os_user_name(self) -> None:
-        from foreman.engine_control import default_command_requester
+        from foreman.engine.control import default_command_requester
 
         result = self.run_cli("engine", "pause", "project-1", "--db", str(self.db_path))
 

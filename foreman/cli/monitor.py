@@ -9,12 +9,12 @@ import time
 from typing import Callable
 
 from ..dashboard_service import STREAM_POLL_INTERVAL_SECONDS
-from ..engine_control import (
+from ..definitions.gate_steps import (
     blocked_kind,
     blocked_kind_counts,
     resolve_gate_steps,
 )
-from ..models import Event
+from ..domain.models import Event
 from ..store import ForemanStore
 
 from .common import (

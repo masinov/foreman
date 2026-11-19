@@ -3,8 +3,8 @@
 from __future__ import annotations
 from pathlib import Path
 import unittest
-from foreman.models import Project, Run, Sprint, Task
-from foreman.orchestrator import ForemanOrchestrator
+from foreman.domain.models import Project, Run, Sprint, Task
+from foreman.engine.orchestrator import ForemanOrchestrator
 from foreman.store import ForemanStore
 
 from engine_support import (
@@ -114,7 +114,7 @@ class ReviewerPromptHardeningTests(RepoTestCase):
         carried_output: str | None = None,
     ) -> str:
         """Render the reviewer prompt for one task using the orchestrator's prompt builder."""
-        from foreman.context import build_project_context
+        from foreman.repo.context import build_project_context
 
         orchestrator = ForemanOrchestrator(store, roles=self.roles, workflows=self.workflows)
         context_proj = build_project_context(
@@ -226,7 +226,7 @@ class ReviewerPromptHardeningTests(RepoTestCase):
             self.git(repo_path, "checkout", "main")
 
             # Render developer prompt — completion_evidence is not a developer role variable
-            from foreman.context import build_project_context
+            from foreman.repo.context import build_project_context
 
             orchestrator = ForemanOrchestrator(store, roles=self.roles, workflows=self.workflows)
             context_proj = build_project_context(
@@ -414,7 +414,7 @@ class BuiltinTranscriptLoggingTests(RepoTestCase):
             created_at="2026-04-24T18:00:00Z",
         )
 
-        from foreman.builtins import BuiltinExecutor
+        from foreman.engine.builtins import BuiltinExecutor
 
         executor = BuiltinExecutor()
         result = executor.execute(
@@ -465,7 +465,7 @@ class BuiltinTranscriptLoggingTests(RepoTestCase):
             created_at="2026-04-24T18:00:00Z",
         )
 
-        from foreman.builtins import BuiltinEventRecord, BuiltinExecutor
+        from foreman.engine.builtins import BuiltinEventRecord, BuiltinExecutor
 
         recorded: list[BuiltinEventRecord] = []
         executor = BuiltinExecutor()
@@ -536,7 +536,7 @@ class BuiltinTranscriptLoggingTests(RepoTestCase):
             store.save_task(task)
             store.save_run(run)
 
-            from foreman.builtins import BuiltinEventRecord
+            from foreman.engine.builtins import BuiltinEventRecord
 
             orchestrator = ForemanOrchestrator(store)
             orchestrator.runner.persist_builtin_event(
@@ -562,7 +562,7 @@ class EnvironmentRulesTests(RepoTestCase):
     seed_project = ReviewerPromptHardeningTests.seed_project
 
     def render(self, role_id: str, agents_md: str | None) -> str:
-        from foreman.context import build_project_context
+        from foreman.repo.context import build_project_context
 
         repo, db_path = self.create_workspace()
         self.initialize_repo(repo)

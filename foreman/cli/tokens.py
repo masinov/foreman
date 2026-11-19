@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from ..api_tokens import API_TOKEN_SCOPES, ApiTokenError
+from ..domain.api_tokens import API_TOKEN_SCOPES, ApiTokenError
 from ..store import ForemanStore
 
 from .common import (

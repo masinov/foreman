@@ -6,8 +6,8 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from foreman.context import build_project_context, write_project_context
-from foreman.models import Project, Sprint, Task
+from foreman.repo.context import build_project_context, write_project_context
+from foreman.domain.models import Project, Sprint, Task
 from foreman.store import ForemanStore
 
 

@@ -12,8 +12,8 @@ import unittest
 from unittest import mock
 
 from foreman.cli import build_parser, main
-from foreman.errors import ForemanError
-from foreman.models import Project, Sprint, Task
+from foreman.domain.errors import ForemanError
+from foreman.domain.models import Project, Sprint, Task
 from foreman.store import ForemanStore
 
 COMMANDS_IN_HELP_ORDER = [

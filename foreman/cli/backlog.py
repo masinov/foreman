@@ -6,7 +6,7 @@ import argparse
 import sys
 
 from ..backlog import BACKLOG_PAGE_LIMIT, BacklogQueryError, read_backlog
-from ..models import BACKLOG_STATES, TASK_COMPLEXITIES, TASK_TYPES
+from ..domain.models import BACKLOG_STATES, TASK_COMPLEXITIES, TASK_TYPES
 from ..mutations import MutationError
 from ..store import ForemanStore
 from .common import (

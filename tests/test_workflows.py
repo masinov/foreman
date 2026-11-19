@@ -7,8 +7,8 @@ import tempfile
 import textwrap
 import unittest
 
-from foreman.roles import default_roles_dir, load_roles
-from foreman.workflows import (
+from foreman.definitions.roles import default_roles_dir, load_roles
+from foreman.definitions.workflows import (
     WorkflowLoadError,
     default_workflows_dir,
     load_workflows,
@@ -154,13 +154,13 @@ class SoundnessTests(unittest.TestCase):
     """A workflow is refused unless a task can get through it properly."""
 
     def setUp(self) -> None:
-        from foreman.roles import load_roles
+        from foreman.definitions.roles import load_roles
 
         self.roles = load_roles()
         self.outcomes = {role_id: role.completion.outcomes for role_id, role in self.roles.items()}
 
     def load(self, steps: list[tuple[str, str]], routes: list[tuple[str, str, str]]):
-        from foreman.workflows import load_workflow_text
+        from foreman.definitions.workflows import load_workflow_text
 
         text = '[workflow]\nid = "x"\nname = "X"\nmethodology = "development"\n'
         for step_id, role in steps:
@@ -257,7 +257,7 @@ class SoundnessTests(unittest.TestCase):
         )
 
     def test_every_shipped_workflow_is_sound(self) -> None:
-        from foreman.workflows import load_workflows
+        from foreman.definitions.workflows import load_workflows
 
         loaded = load_workflows(available_role_ids=set(self.roles), role_outcomes=self.outcomes)
         self.assertEqual(sorted(loaded), ["development", "development_secure", "development_tiered"])

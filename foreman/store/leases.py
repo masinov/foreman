@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
-from ..models import (
+from ..domain.models import (
     EngineLockView,
     Lease,
     utc_now_text,
@@ -122,7 +122,7 @@ class LeaseStore(StoreBase):
 
         The fencing_token is auto-incremented: new leases get MAX(existing) + 1.
         """
-        from ..leases import compute_lease_expiry
+        from ..domain.leases import compute_lease_expiry
 
         now = utc_now_text()
         expires_at = compute_lease_expiry(duration_seconds)
@@ -196,7 +196,7 @@ class LeaseStore(StoreBase):
         Returns the renewed Lease on success.
         Returns None if: no active lease, holder_id mismatch, or token mismatch.
         """
-        from ..leases import compute_lease_expiry, is_lease_expired
+        from ..domain.leases import compute_lease_expiry, is_lease_expired
 
         now = utc_now_text()
         expires_at = compute_lease_expiry(duration_seconds)
@@ -377,7 +377,7 @@ class LeaseStore(StoreBase):
     def get_engine_lock(self, project_id: str) -> EngineLockView | None:
         """Return a token-free view of the project's engine lease, or None.
 
-        This is the read side of :class:`~foreman.engine_lock.EngineLock`: it
+        This is the read side of :class:`~foreman.engine.lock.EngineLock`: it
         answers "is an engine resident on this project, whose is it, and how
         fresh is its heartbeat" without handing out the token that would let
         the reader release someone else's lock.

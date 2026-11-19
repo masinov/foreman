@@ -29,8 +29,8 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
-from .errors import ForemanError
-from .models import PROPOSAL_STATES, Project, Proposal
+from .domain.errors import ForemanError
+from .domain.models import PROPOSAL_STATES, Project, Proposal
 from .mutations import Mutations, MutationError
 from .store import ForemanStore
 
@@ -480,8 +480,8 @@ def _gate_of(store: ForemanStore, project: Project, task: Any) -> dict[str, Any]
 
     if task.status != "blocked" or not task.workflow_current_step:
         return None
-    from .engine_control import HUMAN_GATE_ROLE
-    from .definitions import project_definitions
+    from .definitions.gate_steps import HUMAN_GATE_ROLE
+    from .definitions.layers import project_definitions
 
     try:
         workflow = project_definitions(store, project.id).workflows.get(project.workflow_id)

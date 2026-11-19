@@ -7,8 +7,8 @@ import subprocess
 import tempfile
 import unittest
 
-from foreman.models import Project, Sprint, Task
-from foreman.orchestrator import ForemanOrchestrator
+from foreman.domain.models import Project, Sprint, Task
+from foreman.engine.orchestrator import ForemanOrchestrator
 from foreman.runner.base import AgentEvent, AgentRunConfig
 from foreman.store import ForemanStore
 

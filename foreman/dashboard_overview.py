@@ -16,14 +16,16 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from .engine_control import (
+from .definitions.gate_steps import (
     WorkflowGateSteps,
     blocked_kind,
-    describe_engine,
     resolve_gate_steps,
 )
+from .engine.control import (
+    describe_engine,
+)
 from .engine.limits import resolve_project_settings
-from .models import DecisionGate, Project, Task
+from .domain.models import DecisionGate, Project, Task
 from .store import ForemanStore
 from .store.overview import MILESTONE_KINDS, MilestoneRow
 

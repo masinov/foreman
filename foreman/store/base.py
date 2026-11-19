@@ -10,11 +10,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterator, Sequence, TypeVar
 
-from ..errors import ForemanError
-from ..migrations import MIGRATIONS
+from ..domain.errors import ForemanError
+from .migrations import MIGRATIONS
 
 #: Lease resource type for the per-project engine lock. Defined here rather
-#: than imported from ``foreman.engine_lock`` because that module imports the
+#: than imported from ``foreman.engine.lock`` because that module imports the
 #: store; the string is the schema-level contract both sides agree on.
 ENGINE_RESOURCE_TYPE = "engine"
 

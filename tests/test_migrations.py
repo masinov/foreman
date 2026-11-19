@@ -7,8 +7,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from foreman.migrations import MIGRATIONS
-from foreman.models import (
+from foreman.store.migrations import MIGRATIONS
+from foreman.domain.models import (
     PROPOSAL_STATES,
     Proposal,
     AUTONOMY_LEVELS,

@@ -429,7 +429,7 @@ Target deliverables:
 Status:
 
 - completed on `feat/store-migration-framework`
-- `foreman/migrations.py` owns the append-only `MIGRATIONS` list; migration 1
+- `foreman/store/migrations.py` owns the append-only `MIGRATIONS` list; migration 1
   is the current baseline schema
 - `ForemanStore.initialize()` creates a `schema_migrations` tracking table and
   applies any unapplied migrations in version order via `migrate()`

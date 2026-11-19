@@ -22,22 +22,24 @@ from urllib.parse import urlsplit
 
 from .dashboard_overview import MILESTONE_KINDS, WorkspaceReader
 from .engine.selection import pulled_task_ids
-from .engine_control import (
+from .engine.control import (
     EngineStateView,
     ServeSpawner,
-    WorkflowGateSteps,
-    blocked_kind,
-    blocked_kind_counts,
     describe_engine,
-    resolve_gate_steps,
     serve_command,
     serve_log_path,
     spawn_serve,
 )
-from .api_tokens import INTAKE_SCOPE
+from .definitions.gate_steps import (
+    WorkflowGateSteps,
+    blocked_kind,
+    blocked_kind_counts,
+    resolve_gate_steps,
+)
+from .domain.api_tokens import INTAKE_SCOPE
 from .backlog import BACKLOG_PAGE_LIMIT, BacklogQueryError, read_backlog
 from .backlog import task_source as _serialize_task_source
-from .guidance import guidance_notes
+from .domain.guidance import guidance_notes
 from .proposals import (
     PROPOSAL_PAGE_LIMIT,
     ProposalError,
@@ -47,7 +49,7 @@ from .proposals import (
     serialize_proposal,
 )
 from .mutations import MutationError, Mutations
-from .models import (
+from .domain.models import (
     AUTONOMY_LEVELS,
     ApiToken,
     DecisionGate,
@@ -57,9 +59,9 @@ from .models import (
     Sprint,
     Task,
 )
-from .policy import PolicyMatrix, describe_resolution
-from .scaffold import generate_project_id, new_project_settings
-from .settings import (
+from .domain.policy import PolicyMatrix, describe_resolution
+from .repo.scaffold import generate_project_id, new_project_settings
+from .domain.settings import (
     HOST_LEVEL_SETTINGS,
     ProjectSettings,
     SettingsError,
@@ -68,7 +70,7 @@ from .settings import (
 )
 from .store import ForemanStore
 from .store.overview import SPRINT_LIST_ORDERS, SPRINT_LIST_STATUSES
-from .worktrees import (
+from .repo.worktrees import (
     WorktreeEntry,
     WorktreeError,
     WorktreeManager,
@@ -797,7 +799,7 @@ class DashboardService:
         if not title.strip():
             raise DashboardValidationError("Sprint title is required.")
 
-        from .models import TASK_COMPLEXITIES, TASK_TYPES
+        from .domain.models import TASK_COMPLEXITIES, TASK_TYPES
 
         try:
             sprint = self._mutations().create_sprint(project, title=title, goal=goal)
@@ -1143,7 +1145,7 @@ class DashboardService:
         ids (validated to exist in the same project).
         """
 
-        from .models import TASK_COMPLEXITIES, TASK_TYPES
+        from .domain.models import TASK_COMPLEXITIES, TASK_TYPES
 
         sprint = self._require_sprint(sprint_id)
         if not title.strip():
@@ -1755,9 +1757,9 @@ class DashboardService:
         definitions with the project's own over them (ADR-0024).
         """
 
-        from .definitions import project_definitions
-        from .roles import RoleLoadError
-        from .workflows import WorkflowLoadError
+        from .definitions.layers import project_definitions
+        from .definitions.roles import RoleLoadError
+        from .definitions.workflows import WorkflowLoadError
 
         try:
             definitions = project_definitions(self.store, project_id)
@@ -1792,9 +1794,9 @@ class DashboardService:
     def _project_workflow_step_ids(self, project_id: str) -> set[str] | None:
         """Return the workflow step ids for a project, or ``None`` if unresolved."""
 
-        from .definitions import project_definitions
-        from .roles import RoleLoadError
-        from .workflows import WorkflowLoadError
+        from .definitions.layers import project_definitions
+        from .definitions.roles import RoleLoadError
+        from .definitions.workflows import WorkflowLoadError
 
         project = self.store.get_project(project_id)
         if project is None:
@@ -1828,9 +1830,9 @@ class DashboardService:
     def list_roles(self) -> dict[str, Any]:
         """Return all available role definitions."""
 
-        from .definitions import workspace_definitions
-        from .roles import RoleLoadError
-        from .workflows import WorkflowLoadError
+        from .definitions.layers import workspace_definitions
+        from .definitions.roles import RoleLoadError
+        from .definitions.workflows import WorkflowLoadError
 
         try:
             roles = workspace_definitions(self.store).roles
@@ -1847,8 +1849,8 @@ class DashboardService:
         """
 
         from .dashboard_definitions import describe_project_definitions
-        from .roles import RoleLoadError
-        from .workflows import WorkflowLoadError
+        from .definitions.roles import RoleLoadError
+        from .definitions.workflows import WorkflowLoadError
 
         if project_id is not None:
             self._require_project(project_id)
@@ -1867,7 +1869,7 @@ class DashboardService:
         """Save one role or workflow, for a project or the workspace, from the editor."""
 
         from .dashboard_definitions import save_from_dashboard
-        from .definitions import DefinitionError
+        from .definitions.layers import DefinitionError
 
         if project_id is not None:
             self._require_project(project_id)
@@ -1886,7 +1888,7 @@ class DashboardService:
         """Drop a scope's own role or workflow; the id goes back to the layer below."""
 
         from .dashboard_definitions import reset_from_dashboard
-        from .definitions import DefinitionError
+        from .definitions.layers import DefinitionError
 
         if project_id is not None:
             self._require_project(project_id)
@@ -1990,7 +1992,7 @@ class DashboardService:
         flag into 201 or 200.
         """
 
-        from .models import TASK_COMPLEXITIES, TASK_TYPES
+        from .domain.models import TASK_COMPLEXITIES, TASK_TYPES
 
         project = self._require_project(project_id)
 

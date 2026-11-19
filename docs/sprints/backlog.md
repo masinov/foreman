@@ -287,7 +287,7 @@ validated `executor_overrides` on `PATCH /api/tasks/{id}`. Merged to `main` at
 Add opt-in LLM-judged criteria evidence, diff payloads for reviewers, cheap
 triage review with `escalate`, and the `development_tiered` workflow.
 
-Done: `foreman/judge.py` (heuristic owner + opt-in Anthropic-compatible LLM
+Done: `foreman/engine/judge.py` (heuristic owner + opt-in Anthropic-compatible LLM
 judge with head/tail diff truncation), `CompletionEvidence.judged_by`, the
 `escalate` outcome, `triage_reviewer`/`frontier_reviewer` roles, the
 `{completion_diff}` decision-role prompt payload (`review_diff_max_chars`),

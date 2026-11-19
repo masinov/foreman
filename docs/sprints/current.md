@@ -31,7 +31,7 @@ engine. Nothing new is added until that holds.
 ### Affected areas
 
 `frontend/src/`, `foreman/dashboard/`, `foreman/dashboard_service.py`,
-`foreman/engine/`, `foreman/orchestrator.py`, `foreman/roles/`, tests,
+`foreman/engine/`, `foreman/engine/orchestrator.py`, `foreman/roles/`, tests,
 `docs/`.
 
 ### Slices
@@ -51,6 +51,7 @@ engine. Nothing new is added until that holds.
 | 11 | Close the sprint: checkpoint, archive | todo | Claude | `docs/checkpoints/`, `docs/sprints/archive/` |
 | 12 | Fix the Foreman faults found by running Assay, the first outside project | done | Claude | 2026-11-18: `fix/checkout-follows-merges` (ADR-0031: a project folder on the default branch follows each merge); `fix/new-project-defaults` (merges wait for a person, workers on `claude-sonnet-5-5`); `fix/manager-faults-from-assay` (ADR-0022 amendment: a reply is seen while it is written, one message at a time; the manager's process ends with its turn; clearing declines waiting proposals; `ref` on `create_sprint` and `file_task`) |
 | 13 | Block only before a task starts (owner, 2026-11-18) | done | Claude | `fix/block-only-before-start`, ADR-0030 amended |
+| 14 | The backend in layers, held by a test (owner, 2026-11-19: "Architecture is not good. A refactor is needed.") | in_progress | Claude | ADR-0032 and `.importlinter`, in five branches with no change of behaviour: `refactor/layers-first-moves` (domain, repo, definitions, the engine's root modules); then `mutations/` without the engine cycle, `manager/`, `services/` and `api/` in place of `DashboardService` and the `dashboard_` modules, `notifications/` and the remaining in-function imports. The remaining sprint 60 items (the judge, "Finish sprints", reopening a sprint, Decline on the backlog) wait for it, as they touch the same files |
 
 ### The supervised run (slice 1, 2026-11-16)
 

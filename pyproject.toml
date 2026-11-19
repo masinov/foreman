@@ -42,6 +42,8 @@ version = {attr = "foreman.__version__"}
 [project.optional-dependencies]
 dev = [
   "ruff>=0.6",
+  # The layers contract (.importlinter, ADR-0032); it needs Python 3.11.
+  "import-linter>=2.5,<3; python_version >= '3.11'",
 ]
 e2e = [
   "playwright>=1.40,<2",

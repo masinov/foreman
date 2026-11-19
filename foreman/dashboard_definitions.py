@@ -15,7 +15,7 @@ from typing import Any, Mapping
 
 import tomlkit
 
-from .definitions import (
+from .definitions.layers import (
     ROLE,
     WORKFLOW,
     DefinitionError,
@@ -25,11 +25,11 @@ from .definitions import (
     save_role,
     save_workflow,
 )
-from .model_check import check_model
-from .outcomes import CANONICAL_OUTCOMES
-from .roles import KNOWN_TOOLS, RoleDefinition, load_role_text
-from .settings import settings_of
-from .workflows import _BUILTIN_OUTCOMES, WorkflowDefinition, load_workflow_text
+from .runner.model_check import check_model
+from .domain.outcomes import CANONICAL_OUTCOMES
+from .definitions.roles import KNOWN_TOOLS, RoleDefinition, load_role_text
+from .domain.settings import settings_of
+from .definitions.workflows import _BUILTIN_OUTCOMES, WorkflowDefinition, load_workflow_text
 
 DECISIONS: tuple[str, ...] = ("approve", "deny", "steer", "escalate")
 DEFAULT_MARKER = "TASK_COMPLETE"

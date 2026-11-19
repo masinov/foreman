@@ -23,7 +23,7 @@ Resolution reports *where* the value came from as well as what it is, so the
 audit trail can answer "why was a human asked?" rather than only "was one".
 
 Reading is deliberately lenient: settings are validated at write time by
-:class:`foreman.settings.ProjectSettings`, and a matrix built from a row that
+:class:`foreman.domain.settings.ProjectSettings`, and a matrix built from a row that
 predates a validator (or was edited by hand) must still yield a safe answer
 rather than raise mid-run.
 """
@@ -128,7 +128,7 @@ class PolicyMatrix:
 
     @classmethod
     def for_project(cls, project: Any) -> PolicyMatrix:
-        """Build a matrix from a :class:`foreman.models.Project`."""
+        """Build a matrix from a :class:`foreman.domain.models.Project`."""
 
         return cls.from_settings(getattr(project, "settings", None))
 
@@ -177,7 +177,7 @@ class PolicyMatrix:
         }
 
     def resolve_task(self, task: Any) -> dict[str, PolicyDecision]:
-        """Resolve every decision for one :class:`foreman.models.Task`."""
+        """Resolve every decision for one :class:`foreman.domain.models.Task`."""
 
         return self.resolve_all(
             task_type=getattr(task, "task_type", None),

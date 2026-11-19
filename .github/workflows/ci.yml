@@ -35,6 +35,10 @@ jobs:
           npm --prefix frontend run build
       - name: Lint
         run: ./venv/bin/ruff check foreman tests scripts
+      - name: Layers (ADR-0032)
+        # import-linter needs Python 3.11 or later.
+        if: matrix.python-version != '3.10'
+        run: ./venv/bin/lint-imports
       - name: Repository memory
         run: ./venv/bin/python scripts/validate_repo_memory.py
       - name: Tests

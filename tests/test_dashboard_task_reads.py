@@ -12,7 +12,7 @@ import httpx
 
 from foreman.dashboard.app import create_dashboard_app
 from foreman.dashboard.task_models import DIFF_CAP_CHARS, OUTPUT_CAP_CHARS
-from foreman.models import CompletionEvidence, Event, Project, Run, Sprint, Task
+from foreman.domain.models import CompletionEvidence, Event, Project, Run, Sprint, Task
 from foreman.store import ForemanStore
 
 
@@ -117,7 +117,7 @@ class TaskReadsCase(unittest.TestCase):
         self.assertIn("+a", diff["diff"])
 
     def test_a_merged_task_whose_branch_is_gone_still_shows_it(self) -> None:
-        from foreman.models import CompletionEvidence
+        from foreman.domain.models import CompletionEvidence
 
         self.branch_with_changes()
         head = self.git("rev-parse", "feat/x")

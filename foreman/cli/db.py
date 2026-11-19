@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import sqlite3
 
-from ..migrations import MIGRATIONS
+from ..store.migrations import MIGRATIONS
 from ..store import ForemanStore
 
 from .common import (

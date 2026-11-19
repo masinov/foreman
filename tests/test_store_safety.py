@@ -16,8 +16,8 @@ import unittest
 from pathlib import Path
 
 from foreman.dashboard_service import DashboardService, DashboardValidationError
-from foreman.migrations import MIGRATIONS
-from foreman.models import (
+from foreman.store.migrations import MIGRATIONS
+from foreman.domain.models import (
     DecisionGate,
     Event,
     HumanGateDecision,
@@ -27,8 +27,8 @@ from foreman.models import (
     Sprint,
     Task,
 )
-from foreman.orchestrator import ForemanOrchestrator, OrchestratorError
-from foreman.settings import ProjectSettings, SettingsError
+from foreman.engine.orchestrator import ForemanOrchestrator, OrchestratorError
+from foreman.domain.settings import ProjectSettings, SettingsError
 from foreman.store import ForemanStore
 from foreman.store.base import MigrationError, _SCHEMA_MIGRATIONS_DDL, _split_sql_statements
 

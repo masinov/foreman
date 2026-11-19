@@ -10,7 +10,7 @@ from pathlib import Path
 import httpx
 
 from foreman.dashboard.app import create_dashboard_app
-from foreman.models import Project
+from foreman.domain.models import Project
 from foreman.store import ForemanStore
 
 

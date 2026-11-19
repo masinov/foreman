@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 import subprocess
 
-from .errors import ForemanError
+from ..domain.errors import ForemanError
 
 
 class GitError(ForemanError):

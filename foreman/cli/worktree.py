@@ -6,7 +6,7 @@ import argparse
 import sys
 
 from ..store import ForemanStore
-from ..worktrees import (
+from ..repo.worktrees import (
     WorktreeError,
     WorktreeManager,
     prune_project_worktrees,

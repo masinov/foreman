@@ -593,7 +593,7 @@ class Proposal:
 class ApiToken:
     """A project API token, as persisted -- the secret is never in this record.
 
-    ``token_hash`` is the SHA-256 of the secret (``foreman.api_tokens``). The
+    ``token_hash`` is the SHA-256 of the secret (``foreman.domain.api_tokens``). The
     secret exists only in the response to ``create_api_token`` and in whatever
     the operator pasted it into.
     """

@@ -11,15 +11,15 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ..context import context_directory
-from ..git import (
+from ..repo.context import context_directory
+from ..repo.git import (
     branch_exists,
     commits_behind,
     is_worktree_clean,
     merge_in_progress,
     sync_branch_with_base,
 )
-from ..models import Project, Task
+from ..domain.models import Project, Task
 
 
 def task_working_dir(project: Project, task: Task) -> Path:
