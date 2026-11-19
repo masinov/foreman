@@ -145,6 +145,8 @@ class TaskLeases:
         self.holder_id = holder_id
         self.heartbeat_seconds = heartbeat_seconds
         self.tokens: dict[str, str] = {}
+        #: The fencing number of each lease held, which every task write carries.
+        self.fencing: dict[str, int] = {}
         self.heartbeats: dict[str, TaskLeaseHeartbeat] = {}
 
     def holds(self, task_id: str) -> bool:
@@ -156,6 +158,11 @@ class TaskLeases:
         """Return the token of the lease held on a task, if any."""
 
         return self.tokens.get(task_id)
+
+    def fencing_token_for(self, task_id: str) -> int | None:
+        """The fencing number of the lease held on a task, if any."""
+
+        return self.fencing.get(task_id)
 
     def acquire(self, task: Task, project: Project) -> str | None:
         """Acquire a lease on a task. Returns the lease token or None if denied."""
@@ -170,6 +177,7 @@ class TaskLeases:
         if lease is None:
             return None
         self.tokens[task.id] = token
+        self.fencing[task.id] = lease.fencing_token
         return token
 
     def start_heartbeat(self, task: Task, project: Project, token: str) -> None:
@@ -212,6 +220,7 @@ class TaskLeases:
         """Stop heartbeating a task and drop its token without releasing it."""
 
         self.stop_heartbeat(task_id)
+        self.fencing.pop(task_id, None)
         return self.tokens.pop(task_id, None)
 
     def close(self) -> None:

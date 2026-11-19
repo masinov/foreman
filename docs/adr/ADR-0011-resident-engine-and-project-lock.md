@@ -330,3 +330,21 @@ The interrupted visit is not counted against the step's visit limit.
 - The dashboard offers it under a running agent step's output on the task's
   side bar (ADR-0029; first built on the Activity tab) ("Interrupt and tell it now"), beside "Save for its next
   step".
+
+## Amendment, 2026-11-19: a task write carries its lease's fencing number
+
+Each lease on a task has a fencing number, one higher than the lease before
+it, and until now nothing read it. An engine learned it had lost a task
+only when it next renewed the lease (between steps, or on a heartbeat while
+an agent streamed). A step that ended without a renewal in between wrote
+the task as if it still held it, after another engine had taken it over.
+
+Now the engine's one task write (`TaskWrites.save`, through
+`update_task_engine_state`) carries the fencing number of the lease it holds,
+and the store refuses the write, in the same transaction, when a lease with
+a higher number exists for the task (`FencedWriteError`). The engine turns
+that into `LeaseLostError`, which stops it without touching the task, as a
+refused renewal does. A lease that only lapsed, with nobody taking the task
+over, does not fence a write: the work it vouched for is not thrown away
+over a busy database. A write made without a lease (selection, recovery
+before a lease is taken) is not fenced.

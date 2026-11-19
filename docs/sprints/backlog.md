@@ -120,7 +120,7 @@ Base work that this framing makes necessary:
 
 - `resume_human_gate` and `_run_leased_task` are still on the orchestrator;
   the agent step's corrective retry repeats its first attempt.
-- The lease fencing token is unchecked on writes.
+- (Done in sprint 61, slice 2.) The lease fencing token is unchecked on writes.
 - A stale `running` agent run is reset to the entry step, not resumed in
   place.
 - `--json` on the remaining read commands; response models on the API.

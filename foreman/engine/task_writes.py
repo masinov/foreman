@@ -7,16 +7,30 @@ what a person changed between steps.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
+from ..domain.errors import FencedWriteError
 from ..domain.models import Task
 from ..store import ForemanStore
-from .errors import OrchestratorError, TaskCancelledError
+from .errors import LeaseLostError, OrchestratorError, TaskCancelledError
 
 
 class TaskWrites:
-    """The engine's writes to tasks in one store."""
+    """The engine's writes to tasks in one store.
 
-    def __init__(self, store: ForemanStore) -> None:
+    ``fencing_token_for`` gives the fencing number of the task lease this
+    engine holds, if any. A write under a lease that a newer one replaced is
+    refused and raises ``LeaseLostError``: the task belongs to the new holder.
+    """
+
+    def __init__(
+        self,
+        store: ForemanStore,
+        *,
+        fencing_token_for: Callable[[str], int | None] | None = None,
+    ) -> None:
         self.store = store
+        self._fencing_token_for = fencing_token_for or (lambda _task_id: None)
 
     def save(self, task: Task, *, include_definition: bool = False) -> None:
         """Persist the engine's view of a task without overwriting an operator's.
@@ -27,9 +41,17 @@ class TaskWrites:
         whatever the engine was doing with it.
         """
 
-        written = self.store.update_task_engine_state(
-            task, include_definition=include_definition
-        )
+        try:
+            written = self.store.update_task_engine_state(
+                task,
+                include_definition=include_definition,
+                fencing_token=self._fencing_token_for(task.id),
+            )
+        except FencedWriteError as exc:
+            raise LeaseLostError(
+                f"Lease on task {task.id!r} was taken over by another engine; "
+                f"this engine's write was refused. {exc}"
+            ) from exc
         if written is None:
             self.store.save_task(task)
         elif written is False:

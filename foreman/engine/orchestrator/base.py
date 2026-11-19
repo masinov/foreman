@@ -140,7 +140,6 @@ class OrchestratorBase:
         #: notifying anyone can pass one that does nothing.
         self.notifier = notifier if notifier is not None else NotificationDispatcher(store)
         self.records = RunRecords(store, self.notifier)
-        self.tasks = TaskWrites(store)
         self.runner_sleep = runner_sleep
         self.utc_now = utc_now or (lambda: datetime.now(timezone.utc))
         self.retention = Retention(store, self.records, self.utc_now)
@@ -156,6 +155,8 @@ class OrchestratorBase:
         self.leases = TaskLeases(
             store, self.holder_id, heartbeat_seconds=self._TASK_LEASE_HEARTBEAT_SECONDS
         )
+        # Every task write carries the number of the lease it is made under.
+        self.tasks = TaskWrites(store, fencing_token_for=self.leases.fencing_token_for)
         self.agent_steps = AgentStepRunner(
             agent_executor=self.agent_executor,
             agent_runners=self.agent_runners,

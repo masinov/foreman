@@ -749,6 +749,46 @@ class OrchestratorLifecycleTests(unittest.TestCase):
             self.assertIsNotNone(lease)
             self.assertEqual(lease.holder_id, "other-engine")
 
+    def test_a_write_under_a_replaced_lease_is_refused_even_with_no_renewal_between(self) -> None:
+        # The agent step renews nothing (no ticks, a long heartbeat), so the
+        # first the engine learns of the takeover is its own task write when
+        # the step ends. The fencing number refuses that write.
+        repo, db_path = self._workspace()
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, task = self._seed(store, repo)
+
+            def _taken_over_silently(config: AgentRunConfig):
+                yield AgentEvent("agent.started", payload={"command": "fake"})
+                store.expire_resource_leases(
+                    project_id=project.id, resource_type="task", resource_id=task.id, force=True
+                )
+                store.acquire_lease(
+                    project_id=project.id,
+                    resource_type="task",
+                    resource_id=task.id,
+                    holder_id="other-engine",
+                    lease_token="other-token",
+                )
+                yield AgentEvent("agent.completed", payload={"session_id": "x"})
+
+            orchestrator = ForemanOrchestrator(
+                store,
+                agent_runners={"claude_code": _ScriptedRunner([_taken_over_silently])},
+                native_step_heartbeat_seconds=3600.0,
+            )
+
+            with self.assertRaises(LeaseLostError):
+                orchestrator.run_project(project.id)
+
+            untouched = store.get_task(task.id)
+            self.assertEqual(untouched.status, "in_progress")
+            self.assertEqual(untouched.workflow_current_step, "develop")
+            lease = store.get_active_lease(
+                project_id=project.id, resource_type="task", resource_id=task.id
+            )
+            self.assertEqual(lease.holder_id, "other-engine")
+
 
 if __name__ == "__main__":
     unittest.main()

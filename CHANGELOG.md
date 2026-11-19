@@ -9,6 +9,7 @@ memory changes rather than versioned product releases.
 
 ### Sprint 61 — the core, proven
 
+- A task lease's fencing number is checked on every task write the engine makes (ADR-0011 amendment). An engine whose lease on a task was taken over by another one used to learn it only at its next renewal, so a step that ended without one wrote the task over the new holder. The store now refuses that write in the same transaction, and the engine stops without touching the task, as it does when a renewal is refused. A lease that only lapsed, with nobody taking the task over, does not stop the write.
 - `foreman outcomes <project> [--sprint ID] [--json]` and `GET /api/v1/projects/{id}/outcomes` show how well a project's agents do (ADR-0034): tasks that passed first time (and leaving merge conflicts aside), send-backs by cause (tests, review, a person, merge conflict), decisions a person was asked for and how long they waited, times a person stepped in unasked, cost and tokens per merged task, median time to merge, and the same per agent role and model. Computed from the recorded runs and events; nothing new is stored. The manager can run it.
 
 ### Sprint 60c — defaults from a terminal

@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 from typing import Any, Sequence
 
+from ..domain.errors import FencedWriteError
 from ..domain.models import (
     TASK_STATUSES,
     Task,
@@ -26,7 +27,11 @@ class TaskStore(StoreBase):
     """Tasks, their keys and their dependents."""
 
     def update_task_engine_state(
-        self, task: Task, *, include_definition: bool = False
+        self,
+        task: Task,
+        *,
+        include_definition: bool = False,
+        fencing_token: int | None = None,
     ) -> bool | None:
         """Write only the columns the engine owns for an existing task.
 
@@ -42,6 +47,11 @@ class TaskStore(StoreBase):
         ``cancelled``: cancellation is an operator's terminal decision.
         ``include_definition`` adds title, type and acceptance criteria, for
         the autonomous flow in which the agent names the task it picked.
+
+        ``fencing_token`` is the number of the task lease the writer holds.
+        When given, the write is refused with ``FencedWriteError`` if a lease
+        with a higher number exists for the task: another holder has taken
+        it over, and the check and the write are one transaction.
 
         Returns True when written, False when the task is cancelled (the row
         is left alone), and None when no such task exists.
@@ -78,6 +88,19 @@ class TaskStore(StoreBase):
             values += [task.title, task.task_type, task.acceptance_criteria]
 
         def _write(connection: sqlite3.Connection) -> int:
+            if fencing_token is not None:
+                newest = connection.execute(
+                    """
+                    SELECT MAX(fencing_token) AS newest FROM leases
+                    WHERE project_id = ? AND resource_type = 'task' AND resource_id = ?
+                    """,
+                    (task.project_id, task.id),
+                ).fetchone()["newest"]
+                if newest is not None and newest > fencing_token:
+                    raise FencedWriteError(
+                        f"Task {task.id!r} is held under lease {newest}; this write was "
+                        f"made under lease {fencing_token} and is refused."
+                    )
             cursor = connection.execute(
                 f"UPDATE tasks SET {', '.join(assignments)} "
                 "WHERE id = ? AND status != 'cancelled'",

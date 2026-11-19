@@ -14,7 +14,8 @@ from foreman.domain.leases import (
     is_lease_stale,
     validate_lease_holder,
 )
-from foreman.domain.models import Lease
+from foreman.domain.errors import FencedWriteError
+from foreman.domain.models import Lease, Project, Sprint, Task
 from foreman.store import ForemanStore
 
 
@@ -500,6 +501,69 @@ class AcquireLeaseTests(unittest.TestCase):
             lease_token=token2,
         )
         self.assertIsNotNone(lease2)
+
+
+class FencedTaskWriteTests(unittest.TestCase):
+    """A task write carries the fencing number of the lease it is made under."""
+
+    def setUp(self) -> None:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        self.store = ForemanStore(Path(temp_dir.name) / "foreman.db")
+        self.addCleanup(self.store.close)
+        self.store.initialize()
+        self.store.save_project(
+            Project(id="p1", name="P", repo_path=temp_dir.name, workflow_id="development")
+        )
+        self.store.save_sprint(Sprint(id="s1", project_id="p1", title="S", status="active"))
+        self.task = self.store.save_task(
+            Task(id="t1", sprint_id="s1", project_id="p1", title="T", status="in_progress")
+        )
+
+    def lease(self, holder: str):
+        self.store.expire_resource_leases(
+            project_id="p1", resource_type="task", resource_id="t1", force=True
+        )
+        lease = self.store.acquire_lease(
+            project_id="p1", resource_type="task", resource_id="t1",
+            holder_id=holder, lease_token=generate_lease_token(),
+        )
+        assert lease is not None
+        return lease
+
+    def test_the_current_holder_writes(self) -> None:
+        lease = self.lease("a")
+        self.task.workflow_current_step = "test"
+        self.assertTrue(
+            self.store.update_task_engine_state(self.task, fencing_token=lease.fencing_token)
+        )
+        self.assertEqual(self.store.get_task("t1").workflow_current_step, "test")
+
+    def test_a_holder_replaced_by_a_newer_lease_is_refused_and_nothing_is_written(self) -> None:
+        old = self.lease("a")
+        self.lease("b")
+        self.task.workflow_current_step = "test"
+        with self.assertRaises(FencedWriteError):
+            self.store.update_task_engine_state(self.task, fencing_token=old.fencing_token)
+        self.assertIsNone(self.store.get_task("t1").workflow_current_step)
+
+    def test_a_lapsed_lease_nobody_took_over_still_writes(self) -> None:
+        # Only a newer holder fences a write out; a lease that merely lapsed
+        # under a busy database does not cost the work it vouched for.
+        lease = self.lease("a")
+        self.store.expire_resource_leases(
+            project_id="p1", resource_type="task", resource_id="t1", force=True
+        )
+        self.task.workflow_current_step = "test"
+        self.assertTrue(
+            self.store.update_task_engine_state(self.task, fencing_token=lease.fencing_token)
+        )
+
+    def test_a_write_without_a_lease_is_not_fenced(self) -> None:
+        self.lease("a")
+        self.lease("b")
+        self.task.workflow_current_step = "test"
+        self.assertTrue(self.store.update_task_engine_state(self.task))
 
 
 class ExpireLeasesTests(unittest.TestCase):
