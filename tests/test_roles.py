@@ -31,15 +31,12 @@ class RoleLoaderTests(unittest.TestCase):
             {
                 "code_reviewer",
                 "developer",
-                "developer_worker",
                 "frontier_reviewer",
                 "security_reviewer",
                 "triage_reviewer",
             },
         )
         self.assertTrue(roles["developer"].agent.session_persistence)
-        self.assertTrue(roles["developer_worker"].agent.session_persistence)
-        self.assertEqual(roles["developer_worker"].agent.model, "")
         self.assertEqual(roles["code_reviewer"].completion.max_cost_usd, 5.0)
 
     def test_loads_agent_env_table(self) -> None:
@@ -147,7 +144,7 @@ class RoleLoaderTests(unittest.TestCase):
         self.assertIn("Address the reviewer note.", prompt)
 
     def test_shipped_developers_carry_the_environment_placeholder(self) -> None:
-        for role_id in ("developer", "developer_worker"):
+        for role_id in ("developer",):
             role = load_roles(default_roles_dir())[role_id]
             self.assertIn("{environment_rules}", role.prompt_template)
             self.assertNotIn("./venv/bin/python", role.prompt_template)
