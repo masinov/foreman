@@ -855,6 +855,10 @@ The following items were implemented as hardening before the 1.0 release:
 - `fencing_token` increments on reacquisition after expiry
 - Orchestrator acquires lease before executing a task and renews between steps
 - Stale running run recovery is lease-aware (only expired/missing leases trigger recovery)
+- A stale run of a task that has a step resumes that step in place (sprint 61):
+  the task keeps its step, carried output and visit counts, and a role that
+  keeps its session resumes the one the stale run recorded. A task with no
+  step starts again from the entry step (spec 6.6)
 - Active leases are projected into `.foreman/context.md` without the secret token
 
 **Branch enforcement (Item 4)**

@@ -90,7 +90,15 @@ class Recovery:
         task: Task,
         runs: list[Run],
     ) -> None:
-        """Fail stale running runs and reset task state so the slice can be retried safely."""
+        """Fail stale running runs and let the task run again from where they stopped.
+
+        A task that has a step resumes at that step, with its carried output
+        and visit counts: the step runs again and its agent resumes the
+        session the stale run recorded, so an engine that died mid-step
+        costs that step, not the task. The visit count still bounds a step
+        that keeps dying. A task without a step starts again from the entry
+        step.
+        """
 
         now = utc_now_text()
 
@@ -115,7 +123,12 @@ class Recovery:
                     "lease_id": task_lease.id if task_lease else None,
                     "holder_id": task_lease.holder_id if task_lease else None,
                     "fencing_token": task_lease.fencing_token if task_lease else None,
-                    "message": "Marked stale running run as failed.",
+                    "message": (
+                        f"Marked stale running run as failed; the task resumes at "
+                        f"{task.workflow_current_step}."
+                        if task.workflow_current_step
+                        else "Marked stale running run as failed; the task starts again."
+                    ),
                 },
             )
 
@@ -146,11 +159,13 @@ class Recovery:
             if heartbeating:
                 self.leases.start_heartbeat(task, project, token)
 
-        task.status = "todo"
         task.blocked_reason = None
-        task.workflow_current_step = None
-        task.workflow_carried_output = None
-        task.step_visit_counts = {}
+        if task.workflow_current_step:
+            task.status = "in_progress"
+        else:
+            task.status = "todo"
+            task.workflow_carried_output = None
+            task.step_visit_counts = {}
         self.tasks.save(task)
 
     def run_is_stale(self, project: Project, run: Run) -> bool:
