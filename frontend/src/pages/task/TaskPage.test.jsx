@@ -592,7 +592,7 @@ describe("Overview", () => {
   it("sums up the checks on one line that links to Checks", async () => {
     await renderTask();
     const section = (await screen.findByRole("heading", { name: "Checks" })).closest("section");
-    await waitFor(() => expect(section).toHaveTextContent("1 of 2 acceptance criteria marked met by haiku-5-5"));
+    await waitFor(() => expect(section).toHaveTextContent("2 acceptance criteria, covered by the approving review"));
     expect(section).toHaveTextContent("Tests passed in 114.2 s at b232eb1");
     expect(section).toHaveTextContent("No evidence files required by this workflow");
     expect(within(section).getByRole("link", { name: "All checks" })).toHaveAttribute("href", `${BASE}/checks`);
@@ -875,9 +875,9 @@ describe("Checks", () => {
     expect(facts).not.toHaveTextContent("Review");
     expect(claims).toHaveTextContent("Approved");
     expect(claims).toHaveTextContent("Clean change, tests cover it.");
-    expect(claims).toHaveTextContent("Partly met");
+    expect(claims).toHaveTextContent("Covered by review");
     expect(claims).not.toHaveTextContent("Size of change");
-    expect(screen.getByText("Criteria judged by haiku-5-5")).toBeInTheDocument();
+    expect(screen.queryByText(/judged/i)).toBeNull();
     expect(screen.getByRole("heading", { name: "Evidence files" })).toBeInTheDocument();
     expect(screen.getByText("None required by this workflow.")).toBeInTheDocument();
   });
@@ -885,12 +885,12 @@ describe("Checks", () => {
   it("says when nothing was claimed and the tests did not run", async () => {
     const checks = checksPayload();
     checks.facts.tests = { status: "not_run", exit_code: null, duration_seconds: null, command: null, result_line: null, commit: null, head_sha: null };
-    checks.claims = { reviews: [], judged_by: "none", criteria: [] };
+    checks.claims = { reviews: [], criteria: [] };
     await renderTask(`${BASE}/checks`, taskRoutes({ checks }));
     const facts = await screen.findByRole("table", { name: "Measured by the engine" });
     expect(facts).toHaveTextContent("Not run");
     expect(screen.queryByRole("table", { name: "Reported by an agent" })).toBeNull();
-    expect(screen.getByText("No agent has reported on this task yet, and it has no acceptance criteria to judge.")).toBeInTheDocument();
+    expect(screen.getByText("No agent has reported on this task yet, and it has no acceptance criteria to check.")).toBeInTheDocument();
   });
 });
 

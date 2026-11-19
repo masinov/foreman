@@ -15,8 +15,8 @@ const COLUMNS = [
 // A criterion is written as a list item in the task; the dash is the list's,
 // not the criterion's.
 const criterionText = (text) => String(text ?? "").replace(/^\s*[-*]\s+/, "");
-// What the engine records when no judge looked. The Result column already
-// says "Not judged"; repeating it under every criterion adds nothing.
+// What evidence recorded before the criteria judge was removed says for a
+// criterion nobody checked. The Result column already says so.
 const UNJUDGED_EVIDENCE = "Not checked by a judge model.";
 
 function factRows(facts) {
@@ -96,7 +96,6 @@ export function ChecksTab({ checks }) {
     ) : null;
   }
   const claims = claimRows(data.claims);
-  const judged = data.claims.judged_by && data.claims.judged_by !== "none";
   return (
     <div className="task-checks">
       <section className="task-section" aria-labelledby="task-facts">
@@ -104,15 +103,11 @@ export function ChecksTab({ checks }) {
         <Table caption="Measured by the engine" columns={COLUMNS} rows={factRows(data.facts)} rowKey={(row) => row.key} />
       </section>
       <section className="task-section" aria-labelledby="task-claims">
-        <SectionHeading
-          id="task-claims"
-          title="Reported by an agent"
-          note={judged ? `Criteria judged by ${data.claims.judged_by}` : undefined}
-        />
+        <SectionHeading id="task-claims" title="Reported by an agent" />
         {claims.length ? (
           <Table caption="Reported by an agent" columns={COLUMNS} rows={claims} rowKey={(row) => row.key} />
         ) : (
-          <p className="empty">No agent has reported on this task yet, and it has no acceptance criteria to judge.</p>
+          <p className="empty">No agent has reported on this task yet, and it has no acceptance criteria to check.</p>
         )}
       </section>
       <section className="task-section" aria-labelledby="task-evidence">

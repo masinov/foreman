@@ -39,7 +39,6 @@ def _serialize_completion_evidence(evidence: "Any") -> dict[str, Any] | None:
         return None
     return {
         "proof_status": evidence.proof_status,
-        "judged_by": evidence.judged_by,
         "head_sha": evidence.head_sha,
         "tests_status": evidence.tests_status,
         "tested_sha": evidence.tested_sha,

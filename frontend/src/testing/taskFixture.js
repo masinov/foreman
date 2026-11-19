@@ -109,10 +109,9 @@ export function checksPayload(fields = {}) {
           current: true,
         },
       ],
-      judged_by: "haiku-5-5",
       criteria: [
-        { criterion: "Duration is reported", status: "passed", evidence: "builtins.py reports it" },
-        { criterion: "The result line is reported", status: "partial", evidence: null },
+        { criterion: "Duration is reported", status: "covered", evidence: "Code review approved b232eb1a." },
+        { criterion: "The result line is reported", status: "covered", evidence: "Code review approved b232eb1a." },
       ],
     },
     evidence_files: [],

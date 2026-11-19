@@ -381,7 +381,7 @@ class MergeWaiver:
     id: str
     task_id: str
     project_id: str
-    waiver_type: str  # 'missing_acceptance_criteria' | 'incomplete_criteria' | 'no_code_delta' | 'docs_only_impl_task'
+    waiver_type: str  # foreman.mutations.gates.MERGE_WAIVER_TYPES; older rows may say 'incomplete_criteria'
     reason: str
     approved_by: str
     branch_name: str
@@ -445,8 +445,9 @@ class CompletionEvidence:
     security_review_outcome: str = ""
     security_reviewed_sha: str = ""
     # Criteria checklist: list of {criterion, status, evidence}
-    # status: "passed" | "failed" | "partial" from a judge model, or
-    # "unverified" when no judge looked at the criterion.
+    # status: "covered" when an approving code review of the branch head
+    # covers it, "unverified" until then. Evidence recorded before 2026-11-19
+    # may say "passed", "partial" or "failed", from the removed criteria judge.
     criteria_checklist: tuple[dict[str, str], ...] = field(default_factory=tuple)
     # Proof status
     proof_status: str = "pending"
@@ -454,15 +455,15 @@ class CompletionEvidence:
     # What has not happened yet (tests not run, review not given). Proof is
     # "pending" while this is non-empty and nothing has failed.
     outstanding: tuple[str, ...] = field(default_factory=tuple)
-    # Who judged the criteria checklist: a model id, or "none".
-    judged_by: str = "none"
 
     @classmethod
     def from_mapping(cls, data: Mapping[str, Any]) -> "CompletionEvidence":
         """Build evidence from stored JSON, ignoring fields this version dropped.
 
-        Evidence saved before ADR-0018 carries a numeric score and a verdict;
-        those keys are skipped rather than failing the load of the task.
+        Evidence saved before ADR-0018 carries a numeric score and a verdict,
+        and evidence saved before 2026-11-19 names the criteria judge
+        (``judged_by``); those keys are skipped rather than failing the load
+        of the task.
         """
 
         known = {item.name for item in fields(cls)}
@@ -505,23 +506,13 @@ class CompletionEvidence:
         return f"Code review: {self.review_outcome}{at}"
 
     def criteria_line(self) -> str:
-        """Say how many criteria a judge checked, or that none were."""
+        """Say whether an approving code review covers the criteria."""
 
         if not self.criteria_count:
             return "Acceptance criteria: none defined"
-        if self.judged_by == "none":
-            return (
-                f"Acceptance criteria: {self.criteria_count}, not checked by a judge model"
-            )
-        partial = (
-            f", {self.criteria_partially_addressed} partial"
-            if self.criteria_partially_addressed
-            else ""
-        )
-        return (
-            f"Acceptance criteria: {self.criteria_addressed} of {self.criteria_count} "
-            f"passed{partial} (judged by {self.judged_by})"
-        )
+        if self.criteria_addressed >= self.criteria_count:
+            return f"Acceptance criteria: {self.criteria_count}, covered by the approving code review"
+        return f"Acceptance criteria: {self.criteria_count}, covered once code review approves"
 
     def __str__(self) -> str:
         parts = [

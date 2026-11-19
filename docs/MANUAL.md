@@ -786,23 +786,14 @@ A blocked guard emits `engine.completion_guard` and raises an
 proof gate failed) or `task_blocked`. A human can override criteria-based blocks
 with `foreman waive-merge` (but not test-failure or reviewer-denial blocks).
 
-### Criteria judging: heuristic vs LLM
+### Acceptance criteria
 
-By default each acceptance criterion is judged by a **keyword heuristic**
-(zero-config, never makes a network call). You can opt into a cheap-model judge
-via a single direct HTTP call to an Anthropic-compatible `/v1/messages`
-endpoint:
-
-| Setting | Default | Meaning |
-|---|---|---|
-| `judge_base_url` / `judge_model` | unset | judge endpoint; unset → heuristic |
-| `judge_api_key_env` | unset | host env var holding the judge API key |
-| `judge_max_diff_chars` | 24000 | diff cap fed to the judge (head 70% / tail 30%) |
-
-The judge is **strictly opt-in and fail-safe**: any HTTP/timeout/parse error
-falls back to the heuristic, so evidence building never crashes the workflow.
-`CompletionEvidence.judged_by` records the model (or `heuristic`) and is emitted
-in `engine.completion_evidence`.
+An approving code review of the branch head covers a task's acceptance
+criteria. Nothing else checks them: until the review approves, each criterion
+is recorded as `unverified` and the proof is pending. An approval of an older
+commit does not cover them. The criteria judge, an optional model call that
+marked each criterion, was removed on 2026-11-19 (ADR-0010 amendment);
+evidence it recorded still loads and shows as it was.
 
 ---
 
@@ -1150,9 +1141,6 @@ offending value, rather than running on silent defaults.
 | `policy_rules` | `{}` | per-task-type policy overrides, `{"<task_type>": {"<decision>": "<value>"}}` (§14) |
 | `default_model` | `""` | fallback model when a role pins none |
 | `meta_agent_model` | `""` | `--model` for the manager chat session |
-| `judge_base_url` / `judge_model` | unset | opt-in criteria judge endpoint |
-| `judge_api_key_env` | `""` | host env var for the judge API key |
-| `judge_max_diff_chars` | 24000 | diff cap fed to the judge |
 | `review_diff_max_chars` | 16000 | diff cap in reviewer prompts |
 
 ---
@@ -1254,8 +1242,8 @@ export FOREMAN_DASHBOARD_TOKEN="$(openssl rand -hex 24)"
 - Settings that decide what runs on the host cannot be changed through the
   API or the Settings screen (they answer **403** and are shown read-only):
   `worktree_setup_command`, `worktree_root`,
-  `worktree_link_paths`, `context_dir`, `judge_base_url`,
-  `judge_api_key_env`, `merge_push_remote`, `agent_env_passthrough`. Set them
+  `worktree_link_paths`, `context_dir`, `merge_push_remote`,
+  `agent_env_passthrough`. Set them
   at a terminal with
   `foreman config <project-id> --set <key>=<value>`. A role's `backend` and
   `permission_mode` are likewise changed only in its TOML file. See ADR-0017.

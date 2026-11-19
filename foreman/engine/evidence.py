@@ -3,8 +3,9 @@
 ``EvidenceBuilder`` reads the store and git and returns a
 ``CompletionEvidence``: which commit is the branch head, whether the tests
 passed and on which commit, what each reviewer decided and on which commit,
-and what a judge model said about each acceptance criterion. It decides
-nothing about the workflow; the merge guard in ``foreman.engine.builtins.base`` does.
+and whether an approving code review of the branch head covers the
+acceptance criteria. It decides nothing about the workflow; the merge guard
+in ``foreman.engine.builtins.completion`` does.
 """
 
 from __future__ import annotations
@@ -13,10 +14,15 @@ from collections.abc import Mapping
 import subprocess
 
 from ..repo.git import GitError, head_sha
-from .judge import NOT_JUDGED, judge_criteria, truncate_diff
 from ..domain.models import CompletionEvidence, Project, Run, Task
 from ..definitions.roles import RoleDefinition
 from ..store import ForemanStore
+
+
+#: A criterion an approving code review of the branch head covers.
+CRITERION_COVERED = "covered"
+#: A criterion no approving review covers yet.
+CRITERION_UNVERIFIED = "unverified"
 
 
 class EvidenceBuilder:
@@ -35,11 +41,11 @@ class EvidenceBuilder:
 
         Records facts and nothing derived from them by weighting: which
         commit is the branch head, whether the test step passed and on which
-        commit, what each reviewer decided and on which commit, and what a
-        judge model said about each acceptance criterion when one is
-        configured. ``proof_status`` is ``passed`` only when the tests passed
-        on the head commit and the criteria were either all passed by a judge
-        or covered by an approving code review of the head commit (ADR-0018).
+        commit, and what each reviewer decided and on which commit.
+        ``proof_status`` is ``passed`` only when the tests passed on the head
+        commit and an approving code review of the head commit covers the
+        acceptance criteria (ADR-0018). Nothing else checks the criteria: the
+        criteria judge was removed on 2026-11-19 (ADR-0010 amendment).
         """
         runs = self.store.list_runs(task_id=task.id)
 
@@ -156,40 +162,6 @@ class EvidenceBuilder:
                 security_review_outcome = run.outcome or ""
                 security_reviewed_sha = reviewed_sha_by_run.get(run.id, "")
 
-        # Criteria coverage
-        criteria_count = 0
-        criteria_addressed = 0
-        criteria_partially_addressed = 0
-        criteria_text = task.acceptance_criteria or ""
-        criteria_list = [c.strip() for c in criteria_text.split("\n") if c.strip()]
-        criteria_count = len(criteria_list)
-        criteria_checklist: list[dict[str, str]] = []
-        judged_by = NOT_JUDGED
-
-        if criteria_list:
-            all_output_text = "\n".join(agent_outputs).lower()
-            judge_diff = branch_diff_content(
-                project.repo_path,
-                project.default_branch,
-                task.branch_name,
-            ) if task.branch_name else ""
-            judgment = judge_criteria(
-                criteria=criteria_list,
-                diff_text=judge_diff,
-                agent_summary=all_output_text,
-                changed_files=changed_files,
-                settings=project.settings,
-            )
-            judged_by = judgment.judged_by
-            criteria_checklist = [dict(item) for item in judgment.checklist]
-            criteria_addressed = sum(
-                1 for item in criteria_checklist if item.get("status") == "passed"
-            )
-            criteria_partially_addressed = sum(
-                1 for item in criteria_checklist if item.get("status") == "partial"
-            )
-
-        judged = judged_by != NOT_JUDGED
         review_approved = review_outcome == "approve"
         failure_reasons: list[str] = []
         outstanding: list[str] = []
@@ -212,22 +184,24 @@ class EvidenceBuilder:
                 f"{head_sha_val[:8]}."
             )
 
-        # An approving code review covers the acceptance criteria. Without one,
-        # only a judge model's "passed" on every criterion does; a criterion no
-        # judge looked at is not counted as met.
+        # An approving code review of the branch head covers the acceptance
+        # criteria; until there is one they are not counted as met.
+        criteria_text = task.acceptance_criteria or ""
+        criteria_list = [c.strip() for c in criteria_text.split("\n") if c.strip()]
+        criteria_count = len(criteria_list)
+        covered = review_approved and not review_is_stale
+        criteria_checklist: list[dict[str, str]] = [
+            {
+                "criterion": criterion,
+                "status": CRITERION_COVERED if covered else CRITERION_UNVERIFIED,
+                "evidence": f"Code review approved {reviewed_sha[:8]}." if covered and reviewed_sha else "",
+            }
+            for criterion in criteria_list
+        ]
+        criteria_addressed = criteria_count if covered else 0
+        criteria_partially_addressed = 0
         if criteria_checklist and not review_approved:
-            if judged:
-                for item in criteria_checklist:
-                    if item.get("status") != "passed":
-                        failure_reasons.append(
-                            f"Criterion not fully addressed: {item.get('criterion', '')!r} "
-                            f"({item.get('status')})."
-                        )
-            else:
-                outstanding.append(
-                    "Acceptance criteria were not checked by a judge model and code "
-                    "review has not approved."
-                )
+            outstanding.append("Acceptance criteria are covered once code review approves.")
         # Implementation tasks require acceptance criteria
         if task.task_type in {"feature", "fix", "refactor"} and not criteria_checklist:
             failure_reasons.append("No acceptance criteria defined.")
@@ -270,7 +244,6 @@ class EvidenceBuilder:
             proof_status=proof_status,
             failure_reasons=tuple(failure_reasons),
             outstanding=tuple(outstanding),
-            judged_by=judged_by,
         )
 
     def branch_head(self, project: Project, task: Task) -> str:
@@ -374,6 +347,21 @@ def summarize_agent_outputs(runs: list[Run]) -> tuple[str, ...]:
             role_and_step = f"[{run.role_id} / {run.workflow_step}]"
             outputs.append(f"{role_and_step}: {snippet}")
     return tuple(outputs)
+
+
+def truncate_diff(diff_text: str, max_chars: int) -> str:
+    """Head+tail truncate a diff, keeping the first 70% and last 30%."""
+
+    if max_chars <= 0 or len(diff_text) <= max_chars:
+        return diff_text
+    head_len = int(max_chars * 0.7)
+    tail_len = max_chars - head_len
+    removed = len(diff_text) - max_chars
+    return (
+        diff_text[:head_len]
+        + f"\n[...truncated {removed} chars...]\n"
+        + diff_text[len(diff_text) - tail_len:]
+    )
 
 
 def branch_diff_content(

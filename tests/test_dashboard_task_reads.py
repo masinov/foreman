@@ -214,7 +214,6 @@ class TaskReadsCase(unittest.TestCase):
             task_id="t", task_title="T", acceptance_criteria="a\nb",
             tests_status="passed", tested_sha=head, head_sha=head,
             review_outcome="approve", reviewed_sha=head, proof_status="passed",
-            judged_by="judge-model",
             criteria_checklist=(
                 {"criterion": "a", "status": "passed", "evidence": "see new.txt"},
                 {"criterion": "b", "status": "partial", "evidence": ""},
@@ -255,7 +254,7 @@ class TaskReadsCase(unittest.TestCase):
         )
         self.assertEqual(review["summary"], "Looks right.")
         self.assertTrue(review["current"])
-        self.assertEqual(body["claims"]["judged_by"], "judge-model")
+        self.assertNotIn("judged_by", body["claims"])
         self.assertEqual([c["status"] for c in body["claims"]["criteria"]], ["passed", "partial"])
         self.assertEqual(body["evidence_files"], [])
         self.assertEqual(body["proof_status"], "passed")
@@ -267,7 +266,6 @@ class TaskReadsCase(unittest.TestCase):
         self.assertEqual(body["facts"]["branch"]["state"], "no_branch")
         self.assertEqual(body["facts"]["size"], {"files": 0, "added": 0, "deleted": 0})
         self.assertEqual(body["claims"]["reviews"], [])
-        self.assertEqual(body["claims"]["judged_by"], "none")
         self.assertEqual(
             [(c["criterion"], c["status"]) for c in body["claims"]["criteria"]],
             [("first", "unverified"), ("second", "unverified")],

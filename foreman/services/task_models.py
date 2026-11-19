@@ -128,8 +128,6 @@ class CriterionClaim(BaseModel):
 
 class ChecksClaims(BaseModel):
     reviews: list[ReviewClaim]
-    #: ``none`` when no judge model looked at the criteria.
-    judged_by: str
     criteria: list[CriterionClaim]
 
 

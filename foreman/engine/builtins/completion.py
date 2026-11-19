@@ -112,7 +112,7 @@ class CompletionGuard(BuiltinExecutorBase):
         """Determine the waiver type that could apply given failure reasons.
 
         Returns a waiver type only if ALL failures are waiveable proof deficiencies
-        (missing/incomplete criteria). Never returns a waiver type if any failure
+        (missing criteria). Never returns a waiver type if any failure
         involves tests, reviewer, or security.
         """
         non_waivable_markers = (
@@ -135,9 +135,6 @@ class CompletionGuard(BuiltinExecutorBase):
 
         if all("no acceptance criteria" in r for r in reasons_lower):
             return "missing_acceptance_criteria"
-
-        if all("criterion not fully addressed" in r for r in reasons_lower):
-            return "incomplete_criteria"
 
         return None
 

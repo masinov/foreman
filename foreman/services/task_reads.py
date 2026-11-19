@@ -224,7 +224,6 @@ class TaskReads:
         )
         claims = ChecksClaims(
             reviews=self._review_claims(events, runs, live_head),
-            judged_by=evidence.judged_by if evidence is not None else "none",
             criteria=[
                 CriterionClaim(
                     criterion=str(item.get("criterion", "")),

@@ -66,3 +66,17 @@ de-tooled.
 - A tool-enabled "re-review" routing when the frontier reviewer answers
   `STEER: need repository context` is out of scope; today that carry-output edge
   returns to develop. Recorded as a backlog follow-up.
+
+## Amendment, 2026-11-19: the criteria judge is removed
+
+The owner decided to remove the criteria judge (sprint 60). It added a second
+opinion to what an approving code review already covers, and it never ran:
+the dashboard offered its model but no page offered the endpoint address it
+also needed, so every finished task said "not judged yet". `foreman/engine/
+judge.py`, the `judge_base_url`, `judge_model`, `judge_api_key_env` and
+`judge_max_diff_chars` settings, and `CompletionEvidence.judged_by` are
+gone. An approving code review of the branch head covers the criteria
+(status `covered`); until there is one they are `unverified`. A second
+opinion is a second reviewer on another model, as the tiered and secure
+workflows have. Roles that run once at the end of a sprint, for the whole
+sprint, are recorded as a direction in `docs/sprints/backlog.md`.

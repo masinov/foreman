@@ -43,8 +43,6 @@ const MACHINE_ROWS = {
   worktree_setup_command: { label: "Set up a working copy with", empty: "Nothing" },
   worktree_link_paths: { label: "Linked into each working copy", empty: "Nothing" },
   context_dir: { label: "Context folder", empty: "The default" },
-  judge_base_url: { label: "Criteria judge address", empty: "Not set" },
-  judge_api_key_env: { label: "Criteria judge key variable", empty: "Not set" },
   merge_push_remote: { label: "Push merges to", empty: "Nowhere: merges stay on this machine" },
   agent_env_passthrough: { label: "Extra variables agents are given", empty: "None" },
 };
