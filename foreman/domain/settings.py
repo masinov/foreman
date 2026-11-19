@@ -15,13 +15,13 @@ from .policy import (
 )
 
 
-# Settings that decide what runs on the host, where Foreman writes, or where it
-# sends data and credentials. They are changed by an operator at a terminal
-# (`foreman config <project> --set key=value`), never over the dashboard API:
-# an API caller who could set them could run commands as the engine's user.
+# Settings that decide where Foreman writes on the host, or where it sends data
+# and credentials. They are changed by an operator at a terminal (`foreman
+# config <project> --set key=value`), never over the dashboard API (ADR-0017).
+# The test command is not one of them since 2026-11-19 (the owner): whoever may
+# use the dashboard already starts agents that run commands on this host.
 HOST_LEVEL_SETTINGS: frozenset[str] = frozenset(
     {
-        "test_command",
         "worktree_setup_command",
         "worktree_root",
         "worktree_link_paths",

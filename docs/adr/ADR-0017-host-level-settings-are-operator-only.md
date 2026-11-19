@@ -60,3 +60,16 @@ to after each merge. It makes the engine write to another machine with this
 host's git credentials, so it joins the host-level settings: read-only over
 the API and on the settings page, changed with `foreman config`. Its value
 must be a remote's name; a URL or an option is refused.
+
+## Amendment, 2026-11-19: the test command is set from the dashboard
+
+The owner decided that the test command is edited in the dashboard
+(Project settings, General, Tests). It is the project's: what the project
+calls its tests. The reason it was host-level, that a dashboard caller could
+run any command as the engine's user, does not hold on its own, because the
+same caller already starts agents that run commands on this host. The other
+host-level settings stay terminal-only. They choose where Foreman writes
+and deletes (`worktree_root`, `context_dir`, `worktree_link_paths`), what
+runs before an agent has started (`worktree_setup_command`), or where data
+and credentials go (`merge_push_remote`, `agent_env_passthrough`, the
+judge's address and key).

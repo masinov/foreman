@@ -80,7 +80,6 @@ export function settingsPayload(effective = {}) {
       "context_dir",
       "judge_api_key_env",
       "judge_base_url",
-      "test_command",
       "worktree_link_paths",
       "worktree_root",
       "worktree_setup_command",

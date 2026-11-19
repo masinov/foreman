@@ -119,13 +119,16 @@ describe("General: host-level values are read-only", () => {
     expect(within(machine).queryAllByRole("button")).toHaveLength(0);
   });
 
-  it("shows the test command as text, and only its timeout as a control", async () => {
-    await renderGeneral();
+  it("edits the test command beside its timeout", async () => {
+    const fetchImpl = await renderGeneral(settingsRoutes());
+    fetchImpl.routes[SAVE_URL] = settingsPayload();
     const tests = screen.getByRole("region", { name: "Tests" });
-    expect(within(tests).getByText("./venv/bin/python -m unittest")).toBeInTheDocument();
-    expect(within(tests).queryByLabelText("Test command")).toBeNull();
-    expect(within(tests).getAllByRole("textbox")).toHaveLength(1);
+    expect(within(tests).getByLabelText("Test command")).toHaveValue("./venv/bin/python -m unittest");
     expect(within(tests).getByLabelText("Give up after")).toBeInTheDocument();
+    fireEvent.change(within(tests).getByLabelText("Test command"), { target: { value: "make check" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(saves(fetchImpl)).toHaveLength(1));
+    expect(saves(fetchImpl)[0].body.settings).toEqual({ test_command: "make check" });
   });
 
   it("never sends a host-level setting", async () => {
@@ -135,7 +138,7 @@ describe("General: host-level values are read-only", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(saves(fetchImpl)).toHaveLength(1));
     const sent = Object.keys(saves(fetchImpl)[0].body.settings);
-    for (const key of ["test_command", "worktree_root", "worktree_setup_command", "context_dir"]) {
+    for (const key of ["worktree_root", "worktree_setup_command", "context_dir"]) {
       expect(sent).not.toContain(key);
     }
   });

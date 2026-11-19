@@ -18,6 +18,8 @@ memory changes rather than versioned product releases.
 
 ### Sprint 60 — what is there works and makes sense
 
+- The test command is edited in the dashboard (Project settings, General, Tests), the owner's decision (ADR-0017 amendment). It is no longer a host-level setting; the others stay terminal-only. An edit that empties it is refused, since the test step fails without one.
+
 - The five longest modules are split by concern (ADR-0032): `engine/builtins` (run tests, merge, the completion guard, mark done), `engine/orchestrator` (a project pass, one task, resuming from a gate), `engine/workflow_runner` (the loop, checks, built-in steps, agent steps, transitions), `engine/resident` (the loop, the command table, waiting, `serve_project`) and `cli/tasks` (by kind of command). Each class is put together from its parts and imported from where it was. No behaviour changed. The longest module is now the append-only migrations list.
 
 - One implementation of each change (ADR-0032). The CLI and the dashboard each had their own copies of adding a task to a sprint, creating a sprint, registering a project, changing a setting and pruning worktrees, and their rules had drifted. Each is now one operation in `foreman.mutations`, which both call. A test (`tests/test_layers.py`) fails if the CLI, the API or a service saves or builds a project, sprint, task, decision gate or merge waiver itself. Behaviour that changes: `foreman sprint add` follows the sprint rules (an empty title is refused); the dashboard's Run activates the next sprint through the sprint rules; `foreman task override` checks overrides as an edit does; a task's or sprint's id is made from its title by the one slug function.
