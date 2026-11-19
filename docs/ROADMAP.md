@@ -10,11 +10,127 @@ Roadmap items should preserve the product identity defined in the Foreman spec:
 - explicit sprints, tasks, runs, and events,
 - reviewable autonomous execution,
 - repo-local context projection under `.foreman/`,
-- a dashboard aligned with the mockup.
+- a dashboard aligned with the design in `docs/design/dashboard-v7/`.
 
 Incremental slices must still aim at durable production architecture. Bootstrap
 status does not justify implementation shapes that are knowingly meant to be
 replaced wholesale.
+
+## The roadmap from 2026-11-19 (owner)
+
+Agreed with the owner on 2026-11-19 after sprint 60. It replaces the
+milestones below, which are kept as history, and orders the "Owner
+directions" of `docs/sprints/backlog.md`. Each stage gets an ADR before its
+code, and before each subsystem's ADR the existing tools are surveyed.
+
+What Foreman is becoming: a software factory. People talk with clients,
+write the specs and documentation (fed in from outside later), accept,
+supervise and correct; agents build. Work done through Foreman is fully
+registered: nothing is developed without being listed. Foreman runs on a
+central server shared by the company, with workers on other machines, and
+coordinates several harnesses and models.
+
+### Stage 1 — the core, proven (sprint 61)
+
+Outcome numbers per project, role and model; the lease fencing token checked
+on writes; the carried engine items; the seven functions over 200 lines; the
+CLI's reads through services. Then Assay runs a whole sprint unattended and
+what that shows is fixed. Everything later stands on an engine that can be
+left alone, and is judged by the numbers.
+
+### Stage 2 — the manager and people
+
+The design agreed on 2026-11-19 is in `docs/sprints/backlog.md` ("Owner
+decisions, 2026-11-19"). In order:
+
+1. A simple identity system inside Foreman (owner, 2026-11-19: "We
+   shouldn't be blocked by something so simple"). People sign in to Foreman
+   itself; a company-wide identity service can replace it later.
+2. The manager as project lead: sees everything, investigates freely,
+   operates Foreman directly when asked (recorded under the person's name),
+   writes no product code. Its vocabulary gains per-task model and policy
+   overrides, notes to the developer, the workflow before a task starts,
+   and engine control.
+3. People in a project: owner and member; a responsible person per task,
+   separate from whether the task is accepted; handing over; a change to
+   someone else's work is a request to them; a change based on an
+   out-of-date task is refused, saying what changed and by whom.
+4. Notices to the responsible person and always to owners, with a view of
+   pending work.
+5. One manager conversation per person per project.
+6. The record closed at `main`: only Foreman's merge moves it, and a commit
+   on `main` with no task behind it is reported.
+
+### Stage 3 — a method for the agents
+
+A way of working built into Foreman's roles, workflows and generated
+`AGENTS.md`: planning before code, tests with the change, commits and
+branches, which docs a change updates, what the developer reports and with
+what evidence, when to stop and ask, how a reviewer judges. The planner step
+per task (criteria and a protected test written by someone other than the
+developer) belongs here. Claude writes a proposal for the owner to correct.
+
+### Stage 4 — resources and environments
+
+Project resources (databases, service accounts, secrets, buckets) recorded
+with where they live, which task created them, how to remove them, and a
+reference to their secret, never its value. Per-run environments through
+the test and worktree set-up commands, with a documented pattern. A step
+that creates something outside the repository is recorded and gated by
+policy when it touches shared systems.
+
+### Stage 5 — navigation: a left bar
+
+Views per project: board and sprints, backlog, resources, docs (spec, ADRs,
+status read in place; the spec editor may grow from it), people, activity,
+settings. Workspace level: projects, shared roles and workflows, later
+machines. It revises the approved design (v7), so a design reference comes
+first, one screen at a time. A code browser stays out (owner, 2026-06-16).
+
+### Stage 6 — central server and workers (owner direction 1)
+
+One Foreman on a server, agents run as a service user created at
+installation; sign-in through stage 2's identity, replaceable by the
+company's; a worker program per machine that connects out, works in its own
+clones and sends events and branches back; machines carry labels and steps
+state what they need. Alongside: the database out of the repository,
+migrations as a deploy step, a deployment guide. First case: the BricsCAD
+MCP server on Windows.
+
+### Stage 7 — a fleet of harnesses
+
+Codex made real (smoke test, recorded cost, the same task through both),
+then others; harness and model chosen per role, step or task type by
+capability or price, judged by stage 1's numbers.
+
+### Stage 8 — above the task (owner directions 3 and 4)
+
+A declarative sprint workflow (plan, tasks, checks on the integrated `main`,
+fix tasks into the same sprint until they pass); roles that look at a whole
+sprint; releases through existing CI/CD, whose connector also reads CI
+checks on task branches.
+
+### Stage 9 — memory
+
+Lessons from reviews and failed attempts fed back into a project's
+instructions or retrieved for the task at hand; per-role memory;
+company-level knowledge across projects. A first step can come with stage 3:
+repeated review findings proposed as additions to the project's
+instructions.
+
+### Later, recorded but not scheduled
+
+Shared compute through a cluster manager (owner direction 2); ticketing apps
+in both directions; replying from notifications; recurring and
+event-triggered loops; projects over several repositories; the spec editor.
+
+### Dependencies
+
+Stage 1 before everything. Stage 2 before 5 and 6. Stage 3 before 7. Stage 4
+before 5. Stage 6 before the owner's colleagues use Foreman. Stages 7, 8 and
+9 in any order after 6.
+
+## History: milestones 0 to 23
 
 ## Milestone 0: Repo reset and bootstrap
 
@@ -505,5 +621,4 @@ Status:
 
 ## Near-term priorities
 
-- no prioritised backlog items; define next slice from spec gaps or operator
-  feedback
+- See "The roadmap from 2026-11-19" at the top of this file.
