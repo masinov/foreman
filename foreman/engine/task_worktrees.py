@@ -13,7 +13,7 @@ from ..domain.models import Project, Task
 from ..store import ForemanStore
 from ..repo.worktrees import WorktreeError, WorktreeManager, enforce_worktree_limit, task_slug
 from .errors import OrchestratorError
-from .records import RunRecords
+from ..history.records import RunRecords
 from .task_writes import TaskWrites
 
 

@@ -29,7 +29,7 @@ from typing import Callable
 
 from ..domain.errors import ForemanError
 from ..domain.leases import generate_lease_token
-from .logs import get_logger, log_event
+from ..history.logs import get_logger, log_event
 from ..domain.models import Lease
 from ..store import ENGINE_RESOURCE_TYPE, ForemanStore
 

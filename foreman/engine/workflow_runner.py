@@ -56,7 +56,7 @@ from .output_contract import (
     with_retry_instruction,
 )
 from .prompts import PromptBuilder
-from .records import RunRecords, new_id
+from ..history.records import RunRecords, new_id
 from .results import AgentExecutionResult
 from .signals import SignalHandler
 from .task_worktrees import TaskWorktrees

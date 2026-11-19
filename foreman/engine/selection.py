@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 
 from ..domain.models import Project, Sprint, Task
+from ..mutations import MutationError, Mutations
 from ..store import ForemanStore
 from .errors import OrchestratorError
 from .leasing import TaskLeases
@@ -134,8 +135,6 @@ class TaskSelector:
         The limit per sprint is what bounds an agent filing work that Foreman
         then starts, which files more: each turn of that loop uses one.
         """
-
-        from ..mutations import MutationError, Mutations
 
         limit = resolve_project_settings(project).max_autonomous_tasks
         if len(pulled_task_ids(self.store, sprint)) >= limit:

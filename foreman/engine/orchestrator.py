@@ -30,7 +30,9 @@ from .limits import (
     resolve_project_settings,
 )
 from .prompts import PromptBuilder
-from .records import RunRecords, new_id
+from ..history.records import RunRecords
+from ..mutations import MutationError
+from ..mutations.gates import find_gate_stop, record_gate_decision
 from .task_worktrees import TaskWorktrees
 from .workflow_runner import WorkflowRunner
 from .retention import Retention
@@ -46,17 +48,15 @@ from .results import (
     quota_run_result,
 )
 from ..domain.errors import EngineCommandInterrupt
-from .logs import get_logger
+from ..history.logs import get_logger
 from ..domain.models import (
     CompletionEvidence,
     Event,
-    HumanGateDecision,
     Project,
     Task,
     utc_now_text,
 )
 from ..notifications import NotificationDispatcher
-from ..domain.outcomes import APPROVE, DENY
 from ..runner import ClaudeCodeRunner, CodexRunner
 from ..runner.base import AgentRunner as NativeAgentRunner
 from ..runner.process import EngineShutdown
@@ -777,49 +777,15 @@ class ForemanOrchestrator:
         project lock and the task lease) executes. ADR-0011.
         """
 
-        if outcome not in {APPROVE, DENY}:
-            raise OrchestratorError(f"Unsupported human-gate outcome {outcome!r}.")
-
-        current_task = self.store.get_task(task_id)
-        if current_task is None:
-            raise OrchestratorError(f"Unknown task {task_id!r}.")
-        if current_task.status != "blocked" or not current_task.workflow_current_step:
-            raise OrchestratorError(
-                f"Task {task_id!r} is not paused at a human gate."
+        try:
+            stop = find_gate_stop(
+                self.store, task_id, outcome, self._load_workflow_for_project
             )
+        except MutationError as exc:
+            raise OrchestratorError(str(exc)) from exc
+        project, workflow = stop.project, stop.workflow
+        next_step = stop.next_step
 
-        project = self.store.get_project(current_task.project_id)
-        if project is None:
-            raise OrchestratorError(
-                f"Task {task_id!r} references unknown project {current_task.project_id!r}."
-            )
-        workflow = self._load_workflow_for_project(project)
-        paused_step = workflow.get_step(current_task.workflow_current_step)
-        if paused_step is None or paused_step.role != "_builtin:human_gate":
-            raise OrchestratorError(
-                f"Task {task_id!r} is not paused on a resumable human-gate step."
-            )
-
-        transition = workflow.find_transition(paused_step.id, outcome)
-        if transition is None:
-            raise OrchestratorError(
-                f"Workflow {workflow.id!r} has no `{outcome}` transition from "
-                f"{paused_step.id!r}."
-            )
-
-        next_step = workflow.get_step(transition.to_step)
-        if next_step is None:
-            raise OrchestratorError(
-                f"Workflow {workflow.id!r} is missing step {transition.to_step!r}."
-            )
-
-        carried_output = current_task.workflow_carried_output
-        if outcome == "deny" and note:
-            carried_output = note
-
-        decision_detail = note or (
-            "Approved by human." if outcome == "approve" else "Denied by human."
-        )
         deferred = False
         if not next_step.role.startswith("_builtin:"):
             next_role = self.roles.get(next_step.role)
@@ -836,58 +802,16 @@ class ForemanOrchestrator:
                 and not native_backend_available
             )
         deferred = deferred or defer
-        decision_run = self.records.create_system_run(
-            current_task,
-            workflow_step=paused_step.id,
+        record = record_gate_decision(
+            self.store,
+            self.records,
+            stop,
             outcome=outcome,
-            detail=decision_detail,
-            role_id="_builtin:human_gate",
-            agent_backend="human",
-        )
-        self.records.emit_event(
-            decision_run,
-            "workflow.transition",
-            {
-                "from_step": paused_step.id,
-                "to_step": transition.to_step,
-                "trigger": f"completion:{outcome}",
-            },
-        )
-        event_payload = {
-            "step": paused_step.id,
-            "decision": outcome,
-            "next_step": transition.to_step,
-            "deferred": deferred,
-        }
-        if note:
-            event_payload["note"] = note
-        self.records.emit_event(
-            decision_run,
-            "workflow.resumed",
-            event_payload,
-        )
-
-        # Persist human gate decision as a durable audit record
-        human_decision = HumanGateDecision(
-            id=new_id("hg"),
-            task_id=current_task.id,
-            project_id=project.id,
-            workflow_step=paused_step.id,
-            decision=outcome,
             note=note,
-            decided_by="human",
-            decided_at=utc_now_text(),
-            run_id=decision_run.id,
+            deferred=deferred,
+            save=self.tasks.save,
         )
-        self.store.save_human_gate_decision(human_decision)
-
-        current_task.status = "in_progress"
-        current_task.blocked_reason = None
-        # One write: a crash between "decision recorded" and "next step
-        # recorded" must not leave a task that restarts from its entry step.
-        current_task.workflow_current_step = transition.to_step if deferred else None
-        current_task.workflow_carried_output = carried_output if deferred else None
-        self.tasks.save(current_task)
+        current_task, carried_output = record.task, record.carried_output
 
         if deferred:
             refreshed = self.store.get_task(current_task.id)
@@ -898,8 +822,8 @@ class ForemanOrchestrator:
             return HumanGateResumeResult(
                 task=refreshed,
                 decision=outcome,
-                paused_step=paused_step.id,
-                next_step=transition.to_step,
+                paused_step=stop.paused_step,
+                next_step=next_step.id,
                 deferred=True,
                 carried_output=carried_output,
                 note=note,
@@ -918,7 +842,7 @@ class ForemanOrchestrator:
             project,
             workflow,
             current_task,
-            step=transition.to_step,
+            step=next_step.id,
             carried_output=carried_output,
         )
         refreshed = self.store.get_task(current_task.id)
@@ -942,8 +866,8 @@ class ForemanOrchestrator:
         return HumanGateResumeResult(
             task=refreshed,
             decision=outcome,
-            paused_step=paused_step.id,
-            next_step=transition.to_step,
+            paused_step=stop.paused_step,
+            next_step=next_step.id,
             deferred=False,
             carried_output=carried_output,
             note=note,

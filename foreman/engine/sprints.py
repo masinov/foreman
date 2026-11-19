@@ -8,7 +8,7 @@ from typing import Any
 
 from ..domain.models import Project, Sprint
 from ..store import ForemanStore
-from .records import RunRecords
+from ..history.records import RunRecords
 
 
 class SprintFlow:

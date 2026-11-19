@@ -42,7 +42,7 @@ from typing import Callable
 
 from .lock import EngineBusyError, EngineLock
 from ..domain.errors import EngineCommandInterrupt
-from .logs import get_logger, log_event
+from ..history.logs import get_logger, log_event
 from ..domain.models import ENGINE_COMMANDS_NEEDING_A_RESIDENT_ENGINE, EngineCommand, Task
 from ..notifications import NotificationDeliveryWorker
 from .orchestrator import (

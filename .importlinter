@@ -16,11 +16,7 @@ layers =
     meta_agent : planning : digest : proposals
     engine
     mutations
+    history
     definitions | repo | notifications | runner
     store
     domain | data
-ignore_imports =
-    # A person's gate decision is recorded by the orchestrator; it moves below
-    # the engine in the next slice. The list only shrinks: an entry that no
-    # longer matches an import fails the check.
-    foreman.mutations -> foreman.engine.orchestrator

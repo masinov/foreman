@@ -15,7 +15,7 @@ from ..engine.control import (
 )
 from ..engine.lock import EngineBusyError, EngineLock
 from ..domain.errors import EngineCommandInterrupt
-from ..engine.logs import configure_json_logging
+from ..history.logs import configure_json_logging
 from ..domain.models import EngineCommand
 from ..engine.orchestrator import ForemanOrchestrator, OrchestratorError
 from ..runner.process import EngineShutdown, install_shutdown_handlers

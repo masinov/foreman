@@ -28,7 +28,7 @@ from ..domain.leases import generate_lease_token
 from ..domain.models import Project, Task
 from ..store import ForemanStore
 from .errors import LeaseLostError
-from .logs import log_event
+from ..history.logs import log_event
 
 # Renewals per lease lifetime; a lease survives two missed heartbeats.
 _BEATS_PER_LEASE = 3
