@@ -51,3 +51,19 @@ project's autonomy level is autonomous.
 - Implemented in `SprintFlow.resolve`. `engine.sprint_ready` is emitted once
   per resolution of a directed or supervised sprint, with the resolving task
   ids, and is the dedupe key for the `sprint_resolved` attention turn.
+
+## Amendment, 2026-11-19: "Finish sprints" is its own setting
+
+The owner asked that autonomy let the engine run on its own for merges and
+for finishing sprints, each when the person wants it. Merges already had
+that ("Approve merges: A person / Foreman"). Finishing a sprint depended on
+the project's autonomy level, which no page and no command set, so it could
+not be chosen.
+
+The decision is now the project setting `sprint_completion`: `human` (the
+default) or `auto`. The dashboard shows it as "Finish sprints: A person /
+Foreman", beside "Approve merges". The engine finishes a resolved sprint
+only when it is `auto`. The autonomy level no longer decides it; its
+remaining meaning is "directed", where the manager may only recommend. A
+sprint is not a task, so no task override or per-type rule applies to this
+setting.

@@ -292,11 +292,12 @@ class BacklogIsNeverRunTests(RepoTestCase):
         self.addCleanup(self.store.close)
         self.store.initialize()
 
-    def _project(self, *, mode: str = "directed", autonomy: str = "supervised") -> Project:
+    def _project(self, *, mode: str = "directed", foreman_finishes: bool = False) -> Project:
+        settings = {"task_selection_mode": mode}
+        if foreman_finishes:
+            settings["sprint_completion"] = "auto"
         project = Project(
-            id="p", name="P", repo_path="/tmp/p", workflow_id="development",
-            autonomy_level=autonomy,  # type: ignore[arg-type]
-            settings={"task_selection_mode": mode},
+            id="p", name="P", repo_path="/tmp/p", workflow_id="development", settings=settings,
         )
         self.store.save_project(project)
         return project
@@ -331,7 +332,7 @@ class BacklogIsNeverRunTests(RepoTestCase):
         self.assertIsNone(self.store.get_next_planned_sprint("p"))
 
     def test_finishing_the_last_sprint_does_not_advance_into_the_backlog(self) -> None:
-        project = self._project(autonomy="autonomous")
+        project = self._project(foreman_finishes=True)
         self._backlog_task()
         sprint = Sprint(id="s", project_id="p", title="S", status="active")
         self.store.save_sprint(sprint)

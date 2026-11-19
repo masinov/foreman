@@ -136,6 +136,11 @@ class ProjectSettings:
     triage: str = "human"
     notification: str = "attention"
     policy_rules: dict[str, dict[str, str]] = field(default_factory=dict)
+    # Who finishes a sprint once every task of it is done or cancelled
+    # (ADR-0025): "human" leaves it active for a person to finish; "auto" lets
+    # the engine finish it and start the next one. A sprint is not a task, so
+    # this is the project's alone: no task override or rule applies.
+    sprint_completion: str = "human"
     # Per-run cost ceiling that can lower a role's; 0 means the role's applies.
     runner_max_cost_usd: float = 0.0
     runner_permission_mode: str = "auto"
@@ -196,6 +201,7 @@ class ProjectSettings:
             plan_approval=_validate_policy_default(raw, "plan_approval"),
             triage=_validate_policy_default(raw, "triage"),
             notification=_validate_policy_default(raw, "notification"),
+            sprint_completion=_validate_sprint_completion(raw.get("sprint_completion")),
             policy_rules=_validate_policy_rules(raw.get("policy_rules")),
             runner_max_cost_usd=_validate_non_negative_float(
                 raw.get("runner_max_cost_usd"), default=0.0
@@ -283,6 +289,20 @@ def _validate_worktree_link_paths(value: Any) -> tuple[str, ...]:
 
 
 GATE_POLICY_VALUES: tuple[str, ...] = ("auto", "human")
+
+
+#: Who may finish a sprint: a person, or the engine.
+SPRINT_COMPLETION_VALUES: tuple[str, ...] = ("auto", "human")
+
+
+def _validate_sprint_completion(value: Any) -> str:
+    if value is None or value == "":
+        return "human"
+    if value not in SPRINT_COMPLETION_VALUES:
+        raise SettingsError(
+            f"sprint_completion must be one of {', '.join(SPRINT_COMPLETION_VALUES)}, got {value!r}"
+        )
+    return str(value)
 
 
 def _validate_policy_default(raw: dict[str, Any], decision: str) -> str:

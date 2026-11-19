@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Any
 
 from ..domain.models import Project, Sprint
+from ..domain.settings import settings_of
 from ..store import ForemanStore
 from ..history.records import RunRecords
 
@@ -44,25 +45,25 @@ class SprintFlow:
         return bool(tasks) and all(t.status in {"done", "cancelled"} for t in tasks)
 
     def resolve(self, project: Project, sprint: Sprint) -> str | None:
-        """Handle a fully resolved active sprint according to the autonomy level.
+        """Handle a fully resolved active sprint as the project says.
 
-        Only an autonomous project has its sprint finished by the engine
-        (ADR-0025). In a directed or supervised project the sprint stays
-        active and the engine hands the next move to a person.
+        The engine finishes the sprint only where the project lets Foreman
+        finish sprints (``sprint_completion = "auto"``, ADR-0025 amendment).
+        Otherwise the sprint stays active and the engine hands the next move
+        to a person.
 
         Returns:
-            None              — autonomous: next sprint is active, keep looping.
-            "idle"            — autonomous: sprint completed, no further sprint.
-            "sprint_resolved" — directed/supervised: sprint left active, waiting
-                                for a person to finish it.
+            None              — Foreman finishes: next sprint is active, keep looping.
+            "idle"            — Foreman finishes: sprint completed, no further sprint.
+            "sprint_resolved" — a person finishes: sprint left active for them.
         """
-        if project.autonomy_level == "autonomous":
+        if settings_of(project).sprint_completion == "auto":
             return self._complete_and_advance(project, sprint)
         self._announce_resolved(project, sprint)
         return "sprint_resolved"
 
     def _complete_and_advance(self, project: Project, sprint: Sprint) -> str | None:
-        """Complete *sprint* (autonomous projects only) and activate the next one."""
+        """Complete *sprint* (where Foreman finishes sprints) and activate the next one."""
         now = self.utc_now().isoformat()
         sprint.status = "completed"
         sprint.completed_at = now

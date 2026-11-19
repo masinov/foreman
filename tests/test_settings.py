@@ -132,6 +132,12 @@ class ProjectSettingsFromRawTests(unittest.TestCase):
         self.assertEqual(settings.meta_agent_model, "claude-opus-4-8")
         self.assertEqual(settings.review_diff_max_chars, 8000)
 
+    def test_sprint_completion_defaults_to_a_person_and_takes_auto(self) -> None:
+        self.assertEqual(ProjectSettings.from_raw({}).sprint_completion, "human")
+        self.assertEqual(ProjectSettings.from_raw({"sprint_completion": "auto"}).sprint_completion, "auto")
+        with self.assertRaises(SettingsError):
+            ProjectSettings.from_raw({"sprint_completion": "sometimes"})
+
     def test_review_diff_max_chars_must_be_positive(self) -> None:
         with self.assertRaises(SettingsError):
             ProjectSettings.from_raw({"review_diff_max_chars": 0})

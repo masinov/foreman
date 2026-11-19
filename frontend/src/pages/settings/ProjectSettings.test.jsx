@@ -154,6 +154,17 @@ describe("General: Save and Discard", () => {
     expect(screen.getByRole("button", { name: "Discard" })).toBeEnabled();
   });
 
+  it("lets a person or Foreman finish sprints, beside who approves merges", async () => {
+    const fetchImpl = await renderGeneral();
+    fetchImpl.routes[SAVE_URL] = settingsPayload();
+    const who = screen.getByRole("region", { name: "Who decides" });
+    expect(within(who).getByLabelText("Finish sprints").selectedOptions[0]).toHaveTextContent("A person");
+    fireEvent.change(within(who).getByLabelText("Finish sprints"), { target: { value: "auto" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(saves(fetchImpl)).toHaveLength(1));
+    expect(saves(fetchImpl)[0].body.settings).toEqual({ sprint_completion: "auto" });
+  });
+
   it("sends only what changed, in the units the API stores", async () => {
     const fetchImpl = await renderGeneral();
     fetchImpl.routes[SAVE_URL] = settingsPayload();

@@ -11,6 +11,7 @@ export const EFFECTIVE = {
   triage: "human",
   plan_approval: "human",
   merge_approval: "auto",
+  sprint_completion: "human",
   policy_rules: {},
   task_selection_mode: "directed",
   max_autonomous_tasks: 5,
