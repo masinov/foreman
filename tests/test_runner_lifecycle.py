@@ -22,7 +22,8 @@ from pathlib import Path
 
 from foreman.engine.builtins import BuiltinExecutor
 from foreman.domain.models import Project, Sprint, Task
-from foreman.engine.orchestrator import ForemanOrchestrator, LeaseLostError
+from foreman.engine.orchestrator import ForemanOrchestrator
+from foreman.engine.errors import LeaseLostError
 from foreman.runner import AgentRunConfig, ClaudeCodeRunner, CodexRunner, InfrastructureError
 from foreman.runner.base import AgentEvent
 from foreman.runner.codex import _JsonRpcClient

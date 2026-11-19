@@ -169,11 +169,14 @@ These are known and not hidden by the contract:
   store and does not call the services, whose answers are shaped for the
   API. Two surfaces reading the same rows can still show them differently;
   they can no longer change them differently.
-- **Some modules are long, each within one concern:**
-  `engine/workflow_runner` (1,175 lines), `engine/resident` (1,091),
-  `engine/builtins` (1,048), `cli/tasks` (921), `engine/orchestrator`
-  (898). Splitting them needs the same care as `Mutations` (a part per
-  concern), and is not a layering fault.
+- **Some functions are long.** The five long modules are split by concern
+  (below), but seven functions are still over 200 lines:
+  `AgentStepRunner.execute_native` (301), `AgentSteps._run_agent_step`
+  (299), `ResidentEngineBase.run` (276), `create_dashboard_app` (262),
+  `EvidenceBuilder.build` (246), `MergeStep._merge` (213) and
+  `register_task` (218, which only declares arguments). The engine's are
+  each one step of its control flow. Splitting them changes how that flow
+  reads, and needs its own slice with tests aimed at each branch.
 - Import order is sorted (`ruff`'s `I` rule) only in the modules this
   refactor touched. The rule is not on for the whole repository yet.
 
@@ -204,6 +207,26 @@ builds a project, sprint, task, decision gate or merge waiver itself.**
 notification channel) is called from a surface as it is: it is already the
 one implementation. The engine-command table is the engine's control
 channel by design (ADR-0011).
+
+## The long modules, by concern (2026-11-19)
+
+Each of the five longest modules became a package. Its class is put
+together from a part per concern, as `ForemanStore` and `Mutations` are, and
+is imported from the same place as before:
+
+| Before | After |
+|---|---|
+| `engine/builtins` (1,048 lines) | `engine/builtins/`: `base` (dispatch, human gate, context write), `run_tests`, `merge`, `completion` (the completion guard and waivers), `done` |
+| `engine/orchestrator` (898) | `engine/orchestrator/`: `base`, `passes` (a project pass), `tasks` (one task under a lease), `gates` (resuming from a human gate) |
+| `engine/workflow_runner` (1,175) | `engine/workflow_runner/`: `base` (the loop), `checks`, `builtin_steps`, `agent_steps`, `transitions` |
+| `engine/resident` (1,091) | `engine/resident/`: `base` (the resident loop), `commands` (the command table), `waiting`, `serve` (`serve_project`) |
+| `cli/tasks` (921) | `cli/tasks/`: `register`, `reads`, `changes`, `lifecycle` |
+
+The longest module in the backend is now `store/migrations` (943 lines, an
+append-only list). After it come `repo/worktrees` (841), `runner/claude_code`
+(826) and `domain/models` (795), each one concern. Both parts of the
+resident engine that stop agent processes now reach them through
+`foreman.runner.process`, so a test replaces `terminate_all` in one place.
 
 ## Consequences
 

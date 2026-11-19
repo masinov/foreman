@@ -15,13 +15,12 @@ from ..definitions.layers import (
     save_role,
     save_workflow,
 )
+from ..definitions.roles import RoleLoadError
+from ..definitions.workflows import WorkflowLoadError
 from ..engine.control import default_command_requester
 from ..runner.model_check import check_model
-from ..definitions.roles import RoleLoadError
 from ..store import ForemanStore
-from ..definitions.workflows import WorkflowLoadError
 from .common import print_lines, resolve_db_path_or_print, set_handler
-
 
 WORKSPACE_NAME = "the workspace"
 

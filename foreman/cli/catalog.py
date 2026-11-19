@@ -6,8 +6,11 @@ import argparse
 import sys
 
 from ..definitions.roles import RoleLoadError, default_roles_dir, load_roles
-from ..definitions.workflows import WorkflowLoadError, default_workflows_dir, load_workflows
-
+from ..definitions.workflows import (
+    WorkflowLoadError,
+    default_workflows_dir,
+    load_workflows,
+)
 from .common import (
     print_lines,
     role_outcomes,

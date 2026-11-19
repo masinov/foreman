@@ -936,7 +936,7 @@ class ServeDeliveryTests(unittest.TestCase):
             command_poll = None
 
             def run_project(self, project_id, *, task_id=None, maintenance=True):
-                from foreman.engine.orchestrator import ProjectRunResult
+                from foreman.engine.results import ProjectRunResult
 
                 return ProjectRunResult(
                     project_id=project_id,

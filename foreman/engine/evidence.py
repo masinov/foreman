@@ -4,7 +4,7 @@
 ``CompletionEvidence``: which commit is the branch head, whether the tests
 passed and on which commit, what each reviewer decided and on which commit,
 and what a judge model said about each acceptance criterion. It decides
-nothing about the workflow; the merge guard in ``foreman.engine.builtins`` does.
+nothing about the workflow; the merge guard in ``foreman.engine.builtins.base`` does.
 """
 
 from __future__ import annotations

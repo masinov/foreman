@@ -5,9 +5,8 @@ from __future__ import annotations
 import argparse
 import sqlite3
 
-from ..store.migrations import MIGRATIONS
 from ..store import ForemanStore
-
+from ..store.migrations import MIGRATIONS
 from .common import (
     add_db_option,
     resolve_db_path_or_print,

@@ -5,18 +5,19 @@ from __future__ import annotations
 import argparse
 import sys
 
-from ..engine.orchestrator import ForemanOrchestrator, OrchestratorError
+from ..engine.errors import OrchestratorError
+from ..engine.orchestrator import ForemanOrchestrator
+from ..mutations import MutationError
+from ..mutations.gates import MERGE_WAIVER_TYPES
 from ..store import ForemanStore
 from .common import (
     DB_OPTION_NOTE,
     add_db_option,
+    cli_mutations,
     print_lines,
     resolve_db_path_or_print,
     set_handler,
 )
-from .common import cli_mutations
-from ..mutations import MutationError
-from ..mutations.gates import MERGE_WAIVER_TYPES
 
 
 def handle_approve(args: argparse.Namespace) -> int:

@@ -28,7 +28,8 @@ from foreman.domain.models import (
     Sprint,
     Task,
 )
-from foreman.engine.orchestrator import ForemanOrchestrator, OrchestratorError
+from foreman.engine.orchestrator import ForemanOrchestrator
+from foreman.engine.errors import OrchestratorError
 from foreman.domain.settings import ProjectSettings, SettingsError
 from foreman.store import ForemanStore
 from foreman.store.base import MigrationError, _SCHEMA_MIGRATIONS_DDL, _split_sql_statements

@@ -15,9 +15,12 @@ from ..engine.control import (
     default_command_requester,
     describe_engine,
 )
+from ..engine.errors import OrchestratorError
 from ..engine.lock import EngineBusyError, EngineLock
-from ..engine.orchestrator import ForemanOrchestrator, OrchestratorError
-from ..engine.resident import DEFAULT_POLL_SECONDS, ResidentEngine, serve_project
+from ..engine.orchestrator import ForemanOrchestrator
+from ..engine.resident.base import DEFAULT_POLL_SECONDS
+from ..engine.resident import ResidentEngine
+from ..engine.resident.serve import serve_project
 from ..history.logs import configure_json_logging
 from ..notifications.delivery import (
     NotificationDeliveryWorker,
@@ -164,7 +167,7 @@ def handle_serve(args: argparse.Namespace) -> int:
     """Handle ``foreman serve``.
 
     Thin by design: everything about the loop, the lock, and the waiting lives
-    in ``foreman.engine.resident``. This function resolves arguments, turns on JSON
+    in ``foreman.engine.resident.base``. This function resolves arguments, turns on JSON
     logging (the resident engine has no terminal to print to), and maps the
     result to an exit code.
     """

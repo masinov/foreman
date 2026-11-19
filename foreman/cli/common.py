@@ -5,23 +5,22 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from pathlib import Path
 import sys
+from pathlib import Path
 from typing import Any, Callable
 
+from ..definitions.layers import project_definitions
+from ..definitions.roles import RoleLoadError
+from ..definitions.workflows import WorkflowLoadError
+from ..domain.models import Event, Project, Sprint, Task
 from ..engine.control import (
     default_command_requester,
 )
-from ..domain.models import Event, Project, Sprint, Task
-from ..definitions.roles import RoleLoadError
-from ..definitions.layers import project_definitions
 from ..mutations import Mutations
 from ..repo.scaffold import (
     DEFAULT_DB_FILENAME,
 )
 from ..store import ForemanStore
-from ..definitions.workflows import WorkflowLoadError
-
 
 #: Exit code of ``foreman run`` when the pass stopped because the agent backend's
 #: usage quota ran out (BSD ``EX_TEMPFAIL``): nothing is broken, try again later.

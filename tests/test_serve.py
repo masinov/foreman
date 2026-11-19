@@ -30,13 +30,21 @@ from foreman.history.logs import (
 from foreman.domain.models import Project, Run, Sprint, Task
 from foreman.engine.orchestrator import (
     ForemanOrchestrator,
+)
+from foreman.engine.errors import (
     OrchestratorError,
+)
+from foreman.engine.results import (
     ProjectRunResult,
+)
+from foreman.engine.errors import (
     TaskExecutionError,
 )
 from foreman.runner.base import AgentEvent, AgentRunConfig
 from foreman.runner.process import EngineShutdown
-from foreman.engine.resident import ResidentEngine, ServeResult, serve_project
+from foreman.engine.resident import ResidentEngine
+from foreman.engine.resident.base import ServeResult
+from foreman.engine.resident.serve import serve_project
 from foreman.store import ForemanStore
 
 
@@ -494,7 +502,7 @@ class ResidentEngineLoopTests(unittest.TestCase):
         )
 
     def test_task_failure_is_isolated_with_a_doubling_backoff(self) -> None:
-        from foreman.engine.orchestrator import TaskExecutionError
+        from foreman.engine.errors import TaskExecutionError
 
         orchestrator = _StubOrchestrator(
             [
@@ -519,7 +527,7 @@ class ResidentEngineLoopTests(unittest.TestCase):
         )
 
     def test_backoff_resets_after_a_successful_pass(self) -> None:
-        from foreman.engine.orchestrator import TaskExecutionError
+        from foreman.engine.errors import TaskExecutionError
 
         orchestrator = _StubOrchestrator(
             [
@@ -536,7 +544,7 @@ class ResidentEngineLoopTests(unittest.TestCase):
         self.assertAlmostEqual(self.clock.total_slept, 5.0 + 10.0 + 5.0, places=6)
 
     def test_backoff_is_capped(self) -> None:
-        from foreman.engine.resident import MAX_BACKOFF_SECONDS, _Backoff
+        from foreman.engine.resident.base import MAX_BACKOFF_SECONDS, _Backoff
 
         backoff = _Backoff()
         delays = [backoff.record_failure() for _ in range(12)]
@@ -1049,7 +1057,7 @@ class ServeShutdownTests(unittest.TestCase):
             )
 
             with unittest.mock.patch(
-                "foreman.engine.resident.terminate_all", return_value=0
+                "foreman.runner.process.terminate_all", return_value=0
             ) as terminated:
                 result = serve_project(
                     store=store,
@@ -1362,7 +1370,7 @@ class QuotaWaitTests(unittest.TestCase):
     def test_wait_is_derived_from_the_reset_time_with_grace_and_bounds(self) -> None:
         from datetime import datetime, timezone
 
-        from foreman.engine.resident import (
+        from foreman.engine.resident.base import (
             DEFAULT_QUOTA_WAIT_SECONDS,
             MAX_QUOTA_WAIT_SECONDS,
             MIN_QUOTA_WAIT_SECONDS,
@@ -2057,7 +2065,7 @@ class EngineCommandDuringAgentStepTests(unittest.TestCase):
             )
 
             with unittest.mock.patch(
-                "foreman.engine.resident.terminate_all", return_value=1
+                "foreman.runner.process.terminate_all", return_value=1
             ) as terminated:
                 result = self._serve(runner, db_path, store, once=True)
 
@@ -2103,7 +2111,7 @@ class EngineCommandDuringAgentStepTests(unittest.TestCase):
             runner = _CommandingRunner.for_command(
                 db_path, project_id="project-1", command="pause", requested_by="alice"
             )
-            with unittest.mock.patch("foreman.engine.resident.terminate_all", return_value=1):
+            with unittest.mock.patch("foreman.runner.process.terminate_all", return_value=1):
                 self._serve(runner, db_path, store, once=True)
 
             self.assertIsNone(
@@ -2125,7 +2133,7 @@ class EngineCommandDuringAgentStepTests(unittest.TestCase):
             )
 
             with unittest.mock.patch(
-                "foreman.engine.resident.terminate_all", return_value=1
+                "foreman.runner.process.terminate_all", return_value=1
             ) as terminated:
                 result = self._serve(runner, db_path, store, once=True)
 
@@ -2172,7 +2180,7 @@ class EngineCommandDuringAgentStepTests(unittest.TestCase):
                 task_id="task-1",
             )
 
-            with unittest.mock.patch("foreman.engine.resident.terminate_all", return_value=1) as terminated:
+            with unittest.mock.patch("foreman.runner.process.terminate_all", return_value=1) as terminated:
                 result = self._serve(runner, db_path, store, once=True)
 
             terminated.assert_called()
@@ -2265,7 +2273,7 @@ class EngineCommandDuringAgentStepTests(unittest.TestCase):
                     5: ("pause", None, "dana"),
                 },
             )
-            with unittest.mock.patch("foreman.engine.resident.terminate_all", return_value=1):
+            with unittest.mock.patch("foreman.runner.process.terminate_all", return_value=1):
                 self._serve(runner, db_path, store, once=True)
 
             stop, _pause = runner.queued
@@ -2296,7 +2304,7 @@ class EngineCommandDuringAgentStepTests(unittest.TestCase):
                 db_path, project_id="project-1", command="shutdown", requested_by="ops"
             )
 
-            with unittest.mock.patch("foreman.engine.resident.terminate_all", return_value=1):
+            with unittest.mock.patch("foreman.runner.process.terminate_all", return_value=1):
                 result = self._serve(runner, db_path, store)
 
             self.assertEqual(result.exit_code, 0)

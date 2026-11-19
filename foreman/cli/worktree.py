@@ -5,14 +5,13 @@ from __future__ import annotations
 import argparse
 import sys
 
-from ..store import ForemanStore
 from ..repo.worktrees import (
     WorktreeError,
     WorktreeManager,
     prune_project_worktrees,
     worktree_root,
 )
-
+from ..store import ForemanStore
 from .common import (
     DB_OPTION_NOTE,
     add_db_option,

@@ -1,0 +1,244 @@
+"""``foreman task``: the subcommands and their arguments.
+"""
+
+from __future__ import annotations
+
+import argparse
+
+from ...domain.models import TASK_COMPLEXITIES
+from ..common import (
+    DB_OPTION_NOTE,
+    add_db_option,
+    add_json_option,
+    set_handler,
+)
+from .changes import handle_task_add, handle_task_edit, handle_task_override
+from .lifecycle import (
+    handle_task_accept,
+    handle_task_block,
+    handle_task_cancel,
+    handle_task_done,
+    handle_task_reopen,
+    handle_task_unblock,
+)
+from .reads import handle_task_list, handle_task_show
+
+
+def register_task(subparsers: argparse._SubParsersAction) -> None:
+    """Add `foreman task` to the parser."""
+
+    task_parser = subparsers.add_parser(
+        "task",
+        help="Manage tasks.",
+    )
+    task_commands = task_parser.add_subparsers(
+        dest="task_command",
+        metavar="task_command",
+        required=True,
+    )
+    task_add = task_commands.add_parser("add", help="Create a task.")
+    task_add.add_argument("project_id", help="Project identifier.")
+    task_add.add_argument("--title", required=True, help="Task title.")
+    task_add.add_argument("--type", dest="task_type", default="feature", help="Task type.")
+    task_add.add_argument("--criteria", required=True, help="Acceptance criteria.")
+    task_add.add_argument("--description", help="Task description.")
+    task_add.add_argument(
+        "--sprint",
+        dest="sprint_id",
+        metavar="SPRINT_ID",
+        help="Target sprint id. Defaults to the active sprint, else the first planned sprint.",
+    )
+    task_add.add_argument(
+        "--depends-on",
+        dest="depends_on",
+        metavar="TASK_IDS",
+        help="Comma-separated task ids this task depends on (must exist in the same project).",
+    )
+    task_add.add_argument(
+        "--complexity",
+        choices=TASK_COMPLEXITIES,
+        help="How big the task is. A role with a model ladder starts a large task one model up.",
+    )
+    add_db_option(
+        task_add,
+        help_text=f"Path to the SQLite store containing the project. {DB_OPTION_NOTE}",
+    )
+    set_handler(task_add, handle_task_add, "task add")
+
+    task_override = task_commands.add_parser(
+        "override",
+        help="Set per-task executor model overrides for workflow steps.",
+    )
+    task_override.add_argument("task_id", help="Task identifier.")
+    task_override.add_argument(
+        "--step",
+        dest="step_models",
+        action="append",
+        metavar="STEP=MODEL",
+        default=[],
+        help="Pin a model for one workflow step (repeatable), e.g. --step develop=MiniMax-M2.",
+    )
+    task_override.add_argument(
+        "--ladder-start",
+        dest="ladder_start",
+        type=int,
+        help="Override the model-ladder start index for this task.",
+    )
+    task_override.add_argument(
+        "--gate",
+        dest="gate_policies",
+        action="append",
+        metavar="POLICY=auto|human",
+        default=[],
+        help=(
+            "Override a gate policy for this task (repeatable), e.g. "
+            "--gate merge_approval=human. An empty value removes the override."
+        ),
+    )
+    task_override.add_argument(
+        "--triage",
+        metavar="auto|human",
+        help=(
+            "Override the triage policy for this task. An empty value removes "
+            "the override."
+        ),
+    )
+    task_override.add_argument(
+        "--notification",
+        metavar="none|attention|all",
+        help=(
+            "Override the notification policy for this task. An empty value "
+            "removes the override."
+        ),
+    )
+    task_override.add_argument(
+        "--clear",
+        action="store_true",
+        help="Reset all executor overrides for this task to empty.",
+    )
+    add_db_option(
+        task_override,
+        help_text=f"Path to the SQLite store containing the task. {DB_OPTION_NOTE}",
+    )
+    set_handler(task_override, handle_task_override, "task override")
+
+    task_list = task_commands.add_parser("list", help="List project tasks.")
+    task_list.add_argument("project_id", help="Project identifier.")
+    task_list.add_argument("--sprint", metavar="SPRINT_ID", help="Filter to a specific sprint.")
+    add_db_option(
+        task_list,
+        help_text=f"Path to the SQLite store containing the project. {DB_OPTION_NOTE}",
+    )
+    add_json_option(task_list)
+    set_handler(task_list, handle_task_list, "task list")
+
+    task_show = task_commands.add_parser("show", help="Show one task with recent runs and events.")
+    task_show.add_argument("task_id", help="Task identifier.")
+    task_show.add_argument(
+        "--runs",
+        type=int,
+        default=3,
+        help="Number of recent runs to include.",
+    )
+    task_show.add_argument(
+        "--events",
+        type=int,
+        default=8,
+        help="Number of recent events to include.",
+    )
+    add_db_option(
+        task_show,
+        help_text=f"Path to the SQLite store containing the task. {DB_OPTION_NOTE}",
+    )
+    set_handler(task_show, handle_task_show, "task show")
+
+    task_block = task_commands.add_parser("block", help="Block a task.")
+    task_block.add_argument("task_id", help="Task identifier.")
+    task_block.add_argument("--reason", required=True, help="Blocking reason.")
+    add_db_option(
+        task_block,
+        help_text=f"Path to the SQLite store containing the task. {DB_OPTION_NOTE}",
+    )
+    set_handler(task_block, handle_task_block, "task block")
+
+    task_unblock = task_commands.add_parser("unblock", help="Unblock a task.")
+    task_unblock.add_argument("task_id", help="Task identifier.")
+    add_db_option(
+        task_unblock,
+        help_text=f"Path to the SQLite store containing the task. {DB_OPTION_NOTE}",
+    )
+    set_handler(task_unblock, handle_task_unblock, "task unblock")
+
+    task_accept = task_commands.add_parser(
+        "accept",
+        help="Accept a filed task. In the backlog it then waits to be planned into a sprint.",
+    )
+    task_accept.add_argument("task_id", help="Task identifier.")
+    add_db_option(
+        task_accept,
+        help_text=f"Path to the SQLite store containing the task. {DB_OPTION_NOTE}",
+    )
+    set_handler(task_accept, handle_task_accept, "task accept")
+
+    task_done = task_commands.add_parser(
+        "done",
+        help="Mark a task done by hand, for work finished outside the engine.",
+    )
+    task_done.add_argument("task_id", help="Task identifier.")
+    task_done.add_argument("--reason", required=True, help="Why it is done; recorded on the task.")
+    add_db_option(
+        task_done,
+        help_text=f"Path to the SQLite store containing the task. {DB_OPTION_NOTE}",
+    )
+    set_handler(task_done, handle_task_done, "task done")
+
+    task_reopen = task_commands.add_parser(
+        "reopen",
+        help="Return a done or cancelled task to the queue; its workflow starts over.",
+    )
+    task_reopen.add_argument("task_id", help="Task identifier.")
+    add_db_option(
+        task_reopen,
+        help_text=f"Path to the SQLite store containing the task. {DB_OPTION_NOTE}",
+    )
+    set_handler(task_reopen, handle_task_reopen, "task reopen")
+
+    task_edit = task_commands.add_parser(
+        "edit",
+        help="Change a task's title, size, priority or what it waits for.",
+    )
+    task_edit.add_argument("task_id", help="Task identifier.")
+    task_edit.add_argument("--title", help="New title.")
+    task_edit.add_argument(
+        "--size",
+        choices=[*TASK_COMPLEXITIES, "none"],
+        help="How big the task is; `none` clears it.",
+    )
+    task_edit.add_argument(
+        "--priority", type=int, help="Lower runs first; 0 is the default."
+    )
+    task_edit.add_argument(
+        "--depends-on",
+        action="append",
+        metavar="TASK_ID",
+        help="A task this one waits for. Repeat for several; the list replaces "
+        "what it waited for. Only before the task starts.",
+    )
+    task_edit.add_argument(
+        "--no-dependencies",
+        action="store_true",
+        help="Make the task wait for nothing.",
+    )
+    add_db_option(
+        task_edit,
+        help_text=f"Path to the SQLite store containing the task. {DB_OPTION_NOTE}",
+    )
+    set_handler(task_edit, handle_task_edit, "task edit")
+
+    task_cancel = task_commands.add_parser("cancel", help="Cancel a task.")
+    task_cancel.add_argument("task_id", help="Task identifier.")
+    add_db_option(
+        task_cancel,
+        help_text=f"Path to the SQLite store containing the task. {DB_OPTION_NOTE}",
+    )
+    set_handler(task_cancel, handle_task_cancel, "task cancel")
