@@ -159,7 +159,8 @@ class EffectiveSettingsTests(WorkflowApiCase):
         self.assertIsNone(effective["event_retention_days"])
         # What was stored is still reported as stored.
         self.assertEqual(body["settings"], {"max_step_visits": 7, "merge_approval": "human"})
-        self.assertIn("test_command", body["host_level_settings"])
+        self.assertIn("worktree_setup_command", body["host_level_settings"])
+        self.assertNotIn("test_command", body["host_level_settings"])
 
 
 if __name__ == "__main__":
