@@ -48,8 +48,8 @@ of `foreman/` belongs to no layer and fails the check.
 | Layer | Package | Spec layer |
 |---|---|---|
 | entry | `__main__`, `cli/` | |
-| HTTP | `api/` (today `dashboard/` and the root `dashboard_*` modules) | |
-| services | `services/` (today `dashboard_service` and its siblings, `backlog`) | |
+| HTTP | `api/`: `app`, `routers/` (one module per resource), `schemas`, `context`, `streaming`, `guard` (browser-origin defences), `assets` (the frontend bundle), `runtime` (bind, security posture, the server) | |
+| services | `services/`: one service per area (`projects`, `engine`, `sprints`, `tasks`, `backlog`, `intake`, `proposals`, `decision_gates`, `worktrees`, `definitions`, `workspace`) over `base`, put together by `Services`; the reads they use (`task_reads`, `workflow_reads`, `definition_forms`, `access`, `views`); `errors` | |
 | manager | `manager/`: `agent` (a manager turn, its session and history), `proposals`, `planning`, `digest` | |
 | engine | `engine/` | Orchestrator, Workflow Engine |
 | changes | `mutations/`: a part per area (`tasks`, `gates`, `backlog`, `sprints`) over `base`, composed into `Mutations` | |
@@ -58,8 +58,7 @@ of `foreman/` belongs to no layer and fails the check.
 | store | `store/` | |
 | domain | `domain/`, `data/` | |
 
-The "today" entries are the modules slices 4 and 5 of ADR-0032 still have to
-move. Until then the contract lists them by their current names. It names no
+The "today" entry is the module slice 5 of ADR-0032 still has to move. Until then the contract lists them by their current names. It names no
 exception.
 
 A person's gate decision and the engine's are written by the same two
@@ -174,7 +173,7 @@ Foreman now has:
 - shipped `foreman/data/roles/*.toml` and `foreman/data/workflows/*.toml` defaults,
   with a project's own roles and workflows over them: TOML text in the
   `definitions` table, read through `foreman/definitions/layers.py` (ADR-0024);
-  `foreman/dashboard_definitions.py` turns one into the editor's form fields
+  `foreman/services/definition_forms.py` turns one into the editor's form fields
   and the fields back into text,
 - `foreman/runner/model_check.py`: asks the agent program whether it can run a
   model, before a role is saved with it,
@@ -371,11 +370,11 @@ tracker, a chat bot, a CI job (ADR-0013).
 - `tasks.source_system` / `source_ref` / `source_url` / `reporter`
   (migration 17) — where machine-filed work came from, indexed on
   `(project_id, source_system, source_ref)`, which is the idempotency lookup.
-- `DashboardService.authenticate_intake` and `intake_task` — the service owns
-  both the auth outcome and the filing. Auth raises `DashboardAuthError` (401)
-  or `DashboardPermissionError` (403) so the transport maps status codes
-  instead of deciding them.
-- `foreman/dashboard/` — the route, and the middleware rule that
+- `IntakeService.authenticate_intake` and `intake_task`
+  (`foreman/services/intake.py`): the service owns both the auth outcome and
+  the filing. Auth raises `UnauthenticatedError` (401) or `ForbiddenError`
+  (403) so the transport maps status codes instead of deciding them.
+- `foreman/api/` — the route, and the middleware rule that
   keeps the two credentials apart: the shared dashboard token is refused on
   intake, and a project API token is refused on every other `/api` route
   whether or not a dashboard token is configured.
@@ -404,12 +403,12 @@ whoever writes. A backlog task is `triage` (filed), `todo` (accepted) or
   or none in one transaction), `unplan_task`. Each writes an audit event
   naming `via` and `by`. The CLI, the API, intake and agent `task_created`
   signals all file through `file_task`.
-- `foreman/backlog.py`: the one backlog read, shared by
+- `foreman/services/backlog.py`: the one backlog read, shared by
   `GET /projects/{id}/backlog` and `foreman backlog list --json`. Each task
   carries `carried_from` (`{id, title}` of the sprint it was moved back from,
   from the latest `human.task_unplanned` event, or null), read for the whole
   page in one statement by `OverviewStore.backlog_unplanned_origins`.
-- `foreman/dashboard/routers/backlog.py`: `GET` and `POST
+- `foreman/api/routers/backlog.py`: `GET` and `POST
   /projects/{id}/backlog`, `POST /projects/{id}/backlog/plan`,
   `POST /tasks/{id}/decline`, `POST /tasks/{id}/unplan`.
 - `foreman/cli/backlog.py`: `foreman backlog list|add|accept|decline|plan|unplan`.
@@ -428,7 +427,7 @@ The project settings page reads and writes through four routes.
   client that reads only `error` and `code` is unaffected). An unknown
   `workflow_id` is refused with `field: "workflow_id"`.
 - `GET /projects/{id}/workflow` and `GET /workflows` return a workflow as
-  `foreman/dashboard_workflow_reads.py` describes it: `steps`, `transitions`
+  `foreman/services/workflow_reads.py` describes it: `steps`, `transitions`
   (with `outcome` and `carry_output`), the `roles` its steps use (name,
   description, backend, model), `source_path` (the TOML file it was read from)
   and `requirements`, what finishing needs as facts and claims (ADR-0018),
@@ -438,8 +437,8 @@ The project settings page reads and writes through four routes.
 ### Views across projects (sprint 58)
 
 Four reads serve the rebuilt dashboard. All sit under `/api/v1` (and the
-`/api` alias), live in `foreman/dashboard/routers/projects.py` and
-`sprints.py`, and are built by `foreman/dashboard_overview.py` from the
+`/api` alias), live in `foreman/api/routers/projects.py` and
+`sprints.py`, and are built by `foreman/services/workspace.py` from the
 grouped reads in `foreman/store/overview.py`. Query parameters are typed; a
 bad one is a 400 `invalid_request` envelope (ADR-0019). Paged lists take
 `limit` (1 to 200, default 50) and `offset` (0 or more) and answer with
@@ -493,9 +492,9 @@ bad one is a 400 `invalid_request` envelope (ADR-0019). Paged lists take
 
 A merged task's changes and size are those of the commit it landed as
 (`git.landed_as`), not an empty comparison with a default branch that already
-holds it. The task page reads (sprint 58) are built by `foreman/dashboard_task_reads.py`
+holds it. The task page reads (sprint 58) are built by `foreman/services/task_reads.py`
 over `foreman/repo/git.py`, with typed response models in
-`foreman/dashboard/task_models.py`. All are GETs under `/api/v1`.
+`foreman/services/task_models.py`. All are GETs under `/api/v1`.
 
 - `GET /tasks/{id}/changes` returns `files` (`path`, `status` of `added`,
   `modified`, `deleted` or `renamed`, `added`, `deleted`, `binary`, and
@@ -537,7 +536,7 @@ done), and a More menu for what is rare (Block, Split, Delete).
 `actionsFor(task, engine)` is the one place that says which exist.
 
 Two writes serve the task page's More menu and decision, in
-`foreman/dashboard/routers/tasks.py` over the shared mutation service:
+`foreman/api/routers/tasks.py` over the shared mutation service:
 `POST /tasks/{id}/block` (`reason`, required) parks a task, and
 `POST /tasks/{id}/unblock` (`note`, optional) returns a blocked task to the
 queue and, when a note is given, records it as guidance for the next agent
@@ -549,10 +548,9 @@ step after the unblock succeeded. A task at a workflow gate is refused
 Foreman now exposes two first-class observation surfaces:
 
 - CLI inspection commands: `board`, `history`, `cost`, and live `watch`
-- a dashboard service layer in `foreman/dashboard_service.py`, a FastAPI
-  transport layer in `foreman/dashboard/`, a React frontend
-  workspace in `frontend/`, and a runtime entrypoint in
-  `foreman/dashboard_runtime.py`
+- services in `foreman/services/`, a FastAPI transport layer in
+  `foreman/api/`, a React frontend workspace in `frontend/`, and a runtime
+  entrypoint in `foreman/api/runtime.py`
 
 Per ADR-0002, the dashboard currently reads directly from `ForemanStore`
 read-model helpers rather than going through a separate query service or
@@ -570,15 +568,17 @@ Per ADR-0004, the product backend transport for the dashboard is now:
 
 - FastAPI for routing and HTTP behavior,
 - uvicorn for the runtime server boundary,
-- `dashboard_service.py` as the store-backed service layer under those routes,
-- `dashboard_runtime.py` as the product runtime entrypoint and asset or
-  frontend-dev launcher for `foreman dashboard`.
+- `foreman/services/` as the store-backed services under those routes
+  (ADR-0032),
+- `foreman/api/runtime.py` as the runtime entrypoint for `foreman dashboard`,
+  and `foreman/api/assets.py` for the frontend bundle and the frontend-dev
+  launcher.
 
 The current dashboard baseline includes:
 
-- extracted backend responses for project, sprint, task, action, and
-  streaming contracts in `foreman/dashboard_service.py`,
-- FastAPI route delivery in `foreman/dashboard/`,
+- backend responses for project, sprint, task, action, and streaming
+  contracts in `foreman/services/`,
+- FastAPI route delivery in `foreman/api/`,
 - a dedicated React and Vite frontend source workspace in `frontend/`,
 - built frontend assets in `foreman/dashboard_frontend_dist/` (not in git;
   built by `foreman dashboard`, CI and the test step),
@@ -700,7 +700,7 @@ leaves, and the names of what it names as they were.
 - `foreman/store/base.py`: `atomic()` holds one `BEGIN IMMEDIATE`
   transaction; the store's `with self._connection:` blocks join it instead of
   committing (`_Connection`).
-- `foreman/dashboard/routers/proposals.py`: `GET /projects/{id}/proposals`,
+- `foreman/api/routers/proposals.py`: `GET /projects/{id}/proposals`,
   `GET /proposals/{id}`, `POST /proposals/{id}/confirm|decline`.
 - `foreman/cli/proposals.py`: `foreman proposal create|list|show|confirm|decline`.
 - `foreman/cli/parser.py`: inside a manager session
@@ -820,7 +820,7 @@ The current CLI watch baseline now includes:
   boundaries.
 - the dashboard live transport currently uses server-sent events through the
   FastAPI backend, with store polling inside the stream loop and the
-  extracted `foreman.dashboard_service` layer acting as the service boundary
+  extracted `foreman.services` layer acting as the service boundary
   under the shipped React frontend.
 - `foreman watch` now shares the dashboard's persisted-event cursor boundary
   but stays on a direct store-read loop instead of going through the HTTP SSE
@@ -909,7 +909,7 @@ The engine is resident, steerable through `engine_commands`, isolated from the
 operator's checkout by a worktree per task, and every surface that controls it
 goes through that table. What it still cannot do is accept work from anything
 other than a person at a keyboard: task creation lives on
-`dashboard_service.create_task`, needs a sprint, and has no authentication, no
+`DashboardService.create_task` (today `foreman/services/tasks.py`), needs a sprint, and has no authentication, no
 idempotency, and no record of where the request came from.
 
 Both of those doors are now open. `POST /api/projects/{id}/intake`

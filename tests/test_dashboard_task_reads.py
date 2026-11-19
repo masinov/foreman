@@ -10,8 +10,8 @@ import unittest
 
 import httpx
 
-from foreman.dashboard.app import create_dashboard_app
-from foreman.dashboard.task_models import DIFF_CAP_CHARS, OUTPUT_CAP_CHARS
+from foreman.api.app import create_dashboard_app
+from foreman.services.task_models import DIFF_CAP_CHARS, OUTPUT_CAP_CHARS
 from foreman.domain.models import CompletionEvidence, Event, Project, Run, Sprint, Task
 from foreman.store import ForemanStore
 

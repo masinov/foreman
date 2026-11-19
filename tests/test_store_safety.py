@@ -15,7 +15,8 @@ import time
 import unittest
 from pathlib import Path
 
-from foreman.dashboard_service import DashboardService, DashboardValidationError
+from foreman.services import Services
+from foreman.services.errors import InvalidRequestError
 from foreman.store.migrations import MIGRATIONS
 from foreman.domain.models import (
     DecisionGate,
@@ -617,13 +618,13 @@ class SettingsValidationTests(unittest.TestCase):
         with ForemanStore(":memory:") as store:
             store.initialize()
             project, _, _ = _seed(store, settings={"max_step_visits": 4})
-            service = DashboardService(store)
-            with self.assertRaises(DashboardValidationError):
-                service.update_project_settings(
+            service = Services(store)
+            with self.assertRaises(InvalidRequestError):
+                service.projects.update_project_settings(
                     project.id, updates={"settings": {"max_step_visits": -1}}
                 )
             self.assertEqual(store.get_project(project.id).settings["max_step_visits"], 4)
-            service.update_project_settings(
+            service.projects.update_project_settings(
                 project.id, updates={"settings": {"run_retention_days": 14}}
             )
             self.assertEqual(store.get_project(project.id).settings["run_retention_days"], 14)

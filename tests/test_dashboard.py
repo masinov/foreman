@@ -12,12 +12,14 @@ import tempfile
 
 import httpx
 
-from foreman.dashboard_service import (
-    DashboardService,
-    DashboardNotFoundError,
-    DashboardValidationError,
+from foreman.services import (
+    Services,
 )
-from foreman.dashboard_backend import create_dashboard_app
+from foreman.services.errors import (
+    NotFoundError,
+    InvalidRequestError,
+)
+from foreman.api.app import create_dashboard_app
 from foreman.engine.control import ServeSpawn
 from foreman.domain.leases import generate_lease_token
 from foreman.domain.models import Event, Project, Run, Sprint, Task
@@ -29,7 +31,7 @@ from plan_workflow import install_plan_workflow
 class RecordingSpawner:
     """A ``foreman serve`` spawner that records instead of forking.
 
-    Injected into :class:`DashboardService` so the start path can be tested
+    Injected into :class:`Services` so the start path can be tested
     without ever launching an engine — and, by construction, without any test
     reaching a real ``claude`` or ``codex`` binary.
     """
@@ -195,10 +197,10 @@ class DashboardBackendTests(unittest.TestCase):
             event_type="agent.file_change",
             timestamp="2026-03-30T12:20:00Z",
             role_id="developer",
-            payload={"path": "foreman/dashboard_runtime.py"},
+            payload={"path": "foreman/dashboard_assets.py"},
         )
         cls.store.save_event(cls.event_2)
-        cls.api = DashboardService(
+        cls.api = Services(
             cls.store,
             now_factory=lambda: datetime(
                 2026,
@@ -241,7 +243,7 @@ class DashboardBackendTests(unittest.TestCase):
 
     def test_project_status_detection(self):
         """Project status is derived from task states."""
-        self.assertEqual(self.api.get_project_status("proj-1"), "running")
+        self.assertEqual(self.api.projects.get_project_status("proj-1"), "running")
 
         # Create another project with only blocked tasks
         project2 = Project(
@@ -266,7 +268,7 @@ class DashboardBackendTests(unittest.TestCase):
             status="blocked",
         )
         self.store.save_task(task2)
-        self.assertEqual(self.api.get_project_status("proj-2"), "blocked")
+        self.assertEqual(self.api.projects.get_project_status("proj-2"), "blocked")
 
         # Project with no tasks -> idle
         project3 = Project(
@@ -276,11 +278,11 @@ class DashboardBackendTests(unittest.TestCase):
             workflow_id="development",
         )
         self.store.save_project(project3)
-        self.assertEqual(self.api.get_project_status("proj-3"), "idle")
+        self.assertEqual(self.api.projects.get_project_status("proj-3"), "idle")
 
     def test_api_projects_list(self):
         """API returns list of projects with task counts and totals."""
-        result = self.api.list_projects()
+        result = self.api.projects.list_projects()
         proj = next(p for p in result["projects"] if p["id"] == "proj-1")
         self.assertEqual(proj["name"], "Test Project")
         self.assertEqual(proj["status"], "running")
@@ -290,7 +292,7 @@ class DashboardBackendTests(unittest.TestCase):
 
     def test_api_project_sprints(self):
         """API returns sprints for a project."""
-        result = self.api.list_project_sprints("proj-1")
+        result = self.api.sprints.list_project_sprints("proj-1")
         self.assertEqual(len(result["sprints"]), 2)
         sprint_ids = [s["id"] for s in result["sprints"]]
         self.assertIn("sprint-1", sprint_ids)
@@ -298,7 +300,7 @@ class DashboardBackendTests(unittest.TestCase):
 
     def test_api_sprint_tasks(self):
         """API returns tasks for a sprint."""
-        result = self.api.list_sprint_tasks("sprint-1")
+        result = self.api.sprints.list_sprint_tasks("sprint-1")
         task_ids = [t["id"] for t in result["tasks"]]
         self.assertIn("task-1", task_ids)
         self.assertIn("task-2", task_ids)
@@ -306,7 +308,7 @@ class DashboardBackendTests(unittest.TestCase):
 
     def test_api_sprint_events(self):
         """API returns events for a sprint."""
-        events = self.api.list_sprint_events("sprint-1", limit=10)["events"]
+        events = self.api.sprints.list_sprint_events("sprint-1", limit=10)["events"]
         self.assertGreaterEqual(len(events), 2)
         event_types = [e["event_type"] for e in events]
         self.assertIn("agent.message", event_types)
@@ -314,7 +316,7 @@ class DashboardBackendTests(unittest.TestCase):
 
     def test_dashboard_api_serializes_incremental_sprint_events(self):
         """Dashboard service can serialize sprint event batches after a known event."""
-        events = self.api.list_sprint_events(
+        events = self.api.sprints.list_sprint_events(
             "sprint-1",
             limit=10,
             after_event_id="event-1",
@@ -324,7 +326,7 @@ class DashboardBackendTests(unittest.TestCase):
 
     def test_dashboard_api_wraps_stream_messages_for_sse(self):
         """Dashboard service exposes the SSE payload contract separately from HTTP transport."""
-        messages = self.api.list_sprint_stream_messages(
+        messages = self.api.sprints.list_sprint_stream_messages(
             "sprint-1",
             limit=10,
             after_event_id="event-1",
@@ -336,7 +338,7 @@ class DashboardBackendTests(unittest.TestCase):
 
     def test_fastapi_dashboard_shell_route_returns_html(self):
         """FastAPI serves the built React dashboard index."""
-        from foreman.dashboard_runtime import dashboard_assets_present
+        from foreman.api.assets import dashboard_assets_present
 
         if not dashboard_assets_present():
             self.skipTest("the dashboard frontend is not built (npm --prefix frontend run build)")
@@ -367,7 +369,7 @@ class DashboardBackendTests(unittest.TestCase):
 
     def test_api_task_detail(self):
         """API returns task details with runs."""
-        task = self.api.get_task("task-2")
+        task = self.api.tasks.get_task("task-2")
         self.assertEqual(task["title"], "In progress task")
         self.assertEqual(task["status"], "in_progress")
         self.assertEqual(task["branch_name"], "feat/dashboard")
@@ -379,7 +381,7 @@ class DashboardBackendTests(unittest.TestCase):
 
     def test_fastapi_dashboard_nested_route_returns_html(self):
         """Nested dashboard routes fall back to the React entrypoint."""
-        from foreman.dashboard_runtime import dashboard_assets_present
+        from foreman.api.assets import dashboard_assets_present
 
         if not dashboard_assets_present():
             self.skipTest("the dashboard frontend is not built (npm --prefix frontend run build)")
@@ -412,7 +414,7 @@ class DashboardBackendTests(unittest.TestCase):
         self.store.save_task(task)
         self.addCleanup(self.store.delete_task, task.id)
 
-        result = self.api.create_human_message(task.id, text="One more thing")
+        result = self.api.tasks.create_human_message(task.id, text="One more thing")
 
         self.assertEqual(result["status"], "recorded")
         self.assertFalse(result["will_deliver"])
@@ -430,7 +432,7 @@ class DashboardBackendTests(unittest.TestCase):
         )
         self.store.save_task(task)
         self.addCleanup(self.store.delete_task, task.id)
-        first = self.api.create_human_message(task.id, text="Add more tests")
+        first = self.api.tasks.create_human_message(task.id, text="Add more tests")
         run_id = self.store.list_events(task_id=task.id)[-1].run_id
         self.store.save_event(
             Event(
@@ -448,7 +450,7 @@ class DashboardBackendTests(unittest.TestCase):
             )
         )
 
-        guidance = self.api.get_task(task.id)["guidance"]
+        guidance = self.api.tasks.get_task(task.id)["guidance"]
 
         self.assertEqual(len(guidance), 1)
         self.assertEqual(guidance[0]["text"], "Add more tests")
@@ -458,7 +460,7 @@ class DashboardBackendTests(unittest.TestCase):
 
     def test_human_message_event_storage(self):
         """Human guidance messages are persisted through the dashboard service contract."""
-        result = self.api.create_human_message(
+        result = self.api.tasks.create_human_message(
             self.in_progress_task.id,
             text="Please add more tests",
         )
@@ -480,7 +482,7 @@ class DashboardBackendTests(unittest.TestCase):
 
     def test_fastapi_dashboard_assets_route_returns_built_bundle(self):
         """FastAPI serves the built JavaScript bundle referenced by the React shell."""
-        from foreman.dashboard_runtime import dashboard_assets_present
+        from foreman.api.assets import dashboard_assets_present
 
         if not dashboard_assets_present():
             self.skipTest("the dashboard frontend is not built (npm --prefix frontend run build)")
@@ -1003,8 +1005,8 @@ class DashboardSettingsTests(unittest.TestCase):
         project, _ = self._seed_project()
         store = ForemanStore(self.db_path)
         store.initialize()
-        api = DashboardService(store)
-        result = api.create_sprint(project.id, title="My Sprint", goal="Do things")
+        api = Services(store)
+        result = api.sprints.create_sprint(project.id, title="My Sprint", goal="Do things")
         self.assertTrue(result["id"].startswith("sprint-"))
         self.assertIn("my-sprint", result["id"])
         self.assertEqual(result["status"], "planned")
@@ -1014,8 +1016,8 @@ class DashboardSettingsTests(unittest.TestCase):
         _, sprint = self._seed_project()
         store = ForemanStore(self.db_path)
         store.initialize()
-        api = DashboardService(store)
-        result = api.create_task(sprint.id, title="Fix bug", task_type="fix", acceptance_criteria="No crash")
+        api = Services(store)
+        result = api.tasks.create_task(sprint.id, title="Fix bug", task_type="fix", acceptance_criteria="No crash")
         self.assertTrue(result["id"].startswith("task-"))
         self.assertIn("fix-bug", result["id"])
         self.assertEqual(result["task_type"], "fix")
@@ -1025,9 +1027,9 @@ class DashboardSettingsTests(unittest.TestCase):
         project, _ = self._seed_project()
         store = ForemanStore(self.db_path)
         store.initialize()
-        api = DashboardService(store)
-        with self.assertRaises(DashboardValidationError):
-            api.update_project_settings(project.id, updates={"settings": "not a dict"})
+        api = Services(store)
+        with self.assertRaises(InvalidRequestError):
+            api.projects.update_project_settings(project.id, updates={"settings": "not a dict"})
         store.close()
 
 
@@ -2800,8 +2802,8 @@ class DashboardTier2Tests(unittest.TestCase):
         store.save_sprint(sprint)
 
         spawner = RecordingSpawner()
-        service = DashboardService(store, serve_spawner=spawner)
-        payload = service.start_agent(project.id, requested_by="ana")
+        service = Services(store, serve_spawner=spawner)
+        payload = service.engine.start_agent(project.id, requested_by="ana")
 
         self.assertTrue(payload["started"])
         self.assertFalse(payload["resident"])
@@ -2844,7 +2846,7 @@ class DashboardTier2Tests(unittest.TestCase):
         hold_engine_lock(store, project.id, holder_id="engine-live")
 
         spawner = RecordingSpawner()
-        payload = DashboardService(store, serve_spawner=spawner).start_agent(project.id)
+        payload = Services(store, serve_spawner=spawner).engine.start_agent(project.id)
 
         self.assertTrue(payload["resident"])
         self.assertFalse(payload["spawned"])
@@ -2886,7 +2888,7 @@ class DashboardTier2Tests(unittest.TestCase):
         hold_engine_lock(store, project.id, holder_id="engine-live")
 
         spawner = RecordingSpawner()
-        payload = DashboardService(store, serve_spawner=spawner).start_agent(
+        payload = Services(store, serve_spawner=spawner).engine.start_agent(
             project.id, task_id=task.id
         )
 
@@ -2934,9 +2936,9 @@ class DashboardTier2Tests(unittest.TestCase):
         )
         store.save_task(task)
 
-        service = DashboardService(store, serve_spawner=RecordingSpawner())
-        with self.assertRaises(DashboardValidationError):
-            service.start_agent(project.id, task_id=task.id)
+        service = Services(store, serve_spawner=RecordingSpawner())
+        with self.assertRaises(InvalidRequestError):
+            service.engine.start_agent(project.id, task_id=task.id)
         store.close()
 
     def test_start_agent_over_http_reports_the_spawn(self):
@@ -2963,7 +2965,7 @@ class DashboardTier2Tests(unittest.TestCase):
         import unittest.mock as mock
 
         spawner = RecordingSpawner(pid=777)
-        with mock.patch("foreman.dashboard_service.spawn_serve", spawner):
+        with mock.patch("foreman.services.engine.spawn_serve", spawner):
             response = self._request(
                 "POST",
                 f"/api/projects/{project.id}/agent/start",
@@ -3210,7 +3212,7 @@ class DashboardInterventionTests(unittest.TestCase):
         cls.temp_dir.cleanup()
 
     def _api(self):
-        return DashboardService(self.store)
+        return Services(self.store)
 
     def _create_sprint(self, sprint_id, status="planned", order_index=0):
         sprint = Sprint(
@@ -3245,7 +3247,7 @@ class DashboardInterventionTests(unittest.TestCase):
         sprint = self._create_sprint("spr-stop-1", status="active")
         self._create_task("task-stop-1", sprint.id, status="in_progress")
 
-        result = self._api().stop_task("task-stop-1", requested_by="ana")
+        result = self._api().engine.stop_task("task-stop-1", requested_by="ana")
         self.assertEqual(result["command"]["command"], "stop_task")
         self.assertEqual(result["command"]["task_id"], "task-stop-1")
         self.assertEqual(result["command"]["requested_by"], "ana")
@@ -3257,8 +3259,8 @@ class DashboardInterventionTests(unittest.TestCase):
     def test_stop_task_rejects_non_in_progress(self):
         self._create_task("task-stop-2", "spr-stop-1", status="todo")
 
-        with self.assertRaises(DashboardValidationError):
-            self._api().stop_task("task-stop-2")
+        with self.assertRaises(InvalidRequestError):
+            self._api().engine.stop_task("task-stop-2")
 
     def test_stop_task_records_one_pending_command(self):
         """The command row is the audit trail: who asked, for which task, when."""
@@ -3276,7 +3278,7 @@ class DashboardInterventionTests(unittest.TestCase):
         )
         self.store.save_run(run)
 
-        self._api().stop_task("task-stop-3")
+        self._api().engine.stop_task("task-stop-3")
 
         commands = [
             command
@@ -3353,7 +3355,7 @@ class DashboardDeleteSprintTests(unittest.TestCase):
             repo_path="/tmp/del",
             workflow_id="development",
         ))
-        return store, temp_dir, DashboardService(store)
+        return store, temp_dir, Services(store)
 
     def test_delete_sprint_exists(self):
         store, temp_dir, api = self._api()
@@ -3367,7 +3369,7 @@ class DashboardDeleteSprintTests(unittest.TestCase):
         )
         store.save_sprint(sprint)
 
-        result = api.delete_sprint("spr-del")
+        result = api.sprints.delete_sprint("spr-del")
         self.assertEqual(result["ok"], "deleted")
         self.assertIsNone(store.get_sprint("spr-del"))
 
@@ -3376,8 +3378,8 @@ class DashboardDeleteSprintTests(unittest.TestCase):
 
     def test_delete_sprint_not_found(self):
         _, temp_dir, api = self._api()
-        with self.assertRaises(DashboardNotFoundError):
-            api.delete_sprint("nonexistent")
+        with self.assertRaises(NotFoundError):
+            api.sprints.delete_sprint("nonexistent")
         temp_dir.cleanup()
 
 

@@ -17,9 +17,10 @@ from pathlib import Path
 import httpx
 
 from foreman.cli import build_parser
-from foreman.dashboard_backend import create_dashboard_app
-from foreman.dashboard_runtime import dashboard_security_policy, is_loopback_host
-from foreman.dashboard_service import DashboardService, DashboardValidationError
+from foreman.api.app import create_dashboard_app
+from foreman.api.runtime import dashboard_security_policy, is_loopback_host
+from foreman.services import Services
+from foreman.services.errors import InvalidRequestError
 from foreman.domain.models import Project, Sprint
 from foreman.store import ForemanStore
 
@@ -65,7 +66,7 @@ class TokenAuthTests(unittest.TestCase):
         self.assertEqual(query.status_code, 200)
 
     def test_shell_and_assets_load_without_a_token(self) -> None:
-        from foreman.dashboard_runtime import dashboard_assets_present
+        from foreman.api.assets import dashboard_assets_present
 
         if not dashboard_assets_present():
             self.skipTest("the dashboard frontend is not built (npm --prefix frontend run build)")
@@ -172,16 +173,16 @@ class RepoPathValidationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             with ForemanStore(Path(tmp) / "foreman.db") as store:
                 store.initialize()
-                service = DashboardService(store)
-                with self.assertRaises(DashboardValidationError):
-                    service.create_project(name="Ghost", repo_path=str(Path(tmp) / "missing"), workflow_id="development")
+                service = Services(store)
+                with self.assertRaises(InvalidRequestError):
+                    service.projects.create_project(name="Ghost", repo_path=str(Path(tmp) / "missing"), workflow_id="development")
                 plain_dir = Path(tmp) / "plain"
                 plain_dir.mkdir()
-                with self.assertRaises(DashboardValidationError):
-                    service.create_project(name="Plain", repo_path=str(plain_dir), workflow_id="development")
+                with self.assertRaises(InvalidRequestError):
+                    service.projects.create_project(name="Plain", repo_path=str(plain_dir), workflow_id="development")
                 repo_dir = Path(tmp) / "repo"
                 (repo_dir / ".git").mkdir(parents=True)
-                created = service.create_project(name="Real", repo_path=str(repo_dir), workflow_id="development")
+                created = service.projects.create_project(name="Real", repo_path=str(repo_dir), workflow_id="development")
                 self.assertEqual(created["repo_path"], str(repo_dir))
                 # It starts with the same settings `foreman init` gives a new project.
                 settings = store.get_project(created["id"]).settings
@@ -314,7 +315,7 @@ class BrowserOriginDefenceTests(unittest.TestCase):
         self.assertEqual(write.status_code, 401)
 
     def test_the_runtime_trusts_only_loopback_names_without_a_token(self) -> None:
-        from foreman.dashboard_guard import trusted_hosts_for_bind
+        from foreman.api.guard import trusted_hosts_for_bind
 
         self.assertEqual(trusted_hosts_for_bind("localhost"), ("localhost", "127.0.0.1", "::1"))
         self.assertEqual(trusted_hosts_for_bind("127.0.0.1"), ("localhost", "127.0.0.1", "::1"))
@@ -393,10 +394,12 @@ class HostLevelSettingsTests(unittest.TestCase):
 
 class IntakeSourceUrlTests(unittest.TestCase):
     def test_only_http_and_https_source_urls_are_accepted(self) -> None:
-        normalize = DashboardService._normalize_intake_source
+        from foreman.services.intake import IntakeService
+
+        normalize = IntakeService._normalize_intake_source
         for url in ("javascript:alert(1)", "data:text/html,x", "file:///etc/passwd", "ftp://host/x"):
             with self.subTest(url=url):
-                with self.assertRaises(DashboardValidationError):
+                with self.assertRaises(InvalidRequestError):
                     normalize({"url": url})
         self.assertEqual(
             normalize({"url": " https://tickets.example/INC-1 "})["url"],

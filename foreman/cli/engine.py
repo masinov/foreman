@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 import sys
 
-from ..dashboard_runtime import DEFAULT_FRONTEND_DEV_URL, run_dashboard_server
+from ..api.runtime import DEFAULT_FRONTEND_DEV_URL, run_dashboard_server
 from ..engine.control import (
     default_command_requester,
     describe_engine,

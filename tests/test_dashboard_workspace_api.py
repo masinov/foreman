@@ -10,7 +10,7 @@ import unittest
 
 import httpx
 
-from foreman.dashboard.app import create_dashboard_app
+from foreman.api.app import create_dashboard_app
 from foreman.domain.models import (
     CompletionEvidence,
     DecisionGate,

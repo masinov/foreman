@@ -11,8 +11,8 @@ exhaustive_ignores =
 layers =
     __main__
     cli
-    dashboard : dashboard_backend : dashboard_runtime : dashboard_guard : dashboard_access : dashboard_task_reads
-    dashboard_service : dashboard_overview : dashboard_workflow_reads : dashboard_definitions : backlog
+    api
+    services
     manager
     engine
     mutations
