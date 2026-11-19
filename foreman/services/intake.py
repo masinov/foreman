@@ -9,6 +9,8 @@ from urllib.parse import urlsplit
 
 from ..domain.api_tokens import INTAKE_SCOPE
 from ..domain.models import (
+    TASK_COMPLEXITIES,
+    TASK_TYPES,
     ApiToken,
     Sprint,
 )
@@ -16,10 +18,10 @@ from ..mutations import MutationError, Mutations
 from ..store import ForemanStore
 from .base import Service
 from .errors import (
-    UnauthenticatedError,
-    NotFoundError,
     ForbiddenError,
     InvalidRequestError,
+    NotFoundError,
+    UnauthenticatedError,
 )
 from .tasks import TaskService
 
@@ -86,7 +88,6 @@ class IntakeService(Service):
         flag into 201 or 200.
         """
 
-        from ..domain.models import TASK_COMPLEXITIES, TASK_TYPES
 
         project = self._require_project(project_id)
 

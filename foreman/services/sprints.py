@@ -9,15 +9,17 @@ from ..definitions.gate_steps import (
     blocked_kind,
 )
 from ..domain.models import (
+    TASK_COMPLEXITIES,
+    TASK_TYPES,
     Task,
 )
+from ..engine.limits import resolve_project_settings
 from ..engine.selection import pulled_task_ids
 from ..mutations import MutationError
 from ..store.overview import SPRINT_LIST_ORDERS, SPRINT_LIST_STATUSES
-from .views import task_source
 from .base import Service
-from .errors import NotFoundError, InvalidRequestError
-from .views import stable_slug
+from .errors import InvalidRequestError, NotFoundError
+from .views import stable_slug, task_source
 
 ACTIVITY_EVENT_LIMIT = 50
 
@@ -121,7 +123,6 @@ class SprintService(Service):
         """Return one sprint summary payload."""
 
         sprint = self._require_sprint(sprint_id)
-        from ..engine.limits import resolve_project_settings
 
         project = self.store.get_project(sprint.project_id)
         return {
@@ -161,7 +162,6 @@ class SprintService(Service):
         if not title.strip():
             raise InvalidRequestError("Sprint title is required.")
 
-        from ..domain.models import TASK_COMPLEXITIES, TASK_TYPES
 
         try:
             sprint = self._mutations().create_sprint(project, title=title, goal=goal)

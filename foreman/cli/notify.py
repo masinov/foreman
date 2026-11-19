@@ -7,19 +7,27 @@ import sys
 from typing import Sequence
 from uuid import uuid4
 
-from ..domain.models import Event, NotificationDelivery, NotificationDestination, Project
-from ..notifications import (
-    ATTENTION,
+from ..domain.models import (
+    Event,
+    NotificationDelivery,
+    NotificationDestination,
+    Project,
+)
+from ..notifications.destinations import (
     DESTINATION_KINDS,
     NotificationError,
-    TransportError,
     add_destination,
-    build_payload,
-    build_transport,
+)
+from ..notifications.policy import (
+    ATTENTION,
     resolve_notification_policy,
 )
+from ..notifications.transport import (
+    TransportError,
+    build_payload,
+    build_transport,
+)
 from ..store import ForemanStore
-
 from .common import (
     DB_OPTION_NOTE,
     add_db_option,

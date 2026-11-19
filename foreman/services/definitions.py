@@ -5,15 +5,28 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..definitions.layers import (
+    DefinitionError,
+    project_definitions,
+    workspace_definitions,
+)
+from ..definitions.roles import RoleLoadError
+from ..definitions.workflows import WorkflowLoadError
 from ..domain.settings import (
     settings_of,
 )
 from .base import Service
+from .definition_forms import (
+    describe_project_definitions,
+    reset_from_dashboard,
+    save_from_dashboard,
+)
 from .errors import (
     ActionFailedError,
-    NotFoundError,
     InvalidRequestError,
+    NotFoundError,
 )
+from .workflow_reads import describe_workflow
 
 
 def _serialize_role(role: "Any") -> dict[str, Any]:
@@ -45,9 +58,6 @@ class DefinitionService(Service):
         definitions with the project's own over them (ADR-0024).
         """
 
-        from ..definitions.layers import project_definitions
-        from ..definitions.roles import RoleLoadError
-        from ..definitions.workflows import WorkflowLoadError
 
         try:
             definitions = project_definitions(self.store, project_id)
@@ -58,7 +68,6 @@ class DefinitionService(Service):
     def get_project_workflow(self, project_id: str) -> dict[str, Any]:
         """The project's workflow: steps, transitions, roles and what finishing requires."""
 
-        from .workflow_reads import describe_workflow
 
         project = self._require_project(project_id)
         roles, workflows = self.workflow_catalogue(project_id)
@@ -74,7 +83,6 @@ class DefinitionService(Service):
     def list_workflows(self) -> dict[str, Any]:
         """Every workflow a project can use, each described as a project's is."""
 
-        from .workflow_reads import describe_workflow
 
         roles, workflows = self.workflow_catalogue()
         return {"workflows": [describe_workflow(wf, roles) for wf in workflows.values()]}
@@ -82,9 +90,6 @@ class DefinitionService(Service):
     def list_roles(self) -> dict[str, Any]:
         """Return all available role definitions."""
 
-        from ..definitions.layers import workspace_definitions
-        from ..definitions.roles import RoleLoadError
-        from ..definitions.workflows import WorkflowLoadError
 
         try:
             roles = workspace_definitions(self.store).roles
@@ -98,9 +103,6 @@ class DefinitionService(Service):
         ``None`` is the workspace: the defaults every project starts from.
         """
 
-        from ..definitions.roles import RoleLoadError
-        from ..definitions.workflows import WorkflowLoadError
-        from .definition_forms import describe_project_definitions
 
         if project_id is not None:
             self._require_project(project_id)
@@ -118,8 +120,6 @@ class DefinitionService(Service):
     ) -> dict[str, Any]:
         """Save one role or workflow, for a project or the workspace, from the editor."""
 
-        from ..definitions.layers import DefinitionError
-        from .definition_forms import save_from_dashboard
 
         if project_id is not None:
             self._require_project(project_id)
@@ -137,8 +137,6 @@ class DefinitionService(Service):
     ) -> dict[str, Any]:
         """Drop a scope's own role or workflow; the id goes back to the layer below."""
 
-        from ..definitions.layers import DefinitionError
-        from .definition_forms import reset_from_dashboard
 
         if project_id is not None:
             self._require_project(project_id)

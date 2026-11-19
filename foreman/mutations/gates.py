@@ -17,7 +17,7 @@ from ..definitions.layers import project_definitions
 from ..definitions.workflows import WorkflowDefinition, WorkflowStep
 from ..domain.models import HumanGateDecision, Project, Task, utc_now_text
 from ..history.records import RunRecords, new_id
-from ..notifications import NotificationDispatcher
+from ..notifications.delivery import NotificationDispatcher
 from ..store import ForemanStore
 from .base import MutationBase, MutationError
 

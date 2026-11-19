@@ -6,10 +6,10 @@ import argparse
 import sys
 from uuid import uuid4
 
-from ..domain.models import utc_now_text
+from ..domain.models import MergeWaiver, utc_now_text
 from ..engine.orchestrator import ForemanOrchestrator, OrchestratorError
+from ..repo.git import head_sha
 from ..store import ForemanStore
-
 from .common import (
     DB_OPTION_NOTE,
     add_db_option,
@@ -38,7 +38,6 @@ def handle_waive_merge(args: argparse.Namespace) -> int:
     if db_path is None:
         return 1
 
-    from ..domain.models import MergeWaiver
 
     waiver_types = {
         "missing_acceptance_criteria",
@@ -76,7 +75,6 @@ def handle_waive_merge(args: argparse.Namespace) -> int:
 
         # Get current HEAD SHA
         try:
-            from ..repo.git import head_sha
             head_sha_val = head_sha(project.repo_path, f"refs/heads/{branch_name}") or ""
             base_sha = head_sha(project.repo_path, f"refs/heads/{project.default_branch}") or ""
         except Exception as e:

@@ -14,6 +14,7 @@ own summary and called that a pass, which is not a check (ADR-0018).
 from __future__ import annotations
 
 import json
+import os
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -156,8 +157,6 @@ def judge_criteria(
     api_key_env = str(settings.get("judge_api_key_env") or "").strip()
     api_key = ""
     if api_key_env:
-        import os
-
         api_key = os.environ.get(api_key_env, "")
 
     user_block = (

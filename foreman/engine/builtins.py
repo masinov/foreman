@@ -2,14 +2,22 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from pathlib import Path
 import selectors
 import subprocess
 import time
-from typing import TYPE_CHECKING, Any, Callable
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Callable
 
-from ..repo.context import context_directory, relative_project_path, write_project_context
+from ..definitions.layers import project_definitions
+from ..domain.models import CompletionEvidence, Project, Task, utc_now_text
+from ..domain.settings import settings_of
+from ..notifications.policy import resolve_notification_policy
+from ..repo.context import (
+    context_directory,
+    relative_project_path,
+    write_project_context,
+)
 from ..repo.git import (
     CheckoutFollow,
     GitError,
@@ -24,18 +32,12 @@ from ..repo.git import (
     run_git,
     sync_branch_with_base,
 )
-from ..domain.models import CompletionEvidence, Project, Task, utc_now_text
-from ..notifications import resolve_notification_policy
-from ..runner.process import ManagedProcess
-from .evidence import EvidenceBuilder
-from ..definitions.layers import project_definitions
-from ..domain.settings import settings_of
 from ..repo.worktrees import WorktreeError, WorktreeManager
+from ..runner.process import ManagedProcess
+from ..store import ForemanStore
+from .evidence import EvidenceBuilder
 
 DEFAULT_TEST_TIMEOUT_SECONDS = 1800
-
-if TYPE_CHECKING:
-    from ..store import ForemanStore
 
 
 @dataclass(slots=True)
@@ -653,7 +655,7 @@ class BuiltinExecutor:
         anchor for "a task finished": a workflow step completing is not the
         same claim, and the task row's ``completed_at`` is state rather than a
         moment in the log. ``notify`` records the policy that governed the
-        announcement at the time it was made -- see ``foreman.notifications``.
+        announcement at the time it was made -- see ``foreman.notifications.delivery``.
         """
 
         return BuiltinEventRecord(
