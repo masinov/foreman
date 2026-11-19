@@ -355,6 +355,7 @@ def build_operating_contract(project: Any) -> str:
             "  foreman history <task-id>",
             "  foreman transcript <task-id>",
             f"  foreman cost {pid}",
+            f"  foreman outcomes {pid} [--sprint <sprint-id>]",
             f"  foreman sprint list {pid}",
             f"  foreman backlog list {pid} [--status filed|accepted|declined]",
             f"  foreman worktree list {pid}",

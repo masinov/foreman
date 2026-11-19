@@ -61,6 +61,11 @@ def build_router(ctx: ApiContext) -> APIRouter:
     def get_project_policy(project_id: str, task_id: str | None = None) -> dict[str, Any]:
         return with_api(lambda api: api.projects.get_project_policy(project_id, task_id=task_id))
 
+    @router.get("/projects/{project_id}/outcomes")
+    def get_project_outcomes(project_id: str, sprint: str | None = None) -> dict[str, Any]:
+        """How well the project's agents do, for the project or one sprint (ADR-0034)."""
+        return with_api(lambda api: api.outcomes.numbers(project_id, sprint_id=sprint))
+
     @router.patch("/projects/{project_id}/settings")
     def update_project_settings(project_id: str, data: dict[str, Any] = Depends(read_json_body)) -> dict[str, Any]:
         return with_api(
