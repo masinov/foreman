@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import sys
 
-from ..domain.models import Sprint
 from ..mutations import MutationError
 from ..store import ForemanStore
 
@@ -13,11 +12,9 @@ from .common import (
     DB_OPTION_NOTE,
     add_db_option,
     add_json_option,
-    allocate_entity_id,
     cli_mutations,
     format_run_totals,
     format_task_counts,
-    next_order_index,
     print_json,
     print_lines,
     resolve_db_path_or_print,
@@ -40,16 +37,11 @@ def handle_sprint_add(args: argparse.Namespace) -> int:
         if project is None:
             return 1
 
-        sprints = store.list_sprints(project.id)
-        sprint = Sprint(
-            id=allocate_entity_id("sprint", args.title, exists=store.get_sprint),
-            project_id=project.id,
-            title=args.title,
-            goal=args.goal,
-            status="planned",
-            order_index=next_order_index([item.order_index for item in sprints]),
-        )
-        store.save_sprint(sprint)
+        try:
+            sprint = cli_mutations(store).create_sprint(project, title=args.title, goal=args.goal)
+        except MutationError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
         db_path = store.db_path
 
     print_lines(

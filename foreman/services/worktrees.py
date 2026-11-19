@@ -69,14 +69,6 @@ class WorktreeService(Service):
         except WorktreeError as exc:
             raise InvalidRequestError(str(exc)) from exc
 
-        # Forget the paths that no longer exist so the task drawer stops
-        # advertising a directory an operator cannot open.
-        removed_paths = {str(entry.path) for entry in removed}
-        for task in self.store.list_tasks(project_id=project.id):
-            if task.worktree_path and task.worktree_path in removed_paths:
-                task.worktree_path = None
-                self.store.save_task(task)
-
         return {
             "ok": "pruned",
             "project_id": project.id,

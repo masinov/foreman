@@ -6,7 +6,7 @@ import argparse
 from pathlib import Path
 import sys
 
-from ..domain.models import Project, utc_now_text
+from ..domain.models import Project
 from ..definitions.roles import RoleLoadError, default_roles_dir, load_roles
 from ..repo.scaffold import (
     DEFAULT_DB_FILENAME,
@@ -20,7 +20,7 @@ from ..repo.scaffold import (
     scaffold_repository,
 )
 from ..domain.policy import POLICY_DECISIONS, PolicyMatrix
-from ..domain.settings import ProjectSettings, SettingsError, settings_of
+from ..domain.settings import settings_of
 from ..store import ForemanStore
 from ..definitions.workflows import WorkflowLoadError, default_workflows_dir, load_workflows
 
@@ -29,7 +29,6 @@ from .common import (
     DB_OPTION_NOTE,
     add_db_option,
     add_json_option,
-    allocate_project_id,
     format_run_totals,
     format_setting_value,
     format_task_counts,
@@ -41,6 +40,8 @@ from .common import (
     role_outcomes,
     set_handler,
 )
+from .common import cli_mutations
+from ..mutations.projects import SettingError
 
 
 def handle_init(args: argparse.Namespace) -> int:
@@ -106,19 +107,27 @@ def handle_init(args: argparse.Namespace) -> int:
                 settings.setdefault(key, value)
         settings["test_command"] = test_command
 
-        project = Project(
-            id=allocate_project_id(store, args.name, repo_path, existing),
-            name=args.name,
-            repo_path=str(repo_path),
-            spec_path=spec_reference,
-            methodology=workflow.methodology,
-            workflow_id=workflow_id,
-            default_branch=default_branch,
-            settings=settings,
-            created_at=existing.created_at if existing is not None else utc_now_text(),
-            updated_at=utc_now_text(),
-        )
-        store.save_project(project)
+        mutations = cli_mutations(store)
+        if existing is None:
+            project = mutations.register_project(
+                name=args.name,
+                repo_path=str(repo_path),
+                workflow_id=workflow_id,
+                settings=settings,
+                spec_path=spec_reference,
+                methodology=workflow.methodology,
+                default_branch=default_branch,
+            )
+        else:
+            project = mutations.reregister_project(
+                existing,
+                name=args.name,
+                spec_path=spec_reference,
+                methodology=workflow.methodology,
+                workflow_id=workflow_id,
+                default_branch=default_branch,
+                settings=settings,
+            )
         db_path = store.db_path
 
     lines = [
@@ -268,16 +277,13 @@ def handle_config(args: argparse.Namespace) -> int:
             except CliResolutionError as exc:
                 print(str(exc), file=sys.stderr)
                 return 1
-            candidate = dict(project.settings)
-            candidate[key] = value
             try:
-                ProjectSettings.from_raw(candidate)
-            except SettingsError as exc:
-                print(f"Invalid setting {key}: {exc}", file=sys.stderr)
+                cli_mutations(store).change_project(
+                    project, settings={key: value}, host_level=True
+                )
+            except SettingError as exc:
+                print(f"Invalid setting {key}: {exc.detail}", file=sys.stderr)
                 return 1
-            project.settings = candidate
-            project.updated_at = utc_now_text()
-            store.save_project(project)
             assignment_summary = f"{key}={format_setting_value(value)}"
         db_path = store.db_path
 

@@ -58,7 +58,6 @@ class DefinitionService(Service):
         definitions with the project's own over them (ADR-0024).
         """
 
-
         try:
             definitions = project_definitions(self.store, project_id)
         except (RoleLoadError, WorkflowLoadError) as exc:
@@ -67,7 +66,6 @@ class DefinitionService(Service):
 
     def get_project_workflow(self, project_id: str) -> dict[str, Any]:
         """The project's workflow: steps, transitions, roles and what finishing requires."""
-
 
         project = self._require_project(project_id)
         roles, workflows = self.workflow_catalogue(project_id)
@@ -83,13 +81,11 @@ class DefinitionService(Service):
     def list_workflows(self) -> dict[str, Any]:
         """Every workflow a project can use, each described as a project's is."""
 
-
         roles, workflows = self.workflow_catalogue()
         return {"workflows": [describe_workflow(wf, roles) for wf in workflows.values()]}
 
     def list_roles(self) -> dict[str, Any]:
         """Return all available role definitions."""
-
 
         try:
             roles = workspace_definitions(self.store).roles
@@ -102,7 +98,6 @@ class DefinitionService(Service):
 
         ``None`` is the workspace: the defaults every project starts from.
         """
-
 
         if project_id is not None:
             self._require_project(project_id)
@@ -120,7 +115,6 @@ class DefinitionService(Service):
     ) -> dict[str, Any]:
         """Save one role or workflow, for a project or the workspace, from the editor."""
 
-
         if project_id is not None:
             self._require_project(project_id)
         changed_by = str(body.get("requested_by") or "").strip() or "dashboard"
@@ -136,7 +130,6 @@ class DefinitionService(Service):
         self, project_id: str | None, kind: str, definition_id: str, *, requested_by: str | None = None
     ) -> dict[str, Any]:
         """Drop a scope's own role or workflow; the id goes back to the layer below."""
-
 
         if project_id is not None:
             self._require_project(project_id)

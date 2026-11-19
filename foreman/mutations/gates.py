@@ -11,15 +11,22 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from uuid import uuid4
 
 from ..definitions.gate_steps import HUMAN_GATE_ROLE, blocked_kind, resolve_gate_steps
 from ..definitions.layers import project_definitions
 from ..definitions.workflows import WorkflowDefinition, WorkflowStep
-from ..domain.models import HumanGateDecision, Project, Task, utc_now_text
+from ..domain.models import HumanGateDecision, MergeWaiver, Project, Task, utc_now_text
 from ..history.records import RunRecords, new_id
 from ..notifications.delivery import NotificationDispatcher
+from ..repo.git import head_sha
 from ..store import ForemanStore
 from .base import MutationBase, MutationError
+
+#: The evidence checks a person may waive for one merge.
+MERGE_WAIVER_TYPES: frozenset[str] = frozenset(
+    {"missing_acceptance_criteria", "incomplete_criteria", "no_code_delta", "docs_only_impl_task"}
+)
 
 #: Gate decisions, as the workflow names them.
 GATE_OUTCOMES: tuple[str, ...] = ("approve", "deny")
@@ -249,3 +256,48 @@ class GateMutations(MutationBase):
         unblocked = self.unblock_task(task)
         self.record_guidance(unblocked, clean)
         return unblocked
+
+    def waive_merge(
+        self,
+        task: Task,
+        *,
+        waiver_type: str,
+        reason: str,
+        approved_by: str | None = None,
+    ) -> MergeWaiver:
+        """Let a task merge past one evidence check, at its branch's current commit.
+
+        The waiver names the branch and the commits it was given at, so a
+        later commit is not covered by it.
+        """
+
+        if waiver_type not in MERGE_WAIVER_TYPES:
+            raise MutationError(
+                f"Invalid waiver type {waiver_type!r}. "
+                f"Must be one of: {', '.join(sorted(MERGE_WAIVER_TYPES))}"
+            )
+        project = self.store.get_project(task.project_id)
+        if project is None:
+            raise MutationError(f"Project not found: {task.project_id}")
+        branch_name = task.branch_name or "unknown"
+        try:
+            branch_sha = head_sha(project.repo_path, f"refs/heads/{branch_name}") or ""
+            base_sha = head_sha(project.repo_path, f"refs/heads/{project.default_branch}") or ""
+        except Exception as exc:  # noqa: BLE001 - any git failure refuses the waiver
+            raise MutationError(f"Failed to get branch SHA: {exc}") from exc
+        waiver = MergeWaiver(
+            id=f"waiver-{uuid4().hex[:12]}",
+            task_id=task.id,
+            project_id=task.project_id,
+            waiver_type=waiver_type,
+            reason=reason,
+            approved_by=approved_by or "human",
+            approved_at=self._now().isoformat(),
+            branch_name=branch_name,
+            head_sha=branch_sha,
+            base_sha=base_sha,
+            expires_at=None,
+            revoked_at=None,
+        )
+        self.store.save_merge_waiver(waiver)
+        return waiver

@@ -90,13 +90,6 @@ def handle_worktree_prune(args: argparse.Namespace) -> int:
         except WorktreeError as exc:
             print(str(exc), file=sys.stderr)
             return 1
-        # Forget the paths that no longer exist so `task show` stops
-        # advertising a directory an operator cannot open.
-        removed_paths = {str(entry.path) for entry in removed}
-        for task in store.list_tasks(project_id=project.id):
-            if task.worktree_path and task.worktree_path in removed_paths:
-                task.worktree_path = None
-                store.save_task(task)
 
     lines = [
         "Pruned worktrees",

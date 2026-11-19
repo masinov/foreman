@@ -88,7 +88,6 @@ class IntakeService(Service):
         flag into 201 or 200.
         """
 
-
         project = self._require_project(project_id)
 
         clean_title = (title or "").strip()

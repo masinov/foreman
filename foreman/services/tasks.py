@@ -14,8 +14,6 @@ from ..definitions.roles import RoleLoadError
 from ..definitions.workflows import WorkflowLoadError
 from ..domain.guidance import guidance_notes
 from ..domain.models import (
-    TASK_COMPLEXITIES,
-    TASK_TYPES,
     Event,
     Task,
 )
@@ -27,7 +25,7 @@ from .errors import (
     InvalidRequestError,
     NotFoundError,
 )
-from .views import stable_slug, task_source
+from .views import task_source
 from .workspace import foreman_starts_backlog_work
 
 
@@ -222,59 +220,19 @@ class TaskService(Service):
         ids (validated to exist in the same project).
         """
 
-
         sprint = self._require_sprint(sprint_id)
-        if not title.strip():
-            raise InvalidRequestError("Task title is required.")
-
-        if task_type not in TASK_TYPES:
-            raise InvalidRequestError(
-                f"Unsupported task type: {task_type}. "
-                f"Expected one of: {', '.join(TASK_TYPES)}."
+        try:
+            task = self._mutations().add_task(
+                sprint,
+                title=title,
+                task_type=task_type,
+                acceptance_criteria=acceptance_criteria,
+                description=description,
+                complexity=complexity,
+                depends_on=depends_on or (),
             )
-
-        if complexity is not None and complexity not in TASK_COMPLEXITIES:
-            raise InvalidRequestError(
-                f"Unsupported complexity: {complexity}. "
-                f"Expected one of: {', '.join(TASK_COMPLEXITIES)}."
-            )
-
-        depends_on_ids: list[str] = []
-        for dep_id in depends_on or []:
-            dep_id = str(dep_id).strip()
-            if not dep_id:
-                continue
-            dep_task = self.store.get_task(dep_id)
-            if dep_task is None or dep_task.project_id != sprint.project_id:
-                raise InvalidRequestError(
-                    f"Dependency task not found in this project: {dep_id}"
-                )
-            if dep_id not in depends_on_ids:
-                depends_on_ids.append(dep_id)
-
-        existing_tasks = self.store.list_tasks(sprint_id=sprint_id)
-        task_id = f"task-{stable_slug(title)}"
-        suffix = 2
-        while self.store.get_task(task_id) is not None:
-            task_id = f"task-{stable_slug(title)}-{suffix}"
-            suffix += 1
-
-        now = self._now().isoformat()
-        task = Task(
-            id=task_id,
-            sprint_id=sprint_id,
-            project_id=sprint.project_id,
-            title=title.strip(),
-            task_type=task_type,
-            acceptance_criteria=acceptance_criteria.strip() if acceptance_criteria else None,
-            description=description.strip() if description and description.strip() else None,
-            complexity=complexity,
-            depends_on_task_ids=depends_on_ids,
-            order_index=max((t.order_index for t in existing_tasks), default=-1) + 1,
-            created_by="human",
-            created_at=now,
-        )
-        task = self.store.save_task(task)
+        except MutationError as exc:
+            raise InvalidRequestError(str(exc)) from exc
         return {
             "id": task.id,
             "task_key": task.task_key,
@@ -315,7 +273,6 @@ class TaskService(Service):
 
     def _project_workflow_step_ids(self, project_id: str) -> set[str] | None:
         """Return the workflow step ids for a project, or ``None`` if unresolved."""
-
 
         project = self.store.get_project(project_id)
         if project is None:

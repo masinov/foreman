@@ -163,12 +163,12 @@ and its successors in later slices translate them.
 
 These are known and not hidden by the contract:
 
-- **The CLI does not call the services.** It calls `foreman.mutations` for
-  changes and the store for reads, and a few commands (`foreman project
-  set`, `foreman gate`, `foreman notify`, `foreman sprint`, `foreman task`,
-  `foreman worktree`) still write rows with the store directly. Each is
-  allowed by the stack, which lets a layer reach anything below it. Moving
-  each command onto its service is the next slice.
+- **The CLI reads on its own.** Since `refactor/one-implementation-per-change`
+  every change the CLI makes goes through `foreman.mutations`, as the
+  services' do (below). Its reads are its own: it lists and prints from the
+  store and does not call the services, whose answers are shaped for the
+  API. Two surfaces reading the same rows can still show them differently;
+  they can no longer change them differently.
 - **Some modules are long, each within one concern:**
   `engine/workflow_runner` (1,175 lines), `engine/resident` (1,091),
   `engine/builtins` (1,048), `cli/tasks` (921), `engine/orchestrator`
@@ -176,6 +176,34 @@ These are known and not hidden by the contract:
   concern), and is not a layering fault.
 - Import order is sorted (`ruff`'s `I` rule) only in the modules this
   refactor touched. The rule is not on for the whole repository yet.
+
+## One implementation of each change (2026-11-19, after slice 5)
+
+The stack lets a layer reach anything below it, so the contract could not
+see that the CLI and the services each wrote some rows themselves. Three
+copies of "add a task to a sprint" existed (`foreman task add`, the
+dashboard's add task, a new sprint's first tasks), two of "create a sprint",
+"register a project", "change a setting" and "prune worktrees", and three
+functions that made an id from a title. Their rules had drifted: the CLI's
+`foreman sprint add` skipped the sprint rules, the dashboard's Run activated
+a sprint by setting its status, and `foreman task override` did not check
+the overrides the way an edit does.
+
+Each now has one implementation in `foreman.mutations`: `add_task`,
+`create_sprint`, `register_project`, `reregister_project` (`foreman init`
+on a registered folder), `change_project` (fields and settings, checked
+together; `host_level=True` only from a terminal, ADR-0017),
+`raise_decision_gate`, `resolve_decision_gate`, `waive_merge`, and
+`transition_sprint` for Run's activation. Pruning worktrees forgets their
+paths in `repo/worktrees`. Ids come from `mutations.base.slug_id`.
+
+**No surface (`cli/`, `api/`, `services/`) saves a row with the store or
+builds a project, sprint, task, decision gate or merge waiver itself.**
+`tests/test_layers.py` holds it. A store method that is a whole operation
+(minting or revoking a token, queueing an engine command, removing a
+notification channel) is called from a surface as it is: it is already the
+one implementation. The engine-command table is the engine's control
+channel by design (ADR-0011).
 
 ## Consequences
 

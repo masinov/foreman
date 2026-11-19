@@ -1,4 +1,4 @@
-"""Changes a person makes to tasks and sprints, in one place.
+"""Changes a person makes to projects, sprints and tasks, in one place.
 
 The CLI and the dashboard both let a person accept, edit, block, unblock,
 cancel and delete tasks, write guidance and decide gates, create, edit and
@@ -14,9 +14,11 @@ where.
 Surfaces translate ``MutationError`` into their own error type and decide
 how to present the result. Nothing here prints or knows about HTTP.
 
-The rules are kept in a part per area, like the store's: ``tasks``,
-``gates``, ``backlog`` and ``sprints``, over ``base`` (who acts, the
-audit event). ``Mutations`` puts them together; every part may call the
+The rules are kept in a part per area, like the store's: ``projects``,
+``tasks``, ``gates`` (a gate decision, a merge waiver), ``backlog``,
+``sprints`` and ``decision_gates``, over ``base`` (who acts, the audit
+event). No surface writes a project, sprint or task row itself; a test
+holds that (``tests/test_layers.py``). ``Mutations`` puts them together; every part may call the
 others' operations through it, as ``send_back`` unblocks a task.
 """
 
@@ -24,14 +26,23 @@ from __future__ import annotations
 
 from .backlog import BacklogMutations
 from .base import MutationError
+from .decision_gates import DecisionGateMutations
 from .gates import GateMutations
+from .projects import ProjectMutations
 from .sprints import SprintMutations
 from .tasks import TaskMutations
 
 __all__ = ["MutationError", "Mutations"]
 
 
-class Mutations(TaskMutations, GateMutations, BacklogMutations, SprintMutations):
+class Mutations(
+    ProjectMutations,
+    TaskMutations,
+    GateMutations,
+    BacklogMutations,
+    SprintMutations,
+    DecisionGateMutations,
+):
     """Operator changes to the tasks and sprints of one store.
 
     ``via`` names the surface (``"cli"``, ``"dashboard"``, ``"api"``,

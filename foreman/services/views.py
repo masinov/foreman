@@ -2,19 +2,10 @@
 
 from __future__ import annotations
 
-import re
-import unicodedata
 from typing import Any
 
 from ..domain.models import Task
 from ..engine.control import EngineStateView
-
-
-def stable_slug(text: str) -> str:
-    """Return a filesystem-safe ASCII slug from arbitrary text."""
-    normalized = unicodedata.normalize("NFKD", text.strip().lower())
-    slug = re.sub(r"[^a-z0-9]+", "-", normalized).strip("-")
-    return slug[:48] or "untitled"
 
 
 def serialize_engine_state(engine: EngineStateView) -> dict[str, Any]:

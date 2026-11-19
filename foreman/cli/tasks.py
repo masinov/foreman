@@ -20,11 +20,9 @@ from .common import (
     DB_OPTION_NOTE,
     add_db_option,
     add_json_option,
-    allocate_entity_id,
     cli_mutations,
     format_step_visits,
     format_usd,
-    next_order_index,
     print_json,
     print_lines,
     project_workflow_step_ids,
@@ -201,13 +199,6 @@ def handle_task_add(args: argparse.Namespace) -> int:
                     file=sys.stderr,
                 )
                 return 1
-            if sprint.is_backlog:
-                print(
-                    f"{sprint_id} is the backlog, not a sprint. File work into it with "
-                    f"`foreman backlog add {project.id}`.",
-                    file=sys.stderr,
-                )
-                return 1
         else:
             sprint = select_task_creation_sprint(store, project.id)
             if sprint is None:
@@ -217,36 +208,19 @@ def handle_task_add(args: argparse.Namespace) -> int:
                 )
                 return 1
 
-        depends_on_ids: list[str] = []
-        raw_depends = getattr(args, "depends_on", None)
-        if raw_depends:
-            for dep_id in (part.strip() for part in raw_depends.split(",")):
-                if not dep_id:
-                    continue
-                dep_task = store.get_task(dep_id)
-                if dep_task is None or dep_task.project_id != project.id:
-                    print(
-                        f"Dependency task {dep_id} not found in project {project.id}.",
-                        file=sys.stderr,
-                    )
-                    return 1
-                if dep_id not in depends_on_ids:
-                    depends_on_ids.append(dep_id)
-
-        existing_tasks = store.list_tasks(sprint_id=sprint.id)
-        task = Task(
-            id=allocate_entity_id("task", args.title, exists=store.get_task),
-            sprint_id=sprint.id,
-            project_id=project.id,
-            title=args.title,
-            description=getattr(args, "description", None),
-            task_type=args.task_type,
-            acceptance_criteria=args.criteria,
-            depends_on_task_ids=depends_on_ids,
-            complexity=getattr(args, "complexity", None),
-            order_index=next_order_index([item.order_index for item in existing_tasks]),
-        )
-        store.save_task(task)
+        try:
+            task = cli_mutations(store).add_task(
+                sprint,
+                title=args.title,
+                task_type=args.task_type,
+                description=getattr(args, "description", None),
+                acceptance_criteria=args.criteria,
+                complexity=getattr(args, "complexity", None),
+                depends_on=(getattr(args, "depends_on", None) or "").split(","),
+            )
+        except MutationError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
         db_path = store.db_path
 
     print_lines(
@@ -373,8 +347,13 @@ def handle_task_override(args: argparse.Namespace) -> int:
             else:
                 overrides.pop("policy", None)
 
-        task.executor_overrides = overrides
-        store.save_task(task)
+        try:
+            cli_mutations(store).edit_task(
+                task, {"executor_overrides": overrides}, valid_steps=valid_steps
+            )
+        except MutationError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
         db_path = store.db_path
 
     print_lines(

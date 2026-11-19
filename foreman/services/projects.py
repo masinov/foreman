@@ -14,28 +14,26 @@ from ..definitions.gate_steps import (
     resolve_gate_steps,
 )
 from ..domain.models import (
-    AUTONOMY_LEVELS,
     Project,
 )
 from ..domain.policy import PolicyMatrix, describe_resolution
 from ..domain.settings import (
     HOST_LEVEL_SETTINGS,
-    ProjectSettings,
     SettingsError,
-    changed_host_level_settings,
     settings_of,
 )
 from ..engine.control import (
     describe_engine,
 )
-from ..repo.scaffold import generate_project_id, new_project_settings
+from ..mutations import MutationError
+from ..mutations.projects import HostLevelSettingError, SettingError
 from ..store import ForemanStore
 from .base import Service
 from .definitions import DefinitionService
 from .errors import (
-    NotFoundError,
     ForbiddenError,
     InvalidRequestError,
+    NotFoundError,
 )
 from .views import serialize_engine_state
 
@@ -188,68 +186,21 @@ class ProjectService(Service):
         project = self.store.get_project(project_id)
         if project is None:
             raise NotFoundError(f"Project not found: {project_id}")
-
-        allowed_top_level = {"workflow_id", "default_branch", "spec_path", "autonomy_level"}
-        for key in updates:
-            if key == "settings":
-                continue
-            if key not in allowed_top_level:
-                raise InvalidRequestError(f"Unknown setting: {key}")
-
-        settings_updates = updates.get("settings")
-        if settings_updates is not None:
-            if not isinstance(settings_updates, dict):
-                raise InvalidRequestError("Settings must be a JSON object.")
-            blocked = changed_host_level_settings(project.settings, settings_updates)
-            if blocked:
-                raise ForbiddenError(
-                    f"{', '.join(blocked)} cannot be changed through the dashboard: "
-                    "these settings decide what runs on the host. Change them at a "
-                    f"terminal with `foreman config {project.id} --set <key>=<value>`."
-                )
-            merged = dict(project.settings)
-            merged.update(
-                {
-                    key: value
-                    for key, value in settings_updates.items()
-                    if key not in HOST_LEVEL_SETTINGS
-                }
+        fields = {key: value for key, value in updates.items() if key != "settings"}
+        try:
+            self._mutations().change_project(
+                project, fields=fields, settings=updates.get("settings"), host_level=False
             )
-            # Each key is checked alone first, so the refusal names the setting
-            # it is about and a client can show it beside that field.
-            for key, value in settings_updates.items():
-                try:
-                    ProjectSettings.from_raw({key: value})
-                except SettingsError as exc:
-                    raise InvalidRequestError(str(exc), field=key) from exc
-            try:
-                ProjectSettings.from_raw(merged)
-            except SettingsError as exc:
-                raise InvalidRequestError(f"Invalid settings: {exc}") from exc
-            project.settings = merged
-
-        if "workflow_id" in updates:
-            workflow_id = str(updates["workflow_id"])
-            if workflow_id not in self.definitions.workflow_catalogue(project.id)[1]:
-                raise InvalidRequestError(
-                    f"There is no workflow {workflow_id!r}.", field="workflow_id"
-                )
-            project.workflow_id = workflow_id
-        if "default_branch" in updates:
-            project.default_branch = str(updates["default_branch"])
-        if "spec_path" in updates:
-            project.spec_path = str(updates["spec_path"])
-        if "autonomy_level" in updates:
-            value = str(updates["autonomy_level"])
-            if value not in AUTONOMY_LEVELS:
-                raise InvalidRequestError(
-                    f"Invalid autonomy_level: '{value}'. "
-                    f"Expected one of: {', '.join(AUTONOMY_LEVELS)}."
-                )
-            project.autonomy_level = value  # type: ignore[assignment]
-
-        project.updated_at = self._now().isoformat()
-        self.store.save_project(project)
+        except HostLevelSettingError as exc:
+            raise ForbiddenError(
+                f"{', '.join(exc.settings)} cannot be changed through the dashboard: "
+                "these settings decide what runs on the host. Change them at a "
+                f"terminal with `foreman config {project.id} --set <key>=<value>`."
+            ) from exc
+        except SettingError as exc:
+            raise InvalidRequestError(str(exc), field=exc.field) from exc
+        except MutationError as exc:
+            raise InvalidRequestError(str(exc)) from exc
         return self.get_project_settings(project_id)
 
     def create_project(
@@ -261,32 +212,14 @@ class ProjectService(Service):
     ) -> dict[str, Any]:
         """Register a new project record in the dashboard."""
 
-        name = name.strip()
-        if not name:
-            raise InvalidRequestError("Project name cannot be empty.")
-        repo_path = repo_path.strip()
-        if not repo_path:
-            raise InvalidRequestError("Repo path cannot be empty.")
-        _validate_repo_path(repo_path)
-        workflow_id = (workflow_id or "development").strip()
-        if not workflow_id:
-            raise InvalidRequestError("Workflow ID cannot be empty.")
-
-        base_id = generate_project_id(name, repo_path)
-        project_id = base_id
-        suffix = 2
-        while self.store.get_project(project_id) is not None:
-            project_id = f"{base_id}-{suffix}"
-            suffix += 1
-
-        project = Project(
-            id=project_id,
-            name=name,
-            repo_path=repo_path,
-            workflow_id=workflow_id,
-            settings=new_project_settings(),
-        )
-        self.store.save_project(project)
+        if repo_path.strip():
+            _validate_repo_path(repo_path.strip())
+        try:
+            project = self._mutations().register_project(
+                name=name, repo_path=repo_path, workflow_id=workflow_id or "development"
+            )
+        except MutationError as exc:
+            raise InvalidRequestError(str(exc)) from exc
         return {
             "id": project.id,
             "name": project.name,

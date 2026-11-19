@@ -52,7 +52,7 @@ of `foreman/` belongs to no layer and fails the check.
 | services | `services/`: one service per area (`projects`, `engine`, `sprints`, `tasks`, `backlog`, `intake`, `proposals`, `decision_gates`, `worktrees`, `definitions`, `workspace`) over `base`, put together by `Services`; the reads they use (`task_reads`, `workflow_reads`, `definition_forms`, `access`, `views`); `errors` | |
 | manager | `manager/`: `agent` (a manager turn, its session and history), `proposals`, `planning`, `digest` | |
 | engine | `engine/` | Orchestrator, Workflow Engine |
-| changes | `mutations/`: a part per area (`tasks`, `gates`, `backlog`, `sprints`) over `base`, composed into `Mutations` | |
+| changes | `mutations/`: a part per area (`projects`, `tasks`, `gates`, `backlog`, `sprints`, `decision_gates`) over `base`, composed into `Mutations`. The only writer of those rows: no surface saves or builds one (`tests/test_layers.py`) | |
 | history | `history/`: `RunRecords`, the one writer of runs and events, and the JSON-lines process log | |
 | parts | `definitions/`, `repo/`, `notifications/` (`policy`, `destinations`, `transport`, `delivery`), `runner/` | Role System; Agent Runner |
 | store | `store/` | |

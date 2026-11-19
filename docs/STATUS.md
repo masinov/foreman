@@ -54,8 +54,9 @@ Current snapshot only. History up to 2026-09-08 (sprints 1 to 54) is in
   stack and CI holds it, with no exception. It landed in five branches that
   changed no behaviour. Every module path changed: a branch opened before
   2026-11-19 must be rebased, and a process started before then must be
-  restarted. Left, in ADR-0032: the CLI does not yet go through the
-  services, and five modules are still long.
+  restarted. Every change the CLI and the services make goes through
+  `foreman.mutations` (`tests/test_layers.py`). Left, in ADR-0032: the CLI's
+  reads are its own, and five modules are still long.
 
 ## What sprint 56 changed for an operator
 
