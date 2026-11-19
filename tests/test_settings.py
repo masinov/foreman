@@ -120,28 +120,16 @@ class ProjectSettingsFromRawTests(unittest.TestCase):
     def test_token_economy_setting_defaults(self) -> None:
         settings = ProjectSettings.from_raw({})
         self.assertEqual(settings.meta_agent_model, "")
-        self.assertEqual(settings.judge_base_url, "")
-        self.assertEqual(settings.judge_model, "")
-        self.assertEqual(settings.judge_api_key_env, "")
-        self.assertEqual(settings.judge_max_diff_chars, 24000)
         self.assertEqual(settings.review_diff_max_chars, 16000)
 
     def test_token_economy_settings_parse(self) -> None:
         settings = ProjectSettings.from_raw(
             {
                 "meta_agent_model": "claude-opus-4-8",
-                "judge_base_url": "https://judge.example",
-                "judge_model": "cheap-judge",
-                "judge_api_key_env": "JUDGE_KEY",
-                "judge_max_diff_chars": 12000,
                 "review_diff_max_chars": 8000,
             }
         )
         self.assertEqual(settings.meta_agent_model, "claude-opus-4-8")
-        self.assertEqual(settings.judge_base_url, "https://judge.example")
-        self.assertEqual(settings.judge_model, "cheap-judge")
-        self.assertEqual(settings.judge_api_key_env, "JUDGE_KEY")
-        self.assertEqual(settings.judge_max_diff_chars, 12000)
         self.assertEqual(settings.review_diff_max_chars, 8000)
 
     def test_review_diff_max_chars_must_be_positive(self) -> None:

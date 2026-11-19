@@ -61,8 +61,8 @@ of `foreman/` belongs to no layer and fails the check.
 Nothing but `__init__` and `__main__` is at the root of `foreman/`, and the
 contract names no exception. Imports are at the top of their module. The
 only ones inside a function load something heavy or platform-specific when
-that path runs: `uvicorn` (starting the server), `httpx` (the judge's one
-call), `ctypes` (Linux process control).
+that path runs: `uvicorn` (starting the server) and `ctypes` (Linux process
+control).
 
 A person's gate decision and the engine's are written by the same two
 functions in `mutations/gates.py`: `find_gate_stop` checks the task waits at
@@ -517,7 +517,8 @@ over `foreman/repo/git.py`, with typed response models in
   with `status`, `exit_code`, `duration_seconds`, `command`, `result_line`,
   `commit`, `head_sha`; `branch` with `ahead`, `behind` and `state`; `size`),
   `claims` (what an agent reported: `reviews` with decision, model, duration,
-  commit, summary; `judged_by`; `criteria` with their judged `status`),
+  commit, summary; `criteria` with their `status`: `covered` by an approving
+  review of the head, or `unverified`),
   `proof_status`, `outstanding`, and `evidence_files`, always empty until
   Phase 5 captures evidence files (item shape: `name`, `path`, `media_type`,
   `size_bytes`, `run_id`, `captured_at`). It reads recorded events, runs and

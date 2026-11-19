@@ -381,10 +381,10 @@ class ReviewerPromptHardeningTests(RepoTestCase):
 
             prompt = self._render_reviewer_prompt(store, project, task)
 
-            # The evidence says how many criteria there are and that no judge
-            # checked them, rather than claiming coverage.
+            # The evidence says how many criteria there are and that no review
+            # has covered them yet, rather than claiming coverage.
             self.assertIn("Acceptance criteria: ", prompt)
-            self.assertIn("not checked by a judge model", prompt)
+            self.assertIn("covered once code review approves", prompt)
 
 
 class BuiltinTranscriptLoggingTests(RepoTestCase):

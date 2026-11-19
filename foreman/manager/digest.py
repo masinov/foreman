@@ -70,8 +70,7 @@ def build_attention_digest(
         if evidence is not None:
             lines.append(
                 f"evidence: proof={evidence.proof_status} | tests={evidence.tests_status} "
-                f"| review={evidence.review_outcome or 'none'} "
-                f"| criteria judged by={evidence.judged_by}"
+                f"| review={evidence.review_outcome or 'none'}"
             )
             if evidence.failure_reasons:
                 lines.append("evidence failure reasons:")

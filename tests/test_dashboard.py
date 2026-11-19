@@ -2020,7 +2020,7 @@ class DashboardSprintTaskBacklogTests(unittest.TestCase):
         )
 
     def test_get_task_serializes_completion_evidence(self):
-        """GET /api/tasks/{id} surfaces completion evidence (proof, tests, review, judge)."""
+        """GET /api/tasks/{id} surfaces completion evidence (proof, tests, review, criteria)."""
         from foreman.domain.models import CompletionEvidence
 
         store = ForemanStore(self.db_path)
@@ -2031,7 +2031,6 @@ class DashboardSprintTaskBacklogTests(unittest.TestCase):
             task_title=task.title,
             acceptance_criteria="c",
             proof_status="failed",
-            judged_by="claude-haiku-4-5-20251001",
             head_sha="b" * 40,
             tests_status="stale",
             tested_sha="a" * 40,
@@ -2059,7 +2058,7 @@ class DashboardSprintTaskBacklogTests(unittest.TestCase):
         self.assertEqual(evidence["reviewed_sha"], "b" * 40)
         self.assertEqual(evidence["outstanding"], [])
         self.assertEqual(evidence["proof_status"], "failed")
-        self.assertEqual(evidence["judged_by"], "claude-haiku-4-5-20251001")
+        self.assertNotIn("judged_by", evidence)
         self.assertEqual(len(evidence["criteria_checklist"]), 1)
         self.assertEqual(
             evidence["failure_reasons"],

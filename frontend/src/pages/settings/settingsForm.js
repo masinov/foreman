@@ -87,8 +87,6 @@ export const CODECS = {
   default_branch: { ...text, required: "Name the branch merges land on." },
   spec_path: text,
   review_diff_max_chars: { ...whole({ required: true }) },
-  judge_model: text,
-  judge_max_diff_chars: { ...whole({ required: true }) },
 };
 
 // Kept on the project itself rather than among its settings; the API takes

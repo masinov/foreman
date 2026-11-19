@@ -31,10 +31,6 @@ export const EFFECTIVE = {
   worktree_setup_command: "ln -s ../node_modules frontend/node_modules",
   worktree_link_paths: ["venv"],
   context_dir: "",
-  judge_base_url: "",
-  judge_api_key_env: "",
-  judge_model: "",
-  judge_max_diff_chars: 24000,
   review_diff_max_chars: 16000,
 };
 
@@ -78,8 +74,6 @@ export function settingsPayload(effective = {}) {
     effective: { ...EFFECTIVE, ...effective },
     host_level_settings: [
       "context_dir",
-      "judge_api_key_env",
-      "judge_base_url",
       "worktree_link_paths",
       "worktree_root",
       "worktree_setup_command",

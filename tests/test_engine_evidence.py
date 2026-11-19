@@ -390,7 +390,6 @@ class CompletionEvidenceTests(RepoTestCase):
 
         evidence, _ = self.evidence_for(arrange=arrange)
 
-        self.assertEqual(evidence.judged_by, "none")
         self.assertEqual(evidence.criteria_addressed, 0)
         self.assertEqual([c["status"] for c in evidence.criteria_checklist], ["unverified"])
         self.assertEqual(evidence.proof_status, "pending")
@@ -426,7 +425,7 @@ class CompletionEvidenceTests(RepoTestCase):
 
         self.assertIn(f"Tests: passed at {head[:8]} (exit 0)", text)
         self.assertIn("Code review: none yet", text)
-        self.assertIn("Acceptance criteria: 1, not checked by a judge model", text)
+        self.assertIn("Acceptance criteria: 1, covered once code review approves", text)
         self.assertNotIn("/100", text)
         self.assertNotIn("score", text.lower())
 
@@ -505,95 +504,53 @@ class CompletionEvidenceTests(RepoTestCase):
             self.assertEqual(evidence.head_sha, "")
             self.assertEqual(evidence.tests_status, "not_run")
 
-    def test_build_completion_evidence_uses_configured_judge(self) -> None:
-        import httpx
-        from unittest import mock
+    def test_an_approving_review_of_the_head_covers_the_criteria(self) -> None:
+        def arrange(store, project, task, repo_path, head):
+            self.seed_tests_at(store, project=project, task=task, exit_code=0, head_sha=head)
+            self.seed_review_at(store, project=project, task=task, outcome="approve", head_sha=head)
 
-        repo_path, db_path = self.create_workspace()
-        self.initialize_repo(repo_path)
+        evidence, head = self.evidence_for(arrange=arrange)
 
-        with ForemanStore(db_path) as store:
-            store.initialize()
-            project, _, task = self.seed_project(
-                store,
-                repo_path=repo_path,
-                acceptance_criteria="Implement the orchestrator.\nWrite tests for it.",
-            )
-            project.settings["judge_base_url"] = "https://judge.example/api"
-            project.settings["judge_model"] = "cheap-judge-1"
-            store.save_project(project)
+        self.assertEqual([c["status"] for c in evidence.criteria_checklist], ["covered"])
+        self.assertEqual(evidence.criteria_checklist[0]["evidence"], f"Code review approved {head[:8]}.")
+        self.assertEqual(evidence.criteria_addressed, 1)
+        self.assertEqual(evidence.proof_status, "passed")
+        self.assertIn("Acceptance criteria: 1, covered by the approving code review", str(evidence))
 
-            self.seed_run(
-                store,
-                project=project,
-                task=task,
-                role_id="developer",
-                workflow_step="develop",
-                agent_backend="claude_code",
-                outcome="done",
-                outcome_detail="Implemented the orchestrator module.",
-                created_at="2026-04-22T10:20:00Z",
-            )
-            self.git(repo_path, "checkout", "-b", task.branch_name)
-            self.write_text(repo_path / "orchestrator.py", "def run(): pass\n")
-            self.commit_all(repo_path, "feat: implement orchestrator")
-            self.git(repo_path, "checkout", "main")
+    def test_an_approval_of_an_older_commit_does_not_cover_them(self) -> None:
+        def arrange(store, project, task, repo_path, head):
+            self.seed_tests_at(store, project=project, task=task, exit_code=0, head_sha=head)
+            self.seed_review_at(store, project=project, task=task, outcome="approve", head_sha="0" * 40)
 
-            judge_body = {
-                "content": [
-                    {
-                        "type": "text",
-                        "text": (
-                            '[{"criterion": "Implement the orchestrator.", "status": "passed", "evidence": "done"},'
-                            ' {"criterion": "Write tests for it.", "status": "partial", "evidence": "some"}]'
-                        ),
-                    }
-                ]
+        evidence, _ = self.evidence_for(arrange=arrange)
+
+        self.assertEqual([c["status"] for c in evidence.criteria_checklist], ["unverified"])
+        self.assertEqual(evidence.criteria_addressed, 0)
+        self.assertEqual(evidence.proof_status, "failed")
+
+    def test_criteria_wait_for_an_approving_review(self) -> None:
+        def arrange(store, project, task, repo_path, head):
+            self.seed_tests_at(store, project=project, task=task, exit_code=0, head_sha=head)
+
+        evidence, _ = self.evidence_for(arrange=arrange)
+
+        self.assertEqual([c["status"] for c in evidence.criteria_checklist], ["unverified"])
+        self.assertIn("Acceptance criteria are covered once code review approves.", evidence.outstanding)
+        self.assertEqual(evidence.proof_status, "pending")
+
+    def test_evidence_saved_by_the_removed_judge_still_loads(self) -> None:
+        evidence = CompletionEvidence.from_mapping(
+            {
+                "task_id": "t",
+                "task_title": "T",
+                "acceptance_criteria": "A",
+                "criteria_count": 1,
+                "criteria_checklist": [{"criterion": "A", "status": "passed", "evidence": "x"}],
+                "judged_by": "cheap-judge-1",
             }
-            fake = httpx.Response(
-                status_code=200,
-                json=judge_body,
-                request=httpx.Request("POST", "https://judge.example/api/v1/messages"),
-            )
-
-            orchestrator = ForemanOrchestrator(store, roles=self.roles, workflows=self.workflows)
-            with mock.patch("httpx.post", return_value=fake):
-                evidence = orchestrator.build_completion_evidence(task, project)
-
-            assert evidence is not None
-            self.assertEqual(evidence.judged_by, "cheap-judge-1")
-            self.assertEqual(evidence.criteria_addressed, 1)
-            self.assertEqual(evidence.criteria_partially_addressed, 1)
-            self.assertEqual(
-                [c["status"] for c in evidence.criteria_checklist],
-                ["passed", "partial"],
-            )
-
-    def test_criteria_are_unverified_when_no_judge_is_configured(self) -> None:
-        repo_path, db_path = self.create_workspace()
-        self.initialize_repo(repo_path)
-        with ForemanStore(db_path) as store:
-            store.initialize()
-            project, _, task = self.seed_project(
-                store,
-                repo_path=repo_path,
-                acceptance_criteria="Implement the orchestrator.",
-            )
-            self.seed_run(
-                store, project=project, task=task, role_id="developer",
-                workflow_step="develop", agent_backend="claude_code",
-                outcome="done", outcome_detail="Implemented orchestrator.",
-                created_at="2026-04-22T10:20:00Z",
-            )
-            self.git(repo_path, "checkout", "-b", task.branch_name)
-            self.write_text(repo_path / "orchestrator.py", "def run(): pass\n")
-            self.commit_all(repo_path, "feat: orchestrator")
-            self.git(repo_path, "checkout", "main")
-            orchestrator = ForemanOrchestrator(store, roles=self.roles, workflows=self.workflows)
-            evidence = orchestrator.build_completion_evidence(task, project)
-            assert evidence is not None
-            self.assertEqual(evidence.judged_by, "none")
-            self.assertEqual([c["status"] for c in evidence.criteria_checklist], ["unverified"])
+        )
+        self.assertEqual(evidence.criteria_checklist[0]["status"], "passed")
+        self.assertFalse(hasattr(evidence, "judged_by"))
 
 
 class EvidenceCachingTests(RepoTestCase):

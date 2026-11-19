@@ -25,7 +25,7 @@ from .base import MutationBase, MutationError
 
 #: The evidence checks a person may waive for one merge.
 MERGE_WAIVER_TYPES: frozenset[str] = frozenset(
-    {"missing_acceptance_criteria", "incomplete_criteria", "no_code_delta", "docs_only_impl_task"}
+    {"missing_acceptance_criteria", "no_code_delta", "docs_only_impl_task"}
 )
 
 #: Gate decisions, as the workflow names them.

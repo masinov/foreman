@@ -56,6 +56,10 @@ Base work that this framing makes necessary:
    - **The loop it allows:** a failing sprint-level check files fix tasks
      into the same sprint, and the sprint runs again until its checks pass.
      No task workflow can express that.
+   - **Global roles (owner, 2026-11-18):** roles triggered at the end of a
+     sprint that look at the whole sprint, not at one task. This is where a
+     judge of the sprint's acceptance belongs; the per-task criteria judge
+     was removed (ADR-0010 amendment).
    - **Further out:** recurring and event-triggered loops at project level,
      which create tasks or sprints and stop there.
 

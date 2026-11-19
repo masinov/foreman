@@ -347,8 +347,8 @@ class HostLevelSettingsTests(unittest.TestCase):
             "worktree_root": "/home",
             "worktree_link_paths": ["venv"],
             "context_dir": "/etc",
-            "judge_base_url": "https://evil.example",
-            "judge_api_key_env": "AWS_SECRET_ACCESS_KEY",
+            "merge_push_remote": "evil",
+            "agent_env_passthrough": ["AWS_SECRET_ACCESS_KEY"],
         }
         before = self._settings()
         for key, value in attempts.items():
@@ -375,7 +375,7 @@ class HostLevelSettingsTests(unittest.TestCase):
         current = _request(self.app, "GET", "/api/projects/p1/settings").json()
         self.assertIn("worktree_setup_command", current["host_level_settings"])
         self.assertNotIn("test_command", current["host_level_settings"])
-        payload = dict(current["settings"], max_step_visits=7, worktree_root="", judge_base_url="")
+        payload = dict(current["settings"], max_step_visits=7, worktree_root="", merge_push_remote="")
         response = _request(
             self.app, "PATCH", "/api/projects/p1/settings", json={"settings": payload}
         )

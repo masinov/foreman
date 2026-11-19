@@ -214,12 +214,7 @@ def register_waive_merge(subparsers: argparse._SubParsersAction) -> None:
         "--type",
         dest="waiver_type",
         required=True,
-        choices=[
-            "missing_acceptance_criteria",
-            "incomplete_criteria",
-            "no_code_delta",
-            "docs_only_impl_task",
-        ],
+        choices=sorted(MERGE_WAIVER_TYPES),
         help="Type of proof deficiency being waived.",
     )
     waive_parser.add_argument(

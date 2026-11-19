@@ -431,7 +431,7 @@ describe("General: Advanced", () => {
     fetchImpl.routes[SAVE_URL] = settingsPayload();
     expect(screen.getByLabelText("Merges land on")).toHaveValue("main");
     expect(screen.getByLabelText("Reviewer reads at most")).toHaveValue("16000");
-    expect(screen.getByLabelText("Criteria judge")).toHaveValue("");
+    expect(screen.queryByLabelText("Criteria judge")).toBeNull();
 
     fireEvent.change(screen.getByLabelText("Merges land on"), { target: { value: "develop" } });
     fireEvent.change(screen.getByLabelText("Specification"), { target: { value: "docs/spec.md" } });

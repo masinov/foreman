@@ -219,8 +219,6 @@ function GeneralForm({ projectId, settings, onSaved }) {
         {textRow("default_branch", "Merges land on", "the branch finished tasks are merged into", { narrow: false })}
         {textRow("spec_path", "Specification", "A file in the repository that agents are pointed to. Empty: none", { wide: true })}
         {textRow("review_diff_max_chars", "Reviewer reads at most", "characters of a change; a longer one is cut and the reviewer is told", { inputMode: "numeric" })}
-        {textRow("judge_model", "Criteria judge", "The model that checks acceptance criteria. Empty: they are not judged", { narrow: false })}
-        {textRow("judge_max_diff_chars", "Judge reads at most", "characters of a change", { inputMode: "numeric" })}
       </SettingsSection>
 
       <WorkingCopies projectId={projectId} />

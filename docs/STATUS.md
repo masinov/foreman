@@ -64,7 +64,8 @@ Current snapshot only. History up to 2026-09-08 (sprints 1 to 54) is in
 - A cancelled task is never written to or merged by the engine; a blocker
   signal stops the workflow; a crash between steps costs one step.
 - Completion evidence states facts tied to the branch head (tests, review,
-  judged criteria) and has no score (ADR-0018).
+  and the criteria an approving review covers) and has no score (ADR-0018).
+  The criteria judge was removed on 2026-11-19.
 - Guidance written for a task reaches its next agent step and shows as
   waiting or read.
 - Retries continue the interrupted session; a quota stop needs the CLI's

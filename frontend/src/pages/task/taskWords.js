@@ -247,26 +247,30 @@ export function reviewWords(review) {
   };
 }
 
+// "covered" and "unverified" are what the engine records: an approving code
+// review of the branch head covers the criteria. The others are from evidence
+// recorded before the criteria judge was removed (2026-11-19).
 const CRITERION_WORDS = {
+  covered: { tone: "passed", word: "Covered by review" },
+  unverified: { tone: "idle", word: "Not reviewed yet" },
   passed: { tone: "passed", word: "Met" },
   partial: { tone: "attention", word: "Partly met" },
   failed: { tone: "failed", word: "Not met" },
-  unverified: { tone: "idle", word: "Not judged" },
 };
 
 export function criterionWords(status) {
   return CRITERION_WORDS[status] ?? { tone: "idle", word: humanize(status) };
 }
 
-/** "2 of 3 acceptance criteria marked met by sonnet-5-5", or what is true instead. */
+/** "3 acceptance criteria, covered by the approving review", or what is true instead. */
 export function criteriaSummary(claims) {
   const criteria = claims?.criteria ?? [];
   if (criteria.length === 0) return "No acceptance criteria were filed";
-  if (!claims.judged_by || claims.judged_by === "none") {
-    return `${plural(criteria.length, "acceptance criterion", "acceptance criteria")}, not judged yet`;
-  }
-  const met = criteria.filter((item) => item.status === "passed").length;
-  return `${met} of ${criteria.length} acceptance criteria marked met by ${claims.judged_by}`;
+  const counted = plural(criteria.length, "acceptance criterion", "acceptance criteria");
+  if (criteria.every((item) => item.status === "covered")) return `${counted}, covered by the approving review`;
+  if (criteria.every((item) => item.status === "unverified")) return `${counted}, covered once code review approves`;
+  const met = criteria.filter((item) => item.status === "passed" || item.status === "covered").length;
+  return `${met} of ${criteria.length} acceptance criteria met`;
 }
 
 // ── Details ──────────────────────────────────────────────────────────────

@@ -18,6 +18,8 @@ memory changes rather than versioned product releases.
 
 ### Sprint 60 — what is there works and makes sense
 
+- The criteria judge is removed (sprint 60 decision 1, ADR-0010 amendment). It never ran, since no page offered its endpoint. An approving code review of the branch head covers the acceptance criteria, and the task's Checks say "Covered by review"; until then "Not reviewed yet". Its four settings and `judged_by` are gone, and the merge waiver for partly met criteria went with it, since nothing produces that failure any more. Evidence the judge recorded still loads.
+
 - A note is for the developer (ADR-0033, sprint 60 decision 6). A note written on a task is delivered only to the agent doing the work, at its next step. A reviewer is shown every note as context, with whether the developer has had it, and is never delivered one; before, a note written while a task waited for review went to the reviewer as instructions. The task page says "Save for the developer".
 
 - The test command is edited in the dashboard (Project settings, General, Tests), the owner's decision (ADR-0017 amendment). It is no longer a host-level setting; the others stay terminal-only. An edit that empties it is refused, since the test step fails without one.

@@ -153,7 +153,7 @@ collectors filter on that name.
 | Before | After |
 |---|---|
 | `notifications` (one module of 760 lines) | `notifications/`: `policy` (whether to speak), `destinations` (where), `transport` (the payload and the webhook), `delivery` (the queue and the worker) |
-| 45 imports inside functions | 3, each a late load of something heavy or platform-specific (`uvicorn`, `httpx`, `ctypes`). The rest are at the top of their module |
+| 45 imports inside functions | 3, each a late load of something heavy or platform-specific (`uvicorn`, `httpx`, `ctypes`). The rest are at the top of their module. `httpx` went with the criteria judge on 2026-11-19 |
 | four `if TYPE_CHECKING:` imports "to break a cycle" | real imports: none of them was a cycle once the layers were in place |
 
 Older ADRs name the paths of their day and are left as written. This table
