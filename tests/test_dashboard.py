@@ -3724,7 +3724,7 @@ class DashboardMetaAgentTests(unittest.TestCase):
 
     def _seed_attention(self, autonomy="supervised"):
         """Seed a blocked task + engine.attention_needed event; return ids."""
-        from foreman import meta_agent
+        from foreman.manager import agent as meta_agent
 
         store = ForemanStore(self.db_path)
         store.initialize()
@@ -3769,7 +3769,7 @@ class DashboardMetaAgentTests(unittest.TestCase):
         return project, task, event, captured
 
     def test_supervise_persists_supervision_turn_with_digest(self):
-        from foreman import meta_agent
+        from foreman.manager import agent as meta_agent
 
         orig_which, orig_run = meta_agent.shutil.which, meta_agent._run_claude
         try:
@@ -3795,7 +3795,7 @@ class DashboardMetaAgentTests(unittest.TestCase):
             meta_agent.shutil.which, meta_agent._run_claude = orig_which, orig_run
 
     def test_supervise_duplicate_event_returns_409(self):
-        from foreman import meta_agent
+        from foreman.manager import agent as meta_agent
 
         orig_which, orig_run = meta_agent.shutil.which, meta_agent._run_claude
         try:
@@ -3814,7 +3814,7 @@ class DashboardMetaAgentTests(unittest.TestCase):
             meta_agent.shutil.which, meta_agent._run_claude = orig_which, orig_run
 
     def test_supervise_directed_project_forbids_mutation_in_prompt(self):
-        from foreman import meta_agent
+        from foreman.manager import agent as meta_agent
 
         orig_which, orig_run = meta_agent.shutil.which, meta_agent._run_claude
         try:

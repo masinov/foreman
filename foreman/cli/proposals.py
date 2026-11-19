@@ -10,7 +10,7 @@ from typing import Any
 
 from ..engine.control import default_command_requester
 from ..domain.models import PROPOSAL_STATES
-from ..proposals import (
+from ..manager.proposals import (
     MANAGER,
     OPERATION_KINDS,
     PROPOSAL_PAGE_LIMIT,

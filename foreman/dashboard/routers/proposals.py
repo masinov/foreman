@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Query
 
-from ...proposals import PROPOSAL_PAGE_LIMIT
+from ...manager.proposals import PROPOSAL_PAGE_LIMIT
 from ..context import MAX_PAGE_LIMIT, ApiContext, split_values
 from ..schemas import RequestedBy, body_as
 

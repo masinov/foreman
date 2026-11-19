@@ -13,10 +13,10 @@ from unittest.mock import patch
 
 import argparse
 
-from foreman import meta_agent
+from foreman.manager import agent as meta_agent
 from foreman.cli import build_parser
 from foreman.cli.parser import MANAGER_SESSION_COMMANDS
-from foreman.proposals import MANAGER, OPERATION_KINDS, Proposals
+from foreman.manager.proposals import MANAGER, OPERATION_KINDS, Proposals
 from foreman.domain.models import Project, Sprint, Task, Event
 from foreman.store import ForemanStore
 

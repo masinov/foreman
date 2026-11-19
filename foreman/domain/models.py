@@ -567,7 +567,7 @@ class Proposal:
     """Changes proposed for one project, applied only when a person confirms.
 
     ``operations`` is the ordered list of operations (see
-    ``foreman.proposals``); ``leaves`` the task ids it deliberately leaves
+    ``foreman.manager.proposals``); ``leaves`` the task ids it deliberately leaves
     where they are; ``names`` the titles and keys of what it names, as they
     were when proposed. ``outcome`` says, once decided, what was applied and,
     for ``failed``, which operation was refused and why.

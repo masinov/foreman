@@ -882,7 +882,7 @@ event. Triggers:
 
 The dashboard (or an operator) calls
 `POST /api/projects/{id}/meta/supervise` with `{ "event_id": ... }`. The engine
-builds a compact **attention digest** (`foreman/digest.py`) and runs one
+builds a compact **attention digest** (`foreman/manager/digest.py`) and runs one
 supervision turn through the persisted session:
 
 - the turn is flagged `origin="supervision"`,

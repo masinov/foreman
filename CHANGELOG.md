@@ -18,6 +18,8 @@ memory changes rather than versioned product releases.
 
 ### Sprint 60 — what is there works and makes sense
 
+- The backend in layers, slice 3 (ADR-0032): the manager's modules are one package, `foreman/manager/` (`agent`, which was `meta_agent`, `proposals`, `planning`, `digest`). The manager chat's routes import them at the top of the module, as every other route does.
+
 - The backend in layers, slice 2 (ADR-0032). `Mutations` is a package with a part per area (`tasks`, `gates`, `backlog`, `sprints`) over `base`, composed like `ForemanStore`. A gate decision is written by `mutations/gates.py` for a person and for the engine alike, so the rules for a person's change no longer import the orchestrator, and the contract lists no exception. The writer of runs and events and the process log moved below both, to `foreman/history/`. No behaviour changed.
 
 - The backend is built in layers (ADR-0032), slice 1. An `import-linter` contract (`.importlinter`, run in CI as `lint-imports`) states the stack, and an import that breaks it fails. The model and its rules moved to `foreman/domain/`, git, worktrees, the context projection and the scaffold to `foreman/repo/`, roles, workflows and the human-gate step rules to `foreman/definitions/`, and the engine's root modules into `foreman/engine/` (`serve` is `engine/resident`, `engine_lock` is `engine/lock`, `engine_control` is `engine/control`). The task lease heartbeat joined `engine/leasing`, so a lease is one module per layer instead of four. No behaviour changed, and logger names are the same.

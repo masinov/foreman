@@ -10,7 +10,7 @@ from typing import Sequence
 
 from .. import __version__
 from ..domain.errors import ForemanError
-from ..proposals import manager_session
+from ..manager.proposals import manager_session
 from . import (
     backlog,
     catalog,

@@ -24,7 +24,7 @@ from foreman.cli.parser import MANAGER_SESSION_COMMANDS
 from foreman.dashboard.app import create_dashboard_app
 from foreman.domain.models import Project, Sprint, Task
 from foreman.mutations import Mutations
-from foreman.proposals import (
+from foreman.manager.proposals import (
     MANAGER,
     OPERATION_KINDS,
     ProposalError,

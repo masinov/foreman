@@ -7,16 +7,16 @@ import json
 
 import httpx
 
-from foreman import meta_agent
+from foreman.manager import agent as meta_agent
 from foreman.dashboard.app import create_dashboard_app
 from foreman.domain.models import Sprint
-from foreman.planning import (
+from foreman.manager.planning import (
     PlanningError,
     does_only_what_was_asked,
     planning_request,
     settle_plan,
 )
-from foreman.proposals import MANAGER_TURN_ENV, ProposalError, Proposals
+from foreman.manager.proposals import MANAGER_TURN_ENV, ProposalError, Proposals
 
 from test_proposals import ProposalCase
 
