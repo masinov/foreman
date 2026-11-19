@@ -5,15 +5,12 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 
 from ..api.runtime import DEFAULT_FRONTEND_DEV_URL, run_dashboard_server
 from ..domain.errors import EngineCommandInterrupt
-from ..domain.models import EngineCommand
 from ..engine.control import (
     default_command_requester,
-    describe_engine,
 )
 from ..engine.errors import OrchestratorError
 from ..engine.lock import EngineBusyError, EngineLock
@@ -26,8 +23,10 @@ from ..notifications.delivery import (
     NotificationDeliveryWorker,
 )
 from ..runner.process import EngineShutdown, install_shutdown_handlers
+from ..services import Services
 from ..store import ForemanStore
 from .common import (
+    read_or_print,
     DB_OPTION_NOTE,
     EXIT_QUOTA_EXHAUSTED,
     add_db_option,
@@ -236,114 +235,79 @@ def handle_dashboard(args: argparse.Namespace) -> int:
     return 0
 
 
-def _format_command_row(command: EngineCommand) -> str:
+def _format_command_row(command: dict) -> str:
     parts = [
-        f"- [{command.status}] {command.command}",
-        f"id={command.id}",
-        f"by={command.requested_by}",
-        f"at={command.requested_at}",
+        f"- [{command['status']}] {command['command']}",
+        f"id={command['id']}",
+        f"by={command['requested_by']}",
+        f"at={command['requested_at']}",
     ]
-    if command.task_id:
-        parts.insert(2, f"task={command.task_id}")
+    if command["task_id"]:
+        parts.insert(2, f"task={command['task_id']}")
     line = " | ".join(parts)
-    if command.result_detail:
-        line = f"{line}\n    {command.result_detail}"
+    if command["result_detail"]:
+        line = f"{line}\n    {command['result_detail']}"
     return line
 
 
 def handle_engine_status(args: argparse.Namespace) -> int:
     """Handle ``foreman engine status``."""
 
-    db_path = resolve_db_path_or_print(args.db)
-    if db_path is None:
+    status = read_or_print(
+        args,
+        lambda store: Services(store).reports.engine(args.project_id, command_limit=args.limit),
+    )
+    if status is None:
         return 1
-
-    with ForemanStore(db_path) as store:
-        store.initialize()
-        project = resolve_project_or_print(store, args.project_id)
-        if project is None:
-            return 1
-        # A `pause` that has been applied but not yet resumed is the engine's
-        # current state, so the most recent applied pause/resume is what makes
-        # "paused" visible to an operator who did not queue it themselves.
-        engine = describe_engine(store, project.id, command_limit=args.limit)
-        lock = engine.lock
-        commands = engine.commands
-        running = store.list_tasks(project_id=project.id, statuses=("in_progress",))
-        paused = engine.paused
-        db_path = store.db_path
-
     if getattr(args, "as_json", False):
-        now = datetime.now(timezone.utc)
         print_json(
             {
-                "database": str(db_path),
-                "project_id": project.id,
-                "state": engine.state,
-                "resident": lock is not None,
-                "paused": paused,
-                "holder_id": lock.holder_id if lock is not None else None,
-                "heartbeat_at": lock.heartbeat_at if lock is not None else None,
-                "heartbeat_age_seconds": (
-                    lock.heartbeat_age_seconds(now) if lock is not None else None
-                ),
-                "lease_expires_at": lock.expires_at if lock is not None else None,
-                "lease_expired": lock.is_expired(now) if lock is not None else False,
-                "running_task_ids": [task.id for task in running],
-                "commands": [
-                    {
-                        "id": command.id,
-                        "command": command.command,
-                        "task_id": command.task_id,
-                        "status": command.status,
-                        "requested_by": command.requested_by,
-                        "requested_at": command.requested_at,
-                        "result_detail": command.result_detail,
-                    }
-                    for command in commands
-                ],
+                **{
+                    key: value
+                    for key, value in status.items()
+                    if key not in ("project_name", "acquired_at", "running_tasks")
+                },
+                "running_task_ids": [task["id"] for task in status["running_tasks"]],
             }
         )
         return 0
 
     lines = [
         "Engine status",
-        f"Database: {db_path}",
-        f"Project: {project.id} | {project.name}",
+        f"Database: {status['database']}",
+        f"Project: {status['project_id']} | {status['project_name']}",
     ]
-    if lock is None:
+    if not status["resident"]:
         lines.append("Resident engine: none (no engine holds this project)")
     else:
-        now = datetime.now(timezone.utc)
-        age = lock.heartbeat_age_seconds(now)
+        age = status["heartbeat_age_seconds"]
         age_text = "unknown" if age is None else f"{age:.0f}s ago"
-        state = "paused" if paused else "running"
-        if lock.is_expired(now):
+        state = "paused" if status["paused"] else "running"
+        if status["lease_expired"]:
             state = "stale lease (no heartbeat since it expired)"
         lines.extend(
             [
-                f"Resident engine: {lock.holder_id}",
+                f"Resident engine: {status['holder_id']}",
                 f"State: {state}",
-                f"Heartbeat: {age_text} (at {lock.heartbeat_at})",
-                f"Acquired: {lock.acquired_at} | Lease expires: {lock.expires_at}",
+                f"Heartbeat: {age_text} (at {status['heartbeat_at']})",
+                f"Acquired: {status['acquired_at']} | Lease expires: {status['lease_expires_at']}",
             ]
         )
-    if running:
+    if status["running_tasks"]:
         lines.append(
             "Current task: "
-            + ", ".join(f"{task.id} | {task.title}" for task in running)
+            + ", ".join(f"{task['id']} | {task['title']}" for task in status["running_tasks"])
         )
     else:
         lines.append("Current task: none")
 
+    commands = status["commands"]
     lines.append(f"Recent commands ({len(commands)}):")
     if not commands:
         lines.append("- none")
-    else:
-        lines.extend(_format_command_row(command) for command in commands)
+    lines.extend(_format_command_row(command) for command in commands)
     print_lines(*lines)
     return 0
-
 
 def handle_engine_command(args: argparse.Namespace) -> int:
     """Handle every ``foreman engine`` verb that enqueues a command."""

@@ -178,6 +178,7 @@ def _register_show(task_commands: argparse._SubParsersAction) -> None:
         task_show,
         help_text=f"Path to the SQLite store containing the task. {DB_OPTION_NOTE}",
     )
+    add_json_option(task_show)
     set_handler(task_show, handle_task_show, "task show")
 
 

@@ -316,9 +316,15 @@ foreman serve <project-id> [--poll-seconds N] [--once] [--db DB]
 
 ### Output for other programs, and errors
 
-`foreman projects`, `foreman sprint list`, `foreman task list` and
-`foreman engine status` take `--json` and print one JSON document instead of
-text.
+Every read command takes `--json` and prints one JSON document instead of
+text: `projects`, `project`, `status`, `board`, `cost`, `outcomes`,
+`history`, `transcript`, `sprint list`, `task list`, `task show`,
+`backlog list`, `proposal list`, `proposal show`, `worktree list`,
+`token list`, `notify list`, `notify deliveries`, `engine status`, `roles`,
+`workflows`, `role list`, `role show`, `workflow list`, `workflow show` and
+`db version`. The text and the document come from the same read, the one
+the dashboard's API uses where there is one, so they never disagree.
+`foreman watch` is a live tail and has no single document.
 
 A command that fails prints one line starting `foreman:` and exits 1. An
 error that is a bug in Foreman exits 70 and says so; set `FOREMAN_DEBUG=1`

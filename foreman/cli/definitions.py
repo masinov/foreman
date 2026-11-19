@@ -20,7 +20,7 @@ from ..definitions.workflows import WorkflowLoadError
 from ..engine.control import default_command_requester
 from ..runner.model_check import check_model
 from ..store import ForemanStore
-from .common import print_lines, resolve_db_path_or_print, set_handler
+from .common import add_json_option, print_json, print_lines, resolve_db_path_or_print, set_handler
 
 WORKSPACE_NAME = "the workspace"
 
@@ -83,9 +83,19 @@ def handle_list(args: argparse.Namespace) -> int:
         if definitions is None:
             return 1
         loaded, own, shipped = _parts(definitions, args.kind)
+        rows = [
+            {
+                "id": definition_id,
+                "name": definition.name,
+                "origin": _origin(definition_id, own, shipped, args.workspace),
+            }
+            for definition_id, definition in loaded.items()
+        ]
+        if args.as_json:
+            print_json({"scope": _scope(args), "kind": args.kind, args.kind + "s": rows})
+            return 0
         lines = [f"{args.kind.capitalize()}s of {_label(args)}"]
-        for definition_id, definition in loaded.items():
-            lines.append(f"{definition_id} | {definition.name} | {_origin(definition_id, own, shipped, args.workspace)}")
+        lines.extend(f"{row['id']} | {row['name']} | {row['origin']}" for row in rows)
         print_lines(*lines)
     return 0
 
@@ -98,13 +108,23 @@ def handle_show(args: argparse.Namespace) -> int:
         definitions = _definitions(store, _scope(args))
         if definitions is None:
             return 1
-        loaded, own, _ = _parts(definitions, args.kind)
+        loaded, own, shipped = _parts(definitions, args.kind)
         if args.definition_id not in loaded:
             print(f"Unknown {args.kind}: {args.definition_id}", file=sys.stderr)
             return 1
         text = own.get(args.definition_id)
         if text is None:
             text = Path(loaded[args.definition_id].source_path).read_text(encoding="utf-8")
+        if args.as_json:
+            print_json(
+                {
+                    "id": args.definition_id,
+                    "kind": args.kind,
+                    "origin": _origin(args.definition_id, own, shipped, args.workspace),
+                    "text": text,
+                }
+            )
+            return 0
         sys.stdout.write(text if text.endswith("\n") else text + "\n")
     return 0
 
@@ -167,7 +187,15 @@ def _register(subparsers: argparse._SubParsersAction, kind: str) -> None:
     )
     commands = parser.add_subparsers(dest=f"{kind}_command", required=True)
 
-    def add(name: str, help_text: str, handler, *, definition: bool = False, file: bool = False):
+    def add(
+        name: str,
+        help_text: str,
+        handler,
+        *,
+        definition: bool = False,
+        file: bool = False,
+        json_output: bool = False,
+    ):
         sub = commands.add_parser(name, help=help_text)
         sub.add_argument(
             "project_id",
@@ -187,11 +215,24 @@ def _register(subparsers: argparse._SubParsersAction, kind: str) -> None:
                 "--file", required=True, help=f"TOML file holding the {kind}, or - for standard input."
             )
         sub.add_argument("--db", help="Path to the SQLite store. Defaults to $FOREMAN_DB, else repo-local discovery.")
+        if json_output:
+            add_json_option(sub)
         sub.set_defaults(kind=kind)
         set_handler(sub, handler, f"{kind} {name}")
 
-    add("list", f"List the {kind}s the project runs with and where each comes from.", handle_list)
-    add("show", f"Print one {kind} as TOML, the project's own text or the shipped file.", handle_show, definition=True)
+    add(
+        "list",
+        f"List the {kind}s the project runs with and where each comes from.",
+        handle_list,
+        json_output=True,
+    )
+    add(
+        "show",
+        f"Print one {kind} as TOML, the project's own text or the shipped file.",
+        handle_show,
+        definition=True,
+        json_output=True,
+    )
     add(
         "set",
         f"Save a {kind} for the project from a TOML file. Its id is the one in the file: "

@@ -163,12 +163,17 @@ and its successors in later slices translate them.
 
 These are known and not hidden by the contract:
 
-- **The CLI reads on its own.** Since `refactor/one-implementation-per-change`
-  every change the CLI makes goes through `foreman.mutations`, as the
-  services' do (below). Its reads are its own: it lists and prints from the
-  store and does not call the services, whose answers are shaped for the
-  API. Two surfaces reading the same rows can still show them differently;
-  they can no longer change them differently.
+- **The CLI read on its own; it no longer does** (2026-11-19, sprint 61,
+  slice 5). Every read command takes its data from a service and prints it
+  as text or, with `--json`, as the document itself: the worktree list from
+  the worktree service the API uses, tokens and notification channels from
+  `services.access`, and the terminal's own reports (status, board,
+  project, sprints, tasks, a task's history, a run's transcript, cost,
+  engine status) from `services.reports`, which takes a sprint's board
+  from the sprint service. `tests/test_layers.py` holds it: no CLI function
+  lists or totals rows itself, except `foreman watch`, a live tail, and the
+  lookup of the sprint a new task goes into; and every read command
+  offers `--json`.
 - **Some functions were long.** The five long modules are split by
   concern (below), and on 2026-11-19 (sprint 61, slice 4) the seven
   functions over 200 lines were split into named parts with no change in

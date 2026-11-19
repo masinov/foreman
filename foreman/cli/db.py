@@ -9,6 +9,8 @@ from ..store import ForemanStore
 from ..store.migrations import MIGRATIONS
 from .common import (
     add_db_option,
+    add_json_option,
+    print_json,
     resolve_db_path_or_print,
     set_handler,
 )
@@ -25,13 +27,18 @@ def handle_db_version(args: argparse.Namespace) -> int:
         try:
             version = store.schema_version()
         except sqlite3.OperationalError:
-            print(
-                "Schema version: 0 "
-                "(schema_migrations table not present — run `foreman db migrate`)"
-            )
-            return 0
+            version = None
 
     latest = max((v for v, _, _ in MIGRATIONS), default=0)
+    if args.as_json:
+        print_json({"schema_version": version or 0, "latest": latest, "up_to_date": version == latest})
+        return 0
+    if version is None:
+        print(
+            "Schema version: 0 "
+            "(schema_migrations table not present — run `foreman db migrate`)"
+        )
+        return 0
     if version == latest:
         print(f"Schema version: {version} (up to date)")
     else:
@@ -72,6 +79,7 @@ def register_db(subparsers: argparse._SubParsersAction) -> None:
         help="Show the current schema version.",
     )
     add_db_option(db_version_parser)
+    add_json_option(db_version_parser)
     set_handler(db_version_parser, handle_db_version, "db version")
 
     db_migrate_parser = db_commands.add_parser(

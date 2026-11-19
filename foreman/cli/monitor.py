@@ -6,19 +6,18 @@ import argparse
 import sys
 import time
 from dataclasses import dataclass
-from typing import Callable
+from typing import Any, Callable
 
-from ..definitions.gate_steps import (
-    blocked_kind,
-    blocked_kind_counts,
-    resolve_gate_steps,
-)
 from ..domain.models import Event
 from ..services.sprints import STREAM_POLL_INTERVAL_SECONDS
+from ..services import Services
+from ..services.errors import NotFoundError
+from ..services.reports import ReportService, event_from_payload
 from ..store import ForemanStore
 from .common import (
     DB_OPTION_NOTE,
     add_db_option,
+    add_json_option,
     format_idle_timeout,
     format_step_visits,
     format_task_counts,
@@ -26,6 +25,7 @@ from .common import (
     format_usd,
     format_watch_activity_totals,
     indent_lines,
+    print_json,
     print_lines,
     print_stream_lines,
     render_board_task_line,
@@ -160,45 +160,63 @@ def _build_project_watch_plan(store: ForemanStore, project_id: str, *, limit: in
     )
 
 
-def handle_board(args: argparse.Namespace) -> int:
-    """Handle ``foreman board``."""
+def _report(
+    args: argparse.Namespace,
+    read: Callable[[ReportService], dict[str, Any]],
+    *,
+    missing: str | None = None,
+) -> dict[str, Any] | None:
+    """Read one report from the services, or say what was not found and return None."""
 
     db_path = resolve_db_path_or_print(args.db)
     if db_path is None:
-        return 1
-
+        return None
     with ForemanStore(db_path) as store:
         store.initialize()
-        project = store.get_project(args.project_id)
-        if project is None:
-            print(f"Unknown project: {args.project_id}", file=sys.stderr)
-            return 1
+        try:
+            return read(Services(store).reports)
+        except NotFoundError as exc:
+            message = str(exc)
+            if missing == "project" and message.startswith("Project not found: "):
+                message = f"Unknown project: {message.removeprefix('Project not found: ')}"
+            print(message, file=sys.stderr)
+            return None
 
-        active_sprint = store.get_active_sprint(project.id)
-        lines = [
-            "Board",
-            f"Database: {store.db_path}",
-            f"Project: {project.id} | {project.name}",
-        ]
-        if active_sprint is None:
-            lines.append("No active sprint for this project.")
-            print_lines(*lines)
-            return 0
 
-        tasks = store.list_tasks(sprint_id=active_sprint.id)
-        gates = resolve_gate_steps(store, project)
-        blocked_counts = blocked_kind_counts(tasks, gates)
-        counts = store.task_counts(sprint_id=active_sprint.id)
-        totals = store.run_totals(project_id=project.id, sprint_id=active_sprint.id)
-        task_totals = {
-            str(row["task_id"]): row for row in store.task_run_totals(sprint_id=active_sprint.id)
-        }
-        task_count = sum(counts.values())
+def handle_board(args: argparse.Namespace) -> int:
+    """Handle ``foreman board``."""
 
+    board = _report(args, lambda reports: reports.board(args.project_id), missing="project")
+    if board is None:
+        return 1
+    if args.as_json:
+        print_json(board)
+        return 0
+
+    project = board["project"]
+    lines = [
+        "Board",
+        f"Database: {board['database']}",
+        f"Project: {project['id']} | {project['name']}",
+    ]
+    sprint = board["sprint"]
+    if sprint is None:
+        lines.append("No active sprint for this project.")
+        print_lines(*lines)
+        return 0
+
+    tasks = board["tasks"]
+    counts = sprint["task_counts"]
+    totals = sprint["totals"]
+    blocked_counts = {"gate": 0, "engine": 0}
+    for task in tasks:
+        if task["blocked_kind"] in blocked_counts:
+            blocked_counts[task["blocked_kind"]] += 1
+    task_count = sum(counts.values())
     lines.extend(
         [
-            f"Sprint: {active_sprint.id} | {active_sprint.title}",
-            f"Goal: {active_sprint.goal or 'n/a'}",
+            f"Sprint: {sprint['id']} | {sprint['title']}",
+            f"Goal: {sprint['goal'] or 'n/a'}",
             (
                 f"Progress: done={counts['done']}/{task_count} | "
                 f"in_progress={counts['in_progress']} | "
@@ -222,30 +240,28 @@ def handle_board(args: argparse.Namespace) -> int:
         if status in ("triage", "cancelled") and counts[status] == 0:
             continue
         lines.append(f"{label} ({counts[status]})")
-        status_tasks = [task for task in tasks if task.status == status]
+        status_tasks = [task for task in tasks if task["status"] == status]
         if not status_tasks:
             lines.append("- none")
             continue
         for task in status_tasks:
-            metrics = task_totals.get(task.id, {})
             details: list[str] = []
-            token_count = int(metrics.get("total_token_count", 0))
+            token_count = int(task["totals"].get("total_token_count") or 0)
             if token_count:
                 details.append(f"tokens={token_count}")
-            if task.branch_name:
-                details.append(f"branch={task.branch_name}")
-            if task.assigned_role:
-                details.append(f"role={task.assigned_role}")
-            if task.workflow_current_step:
-                details.append(f"step={task.workflow_current_step}")
-            if task.step_visit_counts:
-                details.append(f"visits={format_step_visits(task.step_visit_counts)}")
-            kind = blocked_kind(task, gates)
-            if kind is not None:
-                details.append(f"blocked_kind={kind}")
-            if task.blocked_reason:
-                details.append(f"reason={task.blocked_reason}")
-            lines.append(render_board_task_line(task.id, task.title, task.task_type, details))
+            if task["branch_name"]:
+                details.append(f"branch={task['branch_name']}")
+            if task["assigned_role"]:
+                details.append(f"role={task['assigned_role']}")
+            if task["workflow_current_step"]:
+                details.append(f"step={task['workflow_current_step']}")
+            if task["step_visit_counts"]:
+                details.append(f"visits={format_step_visits(task['step_visit_counts'])}")
+            if task["blocked_kind"] is not None:
+                details.append(f"blocked_kind={task['blocked_kind']}")
+            if task["blocked_reason"]:
+                details.append(f"reason={task['blocked_reason']}")
+            lines.append(render_board_task_line(task["id"], task["title"], task["task_type"], details))
 
     print_lines(*lines)
     return 0
@@ -254,83 +270,71 @@ def handle_board(args: argparse.Namespace) -> int:
 def handle_history(args: argparse.Namespace) -> int:
     """Handle ``foreman history``."""
 
-    db_path = resolve_db_path_or_print(args.db)
-    if db_path is None:
+    history = _report(args, lambda reports: reports.history(args.task_id))
+    if history is None:
         return 1
+    if args.as_json:
+        print_json(history)
+        return 0
 
-    with ForemanStore(db_path) as store:
-        store.initialize()
-        task = store.get_task(args.task_id)
-        if task is None:
-            print(f"Unknown task: {args.task_id}", file=sys.stderr)
-            return 1
-
-        db_path = store.db_path
-        project = store.get_project(task.project_id)
-        sprint = store.get_sprint(task.sprint_id)
-        runs = store.list_runs(task_id=task.id)
-        events = store.list_events(task_id=task.id)
-        totals = store.run_totals(task_id=task.id)
-
+    task, totals = history["task"], history["totals"]
     lines = [
         "History",
-        f"Database: {db_path}",
-        f"Task: {task.id} | {task.title}",
-        f"Project: {task.project_id} | {project.name if project is not None else 'unknown'}",
-        f"Sprint: {task.sprint_id} | {sprint.title if sprint is not None else 'unknown'}",
-        f"Status: {task.status} | type={task.task_type} | created_by={task.created_by}",
+        f"Database: {history['database']}",
+        f"Task: {task['id']} | {task['title']}",
+        f"Project: {history['project']['id']} | {history['project']['name'] or 'unknown'}",
+        f"Sprint: {history['sprint']['id']} | {history['sprint']['title'] or 'unknown'}",
+        f"Status: {task['status']} | type={task['task_type']} | created_by={task['created_by']}",
         (
             f"Totals: runs={totals['run_count']} | "
             f"tokens={totals['total_token_count']} | "
             f"cost_usd={format_usd(float(totals['total_cost_usd']))} | "
             f"duration_ms={totals['total_duration_ms']}"
         ),
-        f"Step visits: {format_step_visits(task.step_visit_counts)}",
+        f"Step visits: {format_step_visits(task['step_visit_counts'])}",
     ]
-    if task.branch_name:
-        lines.append(f"Branch: {task.branch_name}")
-    if task.worktree_path:
-        lines.append(f"Worktree: {task.worktree_path}")
-    if task.assigned_role:
-        lines.append(f"Assigned role: {task.assigned_role}")
-    if task.blocked_reason:
-        lines.append(f"Blocked reason: {task.blocked_reason}")
+    if task["branch_name"]:
+        lines.append(f"Branch: {task['branch_name']}")
+    if task["worktree_path"]:
+        lines.append(f"Worktree: {task['worktree_path']}")
+    if task["assigned_role"]:
+        lines.append(f"Assigned role: {task['assigned_role']}")
+    if task["blocked_reason"]:
+        lines.append(f"Blocked reason: {task['blocked_reason']}")
 
     lines.append("Runs:")
-    if not runs:
+    if not history["runs"]:
         lines.append("- none")
-    else:
-        for run in runs:
-            parts = [
-                run.id,
-                f"role={run.role_id}",
-                f"step={run.workflow_step}",
-                f"backend={run.agent_backend}",
-                f"status={run.status}",
-                f"cost_usd={format_usd(run.cost_usd)}",
-                f"tokens={run.token_count}",
-                *token_split_parts(run.token_usage.as_dict()),
-                f"duration_ms={run.duration_ms or 0}",
-                f"retries={run.retry_count}",
-            ]
-            if run.outcome:
-                parts.append(f"outcome={run.outcome}")
-            if run.outcome_detail:
-                parts.append(f"detail={truncate_text(run.outcome_detail)}")
-            if run.model:
-                parts.append(f"model={run.model}")
-            if run.session_id:
-                parts.append(f"session={run.session_id}")
-            lines.append(f"- {' | '.join(parts)}")
+    for run in history["runs"]:
+        parts = [
+            run["id"],
+            f"role={run['role_id']}",
+            f"step={run['workflow_step']}",
+            f"backend={run['agent_backend']}",
+            f"status={run['status']}",
+            f"cost_usd={format_usd(run['cost_usd'])}",
+            f"tokens={run['token_count']}",
+            *token_split_parts(run["token_usage"]),
+            f"duration_ms={run['duration_ms'] or 0}",
+            f"retries={run['retry_count']}",
+        ]
+        if run["outcome"]:
+            parts.append(f"outcome={run['outcome']}")
+        if run["outcome_detail"]:
+            parts.append(f"detail={truncate_text(run['outcome_detail'])}")
+        if run["model"]:
+            parts.append(f"model={run['model']}")
+        if run["session_id"]:
+            parts.append(f"session={run['session_id']}")
+        lines.append(f"- {' | '.join(parts)}")
 
     lines.append("Events:")
-    if not events:
+    if not history["events"]:
         lines.append("- none")
-    else:
-        for event in events:
-            lines.append(
-                f"- {render_event_line(event.event_type, event.timestamp, event.role_id, event.payload)}"
-            )
+    for event in history["events"]:
+        lines.append(
+            f"- {render_event_line(event['event_type'], event['timestamp'], event['role_id'], event['payload'])}"
+        )
 
     print_lines(*lines)
     return 0
@@ -339,55 +343,47 @@ def handle_history(args: argparse.Namespace) -> int:
 def handle_transcript(args: argparse.Namespace) -> int:
     """Handle ``foreman transcript``."""
 
-    db_path = resolve_db_path_or_print(args.db)
-    if db_path is None:
+    transcript = _report(args, lambda reports: reports.transcript(args.run_id))
+    if transcript is None:
         return 1
+    if args.as_json:
+        print_json(transcript)
+        return 0
 
-    with ForemanStore(db_path) as store:
-        store.initialize()
-        run = store.get_run(args.run_id)
-        if run is None:
-            print(f"Unknown run: {args.run_id}", file=sys.stderr)
-            return 1
-
-        db_path = store.db_path
-        task = store.get_task(run.task_id)
-        project = store.get_project(run.project_id)
-        events = store.list_events(run_id=run.id)
-
+    run = transcript["run"]
+    events = [event_from_payload(event) for event in transcript["events"]]
     lines = [
         "Transcript",
-        f"Database: {db_path}",
-        f"Run: {run.id}",
-        f"Task: {run.task_id} | {task.title if task is not None else 'unknown'}",
-        f"Project: {run.project_id} | {project.name if project is not None else 'unknown'}",
+        f"Database: {transcript['database']}",
+        f"Run: {run['id']}",
+        f"Task: {transcript['task']['id']} | {transcript['task']['title'] or 'unknown'}",
+        f"Project: {transcript['project']['id']} | {transcript['project']['name'] or 'unknown'}",
         (
-            f"Role: {run.role_id} | step={run.workflow_step} | backend={run.agent_backend} | "
-            f"status={run.status}"
+            f"Role: {run['role_id']} | step={run['workflow_step']} | backend={run['agent_backend']} | "
+            f"status={run['status']}"
         ),
     ]
-    if run.outcome:
-        lines.append(f"Outcome: {run.outcome}")
-    if run.session_id:
-        lines.append(f"Session: {run.session_id}")
-    if run.model:
-        lines.append(f"Model: {run.model}")
-    if run.branch_name:
-        lines.append(f"Branch: {run.branch_name}")
-    if run.prompt_text and not any(event.event_type == "agent.prompt" for event in events):
+    if run["outcome"]:
+        lines.append(f"Outcome: {run['outcome']}")
+    if run["session_id"]:
+        lines.append(f"Session: {run['session_id']}")
+    if run["model"]:
+        lines.append(f"Model: {run['model']}")
+    if run["branch_name"]:
+        lines.append(f"Branch: {run['branch_name']}")
+    if run["prompt_text"] and not any(event.event_type == "agent.prompt" for event in events):
         lines.append("Prompt (from run record):")
-        lines.extend(indent_lines(run.prompt_text))
+        lines.extend(indent_lines(run["prompt_text"]))
 
     lines.append("Events:")
     if not events:
         lines.append("- none")
-    else:
-        for event in events:
-            header = f"- {event.timestamp} | {event.event_type}"
-            if event.role_id:
-                header += f" | role={event.role_id}"
-            lines.append(header)
-            lines.extend(format_transcript_payload(event))
+    for event in events:
+        header = f"- {event.timestamp} | {event.event_type}"
+        if event.role_id:
+            header += f" | role={event.role_id}"
+        lines.append(header)
+        lines.extend(format_transcript_payload(event))
 
     print_lines(*lines)
     return 0
@@ -396,49 +392,21 @@ def handle_transcript(args: argparse.Namespace) -> int:
 def handle_cost(args: argparse.Namespace) -> int:
     """Handle ``foreman cost``."""
 
-    db_path = resolve_db_path_or_print(args.db)
-    if db_path is None:
+    cost = _report(
+        args, lambda reports: reports.cost(args.project_id, sprint_id=args.sprint), missing="project"
+    )
+    if cost is None:
         return 1
+    if args.as_json:
+        print_json(cost)
+        return 0
 
-    with ForemanStore(db_path) as store:
-        store.initialize()
-        project = store.get_project(args.project_id)
-        if project is None:
-            print(f"Unknown project: {args.project_id}", file=sys.stderr)
-            return 1
-
-        db_path = store.db_path
-        sprint = None
-        if args.sprint:
-            sprint = store.get_sprint(args.sprint)
-            if sprint is None:
-                print(f"Unknown sprint: {args.sprint}", file=sys.stderr)
-                return 1
-            if sprint.project_id != project.id:
-                print(
-                    f"Sprint {sprint.id} does not belong to project {project.id}.",
-                    file=sys.stderr,
-                )
-                return 1
-
-        totals = store.run_totals(
-            project_id=project.id,
-            sprint_id=sprint.id if sprint is not None else None,
-        )
-        task_totals = store.task_run_totals(
-            sprint_id=sprint.id if sprint is not None else None,
-            project_id=None if sprint is not None else project.id,
-        )
-
+    project, sprint, totals = cost["project"], cost["sprint"], cost["totals"]
     lines = [
         "Cost",
-        f"Database: {db_path}",
-        f"Project: {project.id} | {project.name}",
-        (
-            f"Scope: sprint {sprint.id} | {sprint.title}"
-            if sprint is not None
-            else "Scope: project"
-        ),
+        f"Database: {cost['database']}",
+        f"Project: {project['id']} | {project['name']}",
+        f"Scope: sprint {sprint['id']} | {sprint['title']}" if sprint else "Scope: project",
         (
             f"Totals: runs={totals['run_count']} | "
             f"tokens={totals['total_token_count']} | "
@@ -452,17 +420,16 @@ def handle_cost(args: argparse.Namespace) -> int:
         ),
         "By task:",
     ]
-    if not task_totals:
+    if not cost["tasks"]:
         lines.append("- none")
-    else:
-        for row in task_totals:
-            lines.append(
-                "- "
-                f"{row['task_id']} | {row['task_type']} | {row['task_title']} | "
-                f"status={row['task_status']} | runs={row['run_count']} | "
-                f"tokens={row['total_token_count']} | "
-                f"cost_usd={format_usd(float(row['total_cost_usd']))}"
-            )
+    for row in cost["tasks"]:
+        lines.append(
+            "- "
+            f"{row['task_id']} | {row['task_type']} | {row['task_title']} | "
+            f"status={row['task_status']} | runs={row['run_count']} | "
+            f"tokens={row['total_token_count']} | "
+            f"cost_usd={format_usd(float(row['total_cost_usd']))}"
+        )
     if int(totals["zero_cost_token_runs"]) > 0:
         lines.append(
             "Note: some runs reported token usage with $0.00 cost; persisted USD totals do not infer missing backend pricing."
@@ -577,39 +544,22 @@ def handle_watch(args: argparse.Namespace) -> int:
 def handle_status(args: argparse.Namespace) -> int:
     """Handle ``foreman status``."""
 
-    db_path = resolve_db_path_or_print(args.db)
-    if db_path is None:
+    status = _report(args, lambda reports: reports.status())
+    if status is None:
         return 1
+    if args.as_json:
+        print_json(status)
+        return 0
 
-    with ForemanStore(db_path) as store:
-        store.initialize()
-        project_count = store.count_projects()
-        active_sprint_count = store.count_active_sprints()
-        task_counts = store.task_counts()
-        # Blocked splits by workflow, so the kinds are counted per project and
-        # summed: "12 blocked" is not actionable, "10 waiting on me, 2 dead
-        # letters" is.
-        blocked_counts = {"gate": 0, "engine": 0}
-        for project in store.list_projects():
-            gates = resolve_gate_steps(store, project)
-            project_counts = blocked_kind_counts(
-                store.list_tasks(project_id=project.id, status="blocked"), gates
-            )
-            for kind, value in project_counts.items():
-                blocked_counts[kind] += value
-
-    lines = ["Status", f"Database: {store.db_path}"]
-    if active_sprint_count == 0:
+    lines = ["Status", f"Database: {status['database']}"]
+    if status["active_sprints"] == 0:
         lines.append("No active projects or sprints.")
     lines.extend(
         [
-            f"Projects: {project_count}",
-            f"Active sprints: {active_sprint_count}",
-            format_task_counts(task_counts),
-            (
-                f"Blocked: gate={blocked_counts['gate']} "
-                f"engine={blocked_counts['engine']}"
-            ),
+            f"Projects: {status['projects']}",
+            f"Active sprints: {status['active_sprints']}",
+            format_task_counts(status["task_counts"]),
+            f"Blocked: gate={status['blocked']['gate']} engine={status['blocked']['engine']}",
         ]
     )
     print_lines(*lines)
@@ -624,6 +574,7 @@ def register_status(subparsers: argparse._SubParsersAction) -> None:
         help="Show a cross-project status overview.",
     )
     add_db_option(status_parser)
+    add_json_option(status_parser)
     set_handler(status_parser, handle_status, "status")
 
 
@@ -637,6 +588,7 @@ def register_board(subparsers: argparse._SubParsersAction) -> None:
         board_parser,
         help_text=f"Path to the SQLite store containing the project board state. {DB_OPTION_NOTE}",
     )
+    add_json_option(board_parser)
     set_handler(board_parser, handle_board, "board")
 
 
@@ -677,6 +629,7 @@ def register_cost(subparsers: argparse._SubParsersAction) -> None:
         cost_parser,
         help_text=f"Path to the SQLite store containing project run totals. {DB_OPTION_NOTE}",
     )
+    add_json_option(cost_parser)
     set_handler(cost_parser, handle_cost, "cost")
 
 
@@ -693,6 +646,7 @@ def register_history(subparsers: argparse._SubParsersAction) -> None:
         history_parser,
         help_text=f"Path to the SQLite store containing task history. {DB_OPTION_NOTE}",
     )
+    add_json_option(history_parser)
     set_handler(history_parser, handle_history, "history")
 
 
@@ -709,5 +663,6 @@ def register_transcript(subparsers: argparse._SubParsersAction) -> None:
         transcript_parser,
         help_text=f"Path to the SQLite store containing the run transcript. {DB_OPTION_NOTE}",
     )
+    add_json_option(transcript_parser)
     set_handler(transcript_parser, handle_transcript, "transcript")
 

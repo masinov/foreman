@@ -9,6 +9,7 @@ memory changes rather than versioned product releases.
 
 ### Sprint 61 — the core, proven
 
+- Every read command takes `--json`, and its text and its JSON come from the same service read (ADR-0032): `status`, `board`, `project`, `cost`, `history`, `transcript`, `task show`, `worktree list`, `token list`, `notify list`, `notify deliveries`, `roles`, `workflows`, `role list/show`, `workflow list/show` and `db version` gained it. The worktree list, tokens and notification channels are now read by the same code as the dashboard's API. The existing `--json` documents are unchanged.
 - The seven functions over 200 lines are split into named parts, with no change in behaviour (ADR-0032): the agent step and its corrective retry now share one execute-and-record, the native runner's stream is folded by one tally, and the resident engine's loop keeps its state in one object. No function in `foreman/` is over 200 lines.
 - A run left `running` by an engine that died is recovered at its step, not at the start of the task. The task keeps its step, what that step was handed and its visit counts; the step runs again, and a developer resumes the session the dead run recorded (a reviewer, which keeps no session, reviews afresh). It used to be reset to the entry step with its counts cleared, so an engine that died during review had the developer do the task again.
 
