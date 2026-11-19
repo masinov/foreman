@@ -538,6 +538,25 @@ class CompletionEvidenceTests(RepoTestCase):
         self.assertIn("Acceptance criteria are covered once code review approves.", evidence.outstanding)
         self.assertEqual(evidence.proof_status, "pending")
 
+    def test_older_evidence_reads_its_approved_review_as_covering_the_criteria(self) -> None:
+        recorded = {
+            "task_id": "t",
+            "task_title": "T",
+            "acceptance_criteria": "A",
+            "criteria_count": 1,
+            "criteria_checklist": [
+                {"criterion": "A", "status": "unverified", "evidence": "Not checked by a judge model."}
+            ],
+            "review_outcome": "approve",
+            "reviewed_sha": "abc12345",
+            "head_sha": "abc12345",
+        }
+        evidence = CompletionEvidence.from_mapping(recorded)
+        self.assertEqual([c["status"] for c in evidence.criteria()], ["covered"])
+        self.assertIn("covered by the approving code review", evidence.criteria_line())
+        stale = CompletionEvidence.from_mapping({**recorded, "head_sha": "def67890"})
+        self.assertEqual([c["status"] for c in stale.criteria()], ["unverified"])
+
     def test_evidence_saved_by_the_removed_judge_still_loads(self) -> None:
         evidence = CompletionEvidence.from_mapping(
             {

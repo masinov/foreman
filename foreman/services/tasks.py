@@ -52,7 +52,7 @@ def _serialize_completion_evidence(evidence: "Any") -> dict[str, Any] | None:
         "criteria_count": evidence.criteria_count,
         "criteria_addressed": evidence.criteria_addressed,
         "criteria_partially_addressed": evidence.criteria_partially_addressed,
-        "criteria_checklist": [dict(item) for item in evidence.criteria_checklist],
+        "criteria_checklist": list(evidence.criteria()),
         "changed_files": list(evidence.changed_files),
         "branch_diff_stat": evidence.branch_diff_stat,
         "builtin_test_passed": evidence.builtin_test_passed,
