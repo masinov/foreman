@@ -17,6 +17,7 @@ One service per area, each in its own module:
 - ``decision_gates``: questions raised for a person,
 - ``worktrees``: a project's task worktrees,
 - ``definitions``: roles and workflows (ADR-0024),
+- ``outcomes``: how well a project's agents do (ADR-0034),
 - ``workspace``: the reads across every project.
 
 ``task_reads`` (a task's changes, checks and runs), ``workflow_reads``,
@@ -36,6 +37,7 @@ from .decision_gates import DecisionGateService
 from .definitions import DefinitionService
 from .engine import EngineService
 from .intake import IntakeService
+from .outcomes import OutcomeService
 from .projects import ProjectService
 from .proposals import ProposalService
 from .sprints import SprintService
@@ -69,3 +71,4 @@ class Services:
         self.decision_gates = DecisionGateService(store, **clock)
         self.worktrees = WorktreeService(store, **clock)
         self.workspace = WorkspaceService(store, **clock)
+        self.outcomes = OutcomeService(store, **clock)

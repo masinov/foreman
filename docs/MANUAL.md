@@ -383,6 +383,9 @@ foreman watch --sprint <sprint-id>    # tail one sprint
 foreman watch --run <run-id>          # tail one run
 foreman cost <project-id>             # cost / token totals, with the input / output /
                                       # cache-read / cache-write split when runs report it
+foreman outcomes <project-id>         # how well the agents do: first-time passes,
+                                      # send-backs by cause, a person's part, cost
+                                      # per merged task, by role and model
 foreman history <task-id>             # run + event history for a task
 foreman transcript <run-id>           # full persisted transcript for one run
 ```
@@ -1317,6 +1320,28 @@ keep the stream alive when idle.
   (every prompt, message, and outcome).
 - `foreman cost <project-id>` — cost and token totals, including the
   zero-cost-token-run count.
+- `foreman outcomes <project-id> [--sprint <sprint-id>] [--json]` — outcome
+  numbers (ADR-0034), also `GET /api/v1/projects/{id}/outcomes?sprint=`:
+  - **Tasks:** started, merged by the engine, closed by hand, cancelled, not
+    finished. A task filed and never run is not counted.
+  - **Passed first time:** merged with no send-back; a second figure leaves
+    merge conflicts aside, since those are usually caused by other work.
+  - **Send-backs:** each return to the step that builds the change, by
+    cause: `tests`, `review` (and which reviewer), `person` (a send-back at
+    a gate), `merge_conflict`.
+  - **A person:** decisions a gate asked for, with the median wait and how
+    many still wait; and times a person stepped in unasked (a note, an
+    edit, a block, a cancel, closing by hand, reopening).
+  - **Cost:** in total, per merged task, and on tasks not merged; tokens per
+    merged task, split into input, output, cache read and cache write.
+  - **Time to merge:** median, from the first step to the merge.
+  - **By role and model:** runs, failed runs, cost and tokens; send-backs a
+    reviewer caused, on the model it ran; and for the role that builds, the
+    tasks it built that merged and how many of them passed first time,
+    credited to the model of the task's first build.
+
+  The numbers are computed from the kept runs and events, so a project that
+  prunes its history loses the pruned part from them.
 
 History hygiene: when `event_retention_days` is set, the orchestrator prunes old
 `events` rows on startup (emitting `engine.event_pruned`), but **preserves**

@@ -7,6 +7,10 @@ memory changes rather than versioned product releases.
 
 ## [Unreleased]
 
+### Sprint 61 — the core, proven
+
+- `foreman outcomes <project> [--sprint ID] [--json]` and `GET /api/v1/projects/{id}/outcomes` show how well a project's agents do (ADR-0034): tasks that passed first time (and leaving merge conflicts aside), send-backs by cause (tests, review, a person, merge conflict), decisions a person was asked for and how long they waited, times a person stepped in unasked, cost and tokens per merged task, median time to merge, and the same per agent role and model. Computed from the recorded runs and events; nothing new is stored. The manager can run it.
+
 ### Sprint 60c — defaults from a terminal
 
 - `foreman role` and `foreman workflow` (`list`, `show`, `set`, `reset`) take `--workspace` in place of a project to work on the workspace's default roles and workflows (ADR-0024 amendment). Naming a project works as before; naming both or neither is refused. A role saved as a workspace default still goes through the model check, and a refused save prints why and exits 1.

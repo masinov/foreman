@@ -20,6 +20,7 @@ from . import (
     gates,
     monitor,
     notify,
+    outcomes,
     projects,
     proposals,
     sprints,
@@ -38,6 +39,7 @@ MANAGER_SESSION_COMMANDS: frozenset[str] = frozenset(
         "board",
         "cost",
         "history",
+        "outcomes",
         "status",
         "transcript",
         "watch",
@@ -105,6 +107,7 @@ def build_parser() -> argparse.ArgumentParser:
     monitor.register_board(subparsers)
     monitor.register_watch(subparsers)
     monitor.register_cost(subparsers)
+    outcomes.register_outcomes(subparsers)
     monitor.register_history(subparsers)
     monitor.register_transcript(subparsers)
     gates.register_approve(subparsers)

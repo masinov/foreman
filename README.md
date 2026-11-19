@@ -469,6 +469,7 @@ npm --prefix frontend run build
 ./venv/bin/foreman board --help
 ./venv/bin/foreman history --help
 ./venv/bin/foreman cost --help
+./venv/bin/foreman outcomes --help
 ./venv/bin/foreman watch --help
 ./venv/bin/foreman dashboard --help
 ./venv/bin/python scripts/dashboard_dev.py --help

@@ -440,6 +440,16 @@ The project settings page reads and writes through four routes.
   read from the steps: a test step is a fact, a deciding role is a claim.
   The project's read adds `requirements_enforced` (the completion guard).
 
+### Outcome numbers (sprint 61, ADR-0034)
+
+`foreman outcomes` and `GET /api/v1/projects/{id}/outcomes` read the same
+`OutcomeService.numbers` (`foreman/services/outcomes.py`). The store's
+`OutcomeStore.outcome_records` (`foreman/store/outcomes.py`) loads a
+project's or a sprint's tasks, their runs and only the events listed in
+`OUTCOME_EVENT_TYPES`; the computation is the pure function
+`outcome_numbers` in `foreman/domain/outcome_numbers.py`. Nothing new is
+stored.
+
 ### Views across projects (sprint 58)
 
 Four reads serve the rebuilt dashboard. All sit under `/api/v1` (and the
