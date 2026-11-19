@@ -28,13 +28,14 @@ class SprintAdvancementTests(unittest.TestCase):
         self.store.close()
         self.tmp.cleanup()
 
-    def _make_project(self, autonomy_level: str = "directed") -> Project:
+    def _make_project(self, autonomy_level: str = "directed", *, foreman_finishes: bool = False) -> Project:
         p = Project(
-            id=f"proj-adv-{autonomy_level}",
+            id=f"proj-adv-{autonomy_level}{'-auto' if foreman_finishes else ''}",
             name=f"Test {autonomy_level}",
             repo_path=self.tmp.name,
             workflow_id="development",
             autonomy_level=autonomy_level,  # type: ignore[arg-type]
+            settings={"sprint_completion": "auto"} if foreman_finishes else {},
         )
         self.store.save_project(p)
         return p
@@ -137,8 +138,8 @@ class SprintAdvancementTests(unittest.TestCase):
         self.assertEqual(events.count("engine.sprint_ready"), 1)
         self.assertEqual(self._attention(project.id), ["sprint_resolved"])
 
-    def test_autonomous_completes_and_activates_next_sprint_and_runs_it(self) -> None:
-        project = self._make_project("autonomous")
+    def test_foreman_finishes_and_activates_next_sprint_and_runs_it(self) -> None:
+        project = self._make_project("supervised", foreman_finishes=True)
         sprint0 = self._make_sprint(project.id, order_index=0, status="active")
         sprint1 = self._make_sprint(project.id, order_index=1, status="planned")
         self._make_done_task(sprint0)
@@ -154,8 +155,8 @@ class SprintAdvancementTests(unittest.TestCase):
         self.assertEqual(self.ran, [next_task.id])
         self.assertEqual(result.stop_reason, "idle")
 
-    def test_autonomous_without_next_sprint_stops_idle_with_one_attention(self) -> None:
-        project = self._make_project("autonomous")
+    def test_foreman_finishing_with_no_next_sprint_stops_idle_with_one_attention(self) -> None:
+        project = self._make_project("supervised", foreman_finishes=True)
         sprint = self._make_sprint(project.id, order_index=0, status="active")
         self._make_done_task(sprint)
 
@@ -164,6 +165,18 @@ class SprintAdvancementTests(unittest.TestCase):
         self.assertEqual(result.stop_reason, "idle")
         self.assertEqual(self._sprint(sprint.id).status, "completed")
         self.assertEqual(self._attention(project.id), ["sprint_resolved"])
+
+    def test_an_autonomous_level_alone_does_not_finish_a_sprint(self) -> None:
+        # Who finishes a sprint is its own setting since 2026-11-19
+        # (ADR-0025 amendment); the autonomy level no longer decides it.
+        project = self._make_project("autonomous")
+        sprint = self._make_sprint(project.id, order_index=0, status="active")
+        self._make_done_task(sprint)
+
+        result = self._orchestrator().run_project(project.id)
+
+        self.assertEqual(result.stop_reason, "sprint_resolved")
+        self.assertEqual(self._sprint(sprint.id).status, "active")
 
     def test_person_finishing_sprint_lets_next_pass_run_next_sprint(self) -> None:
         from foreman.mutations import Mutations

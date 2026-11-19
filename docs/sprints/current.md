@@ -56,6 +56,7 @@ engine. Nothing new is added until that holds.
 | 16 | A note is for the developer; reviewers see notes as context (owner, 2026-11-19, sprint 60 decision 6) | done | Claude | `feat/notes-go-to-the-developer`, ADR-0033 |
 | 17 | Remove the criteria judge; an approving review covers the criteria (owner, sprint 60 decision 1) | done | Claude | `refactor/remove-criteria-judge`, ADR-0010 amendment |
 | 18 | Remove the unused worker-fleet role (owner, sprint 60 decision 3) | done | Claude | `refactor/remove-worker-fleet-role` |
+| 19 | Finish sprints: a person / Foreman (owner, sprint 60 decision 5) | done | Claude | `feat/finish-sprints-setting`, ADR-0025 amendment |
 
 ### The supervised run (slice 1, 2026-11-16)
 

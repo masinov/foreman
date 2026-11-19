@@ -104,6 +104,11 @@ is no login.
 
 ## Documented conflicts between spec, mockup and code
 
+- Spec 6.3 says an *autonomous* project has its sprints finished by the
+  engine. Since 2026-11-19 (owner) that is the project setting
+  `sprint_completion` ("Finish sprints: A person / Foreman"); the autonomy
+  level no longer decides it (ADR-0025 amendment).
+
 - Design v7 draws every board column open, and an empty one says "None". On
   the dashboard a column folds to a narrow strip showing its name, read
   downwards, and its count; the count is gold when a task in it needs you.

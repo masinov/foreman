@@ -917,8 +917,12 @@ Two related knobs:
 
 - **`Project.autonomy_level`** (`directed` / `supervised` / `autonomous`)
   governs how far the engine advances on its own:
-  - `directed` and `supervised` — the engine never finishes a sprint
-    (ADR-0025). When every task is `done` or `cancelled` the sprint stays
+  - **`sprint_completion`** setting (`human` / `auto`; in the dashboard,
+    "Finish sprints: A person / Foreman", beside "Approve merges"). It alone
+    decides who finishes a sprint (ADR-0025 amendment); the autonomy level
+    no longer does.
+  - `human` (the default) — the engine never finishes a sprint. When every
+    task is `done` or `cancelled` the sprint stays
     `active`, the pass stops with `sprint_resolved`, and one `sprint_resolved`
     attention turn (with `engine.sprint_ready`) says it is ready to be
     finished. Later passes over the same resolved sprint add nothing; a task
@@ -926,7 +930,7 @@ Two related knobs:
     person finishes the sprint (dashboard "Finish sprint", `foreman sprint
     complete`, or a confirmed `finish_sprint` proposal); the next pass then
     activates the next planned sprint.
-  - `autonomous` — completes the resolved sprint (`engine.sprint_completed`),
+  - `auto` — completes the resolved sprint (`engine.sprint_completed`),
     activates the next planned sprint and keeps going; when there is none it
     stops `idle` with the `sprint_resolved` turn.
 - **`task_selection_mode`** setting (`directed` / `autonomous`; in the
@@ -939,7 +943,7 @@ Two related knobs:
   invents no tasks (ADR-0028).
 
 When a sprint resolves and the engine stops (a directed or supervised sprint
-left active, or an autonomous project with no further sprint), it raises a
+left active for a person, or one Foreman finished with no further sprint), it raises a
 `sprint_resolved` supervision turn so the manager can decide the next move.
 
 ---
@@ -1134,6 +1138,7 @@ offending value, rather than running on silent defaults.
 | `worktree_setup_timeout_seconds` | `1800` | wall-clock cap for `worktree_setup_command`; `0` disables the timeout |
 | `completion_guard_enabled` | `true` | enforce the merge proof gate |
 | `merge_approval` | `auto` | `auto` or `human`: whether the `merge_approval` gate needs a person (§14) |
+| `sprint_completion` | `human` | `auto` or `human`: whether the engine finishes a resolved sprint and starts the next (ADR-0025) |
 | `plan_approval` | `human` | `auto` or `human`: whether a person confirms a plan the manager proposes (§14) |
 | `triage` | `human` | `auto` or `human`: whether filed work is runnable on arrival or waits in `triage` (§14) |
 | `notification` | `attention` | `none`, `attention`, or `all`: what the project wants to be told about (§14) |

@@ -158,6 +158,7 @@ function GeneralForm({ projectId, settings, onSaved }) {
       >
         {choiceRow("plan_approval", "Approve plans", DECIDERS, "A plan the manager proposes")}
         {choiceRow("merge_approval", "Approve merges", DECIDERS, "After tests and review")}
+        {choiceRow("sprint_completion", "Finish sprints", DECIDERS, "When every task is done or cancelled; Foreman then starts the next sprint")}
         <SettingRow label="Exceptions" error={errors.policy_rules} group>
           {(controlProps) => (
             <PolicyRules

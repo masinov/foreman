@@ -68,6 +68,7 @@ export const CODECS = {
   triage: choice,
   plan_approval: choice,
   merge_approval: choice,
+  sprint_completion: choice,
   policy_rules: rules,
   task_selection_mode: choice,
   max_autonomous_tasks: { ...whole({ required: true }) },

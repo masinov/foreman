@@ -18,6 +18,8 @@ memory changes rather than versioned product releases.
 
 ### Sprint 60 — what is there works and makes sense
 
+- "Finish sprints: A person / Foreman" in Project settings, beside "Approve merges" (sprint 60 decision 5, ADR-0025 amendment). With Foreman, the engine finishes a sprint once every task is done or cancelled and starts the next one. The setting is `sprint_completion` (`human` by default); the autonomy level, which nothing could set, no longer decides it.
+
 - The "Developer (worker fleet)" role is removed (sprint 60 decision 3). No workflow used it; it only pointed a developer at another model endpoint, which any role does with `[agent.env]` (MANUAL §9).
 
 - A task finished before the judge was removed shows its criteria as covered when its approving review was of the branch head; its stored evidence said "unverified", which meant that no judge had looked.
