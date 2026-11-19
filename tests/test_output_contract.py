@@ -573,6 +573,24 @@ class OrchestratorContractTests(unittest.TestCase):
             self.assertIn("ESCALATE: <why the senior reviewer is needed>", corrected)
             self.assertNotIn("STEER", corrected)
 
+    def test_a_retry_that_resumes_the_session_sends_the_correction_alone(self) -> None:
+        repo, db_path = self._workspace()
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            orchestrator = ForemanOrchestrator(store, agent_runners={"claude_code": _ScriptedRunner([])})
+            developer = orchestrator.roles["developer"]
+            first_prompt = "## Task: the whole first prompt"
+
+            resumed = with_retry_instruction(
+                first_prompt, developer, "missing_completion_marker", resumes_session=True
+            )
+            fresh = with_retry_instruction(first_prompt, developer, "missing_completion_marker")
+
+            self.assertTrue(resumed.startswith("### Output Correction"))
+            self.assertNotIn(first_prompt, resumed)
+            self.assertTrue(fresh.startswith(first_prompt))
+            self.assertIn("### Output Correction", fresh)
+
 
 if __name__ == "__main__":
     unittest.main()

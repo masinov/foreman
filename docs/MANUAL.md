@@ -557,7 +557,11 @@ state exactly one verdict there: `APPROVE`, `DENY: <reason>`,
 `STEER: <action>`, or `ESCALATE: <why>`, optionally prefixed with
 `Decision:` or `Verdict:`. Two different verdicts in one message, or a verdict
 the role does not declare, are errors; the engine replays the step once with
-a correction that lists the role's own options.
+a correction that lists the role's own options. A developer that ends
+without the marker is asked once the same way. The replay resumes the
+agent's session, so it is sent the correction alone, not the task again;
+only when there is no session to resume is the first prompt sent with the
+correction after it.
 
 Role files declare the contract:
 

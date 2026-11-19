@@ -235,8 +235,17 @@ def with_retry_instruction(
     prompt: str,
     role: RoleDefinition,
     reason: str,
+    *,
+    resumes_session: bool = False,
 ) -> str:
-    """Append a minimal corrective instruction for one malformed-output retry."""
+    """The prompt of one corrective retry.
+
+    A retry that resumes the agent's session sends the correction alone: the
+    session already holds the first prompt and the work done on it, and
+    sending that prompt again had the agent start the task over. A retry
+    with no session to resume sends the first prompt with the correction
+    after it.
+    """
 
     if reason == "decision_format":
         options = "\n".join(decision_option_lines(role.completion.outcomes))
@@ -266,4 +275,6 @@ def with_retry_instruction(
         )
     else:
         return prompt
+    if resumes_session:
+        return f"### Output Correction\n{correction}"
     return f"{prompt}\n\n### Output Correction\n{correction}"
