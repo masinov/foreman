@@ -78,6 +78,7 @@ export const CODECS = {
   max_live_worktrees: { ...whole(), empty: 0 },
   default_model: text,
   meta_agent_model: text,
+  test_command: { ...text, required: "Name the command that runs the tests; without one the test step fails." },
   test_timeout_seconds: minutes(60),
   notification: choice,
   event_retention_days: days,

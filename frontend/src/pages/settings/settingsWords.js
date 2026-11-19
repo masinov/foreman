@@ -50,13 +50,13 @@ const MACHINE_ROWS = {
 };
 
 /**
- * The rows of "This machine": every host-level setting the API names except
- * the test command (shown under Tests), as `{ key, label, value }` where
- * `value` is null when nothing is set. Unknown keys are shown by name.
+ * The rows of "This machine": every host-level setting the API names, as
+ * `{ key, label, value }` where `value` is null when nothing is set. Unknown
+ * keys are shown by name.
  */
 export function machineRows(hostLevel, effective) {
   const known = Object.keys(MACHINE_ROWS);
-  const keys = (hostLevel ?? []).filter((key) => key !== "test_command");
+  const keys = [...(hostLevel ?? [])];
   keys.sort((a, b) => {
     const rank = (key) => (known.includes(key) ? known.indexOf(key) : known.length);
     return rank(a) - rank(b);

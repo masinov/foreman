@@ -1253,7 +1253,7 @@ export FOREMAN_DASHBOARD_TOKEN="$(openssl rand -hex 24)"
 - Request bodies must be sent as `Content-Type: application/json`.
 - Settings that decide what runs on the host cannot be changed through the
   API or the Settings screen (they answer **403** and are shown read-only):
-  `test_command`, `worktree_setup_command`, `worktree_root`,
+  `worktree_setup_command`, `worktree_root`,
   `worktree_link_paths`, `context_dir`, `judge_base_url`,
   `judge_api_key_env`, `merge_push_remote`, `agent_env_passthrough`. Set them
   at a terminal with
