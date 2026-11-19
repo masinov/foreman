@@ -594,7 +594,7 @@ class EnvironmentRulesTests(RepoTestCase):
         self.assertIsNone(detect_virtualenv(""))
 
     def test_developers_forbid_system_python_when_venv_named(self) -> None:
-        for role_id in ("developer", "developer_worker"):
+        for role_id in ("developer",):
             with self.subTest(role=role_id):
                 prompt = self.render(role_id, "- Run tools with `./venv/bin/python`.\n")
                 self.assertIn("Never run `python`, `python3` or `pip` from the system", prompt)
@@ -609,7 +609,7 @@ class EnvironmentRulesTests(RepoTestCase):
 
     def test_no_python_rule_without_a_named_environment(self) -> None:
         for agents_md in (None, "# Rules\nBe nice.\n"):
-            for role_id in ("developer", "developer_worker"):
+            for role_id in ("developer",):
                 with self.subTest(role=role_id, agents=agents_md):
                     prompt = self.render(role_id, agents_md)
                     self.assertNotIn("python3", prompt)

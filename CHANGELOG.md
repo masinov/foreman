@@ -18,6 +18,8 @@ memory changes rather than versioned product releases.
 
 ### Sprint 60 — what is there works and makes sense
 
+- The "Developer (worker fleet)" role is removed (sprint 60 decision 3). No workflow used it; it only pointed a developer at another model endpoint, which any role does with `[agent.env]` (MANUAL §9).
+
 - A task finished before the judge was removed shows its criteria as covered when its approving review was of the branch head; its stored evidence said "unverified", which meant that no judge had looked.
 
 - The criteria judge is removed (sprint 60 decision 1, ADR-0010 amendment). It never ran, since no page offered its endpoint. An approving code review of the branch head covers the acceptance criteria, and the task's Checks say "Covered by review"; until then "Not reviewed yet". Its four settings and `judged_by` are gone, and the merge waiver for partly met criteria went with it, since nothing produces that failure any more. Evidence the judge recorded still loads.
