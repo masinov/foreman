@@ -14,8 +14,8 @@ import httpx
 
 from foreman.cli import main
 from foreman.cli.parser import MANAGER_SESSION_COMMANDS
-from foreman.dashboard_backend import create_dashboard_app
-from foreman.dashboard_definitions import (
+from foreman.api.app import create_dashboard_app
+from foreman.services.definition_forms import (
     describe_project_definitions,
     role_text_from_fields,
     workflow_text_from_fields,
@@ -79,7 +79,7 @@ class _Workspace(unittest.TestCase):
             self.asked.append((backend, model))
             return f"Claude Code cannot run the model {model!r}." if model in self.unknown_models else None
 
-        for target in ("foreman.dashboard_definitions.check_model", "foreman.cli.definitions.check_model"):
+        for target in ("foreman.services.definition_forms.check_model", "foreman.cli.definitions.check_model"):
             patcher = mock.patch(target, check_model)
             patcher.start()
             self.addCleanup(patcher.stop)

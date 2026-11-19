@@ -345,7 +345,7 @@ Target deliverables:
 Status:
 
 - completed on `refactor/dashboard-api-extraction`
-- `foreman/dashboard_service.py` now owns dashboard reads, actions, and
+- `foreman/services/` now owns dashboard reads, actions, and
   incremental stream payload assembly
 - the dashboard runtime wrapper now delegates backend behavior through that
   service layer instead of assembling responses inline
@@ -364,7 +364,7 @@ Target deliverables:
 Status:
 
 - completed on `feat/dashboard-backend-foundation`
-- `foreman/dashboard_backend.py` now owns FastAPI routing and SSE delivery
+- `foreman/api/app.py` now owns FastAPI routing and SSE delivery
 - `foreman dashboard` now runs through uvicorn instead of stdlib HTTP server
 - the legacy shell is still present, but it now rides on the real backend
 
@@ -382,9 +382,9 @@ Status:
 
 - completed on `feat/react-dashboard-foundation`
 - `frontend/` now contains the dedicated React and Vite dashboard app
-- `foreman/dashboard_runtime.py` no longer embeds product HTML, CSS, or
+- `foreman/api/runtime.py` no longer embeds product HTML, CSS, or
   browser logic
-- `foreman/dashboard_backend.py` now serves the built frontend assets while
+- `foreman/api/app.py` now serves the built frontend assets while
   preserving the existing JSON and SSE backend contract
 - frontend component tests and bundle-build validation now accompany the
   existing dashboard backend regression suite
@@ -404,7 +404,7 @@ Status:
 
 - completed on `feat/dashboard-settings-and-creation`
 - dashboard runtime and service naming are now explicit through
-  `foreman/dashboard_runtime.py` and `foreman/dashboard_service.py`
+  `foreman/api/runtime.py` and `foreman/services/`
 - local dashboard development now has Vite `/api` proxying plus
   `npm --prefix frontend run dev:full` for a combined frontend and backend
   loop

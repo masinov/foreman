@@ -10,10 +10,10 @@ from unittest import mock
 
 import httpx
 
-from foreman.dashboard.app import ROUTERS, _is_intake_path, create_dashboard_app
-from foreman.dashboard.context import API_PREFIXES, ApiContext
-from foreman.dashboard.streaming import event_stream_response
-from foreman.dashboard_service import DashboardService
+from foreman.api.app import ROUTERS, _is_intake_path, create_dashboard_app
+from foreman.api.context import API_PREFIXES, ApiContext
+from foreman.api.streaming import event_stream_response
+from foreman.services import Services
 from foreman.domain.models import Event, Project, Run, Sprint, Task
 from foreman.store import ForemanStore
 
@@ -115,7 +115,7 @@ class DashboardApiShapeTests(unittest.TestCase):
 
     def test_a_bug_answers_with_the_envelope_and_no_internals(self) -> None:
         with mock.patch(
-            "foreman.dashboard_service.DashboardService.list_projects",
+            "foreman.services.projects.ProjectService.list_projects",
             side_effect=KeyError("secret-internal-detail"),
         ):
             with self.assertLogs("foreman.dashboard", level="ERROR"):
@@ -242,7 +242,7 @@ class ProjectEventStreamTests(unittest.TestCase):
         self.add_event("e2", project="p1", sprint="s2", stamp="2026-01-01T00:00:02Z")
         self.add_event("ex", project="other", sprint="sx", stamp="2026-01-01T00:00:03Z")
         self.add_event("e3", project="p1", sprint="s2", stamp="2026-01-01T00:00:04Z")
-        self.api = DashboardService(self.store)
+        self.api = Services(self.store)
 
     def add_event(self, event_id: str, *, project: str, sprint: str, stamp: str) -> None:
         task_id = f"task-{event_id}"
@@ -260,7 +260,7 @@ class ProjectEventStreamTests(unittest.TestCase):
         return [message["event_id"] for message in messages]
 
     def test_a_new_listener_gets_the_recent_events_of_every_sprint_in_order(self) -> None:
-        messages = self.api.list_project_stream_messages("p1")
+        messages = self.api.sprints.list_project_stream_messages("p1")
 
         self.assertEqual(self.ids(messages), ["e1", "e2", "e3"])
         self.assertEqual(messages[0]["payload"]["type"], "event")
@@ -268,19 +268,19 @@ class ProjectEventStreamTests(unittest.TestCase):
 
     def test_a_cursor_resumes_after_that_event_and_other_projects_stay_out(self) -> None:
         self.assertEqual(
-            self.ids(self.api.list_project_stream_messages("p1", after_event_id="e1")),
+            self.ids(self.api.sprints.list_project_stream_messages("p1", after_event_id="e1")),
             ["e2", "e3"],
         )
-        self.assertEqual(self.api.list_project_stream_messages("p1", after_event_id="e3"), [])
+        self.assertEqual(self.api.sprints.list_project_stream_messages("p1", after_event_id="e3"), [])
 
     def test_a_cursor_that_no_longer_exists_starts_over(self) -> None:
-        messages = self.api.list_project_stream_messages("p1", after_event_id="pruned-long-ago")
+        messages = self.api.sprints.list_project_stream_messages("p1", after_event_id="pruned-long-ago")
 
         self.assertEqual(self.ids(messages), ["e1", "e2", "e3"])
 
     def test_the_limit_keeps_the_newest_events(self) -> None:
         self.assertEqual(
-            self.ids(self.api.list_project_stream_messages("p1", limit=2)), ["e2", "e3"]
+            self.ids(self.api.sprints.list_project_stream_messages("p1", limit=2)), ["e2", "e3"]
         )
 
     def test_an_unknown_project_is_a_404_before_any_stream_starts(self) -> None:
@@ -313,11 +313,11 @@ class ProjectEventStreamTests(unittest.TestCase):
                 context,
                 _Request(),  # type: ignore[arg-type]
                 after="e1",
-                next_messages=lambda api, last: api.list_project_stream_messages(
+                next_messages=lambda api, last: api.sprints.list_project_stream_messages(
                     "p1", after_event_id=last
                 ),
             )
-            with mock.patch("foreman.dashboard.streaming.STREAM_POLL_INTERVAL_SECONDS", 0):
+            with mock.patch("foreman.api.streaming.STREAM_POLL_INTERVAL_SECONDS", 0):
                 return [chunk async for chunk in response.body_iterator]
 
         chunks = asyncio.run(collect())

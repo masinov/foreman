@@ -198,7 +198,7 @@ class MergeBranchBehindTests(unittest.TestCase):
 
 class UpdatedOutcomeWiringTests(unittest.TestCase):
     def test_outcome_is_named_everywhere_and_shipped_workflows_carry_it(self) -> None:
-        from foreman.dashboard_definitions import _OUTCOME_ORDER
+        from foreman.services.definition_forms import _OUTCOME_ORDER
         from foreman.domain.outcomes import CANONICAL_OUTCOMES, normalize_agent_outcome
         from foreman.definitions.workflows import _BUILTIN_OUTCOMES, load_workflow
 

@@ -10,12 +10,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from foreman import dashboard_runtime
-from foreman.dashboard_runtime import (
-    MISSING_BUNDLE_MESSAGE,
-    build_dashboard_assets,
-    dashboard_bundle_is_stale,
-)
+from foreman.api import assets as dashboard_assets
+from foreman.api.assets import MISSING_BUNDLE_MESSAGE, build_dashboard_assets, dashboard_bundle_is_stale
 
 
 class BundleFreshnessTests(unittest.TestCase):
@@ -100,19 +96,19 @@ class BuildTests(unittest.TestCase):
 class PrepareTests(unittest.TestCase):
     def test_does_not_build_when_told_not_to(self) -> None:
         with mock.patch.dict(os.environ, {"FOREMAN_DASHBOARD_NO_BUILD": "1"}), mock.patch.object(
-            dashboard_runtime, "build_dashboard_assets"
-        ) as build, mock.patch.object(dashboard_runtime, "ensure_dashboard_assets"):
-            dashboard_runtime.prepare_dashboard_assets()
+            dashboard_assets, "build_dashboard_assets"
+        ) as build, mock.patch.object(dashboard_assets, "ensure_dashboard_assets"):
+            dashboard_assets.prepare_dashboard_assets()
         build.assert_not_called()
 
     def test_builds_a_stale_bundle_in_a_source_checkout(self) -> None:
         with mock.patch.dict(os.environ, {}, clear=False), mock.patch.object(
-            dashboard_runtime, "dashboard_bundle_is_stale", return_value=True
-        ), mock.patch.object(dashboard_runtime, "build_dashboard_assets") as build, mock.patch.object(
-            dashboard_runtime, "ensure_dashboard_assets"
+            dashboard_assets, "dashboard_bundle_is_stale", return_value=True
+        ), mock.patch.object(dashboard_assets, "build_dashboard_assets") as build, mock.patch.object(
+            dashboard_assets, "ensure_dashboard_assets"
         ):
             os.environ.pop("FOREMAN_DASHBOARD_NO_BUILD", None)
-            dashboard_runtime.prepare_dashboard_assets()
+            dashboard_assets.prepare_dashboard_assets()
         build.assert_called_once()
 
 
@@ -120,7 +116,7 @@ class ShellWithoutBundleTests(unittest.TestCase):
     def test_the_api_works_and_the_shell_says_how_to_build(self) -> None:
         from fastapi.testclient import TestClient
 
-        from foreman.dashboard.app import create_dashboard_app
+        from foreman.api.app import create_dashboard_app
         from foreman.store import ForemanStore
 
         temp = tempfile.TemporaryDirectory()
@@ -130,8 +126,8 @@ class ShellWithoutBundleTests(unittest.TestCase):
         store.initialize()
         store.close()
         missing = Path(temp.name) / "nowhere" / "index.html"
-        with mock.patch("foreman.dashboard.app.dashboard_assets_present", return_value=False), mock.patch(
-            "foreman.dashboard.app.DASHBOARD_INDEX_PATH", missing
+        with mock.patch("foreman.api.app.dashboard_assets_present", return_value=False), mock.patch(
+            "foreman.api.app.DASHBOARD_INDEX_PATH", missing
         ):
             client = TestClient(create_dashboard_app(db_path))
             shell = client.get("/dashboard")

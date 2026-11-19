@@ -115,8 +115,8 @@ def live_dashboard_url(tmp_path_factory):
     """Start a real uvicorn dashboard server with seeded test data."""
     try:
         import uvicorn
-        from foreman.dashboard_backend import create_dashboard_app
-        from foreman.dashboard_runtime import DASHBOARD_INDEX_PATH
+        from foreman.api.app import create_dashboard_app
+        from foreman.api.assets import DASHBOARD_INDEX_PATH
     except ImportError as exc:
         pytest.skip(f"Dashboard backend dependencies not available: {exc}")
 

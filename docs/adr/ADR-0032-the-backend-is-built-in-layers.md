@@ -135,6 +135,18 @@ collectors filter on that name.
 | `meta_agent` | `manager/agent` |
 | `proposals`, `planning`, `digest` | `manager/` |
 
+## Where things went (slice 4)
+
+| Before | After |
+|---|---|
+| `dashboard/` | `api/` |
+| `dashboard_guard`, `dashboard_runtime` | `api/guard`; `api/runtime` (the bind, the security posture, the server) and `api/assets` (the frontend bundle). `runtime` and `app` imported each other; now `runtime` imports `app` |
+| `dashboard_backend` (an import shim) | deleted; its importers use `api/app` |
+| `dashboard_service.DashboardService` (2,408 lines, about a hundred methods) | `services/`: `ProjectService`, `EngineService`, `SprintService`, `TaskService`, `BacklogService`, `IntakeService`, `ProposalService`, `DecisionGateService`, `WorktreeService`, `DefinitionService`, `WorkspaceService` over `base.Service`, put together by `services.Services`. A route calls `api.tasks.accept_task(...)` where it called `api.accept_task(...)`. A service that needs another is given it (`BacklogService` and `IntakeService` get `tasks`, `ProjectService` gets `definitions`) |
+| `Dashboard*Error` | `services/errors`: `ServiceError`, `NotFoundError`, `InvalidRequestError`, `ActionFailedError`, `UnauthenticatedError`, `ForbiddenError` |
+| `dashboard_overview`, `dashboard_task_reads`, `dashboard_workflow_reads`, `dashboard_definitions`, `dashboard_access`, `backlog` | `services/workspace`, `task_reads`, `workflow_reads`, `definition_forms`, `access`, `backlog` |
+| `dashboard/task_models` | `services/task_models`: the shape of the task reads, which the services build |
+
 Older ADRs name the paths of their day and are left as written. This table
 and its successors in later slices translate them.
 

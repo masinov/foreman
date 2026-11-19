@@ -8,7 +8,7 @@ import sys
 import time
 from typing import Callable
 
-from ..dashboard_service import STREAM_POLL_INTERVAL_SECONDS
+from ..services.sprints import STREAM_POLL_INTERVAL_SECONDS
 from ..definitions.gate_steps import (
     blocked_kind,
     blocked_kind_counts,

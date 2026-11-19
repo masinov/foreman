@@ -78,10 +78,9 @@ The integrated pre-release baseline now contains:
   sprint (`foreman backlog list|add|accept|decline|plan|unplan` and
   `/api/v1/projects/{id}/backlog`); the engine only runs the active sprint, and
   tasks agents create are filed there too,
-- a dashboard service layer in `foreman/dashboard_service.py` for project,
-  sprint, task, action, and streaming payloads,
-- a FastAPI dashboard backend in `foreman/dashboard/` served by
-  uvicorn,
+- services in `foreman/services/`, one per area (projects, sprints, tasks,
+  backlog, intake, proposals and more), which the HTTP API and the CLI share,
+- the dashboard's FastAPI API in `foreman/api/`, served by uvicorn,
 - a dedicated React dashboard frontend in `frontend/` with project overview,
   queue-oriented sprint management, task detail, activity feed, human message
   input, decision-gate handling, project switching, a per-project meta-agent
@@ -89,7 +88,7 @@ The integrated pre-release baseline now contains:
 - dashboard assets built into `foreman/dashboard_frontend_dist/` (not in git;
   `foreman dashboard` builds them when missing or stale) and served by the
   FastAPI backend,
-- `foreman/dashboard_runtime.py` as the dashboard runtime entrypoint and
+- `foreman/api/runtime.py` as the dashboard runtime entrypoint and
   frontend asset guard plus dev-mode launch support,
 - unit, integration, and browser-driven E2E coverage across store, CLI,
   orchestrator, runners, dashboard, the React frontend, and runner-backed
@@ -305,7 +304,7 @@ rendering repeated snapshots.
 The product dashboard now ships through the accepted architecture:
 
 - Python backend modules expose JSON and streaming APIs through
-  `foreman/dashboard_service.py` and `foreman/dashboard/`,
+  `foreman/services/` and `foreman/api/`,
 - the dedicated React frontend in `frontend/` owns product UI rendering and
   client state,
 - built frontend assets are served by FastAPI from

@@ -25,12 +25,14 @@ from foreman.domain.api_tokens import (
     mint_token_secret,
     normalize_scopes,
 )
-from foreman.dashboard_backend import create_dashboard_app
-from foreman.dashboard_service import (
-    DashboardAuthError,
-    DashboardPermissionError,
-    DashboardService,
-    DashboardValidationError,
+from foreman.api.app import create_dashboard_app
+from foreman.services.errors import (
+    UnauthenticatedError,
+    ForbiddenError,
+    InvalidRequestError,
+)
+from foreman.services import (
+    Services,
 )
 from foreman.domain.models import NotificationDestination, Project, Sprint, Task
 from foreman.store import ForemanStore
@@ -235,7 +237,7 @@ class IntakeMigrationTests(unittest.TestCase):
 
 
 class IntakeServiceTests(unittest.TestCase):
-    """`DashboardService.intake_task`: idempotency, the queue, and the audit trail."""
+    """`Services.intake_task`: idempotency, the queue, and the audit trail."""
 
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
@@ -252,7 +254,7 @@ class IntakeServiceTests(unittest.TestCase):
                 workflow_id="development",
             )
         )
-        self.api = DashboardService(self.store)
+        self.api = Services(self.store)
         self.token, self.secret = self.store.create_api_token(
             project_id="project-1", name="pagerduty"
         )
@@ -268,7 +270,7 @@ class IntakeServiceTests(unittest.TestCase):
             },
         }
         payload.update(overrides)
-        return self.api.intake_task("project-1", token=self.token, **payload)
+        return self.api.intake.intake_task("project-1", token=self.token, **payload)
 
     def test_a_new_reference_creates_a_task_carrying_its_source(self) -> None:
         result = self.file()
@@ -307,8 +309,8 @@ class IntakeServiceTests(unittest.TestCase):
         self.assertEqual(len(self.store.list_tasks(project_id="project-1")), 2)
 
     def test_without_an_idempotency_key_every_call_files_new_work(self) -> None:
-        self.api.intake_task("project-1", token=self.token, title="Something broke")
-        self.api.intake_task("project-1", token=self.token, title="Something broke")
+        self.api.intake.intake_task("project-1", token=self.token, title="Something broke")
+        self.api.intake.intake_task("project-1", token=self.token, title="Something broke")
 
         self.assertEqual(len(self.store.list_tasks(project_id="project-1")), 2)
 
@@ -344,7 +346,7 @@ class IntakeServiceTests(unittest.TestCase):
             Sprint(id="sprint-1", project_id="project-1", title="S", status="active")
         )
         self.file()
-        self.api.transition_sprint("sprint-1", target_status="completed")
+        self.api.sprints.transition_sprint("sprint-1", target_status="completed")
 
         self.file(source={"system": "pagerduty", "external_ref": "INC-99"})
 
@@ -376,7 +378,7 @@ class IntakeServiceTests(unittest.TestCase):
             Sprint(id="sprint-2", project_id="project-2", title="S", status="active")
         )
 
-        with self.assertRaises(DashboardValidationError):
+        with self.assertRaises(InvalidRequestError):
             self.file(sprint_id="sprint-2")
 
     def test_the_origin_is_recorded_as_an_event_without_the_secret(self) -> None:
@@ -404,7 +406,7 @@ class IntakeServiceTests(unittest.TestCase):
     def test_the_response_serializes_the_task_like_the_task_endpoint(self) -> None:
         result = self.file()
 
-        detail = self.api.get_task(result["id"])
+        detail = self.api.tasks.get_task(result["id"])
         detail["created"] = True
         self.assertEqual(result, detail)
         self.assertEqual(
@@ -421,9 +423,9 @@ class IntakeServiceTests(unittest.TestCase):
         self.store.save_sprint(
             Sprint(id="sprint-1", project_id="project-1", title="S", status="active")
         )
-        created = self.api.create_task("sprint-1", title="Hand written")
+        created = self.api.tasks.create_task("sprint-1", title="Hand written")
 
-        self.assertIsNone(self.api.get_task(created["id"])["source"])
+        self.assertIsNone(self.api.tasks.get_task(created["id"])["source"])
 
     def test_bad_payloads_are_rejected_before_anything_is_written(self) -> None:
         cases = [
@@ -436,8 +438,8 @@ class IntakeServiceTests(unittest.TestCase):
         ]
         for payload in cases:
             with self.subTest(payload=payload):
-                with self.assertRaises(DashboardValidationError):
-                    self.api.intake_task("project-1", token=self.token, **payload)
+                with self.assertRaises(InvalidRequestError):
+                    self.api.intake.intake_task("project-1", token=self.token, **payload)
         self.assertEqual(self.store.list_tasks(project_id="project-1"), [])
 
     def test_authentication_separates_unknown_from_unauthorized(self) -> None:
@@ -453,15 +455,15 @@ class IntakeServiceTests(unittest.TestCase):
             project_id="project-2", name="elsewhere"
         )
 
-        with self.assertRaises(DashboardAuthError):
-            self.api.authenticate_intake("project-1", None)
-        with self.assertRaises(DashboardAuthError):
-            self.api.authenticate_intake("project-1", "fmn_wrong")
-        with self.assertRaises(DashboardPermissionError):
-            self.api.authenticate_intake("project-1", other_secret)
+        with self.assertRaises(UnauthenticatedError):
+            self.api.intake.authenticate_intake("project-1", None)
+        with self.assertRaises(UnauthenticatedError):
+            self.api.intake.authenticate_intake("project-1", "fmn_wrong")
+        with self.assertRaises(ForbiddenError):
+            self.api.intake.authenticate_intake("project-1", other_secret)
 
         self.assertEqual(
-            self.api.authenticate_intake("project-1", self.secret).id, self.token.id
+            self.api.intake.authenticate_intake("project-1", self.secret).id, self.token.id
         )
 
     def test_a_token_without_the_intake_scope_is_refused(self) -> None:
@@ -483,8 +485,8 @@ class IntakeServiceTests(unittest.TestCase):
         )
         self.store._connection.commit()
 
-        with self.assertRaises(DashboardPermissionError):
-            self.api.authenticate_intake("project-1", secret)
+        with self.assertRaises(ForbiddenError):
+            self.api.intake.authenticate_intake("project-1", secret)
 
 
 class IntakeEndpointTests(unittest.TestCase):
@@ -769,7 +771,7 @@ class IntakeTriagePolicyTests(unittest.TestCase):
         self.store = ForemanStore(self.db_path)
         self.addCleanup(self.store.close)
         self.store.initialize()
-        self.api = DashboardService(self.store)
+        self.api = Services(self.store)
 
     def _project(self, settings: dict) -> None:
         self.store.save_project(
@@ -786,7 +788,7 @@ class IntakeTriagePolicyTests(unittest.TestCase):
     def file(self, **overrides):
         payload = {"title": "Disk full on web-3", "task_type": "fix"}
         payload.update(overrides)
-        return self.api.intake_task("project-1", token=self.token, **payload)
+        return self.api.intake.intake_task("project-1", token=self.token, **payload)
 
     def test_the_default_policy_parks_filed_work_in_triage(self) -> None:
         self._project({})
@@ -856,7 +858,7 @@ class IntakeTriagePolicyTests(unittest.TestCase):
         self._project({})
         result = self.file()
 
-        accepted = self.api.accept_task(result["id"])
+        accepted = self.api.tasks.accept_task(result["id"])
 
         self.assertEqual(accepted["status"], "todo")
         self.assertEqual(self.store.get_task(result["id"]).status, "todo")
@@ -871,8 +873,8 @@ class IntakeTriagePolicyTests(unittest.TestCase):
         self._project({"triage": "auto"})
         result = self.file()
 
-        with self.assertRaises(DashboardValidationError):
-            self.api.accept_task(result["id"])
+        with self.assertRaises(InvalidRequestError):
+            self.api.tasks.accept_task(result["id"])
 
     def test_the_engine_never_selects_a_triaged_task(self) -> None:
         from foreman.engine.orchestrator import ForemanOrchestrator
@@ -887,7 +889,7 @@ class IntakeTriagePolicyTests(unittest.TestCase):
         orchestrator = ForemanOrchestrator(self.store)
         self.assertIsNone(orchestrator.select_next_task(project))
 
-        self.api.accept_task(result["id"])
+        self.api.tasks.accept_task(result["id"])
         selected = orchestrator.select_next_task(project)
         self.assertIsNotNone(selected)
         self.assertEqual(selected.id, result["id"])
@@ -928,10 +930,10 @@ class ProjectPolicyEndpointTests(unittest.TestCase):
                 executor_overrides={"policy": {"notification": "none"}},
             )
         )
-        self.api = DashboardService(self.store)
+        self.api = Services(self.store)
 
     def test_the_project_view_reports_defaults_and_rules(self) -> None:
-        payload = self.api.get_project_policy("project-1")
+        payload = self.api.projects.get_project_policy("project-1")
 
         self.assertEqual(payload["project_id"], "project-1")
         self.assertEqual(
@@ -942,7 +944,7 @@ class ProjectPolicyEndpointTests(unittest.TestCase):
         self.assertNotIn("resolution", payload)
 
     def test_a_task_id_adds_the_resolution_for_that_task(self) -> None:
-        payload = self.api.get_project_policy("project-1", task_id="task-1")
+        payload = self.api.projects.get_project_policy("project-1", task_id="task-1")
 
         self.assertEqual(payload["task_id"], "task-1")
         self.assertEqual(payload["task_type"], "docs")
@@ -956,7 +958,7 @@ class ProjectPolicyEndpointTests(unittest.TestCase):
         )
 
     def test_the_task_detail_payload_carries_the_resolved_policy(self) -> None:
-        payload = self.api.get_task("task-1")
+        payload = self.api.tasks.get_task("task-1")
 
         self.assertEqual(payload["policy"]["merge_approval"]["value"], "auto")
         self.assertEqual(payload["policy"]["triage"]["value"], "human")
@@ -966,8 +968,8 @@ class ProjectPolicyEndpointTests(unittest.TestCase):
             Project(id="project-2", name="Other", repo_path=self._tmp.name, workflow_id="development")
         )
 
-        with self.assertRaises(DashboardValidationError):
-            self.api.get_project_policy("project-2", task_id="task-1")
+        with self.assertRaises(InvalidRequestError):
+            self.api.projects.get_project_policy("project-2", task_id="task-1")
 
     def test_the_route_serves_both_shapes(self) -> None:
         app = create_dashboard_app(db_path=self.db_path)
@@ -991,7 +993,7 @@ class ProjectPolicyEndpointTests(unittest.TestCase):
         )
 
     def test_the_settings_endpoint_accepts_the_new_policy_settings(self) -> None:
-        updated = self.api.update_project_settings(
+        updated = self.api.projects.update_project_settings(
             "project-1",
             updates={
                 "settings": {
@@ -1009,8 +1011,8 @@ class ProjectPolicyEndpointTests(unittest.TestCase):
         )
 
     def test_the_settings_endpoint_refuses_a_malformed_rules_object(self) -> None:
-        with self.assertRaises(DashboardValidationError):
-            self.api.update_project_settings(
+        with self.assertRaises(InvalidRequestError):
+            self.api.projects.update_project_settings(
                 "project-1", updates={"settings": {"policy_rules": {"docs": {"triage": "maybe"}}}}
             )
 
@@ -1127,7 +1129,7 @@ class IntakeAttentionNotificationTests(unittest.TestCase):
         self.store = ForemanStore(Path(self._tmp.name) / "foreman.db")
         self.addCleanup(self.store.close)
         self.store.initialize()
-        self.api = DashboardService(self.store)
+        self.api = Services(self.store)
 
     def _project(self, settings: dict) -> None:
         self.store.save_project(
@@ -1150,7 +1152,7 @@ class IntakeAttentionNotificationTests(unittest.TestCase):
         self.token, _ = self.store.create_api_token(project_id="project-1", name="pagerduty")
 
     def file(self):
-        return self.api.intake_task(
+        return self.api.intake.intake_task(
             "project-1",
             token=self.token,
             title="Disk full on web-3",

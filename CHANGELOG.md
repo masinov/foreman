@@ -18,6 +18,8 @@ memory changes rather than versioned product releases.
 
 ### Sprint 60 — what is there works and makes sense
 
+- The backend in layers, slice 4 (ADR-0032). `DashboardService`, one class of 2,408 lines, is eleven services in `foreman/services/`, one per area, put together by `Services`. The six `dashboard_*` modules and `backlog` joined them, and `foreman/dashboard/` is `foreman/api/`. The import shim `dashboard_backend` is gone. The services' errors lost their `Dashboard` prefix (`NotFoundError`, `InvalidRequestError`, and so on), since the CLI meets them too. The bundle helpers are `api/assets`, so `api/runtime` and `api/app` no longer import each other. No behaviour or API changed.
+
 - The backend in layers, slice 3 (ADR-0032): the manager's modules are one package, `foreman/manager/` (`agent`, which was `meta_agent`, `proposals`, `planning`, `digest`). The manager chat's routes import them at the top of the module, as every other route does.
 
 - The backend in layers, slice 2 (ADR-0032). `Mutations` is a package with a part per area (`tasks`, `gates`, `backlog`, `sprints`) over `base`, composed like `ForemanStore`. A gate decision is written by `mutations/gates.py` for a person and for the engine alike, so the rules for a person's change no longer import the orchestrator, and the contract lists no exception. The writer of runs and events and the process log moved below both, to `foreman/history/`. No behaviour changed.

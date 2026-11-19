@@ -9,7 +9,7 @@ import unittest
 
 import httpx
 
-from foreman.dashboard_backend import create_dashboard_app
+from foreman.api.app import create_dashboard_app
 from foreman.domain.models import Project, Sprint, Task
 from foreman.store import ForemanStore
 

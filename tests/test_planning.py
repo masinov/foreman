@@ -8,7 +8,7 @@ import json
 import httpx
 
 from foreman.manager import agent as meta_agent
-from foreman.dashboard.app import create_dashboard_app
+from foreman.api.app import create_dashboard_app
 from foreman.domain.models import Sprint
 from foreman.manager.planning import (
     PlanningError,

@@ -100,7 +100,7 @@ class ScaffoldGenerationTests(unittest.TestCase):
 
 class NewProjectDefaultsTests(unittest.TestCase):
     def test_the_default_worker_model_is_one_the_dashboard_offers(self) -> None:
-        from foreman.dashboard_definitions import _KNOWN_MODELS
+        from foreman.services.definition_forms import _KNOWN_MODELS
         from foreman.repo.scaffold import DEFAULT_DEFAULT_MODEL
 
         self.assertIn(DEFAULT_DEFAULT_MODEL, _KNOWN_MODELS)
