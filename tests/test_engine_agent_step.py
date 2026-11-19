@@ -93,6 +93,56 @@ class AgentStepTests(OrchestratorTestCase):
             self.assertEqual(len(retry_events), 1)
             self.assertEqual(retry_events[0].payload["reason"], "missing_completion_marker")
 
+    def test_a_corrective_retry_in_the_same_session_does_not_send_the_task_again(self) -> None:
+        # The retry resumes the first attempt's session, which already holds
+        # the task and the work done on it. Sending the whole prompt again had
+        # the developer start the task over (sprint 57 finding).
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+
+            def developer_missing_marker(*, task: Task, prompt: str, carried_output: str | None):
+                return AgentExecutionResult(
+                    outcome="error",
+                    detail="Missing completion marker `TASK_COMPLETE`.",
+                    status="completed",
+                    session_id="session-first-attempt",
+                )
+
+            def developer_retry(*, task: Task, prompt: str, carried_output: str | None):
+                self.write_text(self.work_dir(task, repo_path) / "ready.txt", "ready\n")
+                self.commit_all(self.work_dir(task, repo_path), "feat: implement")
+                return AgentExecutionResult(outcome="done", detail="Done.", status="completed")
+
+            executor = ScriptedAgentExecutor(
+                {
+                    ("developer", 1): developer_missing_marker,
+                    ("developer", 2): developer_retry,
+                    ("code_reviewer", 1): lambda **_: AgentExecutionResult(
+                        outcome="approve", detail="APPROVE"
+                    ),
+                }
+            )
+            orchestrator = ForemanOrchestrator(
+                store, roles=self.roles, workflows=self.workflows, agent_executor=executor
+            )
+
+            orchestrator.run_project(project.id)
+
+            first = executor.capture("developer", 1).prompt
+            retry = executor.capture("developer", 2).prompt
+            self.assertIn("Task: Implement orchestrator loop", first)
+            self.assertNotIn("Task: Implement orchestrator loop", retry)
+            self.assertTrue(retry.startswith("### Output Correction"))
+            self.assertIn("end with `TASK_COMPLETE`", retry)
+            retry_run = [
+                run for run in store.list_runs(task_id=task.id) if run.role_id == "developer"
+            ][-1]
+            self.assertEqual(retry_run.prompt_text, retry)
+
     def test_run_project_retries_reviewer_once_after_malformed_decision_output(self) -> None:
         repo_path, db_path = self.create_workspace()
         self.initialize_repo(repo_path)

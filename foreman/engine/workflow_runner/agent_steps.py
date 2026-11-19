@@ -229,12 +229,13 @@ class AgentSteps(WorkflowRunnerBase):
                     "retry_attempt": 1,
                 },
             )
+            retry_session_id = result.session_id or session_id
             retry_prompt = with_retry_instruction(
                 prompt,
                 role,
                 retry_reason,
+                resumes_session=bool(retry_session_id),
             )
-            retry_session_id = result.session_id or session_id
             retry_run = self.records.create_running_run(
                 task,
                 role_id=role.id,
