@@ -69,6 +69,37 @@ class ServeResult:
     last_pass_reason: str | None = None
     detail: str | None = None
 
+@dataclass(slots=True)
+class _ServeLoop:
+    """What one ``run`` of the resident engine keeps between its turns."""
+
+    once: bool
+    executed: list[str] = field(default_factory=list)
+    blocked: list[str] = field(default_factory=list)
+    passes: int = 0
+    # Retention pruning and crash recovery belong to startup and to passes
+    # that actually did something. Repeating them on every idle wake would
+    # turn the lock heartbeat — which commits from another connection and so
+    # bumps ``data_version`` — into a busy loop.
+    maintenance_due: bool = True
+    stop_reason: str = "stopped"
+    exit_code: int = 0
+    detail: str | None = None
+    last_pass_reason: str | None = None
+    idle_streak: int = 0
+    paused_streak: int = 0
+
+    def stop(self, reason: str, detail: str | None, *, exit_code: int = 0) -> None:
+        self.stop_reason, self.detail, self.exit_code = reason, detail, exit_code
+
+    def stop_if_once(self, detail: str | None) -> bool:
+        """End a single pass (`--once`) here, saying why. False when serving."""
+
+        if self.once:
+            self.stop("once", detail)
+        return self.once
+
+
 
 @dataclass(slots=True)
 class _Backoff:
@@ -193,21 +224,7 @@ class ResidentEngineBase:
     def run(self, *, once: bool = False) -> ServeResult:
         """Run passes until stopped. Returns why, and with which exit code."""
 
-        executed: list[str] = []
-        blocked: list[str] = []
-        passes = 0
-        # Retention pruning and crash recovery belong to startup and to passes
-        # that actually did something. Repeating them on every idle wake would
-        # turn the lock heartbeat — which commits from another connection and
-        # so bumps ``data_version`` — into a busy loop.
-        maintenance_due = True
-        stop_reason = "stopped"
-        exit_code = 0
-        detail: str | None = None
-        last_pass_reason: str | None = None
-        idle_streak = 0
-        paused_streak = 0
-
+        loop = _ServeLoop(once=once)
         self._log(
             "serve.started",
             poll_seconds=self.poll_seconds,
@@ -222,250 +239,255 @@ class ResidentEngineBase:
             self.orchestrator.yield_between_tasks = self._has_something_waiting
 
         try:
-            while True:
-                if self._lock_is_lost():
-                    stop_reason, exit_code = "lock_lost", 1
-                    detail = self._lock_lost_reason()
-                    self._log("serve.lock_lost", level=logging.ERROR, reason=detail)
-                    break
-
-                self._drain_commands()
-                self._deliver_notifications()
-
-                if self._stopping:
-                    stop_reason, exit_code = "stopped", 0
-                    detail = "Engine was shut down by command."
-                    self._log("serve.stopping", reason=detail)
-                    break
-
-                if self._paused:
-                    # Idle by instruction rather than for lack of work. The
-                    # wait is the same one an idle engine uses, so a `resume`
-                    # committed from another process wakes it immediately.
-                    if once:
-                        stop_reason, detail = "once", "Engine is paused."
-                        break
-                    paused_streak += 1
-                    # Entering the paused state is worth narrating; staying
-                    # paused is not, and a pause can last all day.
-                    self._log(
-                        "serve.paused",
-                        level=logging.INFO if paused_streak == 1 else logging.DEBUG,
-                    )
-                    self._wait_for_change(self.poll_seconds)
-                    continue
-                paused_streak = 0
-
-                passes += 1
-                run_request = self._take_run_request()
-                target_task_id = run_request[0] if run_request else None
-                if run_request is not None:
-                    # The request was checked when it was accepted; the task
-                    # may have run, or been blocked or cancelled, since.
-                    target = self.store.get_task(run_request[0])
-                    if target is None or not _runnable_on_request(target):
-                        self._finish_run_request(
-                            run_request,
-                            "completed",
-                            f"Task {target_task_id!r} was not run on request: it is "
-                            f"{target.status if target else 'gone'!r} now.",
-                        )
-                        continue
-                try:
-                    result = self.orchestrator.run_project(
-                        self.project_id,
-                        task_id=target_task_id,
-                        maintenance=maintenance_due,
-                    )
-                except EngineCommandInterrupt as exc:
-                    self._finish_run_request(
-                        run_request,
-                        "completed",
-                        f"Task {target_task_id!r} was started and then interrupted by "
-                        f"`{exc.command.command}`.",
-                    )
-                    self._settle_interrupt(exc)
-                    maintenance_due = True
-                    if once:
-                        stop_reason, detail = "once", str(exc)
-                        break
-                    continue
-                except TaskExecutionError as exc:
-                    self._finish_run_request(
-                        run_request,
-                        "completed",
-                        f"Task {target_task_id!r} was run and failed: {exc.cause}",
-                    )
-                    delay = self._isolate_task_failure(exc)
-                    blocked.append(exc.task_id)
-                    maintenance_due = True
-                    if once:
-                        # A pass that isolated a failure still did its job: the
-                        # task is blocked with an attention turn and the engine
-                        # is healthy, so a cron-style `--once` exits 0.
-                        stop_reason, detail = "once", str(exc)
-                        break
-                    self._wait(delay)
-                    continue
-                except LeaseLostError as exc:
-                    # This engine's lease on the task it was running expired or
-                    # was taken over. The run is already settled as killed and
-                    # the task is resumable; retry the project after a backoff
-                    # rather than ending the service.
-                    self._finish_run_request(
-                        run_request,
-                        "completed",
-                        f"Task {target_task_id!r} was started; the engine then lost "
-                        f"its lease on it: {exc}",
-                    )
-                    delay = self._backoff.record_failure()
-                    self._log(
-                        "serve.task_lease_lost",
-                        level=logging.WARNING,
-                        reason=str(exc),
-                        backoff_seconds=delay,
-                    )
-                    maintenance_due = True
-                    if once:
-                        stop_reason, detail = "once", str(exc)
-                        break
-                    self._wait(delay)
-                    continue
-                except OrchestratorError as exc:
-                    # Ordered last of the OrchestratorError family: the two
-                    # subclasses above are handled on their own terms, and
-                    # QuotaPauseError never reaches here because run_project
-                    # turns it into a `quota_exhausted` result. A *targeted*
-                    # run that cannot even start is about that one task (it was
-                    # leased away, or it moved) rather than about the project,
-                    # so isolating it keeps a bad `run_task` from ending the
-                    # service. Anything else still ends it.
-                    if target_task_id is None:
-                        raise
-                    self._finish_run_request(
-                        run_request,
-                        "rejected",
-                        f"Task {target_task_id!r} could not be started: {exc}",
-                    )
-                    delay = self._isolate_task_failure(
-                        TaskExecutionError(target_task_id, exc)
-                    )
-                    blocked.append(target_task_id)
-                    maintenance_due = True
-                    if once:
-                        stop_reason, detail = "once", str(exc)
-                        break
-                    self._wait(delay)
-                    continue
-
-                if run_request is not None:
-                    ran = target_task_id in result.executed_task_ids
-                    self._finish_run_request(
-                        run_request,
-                        "completed",
-                        (
-                            f"Task {target_task_id!r} was run"
-                            if ran
-                            else f"Task {target_task_id!r} was not run"
-                        )
-                        + f"; the pass ended with {result.stop_reason!r}."
-                        + (f" {result.detail}" if result.detail and not ran else ""),
-                    )
-                executed.extend(result.executed_task_ids)
-                blocked.extend(result.blocked_task_ids)
-                last_pass_reason = result.stop_reason
-                self._backoff.reset()
-                did_work = bool(result.executed_task_ids)
-                idle_streak = 0 if did_work else idle_streak + 1
-                # The transition into idleness is worth narrating once; a
-                # second consecutive empty pass is routine and stays at DEBUG
-                # so an idle service does not fill its own log.
-                self._log_pass(
-                    result,
-                    level=logging.INFO if idle_streak <= 1 else logging.DEBUG,
-                )
-
-                if result.stop_reason == "quota_exhausted":
-                    # The backend's usage window is spent. The task kept its
-                    # resume point; nothing will succeed before the reset, so
-                    # wait for it instead of blocking the task or spinning.
-                    delay = quota_wait_seconds(result.retry_after, now=self._utc_now())
-                    self._log(
-                        "serve.quota_exhausted",
-                        level=logging.WARNING,
-                        retry_after=result.retry_after,
-                        wait_seconds=delay,
-                        detail=result.detail,
-                    )
-                    maintenance_due = False
-                    if once:
-                        stop_reason, detail = "once", result.detail
-                        break
-                    self._wait(delay)
-                    continue
-
-                if once:
-                    stop_reason = "once"
-                    break
-
-                maintenance_due = did_work
-                if not did_work:
-                    self._log(
-                        "serve.idle",
-                        level=logging.INFO if idle_streak == 1 else logging.DEBUG,
-                        stop_reason=result.stop_reason,
-                    )
-                    self._wait_for_change(self.poll_seconds)
-
+            while not self._iterate(loop):
+                pass
         except (EngineShutdown, KeyboardInterrupt) as exc:
             if self._lock_is_lost():
-                stop_reason, exit_code = "lock_lost", 1
-                detail = self._lock_lost_reason()
-                self._log("serve.lock_lost", level=logging.ERROR, reason=detail)
+                loop.stop("lock_lost", self._lock_lost_reason(), exit_code=1)
+                self._log("serve.lock_lost", level=logging.ERROR, reason=loop.detail)
             else:
                 # A requested stop is not a failure. The orchestrator has
                 # already settled the active run as killed and left the task
                 # resumable at its persisted step.
-                stop_reason, exit_code, detail = "stopped", 0, str(exc)
-                self._log("serve.stopping", reason=detail)
+                loop.stop("stopped", str(exc))
+                self._log("serve.stopping", reason=loop.detail)
             process.terminate_all(grace_seconds=2.0)
         except OrchestratorError as exc:
             # Not task-scoped: an unknown project or an invalid project
             # configuration will not fix itself, so retrying forever would only
             # hide it. Stop and report.
-            stop_reason, exit_code, detail = "error", 1, str(exc)
-            self._log("serve.failed", level=logging.ERROR, reason=detail)
+            loop.stop("error", str(exc), exit_code=1)
+            self._log("serve.failed", level=logging.ERROR, reason=loop.detail)
         except Exception as exc:  # noqa: BLE001 - reported with a non-zero exit, not hidden
             # A bug in the engine. A supervisor decides from the exit code
             # whether to restart, so this must not look like a clean stop.
-            stop_reason, exit_code = "crashed", 1
-            detail = f"{type(exc).__name__}: {exc}"
+            loop.stop("crashed", f"{type(exc).__name__}: {exc}", exit_code=1)
             self._log(
                 "serve.crashed",
                 level=logging.ERROR,
-                reason=detail,
+                reason=loop.detail,
                 traceback=traceback.format_exc(),
             )
             process.terminate_all(grace_seconds=2.0)
         finally:
             self._log(
                 "serve.stopped",
-                stop_reason=stop_reason,
-                exit_code=exit_code,
-                passes=passes,
-                executed_task_ids=list(executed),
+                stop_reason=loop.stop_reason,
+                exit_code=loop.exit_code,
+                passes=loop.passes,
+                executed_task_ids=list(loop.executed),
             )
 
         return ServeResult(
             project_id=self.project_id,
-            stop_reason=stop_reason,
-            exit_code=exit_code,
-            passes=passes,
-            executed_task_ids=tuple(executed),
-            blocked_task_ids=tuple(blocked),
-            last_pass_reason=last_pass_reason,
-            detail=detail,
+            stop_reason=loop.stop_reason,
+            exit_code=loop.exit_code,
+            passes=loop.passes,
+            executed_task_ids=tuple(loop.executed),
+            blocked_task_ids=tuple(loop.blocked),
+            last_pass_reason=loop.last_pass_reason,
+            detail=loop.detail,
         )
+
+    def _iterate(self, loop: _ServeLoop) -> bool:
+        """One turn of the loop: commands, then a pass or a wait. True ends the loop."""
+
+        if self._lock_is_lost():
+            loop.stop("lock_lost", self._lock_lost_reason(), exit_code=1)
+            self._log("serve.lock_lost", level=logging.ERROR, reason=loop.detail)
+            return True
+
+        self._drain_commands()
+        self._deliver_notifications()
+
+        if self._stopping:
+            loop.stop("stopped", "Engine was shut down by command.")
+            self._log("serve.stopping", reason=loop.detail)
+            return True
+
+        if self._paused:
+            # Idle by instruction rather than for lack of work. The wait is
+            # the same one an idle engine uses, so a `resume` committed from
+            # another process wakes it immediately.
+            if loop.once:
+                loop.stop("once", "Engine is paused.")
+                return True
+            loop.paused_streak += 1
+            # Entering the paused state is worth narrating; staying paused is
+            # not, and a pause can last all day.
+            self._log(
+                "serve.paused",
+                level=logging.INFO if loop.paused_streak == 1 else logging.DEBUG,
+            )
+            self._wait_for_change(self.poll_seconds)
+            return False
+        loop.paused_streak = 0
+
+        loop.passes += 1
+        run_request = self._take_run_request()
+        if run_request is not None:
+            # The request was checked when it was accepted; the task may have
+            # run, or been blocked or cancelled, since.
+            target = self.store.get_task(run_request[0])
+            if target is None or not _runnable_on_request(target):
+                self._finish_run_request(
+                    run_request,
+                    "completed",
+                    f"Task {run_request[0]!r} was not run on request: it is "
+                    f"{target.status if target else 'gone'!r} now.",
+                )
+                return False
+        return self._run_pass(loop, run_request)
+
+    def _run_pass(
+        self, loop: _ServeLoop, run_request: tuple[str, EngineCommand] | None
+    ) -> bool:
+        """Run one project pass and settle what it did. True ends the loop."""
+
+        target_task_id = run_request[0] if run_request else None
+        try:
+            result = self.orchestrator.run_project(
+                self.project_id,
+                task_id=target_task_id,
+                maintenance=loop.maintenance_due,
+            )
+        except EngineCommandInterrupt as exc:
+            self._finish_run_request(
+                run_request,
+                "completed",
+                f"Task {target_task_id!r} was started and then interrupted by "
+                f"`{exc.command.command}`.",
+            )
+            self._settle_interrupt(exc)
+            loop.maintenance_due = True
+            return loop.stop_if_once(str(exc))
+        except TaskExecutionError as exc:
+            self._finish_run_request(
+                run_request,
+                "completed",
+                f"Task {target_task_id!r} was run and failed: {exc.cause}",
+            )
+            delay = self._isolate_task_failure(exc)
+            loop.blocked.append(exc.task_id)
+            # A pass that isolated a failure still did its job: the task is
+            # blocked with an attention turn and the engine is healthy, so a
+            # cron-style `--once` exits 0.
+            return self._after_failed_pass(loop, str(exc), delay)
+        except LeaseLostError as exc:
+            # This engine's lease on the task it was running expired or was
+            # taken over. The run is already settled as killed and the task is
+            # resumable; retry the project after a backoff rather than ending
+            # the service.
+            self._finish_run_request(
+                run_request,
+                "completed",
+                f"Task {target_task_id!r} was started; the engine then lost "
+                f"its lease on it: {exc}",
+            )
+            delay = self._backoff.record_failure()
+            self._log(
+                "serve.task_lease_lost",
+                level=logging.WARNING,
+                reason=str(exc),
+                backoff_seconds=delay,
+            )
+            return self._after_failed_pass(loop, str(exc), delay)
+        except OrchestratorError as exc:
+            # Ordered last of the OrchestratorError family: the two subclasses
+            # above are handled on their own terms, and QuotaPauseError never
+            # reaches here because run_project turns it into a
+            # `quota_exhausted` result. A *targeted* run that cannot even start
+            # is about that one task (it was leased away, or it moved) rather
+            # than about the project, so isolating it keeps a bad `run_task`
+            # from ending the service. Anything else still ends it.
+            if target_task_id is None:
+                raise
+            self._finish_run_request(
+                run_request,
+                "rejected",
+                f"Task {target_task_id!r} could not be started: {exc}",
+            )
+            delay = self._isolate_task_failure(TaskExecutionError(target_task_id, exc))
+            loop.blocked.append(target_task_id)
+            return self._after_failed_pass(loop, str(exc), delay)
+        return self._after_pass(loop, run_request, result)
+
+    def _after_failed_pass(self, loop: _ServeLoop, detail: str, delay: float) -> bool:
+        """A pass that ended in a task's failure: wait it out, or end a single pass."""
+
+        loop.maintenance_due = True
+        if loop.stop_if_once(detail):
+            return True
+        self._wait(delay)
+        return False
+
+    def _after_pass(
+        self,
+        loop: _ServeLoop,
+        run_request: tuple[str, EngineCommand] | None,
+        result: ProjectRunResult,
+    ) -> bool:
+        """Record a finished pass, then wait for the quota, for a change, or not at all."""
+
+        if run_request is not None:
+            target_task_id = run_request[0]
+            ran = target_task_id in result.executed_task_ids
+            self._finish_run_request(
+                run_request,
+                "completed",
+                (
+                    f"Task {target_task_id!r} was run"
+                    if ran
+                    else f"Task {target_task_id!r} was not run"
+                )
+                + f"; the pass ended with {result.stop_reason!r}."
+                + (f" {result.detail}" if result.detail and not ran else ""),
+            )
+        loop.executed.extend(result.executed_task_ids)
+        loop.blocked.extend(result.blocked_task_ids)
+        loop.last_pass_reason = result.stop_reason
+        self._backoff.reset()
+        did_work = bool(result.executed_task_ids)
+        loop.idle_streak = 0 if did_work else loop.idle_streak + 1
+        # The transition into idleness is worth narrating once; a second
+        # consecutive empty pass is routine and stays at DEBUG so an idle
+        # service does not fill its own log.
+        self._log_pass(
+            result,
+            level=logging.INFO if loop.idle_streak <= 1 else logging.DEBUG,
+        )
+
+        if result.stop_reason == "quota_exhausted":
+            # The backend's usage window is spent. The task kept its resume
+            # point; nothing will succeed before the reset, so wait for it
+            # instead of blocking the task or spinning.
+            delay = quota_wait_seconds(result.retry_after, now=self._utc_now())
+            self._log(
+                "serve.quota_exhausted",
+                level=logging.WARNING,
+                retry_after=result.retry_after,
+                wait_seconds=delay,
+                detail=result.detail,
+            )
+            loop.maintenance_due = False
+            if loop.stop_if_once(result.detail):
+                return True
+            self._wait(delay)
+            return False
+
+        if loop.once:
+            loop.stop_reason = "once"
+            return True
+
+        loop.maintenance_due = did_work
+        if not did_work:
+            self._log(
+                "serve.idle",
+                level=logging.INFO if loop.idle_streak == 1 else logging.DEBUG,
+                stop_reason=result.stop_reason,
+            )
+            self._wait_for_change(self.poll_seconds)
+        return False
 
     def _deliver_notifications(self) -> None:
         """Send whatever notifications are due for this project.

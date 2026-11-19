@@ -36,6 +36,22 @@ def register_task(subparsers: argparse._SubParsersAction) -> None:
         metavar="task_command",
         required=True,
     )
+    _register_add(task_commands)
+    _register_override(task_commands)
+    _register_list(task_commands)
+    _register_show(task_commands)
+    _register_block(task_commands)
+    _register_unblock(task_commands)
+    _register_accept(task_commands)
+    _register_done(task_commands)
+    _register_reopen(task_commands)
+    _register_edit(task_commands)
+    _register_cancel(task_commands)
+
+
+def _register_add(task_commands: argparse._SubParsersAction) -> None:
+    """`foreman task add`."""
+
     task_add = task_commands.add_parser("add", help="Create a task.")
     task_add.add_argument("project_id", help="Project identifier.")
     task_add.add_argument("--title", required=True, help="Task title.")
@@ -64,6 +80,10 @@ def register_task(subparsers: argparse._SubParsersAction) -> None:
         help_text=f"Path to the SQLite store containing the project. {DB_OPTION_NOTE}",
     )
     set_handler(task_add, handle_task_add, "task add")
+
+
+def _register_override(task_commands: argparse._SubParsersAction) -> None:
+    """`foreman task override`."""
 
     task_override = task_commands.add_parser(
         "override",
@@ -122,6 +142,10 @@ def register_task(subparsers: argparse._SubParsersAction) -> None:
     )
     set_handler(task_override, handle_task_override, "task override")
 
+
+def _register_list(task_commands: argparse._SubParsersAction) -> None:
+    """`foreman task list`."""
+
     task_list = task_commands.add_parser("list", help="List project tasks.")
     task_list.add_argument("project_id", help="Project identifier.")
     task_list.add_argument("--sprint", metavar="SPRINT_ID", help="Filter to a specific sprint.")
@@ -131,6 +155,10 @@ def register_task(subparsers: argparse._SubParsersAction) -> None:
     )
     add_json_option(task_list)
     set_handler(task_list, handle_task_list, "task list")
+
+
+def _register_show(task_commands: argparse._SubParsersAction) -> None:
+    """`foreman task show`."""
 
     task_show = task_commands.add_parser("show", help="Show one task with recent runs and events.")
     task_show.add_argument("task_id", help="Task identifier.")
@@ -152,6 +180,10 @@ def register_task(subparsers: argparse._SubParsersAction) -> None:
     )
     set_handler(task_show, handle_task_show, "task show")
 
+
+def _register_block(task_commands: argparse._SubParsersAction) -> None:
+    """`foreman task block`."""
+
     task_block = task_commands.add_parser("block", help="Block a task.")
     task_block.add_argument("task_id", help="Task identifier.")
     task_block.add_argument("--reason", required=True, help="Blocking reason.")
@@ -161,6 +193,10 @@ def register_task(subparsers: argparse._SubParsersAction) -> None:
     )
     set_handler(task_block, handle_task_block, "task block")
 
+
+def _register_unblock(task_commands: argparse._SubParsersAction) -> None:
+    """`foreman task unblock`."""
+
     task_unblock = task_commands.add_parser("unblock", help="Unblock a task.")
     task_unblock.add_argument("task_id", help="Task identifier.")
     add_db_option(
@@ -168,6 +204,10 @@ def register_task(subparsers: argparse._SubParsersAction) -> None:
         help_text=f"Path to the SQLite store containing the task. {DB_OPTION_NOTE}",
     )
     set_handler(task_unblock, handle_task_unblock, "task unblock")
+
+
+def _register_accept(task_commands: argparse._SubParsersAction) -> None:
+    """`foreman task accept`."""
 
     task_accept = task_commands.add_parser(
         "accept",
@@ -179,6 +219,10 @@ def register_task(subparsers: argparse._SubParsersAction) -> None:
         help_text=f"Path to the SQLite store containing the task. {DB_OPTION_NOTE}",
     )
     set_handler(task_accept, handle_task_accept, "task accept")
+
+
+def _register_done(task_commands: argparse._SubParsersAction) -> None:
+    """`foreman task done`."""
 
     task_done = task_commands.add_parser(
         "done",
@@ -192,6 +236,10 @@ def register_task(subparsers: argparse._SubParsersAction) -> None:
     )
     set_handler(task_done, handle_task_done, "task done")
 
+
+def _register_reopen(task_commands: argparse._SubParsersAction) -> None:
+    """`foreman task reopen`."""
+
     task_reopen = task_commands.add_parser(
         "reopen",
         help="Return a done or cancelled task to the queue; its workflow starts over.",
@@ -202,6 +250,10 @@ def register_task(subparsers: argparse._SubParsersAction) -> None:
         help_text=f"Path to the SQLite store containing the task. {DB_OPTION_NOTE}",
     )
     set_handler(task_reopen, handle_task_reopen, "task reopen")
+
+
+def _register_edit(task_commands: argparse._SubParsersAction) -> None:
+    """`foreman task edit`."""
 
     task_edit = task_commands.add_parser(
         "edit",
@@ -234,6 +286,10 @@ def register_task(subparsers: argparse._SubParsersAction) -> None:
         help_text=f"Path to the SQLite store containing the task. {DB_OPTION_NOTE}",
     )
     set_handler(task_edit, handle_task_edit, "task edit")
+
+
+def _register_cancel(task_commands: argparse._SubParsersAction) -> None:
+    """`foreman task cancel`."""
 
     task_cancel = task_commands.add_parser("cancel", help="Cancel a task.")
     task_cancel.add_argument("task_id", help="Task identifier.")
