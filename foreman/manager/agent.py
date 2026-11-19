@@ -37,8 +37,8 @@ from pathlib import Path
 from typing import Any
 
 from .proposals import MANAGER_SESSION_ENV, MANAGER_TURN_ENV, OPERATION_KINDS, Proposals
-from .store.meta import REPLY_IN_PROGRESS, REPLY_INTERRUPTED
-from .runner.env import agent_environment
+from ..store.meta import REPLY_IN_PROGRESS, REPLY_INTERRUPTED
+from ..runner.env import agent_environment
 
 #: The one folder a manager session can write to, relative to the project's
 #: repository: where it puts a proposal document before proposing it.
@@ -610,7 +610,7 @@ async def process_message(
     ``message``; it too goes into the prompt and is not stored. ``after_turn``
     is called with the turn's id when the reply has ended without an error,
     and returns the ids of proposals it settled, which are announced again so
-    the conversation shows them as they now are (planning, ``foreman.planning``).
+    the conversation shows them as they now are (planning, ``foreman.manager.planning``).
     """
 
     backend = (project.settings or {}).get("meta_agent_backend", "claude")

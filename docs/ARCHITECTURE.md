@@ -50,7 +50,7 @@ of `foreman/` belongs to no layer and fails the check.
 | entry | `__main__`, `cli/` | |
 | HTTP | `api/` (today `dashboard/` and the root `dashboard_*` modules) | |
 | services | `services/` (today `dashboard_service` and its siblings, `backlog`) | |
-| manager | `manager/` (today `meta_agent`, `proposals`, `planning`, `digest`) | |
+| manager | `manager/`: `agent` (a manager turn, its session and history), `proposals`, `planning`, `digest` | |
 | engine | `engine/` | Orchestrator, Workflow Engine |
 | changes | `mutations/`: a part per area (`tasks`, `gates`, `backlog`, `sprints`) over `base`, composed into `Mutations` | |
 | history | `history/`: `RunRecords`, the one writer of runs and events, and the JSON-lines process log | |
@@ -58,7 +58,7 @@ of `foreman/` belongs to no layer and fails the check.
 | store | `store/` | |
 | domain | `domain/`, `data/` | |
 
-The "today" entries are the modules slices 3 to 5 of ADR-0032 still have to
+The "today" entries are the modules slices 4 and 5 of ADR-0032 still have to
 move. Until then the contract lists them by their current names. It names no
 exception.
 
@@ -178,7 +178,7 @@ Foreman now has:
   and the fields back into text,
 - `foreman/runner/model_check.py`: asks the agent program whether it can run a
   model, before a role is saved with it,
-- `foreman/planning.py`: the two planning requests to the manager (plan a
+- `foreman/manager/planning.py`: the two planning requests to the manager (plan a
   sprint, split a task) and who confirms their proposals (ADR-0022,
   amendment of 2026-11-16),
 - prompt rendering with completion and signal conventions,
@@ -689,7 +689,7 @@ migration 22, `ProposalStore`) is an ordered list of operations from a fixed
 vocabulary, each one operation of `Mutations`, with a reason, the tasks it
 leaves, and the names of what it names as they were.
 
-- `foreman/proposals.py`: the vocabulary (`OPERATION_KINDS`),
+- `foreman/manager/proposals.py`: the vocabulary (`OPERATION_KINDS`),
   `normalize_operations` (shape), `apply_operation` (one operation through
   `Mutations`), and `Proposals.create|confirm|decline`. Creating applies the
   operations inside `store.atomic(commit=False)`, a dry run that sees its own

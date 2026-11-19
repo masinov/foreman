@@ -40,7 +40,7 @@ from .domain.api_tokens import INTAKE_SCOPE
 from .backlog import BACKLOG_PAGE_LIMIT, BacklogQueryError, read_backlog
 from .backlog import task_source as _serialize_task_source
 from .domain.guidance import guidance_notes
-from .proposals import (
+from .manager.proposals import (
     PROPOSAL_PAGE_LIMIT,
     ProposalError,
     ProposalNotFound,

@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from foreman.digest import build_attention_digest
+from foreman.manager.digest import build_attention_digest
 from foreman.domain.models import CompletionEvidence, Project, Run, Sprint, Task
 from foreman.store import ForemanStore
 

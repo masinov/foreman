@@ -8,11 +8,16 @@ from typing import Any
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from ...dashboard_service import (
-    DashboardValidationError,
+from ...dashboard_service import DashboardNotFoundError, DashboardValidationError
+from ...manager.agent import (
+    MANAGER_BUSY,
+    clear_session as meta_clear_session,
+    describe_page_context,
+    get_history as meta_get_history,
+    process_message as meta_process_message,
 )
-from ...dashboard_service import DashboardNotFoundError
-from ...planning import PlanningError, planning_request, settle_plan
+from ...manager.digest import build_attention_digest
+from ...manager.planning import PlanningError, planning_request, settle_plan
 from ..context import (
     ApiContext,
     open_store,
@@ -22,8 +27,6 @@ from ..context import (
 
 def _refuse_while_answering(store: Any, project_id: str) -> None:
     """One message at a time: refuse a new one, or clearing, mid-reply."""
-
-    from ...meta_agent import MANAGER_BUSY
 
     if store.meta_reply_in_progress(project_id):
         raise DashboardValidationError(MANAGER_BUSY)
@@ -36,11 +39,6 @@ def build_router(ctx: ApiContext) -> APIRouter:
 
     @router.post("/projects/{project_id}/meta/message")
     async def meta_message(project_id: str, request: Request) -> StreamingResponse:
-        from ...meta_agent import (
-            describe_page_context,
-            process_message as meta_process_message,
-        )
-
         ctx.require_manager()
         data = await read_json_body(request)
         message = str(data.get("message", "")).strip()
@@ -105,7 +103,6 @@ def build_router(ctx: ApiContext) -> APIRouter:
         limit: int = 50,
         before: str | None = None,
     ) -> dict[str, Any]:
-        from ...meta_agent import get_history as meta_get_history
 
         with open_store(ctx.db_path) as store:
             if store.get_project(project_id) is None:
@@ -124,7 +121,6 @@ def build_router(ctx: ApiContext) -> APIRouter:
 
     @router.delete("/projects/{project_id}/meta/session")
     def clear_meta_session(project_id: str, requested_by: str | None = None) -> dict[str, Any]:
-        from ...meta_agent import clear_session as meta_clear_session
 
         ctx.require_manager()
         with open_store(ctx.db_path) as store:
@@ -138,8 +134,6 @@ def build_router(ctx: ApiContext) -> APIRouter:
 
     @router.post("/projects/{project_id}/meta/supervise")
     async def meta_supervise(project_id: str, request: Request):
-        from ...meta_agent import process_message as meta_process_message
-        from ...digest import build_attention_digest
 
         ctx.require_manager()
         data = await read_json_body(request)

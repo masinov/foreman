@@ -128,6 +128,13 @@ collectors filter on that name.
 | `engine/logs` | `history/logs` |
 | the gate decision in `ForemanOrchestrator.resume_human_gate` | `mutations/gates`: `find_gate_stop`, `record_gate_decision`. The orchestrator calls them; `Mutations.decide_gate` no longer imports the engine |
 
+## Where things went (slice 3)
+
+| Before | After |
+|---|---|
+| `meta_agent` | `manager/agent` |
+| `proposals`, `planning`, `digest` | `manager/` |
+
 Older ADRs name the paths of their day and are left as written. This table
 and its successors in later slices translate them.
 
