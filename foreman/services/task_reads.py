@@ -214,7 +214,7 @@ class TaskReads:
             ),
         )
         checklist = (
-            [dict(item) for item in evidence.criteria_checklist]
+            list(evidence.criteria())
             if evidence is not None and evidence.criteria_checklist
             else [
                 {"criterion": line.strip(), "status": "unverified"}

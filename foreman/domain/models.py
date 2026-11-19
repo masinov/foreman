@@ -505,12 +505,34 @@ class CompletionEvidence:
         at = f" at {self.reviewed_sha[:8]}" if self.reviewed_sha else ""
         return f"Code review: {self.review_outcome}{at}"
 
+    @property
+    def review_covers_criteria(self) -> bool:
+        """Whether an approving code review of the branch head covers the criteria."""
+
+        stale = bool(self.reviewed_sha and self.head_sha and self.reviewed_sha != self.head_sha)
+        return self.review_outcome == "approve" and not stale
+
+    def criteria(self) -> tuple[dict[str, str], ...]:
+        """The criteria checklist as it reads today.
+
+        Evidence recorded before 2026-11-19 says ``unverified`` for a criterion
+        no judge looked at, even where an approving review of the head covered
+        it; such a criterion reads as ``covered``.
+        """
+
+        if not self.review_covers_criteria:
+            return tuple(dict(item) for item in self.criteria_checklist)
+        return tuple(
+            {**item, "status": "covered"} if item.get("status") == "unverified" else dict(item)
+            for item in self.criteria_checklist
+        )
+
     def criteria_line(self) -> str:
         """Say whether an approving code review covers the criteria."""
 
         if not self.criteria_count:
             return "Acceptance criteria: none defined"
-        if self.criteria_addressed >= self.criteria_count:
+        if self.criteria_addressed >= self.criteria_count or self.review_covers_criteria:
             return f"Acceptance criteria: {self.criteria_count}, covered by the approving code review"
         return f"Acceptance criteria: {self.criteria_count}, covered once code review approves"
 
