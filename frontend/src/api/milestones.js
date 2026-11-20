@@ -4,28 +4,31 @@ import { queryString, segment } from "./client";
 export const MILESTONE_KINDS = {
   sprintStarted: "sprint_started",
   sprintFinished: "sprint_finished",
+  planConfirmed: "plan_confirmed",
   taskMerged: "task_merged",
-  engineStarted: "engine_started",
+  taskBlocked: "task_blocked",
+  taskUnblocked: "task_unblocked",
+  taskClosed: "task_closed",
+  taskCancelled: "task_cancelled",
+  decisionMade: "decision_made",
+  engineRun: "engine_run",
+  engineLost: "engine_lost",
   enginePaused: "engine_paused",
   engineResumed: "engine_resumed",
-  engineStopped: "engine_stopped",
 };
 
-/** The Activity tab's filters: which kinds each asks the server for. */
+const K = MILESTONE_KINDS;
+
+/**
+ * The Activity tab's filters: which kinds each asks the server for. A
+ * person's decisions, unblocking, closing and cancelling are under All.
+ */
 export const MILESTONE_FILTERS = [
   { key: "all", label: "All", kinds: [] },
-  { key: "sprints", label: "Sprints", kinds: [MILESTONE_KINDS.sprintStarted, MILESTONE_KINDS.sprintFinished] },
-  { key: "merges", label: "Merges", kinds: [MILESTONE_KINDS.taskMerged] },
-  {
-    key: "engine",
-    label: "Engine",
-    kinds: [
-      MILESTONE_KINDS.engineStarted,
-      MILESTONE_KINDS.enginePaused,
-      MILESTONE_KINDS.engineResumed,
-      MILESTONE_KINDS.engineStopped,
-    ],
-  },
+  { key: "sprints", label: "Sprints", kinds: [K.sprintStarted, K.sprintFinished, K.planConfirmed] },
+  { key: "merges", label: "Merges", kinds: [K.taskMerged] },
+  { key: "problems", label: "Problems", kinds: [K.taskBlocked, K.engineLost] },
+  { key: "engine", label: "Engine", kinds: [K.engineRun, K.engineLost, K.enginePaused, K.engineResumed] },
 ];
 
 /** One page of milestones, newest first, as `{ items, total }`. */

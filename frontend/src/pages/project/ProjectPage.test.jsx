@@ -415,7 +415,7 @@ describe("the Sprints tab", () => {
 });
 
 describe("the Activity tab", () => {
-  const sprintKinds = ["sprint_started", "sprint_finished"];
+  const sprintKinds = ["sprint_started", "sprint_finished", "plan_confirmed"];
 
   it("names the merge commit and how many tasks a finished sprint merged", async () => {
     const routes = projectRoutes();
@@ -461,7 +461,7 @@ describe("the Activity tab", () => {
 
   it("pages 25 at a time with Earlier", async () => {
     const all = Array.from({ length: 30 }, (_, index) =>
-      milestone("engine_started", { at: on(`10-${String(30 - index).padStart(2, "0")}`), actor: `person ${index}` }),
+      milestone("engine_paused", { at: on(`10-${String(30 - index).padStart(2, "0")}`), actor: `person ${index}` }),
     );
     const routes = projectRoutes();
     routes[milestonesUrl()] = { milestones: all.slice(0, 25), total: 30 };
@@ -471,9 +471,54 @@ describe("the Activity tab", () => {
     expect(within(table).getAllByRole("row")).toHaveLength(26);
     fireEvent.click(screen.getByRole("button", { name: "Earlier" }));
     await waitFor(() => expect(within(table).getAllByRole("row")).toHaveLength(31));
-    expect(screen.getByText("Engine started by person 29")).toBeInTheDocument();
+    expect(screen.getByText("Engine paused by person 29")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Earlier" })).toBeNull();
     expect(calls(fetchImpl, "GET", milestonesUrl({ offset: 25 }).slice(4))).toHaveLength(1);
+  });
+
+  it("says what a lead needs to know: how a merge went, why a task was blocked, who decided, how the engine stopped", async () => {
+    const routes = projectRoutes();
+    const at = (hour) => `2026-11-20T${hour}:00:00Z`;
+    routes[milestonesUrl()] = {
+      milestones: [
+        milestone("task_merged", {
+          task_id: "task-m",
+          task_key: "ASS-16",
+          task_title: "Operator launcher",
+          sha: "c6aa057aa",
+          merge: { send_backs: 1, send_back_causes: { review: 1 }, minutes_to_merge: 15, cost_usd: 0.45 },
+        }),
+        milestone("task_merged", { task_id: "task-n", task_key: "ASS-17", merge: { send_backs: 0, send_back_causes: {}, minutes_to_merge: 6.5, cost_usd: 0.19 } }),
+        milestone("task_blocked", { task_id: "task-b", task_key: "FOR-22", how: "agent", detail: "Depends on the backlog task. Resume after it merges." }),
+        milestone("task_blocked", { task_id: "task-b", task_key: "FOR-22", how: "loop_limit", detail: "review" }),
+        milestone("decision_made", { task_id: "task-b", task_key: "FOR-22", how: "deny", detail: "merge_approval" }),
+        milestone("task_closed", { task_id: "task-c", task_key: "FOR-49", actor: "masis", detail: "Merged by hand at de26c2d. Suite passed." }),
+        milestone("plan_confirmed", { sprint_id: "sprint-57", sprint_title: "Sprint 57: structure", actor: "masis", detail: "Eight tasks reach the goal. More follows." }),
+        milestone("engine_run", { at: at("21"), ended_at: at("22"), actor: "masis", how: "released" }),
+        milestone("engine_lost", { at: at("19"), ended_at: "2026-11-21T03:00:00Z", how: "expired" }),
+        milestone("engine_run", { at: at("23"), ended_at: null, how: "active" }),
+      ],
+      total: 10,
+    };
+    await renderProject("/dashboard/projects/foreman/activity", routes);
+    const table = await screen.findByRole("table", { name: "Milestones" });
+    const rows = within(table).getAllByRole("row").slice(1);
+    const what = rows.map((row) => within(row).getAllByRole("cell")[2].textContent);
+    const kinds = rows.map((row) => within(row).getAllByRole("cell")[1].textContent);
+    expect(what[0]).toBe("ASS-16 merged: Operator launcher c6aa057 after 1 send-back (review) · 15 min · $0.45");
+    expect(what[1]).toBe("ASS-17 merged first time · 6 min 30 s · $0.19");
+    expect(what[2]).toBe("FOR-22 blocked The agent: Depends on the backlog task.");
+    expect(what[3]).toBe("FOR-22 blocked Review ran as many times as the workflow allows");
+    expect(what[4]).toBe("FOR-22 merge approval: sent back by a person");
+    expect(what[5]).toBe("FOR-49 closed by hand by masis Merged by hand at de26c2d.");
+    expect(what[6]).toBe("Plan for Sprint 57 confirmed by masis Eight tasks reach the goal.");
+    expect(what[7]).toMatch(/^Engine ran \d{2}:\d{2}–\d{2}:\d{2} \(1 h\), stopped by masis$/);
+    expect(what[8]).toMatch(/^Engine stopped without a word after \d{2}:\d{2}–21 Nov, \d{2}:\d{2} \(8 h\)/);
+    expect(what[9]).toMatch(/^Engine running since \d{2}:\d{2}$/);
+    expect(kinds).toEqual(["Merge", "Merge", "Problem", "Problem", "Person", "Person", "Plan", "Engine", "Problem", "Engine"]);
+    // A plan leads to its sprint; an engine row leads nowhere.
+    expect(rows[6]).toHaveClass("table__row--pickable");
+    expect(rows[7]).not.toHaveClass("table__row--pickable");
   });
 
   it("filters by kind on the server", async () => {
@@ -489,6 +534,7 @@ describe("the Activity tab", () => {
       "All",
       "Sprints",
       "Merges",
+      "Problems",
       "Engine",
     ]);
     expect(within(filters).getByRole("button", { name: "All" })).toHaveAttribute("aria-pressed", "true");

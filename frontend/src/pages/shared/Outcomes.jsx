@@ -28,6 +28,7 @@ export function minutesText(minutes) {
   const value = Math.max(0, Number(minutes) || 0);
   if (value < 1) return formatDuration(value * 60);
   if (value < 10) return `${value.toFixed(1).replace(/\.0$/, "")} min`;
+  if (value < 60) return `${Math.round(value)} min`;
   return formatDuration(value * 60);
 }
 
