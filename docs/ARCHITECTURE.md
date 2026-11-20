@@ -486,18 +486,32 @@ bad one is a 400 `invalid_request` envelope (ADR-0019). Paged lists take
   or its creation for filed work never run. A constant number of queries
   whatever the number of projects or tasks.
 - `GET /milestones` and `GET /projects/{id}/milestones` return `milestones`
-  filtered by `kind` (repeatable or comma-separated): `sprint_started`,
-  `sprint_finished`, `task_merged`, `engine_started`, `engine_paused`,
-  `engine_resumed`, `engine_stopped`. Each has `kind`, `at`, project, sprint
-  and task fields, and `actor`. A `task_merged` milestone also carries `sha`,
-  the merge commit (the `engine.merge` event records it; merges from before
-  that are null), and a `sprint_finished` one carries `merged_count`, the
-  tasks of that sprint with a merge event; both are null on other kinds. No
-  table backs them: they are derived from
-  sprint columns, `engine.merge` events, completed `engine_commands` (the
-  actor is `requested_by`) and the engine lock's lease history (a stop names
-  its actor when a `shutdown` command completed during that lease). The
-  backlog is not a sprint and has no milestones.
+  filtered by `kind` (repeatable or comma-separated): what a lead needs to
+  know, newest first (owner, 2026-11-21).
+  - Sprints: `sprint_started`, `sprint_finished` (with `merged_count`),
+    `plan_confirmed` (a manager proposal a person confirmed: `actor`, its
+    reason in `detail`, its sprint the one its first operation names).
+  - Tasks: `task_merged` (with `sha`, and `merge`: `send_backs`,
+    `send_back_causes`, `minutes_to_merge`, `cost_usd`, from
+    `domain.outcome_numbers.merge_story`); `task_blocked` (`how` says by
+    what: `engine` for a run whose outcome is `blocked`, `agent` for
+    `signal.blocker`, `loop_limit`, `no_transition`; `detail` why);
+    `task_unblocked`, `task_closed` (closed by hand), `task_cancelled`, each
+    with `actor` and the reason in `detail`; `decision_made` (a person's
+    decision at a gate, a deferred `workflow.resumed`: `how` is the
+    decision, `detail` the step).
+  - Engine: `engine_run` (one row per lease, at its start, `ended_at` when
+    released, `actor` who asked for the shutdown), `engine_lost` (a lease
+    that ran out with nobody releasing it, the engine having died or been
+    killed, or one still active past its expiry), `engine_paused`,
+    `engine_resumed` (`actor` is the command's `requested_by`).
+
+  Each has `kind`, `at`, project, sprint and task fields, `actor`,
+  `detail`, `ended_at`, `how`, `sha`, `merged_count` and `merge` (null where
+  they do not apply). No table backs them: they are derived from sprint
+  columns, proposals, runs, events, completed `engine_commands` and the
+  engine lock's lease history (`foreman/store/overview.py`). The backlog is
+  not a sprint and has no milestones.
 - `GET /projects/{id}/sprints` accepts `status` (`active`, `planned`,
   `completed`; repeatable or comma-separated), `q` (case-insensitive part of
   the title, which carries the sprint number, or of the id), `limit` and

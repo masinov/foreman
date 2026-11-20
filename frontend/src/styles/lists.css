@@ -55,8 +55,16 @@
   padding-inline: 0;
 }
 
+/* What a milestone adds under its sentence: how a merge got there, why a
+   task was blocked, a plan's reason. */
 .milestones__detail {
-  color: var(--color-text-quiet);
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  margin-top: var(--space-1);
+  font-size: var(--font-size-control);
+  color: var(--color-text-secondary);
 }
 
 /* Needs you: the surface holds only the rows; the heading sits above it. */

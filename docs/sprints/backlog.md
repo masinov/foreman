@@ -23,11 +23,16 @@ proposal and its three recommendations, to review once it is built.
      steps left out), with who, the reason, time and cost, and a filter for
      send-backs and failures, on `GET /sprints/{id}/runs`
      (`feat/sprint-activity-runs`). Done.
-  3. Project milestones: blocked and failed tasks, a person's decisions, a
-     sprint plan confirmed, a task closed by hand; an engine's start and
-     stop as one row saying whether it stopped by a command or without a
-     word; merges with send-backs, time and cost; filters All / Sprints /
-     Merges / Problems / Engine.
+  3. Project milestones: blocked tasks, a person's decisions, a sprint
+     plan confirmed, a task closed by hand, unblocked or cancelled; an
+     engine's start and stop as one row saying whether it stopped by a
+     command or without a word; merges with send-backs, time and cost;
+     filters All / Sprints / Merges / Problems / Engine
+     (`feat/project-milestones`). Done.
+- **Not done, left for the owner's review:** a person's name on a decision
+  at a gate (the resume does not record who; stage 2 identity will), and a
+  task whose agent run failed outright (the engine retries; a failure that
+  ends a task blocks it, which is shown).
 - **Owner's choices (recommended, agreed):** engine runs folded and kept
   under All; sprint Activity a stream of steps with a send-backs filter;
   the engine called Foreman on the page.
