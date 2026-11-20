@@ -10,8 +10,9 @@ import {
   SPRINT_URL,
   sprintPayload,
   sprintRoutes,
+  PROBLEM_STEPS_URL,
+  sprintRun,
   STEPS_URL,
-  stepEvent,
   TASKS,
   taskPayload,
 } from "../../testing/sprintFixture";
@@ -414,79 +415,71 @@ describe("add from backlog", () => {
 });
 
 describe("activity", () => {
-  const events = Array.from({ length: 3 }, (_, index) => stepEvent(`e${index}`, "t-merge", index === 0 ? "review" : "test", "success", `2025-11-11T1${index}:00:00Z`));
+  const page = (runs, total = runs.length, offset = 0) => ({ runs, total, limit: 25, offset });
 
-  it("lists finished steps newest first with the task key", async () => {
-    // The API sends them oldest first within the page; the page shows newest first.
-    await renderSprint("/dashboard/sprints/sprint-56", sprintRoutes({ events }));
-    const table = await screen.findByRole("table", { name: "Finished steps" });
+  it("lists each step newest first, naming its columns, who did it and why it was sent back", async () => {
+    const runs = [
+      sprintRun("run-9", "t-merge", "review", {
+        role_id: "code_reviewer",
+        outcome: "steer",
+        outcome_detail: "The log can still contain the host and port.",
+      }),
+      sprintRun("run-8", "t-merge", "test", { role_id: "_builtin:run_tests", backend: "builtin", model: null, outcome: "success", cost_usd: 0 }),
+      sprintRun("run-7", "t-merge", "develop", { duration_ms: 261900 }),
+    ];
+    await renderSprint("/dashboard/sprints/sprint-56", sprintRoutes({ runs }));
+    const table = await screen.findByRole("table", { name: "Steps" });
+    expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
+      "When",
+      "Task",
+      "Step",
+      "By",
+      "Result",
+      "Took",
+      "Spend",
+    ]);
+    expect(table.querySelector("thead")).not.toHaveClass("visually-hidden");
     const rows = within(table).getAllByRole("row").slice(1);
     expect(rows).toHaveLength(3);
-    expect(rows[0]).toHaveTextContent("FOR-14");
-    expect(rows[0]).toHaveTextContent("Test");
-    expect(rows[2]).toHaveTextContent("Review");
+    expect(rows[0]).toHaveTextContent(/FOR-14.*Review.*sonnet-5-5.*Sent back.*The log can still contain the host and port\./);
+    expect(rows[1]).toHaveTextContent(/Test.*Foreman.*Passed/);
+    expect(rows[2]).toHaveTextContent(/Develop.*Done.*4 min 22 s.*\$0\.12/);
     expect(screen.queryByRole("button", { name: "Earlier steps" })).toBeNull();
   });
 
-  it("names its columns, and each row leads to that run on the task's Activity", async () => {
-    const withRun = [{ ...stepEvent("e9", "t-merge", "review", "steer"), run_id: "run-9" }];
-    await renderSprint("/dashboard/sprints/sprint-56", sprintRoutes({ events: withRun }));
-    const table = await screen.findByRole("table", { name: "Finished steps" });
-    expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["When", "Task", "Step", "Result"]);
-    expect(table.querySelector("thead")).not.toHaveClass("visually-hidden");
-    const row = within(table).getAllByRole("row")[1];
-    expect(row).toHaveTextContent("Sent back");
-    const link = within(row).getByRole("link");
-    expect(link).toHaveAttribute("href", "/dashboard/tasks/t-merge/activity?run=run-9");
+  it("leads each row to that run on the task's Activity", async () => {
+    await renderSprint("/dashboard/sprints/sprint-56", sprintRoutes({ runs: [sprintRun("run-9", "t-merge", "review")] }));
+    const row = within(await screen.findByRole("table", { name: "Steps" })).getAllByRole("row")[1];
+    expect(within(row).getByRole("link")).toHaveAttribute("href", "/dashboard/tasks/t-merge/activity?run=run-9");
     // Anywhere on the row goes there, not only its link.
     fireEvent.click(within(row).getByText("Review"));
     expect(window.location.pathname).toBe("/dashboard/tasks/t-merge/activity");
     expect(window.location.search).toBe("?run=run-9");
   });
 
-  it("loads earlier steps from the oldest one shown", async () => {
-    const routes = sprintRoutes({ events });
-    routes[STEPS_URL] = { events, has_more: true };
-    routes["GET /api/v1/sprints/sprint-56/events?type=workflow.step_completed&limit=25&before=e0"] = {
-      events: [stepEvent("e-old", "t-run", "develop", "success", "2025-11-10T09:00:00Z")],
-      has_more: false,
-    };
-    await renderSprint("/dashboard/sprints/sprint-56", routes);
-    fireEvent.click(await screen.findByRole("button", { name: "Earlier steps" }));
-    await waitFor(() => expect(within(screen.getByRole("table", { name: "Finished steps" })).getAllByRole("row")).toHaveLength(5));
-    expect(screen.queryByRole("button", { name: "Earlier steps" })).toBeNull();
+  it("shows only send-backs and failures when asked, and says when there were none", async () => {
+    const routes = sprintRoutes({ runs: [sprintRun("run-9", "t-merge", "review")] });
+    routes[PROBLEM_STEPS_URL] = page([]);
+    const { fetchImpl } = await renderSprint("/dashboard/sprints/sprint-56", routes);
+    await screen.findByRole("table", { name: "Steps" });
+    fireEvent.click(screen.getByRole("button", { name: "Send-backs and failures" }));
+    expect(await screen.findByText("Nothing was sent back and nothing failed in this sprint.")).toBeInTheDocument();
+    expect(calls(fetchImpl, "GET", PROBLEM_STEPS_URL.slice(4))).toHaveLength(1);
   });
 
-  it("goes back to the newest page with Show fewer, from the middle and from the end", async () => {
-    const page = (prefix, count) =>
-      Array.from({ length: count }, (_, index) => stepEvent(`${prefix}${index}`, "t-merge", "test", "success", "2025-11-11T10:00:00Z"));
-    const routes = sprintRoutes({ events });
-    routes[STEPS_URL] = { events: page("a", 25), has_more: true };
-    routes["GET /api/v1/sprints/sprint-56/events?type=workflow.step_completed&limit=25&before=a0"] = { events: page("b", 25), has_more: true };
-    routes["GET /api/v1/sprints/sprint-56/events?type=workflow.step_completed&limit=25&before=b0"] = { events: page("c", 4), has_more: false };
+  it("loads earlier steps 25 at a time, and goes back with Show fewer", async () => {
+    const many = (prefix, count) => Array.from({ length: count }, (_, index) => sprintRun(`${prefix}${index}`, "t-merge", "test"));
+    const routes = sprintRoutes();
+    routes[STEPS_URL] = page(many("a", 25), 29);
+    routes["GET /api/v1/sprints/sprint-56/runs?limit=25&offset=25"] = page(many("b", 4), 29, 25);
     await renderSprint("/dashboard/sprints/sprint-56", routes);
-    const rowCount = () => within(screen.getByRole("table", { name: "Finished steps" })).getAllByRole("row").length - 1;
+    const rowCount = () => within(screen.getByRole("table", { name: "Steps" })).getAllByRole("row").length - 1;
     await waitFor(() => expect(rowCount()).toBe(25));
-    // Nothing to go back from on the first page.
-    expect(screen.queryByRole("button", { name: "Show fewer" })).toBeNull();
-
     fireEvent.click(screen.getByRole("button", { name: "Earlier steps" }));
-    await waitFor(() => expect(rowCount()).toBe(50));
-    // In the middle: more, and the way back.
-    expect(screen.getByRole("button", { name: "Earlier steps" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Show fewer" }));
-    expect(rowCount()).toBe(25);
-    expect(screen.queryByRole("button", { name: "Show fewer" })).toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: "Earlier steps" }));
-    await waitFor(() => expect(rowCount()).toBe(50));
-    fireEvent.click(screen.getByRole("button", { name: "Earlier steps" }));
-    await waitFor(() => expect(rowCount()).toBe(54));
-    // At the end: only the way back.
+    await waitFor(() => expect(rowCount()).toBe(29));
     expect(screen.queryByRole("button", { name: "Earlier steps" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Show fewer" }));
     expect(rowCount()).toBe(25);
-    expect(screen.getByRole("button", { name: "Earlier steps" })).toBeInTheDocument();
   });
 
   it("says when no step has finished", async () => {

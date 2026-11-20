@@ -129,9 +129,11 @@ export function runResult(run) {
   const role = roleOf(run);
   const note = runNote(run);
   if (role === ORCHESTRATOR && outcome === "success") {
-    // A record the engine kept of being paused, stopped or resumed.
-    const resumed = /^Engine resumed/i.test(note);
-    return { tone: "idle", word: resumed ? "Resumed" : "Interrupted", note: resumed ? "" : firstSentence(note) };
+    // A record the engine kept: of stopping or pausing the step under way,
+    // of resuming, or of something about the sprint or the engine itself.
+    if (/^Engine resumed/i.test(note)) return { tone: "idle", word: "Resumed", note: "" };
+    if (/^(Shut down|Paused|Stopped task)/i.test(note)) return { tone: "idle", word: "Interrupted", note: firstSentence(note) };
+    return { tone: "idle", word: "Recorded", note: firstSentence(note) };
   }
   if (run.status === "killed") return { tone: "failed", word: "Stopped", note };
   if (outcome === "success") return { tone: "passed", word: successWord(role), note };

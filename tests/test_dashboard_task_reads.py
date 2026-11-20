@@ -332,6 +332,48 @@ class TaskReadsCase(unittest.TestCase):
         self.assertEqual(runs["r1"]["outcome_detail"], "The log can still contain the host and port.")
         self.assertIsNone(runs["r0"]["outcome_detail"])
 
+    def sprint_run(self, rid: str, task_id: str, minute: int, **kw) -> None:
+        fields = dict(
+            id=rid, task_id=task_id, project_id="p", role_id="developer", workflow_step="develop",
+            agent_backend="claude_code", status="completed", outcome="done", model="m",
+            cost_usd=0.1, token_count=1, duration_ms=1000,
+            started_at=f"2026-01-01T00:{minute:02d}:00Z", completed_at=f"2026-01-01T00:{minute:02d}:00Z",
+            created_at=f"2026-01-01T00:{minute:02d}:00Z",
+        )
+        fields.update(kw)
+        self.store.save_run(Run(**fields))
+
+    def test_a_sprints_runs_are_its_steps_newest_first_without_the_bookkeeping(self) -> None:
+        self.task("t", task_key="P-1")
+        self.task("u", task_key="P-2")
+        self.store.save_sprint(Sprint(id="other", project_id="p", title="O", status="planned"))
+        self.store.save_task(Task(id="v", sprint_id="other", project_id="p", title="Elsewhere", status="todo"))
+        self.sprint_run("r-file", "t", 0, role_id="human", workflow_step="file", agent_backend="cli", outcome="file")
+        self.sprint_run("r-dev", "t", 1)
+        self.sprint_run("r-steer", "t", 2, role_id="code_reviewer", workflow_step="review",
+                        outcome="steer", outcome_detail="Fix the log.")
+        self.sprint_run("r-test", "u", 3, role_id="_builtin:run_tests", workflow_step="test",
+                        agent_backend="builtin", outcome="failure")
+        self.sprint_run("r-done", "t", 4, role_id="_builtin:mark_done", workflow_step="done",
+                        agent_backend="builtin", outcome="success")
+        self.sprint_run("r-killed", "u", 5, status="killed", outcome="error")
+        self.sprint_run("r-elsewhere", "v", 6)
+        self.sprint_run("r-engine", "t", 7, role_id="_builtin:orchestrator", workflow_step="orchestrator",
+                        agent_backend="orchestrator", outcome="success", outcome_detail="engine.sprint_ready")
+
+        page = self.get("/api/v1/sprints/s/runs").json()
+        self.assertEqual([r["id"] for r in page["runs"]], ["r-killed", "r-test", "r-steer", "r-dev"])
+        self.assertEqual(page["total"], 4)
+        steer = page["runs"][2]
+        self.assertEqual((steer["task_id"], steer["task_key"], steer["task_title"]), ("t", "P-1", "Task t"))
+        self.assertEqual(steer["outcome_detail"], "Fix the log.")
+
+        problems = self.get("/api/v1/sprints/s/runs?only=problems").json()
+        self.assertEqual([r["id"] for r in problems["runs"]], ["r-killed", "r-test", "r-steer"])
+        self.assertEqual([r["id"] for r in self.get("/api/v1/sprints/s/runs?limit=1&offset=1").json()["runs"]], ["r-test"])
+        self.assertEqual(self.get("/api/v1/sprints/s/runs?only=nothing").status_code, 400)
+        self.assertEqual(self.get("/api/v1/sprints/nope/runs").status_code, 404)
+
     def test_run_output_has_prompt_and_transcript(self) -> None:
         self.task()
         self.store.save_run(Run(

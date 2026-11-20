@@ -71,6 +71,7 @@ describe("how a run ended", () => {
       runResult(run({ role_id: "_builtin:orchestrator", agent_backend: "orchestrator", outcome: "success", outcome_detail: detail }));
     expect(orchestrator("Engine resumed.")).toEqual({ tone: "idle", word: "Resumed", note: "" });
     expect(orchestrator("Shut down during task 't': the agent process group was terminated.").word).toBe("Interrupted");
+    expect(orchestrator("engine.sprint_ready")).toEqual({ tone: "idle", word: "Recorded", note: "engine.sprint_ready" });
   });
 });
 

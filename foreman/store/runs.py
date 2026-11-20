@@ -161,6 +161,62 @@ class RunStore(StoreBase):
         ).fetchall()
         return [_row_to_run(row) for row in rows], int(total)
 
+    def list_sprint_runs_page(
+        self,
+        sprint_id: str,
+        *,
+        limit: int,
+        offset: int,
+        skip_roles: Sequence[str] = (),
+        skip_steps: Sequence[str] = (),
+        skip_outcomes: Sequence[str] = (),
+        problem_outcomes: Sequence[str] | None = None,
+        problem_statuses: Sequence[str] = (),
+    ) -> tuple[list[Run], int]:
+        """One page of the runs of a sprint's tasks, newest first, and the total.
+
+        Runs of ``skip_roles``, at ``skip_steps`` or with ``skip_outcomes``
+        are left out. With
+        ``problem_outcomes``, only runs with one of those outcomes or with
+        one of ``problem_statuses`` are kept.
+        """
+
+        where = ["t.sprint_id = ?"]
+        params: list[Any] = [sprint_id]
+        if skip_roles:
+            where.append(f"r.role_id NOT IN ({', '.join('?' for _ in skip_roles)})")
+            params.extend(skip_roles)
+        if skip_steps:
+            where.append(f"r.workflow_step NOT IN ({', '.join('?' for _ in skip_steps)})")
+            params.extend(skip_steps)
+        if skip_outcomes:
+            where.append(
+                f"COALESCE(r.outcome, '') NOT IN ({', '.join('?' for _ in skip_outcomes)})"
+            )
+            params.extend(skip_outcomes)
+        if problem_outcomes is not None:
+            either = [f"COALESCE(r.outcome, '') IN ({', '.join('?' for _ in problem_outcomes)})"]
+            params.extend(problem_outcomes)
+            if problem_statuses:
+                either.append(f"r.status IN ({', '.join('?' for _ in problem_statuses)})")
+                params.extend(problem_statuses)
+            where.append(f"({' OR '.join(either)})")
+        clause = " AND ".join(where)
+        total = self._connection.execute(
+            f"SELECT COUNT(*) FROM runs r JOIN tasks t ON t.id = r.task_id WHERE {clause}",
+            params,
+        ).fetchone()[0]
+        rows = self._connection.execute(
+            f"""
+            SELECT r.* FROM runs r JOIN tasks t ON t.id = r.task_id
+            WHERE {clause}
+            ORDER BY r.created_at DESC, r.rowid DESC
+            LIMIT ? OFFSET ?
+            """,
+            [*params, limit, offset],
+        ).fetchall()
+        return [_row_to_run(row) for row in rows], int(total)
+
     def get_latest_run(self, task_id: str) -> Run | None:
         """Return the most recent run for one task, if it exists."""
 

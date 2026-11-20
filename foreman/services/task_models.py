@@ -185,6 +185,23 @@ class TaskRuns(BaseModel):
     offset: int
 
 
+class SprintRunItem(RunItem):
+    """A run on a sprint's activity, with the task it belongs to."""
+
+    task_id: str
+    task_key: str | None = None
+    task_title: str
+
+
+class SprintRuns(BaseModel):
+    """``GET /sprints/{id}/runs``: each meaningful step of the sprint's tasks, newest first."""
+
+    runs: list[SprintRunItem]
+    total: int
+    limit: int
+    offset: int
+
+
 class TranscriptEntry(BaseModel):
     at: str
     kind: str

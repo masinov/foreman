@@ -26,6 +26,8 @@ from .task_models import (
     RunItem,
     RunOutput,
     SizeFact,
+    SprintRunItem,
+    SprintRuns,
     TaskChanges,
     TaskChecks,
     TaskRuns,
@@ -33,6 +35,13 @@ from .task_models import (
     TranscriptEntry,
 )
 from .errors import NotFoundError, InvalidRequestError
+from ..domain.activity import (
+    PROBLEM_OUTCOMES,
+    PROBLEM_STATUSES,
+    RECORD_OUTCOMES,
+    RECORD_ROLES,
+    RECORD_STEPS,
+)
 from ..domain.models import Event, Project, Run, Task
 from ..store import ForemanStore
 
@@ -309,30 +318,45 @@ class TaskReads:
             raise NotFoundError(f"Task not found: {task_id}")
         runs, total = self.store.list_task_runs_page(task_id, limit=limit, offset=offset)
         return TaskRuns(
-            runs=[
-                RunItem(
-                    id=run.id,
-                    step=run.workflow_step,
-                    role_id=run.role_id,
-                    model=run.model,
-                    backend=run.agent_backend,
-                    status=run.status,
-                    outcome=run.outcome,
-                    outcome_detail=run.outcome_detail,
-                    commit_sha=run.commit_sha,
-                    started_at=run.started_at,
-                    finished_at=run.completed_at,
-                    duration_ms=run.duration_ms,
-                    cost_usd=run.cost_usd,
-                    tokens=run.token_count,
-                    token_usage=run.token_usage.as_dict(),
-                )
-                for run in runs
-            ],
+            runs=[RunItem(**_run_fields(run)) for run in runs],
             total=total,
             limit=limit,
             offset=offset,
         )
+
+    def list_sprint_runs(
+        self, sprint_id: str, *, limit: int, offset: int, problems: bool = False
+    ) -> SprintRuns:
+        """Each meaningful step of a sprint's tasks, newest first (``domain.activity``).
+
+        With ``problems``, only the runs that sent a task back or stopped it.
+        """
+
+        if self.store.get_sprint(sprint_id) is None:
+            raise NotFoundError(f"Sprint not found: {sprint_id}")
+        runs, total = self.store.list_sprint_runs_page(
+            sprint_id,
+            limit=limit,
+            offset=offset,
+            skip_roles=sorted(RECORD_ROLES),
+            skip_steps=sorted(RECORD_STEPS),
+            skip_outcomes=sorted(RECORD_OUTCOMES),
+            problem_outcomes=sorted(PROBLEM_OUTCOMES) if problems else None,
+            problem_statuses=sorted(PROBLEM_STATUSES),
+        )
+        tasks = {task.id: task for task in self.store.list_tasks(sprint_id=sprint_id)}
+        items = []
+        for run in runs:
+            task = tasks.get(run.task_id)
+            items.append(
+                SprintRunItem(
+                    **_run_fields(run),
+                    task_id=run.task_id,
+                    task_key=task.task_key if task else None,
+                    task_title=task.title if task else run.task_id,
+                )
+            )
+        return SprintRuns(runs=items, total=total, limit=limit, offset=offset)
 
     def get_run_output(self, run_id: str, *, raw: bool = False) -> RunOutput:
         """What a run recorded, oldest first.
@@ -423,3 +447,25 @@ def _clipped(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [_clipped(item) for item in value]
     return value
+
+
+def _run_fields(run: Run) -> dict[str, Any]:
+    """What a runs list says of one run."""
+
+    return {
+        "id": run.id,
+        "step": run.workflow_step,
+        "role_id": run.role_id,
+        "model": run.model,
+        "backend": run.agent_backend,
+        "status": run.status,
+        "outcome": run.outcome,
+        "outcome_detail": run.outcome_detail,
+        "commit_sha": run.commit_sha,
+        "started_at": run.started_at,
+        "finished_at": run.completed_at,
+        "duration_ms": run.duration_ms,
+        "cost_usd": run.cost_usd,
+        "tokens": run.token_count,
+        "token_usage": run.token_usage.as_dict(),
+    }

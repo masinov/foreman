@@ -157,7 +157,7 @@ export function SprintLayout({ sprintId, view }) {
           <TaskBoard projectId={projectId} tasks={taskList} workflow={workflow.data} busy={approving} onApprove={approve} />
         ) : null}
       </section>
-      <SprintActivity sprintId={sprintId} tasks={taskList} revision={revision} />
+      <SprintActivity sprintId={sprintId} revision={revision} />
       <NewTaskDialog
         projectId={projectId}
         sprint={current}
