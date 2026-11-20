@@ -115,6 +115,12 @@ Base work that this framing makes necessary:
      was removed (ADR-0010 amendment).
    - **Further out:** recurring and event-triggered loops at project level,
      which create tasks or sprints and stop there.
+   - **Seen in a real run (2026-11-20, Assay sprint 2).** All eight tasks
+     merged, but Assay's `docs/ROADMAP.md` still lists S2 as not delivered,
+     because none of the tasks was asked to update it. Closing a sprint's
+     records is a step after its tasks, and only a sprint workflow can
+     express it. Owner: "A friction noted in favor of the suggestion i made
+     before."
 
 ## Carried engineering items (from sprints 56 and 57)
 
