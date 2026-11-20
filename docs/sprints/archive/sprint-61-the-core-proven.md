@@ -1,0 +1,93 @@
+# Sprint 61 (archived)
+
+## Sprint 61 — the core, proven
+
+- **Opened:** 2026-11-19, as stage 1 of the roadmap in `docs/ROADMAP.md`
+  (owner: "Go with stage 1").
+- **Status:** completed (2026-11-20)
+- **Method:** by hand, except slice 6, which Foreman runs on Assay.
+
+### Goal
+
+An engine that can be left alone for a whole sprint, and numbers that say how
+well its agents do. Every later stage stands on the first and is judged by
+the second.
+
+### Constraints
+
+- Spec `docs/specs/engine-design-v3.md` for behaviour; ADR-0032 for where
+  code goes (`lint-imports` and `tests/test_layers.py` hold it).
+- Slices 3 to 5 change no behaviour that a person or an agent can see,
+  except what their row names.
+- The owner is asked before a screen's structure changes (the outcome
+  numbers' place on the dashboard).
+- Assay: nothing is pushed to its GitLab remote without the owner's word; its
+  `.env.admin` (the shared server's superuser login) is never given to an
+  agent, and no other database on that server is touched.
+
+### Affected areas
+
+`foreman/store/`, `foreman/services/`, `foreman/engine/`, `foreman/cli/`,
+`foreman/api/`, `frontend/src/`, tests, `docs/`.
+
+### Slices
+
+| # | Slice | Status | Executed by | Deliverable |
+|---|-------|--------|-------------|-------------|
+| 1 | Outcome numbers per project, role and model: tasks that passed first time, send-backs, a person's interventions, cost per merged task | done | Claude | `feat/outcome-numbers`: ADR-0034, `foreman outcomes` with `--json`, `GET /api/v1/projects/{id}/outcomes`. The dashboard's place is the owner's to agree |
+| 2 | The lease fencing token is checked on writes: a holder whose lease was taken over cannot write | done | Claude | `fix/lease-fencing-on-writes`: ADR-0011 amendment; `FencedWriteError`; a lifecycle test that fails without the fence |
+| 3 | The carried engine items: `resume_human_gate` and `_run_leased_task` leave the orchestrator; the agent step's corrective retry sends the correction rather than the first prompt again; a stale `running` agent run is resumed in place | done | Claude | `fix/corrective-retry-sends-the-correction`; `fix/stale-run-resumes-in-place`. The first item needed no move: since sprint 60 (ADR-0032) `resume_human_gate` and `_run_leased_task` each sit in their concern's module of the orchestrator package (`gates.py`, `tasks.py`), about 110 lines each |
+| 4 | The seven functions over 200 lines split (ADR-0032's list) | done | Claude | `refactor/long-functions`: no behaviour change; ADR-0032 updated; no function in `foreman/` is over 200 lines |
+| 5 | The CLI's reads go through services; `--json` on the remaining read commands; response models on the API; statuses as Python enums | done | Claude | `refactor/cli-reads-through-services`: `services/reports.py`, every read command with `--json`, two layer tests. Response models deferred and enums decided against, with reasons in the backlog |
+| 6 | Assay runs a whole sprint unattended | done | Foreman, watched by Claude through its records | Assay's sprint 2 planned by its manager, confirmed by the owner and run with nobody stepping in: 8 of 8 merged. Nothing went wrong in Foreman, so nothing needed fixing. See "What slice 6 showed" |
+| 7 | Close the sprint: checkpoint, archive | done | Claude | `docs/checkpoints/`, `docs/sprints/archive/` |
+
+### Risks
+
+- Slices 2 and 3 change how the engine writes and recovers; a fault there
+  shows only in a real run, which is why slice 6 comes after them.
+- Slice 6 depends on the shared database server, which is slow (Assay's
+  suite takes about nine minutes), and on the machine's load from other
+  work.
+
+### Validation
+
+Before every merge: `ruff check foreman tests scripts`, `lint-imports`,
+`./venv/bin/python -m unittest discover -s tests`,
+`npm --prefix frontend run lint`, `npm --prefix frontend test`,
+`npm --prefix frontend run build`,
+`./venv/bin/python scripts/validate_repo_memory.py`. CI is read after every
+push. Dashboard changes are looked at with `scripts/dashboard_shot.mjs`.
+
+### What slice 6 showed
+
+Assay's sprint 2, "weight of evidence and first deployment", 2026-11-20.
+
+- **Planning.** Claude created the sprint and wrote its goal from Assay's
+  roadmap and specification. "Plan this sprint" sent the goal to Assay's
+  manager, which read the spec and the repository and proposed eight tasks
+  with their dependencies. The owner confirmed the proposal unchanged.
+  The manager left the switch-on to a person without being told to: the
+  migrations on the live database, the first admin's token (printed once)
+  and the long-running service. Its reason was that a token would stay in
+  an agent's transcript and a service would die with the task's worktree.
+- **Running.** `foreman serve assay` ran all eight tasks without being
+  restarted. On the owner's word, `merge_approval` was set to `auto` for
+  Assay before the sprint; nobody was asked anything and nobody stepped in.
+- **Numbers** (`foreman outcomes assay --sprint ...`): 8 started, 8 merged;
+  7 of 8 passed first time; one send-back, from the code reviewer (the
+  launcher's log could still show the API's host and port, which its task
+  forbade; fixed in one more round); $2.92 in all, $0.36 per merged task;
+  median 6.9 minutes to merge; all on Sonnet.
+- **Faults in Foreman:** none seen. The lease fencing, corrective retry
+  and stale-run recovery of slices 2 and 3 were not triggered by this run:
+  no engine crashed and no lease was taken over.
+- **After the sprint.** Claude followed Assay's new `docs/DEPLOY.md`.
+  Migrations were applied to the `assay` database, the admin person was
+  created, and the API was started detached at `192.168.50.107:8090`.
+  `/health` answers `ok` with version 0.2.0, and a request without a token
+  is refused with 401. The admin token is left for the owner to issue in
+  their own terminal, as the note says.
+- **Open:** Assay's own `docs/ROADMAP.md` still lists S2 as not delivered,
+  because no task in the plan said to update it. Assay's service does not
+  restart after a reboot (its `docs/DEPLOY.md`, Limits).

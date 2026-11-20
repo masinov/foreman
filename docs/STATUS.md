@@ -3,7 +3,7 @@
 Current snapshot only. History up to 2026-09-08 (sprints 1 to 54) is in
 `docs/checkpoints/status-history-through-2026-09-08.md`.
 
-## Where the project is (2026-11-19)
+## Where the project is (2026-11-20)
 
 - Driving document: `docs/reviews/2026-11-10-full-review-and-finish-plan.md`
   (full review of engine, runner, dashboard, frontend and UX, with a six-phase
@@ -28,8 +28,12 @@ Current snapshot only. History up to 2026-09-08 (sprints 1 to 54) is in
 - **The roadmap from 2026-11-19** is at the top of `docs/ROADMAP.md`: nine
   stages, from the core proven to memory. The decisions about the manager
   and people are in `docs/sprints/backlog.md`.
-- Active sprint: **sprint 61 — the core, proven** (stage 1,
-  `docs/sprints/current.md`).
+- Sprint 61 (the core, proven; stage 1 of the roadmap) closed on
+  2026-11-20 (`docs/checkpoints/2026-11-20-sprint-61-closed.md`). Assay's
+  sprint 2 ran through Foreman with nobody stepping in: 8 of 8 merged, 7
+  first time. No sprint is open. The next one is stage 2, and it starts
+  with an ADR for the identity system inside Foreman
+  (`docs/sprints/current.md`).
 - Nineteen tasks of sprint 58 were run by Foreman itself. On 2026-11-13 the
   owner asked for the engine to be stopped and the rest done by hand; it has
   been stopped since. What the engine did well and badly is in the archived
@@ -45,10 +49,11 @@ Current snapshot only. History up to 2026-09-08 (sprints 1 to 54) is in
   merged at `de26c2d`. No Foreman task is open, and the 57 merged remote
   branches are deleted.
 - **Assay** (`../assay`) is the first outside project run through Foreman.
-  Its sprint 1 (ASS-1 to ASS-9) is merged. The six Foreman faults it showed
-  are fixed (slice 12 of `docs/sprints/current.md`). Its engine
-  (`foreman serve assay`) was started before those fixes and runs the old
-  code until it is restarted.
+  Its sprints 1 and 2 are merged and completed. Its merges are approved by
+  Foreman (`merge_approval=auto`, owner, 2026-11-20). Its engine
+  (`foreman serve assay`) runs `165ddc4`. Its API runs at
+  `192.168.50.107:8090`, detached, from the Assay checkout
+  (`scripts/assay-api status`). It does not restart after a reboot.
 - A task whose work was finished outside the engine is closed with
   `foreman task done <id> --reason ...` (Mark done in the task's More menu);
   `foreman task reopen` undoes it. FOR-38 was closed that way.

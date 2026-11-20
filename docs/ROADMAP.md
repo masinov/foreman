@@ -30,7 +30,7 @@ registered: nothing is developed without being listed. Foreman runs on a
 central server shared by the company, with workers on other machines, and
 coordinates several harnesses and models.
 
-### Stage 1 — the core, proven (sprint 61)
+### Stage 1 — the core, proven (sprint 61, done 2026-11-20)
 
 Outcome numbers per project, role and model; the lease fencing token checked
 on writes; the carried engine items; the seven functions over 200 lines; the
