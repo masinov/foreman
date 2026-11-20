@@ -535,8 +535,14 @@ over `foreman/repo/git.py`, with typed response models in
   `size_bytes`, `run_id`, `captured_at`). It reads recorded events, runs and
   completion evidence and runs nothing (ADR-0018).
 - `GET /tasks/{id}/runs` pages a task's runs newest first (`limit`, `offset`,
-  `total`): `step`, `role_id`, `model`, `outcome`, `started_at`,
+  `total`): `step`, `role_id`, `model`, `outcome`, `outcome_detail` (why it
+  ended so: a reviewer's reason, a failure's message), `started_at`,
   `finished_at`, `duration_ms`, `cost_usd`, `tokens`, `token_usage`.
+- `GET /sprints/{id}/runs` pages the runs of a sprint's tasks the same way,
+  each with `task_id`, `task_key` and `task_title`. Runs that only keep a
+  record are left out (filing a task, marking it done, the engine's own
+  records); `only=problems` keeps send-backs, failures, merge conflicts and
+  blocks (`foreman/domain/activity.py`). It is the sprint page's Activity.
 - `GET /runs/{id}/output` returns the run's `prompt` and `transcript`:
   one entry per recorded event, oldest first, as `{at, kind, text, data}`.
   `data` is what the event recorded (long strings clipped), for the page to

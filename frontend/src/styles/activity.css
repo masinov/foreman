@@ -15,3 +15,18 @@
   color: var(--color-text-secondary);
   white-space: normal;
 }
+
+/* The sprint's steps: the task's title gives way first, so who, the result,
+   the time and the spend stay in view. */
+.steps .steps__task {
+  max-width: 34ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.steps .steps__when,
+.steps .steps__step,
+.steps td.secondary {
+  white-space: nowrap;
+}

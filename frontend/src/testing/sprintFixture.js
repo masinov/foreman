@@ -4,7 +4,8 @@ import { counts, on, workspaceRoutes } from "./workspaceFixture";
 export const SPRINT_URL = "GET /api/v1/sprints/sprint-56";
 export const TASKS_URL = "GET /api/v1/sprints/sprint-56/tasks";
 export const WORKFLOW_URL = "GET /api/v1/projects/foreman/workflow";
-export const STEPS_URL = "GET /api/v1/sprints/sprint-56/events?type=workflow.step_completed&limit=25";
+export const STEPS_URL = "GET /api/v1/sprints/sprint-56/runs?limit=25&offset=0";
+export const PROBLEM_STEPS_URL = "GET /api/v1/sprints/sprint-56/runs?only=problems&limit=25&offset=0";
 export const ACCEPTED_URL = "GET /api/v1/projects/foreman/backlog?status=accepted&limit=25&offset=0";
 
 export function sprintPayload(fields = {}) {
@@ -72,17 +73,39 @@ export const WORKFLOW = {
   ],
 };
 
-export function stepEvent(id, taskId, step, outcome, at = on("11-11")) {
-  return { id, task_id: taskId, project_id: "foreman", event_type: "workflow.step_completed", timestamp: at, role_id: "x", payload: { step, outcome } };
+/** A run on the sprint's activity, as `GET /sprints/{id}/runs` lists it. */
+export function sprintRun(id, taskId, step, fields = {}) {
+  const task = TASKS.find((entry) => entry.id === taskId);
+  return {
+    id,
+    step,
+    role_id: "developer",
+    model: "sonnet-5-5",
+    backend: "claude_code",
+    status: "completed",
+    outcome: "done",
+    outcome_detail: null,
+    commit_sha: null,
+    started_at: on("11-11"),
+    finished_at: on("11-11"),
+    duration_ms: 7000,
+    cost_usd: 0.12,
+    tokens: 100,
+    token_usage: {},
+    task_id: taskId,
+    task_key: task?.task_key ?? null,
+    task_title: task?.title ?? taskId,
+    ...fields,
+  };
 }
 
-export function sprintRoutes({ sprint = sprintPayload(), tasks = TASKS, workflow = WORKFLOW, events = [] } = {}) {
+export function sprintRoutes({ sprint = sprintPayload(), tasks = TASKS, workflow = WORKFLOW, runs = [] } = {}) {
   return {
     ...workspaceRoutes(),
     [SPRINT_URL]: sprint,
     [TASKS_URL]: { tasks },
     [WORKFLOW_URL]: workflow,
-    [STEPS_URL]: { events, has_more: false },
+    [STEPS_URL]: { runs, total: runs.length, limit: 25, offset: 0 },
     [ACCEPTED_URL]: { tasks: [], total: 0, counts: {}, triage: "human" },
   };
 }

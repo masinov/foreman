@@ -16,7 +16,10 @@ from ...services.errors import (
 )
 from ..streaming import event_stream_response
 from ..schemas import SprintCreate, SprintMove, TaskCreate, body_as
+from ...services.task_models import SprintRuns
+from ...services.task_reads import TaskReads
 from ..context import (
+    DEFAULT_PAGE_LIMIT,
     MAX_EVENTS_PAGE_LIMIT,
     MAX_PAGE_LIMIT,
     split_values,
@@ -112,6 +115,23 @@ def build_router(ctx: ApiContext) -> APIRouter:
                 after_event_id=after,
                 before_event_id=before,
                 event_types=event_types or None,
+            )
+        )
+
+    @router.get("/sprints/{sprint_id}/runs", response_model=SprintRuns)
+    def list_sprint_runs(
+        sprint_id: str,
+        limit: int = Query(default=DEFAULT_PAGE_LIMIT, ge=1, le=MAX_PAGE_LIMIT),
+        offset: int = Query(default=0, ge=0),
+        only: str | None = None,
+    ) -> SprintRuns:
+        """Each meaningful step of the sprint's tasks, newest first; ``only=problems`` keeps send-backs and failures."""
+
+        if only not in (None, "", "problems"):
+            raise InvalidRequestError("only must be 'problems'.")
+        return ctx.with_store(
+            lambda store: TaskReads(store).list_sprint_runs(
+                sprint_id, limit=limit, offset=offset, problems=only == "problems"
             )
         )
 

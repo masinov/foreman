@@ -1,91 +1,76 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 
-import { useApiClient } from "../../api/ApiProvider";
-import { errorSentence } from "../../api/client";
-import { listSprintEvents, STEP_FINISHED } from "../../api/sprints";
-import { ListPager } from "../../ui/ListPager";
+import { listSprintRuns } from "../../api/sprints";
+import { usePagedList } from "../../api/usePagedList";
 import { paths } from "../../app/paths";
 import { Link } from "../../app/router";
+import { Button } from "../../ui/Button";
+import { ListPager } from "../../ui/ListPager";
 import { Mono } from "../../ui/Mono";
 import { SectionHeading } from "../../ui/SectionHeading";
 import { Table } from "../../ui/Table";
-import { formatDayTime, humanize } from "../../ui/format";
-import { outcomeTone, outcomeWord } from "../shared/activityWords";
+import { formatDayTime, formatDuration, formatMoney, humanize } from "../../ui/format";
+import { ResultCell } from "../shared/ActivityResult";
+import { runBy, runResult, runSeconds } from "../shared/activityWords";
 
 // Design README: activity 25 at a time.
 export const STEPS_PAGE = 25;
 
+const FILTERS = [
+  { key: "all", label: "All", problems: false },
+  { key: "problems", label: "Send-backs and failures", problems: true },
+];
+
+const EMPTY = {
+  all: "No step has finished in this sprint yet.",
+  problems: "Nothing was sent back and nothing failed in this sprint.",
+};
+
 /**
- * Each finished step of each task in the sprint, newest first. What is waiting
- * is in the task table, not here. `revision` grows when the page changed, so
- * the newest steps are read again.
+ * What happened to each task of the sprint, step by step, newest first: the
+ * work of an agent, tests, a review, a person's decision, a merge. Steps that
+ * only keep a record (filing a task, marking it done) are left out. Each row
+ * says who did it, how it ended and why, and leads to that run on the task's
+ * Activity. `revision` grows when the page changed, so the list is read again.
  */
-export function SprintActivity({ sprintId, tasks, revision }) {
-  const client = useApiClient();
-  const [state, setState] = useState({ events: null, hasMore: false, error: null, loadingMore: false });
-  const generation = useRef(0);
-
+export function SprintActivity({ sprintId, revision }) {
+  const [filterKey, setFilterKey] = useState("all");
+  const filter = FILTERS.find((entry) => entry.key === filterKey);
+  const list = usePagedList(
+    ["sprint-runs", sprintId, filterKey],
+    (client, options) => listSprintRuns(client, sprintId, { problems: filter.problems, ...options }),
+    { pageSize: STEPS_PAGE },
+  );
+  const reload = list.reload;
+  const mounted = useRef(false);
   useEffect(() => {
-    generation.current += 1;
-    const current = generation.current;
-    listSprintEvents(client, sprintId, { types: [STEP_FINISHED], limit: STEPS_PAGE }).then(
-      (page) => {
-        if (generation.current === current) setState({ events: page.events, hasMore: page.hasMore, error: null, loadingMore: false });
-      },
-      (error) => {
-        if (generation.current === current) setState((previous) => ({ ...previous, error: errorSentence(error) }));
-      },
-    );
-  }, [client, sprintId, revision]);
+    // The first reading is the list's own; later changes of `revision` read it again.
+    if (mounted.current) reload();
+    mounted.current = true;
+  }, [revision, reload]);
 
-  const loadEarlier = useCallback(async () => {
-    const oldest = state.events?.[state.events.length - 1];
-    if (!oldest) return;
-    const current = generation.current;
-    setState((previous) => ({ ...previous, loadingMore: true, error: null }));
-    try {
-      const page = await listSprintEvents(client, sprintId, { types: [STEP_FINISHED], limit: STEPS_PAGE, before: oldest.id });
-      if (generation.current !== current) return;
-      setState((previous) => ({
-        events: [...previous.events, ...page.events],
-        hasMore: page.hasMore,
-        error: null,
-        loadingMore: false,
-      }));
-    } catch (error) {
-      if (generation.current === current) setState((previous) => ({ ...previous, loadingMore: false, error: errorSentence(error) }));
-    }
-  }, [client, sprintId, state.events]);
-
-  // Back to the newest page; the steps let go of are asked for again by "Earlier steps".
-  const showFewer = useCallback(() => {
-    generation.current += 1;
-    setState((previous) => ({ ...previous, events: previous.events.slice(0, STEPS_PAGE), hasMore: true, loadingMore: false }));
-  }, []);
-
-  const byId = new Map(tasks.map((task) => [task.id, task]));
-  // A step leads to its run on the task's Activity, or to the task.
-  const hrefOf = (event) => (event.run_id ? paths.taskRun(event.task_id, event.run_id) : paths.task(event.task_id));
+  const hrefOf = (run) => paths.taskRun(run.task_id, run.id);
   const columns = [
-    { key: "when", header: "When", className: "steps__when", render: (event) => <Mono quiet>{formatDayTime(event.timestamp)}</Mono> },
+    { key: "when", header: "When", className: "steps__when", render: (run) => <Mono quiet>{formatDayTime(run.started_at)}</Mono> },
     {
       key: "task",
       header: "Task",
       className: "steps__task",
-      render: (event) => {
-        const task = byId.get(event.task_id);
-        return (
-          <Link className="row-link" href={hrefOf(event)}>
-            <Mono quiet>{task?.task_key ?? event.task_id}</Mono> {task?.title ?? ""}
-          </Link>
-        );
-      },
+      render: (run) => (
+        <Link className="row-link" href={hrefOf(run)} title={run.task_title}>
+          <Mono quiet>{run.task_key ?? ""}</Mono> {run.task_title}
+        </Link>
+      ),
     },
-    { key: "step", header: "Step", className: "steps__step", render: (event) => humanize(event.payload?.step) },
+    { key: "step", header: "Step", className: "steps__step", render: (run) => humanize(run.step) },
+    { key: "by", header: "By", className: "secondary", render: (run) => runBy(run) },
+    { key: "result", header: "Result", render: (run) => <ResultCell result={runResult(run)} /> },
+    { key: "took", header: "Took", numeric: true, render: (run) => <Mono quiet>{formatDuration(runSeconds(run))}</Mono> },
     {
-      key: "outcome",
-      header: "Result",
-      render: (event) => <span className={`tone-${outcomeTone(event.payload?.outcome)}`}>{outcomeWord(event.payload?.outcome)}</span>,
+      key: "spend",
+      header: "Spend",
+      numeric: true,
+      render: (run) => (run.cost_usd ? <Mono quiet>{formatMoney(run.cost_usd)}</Mono> : null),
     },
   ];
 
@@ -94,23 +79,40 @@ export function SprintActivity({ sprintId, tasks, revision }) {
       <SectionHeading
         id="sprint-activity"
         title="Activity"
+        note="Each step of each task, newest first."
+        actions={
+          <div className="filter-group" role="group" aria-label="Show">
+            {FILTERS.map((entry) => (
+              <Button
+                key={entry.key}
+                variant="quiet"
+                inRow
+                className="filter-group__option"
+                aria-pressed={entry.key === filterKey}
+                onClick={() => setFilterKey(entry.key)}
+              >
+                {entry.label}
+              </Button>
+            ))}
+          </div>
+        }
       />
-      {state.error ? (
+      {list.error ? (
         <p className="notice notice--error" role="alert">
-          {state.error}
+          {list.error}
         </p>
       ) : null}
-      {state.events && state.events.length === 0 ? <p className="empty">No step has finished in this sprint yet.</p> : null}
-      {state.events && state.events.length > 0 ? (
-        <Table caption="Finished steps" columns={columns} rows={state.events} rowHref={hrefOf} />
+      {list.items && list.items.length === 0 ? <p className="empty">{EMPTY[filterKey]}</p> : null}
+      {list.items && list.items.length > 0 ? (
+        <Table caption="Steps" columns={columns} rows={list.items} rowHref={hrefOf} />
       ) : null}
       <ListPager
         more="Earlier steps"
-        loading={state.loadingMore}
-        hasMore={state.hasMore}
-        expanded={(state.events?.length ?? 0) > STEPS_PAGE}
-        onMore={loadEarlier}
-        onFewer={showFewer}
+        loading={list.loadingMore}
+        hasMore={list.hasMore}
+        expanded={list.expanded}
+        onMore={() => list.loadMore()}
+        onFewer={list.collapse}
       />
     </section>
   );

@@ -21,7 +21,8 @@ proposal and its three recommendations, to review once it is built.
      (`feat/activity-shared-words`). Done.
   2. Sprint Activity on runs: one row per meaningful step (bookkeeping
      steps left out), with who, the reason, time and cost, and a filter for
-     send-backs and failures. Needs `GET /sprints/{id}/runs`.
+     send-backs and failures, on `GET /sprints/{id}/runs`
+     (`feat/sprint-activity-runs`). Done.
   3. Project milestones: blocked and failed tasks, a person's decisions, a
      sprint plan confirmed, a task closed by hand; an engine's start and
      stop as one row saying whether it stopped by a command or without a

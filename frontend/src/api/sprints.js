@@ -49,22 +49,6 @@ export function transitionSprint(client, sprintId, status, options) {
   return client.patch(`/sprints/${segment(sprintId)}`, { status }, options);
 }
 
-/** The event type the engine records each time a workflow step finishes. */
-export const STEP_FINISHED = "workflow.step_completed";
-
-/**
- * Events of one sprint, newest first, as `{ events, hasMore }`. `types`
- * keeps only those event types; `before` is the id of the oldest event
- * already shown, so the next call returns older ones.
- */
-export function listSprintEvents(client, sprintId, { types = [], limit, before, ...options } = {}) {
-  const query = queryString({ type: types, limit, before });
-  return client.get(`/sprints/${segment(sprintId)}/events${query}`, options).then((payload) => ({
-    events: [...(payload?.events ?? [])].reverse(),
-    hasMore: Boolean(payload?.has_more),
-  }));
-}
-
 /**
  * Write a new task straight into a sprint. A person doing this has decided
  * both that the work is wanted and where it goes, so it skips the backlog.
@@ -97,4 +81,15 @@ export function moveSprint(client, sprintId, direction, options) {
 /** Delete a sprint with its tasks, runs and history. */
 export function deleteSprint(client, sprintId, options) {
   return client.delete(`/sprints/${segment(sprintId)}`, options);
+}
+
+/**
+ * One page of a sprint's activity: each meaningful step of its tasks, newest
+ * first, as `{ items, total }`. Each run carries its task's id, key and title.
+ * `problems` keeps only send-backs and failures.
+ */
+export function listSprintRuns(client, sprintId, { problems = false, limit, offset, ...options } = {}) {
+  return client
+    .get(`/sprints/${segment(sprintId)}/runs${queryString({ only: problems ? "problems" : null, limit, offset })}`, options)
+    .then((payload) => ({ items: payload?.runs ?? [], total: payload?.total ?? 0 }));
 }
