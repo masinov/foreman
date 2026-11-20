@@ -3,7 +3,7 @@
 // shown by its name with its facts beside it, never dropped.
 
 import { formatDuration, formatMoney, formatTokens, humanize, plural, shortSha } from "../../ui/format";
-import { outcomeTone, outcomeWord } from "./taskWords";
+import { outcomeTone, outcomeWord } from "../shared/activityWords";
 
 /** Bookkeeping the engine records for itself; it tells a reader nothing. */
 const SILENT = new Set([

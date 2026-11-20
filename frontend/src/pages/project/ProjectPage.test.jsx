@@ -17,6 +17,15 @@ import {
 } from "../../testing/projectFixture";
 import { engine, milestone, on, ORDER_ITEM, UNBLOCK_ITEM, workspacePayload } from "../../testing/workspaceFixture";
 
+// A milestone says the day and the clock time; the clock depends on the
+// machine's time zone, so rows are compared without it.
+const CLOCK = /, \d{2}:\d{2}/;
+const withoutClock = (row) => {
+  expect(row.textContent).toMatch(CLOCK);
+  return row.textContent.replace(CLOCK, "");
+};
+
+
 function withEngine(routes, state, task = null) {
   const payload = workspacePayload();
   payload.projects[0].engine = engine(state, task);
@@ -421,7 +430,7 @@ describe("the Activity tab", () => {
     };
     await renderProject("/dashboard/projects/foreman/activity", routes);
     const table = await screen.findByRole("table", { name: "Milestones" });
-    expect(within(table).getAllByRole("row").slice(1).map((row) => row.textContent)).toEqual([
+    expect(within(table).getAllByRole("row").slice(1).map(withoutClock)).toEqual([
       "11 NovSprintSprint 55 finished: baseline 3 tasks merged",
       "11 NovMergeFOR-12 merged abc1234",
       "11 NovMergeFOR-11 merged",
@@ -432,12 +441,22 @@ describe("the Activity tab", () => {
   it("shows milestones newest first", async () => {
     await renderProject("/dashboard/projects/foreman/activity");
     const table = await screen.findByRole("table", { name: "Milestones" });
-    expect(within(table).getAllByRole("row").slice(1).map((row) => row.textContent)).toEqual([
+    expect(within(table).getAllByRole("row").slice(1).map(withoutClock)).toEqual([
       "11 NovSprintSprint 56 started: engine truthfulness",
       "10 NovMergeFOR-12 merged: Merged work",
     ]);
     expect(within(table).getByRole("link", { name: "FOR-12 merged: Merged work" })).toHaveAttribute("href", "/dashboard/tasks/task-m");
     expect(screen.queryByRole("button", { name: "Earlier" })).toBeNull();
+  });
+
+  it("names its columns, and a row leads to what it is about", async () => {
+    await renderProject("/dashboard/projects/foreman/activity");
+    const table = await screen.findByRole("table", { name: "Milestones" });
+    expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["When", "Kind", "What happened"]);
+    expect(table.querySelector("thead")).not.toHaveClass("visually-hidden");
+    const merge = within(table).getAllByRole("row")[2];
+    fireEvent.click(within(merge).getByText("Merge"));
+    expect(window.location.pathname).toBe("/dashboard/tasks/task-m");
   });
 
   it("pages 25 at a time with Earlier", async () => {

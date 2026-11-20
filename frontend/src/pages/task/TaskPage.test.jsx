@@ -181,7 +181,7 @@ describe("the decision", () => {
     routes[post("approve")] = { status: "approved", message: "Decision recorded. The engine continues from `merge`." };
     const { fetchImpl } = await renderTask(BASE, routes);
     const region = await screen.findByRole("region", { name: "Approve the merge into main?" });
-    await waitFor(() => expect(region).toHaveTextContent("Tests passed in 114.2 s at b232eb1"));
+    await waitFor(() => expect(region).toHaveTextContent("Tests passed in 1 min 54 s at b232eb1"));
     expect(region).toHaveTextContent("Review approved by sonnet-5-5, same commit");
     expect(region).toHaveTextContent("Branch is up to date with main");
     const before = taskReads(fetchImpl);
@@ -334,7 +334,7 @@ describe("the decision", () => {
     const { fetchImpl } = await renderTask(BASE, routes);
     const region = await screen.findByRole("region", { name: "Blocked: Tests failed three times." });
     expect(region).toHaveTextContent("Stopped at test");
-    expect(region).toHaveTextContent("Last run: Test, failed by engine");
+    expect(region).toHaveTextContent("Last run: Test, failed by Foreman");
     fireEvent.click(within(region).getByRole("button", { name: "Unblock" }));
     expect(await screen.findByText("Unblocked. The task is back in the queue.")).toBeInTheDocument();
     expect(postCalls(fetchImpl, "unblock")[0].body).toEqual({ note: null });
@@ -581,10 +581,10 @@ describe("Overview", () => {
       .map((row) => within(row).getAllByRole("cell").map((cell) => cell.textContent));
     expect(rows).toEqual([
       ["Develop", "Committed b232eb1", "sonnet-5-5", "1"],
-      ["Test", "Passed in 114.2 s", "engine", "1"],
+      ["Test", "Passed in 1 min 54 s", "Foreman", "1"],
       ["Review", "Approved in 7 s", "sonnet-5-5", "1"],
       ["Merge approval", "Waiting for you", "a person", ""],
-      ["Merge", "Not reached", "engine", ""],
+      ["Merge", "Not reached", "Foreman", ""],
     ]);
     expect(screen.getByText(/4 runs in all/)).toBeInTheDocument();
   });
@@ -593,7 +593,7 @@ describe("Overview", () => {
     await renderTask();
     const section = (await screen.findByRole("heading", { name: "Checks" })).closest("section");
     await waitFor(() => expect(section).toHaveTextContent("2 acceptance criteria, covered by the approving review"));
-    expect(section).toHaveTextContent("Tests passed in 114.2 s at b232eb1");
+    expect(section).toHaveTextContent("Tests passed in 1 min 54 s at b232eb1");
     expect(section).toHaveTextContent("No evidence files required by this workflow");
     expect(within(section).getByRole("link", { name: "All checks" })).toHaveAttribute("href", `${BASE}/checks`);
   });
@@ -901,7 +901,7 @@ describe("Activity", () => {
     const rows = within(table).getAllByRole("row").slice(1);
     expect(rows.map((row) => within(row).getAllByRole("cell")[1].textContent)).toEqual(["Review", "Test"]);
     expect(rows[0]).toHaveTextContent("Approved");
-    expect(rows[1]).toHaveTextContent("engine");
+    expect(rows[1]).toHaveTextContent("Foreman");
     // The commit the branch was at after each run; none for the engine's test run.
     expect(rows[0]).toHaveTextContent("b232eb1");
     expect(within(rows[1]).getAllByRole("cell")[4].textContent).toBe("");
@@ -921,7 +921,7 @@ describe("Activity", () => {
     fireEvent.click(within(rows[1]).getAllByRole("cell")[1]);
     expect(await screen.findByText("Ran 1221 tests")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Test" })).toBeInTheDocument();
-    expect(document.querySelector("#run-output").parentElement).toHaveTextContent(/by engine/);
+    expect(document.querySelector("#run-output").parentElement).toHaveTextContent(/by Foreman/);
     expect(within(rows[1]).getByRole("button")).toHaveAttribute("aria-pressed", "true");
     expect(rows[1]).toHaveClass("table__row--selected");
     expect(rows[0]).not.toHaveClass("table__row--selected");
@@ -929,6 +929,27 @@ describe("Activity", () => {
 
     fireEvent.click(within(rows[0]).getByRole("button"));
     expect(await screen.findByText("Reviewed the change.")).toBeInTheDocument();
+  });
+
+  it("opens at the run a link names, and shows a send-back's reason in its row", async () => {
+    const routes = taskRoutes({
+      runs: [
+        runItem("run-3", "review", {
+          role_id: "code_reviewer",
+          outcome: "steer",
+          outcome_detail: "The log can still contain the host and port.",
+        }),
+        runItem("run-2", "test", { role_id: "_builtin:run_tests", backend: "builtin", model: null, outcome: "success" }),
+      ],
+    });
+    await renderTask(`${BASE}/activity?run=run-2`, routes);
+    const table = await screen.findByRole("table", { name: "Runs" });
+    const rows = within(table).getAllByRole("row").slice(1);
+    expect(rows[1]).toHaveClass("table__row--selected");
+    expect(await screen.findByText("Ran 1221 tests")).toBeInTheDocument();
+    expect(rows[0]).toHaveTextContent("Sent back");
+    expect(within(rows[0]).getByText("The log can still contain the host and port.")).toBeInTheDocument();
+    expect(rows[1]).toHaveTextContent(/Foreman\s*Passed/);
   });
 
   it("reads the list again in place when a step is registered: rows stay, the new one opens, the pick is kept", async () => {
@@ -1230,7 +1251,7 @@ describe("The agent's side bar", () => {
     const order = Array.from(thread.children).map((item) => item.textContent);
     expect(order).toHaveLength(4);
     expect(order[0]).toMatch(/Earlier advice\.Read by the agent at develop on 10 Nov/);
-    expect(order[1]).toMatch(/^DevelopError/);
+    expect(order[1]).toMatch(/^DevelopFailed/);
     expect(order[2]).toMatch(/^DevelopRunning/);
     expect(order[3]).toMatch(/Newer advice\.Waiting for the developer.s next step/);
   });

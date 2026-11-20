@@ -1,0 +1,146 @@
+import { humanize } from "../../ui/format";
+
+// One vocabulary for what happened, used wherever activity is shown: the
+// task's Activity tab, its Agent side bar and Overview, the decision box and
+// the sprint's Activity. The same run reads the same everywhere.
+//
+// A run reaches the page in two shapes: the runs list (`step`, `backend`)
+// and the task's own record (`workflow_step`, `agent_backend`). Both are read.
+
+/** Who acts when no agent and no person does: the engine, by the product's name. */
+export const FOREMAN = "Foreman";
+
+const BUILTIN = "_builtin:";
+const HUMAN_GATE = "_builtin:human_gate";
+const MARK_DONE = "_builtin:mark_done";
+const TESTS = "_builtin:run_tests";
+const MERGE = "_builtin:merge";
+const ORCHESTRATOR = "_builtin:orchestrator";
+const PEOPLE = new Set(["human", "dashboard", "cli"]);
+const ENGINE_BACKENDS = new Set(["builtin", "orchestrator", "engine"]);
+
+const backendOf = (run) => run.backend ?? run.agent_backend ?? "";
+const roleOf = (run) => String(run.role_id ?? "");
+
+/** The step a run belongs to. */
+export const stepOf = (run) => run.step ?? run.workflow_step ?? "";
+
+/** Who did a run: a model, Foreman, a person (by name where the task records it). */
+export function runBy(run, task = null) {
+  const backend = backendOf(run);
+  const role = roleOf(run);
+  if (role === HUMAN_GATE) return backend === "human" ? "a person" : FOREMAN;
+  if (backend === "api") return task?.source?.system ? `${task.source.system}, through the API` : "the API";
+  if (PEOPLE.has(backend) || role === "human") {
+    const name = task?.created_by;
+    if (run.outcome === "file" && name && name !== "human") return name;
+    return "a person";
+  }
+  if (run.outcome === "file") return "an agent";
+  if (ENGINE_BACKENDS.has(backend) || role.startsWith(BUILTIN)) return FOREMAN;
+  return run.model || backend;
+}
+
+const GOOD = new Set(["done", "pass", "passed", "approve", "approved", "merged", "committed", "success", "succeeded", "completed", "complete", "accepted"]);
+const BAD = new Set(["fail", "failed", "failure", "error", "errored", "reject", "rejected", "timeout", "timed_out", "cancelled", "cancel", "killed", "stopped"]);
+const BACK = new Set(["steer", "deny", "denied", "changes_requested", "request_changes", "conflict", "blocked", "paused"]);
+
+/** The colour an outcome is shown in: `passed`, `failed`, `attention` or `idle`. Its word says it too. */
+export function outcomeTone(outcome) {
+  const value = String(outcome || "").toLowerCase();
+  if (GOOD.has(value)) return "passed";
+  if (BAD.has(value)) return "failed";
+  if (BACK.has(value)) return "attention";
+  return "idle";
+}
+
+// Outcomes as a person says them once they happened.
+const OUTCOME_WORDS = {
+  approve: "Approved",
+  reject: "Rejected",
+  steer: "Sent back",
+  deny: "Sent back",
+  denied: "Sent back",
+  request_changes: "Changes requested",
+  changes_requested: "Changes requested",
+  pass: "Passed",
+  fail: "Failed",
+  failure: "Failed",
+  error: "Failed",
+  conflict: "Merge conflict",
+  updated: "Brought up to date",
+  paused: "Asked a person",
+  file: "Filed",
+  created: "Filed",
+  cancel: "Cancelled",
+};
+
+/** An outcome or a review decision in words: "approve" is "Approved", "steer" is "Sent back". */
+export function outcomeWord(outcome) {
+  return OUTCOME_WORDS[String(outcome || "").toLowerCase()] ?? humanize(outcome);
+}
+
+/** The outcomes that send a task back to be worked on again. */
+export const SENT_BACK = new Set(["steer", "deny", "denied", "changes_requested", "request_changes"]);
+
+/** What a step's success is called: tests pass, a merge merges, the last step closes the task. */
+function successWord(role) {
+  if (role === TESTS) return "Passed";
+  if (role === MERGE) return "Merged";
+  if (role === MARK_DONE) return "Closed";
+  return "Done";
+}
+
+/** The first sentence of a long reason, which is what fits in a row. */
+function firstSentence(text) {
+  const value = String(text || "").trim();
+  if (!value) return "";
+  const line = value.split("\n")[0].trim();
+  const end = line.search(/[.!?](\s|$)/);
+  return end > 0 ? line.slice(0, end + 1) : line;
+}
+
+/**
+ * Why a run ended as it did, when that is worth a line: a reviewer's or a
+ * person's reason for sending it back, a failure's message, a merge conflict,
+ * a gate decided by the project setting. Empty when the result says it all.
+ */
+export function runNote(run) {
+  const detail = String(run.outcome_detail || "").trim();
+  const outcome = String(run.outcome || "").toLowerCase();
+  const role = roleOf(run);
+  if (role === HUMAN_GATE) {
+    if (outcome === "approve" && backendOf(run) !== "human") return "By the project setting";
+    if (SENT_BACK.has(outcome)) return detail;
+    return "";
+  }
+  if (SENT_BACK.has(outcome) || role === ORCHESTRATOR) return detail;
+  if (BAD.has(outcome) || run.status === "failed" || run.status === "killed") return detail;
+  if (outcome === "conflict" || outcome === "updated" || outcome === "blocked") return firstSentence(detail);
+  return "";
+}
+
+/**
+ * A run's result: `{ tone, word, note }`. The word is its outcome as a
+ * person says it; the note, when there is one, is why (see `runNote`).
+ */
+export function runResult(run) {
+  const outcome = String(run.outcome || "").toLowerCase();
+  const role = roleOf(run);
+  const note = runNote(run);
+  if (role === ORCHESTRATOR && outcome === "success") {
+    // A record the engine kept of being paused, stopped or resumed.
+    const resumed = /^Engine resumed/i.test(note);
+    return { tone: "idle", word: resumed ? "Resumed" : "Interrupted", note: resumed ? "" : firstSentence(note) };
+  }
+  if (run.status === "killed") return { tone: "failed", word: "Stopped", note };
+  if (outcome === "success") return { tone: "passed", word: successWord(role), note };
+  if (outcome) return { tone: outcomeTone(outcome), word: outcomeWord(outcome), note };
+  if (run.status === "running") return { tone: "running", word: "Running", note: "" };
+  if (run.status) return { tone: outcomeTone(run.status), word: humanize(run.status), note };
+  return { tone: "idle", word: "", note: "" };
+}
+
+export function runSeconds(run) {
+  return run.duration_ms === null || run.duration_ms === undefined ? null : run.duration_ms / 1000;
+}

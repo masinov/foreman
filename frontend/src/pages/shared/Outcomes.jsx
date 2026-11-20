@@ -85,7 +85,7 @@ function ByRoleAndModel({ rows }) {
       render: (row) => <Mono quiet>{row.failed_runs || ""}</Mono>,
     },
     { key: "result", header: "Result", render: roleResult },
-    { key: "time", header: "Time", numeric: true, render: (row) => <Mono quiet>{minutesText((row.duration_seconds ?? 0) / 60)}</Mono> },
+    { key: "time", header: "Time", numeric: true, render: (row) => <Mono quiet>{formatDuration(row.duration_seconds)}</Mono> },
     { key: "spend", header: "Spend", numeric: true, render: (row) => <Mono quiet>{formatMoney(row.cost_usd)}</Mono> },
   ];
   return (

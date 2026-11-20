@@ -29,10 +29,13 @@ describe("dates and titles", () => {
 });
 
 describe("formatDuration", () => {
-  it("says seconds to ten minutes, then minutes, then hours", () => {
+  it("says seconds, then minutes and seconds, then hours and minutes", () => {
     expect(formatDuration(null)).toBe("");
     expect(formatDuration(7)).toBe("7 s");
-    expect(formatDuration(114.24)).toBe("114.2 s");
+    expect(formatDuration(0.12)).toBe("0.1 s");
+    expect(formatDuration(17.2)).toBe("17 s");
+    expect(formatDuration(114.24)).toBe("1 min 54 s");
+    expect(formatDuration(261.9)).toBe("4 min 22 s");
     expect(formatDuration(840)).toBe("14 min");
     expect(formatDuration(7500)).toBe("2 h 5 min");
     expect(formatDuration(7200)).toBe("2 h");

@@ -164,6 +164,9 @@ class RunItem(BaseModel):
     backend: str
     status: str
     outcome: str | None = None
+    #: Why it ended as it did, in the run's own words: a reviewer's reason for
+    #: sending a task back, a failure's message, how a gate was decided.
+    outcome_detail: str | None = None
     commit_sha: str | None = None
     started_at: str | None = None
     finished_at: str | None = None

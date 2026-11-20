@@ -1,4 +1,6 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
+
+import { Link, RouterProvider } from "../app/router";
 
 import { Table } from "./Table";
 
@@ -47,4 +49,33 @@ describe("Table", () => {
     expect(bodyRows[0]).not.toHaveClass("table__row--selected");
     expect(bodyRows[1]).toHaveClass("table__row--selected");
   });
+
+  it("leads the whole row to its page, but leaves a control in it to do its own job", () => {
+    window.history.replaceState({}, "", "/dashboard");
+    const pressed = vi.fn();
+    const linked = [
+      { key: "name", header: "Name", render: (row) => <Link href={`/dashboard/things/${row.id}`}>{row.name}</Link> },
+      { key: "act", header: "Act", render: () => <button type="button" onClick={pressed}>Act</button> },
+      { key: "count", header: "Count", render: (row) => row.count },
+    ];
+    render(
+      <RouterProvider browser={window}>
+        <Table caption="Things" columns={linked} rows={rows} rowHref={(row) => (row.id === "a" ? `/dashboard/things/${row.id}` : null)} />
+      </RouterProvider>,
+    );
+    const [first, second] = within(screen.getByRole("table", { name: "Things" })).getAllByRole("row").slice(1);
+    expect(first).toHaveClass("table__row--pickable");
+    expect(second).not.toHaveClass("table__row--pickable");
+
+    fireEvent.click(within(first).getByRole("button", { name: "Act" }));
+    expect(pressed).toHaveBeenCalledTimes(1);
+    expect(window.location.pathname).toBe("/dashboard");
+
+    fireEvent.click(within(second).getByText("2"));
+    expect(window.location.pathname).toBe("/dashboard");
+
+    fireEvent.click(within(first).getByText("1"));
+    expect(window.location.pathname).toBe("/dashboard/things/a");
+  });
 });
+

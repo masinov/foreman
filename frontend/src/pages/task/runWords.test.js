@@ -40,7 +40,7 @@ describe("what a run recorded, in words", () => {
 
   it("says how a step went, with the colour of its outcome", () => {
     expect(sayEntry(entry("engine.test_run", { exit_code: 0, duration_seconds: 187.1, head_sha: "c52648ddceab" }))).toEqual({
-      says: "Tests passed in 187.1 s at c52648d",
+      says: "Tests passed in 3 min 7 s at c52648d",
       tone: "passed",
     });
     expect(sayEntry(entry("engine.test_run", { exit_code: 2, duration_seconds: 3 })).says).toBe("Tests failed (exit code 2) in 3 s");

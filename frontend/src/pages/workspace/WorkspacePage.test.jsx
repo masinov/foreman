@@ -3,6 +3,15 @@ import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import { createFakeFetch, renderApp, reply } from "../../testing/fakeApi";
 import { UNBLOCK_ITEM, workspaceRoutes } from "../../testing/workspaceFixture";
 
+// A milestone says the day and the clock time; the clock depends on the
+// machine's time zone, so rows are compared without it.
+const CLOCK = /, \d{2}:\d{2}/;
+const withoutClock = (row) => {
+  expect(row.textContent).toMatch(CLOCK);
+  return row.textContent.replace(CLOCK, "");
+};
+
+
 function needsYouSection() {
   return screen.getByRole("region", { name: /Needs you/ });
 }
@@ -89,7 +98,7 @@ describe("WorkspacePage", () => {
 
     const recent = await screen.findByRole("table", { name: "Recent milestones" });
     const rows = within(recent).getAllByRole("row").slice(1);
-    expect(rows.map((row) => row.textContent)).toEqual([
+    expect(rows.map(withoutClock)).toEqual([
       "11 NovForemanSprintSprint 56 started: engine truthfulness",
       "10 NovForemanSprintSprint 55 finished: baseline and host safety",
       "9 NovOther projectEngineEngine paused by ana",

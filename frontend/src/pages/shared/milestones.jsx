@@ -5,7 +5,7 @@ import { paths } from "../../app/paths";
 import { Link } from "../../app/router";
 import { Mono } from "../../ui/Mono";
 import { Table } from "../../ui/Table";
-import { formatDay, splitTitle } from "../../ui/format";
+import { formatDayTime, splitTitle } from "../../ui/format";
 
 const ENGINE_VERBS = {
   [MILESTONE_KINDS.engineStarted]: "started",
@@ -88,14 +88,17 @@ export function MilestoneText({ milestone, short = false }) {
   );
 }
 
-/** Milestones, newest first: when, (project,) kind, what happened. */
+/**
+ * Milestones, newest first: when, (project,) kind, what happened. The whole
+ * row leads to what it is about: the sprint, or the merged task.
+ */
 export function MilestoneTable({ caption, items, showProject = false, placeholderRows = null }) {
   const columns = [
     {
       key: "when",
       header: "When",
       className: "milestones__when",
-      render: (m) => <Mono quiet>{formatDay(m.at)}</Mono>,
+      render: (m) => <Mono quiet>{formatDayTime(m.at)}</Mono>,
     },
     showProject
       ? {
@@ -115,7 +118,7 @@ export function MilestoneTable({ caption, items, showProject = false, placeholde
       className: "milestones__kind",
       render: (m) => describeMilestone(m).kind,
     },
-    { key: "what", header: "Milestone", render: (m) => <MilestoneText milestone={m} /> },
+    { key: "what", header: "What happened", render: (m) => <MilestoneText milestone={m} /> },
   ].filter(Boolean);
   return (
     <Table
@@ -123,7 +126,7 @@ export function MilestoneTable({ caption, items, showProject = false, placeholde
       columns={columns}
       rows={items ?? []}
       rowKey={(m) => `${m.kind}:${m.at}:${m.sprint_id ?? ""}:${m.task_id ?? ""}`}
-      hideHeader
+      rowHref={(m) => describeMilestone(m).href}
       placeholderRows={placeholderRows}
       className="milestones"
     />

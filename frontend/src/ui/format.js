@@ -83,16 +83,22 @@ export function formatTokens(count) {
 }
 
 /**
- * A duration in words a person reads at a glance: "7 s", "114.2 s" (to ten
- * minutes, as the test step reports it), then "14 min", then "2 h 5 min".
+ * A duration in words a person reads at a glance: "0.4 s" and "7 s" (tenths
+ * only under ten seconds), "4 min 22 s" under an hour, then "2 h 5 min".
  * Empty for no value.
  */
 export function formatDuration(seconds) {
   if (seconds === null || seconds === undefined || Number.isNaN(Number(seconds))) return "";
   const value = Math.max(0, Number(seconds));
-  if (value < 600) return `${value.toFixed(1).replace(/\.0$/, "")} s`;
+  if (value < 10) return `${value.toFixed(1).replace(/\.0$/, "")} s`;
+  const whole = Math.round(value);
+  if (whole < 60) return `${whole} s`;
+  if (whole < 3600) {
+    const minutes = Math.floor(whole / 60);
+    const rest = whole % 60;
+    return rest ? `${minutes} min ${rest} s` : `${minutes} min`;
+  }
   const minutes = Math.round(value / 60);
-  if (minutes < 60) return `${minutes} min`;
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;
   return rest ? `${hours} h ${rest} min` : `${hours} h`;

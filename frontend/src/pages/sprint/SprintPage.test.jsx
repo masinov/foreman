@@ -428,6 +428,22 @@ describe("activity", () => {
     expect(screen.queryByRole("button", { name: "Earlier steps" })).toBeNull();
   });
 
+  it("names its columns, and each row leads to that run on the task's Activity", async () => {
+    const withRun = [{ ...stepEvent("e9", "t-merge", "review", "steer"), run_id: "run-9" }];
+    await renderSprint("/dashboard/sprints/sprint-56", sprintRoutes({ events: withRun }));
+    const table = await screen.findByRole("table", { name: "Finished steps" });
+    expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["When", "Task", "Step", "Result"]);
+    expect(table.querySelector("thead")).not.toHaveClass("visually-hidden");
+    const row = within(table).getAllByRole("row")[1];
+    expect(row).toHaveTextContent("Sent back");
+    const link = within(row).getByRole("link");
+    expect(link).toHaveAttribute("href", "/dashboard/tasks/t-merge/activity?run=run-9");
+    // Anywhere on the row goes there, not only its link.
+    fireEvent.click(within(row).getByText("Review"));
+    expect(window.location.pathname).toBe("/dashboard/tasks/t-merge/activity");
+    expect(window.location.search).toBe("?run=run-9");
+  });
+
   it("loads earlier steps from the oldest one shown", async () => {
     const routes = sprintRoutes({ events });
     routes[STEPS_URL] = { events, has_more: true };

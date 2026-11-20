@@ -13,7 +13,7 @@ import { formatDayTime, formatDuration, formatMoney, humanize } from "../../ui/f
 import { stageOf } from "../sprint/taskStage";
 import { narrate } from "./runWords";
 import { RunLine, withDays } from "./RunStory";
-import { runBy, runResult, runSeconds } from "./taskWords";
+import { runBy, runResult, runSeconds } from "../shared/activityWords";
 import { agentAtWork, noteState, TellAgent } from "./TellAgent";
 import { useTaskPulse } from "./useTaskPulse";
 
@@ -83,10 +83,10 @@ function StepStory({ run, pulse }) {
  * it ended, who did it, how long it took and what it cost, and under it, when
  * open, what was said and done.
  */
-function Step({ run, open, pulse, onToggle }) {
+function Step({ run, task, open, pulse, onToggle }) {
   const bodyId = useId();
   const result = runResult(run);
-  const facts = [runBy(run), formatDuration(runSeconds(run)), run.cost_usd ? formatMoney(run.cost_usd) : null]
+  const facts = [runBy(run, task), formatDuration(runSeconds(run)), run.cost_usd ? formatMoney(run.cost_usd) : null]
     .filter(Boolean)
     .join(" · ");
   return (
@@ -96,6 +96,11 @@ function Step({ run, open, pulse, onToggle }) {
         <span className={`agent__step-result tone-${result.tone}`}>{result.word}</span>
         <span className="agent__step-facts">{facts}</span>
       </button>
+      {result.note ? (
+        <p className="agent__step-note" title={result.note}>
+          {result.note}
+        </p>
+      ) : null}
       {open ? (
         <div id={bodyId} className="agent__step-body">
           <StepStory run={run} pulse={pulse} />
@@ -254,6 +259,7 @@ export function AgentPanel({ task, onClose }) {
                 <Step
                   key={entry.run.id}
                   run={entry.run}
+                  task={task}
                   open={isOpen(entry.run)}
                   pulse={entry.run === inProgress ? pulse : 0}
                   onToggle={() => toggle(entry.run)}

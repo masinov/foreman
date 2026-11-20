@@ -12,10 +12,13 @@ const RouterContext = createContext(null);
  */
 export function RouterProvider({ browser = window, children }) {
   const [pathname, setPathname] = useState(() => browser.location.pathname);
+  // The query names something on the page (a run picked on a task's Activity).
+  const [search, setSearch] = useState(() => browser.location.search ?? "");
 
   useEffect(() => {
     function handlePopState() {
       setPathname(browser.location.pathname);
+      setSearch(browser.location.search ?? "");
     }
     browser.addEventListener("popstate", handlePopState);
     return () => browser.removeEventListener("popstate", handlePopState);
@@ -34,14 +37,15 @@ export function RouterProvider({ browser = window, children }) {
         browser.history.pushState({}, "", target);
       }
       setPathname(url.pathname);
+      setSearch(url.search);
       browser.scrollTo?.(0, 0);
     },
     [browser],
   );
 
   const value = useMemo(
-    () => ({ browser, pathname, navigate, ...matchRoute(pathname) }),
-    [browser, pathname, navigate],
+    () => ({ browser, pathname, search, navigate, ...matchRoute(pathname) }),
+    [browser, pathname, search, navigate],
   );
   return <RouterContext.Provider value={value}>{children}</RouterContext.Provider>;
 }
@@ -52,14 +56,20 @@ function useRouter() {
   return router;
 }
 
-/** The current `{ pathname, route, params }`. */
+/** The current `{ pathname, route, params, query }`; `query` is a URLSearchParams. */
 export function useRoute() {
-  const { pathname, route, params } = useRouter();
-  return { pathname, route, params };
+  const { pathname, search, route, params } = useRouter();
+  const query = useMemo(() => new URLSearchParams(search), [search]);
+  return { pathname, route, params, query };
 }
 
 export function useNavigate() {
   return useRouter().navigate;
+}
+
+/** `navigate`, or null outside a router (a component drawn on its own in a test). */
+export function useOptionalNavigate() {
+  return useContext(RouterContext)?.navigate ?? null;
 }
 
 function isPlainLeftClick(event) {

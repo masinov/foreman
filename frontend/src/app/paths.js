@@ -19,6 +19,8 @@ export const paths = {
   taskChanges: (taskId) => `${paths.task(taskId)}/changes`,
   taskChecks: (taskId) => `${paths.task(taskId)}/checks`,
   taskActivity: (taskId) => `${paths.task(taskId)}/activity`,
+  // The task's Activity with one run picked.
+  taskRun: (taskId, runId) => `${paths.taskActivity(taskId)}?run=${enc(runId)}`,
 };
 
 export function normalizePath(pathname) {
