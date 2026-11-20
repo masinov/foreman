@@ -215,6 +215,23 @@ class OutcomeNumbersTests(unittest.TestCase):
         self.assertEqual(numbers.people.interventions, 1)
         self.assertEqual(numbers.people.interventions_by_kind, {"message": 1})
 
+    def test_a_task_closed_at_a_gate_is_not_waiting(self) -> None:
+        # FOR-49: paused at merge approval, then merged by hand and closed.
+        closed = Story("t1", status="done").develop().tests().review()
+        closed.step("merge_approval").event(
+            "workflow.paused", role="_builtin:human_gate", reason="human_gate"
+        )
+        cancelled = Story("t2", status="cancelled").develop().tests().review()
+        cancelled.step("merge_approval").event(
+            "workflow.paused", role="_builtin:human_gate", reason="human_gate"
+        )
+
+        numbers = compute(closed, cancelled)
+
+        self.assertEqual(numbers.people.decisions_asked, 2)
+        self.assertEqual(numbers.people.decisions_waiting, 0)
+        self.assertIsNone(numbers.people.median_wait_seconds)
+
     def test_a_merged_task_is_credited_to_the_model_of_its_first_build(self) -> None:
         first = Story("t1").develop(model="haiku").tests(passed=False).through()
         second = Story("t2").develop(model="sonnet").tests().review().gate().merge()

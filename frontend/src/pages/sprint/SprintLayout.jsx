@@ -14,6 +14,7 @@ import { plural } from "../../ui/format";
 import { NewTaskDialog } from "../project/NewTaskDialog";
 import { AddFromBacklogDialog } from "./AddFromBacklogDialog";
 import { SprintActivity } from "./SprintActivity";
+import { Outcomes } from "../shared/Outcomes";
 import { SprintHead } from "./SprintHead";
 import { useProjectEngine } from "../shared/useProjectEngine";
 import { TaskBoard } from "./TaskBoard";
@@ -111,6 +112,7 @@ export function SprintLayout({ sprintId, view }) {
   return (
     <div className="sprint">
       <SprintHead sprint={current} onChanged={changed} />
+      <Outcomes projectId={current.project_id} sprintId={sprintId} revision={revision} />
       <section className="sprint__tasks" aria-labelledby="sprint-tasks">
         <SectionHeading
           id="sprint-tasks"

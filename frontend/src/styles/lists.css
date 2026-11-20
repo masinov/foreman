@@ -179,3 +179,29 @@
     padding-inline: var(--space-3);
   }
 }
+
+/* A summary line: a quiet term before each value (sprint head, outcomes). */
+.summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-6);
+}
+
+.summary {
+  margin: 0;
+}
+
+.summary__item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.summary__item dd {
+  margin: 0;
+}
+
+.summary__item dt {
+  font-size: var(--font-size-control);
+  color: var(--color-text-quiet);
+}

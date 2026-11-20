@@ -12,5 +12,5 @@ Its first slice is an ADR for the simple identity system inside Foreman
 (owner, 2026-11-19). The owner reads the ADR before any code is written.
 The sprint's other slices are written once the ADR is agreed.
 
-Also waiting on the owner: where the outcome numbers (ADR-0034) show on the
-dashboard.
+Since the close: the outcome numbers are on the project and sprint pages
+(owner, 2026-11-21, `feat/outcomes-on-dashboard`).
