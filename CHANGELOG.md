@@ -7,6 +7,11 @@ memory changes rather than versioned product releases.
 
 ## [Unreleased]
 
+### After sprint 61
+
+- The outcome numbers (ADR-0034) are on the dashboard: one line at the top of the project page for all sprints, and one under the sprint page's summary for that sprint. The line shows first-time passes, send-backs by cause, what you were asked and did, cost per merged task and time to merge, with a table by role and model behind "By role and model".
+- A decision counts as waiting only while its task is open. A task closed or cancelled at a gate used to stay "waiting" in the outcome numbers forever (ADR-0034 amendment).
+
 ### Sprint 61 — the core, proven
 
 - Closed on 2026-11-20. Assay's sprint 2 was planned by its manager, confirmed by the owner, and run by `foreman serve` with merges approved by Foreman: 8 of 8 merged, 7 first time, $0.36 per merged task, and nobody stepped in. No Foreman fault was seen, so this sprint has no fix from it.

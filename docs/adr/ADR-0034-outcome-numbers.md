@@ -67,6 +67,16 @@ The terms, as computed:
   numbers.
 - Tasks run before an event existed are counted with what they have: a task
   merged before `engine.merge` was recorded does not count as merged.
-- The dashboard's place for them is the owner's to agree; until then they
-  are read through the CLI and the API.
+- On the dashboard (owner, 2026-11-21): one line at the top of the project
+  page (all sprints) and under the sprint page's summary (that sprint), with
+  the per-role and per-model table behind "By role and model". The line is
+  not shown while no task has started.
 - No migration.
+
+## Amendment 2026-11-21: what is still waiting
+
+A decision still waits only when its pause is the task's last and the task
+is open. A task closed or cancelled while paused at a gate was settled
+without an answer there: its decision counts as asked, not as waiting, and
+has no wait time. Before this, Foreman's project said one decision was
+waiting while Needs you showed none (FOR-49, merged by hand at a gate).

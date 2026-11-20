@@ -178,6 +178,10 @@ def _is_agent_run(run: Run) -> bool:
     return run.agent_backend in AGENT_BACKENDS and not run.role_id.startswith("_builtin:")
 
 
+#: Task statuses in which nothing is waiting any more.
+_SETTLED = frozenset({"done", "cancelled"})
+
+
 class _TaskStory:
     """One task's events in order, read once."""
 
@@ -208,18 +212,21 @@ class _TaskStory:
             and self.first_started_at is not None
             and e.timestamp >= self.first_started_at
         ]
-        self.waits: list[float | None] = []
+        # A decision is asked at each gate pause and answered by the resume
+        # that follows. One still waits only if it is the last and the task
+        # is still open: a task closed or cancelled at a gate was settled
+        # without an answer there, and is neither waiting nor timed.
+        self.decisions_asked = 0
+        self.waits: list[float] = []
         pending: str | None = None
         for e in ordered:
             if e.event_type == PAUSED and e.payload.get("reason") == "human_gate":
-                if pending is not None:
-                    self.waits.append(None)
+                self.decisions_asked += 1
                 pending = e.timestamp
             elif e.event_type == RESUMED and pending is not None:
                 self.waits.append(_seconds(pending, e.timestamp))
                 pending = None
-        if pending is not None:
-            self.waits.append(None)
+        self.decision_waiting = pending is not None and task.status not in _SETTLED
 
     def passed_first_time(self, *, conflicts_aside: bool = False) -> bool:
         """Merged with no send-back (leaving merge conflicts aside if asked)."""
@@ -284,15 +291,14 @@ def outcome_numbers(
                 cause_run = run_by_id.get(event.run_id)
                 caused[(event.role_id, cause_run.model if cause_run else None)] += 1
 
-    waits = [w for s in stories for w in s.waits]
-    decided = [w for w in waits if w is not None]
+    decided = [w for s in stories for w in s.waits]
     by_kind: dict[str, int] = defaultdict(int)
     for story in stories:
         for event in story.interventions:
             by_kind[event.event_type.removeprefix("human.")] += 1
     people = PersonNumbers(
-        decisions_asked=len(waits),
-        decisions_waiting=len(waits) - len(decided),
+        decisions_asked=sum(s.decisions_asked for s in stories),
+        decisions_waiting=sum(1 for s in stories if s.decision_waiting),
         median_wait_seconds=round(median(decided), 1) if decided else None,
         interventions=sum(by_kind.values()),
         interventions_by_kind=dict(sorted(by_kind.items())),

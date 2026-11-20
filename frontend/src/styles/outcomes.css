@@ -1,0 +1,36 @@
+/* Outcome numbers (ADR-0034): one line, the breakdown behind a click. */
+.outcomes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* The lead stays on the first line; the numbers wrap beside it. */
+.outcomes__line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-6);
+}
+
+.outcomes__lead {
+  flex: none;
+}
+
+.outcomes__line .summary {
+  flex: 1;
+  min-width: 0;
+}
+
+.outcomes__lead {
+  font-size: var(--font-size-control);
+  color: var(--color-text-secondary);
+}
+
+.outcomes__more .disclosure__summary {
+  font-size: var(--font-size-control);
+  color: var(--color-text-quiet);
+}
+
+.outcomes__more .disclosure__content {
+  padding-top: var(--space-2);
+}

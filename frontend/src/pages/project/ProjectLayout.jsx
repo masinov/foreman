@@ -8,6 +8,7 @@ import { Icon } from "../../ui/Icon";
 import { Mono } from "../../ui/Mono";
 import { Tabs } from "../../ui/Tabs";
 import { NeedsYou } from "../shared/NeedsYou";
+import { Outcomes } from "../shared/Outcomes";
 import { EngineRow } from "./EngineRow";
 
 import "../../styles/lists.css";
@@ -117,6 +118,7 @@ export function ProjectLayout({ projectId, children }) {
           emptySprint={activeSprintIsEmpty(project)}
           onChanged={changed}
         />
+        <Outcomes projectId={projectId} lead="All sprints" revision={revision} />
       </div>
       <NeedsYou
         projectId={projectId}
