@@ -321,6 +321,17 @@ class TaskReadsCase(unittest.TestCase):
         self.assertEqual(detail["r1"]["commit_sha"], "b232eb1" + "0" * 33)
         self.assertIsNone(detail["r0"]["commit_sha"])
 
+    def test_runs_say_why_they_ended_as_they_did(self) -> None:
+        self.task()
+        self.add_runs(2)
+        run = self.store.get_run("r1")
+        run.role_id, run.outcome = "code_reviewer", "steer"
+        run.outcome_detail = "The log can still contain the host and port."
+        self.store.save_run(run)
+        runs = {r["id"]: r for r in self.get("/api/v1/tasks/t/runs").json()["runs"]}
+        self.assertEqual(runs["r1"]["outcome_detail"], "The log can still contain the host and port.")
+        self.assertIsNone(runs["r0"]["outcome_detail"])
+
     def test_run_output_has_prompt_and_transcript(self) -> None:
         self.task()
         self.store.save_run(Run(

@@ -4,10 +4,13 @@ import { useApiClient } from "../../api/ApiProvider";
 import { errorSentence } from "../../api/client";
 import { listSprintEvents, STEP_FINISHED } from "../../api/sprints";
 import { ListPager } from "../../ui/ListPager";
+import { paths } from "../../app/paths";
+import { Link } from "../../app/router";
 import { Mono } from "../../ui/Mono";
 import { SectionHeading } from "../../ui/SectionHeading";
 import { Table } from "../../ui/Table";
 import { formatDayTime, humanize } from "../../ui/format";
+import { outcomeTone, outcomeWord } from "../shared/activityWords";
 
 // Design README: activity 25 at a time.
 export const STEPS_PAGE = 25;
@@ -60,12 +63,30 @@ export function SprintActivity({ sprintId, tasks, revision }) {
     setState((previous) => ({ ...previous, events: previous.events.slice(0, STEPS_PAGE), hasMore: true, loadingMore: false }));
   }, []);
 
-  const keys = new Map(tasks.map((task) => [task.id, task.task_key || task.title]));
+  const byId = new Map(tasks.map((task) => [task.id, task]));
+  // A step leads to its run on the task's Activity, or to the task.
+  const hrefOf = (event) => (event.run_id ? paths.taskRun(event.task_id, event.run_id) : paths.task(event.task_id));
   const columns = [
     { key: "when", header: "When", className: "steps__when", render: (event) => <Mono quiet>{formatDayTime(event.timestamp)}</Mono> },
-    { key: "task", header: "Task", className: "steps__task", render: (event) => <Mono quiet>{keys.get(event.task_id) ?? event.task_id}</Mono> },
-    { key: "step", header: "Step", className: "steps__step", render: (event) => <span className="secondary">{humanize(event.payload?.step)}</span> },
-    { key: "outcome", header: "Result", render: (event) => humanize(event.payload?.outcome) },
+    {
+      key: "task",
+      header: "Task",
+      className: "steps__task",
+      render: (event) => {
+        const task = byId.get(event.task_id);
+        return (
+          <Link className="row-link" href={hrefOf(event)}>
+            <Mono quiet>{task?.task_key ?? event.task_id}</Mono> {task?.title ?? ""}
+          </Link>
+        );
+      },
+    },
+    { key: "step", header: "Step", className: "steps__step", render: (event) => humanize(event.payload?.step) },
+    {
+      key: "outcome",
+      header: "Result",
+      render: (event) => <span className={`tone-${outcomeTone(event.payload?.outcome)}`}>{outcomeWord(event.payload?.outcome)}</span>,
+    },
   ];
 
   return (
@@ -81,7 +102,7 @@ export function SprintActivity({ sprintId, tasks, revision }) {
       ) : null}
       {state.events && state.events.length === 0 ? <p className="empty">No step has finished in this sprint yet.</p> : null}
       {state.events && state.events.length > 0 ? (
-        <Table caption="Finished steps" columns={columns} rows={state.events} hideHeader />
+        <Table caption="Finished steps" columns={columns} rows={state.events} rowHref={hrefOf} />
       ) : null}
       <ListPager
         more="Earlier steps"

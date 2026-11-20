@@ -2,6 +2,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { getRunOutput, listTaskRuns } from "../../api/tasks";
 import { usePagedList } from "../../api/usePagedList";
+import { useRoute } from "../../app/router";
 import { useResource } from "../../api/useResource";
 import { ListPager } from "../../ui/ListPager";
 import { Disclosure } from "../../ui/Disclosure";
@@ -11,7 +12,8 @@ import { Table } from "../../ui/Table";
 import { formatDayTime, formatDuration, formatMoney, humanize, plural, shortSha } from "../../ui/format";
 import { narrate } from "./runWords";
 import { RunLine, withDays } from "./RunStory";
-import { runBy, runResult, runSeconds } from "./taskWords";
+import { runBy, runResult, runSeconds } from "../shared/activityWords";
+import { ResultCell } from "../shared/ActivityResult";
 import { useTaskPulse } from "./useTaskPulse";
 
 // Design README: activity 25 at a time.
@@ -40,14 +42,14 @@ function RawOutput({ run }) {
   );
 }
 
-function RunOutput({ run, pulse = 0 }) {
+function RunOutput({ run, task, pulse = 0 }) {
   const output = useResource(["run-output", run.id], (client, options) => getRunOutput(client, run.id, options));
   const reload = output.reload;
   // `pulse` grows while this run is in progress and printing.
   useEffect(() => {
     if (pulse) reload();
   }, [pulse, reload]);
-  const by = runBy(run);
+  const by = runBy(run, task);
   const data = output.data;
   const lines = data ? withDays(narrate(data.transcript), run.started_at) : [];
   return (
@@ -104,6 +106,9 @@ function RunOutput({ run, pulse = 0 }) {
  * Activity: every run of the task, newest first, 25 at a time with Earlier,
  * and under the list what the picked run said and did.
  *
+ * A link may name the run to show (`?run=`, from a sprint's or a project's
+ * activity); it is picked while it is among the runs listed.
+ *
  * Picking is pressing a run's row. The picked row is shaded and its time is
  * gold, as a picked file is on the Changes tab. A row has no caret: a caret
  * says "this opens right under me", and what a run shows is under the whole
@@ -128,7 +133,12 @@ export function ActivityTab({ task, revision }) {
     mounted.current = true;
   }, [revision, reloadRuns]);
 
-  const [picked, setPicked] = useState(null);
+  const { query } = useRoute();
+  const named = query.get("run");
+  const [picked, setPicked] = useState(named);
+  useEffect(() => {
+    if (named) setPicked(named);
+  }, [named]);
   const items = runs.items ?? [];
   const selected = items.find((run) => run.id === picked) ?? items[0] ?? null;
 
@@ -163,14 +173,12 @@ export function ActivityTab({ task, revision }) {
       ),
     },
     { key: "step", header: "Step", render: (run) => humanize(run.step) },
-    { key: "by", header: "By", className: "secondary", render: (run) => runBy(run) },
+    { key: "by", header: "By", className: "secondary", render: (run) => runBy(run, task) },
     {
       key: "result",
       header: "Result",
-      render: (run) => {
-        const result = runResult(run);
-        return <span className={`tone-${result.tone}`}>{result.word}</span>;
-      },
+      className: "activity__result",
+      render: (run) => <ResultCell result={runResult(run)} />,
     },
     {
       key: "commit",
@@ -221,7 +229,9 @@ export function ActivityTab({ task, revision }) {
           onFewer={runs.collapse}
         />
       </section>
-      {selected ? <RunOutput key={selected.id} run={selected} pulse={selected.status === "running" ? pulse : 0} /> : null}
+      {selected ? (
+        <RunOutput key={selected.id} run={selected} task={task} pulse={selected.status === "running" ? pulse : 0} />
+      ) : null}
     </div>
   );
 }

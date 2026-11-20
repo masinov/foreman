@@ -1,0 +1,17 @@
+/* Activity rows, at every level: a result with its reason under it. */
+.activity-result {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.activity-result__note {
+  display: -webkit-box;
+  max-width: 48ch;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: var(--font-size-control);
+  color: var(--color-text-secondary);
+  white-space: normal;
+}

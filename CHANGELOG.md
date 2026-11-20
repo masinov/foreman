@@ -9,6 +9,8 @@ memory changes rather than versioned product releases.
 
 ### After sprint 61
 
+- Activity reads the same everywhere (owner, 2026-11-21). A run's words come from one place: a review that sends a task back says "Sent back" with the reviewer's reason in its row, not "Steer"; the engine's own steps are by "Foreman"; a filed task names who filed it; a gate the project setting decided says so; durations read "4 min 22 s". The task runs API carries each run's `outcome_detail`.
+- Every activity table names its columns and every row leads somewhere: a milestone to its sprint or task, a sprint step to that run on the task's Activity (`/tasks/{id}/activity?run={run}` opens with the run picked). Milestones show the time as well as the day. Overview says when a step passed after sending the task back ("Approved after 1 send-back").
 - The outcome numbers (ADR-0034) are on the dashboard: one line at the top of the project page for all sprints, and one under the sprint page's summary for that sprint. The line shows first-time passes, send-backs by cause, what you were asked and did, cost per merged task and time to merge, with a table by role and model behind "By role and model".
 - A decision counts as waiting only while its task is open. A task closed or cancelled at a gate used to stay "waiting" in the outcome numbers forever (ADR-0034 amendment).
 

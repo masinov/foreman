@@ -1,5 +1,36 @@
 # Backlog
 
+## Activity, one stream at three depths (owner, 2026-11-21)
+
+The owner found activity reported differently on every view: too schematic
+to say what happened, columns without names, rows that led nowhere. Claude
+reviewed the five places (workspace Recent, project Activity, sprint
+Activity, task Activity, the Agent side bar) and the owner agreed the
+proposal and its three recommendations, to review once it is built.
+
+- **One row and one vocabulary everywhere:** When (day and time) · What
+  (a sentence naming the task or sprint) · Who · Detail (the reason, commit,
+  time, cost), with named columns. One module says a run's words
+  (`frontend/src/pages/shared/activityWords.js`): "Sent back" with its
+  reason, not "Steer"; Foreman for the engine's own steps; the person's
+  name where it is recorded; "4 min 22 s".
+- **Every row leads somewhere:** a merge to the task, a step or send-back
+  to that run on the task's Activity (`?run=`), a sprint to the sprint.
+- **Slices:**
+  1. Shared words and table, named columns and row links everywhere
+     (`feat/activity-shared-words`). Done.
+  2. Sprint Activity on runs: one row per meaningful step (bookkeeping
+     steps left out), with who, the reason, time and cost, and a filter for
+     send-backs and failures. Needs `GET /sprints/{id}/runs`.
+  3. Project milestones: blocked and failed tasks, a person's decisions, a
+     sprint plan confirmed, a task closed by hand; an engine's start and
+     stop as one row saying whether it stopped by a command or without a
+     word; merges with send-backs, time and cost; filters All / Sprints /
+     Merges / Problems / Engine.
+- **Owner's choices (recommended, agreed):** engine runs folded and kept
+  under All; sprint Activity a stream of steps with a send-backs filter;
+  the engine called Foreman on the page.
+
 ## Owner decisions, 2026-11-19: the manager and people (roadmap stage 2)
 
 Settled in discussion with the owner on 2026-11-19. Stage 2 of

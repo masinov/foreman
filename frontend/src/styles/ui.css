@@ -249,9 +249,13 @@
   background: var(--color-selected);
 }
 
-/* The whole row picks, not only the control in it. */
+/* The whole row picks or leads somewhere, not only the control in it. */
 .table__row--pickable {
   cursor: pointer;
+}
+
+.table__row--pickable:hover .row-link {
+  color: var(--color-gold);
 }
 
 .table__placeholder-bar {

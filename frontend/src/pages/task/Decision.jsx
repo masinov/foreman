@@ -17,11 +17,9 @@ import {
   decisionOf,
   filedBy,
   reviewWords,
-  runBy,
-  runResult,
-  runSeconds,
   testsWords,
 } from "./taskWords";
+import { runBy, runResult, runSeconds } from "../shared/activityWords";
 
 /** The calls behind the two buttons, per kind of decision. */
 const CALLS = {
@@ -91,7 +89,7 @@ function StepBeforeFacts({ task }) {
     <>
       {before ? (
         <Fact tone={runResult(before).tone} word={`${humanize(before.workflow_step)}: ${runResult(before).word.toLowerCase()}`}>
-          {[runBy(before) ? `by ${runBy(before)}` : "", formatDuration(runSeconds(before)) ? `in ${formatDuration(runSeconds(before))}` : ""]
+          {[runBy(before, task) ? `by ${runBy(before, task)}` : "", formatDuration(runSeconds(before)) ? `in ${formatDuration(runSeconds(before))}` : ""]
             .filter(Boolean)
             .join(" ")}
         </Fact>
@@ -130,7 +128,7 @@ function UnblockFacts({ task }) {
       {task.workflow_current_step ? <Fact tone="idle">{`Stopped at ${humanize(task.workflow_current_step).toLowerCase()}`}</Fact> : null}
       {last ? (
         <Fact tone={runResult(last).tone} word={`Last run: ${humanize(last.workflow_step)}, ${runResult(last).word.toLowerCase()}`}>
-          {runBy(last) ? `by ${runBy(last)}` : ""}
+          {runBy(last, task) ? `by ${runBy(last, task)}` : ""}
         </Fact>
       ) : null}
     </>

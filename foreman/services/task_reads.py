@@ -318,6 +318,7 @@ class TaskReads:
                     backend=run.agent_backend,
                     status=run.status,
                     outcome=run.outcome,
+                    outcome_detail=run.outcome_detail,
                     commit_sha=run.commit_sha,
                     started_at=run.started_at,
                     finished_at=run.completed_at,

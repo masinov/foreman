@@ -1,5 +1,6 @@
 import { ENGINE_STATES } from "../../api/workspace";
 import { formatDuration, humanize, plural, shortSha } from "../../ui/format";
+import { FOREMAN, outcomeTone, outcomeWord, runBy, runResult, runSeconds, SENT_BACK } from "../shared/activityWords";
 
 // How the task page puts what the API says into words (design 05, 12, 13,
 // 14). Pure functions, so each sentence is tested on its own.
@@ -84,56 +85,8 @@ export function decisionOf(task, checks) {
 }
 
 // ── Runs ─────────────────────────────────────────────────────────────────
-
-const PEOPLE = new Set(["human", "dashboard", "cli"]);
-
-/** Who did a run: the model, "engine" for the engine's own steps, "a person". */
-export function runBy(run) {
-  const backend = run.backend ?? run.agent_backend;
-  if (PEOPLE.has(backend) || run.role_id === "human") return "a person";
-  if (backend === "builtin" || String(run.role_id || "").startsWith(BUILTIN)) return "engine";
-  return run.model || backend || "";
-}
-
-const GOOD = new Set(["done", "pass", "passed", "approve", "approved", "merged", "committed", "success", "succeeded", "completed", "complete", "accepted"]);
-const BAD = new Set(["fail", "failed", "failure", "error", "errored", "reject", "rejected", "deny", "denied", "changes_requested", "request_changes", "timeout", "timed_out", "cancelled", "killed", "stopped"]);
-
-/** `passed`, `failed` or `idle`: the colour an outcome is shown in. Its word says it too. */
-export function outcomeTone(outcome) {
-  const value = String(outcome || "").toLowerCase();
-  if (GOOD.has(value)) return "passed";
-  if (BAD.has(value)) return "failed";
-  return "idle";
-}
-
-// Outcomes as a person says them once they happened.
-const OUTCOME_WORDS = {
-  approve: "Approved",
-  reject: "Rejected",
-  deny: "Sent back",
-  denied: "Sent back",
-  request_changes: "Changes requested",
-  changes_requested: "Changes requested",
-  pass: "Passed",
-  fail: "Failed",
-};
-
-/** An outcome or a review decision in words: "approve" is "Approved". */
-export function outcomeWord(outcome) {
-  return OUTCOME_WORDS[String(outcome || "").toLowerCase()] ?? humanize(outcome);
-}
-
-/** A run's result in words: its outcome, or what it is doing if it has none. */
-export function runResult(run) {
-  if (run.outcome) return { tone: outcomeTone(run.outcome), word: outcomeWord(run.outcome) };
-  if (run.status === "running") return { tone: "running", word: "Running" };
-  if (run.status) return { tone: outcomeTone(run.status), word: humanize(run.status) };
-  return { tone: "idle", word: "" };
-}
-
-export function runSeconds(run) {
-  return run.duration_ms === null || run.duration_ms === undefined ? null : run.duration_ms / 1000;
-}
+// Who did a run and how it ended are said the same way everywhere
+// (`pages/shared/activityWords.js`).
 
 function runTime(run) {
   return run.started_at || run.created_at || "";
@@ -170,15 +123,19 @@ export function stepRows(task, workflow, engine = null) {
       // when that head is not the one the run before it left.
       const before = runs.filter((run) => run.commit_sha && runTime(run) < runTime(last)).pop();
       const committed = last.commit_sha && last.commit_sha !== before?.commit_sha ? shortSha(last.commit_sha) : "";
+      // A step that sent the task back before it passed says so: the last
+      // run alone would hide it.
+      const sentBack = mine.filter((run) => run !== last && SENT_BACK.has(String(run.outcome || "").toLowerCase())).length;
+      const after = sentBack ? ` after ${plural(sentBack, "send-back")}` : "";
       result = committed
         ? { tone, word: `Committed ${committed}` }
-        : { tone, word: took && word ? `${word} in ${took}` : word };
+        : { tone, word: after ? `${word}${after}` : took && word ? `${word} in ${took}` : word };
     } else {
       result = { tone: "idle", word: "Not reached" };
     }
-    let by = last ? runBy(last) : "";
+    let by = last ? runBy(last, task) : "";
     if (!by && step.role === HUMAN_GATE) by = "a person";
-    if (!by && step.role.startsWith(BUILTIN)) by = "engine";
+    if (!by && step.role.startsWith(BUILTIN)) by = FOREMAN;
     return { id: step.id, label: humanize(step.id), result, by, runs: mine.length };
   });
 }
