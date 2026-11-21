@@ -60,6 +60,7 @@ export function MilestoneTable({ caption, items, showProject = false, placeholde
       items={items}
       describe={describeMilestone}
       keyHeader="Sprint or engine"
+      wideKey
       subjectHeader="Title"
       showProject={showProject}
       rowKey={(m) => `${m.kind}:${m.at}:${m.project_id}:${m.sprint_id ?? ""}`}

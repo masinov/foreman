@@ -21,25 +21,35 @@
   width: 7rem;
 }
 
+/* A task's key, as wide as the task list's Key column; a sprint's name or
+   "Engine" needs a little more. */
 .activity-table .activity-table__key {
-  width: 7.5rem;
+  width: 4.5rem;
+}
+
+.activity-table .activity-table__key--wide {
+  width: 7rem;
 }
 
 .activity-table .activity-table__event {
-  width: 9.5rem;
+  width: 9rem;
 }
 
 .activity-table .activity-table__by {
-  width: 9.5rem;
+  width: 8.5rem;
   color: var(--color-text-secondary);
 }
 
 .activity-table .activity-table__commit {
-  width: 5.5rem;
+  width: 5rem;
 }
 
-.activity-table .activity-table__number {
+.activity-table .activity-table__took {
   width: 6.5rem;
+}
+
+.activity-table .activity-table__spend {
+  width: 4.5rem;
 }
 
 .activity-table__subject-text {
@@ -56,7 +66,8 @@
   .activity-table .activity-table__project,
   .activity-table .activity-table__by,
   .activity-table .activity-table__commit,
-  .activity-table .activity-table__number {
+  .activity-table .activity-table__took,
+  .activity-table .activity-table__spend {
     display: none;
   }
 
