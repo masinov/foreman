@@ -185,18 +185,36 @@ class TaskRuns(BaseModel):
     offset: int
 
 
-class SprintRunItem(RunItem):
-    """A run on a sprint's activity, with the task it belongs to."""
+class SprintActivityItem(BaseModel):
+    """One row of a sprint's activity: a run of one of its tasks, or what a person did to one by hand."""
 
+    #: ``run``, or ``event`` for what a person did by hand.
+    source: str
+    id: str
     task_id: str
     task_key: str | None = None
     task_title: str
+    at: str | None = None
+    step: str | None = None
+    role_id: str | None = None
+    backend: str | None = None
+    model: str | None = None
+    status: str | None = None
+    #: A run's outcome; for a person's act, ``closed``, ``cancelled`` or ``unblocked``.
+    outcome: str | None = None
+    #: Why: a reviewer's reason, a failure's message, a person's reason.
+    outcome_detail: str | None = None
+    commit_sha: str | None = None
+    duration_ms: int | None = None
+    cost_usd: float = 0.0
+    #: Who, for a person's act.
+    actor: str | None = None
 
 
-class SprintRuns(BaseModel):
-    """``GET /sprints/{id}/runs``: each meaningful step of the sprint's tasks, newest first."""
+class SprintActivity(BaseModel):
+    """``GET /sprints/{id}/activity``: what happened to the sprint's tasks, newest first."""
 
-    runs: list[SprintRunItem]
+    items: list[SprintActivityItem]
     total: int
     limit: int
     offset: int

@@ -37,16 +37,19 @@ describe("resource modules", () => {
       "GET /api/v1/workspace": { projects: [{ id: "p" }] },
       "GET /api/v1/needs-you?limit=5&offset=0": { items: [{ task_id: "t" }], total: 9 },
       "GET /api/v1/projects/p%201/needs-you?limit=5": { items: [], total: 0 },
-      "GET /api/v1/projects/p/milestones?kind=task_merged&limit=25&offset=25": { milestones: [{ kind: "task_merged" }], total: 26 },
+      "GET /api/v1/projects/p/milestones?kind=engine_stopped&kind=engine_lost&kind=engine_paused&kind=engine_resumed&limit=25&offset=25": {
+        milestones: [{ kind: "engine_stopped" }],
+        total: 26,
+      },
       "GET /api/v1/milestones?limit=10": { milestones: [], total: 0 },
     });
     const client = testClient(fetchImpl);
     expect(await getWorkspace(client)).toEqual({ projects: [{ id: "p" }] });
     expect(await listNeedsYou(client, { limit: 5, offset: 0 })).toEqual({ items: [{ task_id: "t" }], total: 9 });
     expect(await listNeedsYou(client, { projectId: "p 1", limit: 5 })).toEqual({ items: [], total: 0 });
-    const merges = MILESTONE_FILTERS.find((filter) => filter.key === "merges").kinds;
-    expect(await listMilestones(client, { projectId: "p", kinds: merges, limit: 25, offset: 25 })).toEqual({
-      items: [{ kind: "task_merged" }],
+    const engine = MILESTONE_FILTERS.find((filter) => filter.key === "engine").kinds;
+    expect(await listMilestones(client, { projectId: "p", kinds: engine, limit: 25, offset: 25 })).toEqual({
+      items: [{ kind: "engine_stopped" }],
       total: 26,
     });
     expect(await listMilestones(client, { limit: 10 })).toEqual({ items: [], total: 0 });

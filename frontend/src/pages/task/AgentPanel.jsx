@@ -9,11 +9,11 @@ import { Link } from "../../app/router";
 import { Button } from "../../ui/Button";
 import { StatusDot } from "../../ui/StatusDot";
 import { wrapTab } from "../../ui/focus";
-import { formatDayTime, formatDuration, formatMoney, humanize } from "../../ui/format";
+import { formatDayTime, formatMoney, humanize } from "../../ui/format";
 import { stageOf } from "../sprint/taskStage";
 import { narrate } from "./runWords";
 import { RunLine, withDays } from "./RunStory";
-import { runBy, runResult, runSeconds } from "../shared/activityWords";
+import { runBy, runResult, runTook } from "../shared/activityWords";
 import { agentAtWork, noteState, TellAgent } from "./TellAgent";
 import { useTaskPulse } from "./useTaskPulse";
 
@@ -86,7 +86,7 @@ function StepStory({ run, pulse }) {
 function Step({ run, task, open, pulse, onToggle }) {
   const bodyId = useId();
   const result = runResult(run);
-  const facts = [runBy(run, task), formatDuration(runSeconds(run)), run.cost_usd ? formatMoney(run.cost_usd) : null]
+  const facts = [runBy(run, task), runTook(run), run.cost_usd ? formatMoney(run.cost_usd) : null]
     .filter(Boolean)
     .join(" · ");
   return (
@@ -96,13 +96,10 @@ function Step({ run, task, open, pulse, onToggle }) {
         <span className={`agent__step-result tone-${result.tone}`}>{result.word}</span>
         <span className="agent__step-facts">{facts}</span>
       </button>
-      {result.note ? (
-        <p className="agent__step-note" title={result.note}>
-          {result.note}
-        </p>
-      ) : null}
+
       {open ? (
         <div id={bodyId} className="agent__step-body">
+          {result.note ? <p className={`agent__step-why tone-${result.tone}`}>{result.note}</p> : null}
           <StepStory run={run} pulse={pulse} />
         </div>
       ) : null}

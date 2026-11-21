@@ -308,52 +308,41 @@ class MilestoneTests(WorkspaceApiCase):
     def test_every_kind_newest_first_with_who_when_known(self) -> None:
         self.seed()
         body = self.get("/api/v1/projects/p1/milestones").json()
-        # An engine's time holding the project is one row, at its start, saying
-        # who stopped it and when.
+        # A project's milestones are its sprints' and its engine's; a merge is
+        # its sprint's activity, not a milestone.
         self.assertEqual(
             self.kinds(body),
-            [("engine_resumed", "bo"), ("engine_paused", "ana"), ("engine_run", "ana"),
-             ("sprint_started", None), ("sprint_finished", None),
-             ("task_merged", None), ("sprint_started", None)],
+            [("engine_stopped", "ana"), ("engine_resumed", "bo"), ("engine_paused", "ana"),
+             ("sprint_started", None), ("sprint_finished", None), ("sprint_started", None)],
         )
-        self.assertEqual(body["total"], 7)
-        run = body["milestones"][2]
-        self.assertEqual((run["at"], run["ended_at"], run["how"]),
-                         ("2026-01-04T12:00:00Z", "2026-01-07T00:00:01Z", "released"))
-        merged = body["milestones"][5]
-        self.assertEqual((merged["task_id"], merged["sprint_id"], merged["sprint_title"]),
-                         ("t1", "s1", "Sprint 1"))
-        self.assertTrue(merged["task_key"])
+        self.assertEqual(body["total"], 6)
+        self.assertEqual(body["milestones"][0]["at"], "2026-01-07T00:00:01Z")
         self.assertEqual(body["milestones"][3]["sprint_title"], "Sprint 2")
+        self.assertNotIn("task_id", body["milestones"][0])
         # The backlog and an engine's rejected command are not milestones.
         self.assertNotIn("Backlog", {m["sprint_title"] for m in body["milestones"]})
 
-    def test_merge_names_its_commit_and_a_finished_sprint_its_merged_count(self) -> None:
+    def test_a_finished_sprint_says_how_many_tasks_it_merged(self) -> None:
         self.seed()
-        # A merge recorded before the engine named the commit has none.
         self.task("t2", "s1", "p1", "done")
         self.event("merge-2", "t2", "p1", "engine.merge", "2026-01-02T06:00:00Z")
         self.task("t3", "s1", "p1", "cancelled")
         body = self.get("/api/v1/projects/p1/milestones").json()
-        merges = {m["task_id"]: m for m in body["milestones"] if m["kind"] == "task_merged"}
-        self.assertEqual(merges["t1"]["sha"], "abc1234def5678")
-        self.assertIsNone(merges["t2"]["sha"])
-        by_kind = {m["kind"]: m for m in body["milestones"] if m["kind"] != "task_merged"}
+        by_kind = {m["kind"]: m for m in body["milestones"]}
         self.assertEqual(by_kind["sprint_finished"]["merged_count"], 2)
-        self.assertIsNone(by_kind["sprint_finished"]["sha"])
         self.assertIsNone(by_kind["sprint_started"]["merged_count"])
 
     def test_all_projects_orders_across_them(self) -> None:
         self.seed()
         body = self.get("/api/v1/milestones").json()
-        self.assertEqual(body["total"], 9)
+        self.assertEqual(body["total"], 8)
         stamps = [m["at"] for m in body["milestones"]]
-        self.assertEqual(stamps[0], "2026-01-06T00:00:00Z")
+        self.assertEqual(stamps[0], "2026-01-07T00:00:01Z")
         self.assertEqual(body["milestones"][-1]["at"], "2026-01-01T00:00:00+00:00")
-        # An engine whose lease ran out, with nobody releasing it, was lost.
+        # An engine whose lease ran out, with nobody releasing it, was lost, at its expiry.
         lost = [m for m in body["milestones"] if m["kind"] == "engine_lost"]
-        self.assertEqual([(m["project_id"], m["at"], m["ended_at"], m["actor"]) for m in lost],
-                         [("p2", "2026-01-02T00:00:00Z", "2026-01-02T00:06:00Z", None)])
+        self.assertEqual([(m["project_id"], m["at"], m["actor"]) for m in lost],
+                         [("p2", "2026-01-02T00:06:00Z", None)])
         self.assertEqual(self.get("/api/milestones").json(), body)
 
     def test_kind_filter_repeated_or_comma_separated(self) -> None:
@@ -367,64 +356,24 @@ class MilestoneTests(WorkspaceApiCase):
     def test_paging(self) -> None:
         self.seed()
         page = self.get("/api/v1/projects/p1/milestones?limit=3&offset=2").json()
-        self.assertEqual(self.kinds(page), [("engine_run", "ana"), ("sprint_started", None), ("sprint_finished", None)])
-        self.assertEqual((page["total"], page["limit"], page["offset"]), (7, 3, 2))
+        self.assertEqual(self.kinds(page), [("engine_paused", "ana"), ("sprint_started", None), ("sprint_finished", None)])
+        self.assertEqual((page["total"], page["limit"], page["offset"]), (6, 3, 2))
 
-    def test_what_a_lead_needs_to_know_about_tasks_people_and_plans(self) -> None:
+    def test_a_confirmed_plan_names_who_confirmed_it_its_sprint_and_its_reason(self) -> None:
         self.seed()
-        # A merge says how it got there: one send-back from review, minutes, cost.
-        self.add_run("t1-dev", "t1", "p1", cost=0.25, completed_at="2026-01-01T23:00:00Z")
-        self.event("t1-start", "t1", "p1", "workflow.step_started", "2026-01-01T23:00:00Z", {"step": "develop"})
-        self.event("t1-back", "t1", "p1", "workflow.transition", "2026-01-01T23:30:00Z",
-                   {"from_step": "review", "to_step": "develop", "trigger": "completion:steer"})
-        with self.store._connection:
-            self.store._connection.execute(
-                "UPDATE events SET role_id = 'code_reviewer' WHERE id = 't1-back'")
-        self.task("t4", "s2", "p1", "blocked")
-        self.event("block", "t4", "p1", "signal.blocker", "2026-01-04T01:00:00Z",
-                   {"message": "Needs the schema from P-2."})
-        self.event("loop", "t4", "p1", "workflow.loop_limit", "2026-01-04T02:00:00Z", {"step": "review"})
-        self.store.save_run(Run(id="r-guard", task_id="t4", project_id="p1", role_id="_builtin:merge",
-                                workflow_step="merge", agent_backend="builtin", status="completed",
-                                outcome="blocked", outcome_detail="Completion evidence could not be built.",
-                                created_at="2026-01-04T03:00:00Z", completed_at="2026-01-04T03:00:00Z"))
-        self.event("unblock", "t4", "p1", "human.task_unblocked", "2026-01-04T04:00:00Z",
-                   {"by": "ana", "reason": "P-2 merged."})
-        self.event("approve", "t4", "p1", "workflow.resumed", "2026-01-04T05:00:00Z",
-                   {"decision": "approve", "deferred": True, "step": "merge_approval"})
-        self.event("auto", "t4", "p1", "workflow.resumed", "2026-01-04T05:30:00Z",
-                   {"decision": "approve", "deferred": False, "step": "merge_approval"})
-        self.event("closed", "t4", "p1", "human.task_completed", "2026-01-04T06:00:00Z",
-                   {"by": "ana", "reason": "Done by hand."})
         with self.store._connection:
             self.store._connection.execute(
                 "INSERT INTO proposals (id, project_id, proposed_by, reason, operations_json, state,"
                 " created_at, decided_by, decided_at) VALUES ('prop-1', 'p1', 'manager',"
                 " 'Two tasks reach the goal.', '[{\"kind\": \"add_task\", \"sprint_id\": \"s2\"}]',"
-                " 'confirmed', '2026-01-04T00:30:00Z', 'bo', '2026-01-04T00:40:00Z')")
+                " 'confirmed', '2026-01-04T00:30:00Z', 'bo', '2026-01-04T00:40:00Z'),"
+                " ('prop-2', 'p1', 'manager', 'Declined.', '[]', 'declined', '2026-01-04T00:30:00Z',"
+                " 'bo', '2026-01-04T00:50:00Z')")
+        body = self.get("/api/v1/projects/p1/milestones?kind=plan_confirmed").json()
+        self.assertEqual([(m["actor"], m["sprint_id"], m["sprint_title"], m["detail"]) for m in body["milestones"]],
+                         [("bo", "s2", "Sprint 2", "Two tasks reach the goal.")])
 
-        body = self.get("/api/v1/projects/p1/milestones?kind=task_blocked,task_unblocked,task_closed,"
-                        "decision_made,plan_confirmed,task_merged").json()
-        rows = [(m["kind"], m["actor"], m["detail"], m["how"]) for m in body["milestones"]]
-        self.assertEqual(rows, [
-            ("task_closed", "ana", "Done by hand.", None),
-            ("decision_made", None, "merge_approval", "approve"),
-            ("task_unblocked", "ana", "P-2 merged.", None),
-            ("task_blocked", None, "Completion evidence could not be built.", "engine"),
-            ("task_blocked", None, "review", "loop_limit"),
-            ("task_blocked", None, "Needs the schema from P-2.", "agent"),
-            ("plan_confirmed", "bo", "Two tasks reach the goal.", None),
-            ("task_merged", None, None, None),
-        ])
-        self.assertEqual(body["milestones"][6]["sprint_id"], "s2")
-        merge = body["milestones"][-1]["merge"]
-        self.assertEqual(merge["send_backs"], 1)
-        self.assertEqual(merge["send_back_causes"], {"review": 1})
-        self.assertEqual(merge["minutes_to_merge"], 60.0)
-        self.assertEqual(merge["cost_usd"], 0.25)
-        self.assertIsNone(body["milestones"][0]["merge"])
-
-    def test_an_engine_still_holding_a_lease_past_its_end_was_lost(self) -> None:
+    def test_a_running_engine_is_no_milestone_and_one_past_its_lease_was_lost(self) -> None:
         self.project("p1")
         with self.store._connection:
             self.store._connection.execute(
@@ -436,10 +385,8 @@ class MilestoneTests(WorkspaceApiCase):
                 "'2099-01-01T00:00:00Z','2099-01-01T00:05:00Z')"
             )
         body = self.get("/api/v1/projects/p1/milestones").json()
-        self.assertEqual([(m["kind"], m["ended_at"], m["how"]) for m in body["milestones"]], [
-            ("engine_run", None, "active"),
-            ("engine_lost", "2026-01-01T00:06:00Z", "active"),
-        ])
+        self.assertEqual([(m["kind"], m["at"]) for m in body["milestones"]],
+                         [("engine_lost", "2026-01-01T00:06:00Z")])
 
     def test_empty_project(self) -> None:
         self.project("p1")

@@ -61,7 +61,7 @@ export function WorkspacePage() {
       <section className="workspace__section" aria-labelledby="recent-title">
         <SectionHeading
           id="recent-title"
-          title="Recent"
+          title="Recent activity"
         />
         {recent.error ? (
           <p className="notice notice--error" role="alert">
@@ -70,7 +70,7 @@ export function WorkspacePage() {
         ) : null}
         {recentPlaceholder ? <MilestoneTable caption="Recent milestones" showProject placeholderRows={3} /> : null}
         {recent.data && recent.data.items.length === 0 ? (
-          <p className="empty">Nothing has happened yet. Sprints starting and finishing, merges and engine changes appear here.</p>
+          <p className="empty">Nothing has happened yet. Sprints starting and finishing and the engine stopping appear here.</p>
         ) : null}
         {recent.data && recent.data.items.length > 0 ? (
           <MilestoneTable caption="Recent milestones" items={recent.data.items} showProject />

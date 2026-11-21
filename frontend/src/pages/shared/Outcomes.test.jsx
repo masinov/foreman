@@ -3,7 +3,7 @@ import { fireEvent, screen, within } from "@testing-library/react";
 import { createFakeFetch, renderApp } from "../../testing/fakeApi";
 import { projectRoutes } from "../../testing/projectFixture";
 import { sprintRoutes } from "../../testing/sprintFixture";
-import { firstTimeText, minutesText, sentBackText, youText } from "./Outcomes";
+import { minutesText, outcomeParts } from "./Outcomes";
 
 function outcomesPayload(fields = {}) {
   return {
@@ -24,26 +24,38 @@ function outcomesPayload(fields = {}) {
 
 const SPRINT_OUTCOMES = "GET /api/v1/projects/foreman/outcomes?sprint=sprint-56";
 
-describe("outcome sentences", () => {
-  it("says how many merged tasks passed first time, and leaving conflicts aside only when it differs", () => {
-    expect(firstTimeText({ merged: 8, passed_first_time: 7, passed_first_time_conflicts_aside: 7 })).toBe("7 of 8");
-    expect(firstTimeText({ merged: 35, passed_first_time: 21, passed_first_time_conflicts_aside: 28 })).toBe(
-      "21 of 35 (28 leaving merge conflicts aside)",
-    );
+describe("outcome parts", () => {
+  it("says the numbers short, with the rest on hover", () => {
+    const parts = outcomeParts(outcomesPayload());
+    expect(parts.map((part) => part.text)).toEqual([
+      "7 of 8 first time",
+      "1 sent back",
+      "never asked you, you never stepped in",
+      "$0.36 per merged task",
+      "6.9 min to merge",
+    ]);
+    expect(parts[1].title).toBe("Sent back by review 1");
   });
 
-  it("lists send-backs by cause, largest first, and a person as you", () => {
-    expect(sentBackText({ tests: 0, review: 0, person: 0, merge_conflict: 0, other: 0 })).toBe("None");
-    expect(sentBackText({ tests: 2, review: 3, person: 2, merge_conflict: 15, other: 0 })).toBe(
-      "22: merge conflict 15, review 3, tests 2, you 2",
+  it("puts merge conflicts aside, causes and waits on hover", () => {
+    const parts = outcomeParts(
+      outcomesPayload({
+        tasks: { started: 41, merged: 35, passed_first_time: 21, passed_first_time_conflicts_aside: 28, not_finished: 1 },
+        send_backs: { tests: 2, review: 3, person: 2, merge_conflict: 15, other: 0 },
+        people: { decisions_asked: 3, decisions_waiting: 1, median_wait_seconds: 840, interventions: 1 },
+      }),
     );
-  });
-
-  it("says what the person was asked and did", () => {
-    expect(youText({ decisions_asked: 0, decisions_waiting: 0, interventions: 0 })).toBe("Never asked, never stepped in");
-    expect(youText({ decisions_asked: 3, decisions_waiting: 1, median_wait_seconds: 840, interventions: 1 })).toBe(
-      "Asked 3 times (median wait 14 min), 1 waiting, stepped in once",
-    );
+    expect(parts.map((part) => part.text)).toEqual([
+      "21 of 35 first time",
+      "22 sent back",
+      "asked you 3 times, you stepped in once",
+      "1 not finished",
+      "$0.36 per merged task",
+      "6.9 min to merge",
+    ]);
+    expect(parts[0].title).toBe("Merged tasks never sent back; 28 leaving merge conflicts aside");
+    expect(parts[1].title).toBe("Sent back by merge conflict 15, review 3, tests 2, you 2");
+    expect(parts[2].title).toBe("Median wait for your decision: 14 min; 1 waiting now");
   });
 
   it("reads minutes the way a person says them", () => {
@@ -60,11 +72,9 @@ describe("outcomes on the sprint page", () => {
     routes[SPRINT_OUTCOMES] = outcomesPayload();
     renderApp("/dashboard/sprints/sprint-56", createFakeFetch(routes));
     const line = await screen.findByRole("region", { name: "Outcomes" });
-    expect(line).toHaveTextContent(/First time\s*7 of 8/);
-    expect(line).toHaveTextContent(/Sent back\s*1: review 1/);
-    expect(line).toHaveTextContent(/You\s*Never asked, never stepped in/);
-    expect(line).toHaveTextContent(/Per merged task\s*\$0\.36/);
-    expect(line).toHaveTextContent(/To merge\s*6\.9 min median/);
+    expect(line).toHaveTextContent(
+      "7 of 8 first time · 1 sent back · never asked you, you never stepped in · $0.36 per merged task · 6.9 min to merge",
+    );
     expect(within(line).queryByRole("table")).toBeNull();
 
     fireEvent.click(within(line).getByRole("button", { name: "By role and model" }));
@@ -101,9 +111,7 @@ describe("outcomes on the project page", () => {
     });
     renderApp("/dashboard/projects/foreman", createFakeFetch(routes));
     const line = await screen.findByRole("region", { name: "Outcomes, all sprints" });
-    expect(line).toHaveTextContent(/^All sprints/);
-    expect(line).toHaveTextContent(/First time\s*21 of 35 \(28 leaving merge conflicts aside\)/);
-    expect(line).toHaveTextContent(/Sent back\s*22: merge conflict 15, review 3, tests 2, you 2/);
-    expect(line).toHaveTextContent(/Not finished\s*1 task/);
+    expect(line).toHaveTextContent(/^All sprints21 of 35 first time · 22 sent back/);
+    expect(line).toHaveTextContent("1 not finished");
   });
 });

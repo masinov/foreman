@@ -1,4 +1,4 @@
-import { humanize } from "../../ui/format";
+import { formatDuration, humanize } from "../../ui/format";
 
 // One vocabulary for what happened, used wherever activity is shown: the
 // task's Activity tab, its Agent side bar and Overview, the decision box and
@@ -27,6 +27,8 @@ export const stepOf = (run) => run.step ?? run.workflow_step ?? "";
 
 /** Who did a run: a model, Foreman, a person (by name where the task records it). */
 export function runBy(run, task = null) {
+  // What a person did by hand names them.
+  if (run.source === "event") return run.actor || "a person";
   const backend = backendOf(run);
   const role = roleOf(run);
   if (role === HUMAN_GATE) return backend === "human" ? "a person" : FOREMAN;
@@ -145,4 +147,49 @@ export function runResult(run) {
 
 export function runSeconds(run) {
   return run.duration_ms === null || run.duration_ms === undefined ? null : run.duration_ms / 1000;
+}
+
+/** How long a run took, said only when it was long enough to matter (a second or more). */
+export function runTook(run) {
+  const seconds = runSeconds(run);
+  return seconds !== null && seconds >= 1 ? formatDuration(seconds) : "";
+}
+
+// What a person did to a task by hand, as a sprint's activity lists it.
+const BY_HAND = {
+  closed: { tone: "idle", word: "Closed by hand" },
+  cancelled: { tone: "failed", word: "Cancelled" },
+  unblocked: { tone: "idle", word: "Unblocked" },
+};
+
+const REVIEWER = /review/;
+
+/**
+ * What happened, in a sprint's activity: a short phrase that names its step,
+ * so a row needs no step column. "Developed", "Tests passed", "Approved",
+ * "Sent back", "Merged", "Merge conflict", "Blocked", "Closed by hand".
+ * `{ tone, word, why }`; `why` is the reason, shown on hover.
+ */
+export function stepEvent(item) {
+  if (item.source === "event") {
+    const hand = BY_HAND[item.outcome] ?? { tone: "idle", word: humanize(item.outcome) };
+    return { ...hand, why: String(item.outcome_detail || "").trim() };
+  }
+  const result = runResult(item);
+  const outcome = String(item.outcome || "").toLowerCase();
+  const role = roleOf(item);
+  const step = stepOf(item);
+  const why = result.note;
+  const as = (word) => ({ tone: result.tone, word, why });
+  if (role === TESTS) {
+    if (outcome === "success") return as("Tests passed");
+    if (BAD.has(outcome)) return as("Tests failed");
+  }
+  if (REVIEWER.test(role) || REVIEWER.test(step)) {
+    if (BAD.has(outcome) || item.status === "failed") return as("Review failed");
+    return as(result.word);
+  }
+  if (role === MERGE || role === HUMAN_GATE || role === ORCHESTRATOR) return as(result.word);
+  if (outcome === "done") return as("Developed");
+  return as(result.word);
 }

@@ -905,7 +905,7 @@ describe("Activity", () => {
     // The commit the branch was at after each run; none for the engine's test run.
     expect(rows[0]).toHaveTextContent("b232eb1");
     expect(within(rows[1]).getAllByRole("cell")[4].textContent).toBe("");
-    expect(screen.getByText("4 runs, $0.72. Newest first.")).toBeInTheDocument();
+    expect(screen.getByText("4 runs, $0.72")).toBeInTheDocument();
 
     expect(await screen.findByText("Reviewed the change.")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Review" })).toBeInTheDocument();
@@ -931,7 +931,7 @@ describe("Activity", () => {
     expect(await screen.findByText("Reviewed the change.")).toBeInTheDocument();
   });
 
-  it("opens at the run a link names, and shows a send-back's reason in its row", async () => {
+  it("opens at the run a link names, with a send-back's reason on hover and above its output", async () => {
     const routes = taskRoutes({
       runs: [
         runItem("run-3", "review", {
@@ -947,9 +947,16 @@ describe("Activity", () => {
     const rows = within(table).getAllByRole("row").slice(1);
     expect(rows[1]).toHaveClass("table__row--selected");
     expect(await screen.findByText("Ran 1221 tests")).toBeInTheDocument();
-    expect(rows[0]).toHaveTextContent("Sent back");
-    expect(within(rows[0]).getByText("The log can still contain the host and port.")).toBeInTheDocument();
-    expect(rows[1]).toHaveTextContent(/Foreman\s*Passed/);
+    // One line per row: the reason is on hover, not under the row.
+    expect(within(rows[0]).getByText("Sent back")).toHaveAttribute("title", "The log can still contain the host and port.");
+    expect(rows[0]).not.toHaveTextContent("The log can");
+    expect(rows[1]).toHaveTextContent(/Foreman/);
+    expect(within(rows[1]).getByText("Passed")).toBeInTheDocument();
+
+    // Picking the send-back shows its reason above what it said and did.
+    fireEvent.click(within(rows[0]).getByText("Sent back"));
+    expect(await screen.findByText("Reviewed the change.")).toBeInTheDocument();
+    expect(document.querySelector(".run-output__why")).toHaveTextContent("The log can still contain the host and port.");
   });
 
   it("reads the list again in place when a step is registered: rows stay, the new one opens, the pick is kept", async () => {

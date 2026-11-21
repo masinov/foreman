@@ -63,7 +63,6 @@ export function SprintLayout({ sprintId, view }) {
     (apiClient, options) => getProjectWorkflow(apiClient, projectId, options),
     { enabled: view === VIEWS.board && Boolean(projectId) },
   );
-  const [revision, setRevision] = useState(0);
   const [adding, setAdding] = useState(false);
   const [writing, setWriting] = useState(false);
   const [approving, setApproving] = useState(false);
@@ -74,7 +73,6 @@ export function SprintLayout({ sprintId, view }) {
   const changed = useCallback(() => {
     reloadSprint();
     reloadTasks();
-    setRevision((value) => value + 1);
   }, [reloadSprint, reloadTasks]);
 
   async function approve(task) {
@@ -112,7 +110,7 @@ export function SprintLayout({ sprintId, view }) {
   return (
     <div className="sprint">
       <SprintHead sprint={current} onChanged={changed} />
-      <Outcomes projectId={current.project_id} sprintId={sprintId} revision={revision} />
+      <Outcomes projectId={current.project_id} sprintId={sprintId} />
       <section className="sprint__tasks" aria-labelledby="sprint-tasks">
         <SectionHeading
           id="sprint-tasks"
@@ -157,7 +155,7 @@ export function SprintLayout({ sprintId, view }) {
           <TaskBoard projectId={projectId} tasks={taskList} workflow={workflow.data} busy={approving} onApprove={approve} />
         ) : null}
       </section>
-      <SprintActivity sprintId={sprintId} revision={revision} />
+      <SprintActivity sprintId={sprintId} />
       <NewTaskDialog
         projectId={projectId}
         sprint={current}

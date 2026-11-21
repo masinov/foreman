@@ -7,7 +7,7 @@ an agent's raw output is never loaded for it.
 
 from __future__ import annotations
 
-from typing import Any, Sequence
+from typing import Any
 
 from ..domain.models import Event, Run, Task
 from ..domain.outcome_numbers import OUTCOME_EVENT_TYPES
@@ -29,16 +29,6 @@ class OutcomeStore(StoreBase):
             scope += " AND tasks.sprint_id = ?"
             params.append(sprint_id)
         return self._outcome_records(scope, params)
-
-    def outcome_records_for_tasks(
-        self, task_ids: Sequence[str]
-    ) -> tuple[list[Task], list[Run], list[Event]]:
-        """These tasks, their runs and their outcome events."""
-
-        if not task_ids:
-            return [], [], []
-        scope = f"tasks.id IN ({', '.join('?' for _ in task_ids)})"
-        return self._outcome_records(scope, list(task_ids))
 
     def _outcome_records(
         self, scope: str, params: list[Any]

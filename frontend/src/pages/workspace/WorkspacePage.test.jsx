@@ -87,7 +87,7 @@ describe("WorkspacePage", () => {
       "href",
       "/dashboard/sprints/sprint-56",
     );
-    expect(within(foremanRow).getByText("11 Nov")).toBeInTheDocument();
+    expect(within(foremanRow).getByText(/^11 Nov, \d{2}:\d{2}$/)).toBeInTheDocument();
 
     const otherRow = within(projects).getByRole("link", { name: "Other project" }).closest("tr");
     expect(within(otherRow).getByText("Not running")).toBeInTheDocument();
@@ -99,9 +99,9 @@ describe("WorkspacePage", () => {
     const recent = await screen.findByRole("table", { name: "Recent milestones" });
     const rows = within(recent).getAllByRole("row").slice(1);
     expect(rows.map(withoutClock)).toEqual([
-      "11 NovForemanSprintSprint 56 started: engine truthfulness",
-      "10 NovForemanSprintSprint 55 finished: baseline and host safety",
-      "9 NovOther projectEngineEngine paused by ana",
+      "11 NovForemanSprint 56 · engine truthfulnessStarted",
+      "10 NovForemanSprint 55 · baseline and host safetyFinished",
+      "9 NovOther projectEnginePausedana",
     ]);
   });
 

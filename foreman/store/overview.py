@@ -21,13 +21,7 @@ MILESTONE_KINDS: tuple[str, ...] = (
     "sprint_started",
     "sprint_finished",
     "plan_confirmed",
-    "task_merged",
-    "task_blocked",
-    "task_unblocked",
-    "task_closed",
-    "task_cancelled",
-    "decision_made",
-    "engine_run",
+    "engine_stopped",
     "engine_lost",
     "engine_paused",
     "engine_resumed",
@@ -51,124 +45,75 @@ SPRINT_LIST_ORDERS: dict[str, str] = {
 #: stored) order against each other, which plain text comparison does not.
 _INSTANT = "julianday({column})"
 
-# One row per milestone, from rows the engine and people already write:
-# sprint columns, proposals, runs, events, completed engine commands and the
-# engine lock's lease history. Nothing is stored for the feed itself.
+# One row per milestone: what happened to a project's sprints and to its
+# engine, the project's own level of activity. What happened to a task is the
+# sprint's activity (``RunStore.list_sprint_activity_page``), not a milestone.
+# Every row comes from rows already written: sprint columns, proposals,
+# completed engine commands and the engine lock's lease history. Nothing is
+# stored for the feed itself.
 #
-# Columns: kind, at, project, sprint, task, actor (who, when it is recorded),
-# ref (a stable id), sha (a merge's commit), merged_count (a finished
-# sprint's), detail (a reason or message), ended_at and how (see below).
+# Columns: kind, at, project, sprint, actor (who, when it is recorded), ref
+# (a stable id), merged_count (a finished sprint's) and detail (a confirmed
+# plan's reason).
 #
-# The backlog is not a sprint (ADR-0021), so it has no start or finish.
-#
-# - An engine's time holding the project is one row from its lease: started
-#   at acquiring it, ended when it was released (``engine_run``), or when it
-#   ran out with nobody releasing it, the engine having died or been killed
-#   (``engine_lost``; a lease still active past its expiry is lost too).
-#   When a ``shutdown`` command completed during it, the command names who
-#   asked. ``how`` is the lease's status.
-# - A task is blocked by the engine (a run whose outcome is ``blocked``), by
-#   its agent (``signal.blocker``), by a step with nowhere to go
-#   (``workflow.no_transition``) or by a step's visit limit
-#   (``workflow.loop_limit``); ``how`` says which, ``detail`` why.
-# - A person's decision at a gate is a resume they made (``deferred``);
-#   ``how`` is the decision, ``detail`` the step.
+# - The backlog is not a sprint (ADR-0021), so it has no start or finish.
 # - A plan confirmed is a manager proposal a person confirmed; its sprint is
-#   the one its first operation names.
+#   the one its first operation names. One that names none says what it is
+#   about in ``subject``: the backlog it files into, or the new sprint it
+#   plans.
+# - An engine stops when its lease is released (``engine_stopped``, at the
+#   release; when a ``shutdown`` command completed during the lease, the
+#   command names who asked) or when the lease runs out with nobody releasing
+#   it, the engine having died or been killed (``engine_lost``, at the
+#   expiry; a lease still active past its expiry is lost too). An engine
+#   that is running is the engine row's state, not a milestone.
 _MILESTONES_SQL = f"""
     SELECT 'sprint_started' AS kind, s.started_at AS at, s.project_id AS project_id,
-           s.id AS sprint_id, NULL AS task_id, NULL AS actor, s.id AS ref,
-           NULL AS sha, NULL AS merged_count, NULL AS detail, NULL AS ended_at,
-           NULL AS how
+           s.id AS sprint_id, NULL AS actor, s.id AS ref, NULL AS merged_count,
+           NULL AS detail, NULL AS subject
     FROM sprints s
     WHERE s.started_at IS NOT NULL AND s.kind = 'sprint'
     UNION ALL
-    SELECT 'sprint_finished', s.completed_at, s.project_id, s.id, NULL, NULL, s.id,
-           NULL,
+    SELECT 'sprint_finished', s.completed_at, s.project_id, s.id, NULL, s.id,
            (SELECT COUNT(DISTINCT e.task_id) FROM events e JOIN tasks t ON t.id = e.task_id
              WHERE t.sprint_id = s.id AND e.event_type = 'engine.merge'),
-           NULL, NULL, NULL
+           NULL, NULL
     FROM sprints s
     WHERE s.status = 'completed' AND s.completed_at IS NOT NULL
       AND s.kind = 'sprint'
     UNION ALL
     SELECT 'plan_confirmed', pr.decided_at, pr.project_id,
-           json_extract(pr.operations_json, '$[0].sprint_id'), NULL, pr.decided_by, pr.id,
-           NULL, NULL, pr.reason, NULL, NULL
+           json_extract(pr.operations_json, '$[0].sprint_id'), pr.decided_by, pr.id,
+           NULL, pr.reason,
+           CASE json_extract(pr.operations_json, '$[0].kind')
+             WHEN 'file_task' THEN 'Backlog'
+             WHEN 'plan_tasks' THEN json_extract(pr.operations_json, '$[0].new_sprint.title')
+           END
     FROM proposals pr
     WHERE pr.state = 'confirmed' AND pr.decided_at IS NOT NULL
     UNION ALL
-    SELECT 'task_merged', e.timestamp, e.project_id, t.sprint_id, e.task_id, NULL, e.id,
-           json_extract(e.payload_json, '$.sha'), NULL, NULL, NULL, NULL
-    FROM events e JOIN tasks t ON t.id = e.task_id
-    WHERE e.event_type = 'engine.merge'
-    UNION ALL
-    SELECT 'task_blocked', COALESCE(r.completed_at, r.created_at), r.project_id, t.sprint_id,
-           r.task_id, NULL, r.id, NULL, NULL, r.outcome_detail, NULL, 'engine'
-    FROM runs r JOIN tasks t ON t.id = r.task_id
-    WHERE r.outcome = 'blocked'
-    UNION ALL
-    SELECT 'task_blocked', e.timestamp, e.project_id, t.sprint_id, e.task_id, NULL, e.id,
-           NULL, NULL,
-           CASE e.event_type
-             WHEN 'signal.blocker' THEN json_extract(e.payload_json, '$.message')
-             ELSE json_extract(e.payload_json, '$.step')
-           END,
-           NULL,
-           CASE e.event_type
-             WHEN 'signal.blocker' THEN 'agent'
-             WHEN 'workflow.loop_limit' THEN 'loop_limit'
-             ELSE 'no_transition'
-           END
-    FROM events e JOIN tasks t ON t.id = e.task_id
-    WHERE e.event_type IN ('signal.blocker', 'workflow.no_transition', 'workflow.loop_limit')
-    UNION ALL
-    SELECT CASE e.event_type
-             WHEN 'human.task_completed' THEN 'task_closed'
-             WHEN 'human.task_cancelled' THEN 'task_cancelled'
-             ELSE 'task_unblocked'
-           END,
-           e.timestamp, e.project_id, t.sprint_id, e.task_id,
-           json_extract(e.payload_json, '$.by'), e.id, NULL, NULL,
-           json_extract(e.payload_json, '$.reason'), NULL, NULL
-    FROM events e JOIN tasks t ON t.id = e.task_id
-    WHERE e.event_type IN ('human.task_completed', 'human.task_cancelled', 'human.task_unblocked')
-    UNION ALL
-    SELECT 'decision_made', e.timestamp, e.project_id, t.sprint_id, e.task_id, NULL, e.id,
-           NULL, NULL, json_extract(e.payload_json, '$.step'), NULL,
-           json_extract(e.payload_json, '$.decision')
-    FROM events e JOIN tasks t ON t.id = e.task_id
-    WHERE e.event_type = 'workflow.resumed'
-      AND json_extract(e.payload_json, '$.deferred') = 1
-    UNION ALL
     SELECT CASE c.command WHEN 'pause' THEN 'engine_paused' ELSE 'engine_resumed' END,
-           COALESCE(c.completed_at, c.requested_at), c.project_id, NULL, NULL,
-           c.requested_by, c.id, NULL, NULL, NULL, NULL, NULL
+           COALESCE(c.completed_at, c.requested_at), c.project_id, NULL,
+           c.requested_by, c.id, NULL, NULL, NULL
     FROM engine_commands c
     WHERE c.status = 'completed' AND c.command IN ('pause', 'resume')
     UNION ALL
-    SELECT CASE
-             WHEN l.status = 'expired'
-               OR (l.status = 'active' AND julianday(l.expires_at) < julianday('now'))
-             THEN 'engine_lost'
-             ELSE 'engine_run'
-           END,
-           l.acquired_at, l.project_id, NULL, NULL,
+    SELECT 'engine_stopped', COALESCE(l.released_at, l.expires_at), l.project_id, NULL,
            (SELECT c.requested_by FROM engine_commands c
              WHERE c.project_id = l.project_id AND c.command = 'shutdown'
                AND c.status = 'completed'
                AND c.completed_at BETWEEN l.acquired_at
                    AND COALESCE(l.released_at, l.expires_at)
              ORDER BY c.completed_at DESC LIMIT 1),
-           l.id, NULL, NULL, NULL,
-           CASE l.status WHEN 'released' THEN COALESCE(l.released_at, l.expires_at)
-                         WHEN 'expired' THEN l.expires_at
-                         ELSE CASE WHEN julianday(l.expires_at) < julianday('now')
-                                   THEN l.expires_at END
-           END,
-           l.status
+           l.id, NULL, NULL, NULL
+    FROM leases l
+    WHERE l.resource_type = '{ENGINE_RESOURCE_TYPE}' AND l.status = 'released'
+    UNION ALL
+    SELECT 'engine_lost', l.expires_at, l.project_id, NULL, NULL, l.id, NULL, NULL, NULL
     FROM leases l
     WHERE l.resource_type = '{ENGINE_RESOURCE_TYPE}'
+      AND (l.status = 'expired'
+           OR (l.status = 'active' AND julianday(l.expires_at) < julianday('now')))
 """
 
 
@@ -182,21 +127,11 @@ class MilestoneRow:
     project_name: str
     sprint_id: str | None
     sprint_title: str | None
-    task_id: str | None
-    task_key: str | None
-    task_title: str | None
     actor: str | None
-    #: The merge commit, on a merge recorded since the engine began naming it.
-    sha: str | None = None
     #: How many tasks a finished sprint merged.
     merged_count: int | None = None
-    #: A reason or a message: why a task was blocked or closed, a plan's reason,
-    #: the step a decision was made at.
+    #: A confirmed plan's reason.
     detail: str | None = None
-    #: When an engine's time ended (``engine_run``, ``engine_lost``).
-    ended_at: str | None = None
-    #: How: a lease's status, what blocked a task, a decision.
-    how: str | None = None
 
 
 class OverviewStore(StoreBase):
@@ -506,14 +441,12 @@ class OverviewStore(StoreBase):
               FROM m
             )
             SELECT ranked.kind, ranked.at, ranked.project_id, ranked.actor,
-                   ranked.sha, ranked.merged_count, ranked.detail, ranked.ended_at, ranked.how,
+                   ranked.merged_count, ranked.detail,
                    p.name AS project_name,
-                   s.id AS sprint_id, s.title AS sprint_title,
-                   t.id AS task_id, t.task_key AS task_key, t.title AS task_title
+                   s.id AS sprint_id, COALESCE(s.title, ranked.subject) AS sprint_title
             FROM ranked
             JOIN projects p ON p.id = ranked.project_id
             LEFT JOIN sprints s ON s.id = ranked.sprint_id
-            LEFT JOIN tasks t ON t.id = ranked.task_id
             WHERE ranked.position = 1
             """
         ).fetchall()
@@ -537,15 +470,12 @@ class OverviewStore(StoreBase):
     def _milestone_select(where: str) -> str:
         return f"""
             WITH m AS ({_MILESTONES_SQL})
-            SELECT m.kind, m.at, m.project_id, m.actor, m.ref, m.sha, m.merged_count,
-                   m.detail, m.ended_at, m.how,
+            SELECT m.kind, m.at, m.project_id, m.actor, m.ref, m.merged_count, m.detail,
                    p.name AS project_name,
-                   s.id AS sprint_id, s.title AS sprint_title,
-                   t.id AS task_id, t.task_key AS task_key, t.title AS task_title
+                   s.id AS sprint_id, COALESCE(s.title, m.subject) AS sprint_title
             FROM m
             JOIN projects p ON p.id = m.project_id
             LEFT JOIN sprints s ON s.id = m.sprint_id
-            LEFT JOIN tasks t ON t.id = m.task_id
             {where}
         """
 
@@ -558,13 +488,7 @@ def _row_to_milestone(row: Any) -> MilestoneRow:
         project_name=row["project_name"],
         sprint_id=row["sprint_id"],
         sprint_title=row["sprint_title"],
-        task_id=row["task_id"],
-        task_key=row["task_key"],
-        task_title=row["task_title"],
         actor=row["actor"],
-        sha=row["sha"],
         merged_count=row["merged_count"],
         detail=row["detail"],
-        ended_at=row["ended_at"],
-        how=row["how"],
     )

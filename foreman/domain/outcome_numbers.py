@@ -248,45 +248,6 @@ class _TaskStory:
         return self.merged_at is not None
 
 
-@dataclass(frozen=True, slots=True)
-class MergeStory:
-    """How one merged task got there: what sent it back, how long, what it cost."""
-
-    send_backs: dict[str, int]
-    minutes_to_merge: float | None
-    cost_usd: float
-
-    @property
-    def send_back_count(self) -> int:
-        return sum(self.send_backs.values())
-
-    def as_dict(self) -> dict[str, Any]:
-        return {
-            "send_backs": self.send_back_count,
-            "send_back_causes": dict(self.send_backs),
-            "minutes_to_merge": self.minutes_to_merge,
-            "cost_usd": round(self.cost_usd, 4),
-        }
-
-
-def merge_story(task: Task, runs: Sequence[Run], events: Sequence[Event]) -> MergeStory:
-    """The send-backs by cause, minutes from first step to merge, and cost of one task.
-
-    ``runs`` and ``events`` are the task's own, as ``outcome_numbers`` takes them.
-    """
-
-    story = _TaskStory(task, events)
-    causes: dict[str, int] = defaultdict(int)
-    for event in story.send_backs:
-        causes[_send_back_cause(event)] += 1
-    seconds = _seconds(story.first_started_at, story.merged_at)
-    return MergeStory(
-        send_backs=dict(sorted(causes.items())),
-        minutes_to_merge=round(seconds / 60, 1) if seconds is not None else None,
-        cost_usd=sum(run.cost_usd or 0.0 for run in runs if run.task_id == task.id),
-    )
-
-
 def outcome_numbers(
     tasks: Sequence[Task], runs: Sequence[Run], events: Sequence[Event]
 ) -> OutcomeNumbers:

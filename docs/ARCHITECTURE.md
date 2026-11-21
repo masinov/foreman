@@ -490,32 +490,25 @@ bad one is a 400 `invalid_request` envelope (ADR-0019). Paged lists take
   or its creation for filed work never run. A constant number of queries
   whatever the number of projects or tasks.
 - `GET /milestones` and `GET /projects/{id}/milestones` return `milestones`
-  filtered by `kind` (repeatable or comma-separated): what a lead needs to
-  know, newest first (owner, 2026-11-21).
-  - Sprints: `sprint_started`, `sprint_finished` (with `merged_count`),
+  filtered by `kind` (repeatable or comma-separated): what happened to a
+  project's sprints and its engine, its own level of activity (owner,
+  2026-11-21). What happened to a task is its sprint's activity.
+  - `sprint_started`, `sprint_finished` (with `merged_count`),
     `plan_confirmed` (a manager proposal a person confirmed: `actor`, its
-    reason in `detail`, its sprint the one its first operation names).
-  - Tasks: `task_merged` (with `sha`, and `merge`: `send_backs`,
-    `send_back_causes`, `minutes_to_merge`, `cost_usd`, from
-    `domain.outcome_numbers.merge_story`); `task_blocked` (`how` says by
-    what: `engine` for a run whose outcome is `blocked`, `agent` for
-    `signal.blocker`, `loop_limit`, `no_transition`; `detail` why);
-    `task_unblocked`, `task_closed` (closed by hand), `task_cancelled`, each
-    with `actor` and the reason in `detail`; `decision_made` (a person's
-    decision at a gate, a deferred `workflow.resumed`: `how` is the
-    decision, `detail` the step).
-  - Engine: `engine_run` (one row per lease, at its start, `ended_at` when
-    released, `actor` who asked for the shutdown), `engine_lost` (a lease
-    that ran out with nobody releasing it, the engine having died or been
-    killed, or one still active past its expiry), `engine_paused`,
-    `engine_resumed` (`actor` is the command's `requested_by`).
+    reason in `detail`; its sprint is the one its first operation names, or
+    `sprint_title` says the backlog or the new sprint it plans).
+  - `engine_stopped` (a lease released, at its release; `actor` who asked
+    for the shutdown, when a command did), `engine_lost` (a lease that ran
+    out with nobody releasing it, at its expiry: the engine died or was
+    killed), `engine_paused`, `engine_resumed` (`actor` is the command's
+    `requested_by`). A running engine is the engine row's state, not a
+    milestone.
 
-  Each has `kind`, `at`, project, sprint and task fields, `actor`,
-  `detail`, `ended_at`, `how`, `sha`, `merged_count` and `merge` (null where
-  they do not apply). No table backs them: they are derived from sprint
-  columns, proposals, runs, events, completed `engine_commands` and the
-  engine lock's lease history (`foreman/store/overview.py`). The backlog is
-  not a sprint and has no milestones.
+  Each has `kind`, `at`, project and sprint fields, `actor`, `merged_count`
+  and `detail` (null where they do not apply). No table backs them: they are
+  derived from sprint columns, proposals, completed `engine_commands` and
+  the engine lock's lease history (`foreman/store/overview.py`). The backlog
+  is not a sprint and has no milestones.
 - `GET /projects/{id}/sprints` accepts `status` (`active`, `planned`,
   `completed`; repeatable or comma-separated), `q` (case-insensitive part of
   the title, which carries the sprint number, or of the id), `limit` and
@@ -556,11 +549,16 @@ over `foreman/repo/git.py`, with typed response models in
   `total`): `step`, `role_id`, `model`, `outcome`, `outcome_detail` (why it
   ended so: a reviewer's reason, a failure's message), `started_at`,
   `finished_at`, `duration_ms`, `cost_usd`, `tokens`, `token_usage`.
-- `GET /sprints/{id}/runs` pages the runs of a sprint's tasks the same way,
-  each with `task_id`, `task_key` and `task_title`. Runs that only keep a
-  record are left out (filing a task, marking it done, the engine's own
-  records); `only=problems` keeps send-backs, failures, merge conflicts and
-  blocks (`foreman/domain/activity.py`). It is the sprint page's Activity.
+- `GET /sprints/{id}/activity` pages what happened to a sprint's tasks,
+  newest first (`items`, `total`, `limit`, `offset`): each run that did work
+  (`source: run`, with the run's fields) and what a person did to a task by
+  hand (`source: event`, `outcome` `closed`, `cancelled` or `unblocked`,
+  `actor`, the reason in `outcome_detail`), each with `task_id`, `task_key`
+  and `task_title`. Left out: runs that only keep a record (filing, a
+  cancel's run, marking done, the engine's own records) and gate runs no
+  person decided. `only=problems` keeps send-backs, failures, merge
+  conflicts, blocks and cancels (`foreman/domain/activity.py`). It is the
+  sprint page's Activity.
 - `GET /runs/{id}/output` returns the run's `prompt` and `transcript`:
   one entry per recorded event, oldest first, as `{at, kind, text, data}`.
   `data` is what the event recorded (long strings clipped), for the page to

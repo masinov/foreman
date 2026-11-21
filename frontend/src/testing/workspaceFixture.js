@@ -27,12 +27,9 @@ export function milestone(kind, fields = {}) {
     project_name: "Foreman",
     sprint_id: null,
     sprint_title: null,
-    task_id: null,
-    task_key: null,
-    task_title: null,
     actor: null,
-    sha: null,
     merged_count: null,
+    detail: null,
     ...fields,
   };
 }

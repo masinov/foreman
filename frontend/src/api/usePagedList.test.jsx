@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 
+import { useDataRefresh } from "./ApiProvider";
 import { ApiError } from "./client";
 import { usePagedList } from "./usePagedList";
 import { renderWithApi } from "../testing/fakeApi";
@@ -18,6 +19,7 @@ function pager(calls, { fail = false } = {}) {
 
 function Probe({ load, pageSize = 3 }) {
   const [filter, setFilter] = useState("");
+  const { refresh } = useDataRefresh();
   const list = usePagedList(["things", filter], (client, options) => load(client, { ...options, filter }), {
     pageSize,
   });
@@ -43,6 +45,9 @@ function Probe({ load, pageSize = 3 }) {
       <button type="button" onClick={list.reload}>
         reload
       </button>
+      <button type="button" onClick={refresh}>
+        refresh
+      </button>
     </div>
   );
 }
@@ -65,6 +70,20 @@ describe("usePagedList", () => {
       { limit: 3, offset: 3, filter: "" },
       { limit: 10, offset: 6, filter: "" },
     ]);
+  });
+
+  it("reads again when the page's data changes, as many rows as it shows", async () => {
+    const calls = [];
+    renderWithApi(<Probe load={pager(calls)} />);
+    await waitFor(() => expect(screen.getByTestId("items")).toHaveTextContent("item-0,item-1,item-2"));
+    fireEvent.click(screen.getByRole("button", { name: "more" }));
+    await waitFor(() => expect(screen.getByTestId("items")).toHaveTextContent("item-5"));
+
+    fireEvent.click(screen.getByRole("button", { name: "refresh" }));
+    await waitFor(() => expect(calls).toHaveLength(3));
+    // Rows opened with "more" stay open: the six shown are read again at once.
+    expect(calls[2]).toEqual({ limit: 6, offset: 0, filter: "" });
+    await waitFor(() => expect(screen.getByTestId("items").textContent.split(",")).toHaveLength(6));
   });
 
   it("goes back to the first page without asking again", async () => {

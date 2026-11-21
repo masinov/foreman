@@ -161,61 +161,78 @@ class RunStore(StoreBase):
         ).fetchall()
         return [_row_to_run(row) for row in rows], int(total)
 
-    def list_sprint_runs_page(
+    def list_sprint_activity_page(
         self,
         sprint_id: str,
         *,
         limit: int,
         offset: int,
-        skip_roles: Sequence[str] = (),
-        skip_steps: Sequence[str] = (),
-        skip_outcomes: Sequence[str] = (),
+        skip_roles: Sequence[str],
+        skip_steps: Sequence[str],
+        skip_outcomes: Sequence[str],
+        gate_role: str,
+        hand_events: dict[str, str],
         problem_outcomes: Sequence[str] | None = None,
         problem_statuses: Sequence[str] = (),
-    ) -> tuple[list[Run], int]:
-        """One page of the runs of a sprint's tasks, newest first, and the total.
+    ) -> tuple[list[dict[str, Any]], int]:
+        """One page of a sprint's activity, newest first, and the total.
 
-        Runs of ``skip_roles``, at ``skip_steps`` or with ``skip_outcomes``
-        are left out. With
-        ``problem_outcomes``, only runs with one of those outcomes or with
-        one of ``problem_statuses`` are kept.
+        Runs of the sprint's tasks, less those of ``skip_roles``, at
+        ``skip_steps``, with ``skip_outcomes``, and gate runs no person
+        decided; with the events ``hand_events`` names (event type to the
+        outcome it is listed as), whose ``by`` is the actor and ``reason`` the
+        detail. With ``problem_outcomes`` only those outcomes, or runs with
+        one of ``problem_statuses``, are kept. ``foreman.domain.activity``
+        says what goes in each.
         """
 
-        where = ["t.sprint_id = ?"]
-        params: list[Any] = [sprint_id]
-        if skip_roles:
-            where.append(f"r.role_id NOT IN ({', '.join('?' for _ in skip_roles)})")
-            params.extend(skip_roles)
-        if skip_steps:
-            where.append(f"r.workflow_step NOT IN ({', '.join('?' for _ in skip_steps)})")
-            params.extend(skip_steps)
-        if skip_outcomes:
-            where.append(
-                f"COALESCE(r.outcome, '') NOT IN ({', '.join('?' for _ in skip_outcomes)})"
-            )
-            params.extend(skip_outcomes)
+        def marks(values: Sequence[str]) -> str:
+            return ", ".join("?" for _ in values) or "NULL"
+
+        hand_types = list(hand_events)
+        rows_sql = f"""
+            SELECT 'run' AS source, r.id AS id, r.task_id AS task_id,
+                   COALESCE(r.started_at, r.created_at) AS at,
+                   r.workflow_step AS step, r.role_id AS role_id,
+                   r.agent_backend AS backend, r.model AS model, r.status AS status,
+                   r.outcome AS outcome, r.outcome_detail AS outcome_detail,
+                   r.commit_sha AS commit_sha, r.duration_ms AS duration_ms,
+                   r.cost_usd AS cost_usd, NULL AS actor
+            FROM runs r JOIN tasks t ON t.id = r.task_id
+            WHERE t.sprint_id = ?
+              AND r.role_id NOT IN ({marks(skip_roles)})
+              AND r.workflow_step NOT IN ({marks(skip_steps)})
+              AND COALESCE(r.outcome, '') NOT IN ({marks(skip_outcomes)})
+              AND NOT (r.role_id = ? AND r.agent_backend <> 'human')
+            UNION ALL
+            SELECT 'event', e.id, e.task_id, e.timestamp, NULL, 'human', 'human', NULL,
+                   'completed',
+                   CASE e.event_type {" ".join("WHEN ? THEN ?" for _ in hand_types)} END,
+                   json_extract(e.payload_json, '$.reason'), NULL, NULL, 0,
+                   json_extract(e.payload_json, '$.by')
+            FROM events e JOIN tasks t ON t.id = e.task_id
+            WHERE t.sprint_id = ? AND e.event_type IN ({marks(hand_types)})
+        """
+        params: list[Any] = [sprint_id, *skip_roles, *skip_steps, *skip_outcomes, gate_role]
+        for event_type in hand_types:
+            params.extend([event_type, hand_events[event_type]])
+        params.extend([sprint_id, *hand_types])
+        where = ""
         if problem_outcomes is not None:
-            either = [f"COALESCE(r.outcome, '') IN ({', '.join('?' for _ in problem_outcomes)})"]
-            params.extend(problem_outcomes)
-            if problem_statuses:
-                either.append(f"r.status IN ({', '.join('?' for _ in problem_statuses)})")
-                params.extend(problem_statuses)
-            where.append(f"({' OR '.join(either)})")
-        clause = " AND ".join(where)
+            where = (
+                f"WHERE COALESCE(a.outcome, '') IN ({marks(problem_outcomes)})"
+                f" OR a.status IN ({marks(problem_statuses)})"
+            )
+            params.extend([*problem_outcomes, *problem_statuses])
         total = self._connection.execute(
-            f"SELECT COUNT(*) FROM runs r JOIN tasks t ON t.id = r.task_id WHERE {clause}",
-            params,
+            f"SELECT COUNT(*) FROM ({rows_sql}) a {where}", params
         ).fetchone()[0]
         rows = self._connection.execute(
-            f"""
-            SELECT r.* FROM runs r JOIN tasks t ON t.id = r.task_id
-            WHERE {clause}
-            ORDER BY r.created_at DESC, r.rowid DESC
-            LIMIT ? OFFSET ?
-            """,
+            f"SELECT a.* FROM ({rows_sql}) a {where}"
+            " ORDER BY julianday(a.at) DESC, a.id DESC LIMIT ? OFFSET ?",
             [*params, limit, offset],
         ).fetchall()
-        return [_row_to_run(row) for row in rows], int(total)
+        return [dict(row) for row in rows], int(total)
 
     def get_latest_run(self, task_id: str) -> Run | None:
         """Return the most recent run for one task, if it exists."""

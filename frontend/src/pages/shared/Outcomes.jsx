@@ -1,11 +1,11 @@
-import React, { useEffect, useRef } from "react";
+import React, { useId, useState } from "react";
 
 import { getOutcomes } from "../../api/outcomes";
 import { useResource } from "../../api/useResource";
-import { Disclosure } from "../../ui/Disclosure";
+import { Caret } from "../../ui/Caret";
 import { Mono } from "../../ui/Mono";
 import { Table } from "../../ui/Table";
-import { formatDuration, formatMoney, humanize, plural } from "../../ui/format";
+import { formatDuration, formatMoney, humanize } from "../../ui/format";
 
 import "../../styles/outcomes.css";
 
@@ -32,37 +32,49 @@ export function minutesText(minutes) {
   return formatDuration(value * 60);
 }
 
-/** "7 of 8", and what it is leaving merge conflicts aside when that differs. */
-export function firstTimeText(tasks) {
-  const merged = tasks?.merged ?? 0;
-  const first = tasks?.passed_first_time ?? 0;
-  const aside = tasks?.passed_first_time_conflicts_aside ?? first;
-  const base = `${first} of ${merged}`;
-  return aside !== first ? `${base} (${aside} leaving merge conflicts aside)` : base;
-}
-
-/** "None", or "3: review 2, tests 1", largest cause first. */
-export function sentBackText(sendBacks) {
-  const counts = CAUSES.map(([key, word]) => [word, sendBacks?.[key] ?? 0]).filter(([, count]) => count > 0);
-  const total = counts.reduce((sum, [, count]) => sum + count, 0);
-  if (!total) return "None";
-  counts.sort((a, b) => b[1] - a[1]);
-  return `${total}: ${counts.map(([word, count]) => `${word} ${count}`).join(", ")}`;
-}
-
-/** "Asked once (waited 4 min), stepped in twice", in the reader's terms. */
-export function youText(people) {
-  const asked = people?.decisions_asked ?? 0;
-  const waiting = people?.decisions_waiting ?? 0;
-  const stepped = people?.interventions ?? 0;
-  const wait = people?.median_wait_seconds;
-  const askedText = asked
-    ? `asked ${times(asked)}${wait !== null && wait !== undefined ? ` (median wait ${formatDuration(wait)})` : ""}`
-    : "never asked";
-  const waitingText = waiting ? `, ${waiting} waiting` : "";
-  const steppedText = stepped ? `stepped in ${times(stepped)}` : "never stepped in";
-  const sentence = `${askedText}${waitingText}, ${steppedText}`;
-  return sentence.charAt(0).toUpperCase() + sentence.slice(1);
+/**
+ * The line's parts, each `{ text, title }`: short enough for one line on a
+ * desktop; what does not fit is on hover (`title`).
+ */
+export function outcomeParts(data) {
+  const tasks = data?.tasks ?? {};
+  const merged = tasks.merged ?? 0;
+  const first = tasks.passed_first_time ?? 0;
+  const aside = tasks.passed_first_time_conflicts_aside ?? first;
+  const parts = [
+    {
+      text: `${first} of ${merged} first time`,
+      title: `Merged tasks never sent back${aside !== first ? `; ${aside} leaving merge conflicts aside` : ""}`,
+    },
+  ];
+  const causes = CAUSES.map(([key, word]) => [word, data?.send_backs?.[key] ?? 0]).filter(([, count]) => count > 0);
+  causes.sort((a, b) => b[1] - a[1]);
+  const sent = causes.reduce((sum, [, count]) => sum + count, 0);
+  parts.push({
+    text: sent ? `${sent} sent back` : "none sent back",
+    title: sent ? `Sent back by ${causes.map(([word, count]) => `${word} ${count}`).join(", ")}` : "",
+  });
+  const people = data?.people ?? {};
+  const asked = people.decisions_asked ?? 0;
+  const stepped = people.interventions ?? 0;
+  const wait = people.median_wait_seconds;
+  parts.push({
+    text: `${asked ? `asked you ${times(asked)}` : "never asked you"}, ${stepped ? `you stepped in ${times(stepped)}` : "you never stepped in"}`,
+    title: [
+      wait !== null && wait !== undefined ? `Median wait for your decision: ${formatDuration(wait)}` : "",
+      people.decisions_waiting ? `${people.decisions_waiting} waiting now` : "",
+    ]
+      .filter(Boolean)
+      .join("; "),
+  });
+  if (tasks.not_finished) parts.push({ text: `${tasks.not_finished} not finished`, title: "" });
+  if (merged) {
+    parts.push({ text: `${formatMoney(data.cost?.per_merged_task_usd)} per merged task`, title: "" });
+    if (data.median_minutes_to_merge !== null && data.median_minutes_to_merge !== undefined) {
+      parts.push({ text: `${minutesText(data.median_minutes_to_merge)} to merge`, title: "Median, from a task's first step to its merge" });
+    }
+  }
+  return parts;
 }
 
 /** What one role and model did, in a sentence that fits its kind of work. */
@@ -102,65 +114,52 @@ function ByRoleAndModel({ rows }) {
 
 /**
  * One line of outcome numbers (ADR-0034) for a project or one sprint, with
- * the per-role and per-model breakdown behind a click. `lead` names the scope
- * where the page does not ("All sprints" on the project page). `revision`
- * grows when the page changed, so the numbers are read again.
+ * the per-role and per-model table behind "By role and model" at its end.
+ * `lead` names the scope where the page does not ("All sprints" on the
+ * project page). The numbers read again whenever the project changes.
  */
-export function Outcomes({ projectId, sprintId = null, lead = null, revision = 0 }) {
+export function Outcomes({ projectId, sprintId = null, lead = null }) {
   const outcomes = useResource(["outcomes", projectId, sprintId ?? ""], (client, options) =>
     getOutcomes(client, projectId, { sprintId }, options),
   );
-  const reload = outcomes.reload;
-  const mounted = useRef(false);
-  useEffect(() => {
-    if (mounted.current) reload();
-    mounted.current = true;
-  }, [revision, reload]);
+  const [open, setOpen] = useState(false);
+  const tableId = useId();
 
   // The numbers are an aside: a page whose numbers cannot be read still works.
   if (outcomes.error || !outcomes.data) return null;
   const data = outcomes.data;
   const tasks = data.tasks ?? {};
-  const started = tasks.started ?? 0;
-  const merged = tasks.merged ?? 0;
-  if (!started && !merged) return null;
-
-  const items = [
-    { term: "First time", value: firstTimeText(tasks), title: "Merged tasks that were never sent back" },
-    { term: "Sent back", value: sentBackText(data.send_backs) },
-    { term: "You", value: youText(data.people) },
-  ];
-  if (tasks.not_finished) items.push({ term: "Not finished", value: plural(tasks.not_finished, "task") });
-  if (merged) {
-    items.push({ term: "Per merged task", value: <Mono>{formatMoney(data.cost?.per_merged_task_usd)}</Mono> });
-    if (data.median_minutes_to_merge !== null && data.median_minutes_to_merge !== undefined) {
-      items.push({
-        term: "To merge",
-        value: `${minutesText(data.median_minutes_to_merge)} median`,
-        title: "From a task's first step to its merge",
-      });
-    }
-  }
+  if (!tasks.started && !tasks.merged) return null;
   const rows = data.by_role_and_model ?? [];
 
   return (
     <section className="outcomes" aria-label={lead ? `Outcomes, ${lead.toLowerCase()}` : "Outcomes"}>
-      <div className="outcomes__line">
+      <p className="outcomes__line">
         {lead ? <span className="outcomes__lead">{lead}</span> : null}
-        <dl className="summary">
-          {items.map((item) => (
-            <div className="summary__item" key={item.term} title={item.title}>
-              <dt>{item.term}</dt>
-              <dd>{item.value}</dd>
-            </div>
-          ))}
-        </dl>
+        {outcomeParts(data).map((part, index) => (
+          <React.Fragment key={part.text}>
+            {index > 0 ? <span className="outcomes__dot"> · </span> : null}
+            <span className="outcomes__part" title={part.title || undefined}>
+              {part.text}
+            </span>
+          </React.Fragment>
+        ))}
+        {rows.length ? (
+          <button
+            type="button"
+            className="outcomes__toggle expander"
+            aria-expanded={open}
+            aria-controls={tableId}
+            onClick={() => setOpen((value) => !value)}
+          >
+            <Caret direction={open ? "down" : "right"} />
+            By role and model
+          </button>
+        ) : null}
+      </p>
+      <div id={tableId} hidden={!open}>
+        {open ? <ByRoleAndModel rows={rows} /> : null}
       </div>
-      {rows.length ? (
-        <Disclosure summary="By role and model" className="outcomes__more">
-          <ByRoleAndModel rows={rows} />
-        </Disclosure>
-      ) : null}
     </section>
   );
 }

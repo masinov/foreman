@@ -22,7 +22,6 @@ from ..definitions.gate_steps import (
     resolve_gate_steps,
 )
 from ..domain.models import DecisionGate, Project, Task
-from ..domain.outcome_numbers import MergeStory, merge_story
 from ..engine.control import (
     describe_engine,
 )
@@ -211,25 +210,11 @@ class WorkspaceReader:
         rows, total = self.store.page_milestones(
             project_id=project_id, kinds=kinds, limit=limit, offset=offset
         )
-        merges = self._merge_stories([row.task_id for row in rows if row.kind == "task_merged" and row.task_id])
         return {
-            "milestones": [_serialize_milestone(row, merges.get(row.task_id)) for row in rows],
+            "milestones": [_serialize_milestone(row) for row in rows],
             "total": total,
             "limit": limit,
             "offset": offset,
-        }
-
-    def _merge_stories(self, task_ids: list[str]) -> dict[str, MergeStory]:
-        """How each merged task on the page got there (ADR-0034's numbers, per task)."""
-
-        tasks, runs, events = self.store.outcome_records_for_tasks(sorted(set(task_ids)))
-        return {
-            task.id: merge_story(
-                task,
-                [run for run in runs if run.task_id == task.id],
-                [event for event in events if event.task_id == task.id],
-            )
-            for task in tasks
         }
 
     # ── workspace ─────────────────────────────────────────────────────────
@@ -335,7 +320,7 @@ def _merge_facts(task: Task) -> dict[str, Any] | None:
     }
 
 
-def _serialize_milestone(row: MilestoneRow, merge: MergeStory | None = None) -> dict[str, Any]:
+def _serialize_milestone(row: MilestoneRow) -> dict[str, Any]:
     return {
         "kind": row.kind,
         "at": row.at,
@@ -343,17 +328,9 @@ def _serialize_milestone(row: MilestoneRow, merge: MergeStory | None = None) -> 
         "project_name": row.project_name,
         "sprint_id": row.sprint_id,
         "sprint_title": row.sprint_title,
-        "task_id": row.task_id,
-        "task_key": row.task_key,
-        "task_title": row.task_title,
         "actor": row.actor,
-        "sha": row.sha if row.kind == "task_merged" else None,
         "merged_count": row.merged_count if row.kind == "sprint_finished" else None,
         "detail": row.detail,
-        "ended_at": row.ended_at,
-        "how": row.how,
-        # A merge says how it got there: its send-backs, minutes to merge and cost.
-        "merge": merge.as_dict() if merge is not None else None,
     }
 
 

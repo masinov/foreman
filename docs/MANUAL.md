@@ -1296,7 +1296,7 @@ which token filed each task.
 | `GET /api/sprints/{id}` · `PATCH` · `DELETE` | sprint detail / edit / delete |
 | `GET /api/sprints/{id}/tasks` · `POST` | list / create tasks |
 | `GET /api/sprints/{id}/events` | paginated sprint events |
-| `GET /api/sprints/{id}/runs` | each step of the sprint's tasks, newest first; `only=problems` for send-backs and failures |
+| `GET /api/sprints/{id}/activity` | what happened to the sprint's tasks, newest first: runs and what a person did by hand; `only=problems` for send-backs, failures and blocks |
 | `GET /api/sprints/{id}/stream` | **SSE** live activity (data_version-gated) |
 | `GET /api/tasks/{id}` · `PATCH` · `DELETE` | task detail / edit / delete |
 | `POST /api/tasks/{id}/stop\|cancel\|approve\|deny\|accept` | task actions; `accept` moves a `triage` task to `todo` (§14) |

@@ -61,7 +61,7 @@ export function projectRoutes({ queue = [ACTIVE, PLANNED], finished = FINISHED, 
     [milestonesUrl()]: {
       milestones: [
         milestone("sprint_started", { sprint_id: "sprint-56", sprint_title: "Sprint 56: engine truthfulness" }),
-        milestone("task_merged", { at: on("11-10"), task_id: "task-m", task_key: "FOR-12", task_title: "Merged work" }),
+        milestone("engine_stopped", { at: on("11-10"), actor: "ana" }),
       ],
       total: 2,
     },

@@ -28,16 +28,6 @@
   padding-inline: 0;
 }
 
-.milestones__when,
-.milestones__project,
-.milestones__kind {
-  white-space: nowrap;
-}
-
-.milestones__kind {
-  color: var(--color-text-secondary);
-}
-
 .list-more {
   margin-top: var(--space-2);
   padding-inline: 0;
@@ -55,17 +45,6 @@
   padding-inline: 0;
 }
 
-/* What a milestone adds under its sentence: how a merge got there, why a
-   task was blocked, a plan's reason. */
-.milestones__detail {
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  margin-top: var(--space-1);
-  font-size: var(--font-size-control);
-  color: var(--color-text-secondary);
-}
 
 /* Needs you: the surface holds only the rows; the heading sits above it. */
 /* No padding above the first row or below the last: each row's own padding
