@@ -43,6 +43,7 @@ from ..domain.activity import (
     RECORD_OUTCOMES,
     RECORD_ROLES,
     RECORD_STEPS,
+    WHO,
 )
 from ..domain.models import Event, Project, Run, Task
 from ..store import ForemanStore
@@ -327,16 +328,23 @@ class TaskReads:
         )
 
     def list_sprint_activity(
-        self, sprint_id: str, *, limit: int, offset: int, problems: bool = False
+        self,
+        sprint_id: str,
+        *,
+        limit: int,
+        offset: int,
+        problems: bool = False,
+        by: str | None = None,
     ) -> SprintActivity:
         """What happened to a sprint's tasks, newest first (``domain.activity``).
 
-        With ``problems``, only what sent a task back or stopped it.
+        With ``problems``, only what sent a task back or stopped it; with
+        ``by``, only what was done by that role, ``user`` or ``foreman``.
         """
 
         if self.store.get_sprint(sprint_id) is None:
             raise NotFoundError(f"Sprint not found: {sprint_id}")
-        rows, total = self.store.list_sprint_activity_page(
+        rows, total, present = self.store.list_sprint_activity_page(
             sprint_id,
             limit=limit,
             offset=offset,
@@ -347,6 +355,8 @@ class TaskReads:
             hand_events=HAND_EVENTS,
             problem_outcomes=sorted(PROBLEM_OUTCOMES) if problems else None,
             problem_statuses=sorted(PROBLEM_STATUSES),
+            who=WHO,
+            by=by or None,
         )
         tasks = {task.id: task for task in self.store.list_tasks(sprint_id=sprint_id)}
         items = []
@@ -359,7 +369,7 @@ class TaskReads:
                     task_title=task.title if task else row["task_id"],
                 )
             )
-        return SprintActivity(items=items, total=total, limit=limit, offset=offset)
+        return SprintActivity(items=items, total=total, limit=limit, offset=offset, who=present)
 
     def get_run_output(self, run_id: str, *, raw: bool = False) -> RunOutput:
         """What a run recorded, oldest first.

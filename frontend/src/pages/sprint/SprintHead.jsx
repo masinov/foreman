@@ -8,7 +8,9 @@ import { paths } from "../../app/paths";
 import { useNavigate } from "../../app/router";
 import { Button } from "../../ui/Button";
 import { Menu } from "../../ui/Menu";
+import { LongText } from "../../ui/LongText";
 import { Mono } from "../../ui/Mono";
+import { SectionHeading } from "../../ui/SectionHeading";
 import { formatDay, formatMoney, formatTokens } from "../../ui/format";
 import { TaskCounts } from "../shared/TaskCounts";
 import { ReasonDialog } from "../shared/ReasonDialog";
@@ -79,8 +81,10 @@ function stateSentence(sprint) {
 }
 
 /**
- * Title and goal, Edit, the state action that applies, and the summary row.
- * `onChanged` runs after a save or a state change so the page reads again.
+ * The title row (Edit, the state action that applies, More), then the goal
+ * beside the sprint's details, as a task's Overview sets what it is beside
+ * its facts. `onChanged` runs after a save or a state change so the page
+ * reads again.
  */
 export function SprintHead({ sprint, onChanged }) {
   const client = useApiClient();
@@ -106,13 +110,26 @@ export function SprintHead({ sprint, onChanged }) {
   }
 
   const totals = sprint.totals ?? {};
+  const details = [
+    { key: "state", term: "State", value: stateSentence(sprint) },
+    { key: "tasks", term: "Tasks", value: <TaskCounts counts={sprint.task_counts} /> },
+    {
+      key: "spend",
+      term: "Spend",
+      value: (
+        <Mono>
+          {formatMoney(totals.total_cost_usd)} · {formatTokens(totals.total_token_count)} tokens
+        </Mono>
+      ),
+    },
+    sprint.picks_own_tasks
+      ? { key: "foreman", term: "Started by Foreman", value: `${sprint.started_by_foreman ?? 0} of ${sprint.foreman_limit ?? 0}` }
+      : null,
+  ].filter(Boolean);
   return (
     <>
       <div className="sprint__title-row">
-        <div className="sprint__title">
-          <h1 className="page-title">{sprint.title}</h1>
-          {sprint.goal ? <p className="sprint__goal">{sprint.goal}</p> : null}
-        </div>
+        <h1 className="page-title sprint__title">{sprint.title}</h1>
         <div className="sprint__actions">
           <Button onClick={() => setEditing(true)}>Edit</Button>
           {action ? (
@@ -154,34 +171,29 @@ export function SprintHead({ sprint, onChanged }) {
           {refusal}
         </p>
       ) : null}
-      <dl className="summary">
-        <div className="summary__item">
-          <dt>State</dt>
-          <dd>{stateSentence(sprint)}</dd>
-        </div>
-        <div className="summary__item">
-          <dt>Tasks</dt>
-          <dd>
-            <TaskCounts counts={sprint.task_counts} />
-          </dd>
-        </div>
-        <div className="summary__item">
-          <dt>Spend</dt>
-          <dd>
-            <Mono>
-              {formatMoney(totals.total_cost_usd)} · {formatTokens(totals.total_token_count)} tokens
-            </Mono>
-          </dd>
-        </div>
-        {sprint.picks_own_tasks ? (
-          <div className="summary__item">
-            <dt>Started by Foreman</dt>
-            <dd>
-              {sprint.started_by_foreman ?? 0} of {sprint.foreman_limit ?? 0}
-            </dd>
-          </div>
-        ) : null}
-      </dl>
+      <div className="page-overview">
+        <section className="page-overview__main page-section" aria-labelledby="sprint-goal">
+          <SectionHeading id="sprint-goal" title="Goal" />
+          {sprint.goal ? (
+            <LongText className="sprint__goal" short>
+              {sprint.goal}
+            </LongText>
+          ) : (
+            <p className="empty">No goal is written. Edit adds one; the manager plans the sprint from it.</p>
+          )}
+        </section>
+        <section className="page-overview__aside page-section" aria-labelledby="sprint-details">
+          <SectionHeading id="sprint-details" title="Details" />
+          <dl className="details-list">
+            {details.map((row) => (
+              <div key={row.key} className="details-list__row">
+                <dt>{row.term}</dt>
+                <dd>{row.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      </div>
       <EditSprintDialog
         open={editing}
         sprint={sprint}

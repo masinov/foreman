@@ -89,8 +89,11 @@ export function deleteSprint(client, sprintId, options) {
  * carries its task's id, key and title. `problems` keeps only what sent a task
  * back or stopped it.
  */
-export function listSprintActivity(client, sprintId, { problems = false, limit, offset, ...options } = {}) {
+export function listSprintActivity(client, sprintId, { problems = false, by = null, limit, offset, ...options } = {}) {
   return client
-    .get(`/sprints/${segment(sprintId)}/activity${queryString({ only: problems ? "problems" : null, limit, offset })}`, options)
-    .then((payload) => ({ items: payload?.items ?? [], total: payload?.total ?? 0 }));
+    .get(
+      `/sprints/${segment(sprintId)}/activity${queryString({ only: problems ? "problems" : null, by: by || null, limit, offset })}`,
+      options,
+    )
+    .then((payload) => ({ items: payload?.items ?? [], total: payload?.total ?? 0, meta: { who: payload?.who ?? [] } }));
 }

@@ -22,7 +22,8 @@ import "../../styles/activity.css";
  * project, who and the numbers give way; what happened stays.
  *
  * `describe(item)` returns `{ at, project, subject: { key, title }, event:
- * { word, tone, why }, by, commit, took, spend, href }`. `keyHeader`, when
+ * { word, tone, why }, by, byTitle, commit, took, spend, href }`; By names
+ * a role, and `byTitle` (the model) is on hover. `keyHeader`, when
  * given, puts the key in a column of its own (a task's key, as narrow as
  * the task list's; `wideKey` for a sprint's name); `subjectHeader` names
  * the subject column. `numbers` lists which of commit, took and spend
@@ -86,7 +87,12 @@ export function ActivityTable({
         </span>
       ),
     },
-    { key: "by", header: "By", className: "activity-table__by", render: ({ row }) => row.by || "" },
+    {
+      key: "by",
+      header: "By",
+      className: "activity-table__by",
+      render: ({ row }) => (row.byTitle ? <span title={row.byTitle}>{row.by}</span> : row.by || ""),
+    },
     numbers.includes("commit")
       ? { key: "commit", header: "Commit", className: "activity-table__commit", render: ({ row }) => (row.commit ? <Mono quiet>{row.commit}</Mono> : "") }
       : null,

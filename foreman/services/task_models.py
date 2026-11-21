@@ -209,6 +209,8 @@ class SprintActivityItem(BaseModel):
     cost_usd: float = 0.0
     #: Who, for a person's act.
     actor: str | None = None
+    #: Who did it, as the By filter names them: ``user``, ``foreman`` or an agent's role id.
+    who: str | None = None
 
 
 class SprintActivity(BaseModel):
@@ -218,6 +220,8 @@ class SprintActivity(BaseModel):
     total: int
     limit: int
     offset: int
+    #: Every ``who`` in the sprint's activity, whatever the filters: what the By filter offers.
+    who: list[str] = []
 
 
 class TranscriptEntry(BaseModel):

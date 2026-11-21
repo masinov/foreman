@@ -130,22 +130,6 @@
   color: var(--color-text-secondary);
 }
 
-/* Overview: the main column and the details beside it. */
-.task-overview {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: var(--space-5) var(--space-6);
-}
-
-.task-overview__main {
-  display: flex;
-  flex: 999 1 var(--table-min-width);
-  flex-direction: column;
-  gap: var(--space-5);
-  min-width: 0;
-}
-
 .task-steps__step {
   white-space: nowrap;
 }
@@ -209,41 +193,8 @@
   font-size: var(--font-size-control);
 }
 
-.task-details {
-  display: flex;
-  flex: 1 1 var(--manager-width);
-  flex-direction: column;
-  gap: var(--space-5);
-  min-width: 0;
-}
-
-.task-details__list-terms {
-  margin: 0;
-}
-
 .task-details__more .disclosure__content {
   padding-top: 0;
-}
-
-.task-details__row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 3fr);
-  gap: var(--space-3);
-  padding-block: var(--space-2);
-}
-
-.task-details__row + .task-details__row {
-  border-top: var(--line-width) solid var(--color-line-row);
-}
-
-.task-details__row dt {
-  font-size: var(--font-size-control);
-  color: var(--color-text-quiet);
-}
-
-.task-details__row dd {
-  margin: 0;
-  min-width: 0;
 }
 
 .task-details__list {
@@ -258,7 +209,7 @@
 
 /* What was filed reads as prose: secondary, and no wider than a line of
    text is comfortable to read. */
-.task-overview__main .task-text {
+.page-overview__main .task-text {
   max-width: var(--text-measure);
   color: var(--color-text-secondary);
 }

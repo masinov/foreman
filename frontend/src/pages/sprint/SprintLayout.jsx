@@ -9,12 +9,11 @@ import { useResource } from "../../api/useResource";
 import { paths } from "../../app/paths";
 import { Link } from "../../app/router";
 import { Button } from "../../ui/Button";
-import { SectionHeading } from "../../ui/SectionHeading";
+import { Tabs } from "../../ui/Tabs";
 import { plural } from "../../ui/format";
 import { NewTaskDialog } from "../project/NewTaskDialog";
 import { AddFromBacklogDialog } from "./AddFromBacklogDialog";
 import { SprintActivity } from "./SprintActivity";
-import { Outcomes } from "../shared/Outcomes";
 import { SprintHead } from "./SprintHead";
 import { useProjectEngine } from "../shared/useProjectEngine";
 import { TaskBoard } from "./TaskBoard";
@@ -23,7 +22,8 @@ import { TaskList } from "./TaskList";
 import "../../styles/lists.css";
 import "../../styles/sprint.css";
 
-export const VIEWS = { list: "list", board: "board" };
+// What the page shows under its head: the tasks as a list or a board, or the activity.
+export const VIEWS = { list: "list", board: "board", activity: "activity" };
 
 /** List | Board: two links, so each view has an address. */
 function ViewToggle({ sprintId, view }) {
@@ -48,9 +48,10 @@ function ViewToggle({ sprintId, view }) {
 }
 
 /**
- * The sprint page, the same for both views (docs/design/dashboard-v7/04 and
- * 07): title, state, summary, the tasks as a list or a board, and the steps
- * that finished. Only the tasks' presentation changes with `view`.
+ * The sprint page (docs/design/dashboard-v7/04 and 07): the head (title,
+ * goal, details), then two tabs. Tasks shows them as a list or a board;
+ * Activity is what happened to them. Each tab's controls are on the tab
+ * line. Only what is under the tabs changes with `view`.
  */
 export function SprintLayout({ sprintId, view }) {
   const client = useApiClient();
@@ -107,55 +108,72 @@ export function SprintLayout({ sprintId, view }) {
   const open = current.status === SPRINT_STATUSES.planned || current.status === SPRINT_STATUSES.active;
   const taskList = tasks.data ?? [];
 
+  const tabLine = (controls) => (
+    <Tabs
+      label="Sprint"
+      controls={controls}
+      items={[
+        {
+          href: view === VIEWS.board ? paths.sprintBoard(sprintId) : paths.sprint(sprintId),
+          label: "Tasks",
+          count: tasks.data ? taskList.length : undefined,
+          current: view !== VIEWS.activity,
+        },
+        { href: paths.sprintActivity(sprintId), label: "Activity" },
+      ]}
+    />
+  );
+
   return (
     <div className="sprint">
       <SprintHead sprint={current} onChanged={changed} />
-      <Outcomes projectId={current.project_id} sprintId={sprintId} />
-      <section className="sprint__tasks" aria-labelledby="sprint-tasks">
-        <SectionHeading
-          id="sprint-tasks"
-          title="Tasks"
-          count={tasks.data ? taskList.length : undefined}
-          note={<ViewToggle sprintId={sprintId} view={view} />}
-          actions={
-            open ? (
-              <>
-                <Button onClick={() => setAdding(true)}>Add from backlog</Button>
-                <Button icon="plus" onClick={() => setWriting(true)}>
-                  New task
-                </Button>
-              </>
-            ) : null
-          }
-        />
-        {notice ? (
-          <p className={notice.error ? "notice notice--error" : "notice"} role={notice.error ? "alert" : "status"}>
-            {notice.text}
-          </p>
-        ) : null}
-        {tasks.error ? (
-          <p className="notice notice--error" role="alert">
-            {tasks.error}
-          </p>
-        ) : null}
-        {view === VIEWS.board && workflow.error ? (
-          <p className="notice notice--error" role="alert">
-            {workflow.error}
-          </p>
-        ) : null}
-        {tasks.data && taskList.length === 0 ? (
-          <p className="empty">
-            No task is planned into this sprint. {open ? "Add accepted work from the backlog." : ""}
-          </p>
-        ) : null}
-        {tasks.data && taskList.length > 0 && view === VIEWS.list ? (
-          <TaskList tasks={taskList} engine={engine} busy={approving} onApprove={approve} />
-        ) : null}
-        {tasks.data && taskList.length > 0 && view === VIEWS.board && workflow.data ? (
-          <TaskBoard projectId={projectId} tasks={taskList} workflow={workflow.data} busy={approving} onApprove={approve} />
-        ) : null}
-      </section>
-      <SprintActivity sprintId={sprintId} />
+      {view === VIEWS.activity ? (
+        <SprintActivity sprintId={sprintId} tabLine={tabLine} />
+      ) : (
+        <div className="sprint__tabs">
+          {tabLine(
+            <>
+              {open ? (
+                <>
+                  <Button onClick={() => setAdding(true)}>Add from backlog</Button>
+                  <Button icon="plus" onClick={() => setWriting(true)}>
+                    New task
+                  </Button>
+                </>
+              ) : null}
+              <ViewToggle sprintId={sprintId} view={view} />
+            </>,
+          )}
+          <div className="sprint__tab">
+            {notice ? (
+              <p className={notice.error ? "notice notice--error" : "notice"} role={notice.error ? "alert" : "status"}>
+                {notice.text}
+              </p>
+            ) : null}
+            {tasks.error ? (
+              <p className="notice notice--error" role="alert">
+                {tasks.error}
+              </p>
+            ) : null}
+            {view === VIEWS.board && workflow.error ? (
+              <p className="notice notice--error" role="alert">
+                {workflow.error}
+              </p>
+            ) : null}
+            {tasks.data && taskList.length === 0 ? (
+              <p className="empty">
+                No task is planned into this sprint. {open ? "Add accepted work from the backlog." : ""}
+              </p>
+            ) : null}
+            {tasks.data && taskList.length > 0 && view === VIEWS.list ? (
+              <TaskList tasks={taskList} engine={engine} busy={approving} onApprove={approve} />
+            ) : null}
+            {tasks.data && taskList.length > 0 && view === VIEWS.board && workflow.data ? (
+              <TaskBoard projectId={projectId} tasks={taskList} workflow={workflow.data} busy={approving} onApprove={approve} />
+            ) : null}
+          </div>
+        </div>
+      )}
       <NewTaskDialog
         projectId={projectId}
         sprint={current}

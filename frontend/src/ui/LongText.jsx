@@ -4,15 +4,16 @@ import { Caret } from "./Caret";
 
 /**
  * Text as it was written, line breaks kept. Text longer than a dozen lines
- * is folded to that height with a "Show all" under it, so a long text does
- * not push the rest of the page out of reach. Short text gets no control.
+ * (four with `short`, where a page wants less of it at first) is folded to that
+ * height with a "Show all" under it, so a long text does not push the rest
+ * of the page out of reach. Short text gets no control.
  *
  * The control must not read as one more line of the text above it: it has
  * the look of everything that opens more in place (`expander` in ui.css),
  * with a caret that points down while there is more to show and up once it
  * is all shown.
  */
-export function LongText({ children, className = "" }) {
+export function LongText({ children, className = "", short = false }) {
   const ref = useRef(null);
   const id = useId();
   const [open, setOpen] = useState(false);
@@ -29,14 +30,14 @@ export function LongText({ children, className = "" }) {
     measure();
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
-  }, [children, open]);
+  }, [children, open, short]);
 
   return (
     <div className="long-text">
       <p
         ref={ref}
         id={id}
-        className={["long-text__text", open ? "" : "long-text__text--folded", className].filter(Boolean).join(" ")}
+        className={["long-text__text", open ? "" : "long-text__text--folded", short ? "long-text__text--short" : "", className].filter(Boolean).join(" ")}
       >
         {children}
       </p>

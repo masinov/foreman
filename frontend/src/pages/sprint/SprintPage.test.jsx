@@ -39,6 +39,9 @@ function rowKeys() {
 describe("the sprint page head", () => {
   it("shows title, goal, state, counts and spend", async () => {
     await renderSprint();
+    // The goal beside the details, each under its heading, as on a task's Overview.
+    expect(screen.getByRole("heading", { name: "Goal" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Details" })).toBeInTheDocument();
     expect(screen.getByText("What the engine records is what happened.")).toBeInTheDocument();
     const summary = screen.getByText("State").closest("dl");
     expect(summary).toHaveTextContent(/State\s*Active since 11 Nov/);
@@ -80,7 +83,11 @@ describe("the view toggle", () => {
     expect(screen.getByRole("link", { name: "Board" })).toHaveAttribute("aria-current", "true");
     expect(screen.getByText("State").closest("dl").textContent).toBe(listHead);
     expect(screen.getByRole("button", { name: "Add from backlog" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Activity" })).toBeInTheDocument();
+    // Tasks is the current tab in both views; the activity is a tab of its own.
+    const tabs = screen.getByRole("navigation", { name: "Sprint" });
+    expect(within(tabs).getByRole("link", { name: /^Tasks/ })).toHaveAttribute("aria-current", "page");
+    expect(within(tabs).getByRole("link", { name: "Activity" })).toHaveAttribute("href", "/dashboard/sprints/sprint-56/activity");
+    expect(screen.queryByRole("table", { name: "Activity" })).toBeNull();
   });
 
   it("switches by clicking, without leaving the page", async () => {
@@ -414,7 +421,30 @@ describe("add from backlog", () => {
   });
 });
 
+describe("the tabs", () => {
+  it("are Tasks, with its count, and Activity, with each tab's controls on the tab line", async () => {
+    await renderSprint();
+    const tabs = screen.getByRole("navigation", { name: "Sprint" });
+    expect(within(tabs).getByRole("link", { name: /^Tasks/ })).toHaveTextContent("Tasks 5");
+    const line = tabs.parentElement;
+    expect(within(line).getByRole("button", { name: "Add from backlog" })).toBeInTheDocument();
+    expect(within(line).getByRole("group", { name: "View" })).toBeInTheDocument();
+
+    fireEvent.click(within(tabs).getByRole("link", { name: "Activity" }));
+    expect(await screen.findByText("Nothing has happened to this sprint's tasks yet.")).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/dashboard/sprints/sprint-56/activity");
+    const activityLine = screen.getByRole("navigation", { name: "Sprint" }).parentElement;
+    expect(within(activityLine).getByLabelText("By")).toBeInTheDocument();
+    expect(within(activityLine).getByRole("button", { name: "Problems" })).toBeInTheDocument();
+    expect(within(activityLine).queryByRole("button", { name: "Add from backlog" })).toBeNull();
+    expect(screen.queryByRole("table", { name: "Tasks" })).toBeNull();
+    // The head stays.
+    expect(screen.getByRole("heading", { name: "Goal" })).toBeInTheDocument();
+  });
+});
+
 describe("activity", () => {
+  const ACTIVITY = "/dashboard/sprints/sprint-56/activity";
   const page = (items, total = items.length, offset = 0) => ({ items, total, limit: 25, offset });
   const cells = (row) => within(row).getAllByRole("cell").map((cell) => cell.textContent);
 
@@ -430,7 +460,7 @@ describe("activity", () => {
       sprintRun("run-6", "t-merge", "merge", { role_id: "_builtin:merge", backend: "builtin", model: null, outcome: "success", duration_ms: 100, cost_usd: 0 }),
       sprintRun("ev-1", "t-run", null, { source: "event", outcome: "cancelled", actor: "ana", outcome_detail: "Not needed.", duration_ms: null, cost_usd: 0 }),
     ];
-    await renderSprint("/dashboard/sprints/sprint-56", sprintRoutes({ runs }));
+    await renderSprint(ACTIVITY, sprintRoutes({ runs }));
     const table = await screen.findByRole("table", { name: "Activity" });
     expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
       "When",
@@ -443,12 +473,14 @@ describe("activity", () => {
     ]);
     const rows = within(table).getAllByRole("row").slice(1);
     // The key has its own column, as in the task list above.
-    expect(cells(rows[0]).slice(1)).toEqual(["FOR-14", "Title of FOR-14", "Sent back", "sonnet-5-5", "7 s", "$0.12"]);
+    expect(cells(rows[0]).slice(1)).toEqual(["FOR-14", "Title of FOR-14", "Sent back", "Code reviewer", "7 s", "$0.12"]);
+    // By names the role; the model is on hover.
+    expect(within(rows[0]).getByText("Code reviewer")).toHaveAttribute("title", "sonnet-5-5");
     // Why is on hover, not under the row.
     expect(within(rows[0]).getByText("Sent back")).toHaveAttribute("title", "The log can still contain the host and port.");
     expect(rows[0]).not.toHaveTextContent("The log can");
     expect(cells(rows[1]).slice(3)).toEqual(["Tests passed", "Foreman", "7 s", ""]);
-    expect(cells(rows[2]).slice(3)).toEqual(["Developed", "sonnet-5-5", "4 min 22 s", "$0.12"]);
+    expect(cells(rows[2]).slice(3)).toEqual(["Developed", "Developer", "4 min 22 s", "$0.12"]);
     // A step that took under a second says nothing about it.
     expect(cells(rows[3]).slice(3)).toEqual(["Merged", "Foreman", "", ""]);
     expect(cells(rows[4]).slice(3)).toEqual(["Cancelled", "ana", "", ""]);
@@ -462,7 +494,7 @@ describe("activity", () => {
       sprintRun("run-9", "t-merge", "develop"),
       sprintRun("ev-1", "t-run", null, { source: "event", outcome: "closed", actor: "ana" }),
     ];
-    await renderSprint("/dashboard/sprints/sprint-56", sprintRoutes({ runs }));
+    await renderSprint(ACTIVITY, sprintRoutes({ runs }));
     const rows = within(await screen.findByRole("table", { name: "Activity" })).getAllByRole("row").slice(1);
     expect(within(rows[0]).getByRole("link")).toHaveAttribute("href", "/dashboard/tasks/t-merge/activity?run=run-9");
     expect(within(rows[1]).getByRole("link")).toHaveAttribute("href", "/dashboard/tasks/t-run");
@@ -475,7 +507,7 @@ describe("activity", () => {
   it("shows only problems when asked, and says when there were none", async () => {
     const routes = sprintRoutes({ runs: [sprintRun("run-9", "t-merge", "review")] });
     routes[PROBLEM_STEPS_URL] = page([]);
-    const { fetchImpl } = await renderSprint("/dashboard/sprints/sprint-56", routes);
+    const { fetchImpl } = await renderSprint(ACTIVITY, routes);
     await screen.findByRole("table", { name: "Activity" });
     fireEvent.click(screen.getByRole("button", { name: "Problems" }));
     expect(await screen.findByText("Nothing was sent back, failed or was blocked in this sprint.")).toBeInTheDocument();
@@ -487,7 +519,7 @@ describe("activity", () => {
     const routes = sprintRoutes();
     routes[STEPS_URL] = page(many("a", 25), 29);
     routes["GET /api/v1/sprints/sprint-56/activity?limit=25&offset=25"] = page(many("b", 4), 29, 25);
-    await renderSprint("/dashboard/sprints/sprint-56", routes);
+    await renderSprint(ACTIVITY, routes);
     const rowCount = () => within(screen.getByRole("table", { name: "Activity" })).getAllByRole("row").length - 1;
     await waitFor(() => expect(rowCount()).toBe(25));
     fireEvent.click(screen.getByRole("button", { name: "Earlier" }));
@@ -497,8 +529,30 @@ describe("activity", () => {
     expect(rowCount()).toBe(25);
   });
 
+  it("keeps what one role, Foreman or users did, offering who appears in the sprint", async () => {
+    const routes = sprintRoutes({ runs: [sprintRun("run-9", "t-merge", "review", { role_id: "code_reviewer" })] });
+    routes[STEPS_URL].who = ["code_reviewer", "developer", "foreman", "user"];
+    routes["GET /api/v1/sprints/sprint-56/activity?by=developer&limit=25&offset=0"] = page([sprintRun("run-7", "t-merge", "develop")]);
+    routes["GET /api/v1/sprints/sprint-56/activity?only=problems&by=developer&limit=25&offset=0"] = page([]);
+    await renderSprint(ACTIVITY, routes);
+    await screen.findByRole("table", { name: "Activity" });
+    const by = screen.getByLabelText("By");
+    expect(within(by).getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "Everyone",
+      "Code reviewer",
+      "Developer",
+      "Foreman",
+      "Users",
+    ]);
+    fireEvent.change(by, { target: { value: "developer" } });
+    expect(await screen.findByText("Developed")).toBeInTheDocument();
+    expect(screen.queryByText("Sent back")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Problems" }));
+    expect(await screen.findByText("Nothing in this sprint matches these filters.")).toBeInTheDocument();
+  });
+
   it("says when nothing has happened yet", async () => {
-    await renderSprint();
+    await renderSprint(ACTIVITY);
     expect(await screen.findByText("Nothing has happened to this sprint's tasks yet.")).toBeInTheDocument();
   });
 });

@@ -15,6 +15,7 @@ export const paths = {
   projectSettingsRoles: (projectId) => `${paths.project(projectId)}/settings/roles`,
   sprint: (sprintId) => `${DASHBOARD}/sprints/${enc(sprintId)}`,
   sprintBoard: (sprintId) => `${paths.sprint(sprintId)}/board`,
+  sprintActivity: (sprintId) => `${paths.sprint(sprintId)}/activity`,
   task: (taskId) => `${DASHBOARD}/tasks/${enc(taskId)}`,
   taskChanges: (taskId) => `${paths.task(taskId)}/changes`,
   taskChecks: (taskId) => `${paths.task(taskId)}/checks`,

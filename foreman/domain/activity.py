@@ -14,6 +14,8 @@ merge conflict, a block, a cancel.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 #: Roles whose runs only keep a record.
 RECORD_ROLES: frozenset[str] = frozenset({"_builtin:mark_done"})
 
@@ -43,3 +45,41 @@ PROBLEM_OUTCOMES: frozenset[str] = frozenset(
 
 #: Run statuses that mean the run did not finish.
 PROBLEM_STATUSES: frozenset[str] = frozenset({"failed", "killed"})
+
+#: Who did a row, as the activity's By filter names them: ``user`` for what
+#: a person did (by hand, at a gate, through a channel), ``foreman`` for the
+#: engine's own steps (tests, a merge, a gate decided by setting), and an
+#: agent's role id for its work.
+BY_USER = "user"
+BY_FOREMAN = "foreman"
+
+#: Backends and roles through which a person acts.
+USER_BACKENDS: frozenset[str] = frozenset({"human", "dashboard", "cli", "api"})
+USER_ROLES: frozenset[str] = frozenset({"human"})
+
+#: Backends of the engine's own steps, and the prefix of its built-in roles.
+ENGINE_BACKENDS: frozenset[str] = frozenset({"builtin", "orchestrator", "engine"})
+BUILTIN_PREFIX = "_builtin:"
+
+
+@dataclass(frozen=True)
+class WhoRule:
+    """How a row's ``who`` is told: the words for a person and the engine, and what marks each."""
+
+    user: str
+    foreman: str
+    user_backends: tuple[str, ...]
+    user_roles: tuple[str, ...]
+    engine_backends: tuple[str, ...]
+    builtin_prefix: str
+
+
+#: The rule the sprint's activity uses.
+WHO = WhoRule(
+    user=BY_USER,
+    foreman=BY_FOREMAN,
+    user_backends=tuple(sorted(USER_BACKENDS)),
+    user_roles=tuple(sorted(USER_ROLES)),
+    engine_backends=tuple(sorted(ENGINE_BACKENDS)),
+    builtin_prefix=BUILTIN_PREFIX,
+)

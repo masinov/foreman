@@ -1,6 +1,6 @@
 import { ENGINE_STATES } from "../../api/workspace";
 import { formatDuration, humanize, plural, shortSha } from "../../ui/format";
-import { FOREMAN, outcomeTone, outcomeWord, runBy, runResult, runSeconds, SENT_BACK } from "../shared/activityWords";
+import { FOREMAN, outcomeTone, outcomeWord, runResult, runRole, runSeconds, SENT_BACK } from "../shared/activityWords";
 
 // How the task page puts what the API says into words (design 05, 12, 13,
 // 14). Pure functions, so each sentence is tested on its own.
@@ -133,10 +133,12 @@ export function stepRows(task, workflow, engine = null) {
     } else {
       result = { tone: "idle", word: "Not reached" };
     }
-    let by = last ? runBy(last, task) : "";
+    // By names the role, the model on hover, as every activity list does.
+    const who = last ? runRole(last, task) : { text: "", title: "" };
+    let by = who.text;
     if (!by && step.role === HUMAN_GATE) by = "a user";
     if (!by && step.role.startsWith(BUILTIN)) by = FOREMAN;
-    return { id: step.id, label: humanize(step.id), result, by, runs: mine.length };
+    return { id: step.id, label: humanize(step.id), result, by, byTitle: who.title, runs: mine.length };
   });
 }
 

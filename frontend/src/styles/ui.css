@@ -190,6 +190,93 @@
   border-bottom-color: var(--color-gold);
 }
 
+/* The current tab's own controls sit on the tab line, at its right; on a
+   narrow screen they wrap under the tabs, still above the line. */
+.tabs--with-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  column-gap: var(--space-5);
+}
+
+.tabs__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+  padding-block: var(--space-1);
+}
+
+.tabs__label {
+  color: var(--color-text-quiet);
+  font-size: var(--font-size-control);
+}
+
+.tabs__select {
+  width: auto;
+  font-size: var(--font-size-control);
+}
+
+/* An overview: a wide column, and the facts beside it (a task's, a
+   sprint's). Below the two widths together the facts go under. */
+.page-overview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-5) var(--space-6);
+}
+
+.page-overview__main {
+  display: flex;
+  flex: 999 1 var(--table-min-width);
+  flex-direction: column;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.page-overview__aside {
+  display: flex;
+  flex: 1 1 var(--manager-width);
+  flex-direction: column;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.page-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/* Facts as label and value, one per row, faint lines between. */
+.details-list {
+  margin: 0;
+}
+
+.details-list__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 3fr);
+  gap: var(--space-3);
+  padding-block: var(--space-2);
+}
+
+.details-list__row + .details-list__row {
+  border-top: var(--line-width) solid var(--color-line-row);
+}
+
+.details-list__row dt {
+  font-size: var(--font-size-control);
+  color: var(--color-text-quiet);
+}
+
+.details-list__row dd {
+  margin: 0;
+  min-width: 0;
+}
+
 /* Table: header line, faint row lines, none above the first or below the last */
 .table-scroll {
   width: 100%;
@@ -475,6 +562,10 @@
   -webkit-line-clamp: var(--long-text-lines);
   line-clamp: var(--long-text-lines);
   overflow: hidden;
+}
+
+.long-text__text--short {
+  --long-text-lines: var(--long-text-lines-short);
 }
 
 .long-text__toggle {

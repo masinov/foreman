@@ -1,5 +1,5 @@
 import { stepRows } from "../task/taskWords";
-import { FOREMAN, runBy, runResult } from "./activityWords";
+import { FOREMAN, runBy, runResult, runRole, whoWord } from "./activityWords";
 
 // A run as the task's own record has it (`workflow_step`, `agent_backend`).
 const run = (fields) => ({ status: "completed", agent_backend: "claude_code", model: "sonnet-5-5", ...fields });
@@ -21,6 +21,20 @@ describe("who did a run", () => {
     const gate = { role_id: "_builtin:human_gate", workflow_step: "merge_approval", model: null };
     expect(runBy(run({ ...gate, agent_backend: "human", outcome: "approve" }))).toBe("a user");
     expect(runBy(run({ ...gate, agent_backend: "builtin", outcome: "approve" }))).toBe(FOREMAN);
+  });
+});
+
+describe("who did a run, by role", () => {
+  it("names an agent's role with its model on hover, and everyone else as runBy does", () => {
+    expect(runRole(run({ role_id: "code_reviewer" }))).toEqual({ text: "Code reviewer", title: "sonnet-5-5" });
+    expect(runRole(run({ role_id: "_builtin:run_tests", agent_backend: "builtin", model: null }))).toEqual({ text: FOREMAN, title: "" });
+    expect(runRole(run({ role_id: "developer", agent_backend: "engine", model: null }))).toEqual({ text: FOREMAN, title: "" });
+    expect(runRole({ source: "event", actor: "ana" })).toEqual({ text: "ana", title: "" });
+    expect(runRole({ source: "event", actor: "dashboard" })).toEqual({ text: "a user", title: "" });
+  });
+
+  it("names the By filter's choices", () => {
+    expect(["developer", "code_reviewer", "foreman", "user"].map(whoWord)).toEqual(["Developer", "Code reviewer", FOREMAN, "Users"]);
   });
 });
 
