@@ -17,13 +17,9 @@ import {
 } from "../../testing/projectFixture";
 import { engine, milestone, on, ORDER_ITEM, UNBLOCK_ITEM, workspacePayload } from "../../testing/workspaceFixture";
 
-// A milestone says the day and the clock time; the clock depends on the
+// An activity row says the day and the clock time; the clock depends on the
 // machine's time zone, so rows are compared without it.
 const CLOCK = /, \d{2}:\d{2}/;
-const withoutClock = (row) => {
-  expect(row.textContent).toMatch(CLOCK);
-  return row.textContent.replace(CLOCK, "");
-};
 
 
 function withEngine(routes, state, task = null) {
@@ -426,47 +422,61 @@ describe("the Sprints tab", () => {
 
 describe("the Activity tab", () => {
   const sprintKinds = ["sprint_started", "sprint_finished", "plan_confirmed"];
+  const cells = (row) => within(row).getAllByRole("cell").map((cell) => cell.textContent.replace(CLOCK, ""));
 
-  it("names the merge commit and how many tasks a finished sprint merged", async () => {
+  it("is one line per row: when, the sprint or the engine, what happened, who", async () => {
     const routes = projectRoutes();
     routes[milestonesUrl()] = {
       milestones: [
+        milestone("engine_lost", {}),
+        milestone("engine_stopped", { actor: "ana" }),
         milestone("sprint_finished", { sprint_id: "sprint-55", sprint_title: "Sprint 55: baseline", merged_count: 3 }),
-        milestone("task_merged", { task_id: "task-m", task_key: "FOR-12", sha: "abc1234def5678" }),
-        milestone("task_merged", { task_id: "task-n", task_key: "FOR-11" }),
-        milestone("sprint_finished", { sprint_id: "sprint-54", sprint_title: "Sprint 54", merged_count: 1 }),
+        milestone("plan_confirmed", { sprint_id: "sprint-57", sprint_title: "Sprint 57: structure", actor: "masis", detail: "Eight tasks reach the goal." }),
+        milestone("sprint_started", { sprint_id: "sprint-54", sprint_title: "Sprint 54" }),
+        milestone("engine_paused", { actor: "bo" }),
       ],
-      total: 4,
+      total: 6,
     };
     await renderProject("/dashboard/projects/foreman/activity", routes);
-    const table = await screen.findByRole("table", { name: "Milestones" });
-    expect(within(table).getAllByRole("row").slice(1).map(withoutClock)).toEqual([
-      "11 NovSprintSprint 55 finished: baseline 3 tasks merged",
-      "11 NovMergeFOR-12 merged abc1234",
-      "11 NovMergeFOR-11 merged",
-      "11 NovSprintSprint 54 finished 1 task merged",
+    const table = await screen.findByRole("table", { name: "Activity" });
+    expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
+      "When",
+      "Sprint or engine",
+      "What happened",
+      "By",
     ]);
+    const rows = within(table).getAllByRole("row").slice(1);
+    expect(rows.map(cells)).toEqual([
+      ["11 Nov", "Engine", "Died", ""],
+      ["11 Nov", "Engine", "Stopped", "ana"],
+      ["11 Nov", "Sprint 55 · baseline", "Finished", ""],
+      ["11 Nov", "Sprint 57 · structure", "Plan confirmed", "masis"],
+      ["11 Nov", "Sprint 54", "Started", ""],
+      ["11 Nov", "Engine", "Paused", "bo"],
+    ]);
+    // Why is on hover, never under the row.
+    expect(within(rows[2]).getByText("Finished")).toHaveAttribute("title", "3 tasks merged");
+    expect(within(rows[3]).getByText("Plan confirmed")).toHaveAttribute("title", "Eight tasks reach the goal.");
+    expect(within(rows[0]).getByText("Died")).toHaveClass("tone-failed");
+    // A sprint's row leads to the sprint; the engine's leads nowhere.
+    expect(rows[2]).toHaveClass("table__row--pickable");
+    expect(rows[1]).not.toHaveClass("table__row--pickable");
+    fireEvent.click(within(rows[2]).getByText("Finished"));
+    expect(window.location.pathname).toBe("/dashboard/sprints/sprint-55");
   });
 
-  it("shows milestones newest first", async () => {
+  it("shows the project's sprint and engine events newest first", async () => {
     await renderProject("/dashboard/projects/foreman/activity");
-    const table = await screen.findByRole("table", { name: "Milestones" });
-    expect(within(table).getAllByRole("row").slice(1).map(withoutClock)).toEqual([
-      "11 NovSprintSprint 56 started: engine truthfulness",
-      "10 NovMergeFOR-12 merged: Merged work",
+    const table = await screen.findByRole("table", { name: "Activity" });
+    expect(within(table).getAllByRole("row").slice(1).map((row) => cells(row).slice(1, 4))).toEqual([
+      ["Sprint 56 · engine truthfulness", "Started", ""],
+      ["Engine", "Stopped", "ana"],
     ]);
-    expect(within(table).getByRole("link", { name: "FOR-12 merged: Merged work" })).toHaveAttribute("href", "/dashboard/tasks/task-m");
+    expect(within(table).getByRole("link", { name: "Sprint 56 · engine truthfulness" })).toHaveAttribute(
+      "href",
+      "/dashboard/sprints/sprint-56",
+    );
     expect(screen.queryByRole("button", { name: "Earlier" })).toBeNull();
-  });
-
-  it("names its columns, and a row leads to what it is about", async () => {
-    await renderProject("/dashboard/projects/foreman/activity");
-    const table = await screen.findByRole("table", { name: "Milestones" });
-    expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["When", "Kind", "What happened"]);
-    expect(table.querySelector("thead")).not.toHaveClass("visually-hidden");
-    const merge = within(table).getAllByRole("row")[2];
-    fireEvent.click(within(merge).getByText("Merge"));
-    expect(window.location.pathname).toBe("/dashboard/tasks/task-m");
   });
 
   it("pages 25 at a time with Earlier", async () => {
@@ -477,58 +487,13 @@ describe("the Activity tab", () => {
     routes[milestonesUrl()] = { milestones: all.slice(0, 25), total: 30 };
     routes[milestonesUrl({ offset: 25 })] = { milestones: all.slice(25), total: 30 };
     const { fetchImpl } = await renderProject("/dashboard/projects/foreman/activity", routes);
-    const table = await screen.findByRole("table", { name: "Milestones" });
+    const table = await screen.findByRole("table", { name: "Activity" });
     expect(within(table).getAllByRole("row")).toHaveLength(26);
     fireEvent.click(screen.getByRole("button", { name: "Earlier" }));
     await waitFor(() => expect(within(table).getAllByRole("row")).toHaveLength(31));
-    expect(screen.getByText("Engine paused by person 29")).toBeInTheDocument();
+    expect(screen.getByText("person 29")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Earlier" })).toBeNull();
     expect(calls(fetchImpl, "GET", milestonesUrl({ offset: 25 }).slice(4))).toHaveLength(1);
-  });
-
-  it("says what a lead needs to know: how a merge went, why a task was blocked, who decided, how the engine stopped", async () => {
-    const routes = projectRoutes();
-    const at = (hour) => `2026-11-20T${hour}:00:00Z`;
-    routes[milestonesUrl()] = {
-      milestones: [
-        milestone("task_merged", {
-          task_id: "task-m",
-          task_key: "ASS-16",
-          task_title: "Operator launcher",
-          sha: "c6aa057aa",
-          merge: { send_backs: 1, send_back_causes: { review: 1 }, minutes_to_merge: 15, cost_usd: 0.45 },
-        }),
-        milestone("task_merged", { task_id: "task-n", task_key: "ASS-17", merge: { send_backs: 0, send_back_causes: {}, minutes_to_merge: 6.5, cost_usd: 0.19 } }),
-        milestone("task_blocked", { task_id: "task-b", task_key: "FOR-22", how: "agent", detail: "Depends on the backlog task. Resume after it merges." }),
-        milestone("task_blocked", { task_id: "task-b", task_key: "FOR-22", how: "loop_limit", detail: "review" }),
-        milestone("decision_made", { task_id: "task-b", task_key: "FOR-22", how: "deny", detail: "merge_approval" }),
-        milestone("task_closed", { task_id: "task-c", task_key: "FOR-49", actor: "masis", detail: "Merged by hand at de26c2d. Suite passed." }),
-        milestone("plan_confirmed", { sprint_id: "sprint-57", sprint_title: "Sprint 57: structure", actor: "masis", detail: "Eight tasks reach the goal. More follows." }),
-        milestone("engine_run", { at: at("21"), ended_at: at("22"), actor: "masis", how: "released" }),
-        milestone("engine_lost", { at: at("19"), ended_at: "2026-11-21T03:00:00Z", how: "expired" }),
-        milestone("engine_run", { at: at("23"), ended_at: null, how: "active" }),
-      ],
-      total: 10,
-    };
-    await renderProject("/dashboard/projects/foreman/activity", routes);
-    const table = await screen.findByRole("table", { name: "Milestones" });
-    const rows = within(table).getAllByRole("row").slice(1);
-    const what = rows.map((row) => within(row).getAllByRole("cell")[2].textContent);
-    const kinds = rows.map((row) => within(row).getAllByRole("cell")[1].textContent);
-    expect(what[0]).toBe("ASS-16 merged: Operator launcher c6aa057 after 1 send-back (review) · 15 min · $0.45");
-    expect(what[1]).toBe("ASS-17 merged first time · 6 min 30 s · $0.19");
-    expect(what[2]).toBe("FOR-22 blocked The agent: Depends on the backlog task.");
-    expect(what[3]).toBe("FOR-22 blocked Review ran as many times as the workflow allows");
-    expect(what[4]).toBe("FOR-22 merge approval: sent back by a person");
-    expect(what[5]).toBe("FOR-49 closed by hand by masis Merged by hand at de26c2d.");
-    expect(what[6]).toBe("Plan for Sprint 57 confirmed by masis Eight tasks reach the goal.");
-    expect(what[7]).toMatch(/^Engine ran \d{2}:\d{2}–\d{2}:\d{2} \(1 h\), stopped by masis$/);
-    expect(what[8]).toMatch(/^Engine stopped without a word after \d{2}:\d{2}–21 Nov, \d{2}:\d{2} \(8 h\)/);
-    expect(what[9]).toMatch(/^Engine running since \d{2}:\d{2}$/);
-    expect(kinds).toEqual(["Merge", "Merge", "Problem", "Problem", "Person", "Person", "Plan", "Engine", "Problem", "Engine"]);
-    // A plan leads to its sprint; an engine row leads nowhere.
-    expect(rows[6]).toHaveClass("table__row--pickable");
-    expect(rows[7]).not.toHaveClass("table__row--pickable");
   });
 
   it("filters by kind on the server", async () => {
@@ -537,25 +502,19 @@ describe("the Activity tab", () => {
       milestones: [milestone("sprint_finished", { sprint_id: "sprint-55", sprint_title: "Sprint 55: baseline" })],
       total: 1,
     };
-    routes[milestonesUrl({ kinds: ["task_merged"] })] = { milestones: [], total: 0 };
+    routes[milestonesUrl({ kinds: ["engine_stopped", "engine_lost", "engine_paused", "engine_resumed"] })] = { milestones: [], total: 0 };
     const { fetchImpl } = await renderProject("/dashboard/projects/foreman/activity", routes);
     const filters = screen.getByRole("group", { name: "Show" });
-    expect(within(filters).getAllByRole("button").map((button) => button.textContent)).toEqual([
-      "All",
-      "Sprints",
-      "Merges",
-      "Problems",
-      "Engine",
-    ]);
+    expect(within(filters).getAllByRole("button").map((button) => button.textContent)).toEqual(["All", "Sprints", "Engine"]);
     expect(within(filters).getByRole("button", { name: "All" })).toHaveAttribute("aria-pressed", "true");
 
     fireEvent.click(within(filters).getByRole("button", { name: "Sprints" }));
-    expect(await screen.findByText("Sprint 55 finished: baseline")).toBeInTheDocument();
+    expect(await screen.findByText("Sprint 55 · baseline")).toBeInTheDocument();
     expect(within(filters).getByRole("button", { name: "Sprints" })).toHaveAttribute("aria-pressed", "true");
     expect(calls(fetchImpl, "GET", milestonesUrl({ kinds: sprintKinds }).slice(4))).toHaveLength(1);
 
-    fireEvent.click(within(filters).getByRole("button", { name: "Merges" }));
-    expect(await screen.findByText("No task has been merged yet.")).toBeInTheDocument();
+    fireEvent.click(within(filters).getByRole("button", { name: "Engine" }));
+    expect(await screen.findByText("The engine has not stopped, paused or died yet.")).toBeInTheDocument();
   });
 });
 

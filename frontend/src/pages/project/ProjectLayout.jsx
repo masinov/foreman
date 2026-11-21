@@ -119,7 +119,7 @@ export function ProjectLayout({ projectId, children }) {
           noSprint={Boolean(project) && !project.active_sprint}
           onChanged={changed}
         />
-        <Outcomes projectId={projectId} lead="All sprints" revision={revision} />
+        <Outcomes projectId={projectId} lead="All sprints" />
       </div>
       <NeedsYou
         projectId={projectId}

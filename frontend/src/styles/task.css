@@ -566,3 +566,8 @@
 .task-details__list li + li {
   margin-top: var(--space-1);
 }
+
+/* Why the picked run ended as it did, above what it said and did. */
+.run-output__why {
+  margin: 0 0 var(--space-3);
+}

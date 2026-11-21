@@ -84,12 +84,13 @@ export function deleteSprint(client, sprintId, options) {
 }
 
 /**
- * One page of a sprint's activity: each meaningful step of its tasks, newest
- * first, as `{ items, total }`. Each run carries its task's id, key and title.
- * `problems` keeps only send-backs and failures.
+ * One page of a sprint's activity, newest first, as `{ items, total }`: each
+ * run of its tasks that did work, and what a person did to one by hand. Each
+ * carries its task's id, key and title. `problems` keeps only what sent a task
+ * back or stopped it.
  */
-export function listSprintRuns(client, sprintId, { problems = false, limit, offset, ...options } = {}) {
+export function listSprintActivity(client, sprintId, { problems = false, limit, offset, ...options } = {}) {
   return client
-    .get(`/sprints/${segment(sprintId)}/runs${queryString({ only: problems ? "problems" : null, limit, offset })}`, options)
-    .then((payload) => ({ items: payload?.runs ?? [], total: payload?.total ?? 0 }));
+    .get(`/sprints/${segment(sprintId)}/activity${queryString({ only: problems ? "problems" : null, limit, offset })}`, options)
+    .then((payload) => ({ items: payload?.items ?? [], total: payload?.total ?? 0 }));
 }

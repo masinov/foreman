@@ -2,40 +2,36 @@
 
 ## Activity, one stream at three depths (owner, 2026-11-21)
 
-The owner found activity reported differently on every view: too schematic
-to say what happened, columns without names, rows that led nowhere. Claude
-reviewed the five places (workspace Recent, project Activity, sprint
-Activity, task Activity, the Agent side bar) and the owner agreed the
-proposal and its three recommendations, to review once it is built.
+Built in three slices the same day, then redesigned after the owner's
+review: rows of two and three lines, too much for a summary, titles full on
+one page and cut on another, and a project list that mixed sprints, tasks
+and the engine ("I want you to notice these things by yourself"). The
+design that replaced it (`feat/activity-one-row`):
 
-- **One row and one vocabulary everywhere:** When (day and time) · What
-  (a sentence naming the task or sprint) · Who · Detail (the reason, commit,
-  time, cost), with named columns. One module says a run's words
-  (`frontend/src/pages/shared/activityWords.js`): "Sent back" with its
-  reason, not "Steer"; Foreman for the engine's own steps; the person's
-  name where it is recorded; "4 min 22 s".
-- **Every row leads somewhere:** a merge to the task, a step or send-back
-  to that run on the task's Activity (`?run=`), a sprint to the sprint.
-- **Slices:**
-  1. Shared words and table, named columns and row links everywhere
-     (`feat/activity-shared-words`). Done.
-  2. Sprint Activity on runs: one row per meaningful step (bookkeeping
-     steps left out), with who, the reason, time and cost, and a filter for
-     send-backs and failures, on `GET /sprints/{id}/runs`
-     (`feat/sprint-activity-runs`). Done.
-  3. Project milestones: blocked tasks, a person's decisions, a sprint
-     plan confirmed, a task closed by hand, unblocked or cancelled; an
-     engine's start and stop as one row saying whether it stopped by a
-     command or without a word; merges with send-backs, time and cost;
-     filters All / Sprints / Merges / Problems / Engine
-     (`feat/project-milestones`). Done.
-- **Not done, left for the owner's review:** a person's name on a decision
-  at a gate (the resume does not record who; stage 2 identity will), and a
-  task whose agent run failed outright (the engine retries; a failure that
-  ends a task blocks it, which is shown).
-- **Owner's choices (recommended, agreed):** engine runs folded and kept
-  under All; sprint Activity a stream of steps with a send-backs filter;
-  the engine called Foreman on the page.
+- **One row shape for every activity list**
+  (`frontend/src/pages/shared/ActivityTable.jsx`): When · (Project) ·
+  Subject · What happened · By · (numbers). One line per row, the same
+  column widths on every page; the subject (key, then title) is cut with
+  "…" at the same width everywhere, all of it on hover; why (a reviewer's
+  reason, a failure, a person's reason) is on hover and on the page the
+  row leads to, never under the row. At phone width the project, who and
+  the numbers give way; what happened stays.
+- **Each level lists its own things:** workspace Recent and project
+  Activity, sprints (planned, started, finished) and the engine (stopped,
+  paused, resumed, died); sprint Activity, each task's development, tests,
+  review, a person's decision, merge, block, close or cancel, with a
+  Problems filter (`GET /sprints/{id}/activity`); task Activity, every run,
+  with the reason above the picked run's output. A sprint-level phrase
+  names its step ("Tests passed", "Sent back", "Merged"), so there is no
+  step column.
+- **Left out:** bookkeeping runs, gates decided by the project setting, a
+  running engine (the engine row says it), a merge's numbers (the outcome
+  line says how the work went).
+- **Everywhere:** "Activity" as the title, "Earlier" for more, day and time,
+  lists that read again while the page is open (`usePagedList` follows the
+  page's refresh), and the outcome line as one short sentence.
+- **Not done:** a person's name on a decision at a gate (the resume does not
+  record who; stage 2 identity will).
 
 ## Owner decisions, 2026-11-19: the manager and people (roadmap stage 2)
 

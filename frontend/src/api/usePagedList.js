@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { useApiClient } from "./ApiProvider";
+import { useApiClient, useDataRefresh } from "./ApiProvider";
 import { errorSentence } from "./client";
 
 function keyOf(key) {
@@ -21,9 +21,14 @@ const EMPTY = { items: null, total: null, meta: null, error: null, loading: fals
  * `collapse()` goes back to the first page without asking the server; `expanded` says there is something to go back from.
  * A new key or `reload()` starts again from the first page; a response for
  * an older key or an earlier reload is ignored. `error` is a sentence.
+ *
+ * Like `useResource`, the list reads again on every `refresh()` from
+ * `useDataRefresh` (the project changed while the page is open). It reads as
+ * many rows as it shows, so rows opened with Earlier stay open.
  */
 export function usePagedList(key, loadPage, { pageSize, enabled = true }) {
   const client = useApiClient();
+  const { generation: refreshes } = useDataRefresh();
   const listKey = keyOf(key);
   const loadRef = useRef(loadPage);
   loadRef.current = loadPage;
@@ -31,6 +36,10 @@ export function usePagedList(key, loadPage, { pageSize, enabled = true }) {
   const more = useRef(null);
   const [reloads, setReloads] = useState(0);
   const [state, setState] = useState({ key: listKey, ...EMPTY, loading: enabled });
+  // How many rows this key shows, so a refresh reads them all again.
+  const shown = useRef({ key: listKey, count: 0 });
+  if (shown.current.key !== listKey) shown.current = { key: listKey, count: 0 };
+  shown.current.count = state.key === listKey && state.items ? state.items.length : shown.current.count;
 
   useEffect(() => {
     generation.current += 1;
@@ -47,7 +56,13 @@ export function usePagedList(key, loadPage, { pageSize, enabled = true }) {
         : { key: listKey, ...EMPTY, loading: true },
     );
     Promise.resolve()
-      .then(() => loadRef.current(client, { limit: pageSize, offset: 0, signal: controller.signal }))
+      .then(() =>
+        loadRef.current(client, {
+          limit: Math.max(pageSize, shown.current.key === listKey ? shown.current.count : 0),
+          offset: 0,
+          signal: controller.signal,
+        }),
+      )
       .then(
         (page) => {
           if (generation.current !== current) return;
@@ -63,7 +78,7 @@ export function usePagedList(key, loadPage, { pageSize, enabled = true }) {
         },
       );
     return () => controller.abort();
-  }, [client, listKey, reloads, enabled, pageSize]);
+  }, [client, listKey, reloads, refreshes, enabled, pageSize]);
 
   const loadMore = useCallback(
     (limit = pageSize) => {

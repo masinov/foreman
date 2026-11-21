@@ -13,13 +13,15 @@ export const ACTIVITY_PAGE = 25;
 
 // What is true when a filter finds nothing, and what would appear.
 const EMPTY = {
-  all: "Nothing has happened yet. Sprints starting and finishing, merges and engine changes appear here.",
-  sprints: "No sprint has started or finished yet.",
-  merges: "No task has been merged yet.",
-  engine: "The engine has not been started, paused or stopped yet.",
+  all: "Nothing has happened yet. Sprints being planned, starting and finishing, and the engine stopping, appear here.",
+  sprints: "No sprint has been planned, started or finished yet.",
+  engine: "The engine has not stopped, paused or died yet.",
 };
 
-/** The Activity tab: the project's milestones, newest first. */
+/**
+ * The Activity tab: what happened to the project's sprints and its engine,
+ * newest first. What happened to a task is on its sprint's page.
+ */
 export function ActivityTab({ projectId }) {
   const [filterKey, setFilterKey] = useState("all");
   const filter = MILESTONE_FILTERS.find((entry) => entry.key === filterKey);
@@ -34,8 +36,7 @@ export function ActivityTab({ projectId }) {
     <section className="activity" aria-labelledby="activity-title">
       <SectionHeading
         id="activity-title"
-        title="Milestones"
-        note="Each step is on the sprint page; agent output is on the task page."
+        title="Activity"
         actions={
           <div className="filter-group" role="group" aria-label="Show">
             {MILESTONE_FILTERS.map((entry) => (
@@ -58,11 +59,11 @@ export function ActivityTab({ projectId }) {
           {list.error}
         </p>
       ) : null}
-      {placeholder ? <MilestoneTable caption="Milestones" placeholderRows={3} /> : null}
+      {placeholder ? <MilestoneTable caption="Activity" placeholderRows={3} /> : null}
       {list.items && list.items.length === 0 ? (
         <p className="empty">{EMPTY[filterKey]}</p>
       ) : null}
-      {list.items && list.items.length > 0 ? <MilestoneTable caption="Milestones" items={list.items} /> : null}
+      {list.items && list.items.length > 0 ? <MilestoneTable caption="Activity" items={list.items} /> : null}
       <ListPager
         more="Earlier"
         loading={list.loadingMore}

@@ -26,8 +26,8 @@ from .task_models import (
     RunItem,
     RunOutput,
     SizeFact,
-    SprintRunItem,
-    SprintRuns,
+    SprintActivity,
+    SprintActivityItem,
     TaskChanges,
     TaskChecks,
     TaskRuns,
@@ -36,6 +36,8 @@ from .task_models import (
 )
 from .errors import NotFoundError, InvalidRequestError
 from ..domain.activity import (
+    GATE_ROLE,
+    HAND_EVENTS,
     PROBLEM_OUTCOMES,
     PROBLEM_STATUSES,
     RECORD_OUTCOMES,
@@ -324,39 +326,40 @@ class TaskReads:
             offset=offset,
         )
 
-    def list_sprint_runs(
+    def list_sprint_activity(
         self, sprint_id: str, *, limit: int, offset: int, problems: bool = False
-    ) -> SprintRuns:
-        """Each meaningful step of a sprint's tasks, newest first (``domain.activity``).
+    ) -> SprintActivity:
+        """What happened to a sprint's tasks, newest first (``domain.activity``).
 
-        With ``problems``, only the runs that sent a task back or stopped it.
+        With ``problems``, only what sent a task back or stopped it.
         """
 
         if self.store.get_sprint(sprint_id) is None:
             raise NotFoundError(f"Sprint not found: {sprint_id}")
-        runs, total = self.store.list_sprint_runs_page(
+        rows, total = self.store.list_sprint_activity_page(
             sprint_id,
             limit=limit,
             offset=offset,
             skip_roles=sorted(RECORD_ROLES),
             skip_steps=sorted(RECORD_STEPS),
             skip_outcomes=sorted(RECORD_OUTCOMES),
+            gate_role=GATE_ROLE,
+            hand_events=HAND_EVENTS,
             problem_outcomes=sorted(PROBLEM_OUTCOMES) if problems else None,
             problem_statuses=sorted(PROBLEM_STATUSES),
         )
         tasks = {task.id: task for task in self.store.list_tasks(sprint_id=sprint_id)}
         items = []
-        for run in runs:
-            task = tasks.get(run.task_id)
+        for row in rows:
+            task = tasks.get(row["task_id"])
             items.append(
-                SprintRunItem(
-                    **_run_fields(run),
-                    task_id=run.task_id,
+                SprintActivityItem(
+                    **row,
                     task_key=task.task_key if task else None,
-                    task_title=task.title if task else run.task_id,
+                    task_title=task.title if task else row["task_id"],
                 )
             )
-        return SprintRuns(runs=items, total=total, limit=limit, offset=offset)
+        return SprintActivity(items=items, total=total, limit=limit, offset=offset)
 
     def get_run_output(self, run_id: str, *, raw: bool = False) -> RunOutput:
         """What a run recorded, oldest first.

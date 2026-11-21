@@ -248,15 +248,10 @@
   font-size: var(--font-size-control);
 }
 
-/* Why a step ended as it did (a reason for sending it back, a failure). */
-.agent__step-note {
-  display: -webkit-box;
-  margin: 0;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
+/* Why a step ended as it did, first in the opened step. */
+.agent__step-why {
+  margin: 0 0 var(--space-2);
   font-size: var(--font-size-control);
-  color: var(--color-text-secondary);
 }
 
 .agent__step-body {

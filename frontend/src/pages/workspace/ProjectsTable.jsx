@@ -5,8 +5,8 @@ import { Link } from "../../app/router";
 import { Mono } from "../../ui/Mono";
 import { StatusDot } from "../../ui/StatusDot";
 import { Table } from "../../ui/Table";
-import { formatDay, formatMoney, humanize } from "../../ui/format";
-import { MilestoneText } from "../shared/milestones";
+import { formatDayTime, formatMoney, humanize } from "../../ui/format";
+import { milestoneSentence } from "../shared/milestones";
 import { TaskCounts } from "../shared/TaskCounts";
 import { engineWords } from "../shared/words";
 
@@ -57,8 +57,14 @@ function LastChangeCell({ milestone }) {
   if (!milestone) return <span className="quiet">nothing yet</span>;
   return (
     <div className="cell-stack">
-      <MilestoneText milestone={milestone} short />
-      <span className="quiet">{formatDay(milestone.at)}</span>
+      {milestone.sprint_id ? (
+        <Link className="row-link" href={paths.sprint(milestone.sprint_id)}>
+          {milestoneSentence(milestone)}
+        </Link>
+      ) : (
+        <span>{milestoneSentence(milestone)}</span>
+      )}
+      <span className="quiet">{formatDayTime(milestone.at)}</span>
     </div>
   );
 }

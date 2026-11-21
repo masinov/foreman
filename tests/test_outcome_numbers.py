@@ -370,7 +370,7 @@ class OutcomeTimesTests(unittest.TestCase):
     """The store writes timestamps ending in ``Z``; Python 3.10 must read them too."""
 
     def test_times_ending_in_z_are_read(self) -> None:
-        from foreman.domain.outcome_numbers import merge_story
+        from foreman.domain.outcome_numbers import outcome_numbers
 
         task = Task(id="t", project_id="p", sprint_id="s", title="T", status="done")
 
@@ -378,9 +378,8 @@ class OutcomeTimesTests(unittest.TestCase):
             return Event(id=eid, run_id="r", task_id="t", project_id="p", event_type=kind,
                          timestamp=stamp, role_id=None, payload=payload)
 
-        story = merge_story(task, [], [
+        numbers = outcome_numbers([task], [], [
             event("e1", "workflow.step_started", "2026-11-20T17:00:00.000001Z", step="develop"),
             event("e2", "engine.merge", "2026-11-20T17:15:00Z"),
         ])
-        self.assertEqual(story.minutes_to_merge, 15.0)
-
+        self.assertEqual(numbers.median_minutes_to_merge, 15.0)

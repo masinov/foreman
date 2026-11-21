@@ -6,14 +6,12 @@ import { useRoute } from "../../app/router";
 import { useResource } from "../../api/useResource";
 import { ListPager } from "../../ui/ListPager";
 import { Disclosure } from "../../ui/Disclosure";
-import { Mono } from "../../ui/Mono";
 import { SectionHeading } from "../../ui/SectionHeading";
-import { Table } from "../../ui/Table";
-import { formatDayTime, formatDuration, formatMoney, humanize, plural, shortSha } from "../../ui/format";
+import { formatDayTime, formatMoney, humanize, plural, shortSha } from "../../ui/format";
 import { narrate } from "./runWords";
 import { RunLine, withDays } from "./RunStory";
-import { runBy, runResult, runSeconds } from "../shared/activityWords";
-import { ResultCell } from "../shared/ActivityResult";
+import { ActivityTable } from "../shared/ActivityTable";
+import { runBy, runResult, runTook } from "../shared/activityWords";
 import { useTaskPulse } from "./useTaskPulse";
 
 // Design README: activity 25 at a time.
@@ -50,6 +48,7 @@ function RunOutput({ run, task, pulse = 0 }) {
     if (pulse) reload();
   }, [pulse, reload]);
   const by = runBy(run, task);
+  const { note: why, tone } = runResult(run);
   const data = output.data;
   const lines = data ? withDays(narrate(data.transcript), run.started_at) : [];
   return (
@@ -60,6 +59,7 @@ function RunOutput({ run, task, pulse = 0 }) {
         title={humanize(run.step)}
         note={[by ? `by ${by}` : null, formatDayTime(run.started_at)].filter(Boolean).join(" · ")}
       />
+      {why ? <p className={`run-output__why tone-${tone}`}>{why}</p> : null}
       {output.error ? (
         <p className="notice notice--error" role="alert">
           {output.error}
@@ -155,45 +155,20 @@ export function ActivityTab({ task, revision }) {
     known.current = new Set(ids);
   }, [runs.items]);
 
-  const columns = [
-    {
-      key: "when",
-      header: "When",
-      className: "task-runs__when",
-      render: (run) => (
-        <button
-          type="button"
-          className="file-pick"
-          aria-pressed={run === selected}
-          aria-label={`${humanize(run.step)}, ${formatDayTime(run.started_at) || "not started"}`}
-          onClick={() => setPicked(run.id)}
-        >
-          <Mono quiet>{formatDayTime(run.started_at) || "not started"}</Mono>
-        </button>
-      ),
-    },
-    { key: "step", header: "Step", render: (run) => humanize(run.step) },
-    { key: "by", header: "By", className: "secondary", render: (run) => runBy(run, task) },
-    {
-      key: "result",
-      header: "Result",
-      className: "activity__result",
-      render: (run) => <ResultCell result={runResult(run)} />,
-    },
-    {
-      key: "commit",
-      header: "Commit",
-      className: "secondary",
-      render: (run) => (run.commit_sha ? <Mono quiet>{shortSha(run.commit_sha)}</Mono> : null),
-    },
-    { key: "took", header: "Took", numeric: true, render: (run) => <Mono quiet>{formatDuration(runSeconds(run))}</Mono> },
-    {
-      key: "spend",
-      header: "Spend",
-      numeric: true,
-      render: (run) => (run.cost_usd ? <Mono quiet>{formatMoney(run.cost_usd)}</Mono> : null),
-    },
-  ];
+  // A row of the task's activity: the step, how it ended, who, the commit it
+  // left, how long, what it cost. Why is on hover, and above the picked run.
+  const describe = (run) => {
+    const result = runResult(run);
+    return {
+      at: run.started_at,
+      subject: { key: null, title: humanize(run.step) },
+      event: { word: result.word, tone: result.tone, why: result.note },
+      by: runBy(run, task),
+      commit: run.commit_sha ? shortSha(run.commit_sha) : "",
+      took: runTook(run),
+      spend: run.cost_usd ? formatMoney(run.cost_usd) : "",
+    };
+  };
 
   const totals = task.totals ?? {};
   return (
@@ -201,8 +176,8 @@ export function ActivityTab({ task, revision }) {
       <section className="task-section" aria-labelledby="task-runs">
         <SectionHeading
           id="task-runs"
-          title="Everything that happened"
-          note={`${plural(totals.run_count ?? runs.total ?? 0, "run")}, ${formatMoney(totals.total_cost_usd)}. Newest first.`}
+          title="Activity"
+          note={`${plural(totals.run_count ?? runs.total ?? 0, "run")}, ${formatMoney(totals.total_cost_usd)}`}
         />
         {runs.error ? (
           <p className="notice notice--error" role="alert">
@@ -211,12 +186,15 @@ export function ActivityTab({ task, revision }) {
         ) : null}
         {runs.items && items.length === 0 ? <p className="empty">Nothing has run on this task yet.</p> : null}
         {items.length ? (
-          <Table
+          <ActivityTable
             caption="Runs"
-            columns={columns}
-            rows={items}
-            selected={(run) => run === selected}
+            items={items}
+            describe={describe}
+            subjectHeader="Step"
+            numbers={["commit", "took", "spend"]}
+            rowKey={(run) => run.id}
             onRowClick={(run) => setPicked(run.id)}
+            selected={(run) => run === selected}
             arrived={(run) => arrived.has(run.id)}
           />
         ) : null}
