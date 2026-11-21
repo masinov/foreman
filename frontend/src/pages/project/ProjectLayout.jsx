@@ -116,6 +116,7 @@ export function ProjectLayout({ projectId, children }) {
           projectId={projectId}
           engine={project?.engine ?? null}
           emptySprint={activeSprintIsEmpty(project)}
+          noSprint={Boolean(project) && !project.active_sprint}
           onChanged={changed}
         />
         <Outcomes projectId={projectId} lead="All sprints" revision={revision} />

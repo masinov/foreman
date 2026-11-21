@@ -74,3 +74,16 @@ Reopening, left undecided above, is allowed (the owner): a completed sprint
 may go back to `active` when no other sprint is, from the sprint page
 ("Reopen sprint") or with `foreman sprint activate`. Its finish time is
 cleared and its start time kept. A cancelled sprint stays closed.
+
+## Amendment 2026-11-21: the engine does not start a planned sprint
+
+A pass used to activate the first planned sprint whenever no sprint was
+active (`SprintFlow.activate_first_planned`). Assay's sprint 2 showed the
+fault: created while the engine ran, it was active and empty half a second
+later, before its plan was confirmed. The owner decided that only an
+explicit activation, or Foreman finishing the sprint before it (`auto`),
+starts a sprint. The engine no longer activates one on a pass. A person
+activates the next sprint after finishing one; Start on the engine row,
+which a person presses, still activates the first planned sprint when none
+is active. The engine row says when no sprint is active.
+

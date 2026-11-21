@@ -22,23 +22,6 @@ class SprintFlow:
         self.records = records
         self.utc_now = utc_now
 
-    def activate_first_planned(self, project_id: str) -> Sprint | None:
-        """Activate the first planned sprint when project-scoped execution starts idle."""
-
-        active = self.store.get_active_sprint(project_id)
-        if active is not None:
-            return active
-
-        next_sprint = self.store.get_next_planned_sprint(project_id)
-        if next_sprint is None:
-            return None
-
-        next_sprint.status = "active"
-        next_sprint.started_at = next_sprint.started_at or self.utc_now().isoformat()
-        next_sprint.completed_at = None
-        self.store.save_sprint(next_sprint)
-        return next_sprint
-
     def fully_resolved(self, sprint: Sprint) -> bool:
         """Return True when every task in the sprint is done or cancelled."""
         tasks = self.store.list_tasks(sprint_id=sprint.id)

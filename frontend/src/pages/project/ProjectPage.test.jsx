@@ -98,6 +98,16 @@ describe("the engine row", () => {
     expect(within(engineSection()).getByText(/the active sprint has no tasks/)).toBeInTheDocument();
   });
 
+  it("says to activate a sprint when the engine runs with none active", async () => {
+    const routes = projectRoutes();
+    const payload = structuredClone(routes["GET /api/v1/workspace"]);
+    payload.projects[0].active_sprint = null;
+    payload.projects[0].engine = { ...payload.projects[0].engine, state: "running", task_id: null };
+    routes["GET /api/v1/workspace"] = payload;
+    await renderProject("/dashboard/projects/foreman", routes);
+    expect(await screen.findByText("Nothing to work on: no sprint is active. Activate one under Sprints.")).toBeInTheDocument();
+  });
+
   it("offers Pause and Stop while running, and sends them to the engine endpoints", async () => {
     const routes = projectRoutes();
     routes["POST /api/v1/projects/foreman/agent/stop"] = { command: { command: "pause", status: "pending" } };
