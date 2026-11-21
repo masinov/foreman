@@ -23,8 +23,9 @@ import "../../styles/activity.css";
  *
  * `describe(item)` returns `{ at, project, subject: { key, title }, event:
  * { word, tone, why }, by, commit, took, spend, href }`. `keyHeader`, when
- * given, puts the key in a column of its own; `subjectHeader` names the
- * subject column. `numbers` lists which of commit, took and spend
+ * given, puts the key in a column of its own (a task's key, as narrow as
+ * the task list's; `wideKey` for a sprint's name); `subjectHeader` names
+ * the subject column. `numbers` lists which of commit, took and spend
  * this level shows. A row leads to `href`, or `onRowClick` picks it, with
  * `selected` marking the picked one.
  */
@@ -34,6 +35,7 @@ export function ActivityTable({
   describe,
   subjectHeader,
   keyHeader = null,
+  wideKey = false,
   showProject = false,
   numbers = [],
   rowKey,
@@ -57,7 +59,7 @@ export function ActivityTable({
       ? {
           key: "key",
           header: keyHeader,
-          className: "activity-table__key",
+          className: wideKey ? "activity-table__key activity-table__key--wide" : "activity-table__key",
           render: ({ row }) => <Mono quiet>{row.subject.key || ""}</Mono>,
         }
       : null,
@@ -89,10 +91,10 @@ export function ActivityTable({
       ? { key: "commit", header: "Commit", className: "activity-table__commit", render: ({ row }) => (row.commit ? <Mono quiet>{row.commit}</Mono> : "") }
       : null,
     numbers.includes("took")
-      ? { key: "took", header: "Took", numeric: true, className: "activity-table__number", render: ({ row }) => <Mono quiet>{row.took || ""}</Mono> }
+      ? { key: "took", header: "Took", numeric: true, className: "activity-table__took", render: ({ row }) => <Mono quiet>{row.took || ""}</Mono> }
       : null,
     numbers.includes("spend")
-      ? { key: "spend", header: "Spend", numeric: true, className: "activity-table__number", render: ({ row }) => <Mono quiet>{row.spend || ""}</Mono> }
+      ? { key: "spend", header: "Spend", numeric: true, className: "activity-table__spend", render: ({ row }) => <Mono quiet>{row.spend || ""}</Mono> }
       : null,
   ].filter(Boolean);
   return (
