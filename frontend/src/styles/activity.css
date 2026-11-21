@@ -21,6 +21,10 @@
   width: 7rem;
 }
 
+.activity-table .activity-table__key {
+  width: 7.5rem;
+}
+
 .activity-table .activity-table__event {
   width: 9.5rem;
 }
@@ -45,8 +49,10 @@
   white-space: nowrap;
 }
 
-/* A phone keeps when, the subject and what happened. */
+/* A phone keeps when, the subject (its key where it has one) and what
+   happened. */
 @media (max-width: 640px) {
+  .activity-table .activity-table__subject--titled,
   .activity-table .activity-table__project,
   .activity-table .activity-table__by,
   .activity-table .activity-table__commit,

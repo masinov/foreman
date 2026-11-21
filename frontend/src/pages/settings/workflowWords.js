@@ -62,7 +62,7 @@ function joinOr(items) {
 function doneBy(step, rolesById, decidedBy) {
   if (!isBuiltin(step.role)) return rolesById[step.role]?.name ?? humanize(step.role);
   if (builtinKind(step.role) === "human_gate") {
-    return step.policy ? (decidedBy[step.policy] ?? "A person") : "A person";
+    return step.policy ? (decidedBy[step.policy] ?? "A user") : "A user";
   }
   return "Engine";
 }
@@ -75,7 +75,7 @@ function how(step, rolesById, { defaultBranch }) {
   }
   const kind = builtinKind(step.role);
   if (kind === "human_gate") {
-    return { text: step.policy ? "this project's Who decides setting" : "always waits for a person" };
+    return { text: step.policy ? "this project's Who decides setting" : "always waits for a user" };
   }
   const describe = HOW_BUILTIN[kind];
   return { text: describe ? describe({ defaultBranch }) : "a built-in step" };

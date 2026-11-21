@@ -12,7 +12,7 @@ const LAST = "_builtin:mark_done";
 
 // Where a way of ending leads, besides another step (held by that step's key).
 const NEXT = "_next"; // the step below, or the end after the last step
-const STOP = ""; // nowhere: the task stops and waits for a person
+const STOP = ""; // nowhere: the task stops and waits for a user
 const END = "_end"; // straight to the end (only kept if a workflow already says so)
 
 /**
@@ -235,7 +235,7 @@ export function WorkflowEditor({ open, projectId, workflow, isNew = false, vocab
             </div>
             {step.role === GATE ? (
               <label className="wf-editor__ending">
-                <span>It stops for a person when</span>
+                <span>It stops for a user when</span>
                 <select className="field__input" value={step.policy} onChange={(event) => change(step.key, { policy: event.target.value })}>
                   <option value="">always</option>
                   {vocabulary.gate_policies.map((policy) => (
@@ -265,7 +265,7 @@ export function WorkflowEditor({ open, projectId, workflow, isNew = false, vocab
                           ? `on to ${index + 2} · ${titleOf(below, index + 1)}`
                           : hasEnd
                             ? "the task is done"
-                            : "stop and wait for a person"}
+                            : "stop and wait for a user"}
                       </option>
                     ) : null}
                     {steps.map((entry, other) =>
@@ -276,7 +276,7 @@ export function WorkflowEditor({ open, projectId, workflow, isNew = false, vocab
                       ),
                     )}
                     {chosen === END ? <option value={END}>the task is done</option> : null}
-                    <option value={STOP}>stop and wait for a person</option>
+                    <option value={STOP}>stop and wait for a user</option>
                   </select>
                 </label>
               );

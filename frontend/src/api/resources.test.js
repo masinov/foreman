@@ -37,7 +37,7 @@ describe("resource modules", () => {
       "GET /api/v1/workspace": { projects: [{ id: "p" }] },
       "GET /api/v1/needs-you?limit=5&offset=0": { items: [{ task_id: "t" }], total: 9 },
       "GET /api/v1/projects/p%201/needs-you?limit=5": { items: [], total: 0 },
-      "GET /api/v1/projects/p/milestones?kind=engine_stopped&kind=engine_lost&kind=engine_paused&kind=engine_resumed&limit=25&offset=25": {
+      "GET /api/v1/projects/p/milestones?kind=engine_started&kind=engine_stopped&kind=engine_paused&kind=engine_resumed&kind=engine_lost&limit=25&offset=25": {
         milestones: [{ kind: "engine_stopped" }],
         total: 26,
       },

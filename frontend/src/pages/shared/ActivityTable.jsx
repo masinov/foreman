@@ -10,19 +10,21 @@ import "../../styles/activity.css";
 /**
  * Every activity list on the dashboard, one shape (owner, 2026-11-21):
  *
- *   When · (Project) · Subject · What happened · By · (numbers)
+ *   When · (Project) · (Key) · Subject · What happened · By · (numbers)
  *
  * One line per row, the same column widths on every page. The subject is
  * what the level lists (a sprint or the engine on a project, a task on a
- * sprint, a step on a task): its key and its title, cut with "…" at the
- * column's width, all of it on hover. What happened is a short phrase in its
+ * sprint, a step on a task). Where the level has keys (a task's, a sprint's
+ * name) they have their own column, as in the task list, and the subject is
+ * the title, cut with "…" at the column's width, all of it on hover. What happened is a short phrase in its
  * colour; why (a reviewer's reason, a failure, a person's reason) is on hover
  * and on the page the row leads to, never under the row. At phone width the
  * project, who and the numbers give way; what happened stays.
  *
  * `describe(item)` returns `{ at, project, subject: { key, title }, event:
- * { word, tone, why }, by, commit, took, spend, href }`. `subjectHeader`
- * names the subject column. `numbers` lists which of commit, took and spend
+ * { word, tone, why }, by, commit, took, spend, href }`. `keyHeader`, when
+ * given, puts the key in a column of its own; `subjectHeader` names the
+ * subject column. `numbers` lists which of commit, took and spend
  * this level shows. A row leads to `href`, or `onRowClick` picks it, with
  * `selected` marking the picked one.
  */
@@ -31,6 +33,7 @@ export function ActivityTable({
   items,
   describe,
   subjectHeader,
+  keyHeader = null,
   showProject = false,
   numbers = [],
   rowKey,
@@ -50,12 +53,25 @@ export function ActivityTable({
     showProject
       ? { key: "project", header: "Project", className: "activity-table__project", render: ({ row }) => row.project }
       : null,
+    keyHeader
+      ? {
+          key: "key",
+          header: keyHeader,
+          className: "activity-table__key",
+          render: ({ row }) => <Mono quiet>{row.subject.key || ""}</Mono>,
+        }
+      : null,
     {
       key: "subject",
       header: subjectHeader,
-      className: "activity-table__subject",
+      className: keyHeader ? "activity-table__subject activity-table__subject--titled" : "activity-table__subject",
       render: ({ item, row }) => (
-        <Subject row={row} pick={onRowClick ? () => onRowClick(item) : null} pressed={selected ? selected(item) : false} />
+        <Subject
+          row={row}
+          withKey={!keyHeader}
+          pick={onRowClick ? () => onRowClick(item) : null}
+          pressed={selected ? selected(item) : false}
+        />
       ),
     },
     {
@@ -99,9 +115,10 @@ export function ActivityTable({
  * The subject in one line: its key, then its title, all of it on hover. In a
  * list whose rows pick (a task's runs), it is the row's button.
  */
-function Subject({ row, pick, pressed }) {
-  const { key, title } = row.subject;
-  const full = [key, title].filter(Boolean).join(" · ");
+function Subject({ row, withKey, pick, pressed }) {
+  const { title } = row.subject;
+  const key = withKey ? row.subject.key : null;
+  const full = [row.subject.key, title].filter(Boolean).join(" · ");
   const text = (
     <>
       {key ? <Mono quiet>{key}</Mono> : null}

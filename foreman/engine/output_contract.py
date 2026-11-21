@@ -195,7 +195,7 @@ _READING_TOOLS = frozenset({"Read", "Grep", "Glob"})
 #: What a task is stopped with when a reviewer approves unread twice.
 UNREAD_APPROVAL_DETAIL = (
     "The reviewer approved a change it had not read: the diff it was given was "
-    "cut, and it opened no file, also after being asked to. A person should "
+    "cut, and it opened no file, also after being asked to. A user should "
     "review this change, or unblock the task to have it reviewed again."
 )
 

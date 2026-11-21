@@ -4,6 +4,7 @@ import { MILESTONE_KINDS } from "../../api/milestones";
 import { paths } from "../../app/paths";
 import { plural, splitTitle } from "../../ui/format";
 import { ActivityTable } from "./ActivityTable";
+import { userName } from "./activityWords";
 
 const K = MILESTONE_KINDS;
 
@@ -16,6 +17,7 @@ const EVENTS = {
     why: m.merged_count === null || m.merged_count === undefined ? "" : `${plural(m.merged_count, "task")} merged`,
   }),
   [K.planConfirmed]: (m) => ({ word: "Plan confirmed", tone: "idle", why: m.detail || "" }),
+  [K.engineStarted]: () => ({ word: "Started", tone: "idle" }),
   [K.engineStopped]: () => ({ word: "Stopped", tone: "idle" }),
   [K.engineLost]: () => ({
     word: "Died",
@@ -35,9 +37,9 @@ export function describeMilestone(m) {
   return {
     at: m.at,
     project: m.project_name,
-    subject: isEngine(m) ? { key: null, title: "Engine" } : { key: null, title: rest ? `${name} · ${rest}` : name },
+    subject: isEngine(m) ? { key: "Engine", title: "" } : { key: name, title: rest },
     event,
-    by: m.actor || "",
+    by: m.actor ? userName(m.actor) : "",
     href: !isEngine(m) && m.sprint_id ? paths.sprint(m.sprint_id) : null,
   };
 }
@@ -57,7 +59,8 @@ export function MilestoneTable({ caption, items, showProject = false, placeholde
       caption={caption}
       items={items}
       describe={describeMilestone}
-      subjectHeader="Sprint or engine"
+      keyHeader="Sprint or engine"
+      subjectHeader="Title"
       showProject={showProject}
       rowKey={(m) => `${m.kind}:${m.at}:${m.project_id}:${m.sprint_id ?? ""}`}
       placeholderRows={placeholderRows}

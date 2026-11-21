@@ -57,7 +57,7 @@ describe("WorkspacePage", () => {
     );
     const unblock = within(needsYou).getByText("FOR-15").closest("tr");
     expect(within(unblock).getByText("Blocked")).toBeInTheDocument();
-    // What a person weighs before unblocking: why it is blocked and where it stopped.
+    // What a user weighs before unblocking: why it is blocked and where it stopped.
     expect(unblock).toHaveTextContent("Tests failed three times · at test");
     expect(within(unblock).getByRole("button", { name: "Unblock FOR-15" })).toHaveClass("button--gold-outline");
 
@@ -99,8 +99,8 @@ describe("WorkspacePage", () => {
     const recent = await screen.findByRole("table", { name: "Recent milestones" });
     const rows = within(recent).getAllByRole("row").slice(1);
     expect(rows.map(withoutClock)).toEqual([
-      "11 NovForemanSprint 56 · engine truthfulnessStarted",
-      "10 NovForemanSprint 55 · baseline and host safetyFinished",
+      "11 NovForemanSprint 56engine truthfulnessStarted",
+      "10 NovForemanSprint 55baseline and host safetyFinished",
       "9 NovOther projectEnginePausedana",
     ]);
   });

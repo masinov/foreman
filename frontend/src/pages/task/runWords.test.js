@@ -49,10 +49,10 @@ describe("what a run recorded, in words", () => {
       tone: "passed",
     });
     expect(sayEntry(entry("workflow.paused", { reason: "human_gate", policy: "merge_approval" })).says).toBe(
-      "Waiting for a person: merge approval",
+      "Waiting for a user: merge approval",
     );
     expect(sayEntry(entry("workflow.resumed", { decision: "approve", next_step: "merge" })).says).toBe(
-      "A person approved. Next step: Merge",
+      "A user approved. Next step: Merge",
     );
     expect(sayEntry(entry("agent.completed", { duration_ms: 9400, token_count: 1200, cost_usd: 0.12 })).says).toBe(
       "Finished in 9.4 s · 1.2K tokens · $0.12",
@@ -72,7 +72,7 @@ describe("what a run recorded, in words", () => {
     expect(sayEntry(entry("engine.role_policy", {})).says).toBe("May use every tool");
   });
 
-  it("says what a person did by hand, and why", () => {
+  it("says what a user did by hand, and why", () => {
     expect(
       sayEntry(entry("human.task_completed", { by: "Claude", reason: "Merged by hand.", from_status: "in_progress" })),
     ).toEqual({ says: "Marked done by hand by Claude", body: "Merged by hand.", prose: true });

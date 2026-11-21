@@ -484,7 +484,7 @@ describe("a proposal in the conversation", () => {
       { ...projectRoutes(), [PROPOSAL_URL]: proposal() },
       { turns: [turn("t2", "assistant", "", [{ proposal_id: PROPOSAL_ID }])], has_more: false },
     );
-    const sentence = "Operation 2 of 2 (send a task back with guidance) was refused: Task task-merge is done, not waiting for a person. Nothing was applied.";
+    const sentence = "Operation 2 of 2 (send a task back with guidance) was refused: Task task-merge is done, not waiting for a user. Nothing was applied.";
     fetchImpl.routes[CONFIRM_URL] = proposal({ state: "failed", decided_by: "ada", outcome: { sentence, failed: { index: 1 } } });
     await within(panel()).findByText("Proposed change. Nothing happens until you confirm.");
     fireEvent.click(within(card()).getByRole("button", { name: "Confirm" }));

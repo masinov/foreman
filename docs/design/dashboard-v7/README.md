@@ -69,8 +69,11 @@ Workspace / Project / Sprint / Task.
 - **History is one click away, not in the way.** The project shows the
   sprint queue (active, then planned in run order); finished sprints are a
   closed line that opens in place. A sprint shows all its tasks, done last.
-- **Activity is one stream at three depths:** project shows milestones,
-  sprint shows each finished step, task shows every run and its output.
+- **Activity is one stream at three depths:** project shows its sprints and
+  its engine (every change of the engine's state), sprint shows what
+  happened to each of its tasks, task shows every run and its output. Every
+  list is one table, one line per row, with the same columns (owner,
+  2026-11-21; `frontend/src/pages/shared/ActivityTable.jsx`).
 
 ## Look
 
@@ -128,7 +131,7 @@ Workspace / Project / Sprint / Task.
 ## Words
 
 Plain words, no engine jargon on the page. "Needs you", "Who decides",
-"A person" or "Foreman", "Fact" and "Claim". A fact is something the engine
+"A user" or "Foreman" (owner, 2026-11-21: "user", not "person", wherever the page names someone), "Fact" and "Claim". A fact is something the engine
 measured; a claim is something an agent reported (ADR-0018). Empty states
 say what is true and what happens next.
 

@@ -37,7 +37,7 @@ DEFAULT_MARKER = "TASK_COMPLETE"
 #: The steps the engine does itself, in the order the editor offers them.
 ENGINE_STEPS: tuple[tuple[str, str], ...] = (
     ("_builtin:run_tests", "The tests"),
-    ("_builtin:human_gate", "A person"),
+    ("_builtin:human_gate", "A user"),
     ("_builtin:merge", "The merge"),
     ("_builtin:mark_done", "Mark the task done"),
 )

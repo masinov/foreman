@@ -68,7 +68,7 @@ export function WorkflowGraph({ rows, end, selected, onSelect, label }) {
         }, {}),
       ).map(([to, words]) => `${words.join(", ")} ${Number(to) < at ? "↩" : "↪"} ${Number(to) + 1}`),
       ...(row.nexts?.length ? [`${row.nexts.join(", ")} ↓ ${at + 2}`] : []),
-      ...(row.stops.length ? [`${row.stops.join(", ")}: waits for a person`] : []),
+      ...(row.stops.length ? [`${row.stops.join(", ")}: waits for a user`] : []),
     ].join("  ·  ");
 
   const laneCount = lanes(lines);

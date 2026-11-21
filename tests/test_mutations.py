@@ -463,7 +463,7 @@ class BacklogMutationsTests(unittest.TestCase):
         with self.assertRaises(MutationError) as caught:
             foreman.plan_tasks([accepted, request], sprint=self.store.get_sprint("s2"), pulled=True)
 
-        self.assertIn("no person has accepted", str(caught.exception))
+        self.assertIn("no user has accepted", str(caught.exception))
         self.assertTrue(self.store.get_sprint(self.store.get_task(accepted.id).sprint_id).is_backlog)
         self.assertEqual(self.events(accepted.id, "engine.task_pulled"), [])
 

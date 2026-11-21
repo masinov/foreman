@@ -43,7 +43,7 @@ describe("Table", () => {
     expect(screen.queryByText("Alpha")).toBeNull();
   });
 
-  it("shades the row a person selected", () => {
+  it("shades the row a user selected", () => {
     render(<Table caption="Things" columns={columns} rows={rows} selected={(row) => row === rows[1]} />);
     const bodyRows = screen.getByRole("table", { name: "Things" }).querySelectorAll("tbody tr");
     expect(bodyRows[0]).not.toHaveClass("table__row--selected");

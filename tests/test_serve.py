@@ -2218,7 +2218,7 @@ class EngineCommandDuringAgentStepTests(unittest.TestCase):
             self._serve(_Reading(), db_path, store, once=True)
 
             self.assertEqual(len(seen), 1)
-            self.assertIn("Guidance from a person", seen[0])
+            self.assertIn("Guidance from a user", seen[0])
             self.assertIn("Use the existing parser, do not write a new one.", seen[0])
             self.assertEqual(len(develop()), 2)
 

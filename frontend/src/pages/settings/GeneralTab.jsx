@@ -39,7 +39,7 @@ function Text({ value, onChange, narrow = true, wide = false, ...controlProps })
 
 // Who lets Foreman start a request: a person accepting it first, or nobody.
 const REQUESTS = [
-  { value: "human", word: "A person accepts them" },
+  { value: "human", word: "A user accepts them" },
   { value: "auto", word: "Foreman may start them" },
 ];
 
@@ -158,7 +158,7 @@ function GeneralForm({ projectId, settings, onSaved }) {
       >
         {choiceRow("plan_approval", "Approve plans", DECIDERS, "A plan the manager proposes")}
         {choiceRow("merge_approval", "Approve merges", DECIDERS, "After tests and review")}
-        {choiceRow("sprint_completion", "Finish sprints", DECIDERS, "When every task is done or cancelled; Foreman then starts the next sprint")}
+        {choiceRow("sprint_completion", "Finish sprints", DECIDERS, "When every task is done or cancelled. If Foreman finishes it, it starts the next sprint; if a user does, the next sprint waits until a user activates it")}
         <SettingRow label="Exceptions" error={errors.policy_rules} group>
           {(controlProps) => (
             <PolicyRules

@@ -175,7 +175,7 @@ def handle_proposal_create(args: argparse.Namespace) -> int:
         print_json(payload)
         return 0
     print_lines(
-        "Stored the proposal. Nothing changes until a person confirms it.",
+        "Stored the proposal. Nothing changes until a user confirms it.",
         *_proposal_lines(payload),
     )
     return 0
@@ -274,7 +274,7 @@ def register_proposal(subparsers: argparse._SubParsersAction) -> None:
 
     proposal_parser = subparsers.add_parser(
         "proposal",
-        help="Changes proposed for a project; nothing happens until a person confirms.",
+        help="Changes proposed for a project; nothing happens until a user confirms.",
     )
     commands = proposal_parser.add_subparsers(
         dest="proposal_command", metavar="proposal_command", required=True

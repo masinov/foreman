@@ -15,7 +15,7 @@ export const ACTIVITY_PAGE = 25;
 const EMPTY = {
   all: "Nothing has happened yet. Sprints being planned, starting and finishing, and the engine stopping, appear here.",
   sprints: "No sprint has been planned, started or finished yet.",
-  engine: "The engine has not stopped, paused or died yet.",
+  engine: "The engine has not started yet.",
 };
 
 /**
@@ -36,7 +36,7 @@ export function ActivityTab({ projectId }) {
     <section className="activity" aria-labelledby="activity-title">
       <SectionHeading
         id="activity-title"
-        title="Activity"
+        title="Sprints and engine"
         actions={
           <div className="filter-group" role="group" aria-label="Show">
             {MILESTONE_FILTERS.map((entry) => (

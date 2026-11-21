@@ -210,7 +210,7 @@ export const VOCABULARY = {
   default_model: "claude-sonnet-5-5",
   done_by: [
     { role: "_builtin:run_tests", label: "The tests", outcomes: ["success", "failure"] },
-    { role: "_builtin:human_gate", label: "A person", outcomes: ["approve", "deny", "steer"] },
+    { role: "_builtin:human_gate", label: "A user", outcomes: ["approve", "deny", "steer"] },
     { role: "_builtin:merge", label: "The merge", outcomes: ["success", "failure", "conflict"] },
     { role: "_builtin:mark_done", label: "Mark the task done", outcomes: ["success"] },
     { role: "developer", label: "Developer", outcomes: ["done"] },

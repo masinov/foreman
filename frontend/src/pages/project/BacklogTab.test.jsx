@@ -33,7 +33,7 @@ const requestsSection = () => screen.getByRole("region", { name: /^Requests/ });
 const backlogSection = () => screen.getByRole("region", { name: /^Backlog/ });
 
 describe("the backlog tab", () => {
-  it("is one list where a person plans everything: plan or decline, nothing to accept", async () => {
+  it("is one list where a user plans everything: plan or decline, nothing to accept", async () => {
     const { fetchImpl } = await renderBacklog();
     expect(calls(fetchImpl, "GET", backlogUrl())).toHaveLength(1);
     expect(screen.queryByRole("navigation", { name: "Project" })).toBeNull();

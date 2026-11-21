@@ -497,12 +497,16 @@ bad one is a 400 `invalid_request` envelope (ADR-0019). Paged lists take
     `plan_confirmed` (a manager proposal a person confirmed: `actor`, its
     reason in `detail`; its sprint is the one its first operation names, or
     `sprint_title` says the backlog or the new sprint it plans).
-  - `engine_stopped` (a lease released, at its release; `actor` who asked
-    for the shutdown, when a command did), `engine_lost` (a lease that ran
-    out with nobody releasing it, at its expiry: the engine died or was
-    killed), `engine_paused`, `engine_resumed` (`actor` is the command's
-    `requested_by`). A running engine is the engine row's state, not a
-    milestone.
+  - Every change of the engine's state, and nothing else (owner,
+    2026-11-21): `engine_started` (a lease acquired; `actor` who started it,
+    from the `resume` command Start sends, requested before the lease and
+    completed after it, which is the start's and not a resume),
+    `engine_paused`, `engine_resumed` (`actor` is the command's
+    `requested_by`), `engine_stopped` (a lease released, at its release;
+    `actor` who asked for the shutdown, when a command did), `engine_lost`
+    (a lease that ran out with nobody releasing it, at its expiry: the
+    engine died or was killed). An actor that is only a channel
+    (`dashboard`, `cli`) is shown as "a user".
 
   Each has `kind`, `at`, project and sprint fields, `actor`, `merged_count`
   and `detail` (null where they do not apply). No table backs them: they are

@@ -271,7 +271,7 @@ describe("the decision", () => {
     const region = await screen.findByRole("region", { name: "A request: plan it into a sprint?" });
     expect(region).toHaveTextContent("Filed by ana via github on 10 Nov");
     expect(within(region).getByRole("link", { name: "#42" })).toHaveAttribute("href", "https://example.test/42");
-    // Where a person plans everything there is nothing to accept.
+    // Where a user plans everything there is nothing to accept.
     expect(within(region).queryByRole("button", { name: /Accept/ })).toBeNull();
 
     const sprint = within(region).getByRole("combobox", { name: "Sprint to plan it into" });
@@ -583,7 +583,7 @@ describe("Overview", () => {
       ["Develop", "Committed b232eb1", "sonnet-5-5", "1"],
       ["Test", "Passed in 1 min 54 s", "Foreman", "1"],
       ["Review", "Approved in 7 s", "sonnet-5-5", "1"],
-      ["Merge approval", "Waiting for you", "a person", ""],
+      ["Merge approval", "Waiting for you", "a user", ""],
       ["Merge", "Not reached", "Foreman", ""],
     ]);
     expect(screen.getByText(/4 runs in all/)).toBeInTheDocument();
@@ -604,11 +604,11 @@ describe("Overview", () => {
     await waitFor(() => expect(details).toHaveTextContent(/Workflow\s*development/));
     expect(details).toHaveTextContent(/Stage\s*Waiting for merge approval/);
     expect(within(details).getByRole("link", { name: "Sprint 56: engine truthfulness" })).toHaveAttribute("href", "/dashboard/sprints/sprint-56");
-    expect(details).toHaveTextContent("A person approves merges (project setting)");
+    expect(details).toHaveTextContent("A user approves merges (project setting)");
     expect(details).not.toHaveTextContent("plans");
     expect(details).toHaveTextContent(/Branch\s*foreman\/for-14/);
     expect(details).toHaveTextContent("$0.72 · 4 runs");
-    expect(details).toHaveTextContent(/Filed by\s*a person on 10 Nov/);
+    expect(details).toHaveTextContent(/Filed by\s*a user on 10 Nov/);
     // What was filed is prose for the wide column, not a fact beside it.
     expect(details).not.toHaveTextContent("It should say how long");
     expect(screen.getByRole("region", { name: "Description" })).toHaveTextContent("It should say how long and what the runner printed.");
@@ -905,7 +905,8 @@ describe("Activity", () => {
     // The commit the branch was at after each run; none for the engine's test run.
     expect(rows[0]).toHaveTextContent("b232eb1");
     expect(within(rows[1]).getAllByRole("cell")[4].textContent).toBe("");
-    expect(screen.getByText("4 runs, $0.72")).toBeInTheDocument();
+    const heading = screen.getByRole("heading", { name: /^Runs/ }).closest(".section-heading");
+    expect(heading).toHaveTextContent(/^Runs\s*4\s*\$0\.72 in all$/);
 
     expect(await screen.findByText("Reviewed the change.")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Review" })).toBeInTheDocument();
@@ -1150,7 +1151,7 @@ describe("The agent's side bar", () => {
 
   it("is open without being asked while a step is in progress, on what that step is doing", async () => {
     const routes = taskRoutes({ task: taskDetail(IN_PROGRESS), runs: working() });
-    // The step's own line says how it started; a person's words have their own place.
+    // The step's own line says how it started; a user's words have their own place.
     routes[outputUrl("run-9")] = outputPayload("run-9", "Reading the parser.", {
       transcript: [
         { at: "2026-11-11T08:00:00Z", kind: "workflow.step_started", text: "", data: { step: "develop" } },
@@ -1240,7 +1241,7 @@ describe("The agent's side bar", () => {
     expect(within(panel).queryByRole("form", { name: "Tell the agent" })).toBeNull();
   });
 
-  it("shows what a person said where it was said, and whether it was read", async () => {
+  it("shows what a user said where it was said, and whether it was read", async () => {
     const { panel } = await open(
       [
         runItem("run-9", "develop", { status: "running", outcome: null, finished_at: null, started_at: "2026-11-11T08:00:00Z" }),
