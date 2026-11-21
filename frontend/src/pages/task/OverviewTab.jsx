@@ -27,7 +27,7 @@ function Steps({ task, workflow }) {
       header: "Result",
       render: (row) => <span className={`tone-${row.result.tone}`}>{row.result.word}</span>,
     },
-    { key: "by", header: "By", className: "secondary", render: (row) => row.by },
+    { key: "by", header: "By", className: "secondary", render: (row) => (row.byTitle ? <span title={row.byTitle}>{row.by}</span> : row.by) },
     { key: "runs", header: "Runs", numeric: true, render: (row) => (row.runs ? <Mono quiet>{row.runs}</Mono> : null) },
   ];
   return (
@@ -163,9 +163,9 @@ function MoreDetails({ task }) {
   ].filter(Boolean);
   return (
     <Disclosure summary="More details" className="task-details__more">
-      <dl className="task-details__list-terms">
+      <dl className="details-list">
         {rows.map((row) => (
-          <div key={row.key} className="task-details__row">
+          <div key={row.key} className="details-list__row">
             <dt>{row.term}</dt>
             <dd>{row.value}</dd>
           </div>
@@ -266,9 +266,9 @@ function Details({ task, workflow }) {
   return (
     <section className="task-section" aria-labelledby="task-details">
       <SectionHeading id="task-details" title="Details" />
-      <dl className="task-details__list-terms">
+      <dl className="details-list">
         {rows.map((row) => (
-          <div key={row.key} className="task-details__row">
+          <div key={row.key} className="details-list__row">
             <dt>{row.term}</dt>
             <dd>{row.value}</dd>
           </div>
@@ -293,13 +293,13 @@ export function OverviewTab({ task, checks, changed }) {
   // Nothing reads guidance or an override once the task is finished.
   const finished = task.status === "done" || task.status === "cancelled";
   return (
-    <div className="task-overview">
-      <div className="task-overview__main">
+    <div className="page-overview">
+      <div className="page-overview__main">
         <Steps task={task} workflow={workflow} />
         <ChecksSummary task={task} checks={checks} />
         <Filed task={task} />
       </div>
-      <aside className="task-details" aria-label="Details and overrides">
+      <aside className="page-overview__aside" aria-label="Details and overrides">
         <Details task={task} workflow={workflow} />
         {finished ? null : <Overrides task={task} workflow={workflow.data} onSaved={() => changed(null)} />}
       </aside>

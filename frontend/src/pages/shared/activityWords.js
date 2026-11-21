@@ -52,6 +52,25 @@ export function runBy(run, task = null) {
   return run.model || backend;
 }
 
+/**
+ * Who did a run, by role: an agent's run names its role ("Developer",
+ * "Code reviewer"), with the model in `title` for the hover; everyone else
+ * is named as `runBy` names them. `{ text, title }`.
+ */
+export function runRole(run, task = null) {
+  const by = runBy(run, task);
+  const role = roleOf(run);
+  const agent = run.source !== "event" && role && !role.startsWith(BUILTIN) && (by === run.model || by === backendOf(run));
+  return agent ? { text: humanize(role), title: run.model || backendOf(run) } : { text: by, title: "" };
+}
+
+/** Who did it, as the activity's By filter names them (`who` from the API): a role, Foreman, users. */
+export function whoWord(who) {
+  if (who === "foreman") return FOREMAN;
+  if (who === "user") return "Users";
+  return humanize(who);
+}
+
 const GOOD = new Set(["done", "pass", "passed", "approve", "approved", "merged", "committed", "success", "succeeded", "completed", "complete", "accepted"]);
 const BAD = new Set(["fail", "failed", "failure", "error", "errored", "reject", "rejected", "timeout", "timed_out", "cancelled", "cancel", "killed", "stopped"]);
 const BACK = new Set(["steer", "deny", "denied", "changes_requested", "request_changes", "conflict", "blocked", "paused"]);

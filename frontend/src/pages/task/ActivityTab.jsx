@@ -11,7 +11,7 @@ import { formatDayTime, formatMoney, humanize, plural, shortSha } from "../../ui
 import { narrate } from "./runWords";
 import { RunLine, withDays } from "./RunStory";
 import { ActivityTable } from "../shared/ActivityTable";
-import { runBy, runResult, runTook } from "../shared/activityWords";
+import { runBy, runResult, runRole, runTook } from "../shared/activityWords";
 import { useTaskPulse } from "./useTaskPulse";
 
 // Design README: activity 25 at a time.
@@ -159,11 +159,13 @@ export function ActivityTab({ task, revision }) {
   // left, how long, what it cost. Why is on hover, and above the picked run.
   const describe = (run) => {
     const result = runResult(run);
+    const by = runRole(run, task);
     return {
       at: run.started_at,
       subject: { key: null, title: humanize(run.step) },
       event: { word: result.word, tone: result.tone, why: result.note },
-      by: runBy(run, task),
+      by: by.text,
+      byTitle: by.title,
       commit: run.commit_sha ? shortSha(run.commit_sha) : "",
       took: runTook(run),
       spend: run.cost_usd ? formatMoney(run.cost_usd) : "",

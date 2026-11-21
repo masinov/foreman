@@ -580,12 +580,14 @@ describe("Overview", () => {
       .slice(1)
       .map((row) => within(row).getAllByRole("cell").map((cell) => cell.textContent));
     expect(rows).toEqual([
-      ["Develop", "Committed b232eb1", "sonnet-5-5", "1"],
+      ["Develop", "Committed b232eb1", "Developer", "1"],
       ["Test", "Passed in 1 min 54 s", "Foreman", "1"],
-      ["Review", "Approved in 7 s", "sonnet-5-5", "1"],
+      ["Review", "Approved in 7 s", "Code reviewer", "1"],
       ["Merge approval", "Waiting for you", "a user", ""],
       ["Merge", "Not reached", "Foreman", ""],
     ]);
+    // By names the role; the model is on hover.
+    expect(within(table).getByText("Developer")).toHaveAttribute("title", "sonnet-5-5");
     expect(screen.getByText(/4 runs in all/)).toBeInTheDocument();
   });
 

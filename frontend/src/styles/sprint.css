@@ -1,4 +1,5 @@
-/* The sprint page: head, summary, tasks as a list or a board, steps. */
+/* The sprint page: the title row, the goal beside the details, and the
+   Tasks and Activity tabs, each tab's controls on the tab line. */
 .sprint {
   display: flex;
   flex-direction: column;
@@ -9,19 +10,17 @@
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
+  justify-content: space-between;
   gap: var(--space-3) var(--space-5);
 }
 
 .sprint__title {
-  display: flex;
   flex: 999 1 var(--table-min-width);
-  flex-direction: column;
-  gap: var(--space-1);
   min-width: 0;
 }
 
 .sprint__goal {
-  max-width: 80ch;
+  max-width: var(--text-measure);
   color: var(--color-text-secondary);
 }
 
@@ -30,16 +29,16 @@
   gap: var(--space-2);
 }
 
-.sprint__tasks {
+.sprint__tabs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.sprint__tab {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-}
-
-/* The heading's actions are boxes; the title and the view choice are text.
-   Centred, the row keeps one height whichever is taller. */
-.sprint__tasks .section-heading {
-  align-items: center;
 }
 
 .sprint__board-note {

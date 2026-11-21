@@ -77,6 +77,13 @@ export const ROUTES = [
     title: "Sprint, board",
   },
   {
+    name: "sprint-activity",
+    cli: ({ sprintId }) => [`foreman watch --sprint ${sprintId}`],
+    pattern: "/sprints/:sprintId/activity",
+    level: "sprint",
+    title: "Sprint, Activity",
+  },
+  {
     name: "task",
     cli: ({ taskId }) => [`foreman task show ${taskId}`, `foreman approve ${taskId}`, `foreman deny ${taskId}`],
     pattern: "/tasks/:taskId",

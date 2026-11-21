@@ -389,6 +389,19 @@ class TaskReadsCase(unittest.TestCase):
         self.assertEqual([i["id"] for i in self.get("/api/v1/sprints/s/activity?limit=1&offset=1").json()["items"]],
                          ["r-killed"])
         self.assertEqual(self.get("/api/v1/sprints/s/activity?only=nothing").status_code, 400)
+
+        # Who did each row, and the By filter: a role, the engine, a user.
+        self.assertEqual({i["id"]: i["who"] for i in page["items"]},
+                         {"e-cancel": "user", "r-killed": "developer", "r-test": "foreman",
+                          "r-approved": "user", "r-steer": "code_reviewer", "r-dev": "developer"})
+        self.assertEqual(page["who"], ["code_reviewer", "developer", "foreman", "user"])
+        by = lambda query: [i["id"] for i in self.get(f"/api/v1/sprints/s/activity?{query}").json()["items"]]
+        self.assertEqual(by("by=developer"), ["r-killed", "r-dev"])
+        self.assertEqual(by("by=user"), ["e-cancel", "r-approved"])
+        self.assertEqual(by("by=foreman"), ["r-test"])
+        self.assertEqual(by("by=developer&only=problems"), ["r-killed"])
+        narrowed = self.get("/api/v1/sprints/s/activity?by=foreman").json()
+        self.assertEqual((narrowed["total"], narrowed["who"]), (1, page["who"]))
         self.assertEqual(self.get("/api/v1/sprints/nope/activity").status_code, 404)
 
     def test_run_output_has_prompt_and_transcript(self) -> None:

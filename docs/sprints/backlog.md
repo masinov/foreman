@@ -1,5 +1,33 @@
 # Backlog
 
+## The sprint page, step by step (owner, 2026-11-21)
+
+The owner asked for the sprint page to be redesigned a little at a time,
+from a mockup first, so less goes wrong at once. "When a user clicks on a
+sprint, what should they see first?"
+
+- **Done, the top (`feat/sprint-page-top`):** the title row; the goal,
+  four lines then "Show all", beside Details (state, tasks, spend); two
+  tabs, Tasks and Activity, each with its controls on the tab line (Add
+  from backlog, New task, List | Board; By and All | Problems). Activity is
+  the log alone. By names the role, the model on hover, on every activity
+  list and on a task's Steps. The outcome line is off the sprint and
+  project pages (ADR-0034 amendment).
+- **Statistics view (owner):** how well agents do over many sprints, as
+  numbers and graphs: first-time passes, send-backs by cause, a user's
+  part, cost per merged task, time to merge, by role and model. The data
+  is `GET /projects/{id}/outcomes`; where the view lives is not decided.
+- **Proposed next, one at a time, each from a mockup:**
+  - a run's raw output and prompt as Copy prompt, Download prompt and
+    Download raw output, in place of the caret that prints it on the page;
+  - the project page's tabs with their controls on the tab line too (its
+    Activity filters and New sprint are under it, in a heading of their
+    own), so every tabbed page works the same;
+  - small frictions seen on the way: the task's Checks heading "Measured
+    by the engine" (Foreman), stray "OK" and "APPROVE" lines in a run's
+    story, Overview's "Merged in 0.1 s", spend written three ways, the
+    task Activity's header naming the model where the table names the role.
+
 ## Activity, one stream at three depths (owner, 2026-11-21)
 
 Built in three slices the same day, then redesigned after the owner's

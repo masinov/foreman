@@ -70,7 +70,8 @@ The terms, as computed:
 - On the dashboard (owner, 2026-11-21): one line at the top of the project
   page (all sprints) and under the sprint page's summary (that sprint), with
   the per-role and per-model table behind "By role and model". The line is
-  not shown while no task has started.
+  not shown while no task has started. Taken off both pages the same day:
+  see the second amendment below.
 - No migration.
 
 ## Amendment 2026-11-21: what is still waiting
@@ -80,3 +81,16 @@ is open. A task closed or cancelled while paused at a gate was settled
 without an answer there: its decision counts as asked, not as waiting, and
 has no wait time. Before this, Foreman's project said one decision was
 waiting while Needs you showed none (FOR-49, merged by hand at a gate).
+
+## Amendment 2026-11-21: off the pages, kept in the CLI and API
+
+The owner reviewed the line on the sprint and project pages and took it
+off both. The numbers judge the setup over many sprints (which model for
+which role, where tasks fail, how much a user has to step in); a person
+opening a sprint wants to see where its tasks are, and for one sprint the
+figures are small (eight tasks, one send-back) and say what its Activity
+already shows. They stay in `foreman outcomes` and
+`GET /api/v1/projects/{id}/outcomes`, which the manager reads. On the
+dashboard they will return in a statistics view, numbers and graphs over
+sprints (backlog). Until then a sprint's Activity answers the practical
+questions with its By and Problems filters.

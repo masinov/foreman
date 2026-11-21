@@ -124,14 +124,19 @@ def build_router(ctx: ApiContext) -> APIRouter:
         limit: int = Query(default=DEFAULT_PAGE_LIMIT, ge=1, le=MAX_PAGE_LIMIT),
         offset: int = Query(default=0, ge=0),
         only: str | None = None,
+        by: str | None = None,
     ) -> SprintActivity:
-        """What happened to the sprint's tasks, newest first; ``only=problems`` keeps send-backs and failures."""
+        """What happened to the sprint's tasks, newest first.
+
+        ``only=problems`` keeps send-backs and failures; ``by`` keeps what one
+        role did, or ``user`` or ``foreman`` (the ``who`` the response lists).
+        """
 
         if only not in (None, "", "problems"):
             raise InvalidRequestError("only must be 'problems'.")
         return ctx.with_store(
             lambda store: TaskReads(store).list_sprint_activity(
-                sprint_id, limit=limit, offset=offset, problems=only == "problems"
+                sprint_id, limit=limit, offset=offset, problems=only == "problems", by=by
             )
         )
 

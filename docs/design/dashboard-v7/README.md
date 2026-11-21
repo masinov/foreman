@@ -46,8 +46,12 @@ Workspace / Project / Sprint / Task.
   reached from two buttons in the project's title row. (Revised 2026-11-13;
   `03-project-backlog.html` still draws the backlog as a tab and is kept for
   its content, not its placement.)
-- **Sprint** shows its tasks as a list or a board (one column per workflow
-  step, with Queued first and Done last).
+- **Sprint** has its goal (four lines, then "Show all") beside its
+  details (state, tasks, spend), as a task's Overview sets what it is
+  beside its facts, then two tabs: Tasks, as a list or a board (one column
+  per workflow step, with Queued first and Done last), and Activity. A
+  tab's own controls sit on the tab line at its right, never in a row of
+  their own under it (owner, 2026-11-21).
 - **Task** shows the pending decision first, then four tabs: Overview,
   Changes, Checks, Activity.
 - **Manager** is one conversation per project. It is a side bar on the
@@ -73,7 +77,11 @@ Workspace / Project / Sprint / Task.
   its engine (every change of the engine's state), sprint shows what
   happened to each of its tasks, task shows every run and its output. Every
   list is one table, one line per row, with the same columns (owner,
-  2026-11-21; `frontend/src/pages/shared/ActivityTable.jsx`).
+  2026-11-21; `frontend/src/pages/shared/ActivityTable.jsx`). By names the
+  role ("Developer", "Code reviewer", "Foreman", a user); the model is on
+  hover. A sprint's Activity filters by who (Everyone, each role, Foreman,
+  Users) and by Problems. How well agents do over many sprints is a
+  statistics view, not a line on these pages (owner, 2026-11-21).
 
 ## Look
 

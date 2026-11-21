@@ -5,6 +5,8 @@ from __future__ import annotations
 import sqlite3
 from typing import Any, Sequence
 
+from ..domain.activity import WhoRule
+
 from ..domain.models import (
     Run,
 )
@@ -172,18 +174,23 @@ class RunStore(StoreBase):
         skip_outcomes: Sequence[str],
         gate_role: str,
         hand_events: dict[str, str],
+        who: WhoRule,
         problem_outcomes: Sequence[str] | None = None,
         problem_statuses: Sequence[str] = (),
-    ) -> tuple[list[dict[str, Any]], int]:
-        """One page of a sprint's activity, newest first, and the total.
+        by: str | None = None,
+    ) -> tuple[list[dict[str, Any]], int, list[str]]:
+        """One page of a sprint's activity, newest first, the total, and who appears in it.
 
         Runs of the sprint's tasks, less those of ``skip_roles``, at
         ``skip_steps``, with ``skip_outcomes``, and gate runs no person
         decided; with the events ``hand_events`` names (event type to the
         outcome it is listed as), whose ``by`` is the actor and ``reason`` the
         detail. With ``problem_outcomes`` only those outcomes, or runs with
-        one of ``problem_statuses``, are kept. ``foreman.domain.activity``
-        says what goes in each.
+        one of ``problem_statuses``, are kept. Each row's ``who`` is
+        ``who.user`` for what a person did, ``who.foreman`` for the engine's
+        own steps, else the run's role; with ``by`` only rows of that ``who``
+        are kept. The last value lists every ``who`` in the sprint's activity,
+        whatever the filters. ``foreman.domain.activity`` says what goes in each.
         """
 
         def marks(values: Sequence[str]) -> str:
@@ -197,7 +204,12 @@ class RunStore(StoreBase):
                    r.agent_backend AS backend, r.model AS model, r.status AS status,
                    r.outcome AS outcome, r.outcome_detail AS outcome_detail,
                    r.commit_sha AS commit_sha, r.duration_ms AS duration_ms,
-                   r.cost_usd AS cost_usd, NULL AS actor
+                   r.cost_usd AS cost_usd, NULL AS actor,
+                   CASE WHEN r.agent_backend IN ({marks(who.user_backends)})
+                             OR r.role_id IN ({marks(who.user_roles)}) THEN ?
+                        WHEN r.agent_backend IN ({marks(who.engine_backends)})
+                             OR substr(r.role_id, 1, ?) = ? THEN ?
+                        ELSE r.role_id END AS who
             FROM runs r JOIN tasks t ON t.id = r.task_id
             WHERE t.sprint_id = ?
               AND r.role_id NOT IN ({marks(skip_roles)})
@@ -209,21 +221,38 @@ class RunStore(StoreBase):
                    'completed',
                    CASE e.event_type {" ".join("WHEN ? THEN ?" for _ in hand_types)} END,
                    json_extract(e.payload_json, '$.reason'), NULL, NULL, 0,
-                   json_extract(e.payload_json, '$.by')
+                   json_extract(e.payload_json, '$.by'), ?
             FROM events e JOIN tasks t ON t.id = e.task_id
             WHERE t.sprint_id = ? AND e.event_type IN ({marks(hand_types)})
         """
-        params: list[Any] = [sprint_id, *skip_roles, *skip_steps, *skip_outcomes, gate_role]
+        params: list[Any] = [
+            *who.user_backends, *who.user_roles, who.user,
+            *who.engine_backends, len(who.builtin_prefix), who.builtin_prefix, who.foreman,
+            sprint_id, *skip_roles, *skip_steps, *skip_outcomes, gate_role,
+        ]
         for event_type in hand_types:
             params.extend([event_type, hand_events[event_type]])
-        params.extend([sprint_id, *hand_types])
-        where = ""
+        params.extend([who.user, sprint_id, *hand_types])
+        present = [
+            row[0]
+            for row in self._connection.execute(
+                f"SELECT DISTINCT a.who FROM ({rows_sql}) a ORDER BY a.who", params
+            ).fetchall()
+            if row[0]
+        ]
+        conditions: list[str] = []
+        all_params = list(params)
         if problem_outcomes is not None:
-            where = (
-                f"WHERE COALESCE(a.outcome, '') IN ({marks(problem_outcomes)})"
-                f" OR a.status IN ({marks(problem_statuses)})"
+            conditions.append(
+                f"(COALESCE(a.outcome, '') IN ({marks(problem_outcomes)})"
+                f" OR a.status IN ({marks(problem_statuses)}))"
             )
-            params.extend([*problem_outcomes, *problem_statuses])
+            all_params.extend([*problem_outcomes, *problem_statuses])
+        if by:
+            conditions.append("a.who = ?")
+            all_params.append(by)
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        params = all_params
         total = self._connection.execute(
             f"SELECT COUNT(*) FROM ({rows_sql}) a {where}", params
         ).fetchone()[0]
@@ -232,7 +261,7 @@ class RunStore(StoreBase):
             " ORDER BY julianday(a.at) DESC, a.id DESC LIMIT ? OFFSET ?",
             [*params, limit, offset],
         ).fetchall()
-        return [dict(row) for row in rows], int(total)
+        return [dict(row) for row in rows], int(total), present
 
     def get_latest_run(self, task_id: str) -> Run | None:
         """Return the most recent run for one task, if it exists."""
