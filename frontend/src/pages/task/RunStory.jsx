@@ -17,7 +17,7 @@ export function withDays(lines, startedAt) {
   return out;
 }
 
-/** One line of the story: when, what happened in words, and what it ran or said. */
+/** One line of the story: when, what happened in words, and what it ran, said or printed. */
 export function RunLine({ line }) {
   const tone = line.tone ? ` tone-${line.tone}` : "";
   if (line.day) {
@@ -30,21 +30,23 @@ export function RunLine({ line }) {
         {formatClock(line.at)}
       </Mono>
       <div className="run-line__what">
-        {line.says || line.mono ? (
-          <p className="run-line__head">
+        {/* What someone wrote (an agent, a user) is shown whole: it is what
+            the run is about. Code and what a program printed (a command the
+            agent ran, a tool's result, test output, an error) show their
+            first lines, with Show all. */}
+        {line.mono ? (
+          <LongText brief className="run-line__head">
             {line.says ? <span className={`run-line__says${tone}`}>{line.says}</span> : null}
-            {line.says && line.mono ? " " : null}
-            {line.mono ? <Mono className="run-line__mono">{line.mono}</Mono> : null}
+            {line.says ? " " : null}
+            <Mono className="run-line__mono">{line.mono}</Mono>
+          </LongText>
+        ) : line.says ? (
+          <p className="run-line__head">
+            <span className={`run-line__says${tone}`}>{line.says}</span>
           </p>
         ) : null}
         {line.body ? (
-          line.output ? (
-            <pre className="run-output__text run-line__output">{line.body}</pre>
-          ) : line.prose ? (
-            <LongText>{line.body}</LongText>
-          ) : (
-            <pre className={line.clamp ? "run-output__text run-line__result" : "run-output__text"}>{line.body}</pre>
-          )
+          line.prose ? <p className="run-line__words">{line.body}</p> : <LongText output>{line.body}</LongText>
         ) : null}
       </div>
     </li>
