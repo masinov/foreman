@@ -130,8 +130,11 @@ class OutcomeNumbers:
 def _when(text: str | None) -> datetime | None:
     if not text:
         return None
+    # The store writes both ``...Z`` and ``...+00:00``; Python before 3.11
+    # reads only the second.
+    value = text[:-1] + "+00:00" if text.endswith("Z") else text
     try:
-        return datetime.fromisoformat(text)
+        return datetime.fromisoformat(value)
     except ValueError:
         return None
 
