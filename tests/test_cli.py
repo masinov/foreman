@@ -1162,7 +1162,7 @@ class ForemanCLISmokeTests(unittest.TestCase):
         self.assertIn("Executed tasks: task-done", result.stdout)
         self.assertIn("Stop reason: task_complete", result.stdout)
 
-    def test_run_command_auto_activates_first_planned_sprint(self) -> None:
+    def test_run_command_leaves_a_planned_sprint_for_a_person(self) -> None:
         store, db_path = self.create_store()
         project = Project(
             id="project-1",
@@ -1191,12 +1191,11 @@ class ForemanCLISmokeTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Executed tasks: none", result.stdout)
-        self.assertIn("Stop reason: sprint_resolved", result.stdout)
+        self.assertIn("Stop reason: idle", result.stdout)
         refreshed = store.get_sprint(sprint.id)
         assert refreshed is not None
-        self.assertEqual(refreshed.status, "active")
-        self.assertIsNotNone(refreshed.started_at)
-        self.assertIsNone(refreshed.completed_at)
+        self.assertEqual(refreshed.status, "planned")
+        self.assertIsNone(refreshed.started_at)
 
     def test_run_command_is_refused_while_a_resident_engine_holds_the_lock(self) -> None:
         store, db_path = self.create_store()

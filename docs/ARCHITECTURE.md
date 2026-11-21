@@ -123,7 +123,11 @@ every task of the active sprint is `done` or `cancelled`, a project whose
 default) the project keeps the sprint `active`; the pass stops
 with `sprint_resolved`, and `engine.sprint_ready` plus one attention turn are
 recorded once per resolution (not on every pass). Only a person finishes it, via
-`MutationService.transition_sprint`.
+`MutationService.transition_sprint`. The engine activates a planned sprint
+only when it has just completed the one before (`auto`); otherwise a planned
+sprint waits for a person to activate it, so a sprint created while the
+engine runs is never started before it is planned (ADR-0025 amendment,
+2026-11-21).
 
 Primary persisted entities:
 

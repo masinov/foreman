@@ -178,7 +178,7 @@ class SprintAdvancementTests(unittest.TestCase):
         self.assertEqual(result.stop_reason, "sprint_resolved")
         self.assertEqual(self._sprint(sprint.id).status, "active")
 
-    def test_person_finishing_sprint_lets_next_pass_run_next_sprint(self) -> None:
+    def test_after_a_person_finishes_a_sprint_the_next_waits_to_be_activated(self) -> None:
         from foreman.mutations import Mutations
 
         project = self._make_project("supervised")
@@ -190,13 +190,18 @@ class SprintAdvancementTests(unittest.TestCase):
         orchestrator.run_project(project.id)
         self.assertEqual(self.ran, [])
 
-        Mutations(self.store, via="cli").transition_sprint(
-            self._sprint(sprint0.id), "completed"
-        )
+        mutations = Mutations(self.store, via="cli")
+        mutations.transition_sprint(self._sprint(sprint0.id), "completed")
+        orchestrator.run_project(project.id)
+
+        # The next sprint waits for a person to activate it (owner, 2026-11-21).
+        self.assertEqual(self.ran, [])
+        self.assertEqual(self._sprint(sprint1.id).status, "planned")
+
+        mutations.transition_sprint(self._sprint(sprint1.id), "active")
         orchestrator.run_project(project.id)
 
         self.assertEqual(self.ran, [next_task.id])
-        self.assertEqual(self._sprint(sprint1.id).status, "active")
 
     def test_task_added_to_resolved_active_sprint_is_run(self) -> None:
         project = self._make_project("supervised")
@@ -228,18 +233,20 @@ class SprintAdvancementTests(unittest.TestCase):
         self.assertEqual(self._attention(project.id), ["sprint_resolved"])
         self.assertEqual(self._event_types(project.id).count("engine.sprint_ready"), 1)
 
-    def test_run_project_auto_activates_first_planned_sprint(self) -> None:
+    def test_the_engine_never_activates_a_planned_sprint(self) -> None:
+        # A sprint created while the engine runs is planned, not started:
+        # its tasks may not be planned yet (owner, 2026-11-21).
         project = self._make_project("directed")
         sprint = self._make_sprint(project.id, order_index=0, status="planned")
-        self._make_done_task(sprint)
+        self._todo_task(sprint, "task-adv-waiting")
 
-        result = self._orchestrator().run_project(project.id)
+        result = self._orchestrator_running_tasks().run_project(project.id)
 
-        self.assertEqual(result.stop_reason, "sprint_resolved")
+        self.assertEqual(self.ran, [])
+        self.assertEqual(result.stop_reason, "idle")
         refreshed = self._sprint(sprint.id)
-        self.assertEqual(refreshed.status, "active")
-        self.assertIsNotNone(refreshed.started_at)
-        self.assertIsNone(refreshed.completed_at)
+        self.assertEqual(refreshed.status, "planned")
+        self.assertIsNone(refreshed.started_at)
 
     def test_blocked_task_prevents_completion_and_attention_at_every_level(self) -> None:
         for level in ("directed", "supervised", "autonomous"):

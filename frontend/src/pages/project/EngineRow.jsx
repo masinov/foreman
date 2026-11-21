@@ -19,10 +19,12 @@ function TaskRef({ engine }) {
 }
 
 /** What the engine's state means now, in a sentence. */
-function EngineSentence({ engine, emptySprint }) {
+function EngineSentence({ engine, emptySprint, noSprint }) {
   const step = engine?.step ? humanize(engine.step).toLowerCase() : null;
   if (engine?.state === ENGINE_STATES.running) {
     if (!engine.task_id) {
+      // The engine never starts a planned sprint itself; a person activates it.
+      if (noSprint) return "Nothing to work on: no sprint is active. Activate one under Sprints.";
       if (emptySprint) return "Nothing to work on: the active sprint has no tasks. Add some on its page.";
       return "Nothing is being worked on now. It takes the next task in the active sprint when one is ready.";
     }
@@ -50,7 +52,7 @@ function EngineSentence({ engine, emptySprint }) {
  * Start, Pause or Resume, and Stop. A control that does not apply to the
  * state is disabled; a command the API refuses shows its sentence.
  */
-export function EngineRow({ projectId, engine, emptySprint = false, onChanged }) {
+export function EngineRow({ projectId, engine, emptySprint = false, noSprint = false, onChanged }) {
   const { pending, busy, notice, send } = useEngineControl({ projectId, onChanged });
   const state = engine?.state ?? null;
   const applies = applicableCommands(state);
@@ -66,7 +68,7 @@ export function EngineRow({ projectId, engine, emptySprint = false, onChanged })
         {state ? <StatusDot tone={tone}>{word}</StatusDot> : null}
         {state ? (
           <p className="engine__sentence">
-            <EngineSentence engine={engine} emptySprint={emptySprint} />
+            <EngineSentence engine={engine} emptySprint={emptySprint} noSprint={noSprint} />
           </p>
         ) : null}
       </div>

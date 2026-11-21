@@ -945,8 +945,12 @@ Two related knobs:
     finished. Later passes over the same resolved sprint add nothing; a task
     added to it is run, and the turn is raised again once it is resolved. A
     person finishes the sprint (dashboard "Finish sprint", `foreman sprint
-    complete`, or a confirmed `finish_sprint` proposal); the next pass then
-    activates the next planned sprint.
+    complete`, or a confirmed `finish_sprint` proposal). The next planned
+    sprint then waits for a person to activate it ("Activate sprint",
+    `foreman sprint activate`, or Start on the engine row when no sprint is
+    active): the engine never starts a planned sprint on its own (owner,
+    2026-11-21), so a sprint created while it runs stays planned until its
+    tasks are planned and someone starts it.
   - `auto` — completes the resolved sprint (`engine.sprint_completed`),
     activates the next planned sprint and keeps going; when there is none it
     stops `idle` with the `sprint_resolved` turn.

@@ -163,7 +163,9 @@ class ProjectPass(OrchestratorBase):
                 stop_reason="task_complete",
             )
 
-        self.sprints.activate_first_planned(project.id)
+        # A planned sprint waits for a person to activate it, or for Foreman
+        # to finish the sprint before it; the engine never starts one on its
+        # own (owner, 2026-11-21).
         stop_reason = "idle"
         while True:
             if (

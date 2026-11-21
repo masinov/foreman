@@ -325,7 +325,7 @@ class BacklogIsNeverRunTests(RepoTestCase):
         self._project()
         backlog_task = self._backlog_task()
 
-        self.assertIsNone(self._orchestrator().sprints.activate_first_planned("p"))
+        self._orchestrator().run_project("p")
 
         self.assertEqual(self.store.get_sprint(backlog_task.sprint_id).status, "planned")
         self.assertIsNone(self.store.get_active_sprint("p"))
