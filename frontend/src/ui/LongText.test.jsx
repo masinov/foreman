@@ -52,4 +52,14 @@ describe("LongText", () => {
     fireEvent.click(screen.getByRole("button", { name: "Show less" }));
     expect(text).toHaveClass("long-text__text--folded");
   });
+
+  it("folds what a program printed to its first lines, monospace, with the same Show all", () => {
+    heights(900, 54);
+    render(<LongText output>{"line 1\nline 2\nline 3\nline 4"}</LongText>);
+    const text = screen.getByText(/line 1/);
+    expect(text.tagName).toBe("PRE");
+    expect(text).toHaveClass("long-text__text--output", "long-text__text--folded");
+    fireEvent.click(screen.getByRole("button", { name: "Show all" }));
+    expect(text).not.toHaveClass("long-text__text--folded");
+  });
 });

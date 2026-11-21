@@ -34,7 +34,6 @@ describe("what a run recorded, in words", () => {
       mono: "/p/assay",
       body: "it holds staged changes that are not a commit of main",
       tone: "failed",
-      clamp: true,
     });
   });
 
@@ -84,7 +83,6 @@ describe("what a run recorded, in words", () => {
       says: "",
       body: "  first\nsecond",
       tone: null,
-      clamp: true,
     });
     expect(sayEntry(entry("agent.tool_result", { is_error: true, preview: "boom" }))).toMatchObject({ says: "It failed", tone: "failed" });
     expect(sayEntry(entry("agent.tool_result", { is_error: false, preview: "" }))).toBeNull();

@@ -564,6 +564,21 @@
   overflow: hidden;
 }
 
+/* What a program printed: its first lines, quieter than what a person or
+   an agent wrote. */
+.long-text__text--output {
+  --long-text-lines: var(--long-text-lines-output);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--color-text-quiet);
+}
+
+.long-text__text--brief {
+  --long-text-lines: var(--long-text-lines-output);
+}
+
 .long-text__text--short {
   --long-text-lines: var(--long-text-lines-short);
 }

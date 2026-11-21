@@ -99,6 +99,8 @@
   --long-text-lines: 12;
   /* A text that should leave the rest of its page in view (a sprint's goal) */
   --long-text-lines-short: 4;
+  /* What a program printed in a run's story: its first lines */
+  --long-text-lines-output: 3;
   /* The verb column of a proposal card in the manager side bar */
   --proposal-term-width: 62px;
   /* Below this width the manager cannot sit beside the page and becomes an
@@ -135,8 +137,6 @@
   /* Task changes: the file list beside the diff */
   --changes-files-width: 300px;
   --run-time-width: 64px;
-  --run-result-lines: 3;
-  --run-output-max-height: 320px;
   --changes-files-max-width: 400px;
   --changes-diff-min-width: 520px;
   --changes-list-offset: 140px;

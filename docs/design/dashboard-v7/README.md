@@ -82,6 +82,11 @@ Workspace / Project / Sprint / Task.
   hover. A sprint's Activity filters by who (Everyone, each role, Foreman,
   Users) and by Problems. How well agents do over many sprints is a
   statistics view, not a line on these pages (owner, 2026-11-21).
+- **A run's story has one rule for long text** (owner, 2026-11-21): what
+  someone wrote (an agent's message, a user's guidance or reason) is shown
+  whole; code and what a program printed (a command the agent ran, a
+  tool's result, test output, an error) show their first three lines, with
+  "Show all" when there is more. Nothing is cut without a way to open it.
 
 ## Look
 

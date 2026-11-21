@@ -124,7 +124,6 @@ export function sayEntry(entry) {
         // Blank lines before the first line of output say nothing.
         body: String(d.preview || "").replace(/^(\s*\n)+/, "").trimEnd(),
         tone: d.is_error ? "failed" : null,
-        clamp: true,
       };
     case "agent.completed":
       return {
@@ -183,19 +182,18 @@ export function sayEntry(entry) {
     case "engine.checkout_updated":
       return { says: `Brought the project's folder to ${d.branch} at ${shortSha(d.sha)}`, mono: d.path };
     case "engine.checkout_behind":
-      return { says: `The project's folder still shows an older ${d.branch}`, mono: d.path, body: d.reason || "", tone: "failed", clamp: true };
+      return { says: `The project's folder still shows an older ${d.branch}`, mono: d.path, body: d.reason || "", tone: "failed" };
     case "engine.merge_conflict":
-      return { says: `Merge conflict with ${d.target}`, body: d.error || "", tone: "failed", clamp: true };
+      return { says: `Merge conflict with ${d.target}`, body: d.error || "", tone: "failed" };
     case "engine.merge_failed":
-      return { says: "The merge failed", body: d.error || "", tone: "failed", clamp: true };
+      return { says: "The merge failed", body: d.error || "", tone: "failed" };
     case "engine.branch_sync":
       return {
         says: join(["Brought the branch up to date", d.commits_behind ? `it was ${plural(d.commits_behind, "commit")} behind` : ""], ": "),
         body: d.detail || "",
-        clamp: true,
       };
     case "engine.branch_sync_conflict":
-      return { says: "Could not bring the branch up to date: conflict", body: d.detail || "", tone: "failed", clamp: true };
+      return { says: "Could not bring the branch up to date: conflict", body: d.detail || "", tone: "failed" };
     case "workflow.step_completed":
       return { says: `${humanize(d.step)} ended: ${outcomeWord(d.outcome)}`, tone: outcomeTone(d.outcome) };
     case "workflow.transition":

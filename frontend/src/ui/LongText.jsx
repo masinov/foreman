@@ -8,12 +8,18 @@ import { Caret } from "./Caret";
  * height with a "Show all" under it, so a long text does not push the rest
  * of the page out of reach. Short text gets no control.
  *
+ * With `brief` it folds to its first three lines (a command an agent ran).
+ * With `output` it is what a program printed (a tool's result, test output,
+ * an error): monospace, quieter, and folded to its first three lines, with
+ * the same "Show all" when there is more.
+ *
  * The control must not read as one more line of the text above it: it has
  * the look of everything that opens more in place (`expander` in ui.css),
  * with a caret that points down while there is more to show and up once it
  * is all shown.
  */
-export function LongText({ children, className = "", short = false }) {
+export function LongText({ children, className = "", short = false, brief = false, output = false }) {
+  const Tag = output ? "pre" : "p";
   const ref = useRef(null);
   const id = useId();
   const [open, setOpen] = useState(false);
@@ -30,17 +36,24 @@ export function LongText({ children, className = "", short = false }) {
     measure();
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
-  }, [children, open, short]);
+  }, [children, open, short, brief, output]);
 
   return (
     <div className="long-text">
-      <p
+      <Tag
         ref={ref}
         id={id}
-        className={["long-text__text", open ? "" : "long-text__text--folded", short ? "long-text__text--short" : "", className].filter(Boolean).join(" ")}
+        className={[
+          "long-text__text",
+          output ? "long-text__text--output" : "",
+          open ? "" : "long-text__text--folded",
+          short ? "long-text__text--short" : "",
+          brief ? "long-text__text--brief" : "",
+          className,
+        ].filter(Boolean).join(" ")}
       >
         {children}
-      </p>
+      </Tag>
       {folds ? (
         <button
           type="button"

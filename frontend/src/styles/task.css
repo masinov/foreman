@@ -388,29 +388,12 @@
   color: var(--color-text-quiet);
 }
 
-.run-line .long-text__text {
+/* What an agent or a user wrote, whole, line breaks kept. */
+.run-line__words {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   color: var(--color-text);
-}
-
-/* A test's output: a box of its own that scrolls, so a long one does not
-   push the rest of the story away. */
-.run-line__output {
-  max-height: var(--run-output-max-height);
-  padding: var(--space-2) var(--space-3);
-  overflow-y: auto;
-  background: var(--color-inset);
-  border-radius: var(--radius);
-  color: var(--color-text-secondary);
-}
-
-/* What a tool returned is long and rarely the point: its first lines,
-   quieter than the line that asked for it. */
-.run-line__result {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: var(--run-result-lines);
-  overflow: hidden;
-  color: var(--color-text-quiet);
 }
 
 .run-output__text {
