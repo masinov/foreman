@@ -68,7 +68,7 @@ MANAGER_SESSION_COMMANDS: frozenset[str] = frozenset(
 
 MANAGER_REFUSAL = (
     "Foreman's manager cannot change project state itself. Propose the change: "
-    "`foreman proposal create <project> --json <file or ->`; a person confirms it."
+    "`foreman proposal create <project> --json <file or ->`; a user confirms it."
 )
 
 CLI_DESCRIPTION = (

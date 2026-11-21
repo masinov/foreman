@@ -298,7 +298,7 @@ class CreateRefusalTests(ProposalCase):
             ("cancel_task", "already done", {"kind": "cancel_task", "task_id": "done1"}),
             ("complete_task", "only a queued, unfinished or", {"kind": "complete_task", "task_id": "done1", "reason": "x"}),
             ("reopen_task", "only a done or cancelled task", {"kind": "reopen_task", "task_id": "todo1"}),
-            ("send_back", "not waiting for a person", {"kind": "send_back", "task_id": "todo1", "guidance": "x"}),
+            ("send_back", "not waiting for a user", {"kind": "send_back", "task_id": "todo1", "guidance": "x"}),
             ("approve_gate", "not waiting at a gate", {"kind": "approve_gate", "task_id": "running"}),
         ]
         self.assertEqual({kind for kind, _, _ in cases}, set(OPERATION_KINDS))
@@ -614,7 +614,7 @@ class ProposalCliTests(ProposalCase):
 
         code, out, err = self.run_cli("proposal", "create", "p1", "--json", str(path), "--db", self.db_path)
         self.assertEqual(code, 0, err)
-        self.assertIn("Nothing changes until a person confirms it.", out)
+        self.assertIn("Nothing changes until a user confirms it.", out)
         self.assertIn(f"1. Accept {filed.task_key} Filed", out)
         self.assertEqual(self.store.get_task(filed.id).status, "triage")
 

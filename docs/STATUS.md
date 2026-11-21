@@ -114,7 +114,7 @@ is no login.
 
 - Spec 6.3 says an *autonomous* project has its sprints finished by the
   engine. Since 2026-11-19 (owner) that is the project setting
-  `sprint_completion` ("Finish sprints: A person / Foreman"); the autonomy
+  `sprint_completion` ("Finish sprints: A user / Foreman"); the autonomy
   level no longer decides it (ADR-0025 amendment).
 
 - Design v7 draws every board column open, and an empty one says "None". On

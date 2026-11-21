@@ -313,11 +313,13 @@ class MilestoneTests(WorkspaceApiCase):
         self.assertEqual(
             self.kinds(body),
             [("engine_stopped", "ana"), ("engine_resumed", "bo"), ("engine_paused", "ana"),
-             ("sprint_started", None), ("sprint_finished", None), ("sprint_started", None)],
+             ("engine_started", None), ("sprint_started", None), ("sprint_finished", None),
+             ("sprint_started", None)],
         )
-        self.assertEqual(body["total"], 6)
+        self.assertEqual(body["total"], 7)
         self.assertEqual(body["milestones"][0]["at"], "2026-01-07T00:00:01Z")
-        self.assertEqual(body["milestones"][3]["sprint_title"], "Sprint 2")
+        self.assertEqual(body["milestones"][3]["at"], "2026-01-04T12:00:00Z")
+        self.assertEqual(body["milestones"][4]["sprint_title"], "Sprint 2")
         self.assertNotIn("task_id", body["milestones"][0])
         # The backlog and an engine's rejected command are not milestones.
         self.assertNotIn("Backlog", {m["sprint_title"] for m in body["milestones"]})
@@ -335,7 +337,7 @@ class MilestoneTests(WorkspaceApiCase):
     def test_all_projects_orders_across_them(self) -> None:
         self.seed()
         body = self.get("/api/v1/milestones").json()
-        self.assertEqual(body["total"], 8)
+        self.assertEqual(body["total"], 10)
         stamps = [m["at"] for m in body["milestones"]]
         self.assertEqual(stamps[0], "2026-01-07T00:00:01Z")
         self.assertEqual(body["milestones"][-1]["at"], "2026-01-01T00:00:00+00:00")
@@ -356,8 +358,8 @@ class MilestoneTests(WorkspaceApiCase):
     def test_paging(self) -> None:
         self.seed()
         page = self.get("/api/v1/projects/p1/milestones?limit=3&offset=2").json()
-        self.assertEqual(self.kinds(page), [("engine_paused", "ana"), ("sprint_started", None), ("sprint_finished", None)])
-        self.assertEqual((page["total"], page["limit"], page["offset"]), (6, 3, 2))
+        self.assertEqual(self.kinds(page), [("engine_paused", "ana"), ("engine_started", None), ("sprint_started", None)])
+        self.assertEqual((page["total"], page["limit"], page["offset"]), (7, 3, 2))
 
     def test_a_confirmed_plan_names_who_confirmed_it_its_sprint_and_its_reason(self) -> None:
         self.seed()
@@ -373,7 +375,7 @@ class MilestoneTests(WorkspaceApiCase):
         self.assertEqual([(m["actor"], m["sprint_id"], m["sprint_title"], m["detail"]) for m in body["milestones"]],
                          [("bo", "s2", "Sprint 2", "Two tasks reach the goal.")])
 
-    def test_a_running_engine_is_no_milestone_and_one_past_its_lease_was_lost(self) -> None:
+    def test_an_engine_starts_and_one_past_its_lease_was_lost(self) -> None:
         self.project("p1")
         with self.store._connection:
             self.store._connection.execute(
@@ -385,8 +387,28 @@ class MilestoneTests(WorkspaceApiCase):
                 "'2099-01-01T00:00:00Z','2099-01-01T00:05:00Z')"
             )
         body = self.get("/api/v1/projects/p1/milestones").json()
-        self.assertEqual([(m["kind"], m["at"]) for m in body["milestones"]],
-                         [("engine_lost", "2026-01-01T00:06:00Z")])
+        self.assertEqual([(m["kind"], m["at"]) for m in body["milestones"]], [
+            ("engine_started", "2026-01-02T00:00:00Z"),
+            ("engine_lost", "2026-01-01T00:06:00Z"),
+            ("engine_started", "2026-01-01T00:00:00Z"),
+        ])
+
+    def test_the_resume_that_starts_an_engine_names_who_started_it(self) -> None:
+        # Start on the dashboard sends a resume that the new engine applies as it starts.
+        self.project("p1")
+        self.store.enqueue_engine_command(project_id="p1", command="resume", requested_by="ana", command_id="c-start")
+        self.store.mark_engine_command("c-start", "completed")
+        self.set_column("engine_commands", "requested_at", "2026-01-01T00:00:00Z", "c-start")
+        self.set_column("engine_commands", "completed_at", "2026-01-01T00:00:02Z", "c-start")
+        with self.store._connection:
+            self.store._connection.execute(
+                "INSERT INTO leases (id, project_id, resource_type, resource_id, holder_id, lease_token,"
+                " status, acquired_at, heartbeat_at, expires_at, released_at) VALUES"
+                " ('l1','p1','engine','p1','eng-1','tok','released','2026-01-01T00:00:01Z',"
+                "'2026-01-01T00:10:00Z','2026-01-01T00:15:00Z','2026-01-01T00:10:00Z')"
+            )
+        body = self.get("/api/v1/projects/p1/milestones").json()
+        self.assertEqual(self.kinds(body), [("engine_stopped", None), ("engine_started", "ana")])
 
     def test_empty_project(self) -> None:
         self.project("p1")

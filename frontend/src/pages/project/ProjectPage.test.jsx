@@ -300,7 +300,7 @@ describe("the Sprints tab", () => {
     // The goal is on the sprint's own page, not under the title in the list.
     expect(within(rows[0]).queryByText(ACTIVE.goal)).toBeNull();
     expect(rows[0]).toHaveTextContent("3 need you · 1 done");
-    // What waits for a person is gold wherever the counts appear.
+    // What waits for a user is gold wherever the counts appear.
     expect(within(rows[0]).getByText("3 need you")).toHaveClass("attention");
     expect(within(rows[0]).getByText("since 11 Nov")).toBeInTheDocument();
     expect(within(rows[0]).getByText("$1.31")).toBeInTheDocument();
@@ -433,7 +433,8 @@ describe("the Activity tab", () => {
         milestone("sprint_finished", { sprint_id: "sprint-55", sprint_title: "Sprint 55: baseline", merged_count: 3 }),
         milestone("plan_confirmed", { sprint_id: "sprint-57", sprint_title: "Sprint 57: structure", actor: "masis", detail: "Eight tasks reach the goal." }),
         milestone("sprint_started", { sprint_id: "sprint-54", sprint_title: "Sprint 54" }),
-        milestone("engine_paused", { actor: "bo" }),
+        // Started from the dashboard: Foreman recorded the channel, not a name.
+        milestone("engine_started", { actor: "dashboard" }),
       ],
       total: 6,
     };
@@ -442,17 +443,18 @@ describe("the Activity tab", () => {
     expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
       "When",
       "Sprint or engine",
+      "Title",
       "What happened",
       "By",
     ]);
     const rows = within(table).getAllByRole("row").slice(1);
     expect(rows.map(cells)).toEqual([
-      ["11 Nov", "Engine", "Died", ""],
-      ["11 Nov", "Engine", "Stopped", "ana"],
-      ["11 Nov", "Sprint 55 · baseline", "Finished", ""],
-      ["11 Nov", "Sprint 57 · structure", "Plan confirmed", "masis"],
-      ["11 Nov", "Sprint 54", "Started", ""],
-      ["11 Nov", "Engine", "Paused", "bo"],
+      ["11 Nov", "Engine", "", "Died", ""],
+      ["11 Nov", "Engine", "", "Stopped", "ana"],
+      ["11 Nov", "Sprint 55", "baseline", "Finished", ""],
+      ["11 Nov", "Sprint 57", "structure", "Plan confirmed", "masis"],
+      ["11 Nov", "Sprint 54", "", "Started", ""],
+      ["11 Nov", "Engine", "", "Started", "a user"],
     ]);
     // Why is on hover, never under the row.
     expect(within(rows[2]).getByText("Finished")).toHaveAttribute("title", "3 tasks merged");
@@ -468,11 +470,11 @@ describe("the Activity tab", () => {
   it("shows the project's sprint and engine events newest first", async () => {
     await renderProject("/dashboard/projects/foreman/activity");
     const table = await screen.findByRole("table", { name: "Activity" });
-    expect(within(table).getAllByRole("row").slice(1).map((row) => cells(row).slice(1, 4))).toEqual([
-      ["Sprint 56 · engine truthfulness", "Started", ""],
-      ["Engine", "Stopped", "ana"],
+    expect(within(table).getAllByRole("row").slice(1).map((row) => cells(row).slice(1, 5))).toEqual([
+      ["Sprint 56", "engine truthfulness", "Started", ""],
+      ["Engine", "", "Stopped", "ana"],
     ]);
-    expect(within(table).getByRole("link", { name: "Sprint 56 · engine truthfulness" })).toHaveAttribute(
+    expect(within(table).getByRole("link", { name: "engine truthfulness" })).toHaveAttribute(
       "href",
       "/dashboard/sprints/sprint-56",
     );
@@ -502,19 +504,22 @@ describe("the Activity tab", () => {
       milestones: [milestone("sprint_finished", { sprint_id: "sprint-55", sprint_title: "Sprint 55: baseline" })],
       total: 1,
     };
-    routes[milestonesUrl({ kinds: ["engine_stopped", "engine_lost", "engine_paused", "engine_resumed"] })] = { milestones: [], total: 0 };
+    routes[milestonesUrl({ kinds: ["engine_started", "engine_stopped", "engine_paused", "engine_resumed", "engine_lost"] })] = {
+      milestones: [],
+      total: 0,
+    };
     const { fetchImpl } = await renderProject("/dashboard/projects/foreman/activity", routes);
     const filters = screen.getByRole("group", { name: "Show" });
     expect(within(filters).getAllByRole("button").map((button) => button.textContent)).toEqual(["All", "Sprints", "Engine"]);
     expect(within(filters).getByRole("button", { name: "All" })).toHaveAttribute("aria-pressed", "true");
 
     fireEvent.click(within(filters).getByRole("button", { name: "Sprints" }));
-    expect(await screen.findByText("Sprint 55 · baseline")).toBeInTheDocument();
+    expect(await screen.findByText("baseline")).toBeInTheDocument();
     expect(within(filters).getByRole("button", { name: "Sprints" })).toHaveAttribute("aria-pressed", "true");
     expect(calls(fetchImpl, "GET", milestonesUrl({ kinds: sprintKinds }).slice(4))).toHaveLength(1);
 
     fireEvent.click(within(filters).getByRole("button", { name: "Engine" }));
-    expect(await screen.findByText("The engine has not stopped, paused or died yet.")).toBeInTheDocument();
+    expect(await screen.findByText("The engine has not started yet.")).toBeInTheDocument();
   });
 });
 

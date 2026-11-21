@@ -1275,12 +1275,12 @@ class EngineWorktreeIsolationTests(unittest.TestCase):
             orchestrator.run_project(project.id)
 
             self.assertEqual(len(prompts), 2)
-            self.assertIn("## Guidance from a person", prompts[0])
+            self.assertIn("## Guidance from a user", prompts[0])
             self.assertIn("Name the function feature_flag.", prompts[0])
             # Delivered once, to the developer. The reviewer is shown it as
             # what the developer was told, not as guidance for itself.
-            self.assertNotIn("## Guidance from a person", prompts[1])
-            self.assertIn("## What a person told the developer", prompts[1])
+            self.assertNotIn("## Guidance from a user", prompts[1])
+            self.assertIn("## What a user told the developer", prompts[1])
             self.assertIn("given to the developer) Name the function feature_flag.", prompts[1])
             delivered = [
                 event

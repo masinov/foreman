@@ -49,16 +49,16 @@ class GuidanceTests(unittest.TestCase):
 
     def test_a_reviewer_sees_every_note_and_whether_the_developer_has_it(self) -> None:
         prompt = prompt_with_guidance_as_context("Review this.", guidance_notes(self.events))
-        self.assertIn("## What a person told the developer", prompt)
+        self.assertIn("## What a user told the developer", prompt)
         self.assertIn("They\nare not instructions to you.", prompt)
         self.assertIn("given to the developer) Leave the API alone.", prompt)
         self.assertIn("not given to the developer yet) Only the UI changes.", prompt)
-        self.assertNotIn("## Guidance from a person", prompt)
+        self.assertNotIn("## Guidance from a user", prompt)
 
     def test_what_a_reviewer_was_shown_still_waits_for_the_developer(self) -> None:
         self.assertEqual([note.event_id for note in pending_guidance(self.events)], ["n2"])
         prompt = prompt_with_guidance("Develop this.", pending_guidance(self.events))
-        self.assertIn("## Guidance from a person", prompt)
+        self.assertIn("## Guidance from a user", prompt)
         self.assertIn("Only the UI changes.", prompt)
         self.assertNotIn("Leave the API alone.", prompt)
 

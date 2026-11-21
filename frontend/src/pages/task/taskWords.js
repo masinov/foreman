@@ -134,7 +134,7 @@ export function stepRows(task, workflow, engine = null) {
       result = { tone: "idle", word: "Not reached" };
     }
     let by = last ? runBy(last, task) : "";
-    if (!by && step.role === HUMAN_GATE) by = "a person";
+    if (!by && step.role === HUMAN_GATE) by = "a user";
     if (!by && step.role.startsWith(BUILTIN)) by = FOREMAN;
     return { id: step.id, label: humanize(step.id), result, by, runs: mine.length };
   });
@@ -240,8 +240,8 @@ const POLICY_SOURCES = {
 };
 
 const GATE_WORDS = {
-  plan_approval: { human: "A person approves plans", auto: "Foreman approves plans" },
-  merge_approval: { human: "A person approves merges", auto: "Foreman approves merges" },
+  plan_approval: { human: "A user approves plans", auto: "Foreman approves plans" },
+  merge_approval: { human: "A user approves merges", auto: "Foreman approves merges" },
 };
 
 /**
@@ -269,13 +269,13 @@ export function filedBy(task) {
     return [source.reporter, source.system ? `via ${source.system}` : null].filter(Boolean).join(" ");
   }
   if (!task.created_by) return "";
-  return task.created_by === "human" ? "a person" : humanize(task.created_by).toLowerCase();
+  return task.created_by === "human" ? "a user" : humanize(task.created_by).toLowerCase();
 }
 
 // ── Overrides for this task ──────────────────────────────────────────────
 
 const GATE_CHOICES = [
-  { value: "human", word: "A person decides" },
+  { value: "human", word: "A user decides" },
   { value: "auto", word: "Foreman decides" },
 ];
 

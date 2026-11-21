@@ -11,15 +11,15 @@ describe("who did a run", () => {
     expect(runBy(run({ role_id: "_builtin:orchestrator", agent_backend: "orchestrator", model: null }))).toBe(FOREMAN);
     const filed = run({ role_id: "human", agent_backend: "cli", outcome: "file", model: null });
     expect(runBy(filed, { created_by: "masis" })).toBe("masis");
-    expect(runBy(filed, { created_by: "human" })).toBe("a person");
+    expect(runBy(filed, { created_by: "human" })).toBe("a user");
     expect(runBy(run({ role_id: "api", agent_backend: "api", outcome: "created" }), { source: { system: "tracker" } })).toBe(
       "tracker, through the API",
     );
   });
 
-  it("says a gate was decided by a person or by Foreman, as the run records", () => {
+  it("says a gate was decided by a user or by Foreman, as the run records", () => {
     const gate = { role_id: "_builtin:human_gate", workflow_step: "merge_approval", model: null };
-    expect(runBy(run({ ...gate, agent_backend: "human", outcome: "approve" }))).toBe("a person");
+    expect(runBy(run({ ...gate, agent_backend: "human", outcome: "approve" }))).toBe("a user");
     expect(runBy(run({ ...gate, agent_backend: "builtin", outcome: "approve" }))).toBe(FOREMAN);
   });
 });
@@ -49,7 +49,7 @@ describe("how a run ended", () => {
     });
     expect(runResult(auto)).toEqual({ tone: "passed", word: "Approved", note: "By the project setting" });
     const asked = run({ role_id: "_builtin:human_gate", agent_backend: "builtin", outcome: "paused", outcome_detail: "Awaiting human approval" });
-    expect(runResult(asked)).toEqual({ tone: "attention", word: "Asked a person", note: "" });
+    expect(runResult(asked)).toEqual({ tone: "attention", word: "Asked a user", note: "" });
   });
 
   it("gives a failure its message, and a merge conflict its first sentence", () => {

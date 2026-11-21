@@ -75,7 +75,7 @@ def outcome_lines(numbers: dict[str, Any]) -> list[str]:
     unasked = f"stepped in unasked {people['interventions']} times"
     if people["interventions"]:
         unasked += f" ({_named_counts(people['interventions_by_kind'])})"
-    lines.append(f"A person: {asked}; {unasked}")
+    lines.append(f"A user: {asked}; {unasked}")
     cost = numbers["cost"]
     per_task = cost["per_merged_task_usd"]
     lines.append(
@@ -151,7 +151,7 @@ def register_outcomes(subparsers: argparse._SubParsersAction) -> None:
 
     parser = subparsers.add_parser(
         "outcomes",
-        help="Show how well a project's agents do: first-time passes, send-backs, a person's part, cost.",
+        help="Show how well a project's agents do: first-time passes, send-backs, a user's part, cost.",
     )
     parser.add_argument("project_id", help="Project identifier.")
     parser.add_argument("--sprint", help="Only the tasks of this sprint.")

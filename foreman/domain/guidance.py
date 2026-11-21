@@ -88,9 +88,9 @@ def prompt_with_guidance(prompt: str, notes: list[GuidanceNote]) -> str:
     if not notes:
         return prompt
     lines = [
-        "## Guidance from a person",
+        "## Guidance from a user",
         "",
-        "A person overseeing this task wrote the following since the last agent",
+        "A user overseeing this task wrote the following since the last agent",
         "step. Follow it in this step. Where it conflicts with earlier feedback,",
         "the guidance wins. If it asks for work that is not this step's job, say so",
         "in your final message so the next step picks it up.",
@@ -112,9 +112,9 @@ def prompt_with_guidance_as_context(prompt: str, notes: list[GuidanceNote]) -> s
     if not notes:
         return prompt
     lines = [
-        "## What a person told the developer",
+        "## What a user told the developer",
         "",
-        "A person overseeing this task wrote these notes for the developer. They",
+        "A user overseeing this task wrote these notes for the developer. They",
         "are not instructions to you. Review the work against the task as these",
         "notes changed it. A note the developer has not had yet cannot be in the",
         "work; if it is not, say so rather than treating it as a fault.",

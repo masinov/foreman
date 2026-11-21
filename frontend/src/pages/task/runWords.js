@@ -202,11 +202,11 @@ export function sayEntry(entry) {
       return { says: `Next step: ${humanize(d.to_step)}` };
     case "workflow.paused":
       return {
-        says: d.reason === "human_gate" ? `Waiting for a person: ${humanize(d.policy || d.step).toLowerCase()}` : `Paused: ${humanize(d.reason).toLowerCase()}`,
+        says: d.reason === "human_gate" ? `Waiting for a user: ${humanize(d.policy || d.step).toLowerCase()}` : `Paused: ${humanize(d.reason).toLowerCase()}`,
       };
     case "workflow.resumed":
       return {
-        says: `A person ${d.decision === "approve" ? "approved" : "sent it back"}. Next step: ${humanize(d.next_step)}`,
+        says: `A user ${d.decision === "approve" ? "approved" : "sent it back"}. Next step: ${humanize(d.next_step)}`,
       };
     case "workflow.no_transition":
       return { says: `Nothing follows "${d.outcome}" at ${humanize(d.step)}. The task stopped.`, tone: "failed" };
@@ -219,7 +219,7 @@ export function sayEntry(entry) {
     case "engine.worktree_removed":
       return { says: "Working copy removed" };
     case "engine.attention_needed":
-      return { says: `Needs a person: ${humanize(d.trigger).toLowerCase()}` };
+      return { says: `Needs a user: ${humanize(d.trigger).toLowerCase()}` };
     case "engine.task_created":
       return { says: "Filed a task", body: d.title || "", prose: true };
     case "signal.progress":
@@ -227,7 +227,7 @@ export function sayEntry(entry) {
     case "signal.blocker":
       return { says: "Reported a blocker", body: d.message || "", prose: true, tone: "failed" };
     case "human.message":
-      return { says: "A person wrote guidance", body: d.text || "", prose: true };
+      return { says: "A user wrote guidance", body: d.text || "", prose: true };
     case "human.message_delivered":
       return { says: "The guidance reached the agent" };
     case "engine.command_applied":

@@ -86,6 +86,7 @@ export function SprintActivity({ sprintId }) {
           caption="Activity"
           items={list.items}
           describe={describe}
+          keyHeader="Key"
           subjectHeader="Task"
           numbers={["took", "spend"]}
           rowKey={(item) => `${item.source}:${item.id}`}

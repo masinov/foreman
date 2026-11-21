@@ -17,7 +17,7 @@ _TRIGGER_LABELS: dict[str, str] = {
     "task_blocked": "A task was blocked and needs a decision.",
     "evidence_failed": "Completion evidence failed the proof gate.",
     "loop_limit": "A task hit the workflow step-visit loop limit.",
-    "sprint_resolved": "Every task of the sprint is finished and the next move is a person's.",
+    "sprint_resolved": "Every task of the sprint is finished and the next move is a user's.",
 }
 
 
@@ -98,7 +98,7 @@ def build_attention_digest(
             "will execute it, or confirm it if you propose it.",
         ]
     lines += [
-        "You change nothing yourself; a person confirms every change (ADR-0022).",
+        "You change nothing yourself; a user confirms every change (ADR-0022).",
         "- inspect: foreman board / task show / history / cost / sprint list / backlog list",
         f"- propose: foreman proposal create {project.id} --json - (the operations in",
         "  your operating contract: plan, file, accept, block, unblock, cancel,",

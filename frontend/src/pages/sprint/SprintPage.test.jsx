@@ -44,7 +44,7 @@ describe("the sprint page head", () => {
     expect(summary).toHaveTextContent(/State\s*Active since 11 Nov/);
     expect(summary).toHaveTextContent("1 need you · 1 in progress · 2 to do · 1 done");
     expect(summary).toHaveTextContent("$1.31 · 28.5K tokens");
-    // Nothing about Foreman starting tasks where a person plans them all.
+    // Nothing about Foreman starting tasks where a user plans them all.
     expect(summary).not.toHaveTextContent(/Foreman/);
   });
 
@@ -92,7 +92,7 @@ describe("the view toggle", () => {
 });
 
 describe("the list", () => {
-  it("orders waiting for a person, running, queued in run order, then done", async () => {
+  it("orders waiting for a user, running, queued in run order, then done", async () => {
     await renderSprint();
     expect(rowKeys()).toEqual(["FOR-14", "FOR-13", "FOR-17", "FOR-18", "FOR-10"]);
   });
@@ -434,6 +434,7 @@ describe("activity", () => {
     const table = await screen.findByRole("table", { name: "Activity" });
     expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
       "When",
+      "Key",
       "Task",
       "What happened",
       "By",
@@ -441,21 +442,22 @@ describe("activity", () => {
       "Spend",
     ]);
     const rows = within(table).getAllByRole("row").slice(1);
-    expect(cells(rows[0]).slice(1)).toEqual(["FOR-14 · Title of FOR-14", "Sent back", "sonnet-5-5", "7 s", "$0.12"]);
+    // The key has its own column, as in the task list above.
+    expect(cells(rows[0]).slice(1)).toEqual(["FOR-14", "Title of FOR-14", "Sent back", "sonnet-5-5", "7 s", "$0.12"]);
     // Why is on hover, not under the row.
     expect(within(rows[0]).getByText("Sent back")).toHaveAttribute("title", "The log can still contain the host and port.");
     expect(rows[0]).not.toHaveTextContent("The log can");
-    expect(cells(rows[1]).slice(2)).toEqual(["Tests passed", "Foreman", "7 s", ""]);
-    expect(cells(rows[2]).slice(2)).toEqual(["Developed", "sonnet-5-5", "4 min 22 s", "$0.12"]);
+    expect(cells(rows[1]).slice(3)).toEqual(["Tests passed", "Foreman", "7 s", ""]);
+    expect(cells(rows[2]).slice(3)).toEqual(["Developed", "sonnet-5-5", "4 min 22 s", "$0.12"]);
     // A step that took under a second says nothing about it.
-    expect(cells(rows[3]).slice(2)).toEqual(["Merged", "Foreman", "", ""]);
-    expect(cells(rows[4]).slice(2)).toEqual(["Cancelled", "ana", "", ""]);
+    expect(cells(rows[3]).slice(3)).toEqual(["Merged", "Foreman", "", ""]);
+    expect(cells(rows[4]).slice(3)).toEqual(["Cancelled", "ana", "", ""]);
     // The whole title is on hover; the cell cuts it.
     expect(within(rows[0]).getByRole("link")).toHaveAttribute("title", "FOR-14 · Title of FOR-14");
     expect(screen.queryByRole("button", { name: "Earlier" })).toBeNull();
   });
 
-  it("leads a run's row to that run on the task's Activity, and a person's act to the task", async () => {
+  it("leads a run's row to that run on the task's Activity, and a user's act to the task", async () => {
     const runs = [
       sprintRun("run-9", "t-merge", "develop"),
       sprintRun("ev-1", "t-run", null, { source: "event", outcome: "closed", actor: "ana" }),

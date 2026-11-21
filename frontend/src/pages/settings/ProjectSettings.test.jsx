@@ -71,7 +71,7 @@ describe("General: every field reads its real value", () => {
     expect(screen.getByLabelText("At most, per sprint")).toHaveValue("5");
     expect(screen.getByLabelText("Requests from agents and other systems")).toHaveValue("human");
     expect(screen.getByLabelText("Requests from agents and other systems").selectedOptions[0]).toHaveTextContent(
-      "A person accepts them",
+      "A user accepts them",
     );
     expect(screen.getByLabelText("Spend per task")).toHaveValue("");
     expect(screen.getByLabelText("Spend per sprint")).toHaveValue("12.5");
@@ -154,11 +154,11 @@ describe("General: Save and Discard", () => {
     expect(screen.getByRole("button", { name: "Discard" })).toBeEnabled();
   });
 
-  it("lets a person or Foreman finish sprints, beside who approves merges", async () => {
+  it("lets a user or Foreman finish sprints, beside who approves merges", async () => {
     const fetchImpl = await renderGeneral();
     fetchImpl.routes[SAVE_URL] = settingsPayload();
     const who = screen.getByRole("region", { name: "Who decides" });
-    expect(within(who).getByLabelText("Finish sprints").selectedOptions[0]).toHaveTextContent("A person");
+    expect(within(who).getByLabelText("Finish sprints").selectedOptions[0]).toHaveTextContent("A user");
     fireEvent.change(within(who).getByLabelText("Finish sprints"), { target: { value: "auto" } });
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(saves(fetchImpl)).toHaveLength(1));
@@ -342,10 +342,10 @@ describe("Workflow tab", () => {
     ]);
   });
 
-  it("names a person at a gate that the project's Who decides setting gives to a person", async () => {
+  it("names a user at a gate that the project's Who decides setting gives to a user", async () => {
     await renderWorkflow(settingsRoutes({ effective: { merge_approval: "human" } }));
     const table = screen.getByRole("table", { name: "Steps of the workflow" });
-    expect(within(table).getByRole("row", { name: /Merge approval/ })).toHaveTextContent("A person");
+    expect(within(table).getByRole("row", { name: /Merge approval/ })).toHaveTextContent("A user");
   });
 
   it("shows other steps and outcomes for a different workflow", async () => {
@@ -355,7 +355,7 @@ describe("Workflow tab", () => {
     expect(rows[0]).toEqual(["Draft", "Developer", "agent, project default model", "it reports the work done", ""]);
     expect(rows[1]).toEqual([
       "Plan approval",
-      "A person",
+      "A user",
       "this project's Who decides setting",
       "approved",
       "If denied: back to Draft",

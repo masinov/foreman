@@ -25,18 +25,27 @@ const roleOf = (run) => String(run.role_id ?? "");
 /** The step a run belongs to. */
 export const stepOf = (run) => run.step ?? run.workflow_step ?? "";
 
-/** Who did a run: a model, Foreman, a person (by name where the task records it). */
+// What Foreman records as who asked when no name was given: the channel, not a user.
+const CHANNELS = new Set(["", "human", "dashboard", "cli", "api", "unknown"]);
+
+/** A recorded actor as the page names them: their name, or "a user" when only the channel was recorded. */
+export function userName(actor) {
+  const value = String(actor ?? "").trim();
+  return CHANNELS.has(value.toLowerCase()) ? "a user" : value;
+}
+
+/** Who did a run: a model, Foreman, a user (by name where the task records it). */
 export function runBy(run, task = null) {
   // What a person did by hand names them.
-  if (run.source === "event") return run.actor || "a person";
+  if (run.source === "event") return userName(run.actor);
   const backend = backendOf(run);
   const role = roleOf(run);
-  if (role === HUMAN_GATE) return backend === "human" ? "a person" : FOREMAN;
+  if (role === HUMAN_GATE) return backend === "human" ? "a user" : FOREMAN;
   if (backend === "api") return task?.source?.system ? `${task.source.system}, through the API` : "the API";
   if (PEOPLE.has(backend) || role === "human") {
     const name = task?.created_by;
     if (run.outcome === "file" && name && name !== "human") return name;
-    return "a person";
+    return "a user";
   }
   if (run.outcome === "file") return "an agent";
   if (ENGINE_BACKENDS.has(backend) || role.startsWith(BUILTIN)) return FOREMAN;
@@ -71,7 +80,7 @@ const OUTCOME_WORDS = {
   error: "Failed",
   conflict: "Merge conflict",
   updated: "Brought up to date",
-  paused: "Asked a person",
+  paused: "Asked a user",
   file: "Filed",
   created: "Filed",
   cancel: "Cancelled",

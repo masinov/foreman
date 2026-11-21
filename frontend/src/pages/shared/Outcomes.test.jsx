@@ -58,7 +58,7 @@ describe("outcome parts", () => {
     expect(parts[2].title).toBe("Median wait for your decision: 14 min; 1 waiting now");
   });
 
-  it("reads minutes the way a person says them", () => {
+  it("reads minutes the way a user says them", () => {
     expect(minutesText(0.5)).toBe("30 s");
     expect(minutesText(6.9)).toBe("6.9 min");
     expect(minutesText(42)).toBe("42 min");

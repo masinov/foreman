@@ -173,7 +173,7 @@ def describe_page_context(context: Any) -> str | None:
             parts.append(f"{label}: {value}")
     if not parts:
         return None
-    return "The person is looking at the dashboard (" + "; ".join(parts) + ")."
+    return "The user is looking at the dashboard (" + "; ".join(parts) + ")."
 
 
 def clear_session(store: Any, project_id: str, *, via: str, actor: str | None = None) -> list[str]:
@@ -343,7 +343,7 @@ def build_operating_contract(project: Any) -> str:
         [
             "## OPERATING CONTRACT",
             "You are the manager seat for the Foreman engine. You read the project",
-            "and propose changes; a person confirms them. Nothing you propose",
+            "and propose changes; a user confirms them. Nothing you propose",
             "happens until they do. You operate in the project repository",
             f"at {project.repo_path}.",
             "",
@@ -405,7 +405,7 @@ def build_operating_contract(project: Any) -> str:
             "",
             "The command checks every operation against the project as it is now,",
             "in order, and stores nothing if one is refused; it prints why. Fix the",
-            "proposal and create it again. Once stored, the person sees it beside",
+            "proposal and create it again. Once stored, the user sees it beside",
             "your reply with Confirm and Not now. Say in your reply what it does;",
             "do not claim a change has happened.",
             "",

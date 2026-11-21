@@ -246,7 +246,7 @@ class GateMutations(MutationBase):
             raise MutationError("Say what should change: guidance is required to send a task back.")
         if task.status != "blocked":
             raise MutationError(
-                f"Task {task.id} is {task.status}, not waiting for a person; only a task "
+                f"Task {task.id} is {task.status}, not waiting for a user; only a task "
                 "waiting at a gate or blocked can be sent back."
             )
         project = self.store.get_project(task.project_id)

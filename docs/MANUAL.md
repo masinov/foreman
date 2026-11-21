@@ -935,7 +935,7 @@ Two related knobs:
 - **`Project.autonomy_level`** (`directed` / `supervised` / `autonomous`)
   governs how far the engine advances on its own:
   - **`sprint_completion`** setting (`human` / `auto`; in the dashboard,
-    "Finish sprints: A person / Foreman", beside "Approve merges"). It alone
+    "Finish sprints: A user / Foreman", beside "Approve merges"). It alone
     decides who finishes a sprint (ADR-0025 amendment); the autonomy level
     no longer does.
   - `human` (the default) — the engine never finishes a sprint. When every
@@ -1344,7 +1344,7 @@ keep the stream alive when idle.
   - **Send-backs:** each return to the step that builds the change, by
     cause: `tests`, `review` (and which reviewer), `person` (a send-back at
     a gate), `merge_conflict`.
-  - **A person:** decisions a gate asked for, with the median wait and how
+  - **A user:** decisions a gate asked for, with the median wait and how
     many still wait; and times a person stepped in unasked (a note, an
     edit, a block, a cancel, closing by hand, reopening).
   - **Cost:** in total, per merged task, and on tasks not merged; tokens per

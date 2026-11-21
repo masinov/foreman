@@ -30,8 +30,15 @@ design that replaced it (`feat/activity-one-row`):
 - **Everywhere:** "Activity" as the title, "Earlier" for more, day and time,
   lists that read again while the page is open (`usePagedList` follows the
   page's refresh), and the outcome line as one short sentence.
-- **Not done:** a person's name on a decision at a gate (the resume does not
-  record who; stage 2 identity will).
+- **After the owner's second look (same day):** the engine's every state
+  change is listed, starts included, so a stop never follows a stop (the
+  owner: the rule must be solid, not special to some stops); the sprint's
+  Activity has a Key column, as its task list does, and the project's a
+  sprint-name column; the headings no longer repeat the tab ("Sprints and
+  engine", "Runs"); "user", not "person", wherever the page or the CLI
+  names someone (owner).
+- **Not done:** a user's name on a decision at a gate, or on an engine
+  stopped by a signal (neither records who; stage 2 identity will).
 
 ## Owner decisions, 2026-11-19: the manager and people (roadmap stage 2)
 

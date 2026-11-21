@@ -342,7 +342,7 @@ describe("Editing a workflow's steps", () => {
     expect(within(dialog).getByLabelText("Name of step 5")).toHaveValue("Announce");
     expect(picked(dialog, "Announce: when it approves")).toHaveTextContent("on to 6 · Merge");
     choose(dialog, "Merge approval");
-    expect(picked(dialog, "Merge approval: when the person approves")).toHaveTextContent("on to 5 · Announce");
+    expect(picked(dialog, "Merge approval: when the user approves")).toHaveTextContent("on to 5 · Announce");
     fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(sent(fetchImpl, "PUT")).toHaveLength(1));

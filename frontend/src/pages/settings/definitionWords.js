@@ -42,7 +42,7 @@ const OUTCOME = {
     failure: "the merge fails",
     updated: "the branch was out of date",
   },
-  "_builtin:human_gate": { approve: "the person approves", deny: "the person sends it back", steer: "the person steers" },
+  "_builtin:human_gate": { approve: "the user approves", deny: "the user sends it back", steer: "the user steers" },
   "_builtin:mark_done": { success: "it is marked done" },
   agent: {
     done: "it says it is done",
@@ -71,8 +71,8 @@ export function shortOutcome(role, outcome) {
 }
 
 export const GATE_POLICY = {
-  merge_approval: "“Approve merges” is a person",
-  plan_approval: "“Approve plans” is a person",
+  merge_approval: "“Approve merges” is a user",
+  plan_approval: "“Approve plans” is a user",
 };
 
 /** An id from a name: lower case, underscores, starting with a letter. */

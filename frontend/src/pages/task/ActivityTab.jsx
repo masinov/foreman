@@ -176,8 +176,9 @@ export function ActivityTab({ task, revision }) {
       <section className="task-section" aria-labelledby="task-runs">
         <SectionHeading
           id="task-runs"
-          title="Activity"
-          note={`${plural(totals.run_count ?? runs.total ?? 0, "run")}, ${formatMoney(totals.total_cost_usd)}`}
+          title="Runs"
+          count={totals.run_count ?? runs.total ?? 0}
+          note={`${formatMoney(totals.total_cost_usd)} in all`}
         />
         {runs.error ? (
           <p className="notice notice--error" role="alert">

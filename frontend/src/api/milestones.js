@@ -5,6 +5,7 @@ export const MILESTONE_KINDS = {
   sprintStarted: "sprint_started",
   sprintFinished: "sprint_finished",
   planConfirmed: "plan_confirmed",
+  engineStarted: "engine_started",
   engineStopped: "engine_stopped",
   engineLost: "engine_lost",
   enginePaused: "engine_paused",
@@ -17,7 +18,7 @@ const K = MILESTONE_KINDS;
 export const MILESTONE_FILTERS = [
   { key: "all", label: "All", kinds: [] },
   { key: "sprints", label: "Sprints", kinds: [K.sprintStarted, K.sprintFinished, K.planConfirmed] },
-  { key: "engine", label: "Engine", kinds: [K.engineStopped, K.engineLost, K.enginePaused, K.engineResumed] },
+  { key: "engine", label: "Engine", kinds: [K.engineStarted, K.engineStopped, K.enginePaused, K.engineResumed, K.engineLost] },
 ];
 
 /** One page of milestones, newest first, as `{ items, total }`. */

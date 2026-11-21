@@ -4,7 +4,7 @@ import { humanize } from "../../ui/format";
 
 /** Who decides: the two answers every decision has. */
 export const DECIDERS = [
-  { value: "human", word: "A person" },
+  { value: "human", word: "A user" },
   { value: "auto", word: "Foreman" },
 ];
 

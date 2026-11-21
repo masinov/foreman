@@ -21,6 +21,7 @@ MILESTONE_KINDS: tuple[str, ...] = (
     "sprint_started",
     "sprint_finished",
     "plan_confirmed",
+    "engine_started",
     "engine_stopped",
     "engine_lost",
     "engine_paused",
@@ -61,12 +62,16 @@ _INSTANT = "julianday({column})"
 #   the one its first operation names. One that names none says what it is
 #   about in ``subject``: the backlog it files into, or the new sprint it
 #   plans.
-# - An engine stops when its lease is released (``engine_stopped``, at the
-#   release; when a ``shutdown`` command completed during the lease, the
-#   command names who asked) or when the lease runs out with nobody releasing
-#   it, the engine having died or been killed (``engine_lost``, at the
-#   expiry; a lease still active past its expiry is lost too). An engine
-#   that is running is the engine row's state, not a milestone.
+# - Every change of the engine's state is a milestone, and nothing else is
+#   (owner, 2026-11-21): it starts when it acquires its lease
+#   (``engine_started``), pauses and resumes by command, and stops when the
+#   lease is released (``engine_stopped``; when a ``shutdown`` command
+#   completed during the lease, the command names who asked) or runs out
+#   with nobody releasing it, the engine having died or been killed
+#   (``engine_lost``, at the expiry; a lease still active past its expiry is
+#   lost too). Start on the dashboard sends a ``resume`` that the new engine
+#   applies as it starts: requested before the lease and completed after,
+#   it is the start's, naming who started the engine, not a resume.
 _MILESTONES_SQL = f"""
     SELECT 'sprint_started' AS kind, s.started_at AS at, s.project_id AS project_id,
            s.id AS sprint_id, NULL AS actor, s.id AS ref, NULL AS merged_count,
@@ -97,6 +102,22 @@ _MILESTONES_SQL = f"""
            c.requested_by, c.id, NULL, NULL, NULL
     FROM engine_commands c
     WHERE c.status = 'completed' AND c.command IN ('pause', 'resume')
+      AND NOT EXISTS (
+        SELECT 1 FROM leases l
+        WHERE l.project_id = c.project_id AND l.resource_type = '{ENGINE_RESOURCE_TYPE}'
+          AND julianday(c.requested_at) <= julianday(l.acquired_at)
+          AND julianday(c.completed_at) >= julianday(l.acquired_at))
+    UNION ALL
+    SELECT 'engine_started', l.acquired_at, l.project_id, NULL,
+           (SELECT c.requested_by FROM engine_commands c
+             WHERE c.project_id = l.project_id AND c.command = 'resume'
+               AND c.status = 'completed'
+               AND julianday(c.requested_at) <= julianday(l.acquired_at)
+               AND julianday(c.completed_at) >= julianday(l.acquired_at)
+             ORDER BY c.requested_at DESC LIMIT 1),
+           l.id, NULL, NULL, NULL
+    FROM leases l
+    WHERE l.resource_type = '{ENGINE_RESOURCE_TYPE}'
     UNION ALL
     SELECT 'engine_stopped', COALESCE(l.released_at, l.expires_at), l.project_id, NULL,
            (SELECT c.requested_by FROM engine_commands c

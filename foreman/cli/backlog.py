@@ -64,7 +64,7 @@ def handle_backlog_list(args: argparse.Namespace) -> int:
         print_json(page)
         return 0
 
-    who = "a person" if page["triage"] == "human" else "Foreman"
+    who = "a user" if page["triage"] == "human" else "Foreman"
     lines = [
         f"Backlog: {project.id} | {project.name}",
         f"Filed work is accepted by {who}. "

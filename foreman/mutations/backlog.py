@@ -225,7 +225,7 @@ class BacklogMutations(MutationBase):
                 )
             if task.status == "triage" and by_policy:
                 raise MutationError(
-                    f"Task {task.id} is a request no person has accepted; Foreman may not start it."
+                    f"Task {task.id} is a request no user has accepted; Foreman may not start it."
                 )
             if task.status not in ("todo", "triage"):
                 raise MutationError(
