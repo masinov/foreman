@@ -19,7 +19,6 @@ import { criteriaSummary, filedBy, stepRows, testsWords, whoDecides } from "./ta
 
 function Steps({ task, workflow }) {
   const engine = useProjectEngine(task.project_id);
-  const total = task.totals?.run_count ?? task.runs?.length ?? 0;
   const columns = [
     { key: "step", header: "Step", className: "task-steps__step", render: (row) => row.label },
     {
@@ -40,7 +39,7 @@ function Steps({ task, workflow }) {
       ) : null}
       {workflow.data ? <Table caption="Steps" columns={columns} rows={stepRows(task, workflow.data, engine)} /> : null}
       <p className="task-section__foot">
-        {plural(total, "run")} in all. Every run and its output is under{" "}
+        Every step and what it did is under{" "}
         <Link href={paths.taskActivity(task.id)}>Activity</Link>.
       </p>
     </section>
@@ -254,7 +253,7 @@ function Details({ task, workflow }) {
     {
       key: "spend",
       term: "Spend",
-      value: <Mono>{`${formatMoney(task.totals?.total_cost_usd)} · ${plural(task.totals?.run_count ?? 0, "run")}`}</Mono>,
+      value: <Mono>{formatMoney(task.totals?.total_cost_usd)}</Mono>,
     },
     {
       key: "filed",

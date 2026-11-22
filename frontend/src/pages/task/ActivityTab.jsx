@@ -15,7 +15,7 @@ import { formatDayTime, formatMoney, humanize, plural, shortSha } from "../../ui
 import { narrate } from "./runWords";
 import { RunLine, withDays } from "./RunStory";
 import { ActivityTable } from "../shared/ActivityTable";
-import { runResult, runRole, runTook } from "../shared/activityWords";
+import { runRole, runTook, stepOutcome } from "../shared/activityWords";
 import { attemptOf, stepFacts } from "./stepFacts";
 import { useTaskPulse } from "./useTaskPulse";
 
@@ -135,7 +135,7 @@ function RunOutput({ run, task, previous, next, onPick, pulse = 0 }) {
     });
   }
   const lines = data ? withDays(told, run.started_at) : [];
-  const attempt = attemptOf(transcript);
+  const attempt = attemptOf(run, transcript);
   const facts = data ? stepFacts(run, transcript, { previous, next, task }) : [];
   return (
     <section className="task-section run-output" aria-labelledby="run-output">
@@ -240,18 +240,19 @@ export function ActivityTab({ task, revision }) {
     known.current = new Set(ids);
   }, [runs.items]);
 
-  // A row of the task's activity: the step, how it ended, who, the commit it
-  // left, how long, what it cost. Why is on hover, and above the picked run.
+  // A row of the task's activity: the step and its attempt, how it ended,
+  // who, the commit it was about, how long, what it cost. Why is on hover.
   const describe = (run) => {
-    const result = runResult(run);
+    const result = stepOutcome(run, items[items.indexOf(run) + 1] ?? null);
     const by = runRole(run, task);
+    const commit = run.step_commit ?? run.commit_sha;
     return {
       at: run.started_at,
-      subject: { key: null, title: humanize(run.step) },
+      subject: { key: null, title: humanize(run.step), note: run.attempt > 1 ? `attempt ${run.attempt}` : "" },
       event: { word: result.word, tone: result.tone, why: result.note },
       by: by.text,
       byTitle: by.title,
-      commit: run.commit_sha ? shortSha(run.commit_sha) : "",
+      commit: commit ? shortSha(commit) : "",
       took: runTook(run),
       spend: run.cost_usd ? formatMoney(run.cost_usd) : "",
     };
@@ -263,8 +264,8 @@ export function ActivityTab({ task, revision }) {
       <section className="task-section" aria-labelledby="task-runs">
         <SectionHeading
           id="task-runs"
-          title="Runs"
-          count={totals.run_count ?? runs.total ?? 0}
+          title="Steps"
+          count={runs.total ?? undefined}
           note={`${formatMoney(totals.total_cost_usd)} in all`}
         />
         {runs.error ? (
@@ -275,7 +276,7 @@ export function ActivityTab({ task, revision }) {
         {runs.items && items.length === 0 ? <p className="empty">Nothing has run on this task yet.</p> : null}
         {items.length ? (
           <ActivityTable
-            caption="Runs"
+            caption="Steps"
             items={items}
             describe={describe}
             subjectHeader="Step"

@@ -588,7 +588,7 @@ describe("Overview", () => {
     ]);
     // By names the role; the model is on hover.
     expect(within(table).getByText("Developer")).toHaveAttribute("title", "sonnet-5-5");
-    expect(screen.getByText(/4 runs in all/)).toBeInTheDocument();
+    expect(screen.getByText(/Every step and what it did is under/)).toBeInTheDocument();
   });
 
   it("sums up the checks on one line that links to Checks", async () => {
@@ -609,7 +609,8 @@ describe("Overview", () => {
     expect(details).toHaveTextContent("A user approves merges (project setting)");
     expect(details).not.toHaveTextContent("plans");
     expect(details).toHaveTextContent(/Branch\s*foreman\/for-14/);
-    expect(details).toHaveTextContent("$0.72 · 4 runs");
+    // Spend is money; how many steps there were is on Activity.
+    expect(details).toHaveTextContent(/Spend\s*\$0\.72Filed/);
     expect(details).toHaveTextContent(/Filed by\s*a user on 10 Nov/);
     // What was filed is prose for the wide column, not a fact beside it.
     expect(details).not.toHaveTextContent("It should say how long");
@@ -899,7 +900,7 @@ describe("Checks", () => {
 describe("Activity", () => {
   it("lists runs newest first and shows the picked run: its story, beginning with its prompt, and its facts", async () => {
     const { fetchImpl } = await renderTask(`${BASE}/activity`);
-    const table = await screen.findByRole("table", { name: "Runs" });
+    const table = await screen.findByRole("table", { name: "Steps" });
     const rows = within(table).getAllByRole("row").slice(1);
     expect(rows.map((row) => within(row).getAllByRole("cell")[1].textContent)).toEqual(["Review", "Test"]);
     expect(rows[0]).toHaveTextContent("Approved");
@@ -907,8 +908,9 @@ describe("Activity", () => {
     // The commit the branch was at after each run; none for the engine's test run.
     expect(rows[0]).toHaveTextContent("b232eb1");
     expect(within(rows[1]).getAllByRole("cell")[4].textContent).toBe("");
-    const heading = screen.getByRole("heading", { name: /^Runs/ }).closest(".section-heading");
-    expect(heading).toHaveTextContent(/^Runs\s*4\s*\$0\.72 in all$/);
+    // The count is of the steps listed; the spend is the task's.
+    const heading = screen.getByRole("heading", { name: /^Steps/ }).closest(".section-heading");
+    expect(heading).toHaveTextContent(/^Steps\s*2\s*\$0\.72 in all$/);
 
     expect(await screen.findByText("Reviewed the change.")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Review" })).toBeInTheDocument();
@@ -963,7 +965,7 @@ describe("Activity", () => {
       ],
     });
     await renderTask(`${BASE}/activity?run=run-2`, routes);
-    const table = await screen.findByRole("table", { name: "Runs" });
+    const table = await screen.findByRole("table", { name: "Steps" });
     const rows = within(table).getAllByRole("row").slice(1);
     expect(rows[1]).toHaveClass("table__row--selected");
     expect(await screen.findByText("Ran 1221 tests")).toBeInTheDocument();
@@ -984,7 +986,7 @@ describe("Activity", () => {
       task: taskDetail({ status: "in_progress", workflow_current_step: "merge", awaiting_human_gate: false, gate_policy: null, blocked_kind: null }),
     });
     const { fetchImpl } = await renderTask(`${BASE}/activity`, routes);
-    const table = await screen.findByRole("table", { name: "Runs" });
+    const table = await screen.findByRole("table", { name: "Steps" });
     const firstRow = within(table).getAllByRole("row")[1];
     // The person goes back to the earlier run.
     fireEvent.click(within(table).getAllByRole("row")[2]);
@@ -997,9 +999,9 @@ describe("Activity", () => {
     fetchImpl.routes[outputUrl("run-9")] = outputPayload("run-9", "Merged.");
     const source = fetchImpl.EventSource.sources.find((entry) => entry.url === "/api/v1/sprints/sprint-56/stream");
     source.emit({ type: "event", event: { id: "e20", task_id: TASK_ID } });
-    await waitFor(() => expect(within(screen.getByRole("table", { name: "Runs" })).getAllByRole("row")).toHaveLength(4), { timeout: 3000 });
+    await waitFor(() => expect(within(screen.getByRole("table", { name: "Steps" })).getAllByRole("row")).toHaveLength(4), { timeout: 3000 });
 
-    const rows = within(screen.getByRole("table", { name: "Runs" })).getAllByRole("row").slice(1);
+    const rows = within(screen.getByRole("table", { name: "Steps" })).getAllByRole("row").slice(1);
     // The row that was there is the same element, the new one is marked as arrived, and nothing went blank.
     expect(rows[1]).toBe(firstRow);
     expect(rows[0]).toHaveClass("table__row--arrived");
@@ -1017,12 +1019,12 @@ describe("Activity", () => {
     routes[`GET /api/v1/tasks/${TASK_ID}/runs?limit=25&offset=25`] = { runs: all.slice(25), total: 30, limit: 25, offset: 25 };
     routes[outputUrl("run-0")] = outputPayload("run-0", "First output", { prompt: null, transcript: [] });
     await renderTask(`${BASE}/activity`, routes);
-    const table = await screen.findByRole("table", { name: "Runs" });
+    const table = await screen.findByRole("table", { name: "Steps" });
     expect(within(table).getAllByRole("row")).toHaveLength(26);
     expect(await screen.findByText("This run recorded nothing to read.")).toBeInTheDocument();
     expect(screen.queryByText(/No prompt was recorded/)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Earlier" }));
-    await waitFor(() => expect(within(screen.getByRole("table", { name: "Runs" })).getAllByRole("row")).toHaveLength(31));
+    await waitFor(() => expect(within(screen.getByRole("table", { name: "Steps" })).getAllByRole("row")).toHaveLength(31));
     expect(screen.queryByRole("button", { name: "Earlier" })).toBeNull();
   });
 
@@ -1030,7 +1032,7 @@ describe("Activity", () => {
     const at = "2026-11-12T18:27:39Z";
     const routes = taskRoutes({
       runs: [
-        runItem("run-3", "review", { role_id: "code_reviewer", outcome: "approve", commit_sha: null }),
+        runItem("run-3", "review", { role_id: "code_reviewer", outcome: "approve", commit_sha: null, attempt: 2 }),
         runItem("run-2", "develop", { role_id: "developer", outcome: "done" }),
         runItem("run-1", "review", { role_id: "code_reviewer", outcome: "steer", outcome_detail: "Fix the log." }),
       ],
@@ -1080,6 +1082,9 @@ describe("Activity", () => {
     expect(story).not.toHaveTextContent("APPROVE");
     expect(screen.getByText("what").tagName).toBe("STRONG");
     expect(screen.getByRole("heading", { name: "Review" }).closest(".section-heading")).toHaveTextContent("attempt 2");
+    // Its row names the attempt after the step, as the heading does.
+    const firstRow = within(screen.getByRole("table", { name: "Steps" })).getAllByRole("row")[1];
+    expect(within(firstRow).getByText("attempt 2")).toHaveClass("activity-table__note");
 
     const facts = screen.getByRole("complementary", { name: "About this step" });
     expect(facts).not.toHaveTextContent("After");
@@ -1120,7 +1125,7 @@ describe("Activity", () => {
     expect(text).toContain('{"type":"result"}');
 
     // The step that answered a send-back names it, and picking it there shows it.
-    const rows = within(screen.getByRole("table", { name: "Runs" })).getAllByRole("row").slice(1);
+    const rows = within(screen.getByRole("table", { name: "Steps" })).getAllByRole("row").slice(1);
     fireEvent.click(within(rows[1]).getAllByRole("cell")[1]);
     const answered = await screen.findByRole("complementary", { name: "About this step" });
     await waitFor(() => expect(answered).toHaveTextContent(/After\s*Review, sent back/));
@@ -1147,7 +1152,10 @@ describe("Activity", () => {
       "Approved without asking anyone",
     ]);
     const facts = screen.getByRole("complementary", { name: "About this step" });
-    expect(within(facts).getByText("Approved")).toHaveClass("tone-idle");
+    expect(within(facts).getByText("Approved by setting")).toHaveClass("tone-idle");
+    // Its row says the same, in no colour: no one looked.
+    const row = within(screen.getByRole("table", { name: "Steps" })).getAllByRole("row")[1];
+    expect(within(row).getByText("Approved by setting")).toHaveClass("tone-idle");
     expect(within(facts).getByRole("link", { name: "The project's setting “Approve merges”: Foreman" })).toHaveAttribute(
       "href",
       "/dashboard/projects/foreman/settings",
@@ -1306,7 +1314,7 @@ describe("The agent's side bar", () => {
 
   it("is the only box for it on the Activity tab too", async () => {
     await open(working(), IN_PROGRESS, `${BASE}/activity`);
-    await screen.findByRole("table", { name: "Runs" });
+    await screen.findByRole("table", { name: "Steps" });
     expect(screen.getAllByRole("form", { name: "Tell the agent" })).toHaveLength(1);
     expect(screen.queryByRole("list", { name: "Told the agent" })).toBeNull();
   });

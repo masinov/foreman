@@ -174,10 +174,19 @@ class RunItem(BaseModel):
     cost_usd: float
     tokens: int
     token_usage: dict[str, int]
+    #: Which attempt at its step this run was: 1 for the first.
+    attempt: int = 1
+    #: The commit the step was about: the one it made or reviewed, the one
+    #: the tests ran on, or the merge commit.
+    step_commit: str | None = None
 
 
 class TaskRuns(BaseModel):
-    """``GET /tasks/{id}/runs``, newest first."""
+    """``GET /tasks/{id}/runs``, newest first: the task's own steps.
+
+    Left out: the step that closes a task after its merge, and the
+    engine's records that do not name the task (``domain.activity``).
+    """
 
     runs: list[RunItem]
     total: int

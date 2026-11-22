@@ -1,6 +1,6 @@
 import { formatDuration, formatMoney, formatTokens, humanize, shortSha } from "../../ui/format";
 import { RULE_DECISIONS } from "../settings/settingsWords";
-import { FOREMAN, outcomeTone, runResult, runRole, runSeconds, SENT_BACK, stepOf } from "../shared/activityWords";
+import { FOREMAN, outcomeTone, runResult, runRole, runSeconds, SENT_BACK, stepOf, stepOutcome } from "../shared/activityWords";
 
 // The facts of one step, the column beside its story (owner, 2026-11-22):
 // the same labels for every kind of step, each shown only where it applies.
@@ -27,9 +27,9 @@ function listWords(items) {
   return items.length > 1 ? `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}` : items[0];
 }
 
-/** Which attempt at its step a run was, from the step's own record; 1 when it does not say. */
-export function attemptOf(transcript) {
-  return Number(last(transcript, "workflow.step_started")?.visit_count) || 1;
+/** Which attempt at its step a run was: as the runs list says, else from the step's own record; 1 when neither says. */
+export function attemptOf(run, transcript) {
+  return Number(run?.attempt) || Number(last(transcript, "workflow.step_started")?.visit_count) || 1;
 }
 
 /** What a role may use, in words, from the policy the step ran under. */
@@ -83,9 +83,10 @@ function why(run, gate) {
  */
 export function stepFacts(run, transcript, { previous = null, next = null, task = null } = {}) {
   const facts = [];
-  const result = runResult(run);
+  // The same words as the step's row.
+  const result = stepOutcome(run, previous);
   const gate = decidedBy(run, transcript);
-  facts.push({ key: "result", term: "Result", text: result.word, tone: gate?.settings ? "idle" : result.tone });
+  facts.push({ key: "result", term: "Result", text: result.word, tone: result.tone });
   const reason = why(run, Boolean(gate));
   if (reason) facts.push({ key: "why", term: "Why", text: reason });
   if (gate) facts.push({ key: "decided", term: "Decided by", text: gate.text, settings: Boolean(gate.settings) });
@@ -96,7 +97,7 @@ export function stepFacts(run, transcript, { previous = null, next = null, task 
       facts.push({ key: "after", term: "After", text: `${humanize(stepOf(previous))}, ${before.word.toLowerCase()}`, run: previous.id });
     }
   }
-  const commit = commitFact(run, transcript);
+  const commit = commitFact(run, transcript) ?? (run.step_commit ? { term: "Commit", sha: run.step_commit } : null);
   if (commit) facts.push({ key: "commit", term: commit.term, text: shortSha(commit.sha), sha: commit.sha });
   const by = runRole(run, task);
   if (by.text) facts.push({ key: "by", term: "By", text: by.text });

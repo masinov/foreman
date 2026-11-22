@@ -8,12 +8,13 @@ https://claude.ai/artifact/5XgyCnzgX7QyeVFCJMj2we (one kind of line, the
 step's facts beside it, the prompt as the first line).
 
 - **Done, the step panel (`feat/task-step-panel`).**
-- **Next, the table:** only the task's own steps, so the count matches
-  the Overview. That means no Orchestrator records and no "Done" step.
-  - Plain "What happened" words ("Approved by setting", "Passed · 186
-    tests").
-  - The commit on Test, Review and Merge rows.
-  - The test count needs Foreman to record it when tests run.
+- **Done, the table (`feat/task-steps-table`):**
+  - only the task's own steps;
+  - "attempt 2", "Committed" and "Approved by setting";
+  - the commit on Test, Review and Merge rows.
+
+  Still to do: the test count ("Passed · 186 tests") needs Foreman to
+  record how many tests ran.
 - **Then, facts that need the repository:** the files a step changed with
   their added and removed lines, and for a merge what it brought in, where
   main was before, and whether the branch was kept. Also "Session:

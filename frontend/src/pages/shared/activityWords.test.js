@@ -1,5 +1,5 @@
 import { stepRows } from "../task/taskWords";
-import { FOREMAN, runBy, runResult, runRole, whoWord } from "./activityWords";
+import { FOREMAN, runBy, runResult, runRole, stepOutcome, whoWord } from "./activityWords";
 
 // A run as the task's own record has it (`workflow_step`, `agent_backend`).
 const run = (fields) => ({ status: "completed", agent_backend: "claude_code", model: "sonnet-5-5", ...fields });
@@ -35,6 +35,19 @@ describe("who did a run, by role", () => {
 
   it("names the By filter's choices", () => {
     expect(["developer", "code_reviewer", "foreman", "user"].map(whoWord)).toEqual(["Developer", "Code reviewer", FOREMAN, "Users"]);
+  });
+});
+
+describe("how a step of a task ended, in its row", () => {
+  it("says a step that made a commit committed, and a gate the setting decided was approved by it", () => {
+    const develop = run({ role_id: "developer", outcome: "done", commit_sha: "b".repeat(40) });
+    expect(stepOutcome(develop, { step_commit: "a".repeat(40) })).toMatchObject({ word: "Committed", tone: "passed" });
+    // A step that left the branch where it was made no commit.
+    expect(stepOutcome(develop, { step_commit: "b".repeat(40) }).word).toBe("Done");
+    const gate = { role_id: "_builtin:human_gate", outcome: "approve", model: null };
+    expect(stepOutcome(run({ ...gate, agent_backend: "builtin" }))).toMatchObject({ word: "Approved by setting", tone: "idle" });
+    expect(stepOutcome(run({ ...gate, agent_backend: "human" }))).toMatchObject({ word: "Approved", tone: "passed" });
+    expect(stepOutcome(run({ role_id: "code_reviewer", outcome: "steer", commit_sha: "c".repeat(40) })).word).toBe("Sent back");
   });
 });
 

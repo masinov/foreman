@@ -321,6 +321,46 @@ class TaskReadsCase(unittest.TestCase):
         self.assertEqual(detail["r1"]["commit_sha"], "b232eb1" + "0" * 33)
         self.assertIsNone(detail["r0"]["commit_sha"])
 
+    def test_runs_are_the_tasks_own_steps_with_their_attempt_and_commit(self) -> None:
+        self.task()
+
+        def run(rid: str, minute: int, **kw) -> None:
+            fields = dict(
+                id=rid, task_id="t", project_id="p", role_id="developer", workflow_step="develop",
+                agent_backend="claude_code", status="completed", outcome="done", model="m",
+                created_at=f"2026-01-01T00:{minute:02d}:00Z", started_at=f"2026-01-01T00:{minute:02d}:00Z",
+            )
+            fields.update(kw)
+            self.store.save_run(Run(**fields))
+
+        engine = dict(role_id="_builtin:orchestrator", agent_backend="orchestrator", model=None, outcome="success")
+        run("d1", 1, commit_sha="a" * 40)
+        run("stop", 2, outcome_detail="Shut down during task 't': the agent process group was terminated.", **engine)
+        run("d2", 3, commit_sha="b" * 40)
+        run("t1", 4, role_id="_builtin:run_tests", workflow_step="test", agent_backend="builtin", model=None, outcome="success")
+        run("m1", 5, role_id="_builtin:merge", workflow_step="merge", agent_backend="builtin", model=None, outcome="success")
+        run("done", 6, role_id="_builtin:mark_done", workflow_step="done", agent_backend="builtin", model=None, outcome="success")
+        run("ready", 7, workflow_step="orchestrator", outcome_detail="engine.sprint_ready", **engine)
+        run("head", 8, outcome_detail="Default branch 'main' HEAD changed from 'x' to 'y'.", **engine)
+        self.store.save_event(Event(id="e-test", run_id="t1", task_id="t", project_id="p", event_type="engine.test_run",
+                                    timestamp="2026-01-01T00:04:30Z", payload={"head_sha": "b" * 40, "exit_code": 0}))
+        self.store.save_event(Event(id="e-merge", run_id="m1", task_id="t", project_id="p", event_type="engine.merge",
+                                    timestamp="2026-01-01T00:05:30Z", payload={"sha": "c" * 40, "target": "main"}))
+
+        page = self.get("/api/v1/tasks/t/runs").json()
+        # Left out: closing the task after its merge, and the engine's records that do not name it.
+        self.assertEqual([r["id"] for r in page["runs"]], ["m1", "t1", "d2", "stop", "d1"])
+        self.assertEqual(page["total"], 5)
+        runs = {r["id"]: r for r in page["runs"]}
+        # The engine's record is not an attempt at the step it was kept under.
+        self.assertEqual({rid: runs[rid]["attempt"] for rid in ("d1", "d2", "t1")}, {"d1": 1, "d2": 2, "t1": 1})
+        # The commit each step was about: made, tested, merged.
+        self.assertEqual(runs["d2"]["step_commit"], "b" * 40)
+        self.assertEqual(runs["t1"]["step_commit"], "b" * 40)
+        self.assertEqual(runs["m1"]["step_commit"], "c" * 40)
+        self.assertIsNone(runs["m1"]["commit_sha"])
+        self.assertEqual([r["id"] for r in self.get("/api/v1/tasks/t/runs?limit=2&offset=2").json()["runs"]], ["d2", "stop"])
+
     def test_runs_say_why_they_ended_as_they_did(self) -> None:
         self.task()
         self.add_runs(2)
