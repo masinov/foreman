@@ -28,6 +28,55 @@ step's facts beside it, the prompt as the first line).
     what they are (an ADR first), say on the sprint that it is ready to
     finish, and list it in the project's Activity.
 
+## Owner direction, 2026-11-22: tests Foreman can see and control
+
+Recorded so the design is kept, not scheduled. It needs a survey, an ADR and
+a mockup before any code.
+
+What Foreman knows today: each project has one shell command
+(`test_command`). Foreman keeps its exit code, duration and commit, plus its
+output, and the step's detail shows the last 200 lines. It does not know
+which tests ran. A count, a test's name or a failure is only in the printed
+text.
+
+What the owner wants kept open:
+
+- **Which tests ran, and how each one ended.** Read the report the test
+  tool can already write instead of the printed text. JUnit XML is the
+  common one (pytest, vitest, jest, Go through gotestsum and others).
+  - For each test: its name and file, the result, the time and the failure
+    message.
+  - The count ("Passed · 186 tests") comes from the same report.
+- **What each test checks, in words.**
+  - From the test's own name and docstring: a fact.
+  - A summary written by a model is a claim. It is shown with the claims
+    (ADR-0018).
+- **Where it is shown.** A Tests view on the task, reached from the Checks
+  tab's Tests row or as its own tab. In this order:
+  - the failures;
+  - the tests this task added or changed;
+  - the full list, folded, with a search.
+
+  A long list of passing tests says little on its own.
+- **Control over which tests apply where.**
+  - Several suites per project (backend, frontend, smoke), each with its
+    own command and time limit.
+  - Which suites a task must pass: chosen from the files it touches, or
+    set on the task or the workflow step.
+  - A suite either blocks or only advises.
+  - An acceptance criterion can name the tests that prove it, so a test can
+    check a criterion, not only a review.
+- **Over time**, with the statistics view: flaky tests, slow tests and
+  skipped tests.
+
+Survey first (prefer tools that already do this):
+
+- JUnit XML as the common report.
+- How test tools and CI already pick tests: pytest markers, vitest
+  projects, "affected" in Nx or Bazel.
+- Whether the central server's workers run the tests through an existing
+  CI runner.
+
 ## The sprint page, step by step (owner, 2026-11-21)
 
 The owner asked for the sprint page to be redesigned a little at a time,
