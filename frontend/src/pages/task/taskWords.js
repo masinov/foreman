@@ -1,6 +1,6 @@
 import { ENGINE_STATES } from "../../api/workspace";
 import { formatDuration, humanize, plural, shortSha } from "../../ui/format";
-import { FOREMAN, outcomeTone, outcomeWord, runResult, runRole, runSeconds, SENT_BACK } from "../shared/activityWords";
+import { FOREMAN, outcomeTone, outcomeWord, runResult, runRole, runTook, SENT_BACK, stepOutcome } from "../shared/activityWords";
 
 // How the task page puts what the API says into words (design 05, 12, 13,
 // 14). Pure functions, so each sentence is tested on its own.
@@ -116,9 +116,13 @@ export function stepRows(task, workflow, engine = null) {
       if (onIt && engine.state === ENGINE_STATES.running) result = { tone: "running", word: "Running" };
       else if (onIt && engine.state === ENGINE_STATES.paused) result = { tone: "idle", word: "Paused here" };
       else result = { tone: "idle", word: "Stopped here" };
+    } else if (last && stepOutcome(last).word === "Approved by setting") {
+      // No one looked: the project's setting decided, as its Activity row says.
+      result = stepOutcome(last);
     } else if (last) {
       const { tone, word } = runResult(last);
-      const took = formatDuration(runSeconds(last));
+      // Under a second is not worth saying ("Merged", not "Merged in 0.1 s").
+      const took = runTook(last);
       // A run records the branch head it finished at; it "committed" only
       // when that head is not the one the run before it left.
       const before = runs.filter((run) => run.commit_sha && runTime(run) < runTime(last)).pop();
@@ -192,10 +196,11 @@ export function codeReview(checks) {
   return reviews.find((review) => review.kind === "code") ?? reviews[0] ?? null;
 }
 
-/** A review claim as `{ tone, word, detail }`. */
+/** A review claim as `{ tone, word, detail }`: by its role, as every list names who did a step. */
 export function reviewWords(review) {
   const word = review.decision ? outcomeWord(review.decision) : "No decision";
-  const parts = [review.model ? `by ${review.model}` : "", review.duration_seconds ? `in ${formatDuration(review.duration_seconds)}` : ""];
+  const by = review.role_id ? humanize(review.role_id) : review.model;
+  const parts = [by ? `by ${by}` : "", review.duration_seconds ? `in ${formatDuration(review.duration_seconds)}` : ""];
   const sha = shortSha(review.commit);
   if (sha) parts.push(`at ${sha}`);
   if (review.current === false) parts.push("(the branch has moved since)");
@@ -262,6 +267,22 @@ export function whoDecides(task, workflow) {
       text: GATE_WORDS[gate][policies[gate].value] ?? `${humanize(gate)}: ${policies[gate].value}`,
       source: POLICY_SOURCES[policies[gate].source] ?? humanize(policies[gate].source),
     }));
+}
+
+/**
+ * Who decided one gate, as `{ text, source }`, in the words the task's
+ * Details use: "Foreman approves merges" and where that comes from
+ * ("project setting"). `value` is who decided then (`auto` or `human`);
+ * the source is named only while the task's setting still says the same,
+ * since a setting can change after the step.
+ */
+export function gateDecider(task, policy, value) {
+  if (!GATE_WORDS[policy]?.[value]) return null;
+  const set = (task?.policy ?? {})[policy];
+  return {
+    text: GATE_WORDS[policy][value],
+    source: set && set.value === value ? (POLICY_SOURCES[set.source] ?? humanize(set.source)) : null,
+  };
 }
 
 /** Who filed the task: a reporter and a system, else who created it. */

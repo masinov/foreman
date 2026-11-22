@@ -1,5 +1,6 @@
 import { formatDuration, formatMoney, formatTokens, humanize, shortSha } from "../../ui/format";
 import { RULE_DECISIONS } from "../settings/settingsWords";
+import { gateDecider } from "./taskWords";
 import { FOREMAN, outcomeTone, runResult, runRole, runSeconds, SENT_BACK, stepOf, stepOutcome } from "../shared/activityWords";
 
 // The facts of one step, the column beside its story (owner, 2026-11-22):
@@ -52,15 +53,25 @@ function commitFact(run, transcript) {
   return run.commit_sha ? { term: "Commit", sha: run.commit_sha } : null;
 }
 
-/** Who decided at a gate: a user, or the project's setting (by its name on the settings page). */
-function decidedBy(run, transcript) {
+/**
+ * Who decided at a gate: a user, or a setting, in the words of the task's
+ * Details ("Foreman approves merges (project setting)").
+ */
+function decidedBy(run, transcript, task) {
   if (String(run.role_id ?? "") !== HUMAN_GATE) return null;
   const auto = last(transcript, "workflow.gate_auto_approved");
   if ((run.backend ?? run.agent_backend) === "human") return { text: "A user" };
   if (!auto && !run.outcome) return null;
   const policy = auto?.policy ?? last(transcript, "workflow.paused")?.policy ?? stepOf(run);
+  const decider = gateDecider(task, policy, "auto");
+  if (decider) {
+    return {
+      text: decider.source ? `${decider.text} (${decider.source})` : decider.text,
+      settings: decider.source === "project setting",
+    };
+  }
   const label = RULE_DECISIONS.find((entry) => entry.key === policy)?.label ?? humanize(policy);
-  return { text: `The project's setting “${label}”: ${FOREMAN}`, settings: true };
+  return { text: `${FOREMAN}, by the setting “${label}”`, settings: true };
 }
 
 /** Why a step ended as it did, where its story does not already say it in someone's words. */
@@ -85,7 +96,7 @@ export function stepFacts(run, transcript, { previous = null, next = null, task 
   const facts = [];
   // The same words as the step's row.
   const result = stepOutcome(run, previous);
-  const gate = decidedBy(run, transcript);
+  const gate = decidedBy(run, transcript, task);
   facts.push({ key: "result", term: "Result", text: result.word, tone: result.tone });
   const reason = why(run, Boolean(gate));
   if (reason) facts.push({ key: "why", term: "Why", text: reason });
