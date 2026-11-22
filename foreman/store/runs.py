@@ -146,22 +146,64 @@ class RunStore(StoreBase):
         return [_row_to_run(row) for row in rows]
 
     def list_task_runs_page(
-        self, task_id: str, *, limit: int, offset: int
-    ) -> tuple[list[Run], int]:
-        """Return one page of a task's runs, newest first, and the total count."""
+        self,
+        task_id: str,
+        *,
+        limit: int,
+        offset: int,
+        skip_roles: Sequence[str] = (),
+        engine_role: str | None = None,
+        commit_events: Sequence[tuple[str, str]] = (),
+    ) -> tuple[list[tuple[Run, int, str | None]], int]:
+        """One page of a task's runs, newest first, and the total count.
 
+        Each run comes with its attempt at its step (1 for the first run
+        of that step; records of ``engine_role`` are not attempts) and the
+        commit it was about: its own, else the one the first of
+        ``commit_events`` (event type, field) names. Runs of ``skip_roles``
+        are left out, and so are runs of ``engine_role`` whose detail does
+        not name the task.
+        """
+
+        commit_sql = "r.commit_sha"
+        commit_params: list[Any] = []
+        for event_type, field in commit_events:
+            commit_sql += (
+                ", (SELECT json_extract(e.payload_json, ?) FROM events e"
+                " WHERE e.run_id = r.id AND e.event_type = ?"
+                " ORDER BY e.timestamp DESC LIMIT 1)"
+            )
+            commit_params.extend([f"$.{field}", event_type])
+        marks = ", ".join("?" for _ in skip_roles) or "NULL"
+        steps_sql = f"""
+            WITH numbered AS (
+                SELECT r.*, r.rowid AS run_rowid,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY r.workflow_step, r.role_id = COALESCE(?, '')
+                           ORDER BY r.created_at, r.rowid
+                       ) AS attempt,
+                       COALESCE({commit_sql}, NULL) AS step_commit
+                FROM runs r WHERE r.task_id = ?
+            )
+            SELECT * FROM numbered
+            WHERE role_id NOT IN ({marks})
+              AND (role_id <> COALESCE(?, '')
+                   OR instr(COALESCE(outcome_detail, ''), ? || task_id || ?) > 0)
+        """
+        # The engine names a task in its records quoted: "during task 'task-1'".
+        params: list[Any] = [
+            engine_role, *commit_params, task_id, *skip_roles, engine_role, "'", "'"
+        ]
         total = self._connection.execute(
-            "SELECT COUNT(*) FROM runs WHERE task_id = ?", (task_id,)
+            f"SELECT COUNT(*) FROM ({steps_sql})", params
         ).fetchone()[0]
         rows = self._connection.execute(
-            """
-            SELECT * FROM runs WHERE task_id = ?
-            ORDER BY created_at DESC, rowid DESC
-            LIMIT ? OFFSET ?
-            """,
-            (task_id, limit, offset),
+            f"{steps_sql} ORDER BY created_at DESC, run_rowid DESC LIMIT ? OFFSET ?",
+            [*params, limit, offset],
         ).fetchall()
-        return [_row_to_run(row) for row in rows], int(total)
+        return [
+            (_row_to_run(row), int(row["attempt"]), row["step_commit"]) for row in rows
+        ], int(total)
 
     def list_sprint_activity_page(
         self,

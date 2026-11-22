@@ -83,3 +83,23 @@ WHO = WhoRule(
     engine_backends=tuple(sorted(ENGINE_BACKENDS)),
     builtin_prefix=BUILTIN_PREFIX,
 )
+
+
+# A task's own steps (its Activity table): every run of the task but those
+# that are not a step of it. The step that marks a task done only closes
+# it after the merge; the engine's records (its role) are kept on
+# whichever task and step were at hand, and only one that names the task
+# (a step stopped or paused during it) is about it.
+
+#: Roles whose runs are not one of the task's steps.
+NOT_STEP_ROLES: frozenset[str] = frozenset({"_builtin:mark_done"})
+
+#: The role of the engine's own records.
+ENGINE_RECORD_ROLE = "_builtin:orchestrator"
+
+#: Where a step that made no commit of its own says which commit it was
+#: about: the event, and the field of it that holds the commit.
+STEP_COMMIT_EVENTS: tuple[tuple[str, str], ...] = (
+    ("engine.test_run", "head_sha"),
+    ("engine.merge", "sha"),
+)

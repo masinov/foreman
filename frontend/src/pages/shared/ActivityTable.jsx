@@ -21,7 +21,7 @@ import "../../styles/activity.css";
  * and on the page the row leads to, never under the row. At phone width the
  * project, who and the numbers give way; what happened stays.
  *
- * `describe(item)` returns `{ at, project, subject: { key, title }, event:
+ * `describe(item)` returns `{ at, project, subject: { key, title, note }, event:
  * { word, tone, why }, by, byTitle, commit, took, spend, href }`; By names
  * a role, and `byTitle` (the model) is on hover. `keyHeader`, when
  * given, puts the key in a column of its own (a task's key, as narrow as
@@ -124,14 +124,16 @@ export function ActivityTable({
  * list whose rows pick (a task's runs), it is the row's button.
  */
 function Subject({ row, withKey, pick, pressed }) {
-  const { title } = row.subject;
+  const { title, note } = row.subject;
   const key = withKey ? row.subject.key : null;
-  const full = [row.subject.key, title].filter(Boolean).join(" · ");
+  const full = [row.subject.key, title, note].filter(Boolean).join(" · ");
+  // A note (a step's attempt) follows the title, quieter.
   const text = (
     <>
       {key ? <Mono quiet>{key}</Mono> : null}
       {key && title ? " · " : null}
       {title || null}
+      {note ? <span className="activity-table__note">{note}</span> : null}
     </>
   );
   if (pick) {

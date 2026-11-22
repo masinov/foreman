@@ -59,6 +59,12 @@
   white-space: nowrap;
 }
 
+/* What follows a subject's title (a step's attempt), quieter. */
+.activity-table__note {
+  margin-left: var(--space-2);
+  color: var(--color-text-quiet);
+}
+
 /* A phone keeps when, the subject (its key where it has one) and what
    happened. */
 @media (max-width: 640px) {

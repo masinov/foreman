@@ -173,6 +173,26 @@ export function runResult(run) {
   return { tone: "idle", word: "", note: "" };
 }
 
+/**
+ * How a step of a task ended, as its Activity says it: a run's result, but
+ * a step that made a commit says "Committed", and a gate the project's
+ * setting decided says "Approved by setting" in no colour, since no one
+ * looked. `earlier` is the run before it, whose commit it is compared with.
+ */
+export function stepOutcome(run, earlier = null) {
+  const result = runResult(run);
+  const role = roleOf(run);
+  const outcome = String(run.outcome || "").toLowerCase();
+  if (role === HUMAN_GATE && backendOf(run) !== "human" && outcome === "approve") {
+    return { ...result, tone: "idle", word: "Approved by setting" };
+  }
+  const before = earlier ? (earlier.step_commit ?? earlier.commit_sha ?? null) : null;
+  if (outcome === "done" && !role.startsWith(BUILTIN) && run.commit_sha && run.commit_sha !== before) {
+    return { ...result, word: "Committed" };
+  }
+  return result;
+}
+
 export function runSeconds(run) {
   return run.duration_ms === null || run.duration_ms === undefined ? null : run.duration_ms / 1000;
 }

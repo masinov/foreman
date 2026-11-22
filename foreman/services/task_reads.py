@@ -36,13 +36,16 @@ from .task_models import (
 )
 from .errors import NotFoundError, InvalidRequestError
 from ..domain.activity import (
+    ENGINE_RECORD_ROLE,
     GATE_ROLE,
     HAND_EVENTS,
+    NOT_STEP_ROLES,
     PROBLEM_OUTCOMES,
     PROBLEM_STATUSES,
     RECORD_OUTCOMES,
     RECORD_ROLES,
     RECORD_STEPS,
+    STEP_COMMIT_EVENTS,
     WHO,
 )
 from ..domain.models import Event, Project, Run, Task
@@ -319,9 +322,19 @@ class TaskReads:
     def list_runs(self, task_id: str, *, limit: int, offset: int) -> TaskRuns:
         if self.store.get_task(task_id) is None:
             raise NotFoundError(f"Task not found: {task_id}")
-        runs, total = self.store.list_task_runs_page(task_id, limit=limit, offset=offset)
+        runs, total = self.store.list_task_runs_page(
+            task_id,
+            limit=limit,
+            offset=offset,
+            skip_roles=sorted(NOT_STEP_ROLES),
+            engine_role=ENGINE_RECORD_ROLE,
+            commit_events=STEP_COMMIT_EVENTS,
+        )
         return TaskRuns(
-            runs=[RunItem(**_run_fields(run)) for run in runs],
+            runs=[
+                RunItem(**_run_fields(run), attempt=attempt, step_commit=step_commit)
+                for run, attempt, step_commit in runs
+            ],
             total=total,
             limit=limit,
             offset=offset,
