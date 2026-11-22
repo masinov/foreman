@@ -5,17 +5,17 @@ import { getSprint } from "../../api/sprints";
 import { useResource } from "../../api/useResource";
 import { paths } from "../../app/paths";
 import { Link } from "../../app/router";
-import { Disclosure } from "../../ui/Disclosure";
 import { LongText } from "../../ui/LongText";
+import { Markdown } from "../../ui/Markdown";
 import { Mono } from "../../ui/Mono";
 import { SectionHeading } from "../../ui/SectionHeading";
 import { StatusDot } from "../../ui/StatusDot";
 import { Table } from "../../ui/Table";
-import { formatDay, formatMoney, formatTokens, humanize, plural } from "../../ui/format";
+import { formatDay, formatMoney, formatTokens, humanize } from "../../ui/format";
 import { useProjectEngine } from "../shared/useProjectEngine";
 import { stageOf } from "../sprint/taskStage";
 import { Overrides } from "./Overrides";
-import { criteriaSummary, filedBy, stepRows, testsWords, whoDecides } from "./taskWords";
+import { filedBy, stepRows, whoDecides } from "./taskWords";
 
 function Steps({ task, workflow }) {
   const engine = useProjectEngine(task.project_id);
@@ -27,7 +27,7 @@ function Steps({ task, workflow }) {
       render: (row) => <span className={`tone-${row.result.tone}`}>{row.result.word}</span>,
     },
     { key: "by", header: "By", className: "secondary", render: (row) => (row.byTitle ? <span title={row.byTitle}>{row.by}</span> : row.by) },
-    { key: "runs", header: "Runs", numeric: true, render: (row) => (row.runs ? <Mono quiet>{row.runs}</Mono> : null) },
+    { key: "runs", header: "Attempts", numeric: true, render: (row) => (row.runs ? <Mono quiet>{row.runs}</Mono> : null) },
   ];
   return (
     <section className="task-section" aria-labelledby="task-steps">
@@ -42,43 +42,6 @@ function Steps({ task, workflow }) {
         Every step and what it did is under{" "}
         <Link href={paths.taskActivity(task.id)}>Activity</Link>.
       </p>
-    </section>
-  );
-}
-
-function ChecksSummary({ task, checks }) {
-  const data = checks.data;
-  const tests = data ? testsWords(data.facts.tests) : null;
-  return (
-    <section className="task-section" aria-labelledby="task-checks-summary">
-      <SectionHeading
-        id="task-checks-summary"
-        title="Checks"
-        actions={
-          <Link className="section-link" href={paths.taskChecks(task.id)}>
-            All checks
-          </Link>
-        }
-      />
-      {checks.error ? (
-        <p className="notice notice--error" role="alert">
-          {checks.error}
-        </p>
-      ) : null}
-      {data ? (
-        <div className="task-checks-line">
-          <span>
-            <span className={`tone-${tests.tone}`}>Tests {tests.word.toLowerCase()}</span>
-            {tests.detail ? ` ${tests.detail}` : ""}
-          </span>
-          <span>{criteriaSummary(data.claims)}</span>
-          <span>
-            {data.evidence_files.length
-              ? plural(data.evidence_files.length, "evidence file")
-              : "No evidence files required by this workflow"}
-          </span>
-        </div>
-      ) : null}
     </section>
   );
 }
@@ -127,53 +90,6 @@ function Dependencies({ items, engine }) {
  * What the engine keeps about a task that a person rarely needs: closed
  * until asked for.
  */
-function MoreDetails({ task }) {
-  const usage = task.totals?.token_usage ?? {};
-  const visits = Object.entries(task.step_visit_counts ?? {}).filter(([, count]) => count > 0);
-  const rows = [
-    {
-      key: "copy",
-      term: "Working copy",
-      value: task.worktree_path ? (
-        <Mono className="task-details__branch">{task.worktree_path}</Mono>
-      ) : (
-        <span className="quiet">None now. One exists while the task is being worked on.</span>
-      ),
-    },
-    {
-      key: "tokens",
-      term: "Tokens",
-      value: (
-        <Mono>
-          {`${formatTokens(usage.input)} in · ${formatTokens(usage.output)} out · ${formatTokens(usage.cache_read)} cached`}
-        </Mono>
-      ),
-    },
-    {
-      key: "visits",
-      term: "Times at each step",
-      value: visits.length ? (
-        visits.map(([step, count]) => `${humanize(step)} ${count}`).join(" · ")
-      ) : (
-        <span className="quiet">No step has run</span>
-      ),
-    },
-    task.assigned_role ? { key: "role", term: "Last role", value: humanize(task.assigned_role) } : null,
-  ].filter(Boolean);
-  return (
-    <Disclosure summary="More details" className="task-details__more">
-      <dl className="details-list">
-        {rows.map((row) => (
-          <div key={row.key} className="details-list__row">
-            <dt>{row.term}</dt>
-            <dd>{row.value}</dd>
-          </div>
-        ))}
-      </dl>
-    </Disclosure>
-  );
-}
-
 /** What was filed: the description and the acceptance criteria, as written. */
 function Filed({ task }) {
   return (
@@ -181,7 +97,9 @@ function Filed({ task }) {
       <section className="task-section" aria-labelledby="task-description">
         <SectionHeading id="task-description" title="Description" />
         {task.description ? (
-          <LongText className="task-text">{task.description}</LongText>
+          <LongText className="task-text">
+            <Markdown text={task.description} />
+          </LongText>
         ) : (
           <p className="empty">No description was filed.</p>
         )}
@@ -189,7 +107,9 @@ function Filed({ task }) {
       <section className="task-section" aria-labelledby="task-criteria">
         <SectionHeading id="task-criteria" title="Acceptance criteria" />
         {task.acceptance_criteria ? (
-          <LongText className="task-text">{task.acceptance_criteria}</LongText>
+          <LongText className="task-text">
+            <Markdown text={task.acceptance_criteria} />
+          </LongText>
         ) : (
           <p className="empty">No acceptance criteria were filed.</p>
         )}
@@ -199,6 +119,7 @@ function Filed({ task }) {
 }
 
 function Details({ task, workflow }) {
+  const usage = task.totals?.token_usage ?? {};
   const engine = useProjectEngine(task.project_id);
   const stage = stageOf(task, engine);
   const deciders = whoDecides(task, workflow.data);
@@ -250,16 +171,32 @@ function Details({ task, workflow }) {
         }
       : null,
     { key: "branch", term: "Branch", value: task.branch_name ? <Mono className="task-details__branch">{task.branch_name}</Mono> : <span className="quiet">None yet</span> },
+    // A working copy exists while the task is worked on; none says nothing.
+    task.worktree_path
+      ? { key: "copy", term: "Working copy", value: <Mono className="task-details__branch">{task.worktree_path}</Mono> }
+      : null,
     {
       key: "spend",
       term: "Spend",
       value: <Mono>{formatMoney(task.totals?.total_cost_usd)}</Mono>,
     },
+    usage.input || usage.output || usage.cache_read
+      ? {
+          key: "tokens",
+          term: "Tokens",
+          value: (
+            <Mono>
+              {`${formatTokens(usage.input)} in · ${formatTokens(usage.output)} out · ${formatTokens(usage.cache_read)} cached`}
+            </Mono>
+          ),
+        }
+      : null,
     {
       key: "filed",
       term: "Filed by",
       value: who || when ? <span className="secondary">{[who, when ? `on ${when}` : ""].filter(Boolean).join(" ")}</span> : null,
     },
+    task.assigned_role ? { key: "role", term: "Last role", value: humanize(task.assigned_role) } : null,
   ].filter((row) => row && row.value !== null);
 
   return (
@@ -273,17 +210,16 @@ function Details({ task, workflow }) {
           </div>
         ))}
       </dl>
-      <MoreDetails task={task} />
     </section>
   );
 }
 
 /**
- * Overview: in the wide column what happened and what was asked for (steps,
- * checks, the description and criteria as filed, guidance); beside it the
- * task's facts and its own settings.
+ * Overview: in the wide column what happened and what was asked for (the
+ * steps, the description and criteria as filed); beside it the task's
+ * facts and its own settings. Checks have their own tab (owner, 2026-11-22).
  */
-export function OverviewTab({ task, checks, changed }) {
+export function OverviewTab({ task, changed }) {
   const workflow = useResource(
     ["workflow", task.project_id],
     (client, options) => getProjectWorkflow(client, task.project_id, options),
@@ -295,7 +231,6 @@ export function OverviewTab({ task, checks, changed }) {
     <div className="page-overview">
       <div className="page-overview__main">
         <Steps task={task} workflow={workflow} />
-        <ChecksSummary task={task} checks={checks} />
         <Filed task={task} />
       </div>
       <aside className="page-overview__aside" aria-label="Details and overrides">

@@ -19,7 +19,8 @@ import { Caret } from "./Caret";
  * is all shown.
  */
 export function LongText({ children, className = "", short = false, brief = false, output = false }) {
-  const Tag = output ? "pre" : "p";
+  // Output is preformatted; anything else may hold formatted blocks (lists, paragraphs).
+  const Tag = output ? "pre" : "div";
   const ref = useRef(null);
   const id = useId();
   const [open, setOpen] = useState(false);

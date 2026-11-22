@@ -1,9 +1,11 @@
 import React from "react";
 
-// What agents write is Markdown: paragraphs, lists ("- ", "* ", "1. ",
-// nested by indentation), headings, fenced code, **bold** and `code`. This
-// reads that much into elements (never into HTML), so their words show as
-// they meant them; anything else shows as written.
+// What agents and people write is Markdown: paragraphs, lists ("- ", "* ",
+// "1. ", nested by indentation), headings, fenced code, **bold** and
+// `code`. This reads that much into elements (never into HTML), so their
+// words show as they meant them; anything else shows as written. A line
+// break inside a paragraph is kept: acceptance criteria are often one per
+// line with no list mark.
 
 const BULLET = /^(\s*)(?:[-*]|(\d+)[.)])\s+(.*)$/;
 const FENCE = /^\s*```/;
@@ -33,7 +35,7 @@ export function blocksOf(text) {
   let paragraph = [];
   let code = null;
   const flush = () => {
-    if (paragraph.length) blocks.push({ kind: "paragraph", text: paragraph.join(" ") });
+    if (paragraph.length) blocks.push({ kind: "paragraph", lines: paragraph });
     paragraph = [];
   };
   for (const line of String(text ?? "").split("\n")) {
@@ -125,7 +127,18 @@ export function Markdown({ text, className = "" }) {
     }
     if (block.kind === "code") out.push(<pre key={index} className="markdown__code">{block.text}</pre>);
     else if (block.kind === "heading") out.push(<p key={index} className="markdown__heading">{inline(block.text, `h${index}`)}</p>);
-    else out.push(<p key={index}>{inline(block.text, `p${index}`)}</p>);
+    else {
+      out.push(
+        <p key={index}>
+          {block.lines.map((line, at) => (
+            <React.Fragment key={at}>
+              {at ? <br /> : null}
+              {inline(line, `p${index}-${at}`)}
+            </React.Fragment>
+          ))}
+        </p>,
+      );
+    }
     index += 1;
   }
   return <div className={["markdown", className].filter(Boolean).join(" ")}>{out}</div>;

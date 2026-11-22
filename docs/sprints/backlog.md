@@ -51,10 +51,10 @@ sprint, what should they see first?"
   - the project page's tabs with their controls on the tab line too (its
     Activity filters and New sprint are under it, in a heading of their
     own), so every tabbed page works the same;
-  - small frictions seen on the way: the task's Checks heading "Measured
-    by the engine" (Foreman), stray "OK" and "APPROVE" lines in a run's
-    story, Overview's "Merged in 0.1 s", spend written three ways, the
-    task Activity's header naming the model where the table names the role.
+  - small frictions seen on the way. Done on 2026-11-22: "Measured by
+    Foreman", the APPROVE line, "Merged in 0.1 s", the review named by its
+    role. Still to do: the lone "OK" a test's detail shows (with the test
+    count), and spend written three ways.
 
 ## Activity, one stream at three depths (owner, 2026-11-21)
 

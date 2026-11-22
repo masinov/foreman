@@ -53,7 +53,10 @@ Workspace / Project / Sprint / Task.
   tab's own controls sit on the tab line at its right, never in a row of
   their own under it (owner, 2026-11-21).
 - **Task** shows the pending decision first, then four tabs: Overview,
-  Changes, Checks, Activity.
+  Changes, Checks, Activity. Overview is the steps, the description and
+  the acceptance criteria as filed (formatted), and every detail beside
+  them at once. It has no checks summary and no "More details" (owner,
+  2026-11-22): the Steps table and the Checks tab say it.
 - **Manager** is one conversation per project. It is a side bar on the
   right of a project's pages and its sprints, toggled from the same place in
   the top bar, and it stays open as you move. It proposes changes; nothing

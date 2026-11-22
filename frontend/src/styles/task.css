@@ -193,10 +193,6 @@
   font-size: var(--font-size-control);
 }
 
-.task-details__more .disclosure__content {
-  padding-top: 0;
-}
-
 .task-details__list {
   margin: 0;
   padding: 0;

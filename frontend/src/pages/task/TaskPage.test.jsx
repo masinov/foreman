@@ -591,13 +591,11 @@ describe("Overview", () => {
     expect(screen.getByText(/Every step and what it did is under/)).toBeInTheDocument();
   });
 
-  it("sums up the checks on one line that links to Checks", async () => {
+  it("has no checks summary: the Steps table and the Checks tab say it", async () => {
     await renderTask();
-    const section = (await screen.findByRole("heading", { name: "Checks" })).closest("section");
-    await waitFor(() => expect(section).toHaveTextContent("2 acceptance criteria, covered by the approving review"));
-    expect(section).toHaveTextContent("Tests passed in 1 min 54 s at b232eb1");
-    expect(section).toHaveTextContent("No evidence files required by this workflow");
-    expect(within(section).getByRole("link", { name: "All checks" })).toHaveAttribute("href", `${BASE}/checks`);
+    await screen.findByRole("table", { name: "Steps" });
+    expect(screen.queryByRole("heading", { name: "Checks" })).toBeNull();
+    expect(screen.queryByText(/evidence files/i)).toBeNull();
   });
 
   it("shows the details and the task as filed", async () => {
@@ -659,7 +657,7 @@ describe("a merged task", () => {
     const checks = checksPayload();
     checks.facts.branch = { name: "foreman/for-14", default_branch: "main", ahead: null, behind: null, state: "merged", merged_as: COMMIT };
     await renderTask(`${BASE}/checks`, taskRoutes({ task: taskDetail({ status: "done", blocked_kind: null }), checks }));
-    const facts = (await screen.findByRole("heading", { name: "Measured by the engine" })).closest("section");
+    const facts = (await screen.findByRole("heading", { name: "Measured by Foreman" })).closest("section");
     expect(facts).toHaveTextContent("Merged into main");
     expect(facts).toHaveTextContent(COMMIT.slice(0, 7));
     expect(facts).not.toHaveTextContent("behind");
@@ -863,7 +861,7 @@ describe("Changes, a long list", () => {
 describe("Checks", () => {
   it("keeps facts and claims in separate tables, then evidence files", async () => {
     await renderTask(`${BASE}/checks`);
-    const facts = await screen.findByRole("table", { name: "Measured by the engine" });
+    const facts = await screen.findByRole("table", { name: "Measured by Foreman" });
     const claims = screen.getByRole("table", { name: "Reported by an agent" });
     const firstCells = (table) =>
       within(table)
@@ -879,10 +877,16 @@ describe("Checks", () => {
     expect(claims).toHaveTextContent("Approved");
     expect(claims).toHaveTextContent("Clean change, tests cover it.");
     expect(claims).toHaveTextContent("Covered by review");
+    // The review is named by its role; the commit it approved is said once, on its row.
+    expect(claims).toHaveTextContent(/by Code reviewer/);
+    expect(claims).not.toHaveTextContent("sonnet-5-5");
+    expect(claims).not.toHaveTextContent("Code review approved");
     expect(claims).not.toHaveTextContent("Size of change");
     expect(screen.queryByText(/judged/i)).toBeNull();
-    expect(screen.getByRole("heading", { name: "Evidence files" })).toBeInTheDocument();
-    expect(screen.getByText("None required by this workflow.")).toBeInTheDocument();
+    // A criterion's `code` is formatted as it is on the Overview.
+    expect(claims).not.toHaveTextContent("`");
+    // No evidence files: nothing to say about them.
+    expect(screen.queryByRole("heading", { name: "Evidence files" })).toBeNull();
   });
 
   it("says when nothing was claimed and the tests did not run", async () => {
@@ -890,7 +894,7 @@ describe("Checks", () => {
     checks.facts.tests = { status: "not_run", exit_code: null, duration_seconds: null, command: null, result_line: null, commit: null, head_sha: null };
     checks.claims = { reviews: [], criteria: [] };
     await renderTask(`${BASE}/checks`, taskRoutes({ checks }));
-    const facts = await screen.findByRole("table", { name: "Measured by the engine" });
+    const facts = await screen.findByRole("table", { name: "Measured by Foreman" });
     expect(facts).toHaveTextContent("Not run");
     expect(screen.queryByRole("table", { name: "Reported by an agent" })).toBeNull();
     expect(screen.getByText("No agent has reported on this task yet, and it has no acceptance criteria to check.")).toBeInTheDocument();
@@ -1156,10 +1160,8 @@ describe("Activity", () => {
     // Its row says the same, in no colour: no one looked.
     const row = within(screen.getByRole("table", { name: "Steps" })).getAllByRole("row")[1];
     expect(within(row).getByText("Approved by setting")).toHaveClass("tone-idle");
-    expect(within(facts).getByRole("link", { name: "The project's setting “Approve merges”: Foreman" })).toHaveAttribute(
-      "href",
-      "/dashboard/projects/foreman/settings",
-    );
+    // In the words of the task's Details. The fixture's setting is now "a user", so its source is not claimed.
+    expect(facts).toHaveTextContent(/Decided by\s*Foreman approves merges/);
     expect(facts).toHaveTextContent(/Next\s*Merge/);
     expect(facts).not.toHaveTextContent("Took");
     expect(facts).not.toHaveTextContent("Spend");
@@ -1208,7 +1210,7 @@ describe("details beyond the usual", () => {
     expect(details).toHaveTextContent(/Priority\s*2/);
   });
 
-  it("leaves those rows out when there is nothing to say, and keeps the rest behind More details", async () => {
+  it("shows every detail at once, leaving out rows with nothing to say", async () => {
     const task = taskDetail({
       worktree_path: "/srv/foreman/.foreman/worktrees/FOR-14",
       step_visit_counts: { develop: 2, test: 1 },
@@ -1218,11 +1220,13 @@ describe("details beyond the usual", () => {
     const details = await screen.findByRole("region", { name: "Details" });
     expect(details).not.toHaveTextContent("Depends on");
     expect(details).not.toHaveTextContent("Priority");
-    expect(details).not.toHaveTextContent("worktrees/FOR-14");
-    fireEvent.click(within(details).getByRole("button", { name: "More details" }));
+    // Nothing behind a control: the working copy and tokens are there at once.
+    expect(within(details).queryByRole("button", { name: "More details" })).toBeNull();
     expect(details).toHaveTextContent("/srv/foreman/.foreman/worktrees/FOR-14");
     expect(details).toHaveTextContent("1.2K in · 34K out · 2.5M cached");
-    expect(details).toHaveTextContent("Develop 2 · Test 1");
+    // How often each step ran is the Steps table's Attempts column, not a detail.
+    expect(details).not.toHaveTextContent("Times at each step");
+    expect(details).not.toHaveTextContent("Develop 2 · Test 1");
   });
 });
 

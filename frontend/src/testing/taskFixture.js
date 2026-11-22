@@ -111,7 +111,7 @@ export function checksPayload(fields = {}) {
       ],
       criteria: [
         { criterion: "Duration is reported", status: "covered", evidence: "Code review approved b232eb1a." },
-        { criterion: "The result line is reported", status: "covered", evidence: "Code review approved b232eb1a." },
+        { criterion: "The `result` line is reported", status: "covered", evidence: "Code review approved b232eb1a." },
       ],
     },
     evidence_files: [],
