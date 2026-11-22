@@ -24,7 +24,7 @@ import {
   taskDetail,
   taskRoutes,
 } from "../../testing/taskFixture";
-import { engine, workspacePayload } from "../../testing/workspaceFixture";
+import { engine, on, workspacePayload } from "../../testing/workspaceFixture";
 import { actionsFor } from "./TaskActions";
 
 /** The More menu depends on the engine, which arrives with the workspace. */
@@ -897,7 +897,7 @@ describe("Checks", () => {
 });
 
 describe("Activity", () => {
-  it("lists runs newest first and shows the selected run's output and prompt", async () => {
+  it("lists runs newest first and shows the picked run: its story, beginning with its prompt, and its facts", async () => {
     const { fetchImpl } = await renderTask(`${BASE}/activity`);
     const table = await screen.findByRole("table", { name: "Runs" });
     const rows = within(table).getAllByRole("row").slice(1);
@@ -912,9 +912,21 @@ describe("Activity", () => {
 
     expect(await screen.findByText("Reviewed the change.")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Review" })).toBeInTheDocument();
-    expect(document.querySelector("#run-output").parentElement).toHaveTextContent(/by sonnet-5-5/);
-    fireEvent.click(screen.getByRole("button", { name: "Show the prompt this run was given" }));
-    expect(screen.getByText("The prompt of run-3")).toBeInTheDocument();
+    // The story begins when Foreman sends the agent its prompt: a line like the others.
+    const story = screen.getByRole("list", { name: "What happened" });
+    const first = within(story).getAllByRole("listitem")[0];
+    expect(first).toHaveTextContent("Sent the prompt · 1 line");
+    expect(first).toHaveTextContent("The prompt of run-3");
+    // Its facts beside it: how it ended, the commit it was about, who, the model, the time and cost, what came next.
+    const facts = screen.getByRole("complementary", { name: "About this step" });
+    expect(facts).toHaveTextContent(/Result\s*Approved/);
+    expect(facts).toHaveTextContent(/Commit\s*b232eb1/);
+    expect(facts).toHaveTextContent(/By\s*Developer/);
+    expect(facts).toHaveTextContent(/Model\s*sonnet-5-5/);
+    expect(facts).toHaveTextContent(/Took\s*7 s/);
+    expect(facts).toHaveTextContent(/Spend\s*\$0\.12 · 1K tokens/);
+    expect(within(facts).getByRole("button", { name: "Download the transcript" })).toBeInTheDocument();
+    expect(screen.queryByText(/No prompt was recorded/)).toBeNull();
 
     // No caret on a row: what a run shows is under the list, not under its row.
     expect(table.querySelector(".caret")).toBeNull();
@@ -924,17 +936,22 @@ describe("Activity", () => {
     fireEvent.click(within(rows[1]).getAllByRole("cell")[1]);
     expect(await screen.findByText("Ran 1221 tests")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Test" })).toBeInTheDocument();
-    expect(document.querySelector("#run-output").parentElement).toHaveTextContent(/by Foreman/);
+    expect(screen.getByRole("complementary", { name: "About this step" })).toHaveTextContent(/By\s*Foreman/);
+
     expect(within(rows[1]).getByRole("button")).toHaveAttribute("aria-pressed", "true");
     expect(rows[1]).toHaveClass("table__row--selected");
     expect(rows[0]).not.toHaveClass("table__row--selected");
     expect(calls(fetchImpl, "GET", outputUrl("run-2").slice(4))).toHaveLength(1);
+    // The run after it is named among its facts, and picking it there shows it.
+    fireEvent.click(within(screen.getByRole("complementary", { name: "About this step" })).getByRole("button", { name: "Review" }));
+    expect(await screen.findByText("Reviewed the change.")).toBeInTheDocument();
+    expect(rows[0]).toHaveClass("table__row--selected");
 
     fireEvent.click(within(rows[0]).getByRole("button"));
     expect(await screen.findByText("Reviewed the change.")).toBeInTheDocument();
   });
 
-  it("opens at the run a link names, with a send-back's reason on hover and above its output", async () => {
+  it("opens at the run a link names, with a send-back's reason on hover, and the attempt after it names it", async () => {
     const routes = taskRoutes({
       runs: [
         runItem("run-3", "review", {
@@ -956,10 +973,10 @@ describe("Activity", () => {
     expect(rows[1]).toHaveTextContent(/Foreman/);
     expect(within(rows[1]).getByText("Passed")).toBeInTheDocument();
 
-    // Picking the send-back shows its reason above what it said and did.
+    // Picking the send-back shows what the reviewer wrote, and that it sent the task back.
     fireEvent.click(within(rows[0]).getByText("Sent back"));
     expect(await screen.findByText("Reviewed the change.")).toBeInTheDocument();
-    expect(document.querySelector(".run-output__why")).toHaveTextContent("The log can still contain the host and port.");
+    expect(screen.getByRole("complementary", { name: "About this step" })).toHaveTextContent(/Result\s*Sent back/);
   });
 
   it("reads the list again in place when a step is registered: rows stay, the new one opens, the pick is kept", async () => {
@@ -1003,23 +1020,37 @@ describe("Activity", () => {
     const table = await screen.findByRole("table", { name: "Runs" });
     expect(within(table).getAllByRole("row")).toHaveLength(26);
     expect(await screen.findByText("This run recorded nothing to read.")).toBeInTheDocument();
-    expect(screen.getByText("No prompt was recorded for this run.")).toBeInTheDocument();
+    expect(screen.queryByText(/No prompt was recorded/)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Earlier" }));
     await waitFor(() => expect(within(screen.getByRole("table", { name: "Runs" })).getAllByRole("row")).toHaveLength(31));
     expect(screen.queryByRole("button", { name: "Earlier" })).toBeNull();
   });
 
-  it("tells the run as a story, with the raw stream one level down", async () => {
+  it("tells the run as one kind of line, with its facts beside it and the whole record to download", async () => {
     const at = "2026-11-12T18:27:39Z";
-    const routes = taskRoutes();
+    const routes = taskRoutes({
+      runs: [
+        runItem("run-3", "review", { role_id: "code_reviewer", outcome: "approve", commit_sha: null }),
+        runItem("run-2", "develop", { role_id: "developer", outcome: "done" }),
+        runItem("run-1", "review", { role_id: "code_reviewer", outcome: "steer", outcome_detail: "Fix the log." }),
+      ],
+    });
     routes[outputUrl("run-3")] = outputPayload("run-3", "", {
       transcript: [
-        { at, kind: "workflow.step_started", text: "", data: { step: "review", visit_count: 1 } },
+        { at, kind: "workflow.step_started", text: "", data: { step: "review", visit_count: 2 } },
+        { at, kind: "workflow.model_selected", text: "", data: { model: "sonnet-5-5", source: "role" } },
         { at, kind: "engine.role_policy", text: "", data: { allowed_tools: ["Read", "Grep", "Glob"], disallowed_tools: [] } },
+        { at, kind: "agent.started", text: "", data: { command: "claude --print" } },
         { at, kind: "agent.file_change", text: "", data: { tool: "Read", path: "/r/.foreman/worktrees/FOR-9/foreman/builtins.py" } },
-        { at, kind: "agent.message", text: "", data: { phase: "assistant", text: "The change does what the task asks." } },
+        { at, kind: "agent.command", text: "", data: { command: "git diff main" } },
+        { at, kind: "agent.tool_result", text: "", data: { is_error: true, preview: "Error: No such tool available: Bash." } },
+        { at, kind: "agent.rate_limit", text: "", data: { rate_limit_type: "seven_day", status: "allowed_warning" } },
+        { at, kind: "agent.message", text: "", data: { phase: "assistant", text: "APPROVE\n\nThe change does **what** the task asks." } },
         { at, kind: "engine.context_write", text: "", data: { path: ".foreman/context.md" } },
+        { at, kind: "engine.review_recorded", text: "", data: { head_sha: "c248621ae45e", outcome: "approve" } },
+        { at, kind: "engine.sprint_ready", text: "", data: { sprint_id: "s" } },
         { at, kind: "workflow.step_completed", text: "", data: { step: "review", outcome: "approve" } },
+        { at, kind: "workflow.transition", text: "", data: { to_step: "merge_approval" } },
       ],
       raw_entries: 2,
     });
@@ -1036,19 +1067,94 @@ describe("Activity", () => {
     const story = await screen.findByRole("list", { name: "What happened" });
     const lines = within(story).getAllByRole("listitem").map((item) => item.textContent.replace(/^\d\d:\d\d:\d\d/, ""));
     expect(lines).toEqual([
+      "Sent the prompt · 1 lineThe prompt of run-3",
       // These events are dated the day after the run began, and the story says so.
       "12 Nov",
-      "Started Review",
-      "May use: Read, Grep, Glob",
-      "Read foreman/builtins.py",
+      "Readforeman/builtins.py",
+      "Rangit diff main",
+      "Not run: this role may not use Bash",
       "The change does what the task asks.",
-      "Review ended: Approved",
     ]);
-    // Nothing of the raw stream is fetched or shown until it is asked for.
+    // No bookkeeping, no event names, no JSON, no decision word.
     expect(story).not.toHaveTextContent("{");
+    expect(story).not.toHaveTextContent("APPROVE");
+    expect(screen.getByText("what").tagName).toBe("STRONG");
+    expect(screen.getByRole("heading", { name: "Review" }).closest(".section-heading")).toHaveTextContent("attempt 2");
+
+    const facts = screen.getByRole("complementary", { name: "About this step" });
+    expect(facts).not.toHaveTextContent("After");
+    expect(facts).toHaveTextContent(/Reviewed\s*c248621/);
+    expect(facts).toHaveTextContent(/By\s*Code reviewer/);
+    expect(facts).toHaveTextContent(/Model\s*sonnet-5-5, set by the role/);
+    expect(facts).toHaveTextContent(/May use\s*Read, Grep and Glob/);
+    expect(facts).toHaveTextContent(/Next\s*Merge approval/);
+
+    // The raw stream is read only to be downloaded, with everything else the run recorded.
     expect(calls(fetchImpl, "GET", `${outputUrl("run-3").slice(4)}?raw=true`)).toHaveLength(0);
-    fireEvent.click(screen.getByRole("button", { name: "Show the raw output (2 lines)" }));
-    expect(await screen.findByText(/"type":"result"/)).toBeInTheDocument();
+    const saved = [];
+    const created = vi.fn((blob) => {
+      saved.push(blob);
+      return "blob:transcript";
+    });
+    const revoked = vi.fn();
+    vi.stubGlobal("URL", Object.assign(Object.create(URL), { createObjectURL: created, revokeObjectURL: revoked }));
+    // jsdom cannot follow a download link; the click is where the browser saves the file.
+    const clicked = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    try {
+      fireEvent.click(within(facts).getByRole("button", { name: "Download the transcript" }));
+      await waitFor(() => expect(saved).toHaveLength(1));
+      expect(clicked).toHaveBeenCalledTimes(1);
+      // The file's address is let go once the browser has it.
+      await waitFor(() => expect(revoked).toHaveBeenCalledWith("blob:transcript"), { timeout: 2000 });
+    } finally {
+      vi.unstubAllGlobals();
+      clicked.mockRestore();
+    }
+    const text = await new Promise((done) => {
+      const reader = new FileReader();
+      reader.onload = () => done(reader.result);
+      reader.readAsText(saved[0]);
+    });
+    expect(text).toContain("The prompt of run-3");
+    expect(text).toContain("engine.sprint_ready");
+    expect(text).toContain('{"type":"result"}');
+
+    // The step that answered a send-back names it, and picking it there shows it.
+    const rows = within(screen.getByRole("table", { name: "Runs" })).getAllByRole("row").slice(1);
+    fireEvent.click(within(rows[1]).getAllByRole("cell")[1]);
+    const answered = await screen.findByRole("complementary", { name: "About this step" });
+    await waitFor(() => expect(answered).toHaveTextContent(/After\s*Review, sent back/));
+    fireEvent.click(within(answered).getByRole("button", { name: "Review, sent back" }));
+    await waitFor(() => expect(rows[2]).toHaveClass("table__row--selected"));
+  });
+
+  it("says who decided a gate the project's setting decided, and that no one was asked", async () => {
+    const routes = taskRoutes({
+      runs: [runItem("run-5", "merge_approval", { role_id: "_builtin:human_gate", backend: "builtin", model: null, outcome: "approve", duration_ms: 10, cost_usd: 0, tokens: 0 })],
+    });
+    routes[outputUrl("run-5")] = outputPayload("run-5", "", {
+      prompt: null,
+      transcript: [
+        { at: on("11-11"), kind: "workflow.step_started", text: "", data: { step: "merge_approval", visit_count: 1 } },
+        { at: on("11-11"), kind: "workflow.gate_auto_approved", text: "", data: { policy: "merge_approval", step: "merge_approval" } },
+        { at: on("11-11"), kind: "workflow.step_completed", text: "", data: { step: "merge_approval", outcome: "approve" } },
+        { at: on("11-11"), kind: "workflow.transition", text: "", data: { to_step: "merge" } },
+      ],
+    });
+    await renderTask(`${BASE}/activity`, routes);
+    const story = await screen.findByRole("list", { name: "What happened" });
+    expect(within(story).getAllByRole("listitem").map((item) => item.textContent.replace(/^\d\d:\d\d:\d\d/, ""))).toEqual([
+      "Approved without asking anyone",
+    ]);
+    const facts = screen.getByRole("complementary", { name: "About this step" });
+    expect(within(facts).getByText("Approved")).toHaveClass("tone-idle");
+    expect(within(facts).getByRole("link", { name: "The project's setting “Approve merges”: Foreman" })).toHaveAttribute(
+      "href",
+      "/dashboard/projects/foreman/settings",
+    );
+    expect(facts).toHaveTextContent(/Next\s*Merge/);
+    expect(facts).not.toHaveTextContent("Took");
+    expect(facts).not.toHaveTextContent("Spend");
   });
 
   it("says when nothing has run", async () => {

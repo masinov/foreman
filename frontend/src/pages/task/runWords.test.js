@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { narrate, sayEntry, shortPath } from "./runWords";
+import { narrate, ownWords, sayEntry, shortPath } from "./runWords";
 
 const at = "2026-11-12T18:27:39Z";
 const entry = (kind, data, text = "") => ({ at, kind, text, data });
@@ -16,9 +16,10 @@ describe("what a run recorded, in words", () => {
       says: "Searched for",
       mono: "shortSha in src",
     });
+    // What a tool was given shows as its values, never as JSON.
     expect(sayEntry(entry("agent.tool_use", { tool: "WebFetch", input: { url: "https://example.com" } }))).toEqual({
       says: "Used WebFetch",
-      mono: '{"url":"https://example.com"}',
+      mono: "https://example.com",
     });
   });
 
@@ -43,19 +44,14 @@ describe("what a run recorded, in words", () => {
       tone: "passed",
     });
     expect(sayEntry(entry("engine.test_run", { exit_code: 2, duration_seconds: 3 })).says).toBe("Tests failed (exit code 2) in 3 s");
-    expect(sayEntry(entry("workflow.step_completed", { step: "review", outcome: "approve" }))).toEqual({
-      says: "Review ended: Approved",
-      tone: "passed",
-    });
     expect(sayEntry(entry("workflow.paused", { reason: "human_gate", policy: "merge_approval" })).says).toBe(
       "Waiting for a user: merge approval",
     );
-    expect(sayEntry(entry("workflow.resumed", { decision: "approve", next_step: "merge" })).says).toBe(
-      "A user approved. Next step: Merge",
+    expect(sayEntry(entry("workflow.resumed", { decision: "approve", next_step: "merge" })).says).toBe("A user approved");
+    expect(sayEntry(entry("workflow.gate_auto_approved", { policy: "merge_approval", step: "merge_approval" })).says).toBe(
+      "Approved without asking anyone",
     );
-    expect(sayEntry(entry("agent.completed", { duration_ms: 9400, token_count: 1200, cost_usd: 0.12 })).says).toBe(
-      "Finished in 9.4 s · 1.2K tokens · $0.12",
-    );
+    expect(sayEntry(entry("engine.test_started", { command: "npm test" }))).toEqual({ says: "Ran", mono: "npm test" });
   });
 
   it("says why the engine asked again", () => {
@@ -63,12 +59,37 @@ describe("what a run recorded, in words", () => {
     expect(sayEntry(entry("engine.output_contract_retry", { reason: "missing_completion_marker" })).says).toMatch(/completion marker/);
   });
 
-  it("says what tools a role had", () => {
-    expect(sayEntry(entry("engine.role_policy", { allowed_tools: ["Read", "Grep"], disallowed_tools: ["Bash"] })).says).toBe("May use: Read, Grep");
-    expect(sayEntry(entry("engine.role_policy", { allowed_tools: [], disallowed_tools: ["Bash", "Write"] })).says).toBe(
-      "May use every tool except Bash, Write",
-    );
-    expect(sayEntry(entry("engine.role_policy", {})).says).toBe("May use every tool");
+  it("leaves to the step's facts what they say: its model, its tools, how it started and ended, what came next", () => {
+    for (const kind of [
+      "workflow.step_started",
+      "workflow.model_selected",
+      "engine.role_policy",
+      "agent.started",
+      "agent.completed",
+      "engine.review_recorded",
+      "workflow.step_completed",
+      "workflow.transition",
+    ]) {
+      expect(sayEntry(entry(kind, { step: "review", outcome: "approve" }))).toBeNull();
+    }
+  });
+
+  it("says nothing of a usage limit that lets the account go on, and says one that stopped it", () => {
+    expect(sayEntry(entry("agent.rate_limit", { rate_limit_type: "seven_day", status: "allowed_warning" }))).toBeNull();
+    expect(sayEntry(entry("agent.rate_limit", { rate_limit_type: "seven_day", status: "rejected" }))).toEqual({
+      says: "Stopped by the account's usage limit (seven day)",
+      tone: "failed",
+    });
+  });
+
+  it("shows an agent's words without the decision it opens with or the marker it ends with", () => {
+    expect(ownWords("APPROVE\n\nI read the whole diff.")).toBe("I read the whole diff.");
+    expect(ownWords("STEER: The log can still contain the host.\n\nMore.")).toBe("The log can still contain the host.\n\nMore.");
+    expect(ownWords("Decision: DENY - out of scope")).toBe("out of scope");
+    expect(ownWords("Done, and committed.\n\nTASK_COMPLETE\n")).toBe("Done, and committed.");
+    // A word that only begins like a decision is the agent's own.
+    expect(ownWords("APPROVED changes are listed below.")).toBe("APPROVED changes are listed below.");
+    expect(sayEntry(entry("agent.message", { text: "APPROVE" }))).toBeNull();
   });
 
   it("says what a user did by hand, and why", () => {
@@ -85,13 +106,17 @@ describe("what a run recorded, in words", () => {
       tone: null,
     });
     expect(sayEntry(entry("agent.tool_result", { is_error: true, preview: "boom" }))).toMatchObject({ says: "It failed", tone: "failed" });
+    // A tool the role was not given: what happened, not an error.
+    expect(
+      sayEntry(entry("agent.tool_result", { is_error: true, preview: "<tool_use_error>Error: No such tool available: Bash. Bash is disabled.</tool_use_error>" })),
+    ).toEqual({ says: "Not run: this role may not use Bash" });
     expect(sayEntry(entry("agent.tool_result", { is_error: false, preview: "" }))).toBeNull();
   });
 
-  it("leaves the engine's bookkeeping out and never drops what it does not know", () => {
+  it("leaves out the engine's bookkeeping and what it has no words for; the transcript keeps them", () => {
     expect(sayEntry(entry("engine.context_write", { path: ".foreman/context.md" }))).toBeNull();
     expect(sayEntry(entry("agent.cost_update", { cumulative_usd: 1 }))).toBeNull();
-    expect(sayEntry(entry("engine.something_new", { detail: "x" }))).toEqual({ says: "Engine something new", mono: '{"detail":"x"}' });
+    expect(sayEntry(entry("engine.sprint_ready", { sprint_id: "s", task_ids: ["a"] }))).toBeNull();
   });
 
   it("shortens a path inside a working copy and leaves others alone", () => {
@@ -107,13 +132,13 @@ describe("a run's story", () => {
       { at, kind: "engine.test_output", stream: "stdout", text: "line one" },
       { at, kind: "engine.test_output", stream: "stdout", text: "line two" },
       entry("engine.test_run", { exit_code: 0, duration_seconds: 1 }),
-      entry("agent.message", { phase: "assistant", text: "APPROVE" }),
-      entry("agent.message", { phase: "result", text: "APPROVE" }),
+      entry("agent.message", { phase: "assistant", text: "APPROVE\n\nThe change is right." }),
+      entry("agent.message", { phase: "result", text: "APPROVE\n\nThe change is right." }),
       entry("engine.context_write", { path: "x" }),
     ]);
     expect(lines.map((line) => line.kind)).toEqual(["engine.test_started", "engine.test_output", "engine.test_run", "agent.message"]);
     expect(lines[1]).toMatchObject({ output: true, body: "line one\nline two" });
-    expect(lines[3]).toMatchObject({ body: "APPROVE", prose: true });
+    expect(lines[3]).toMatchObject({ body: "The change is right.", prose: true });
   });
 
   it("is empty for a run that recorded nothing", () => {

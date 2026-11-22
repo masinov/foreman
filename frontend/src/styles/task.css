@@ -404,10 +404,27 @@
   overflow-wrap: anywhere;
 }
 
-.run-output__prompt {
-  padding: var(--space-3);
-  background: var(--color-inset);
-  border-radius: var(--radius);
+/* A run's facts, beside its story: label and value rows, then the one
+   download. A run named in a fact (the one before, the next) is picked in
+   place, as a file is on Changes. */
+.run-facts__pick {
+  text-decoration: underline;
+  text-decoration-color: var(--color-border-control);
+  text-underline-offset: 3px;
+}
+
+.run-facts__download {
+  align-self: flex-start;
+}
+
+/* What a step ran reads at the secondary level; what a program printed is
+   quieter; what someone wrote is the text itself. */
+.run-line .run-line__command {
+  color: var(--color-text-secondary);
+}
+
+.run-line__words {
+  color: var(--color-text);
 }
 
 /* Kept to the side column's width even where the column is stacked under
@@ -501,7 +518,3 @@
   margin-top: var(--space-1);
 }
 
-/* Why the picked run ended as it did, above what it said and did. */
-.run-output__why {
-  margin: 0 0 var(--space-3);
-}
