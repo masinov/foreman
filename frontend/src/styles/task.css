@@ -121,15 +121,6 @@
   min-width: 0;
 }
 
-.task-section__foot {
-  font-size: var(--font-size-control);
-  color: var(--color-text-quiet);
-}
-
-.task-section__foot a {
-  color: var(--color-text-secondary);
-}
-
 .task-steps__step {
   white-space: nowrap;
 }
