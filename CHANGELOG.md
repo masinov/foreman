@@ -9,6 +9,7 @@ memory changes rather than versioned product releases.
 
 ### After sprint 61
 
+- The dashboard's tab icon is the F of the wordmark (owner, 2026-11-22): Fraunces at weight 600, as the "Foreman" in the top bar is set. It used to be a drawn block F that matched nothing on the page.
 - The task's Overview no longer ends its Steps table with "Every step and what it did is under Activity" (owner, 2026-11-22): the Activity tab is beside it.
 - A task's pages say things one way (owner, 2026-11-22).
   - **Overview:**
