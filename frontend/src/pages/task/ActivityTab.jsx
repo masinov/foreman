@@ -2,101 +2,186 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { getRunOutput, listTaskRuns } from "../../api/tasks";
 import { usePagedList } from "../../api/usePagedList";
-import { useRoute } from "../../app/router";
+import { useApiClient } from "../../api/ApiProvider";
+import { errorSentence } from "../../api/client";
+import { paths } from "../../app/paths";
+import { Link, useRoute } from "../../app/router";
 import { useResource } from "../../api/useResource";
 import { ListPager } from "../../ui/ListPager";
-import { Disclosure } from "../../ui/Disclosure";
+import { Button } from "../../ui/Button";
+import { Mono } from "../../ui/Mono";
 import { SectionHeading } from "../../ui/SectionHeading";
 import { formatDayTime, formatMoney, humanize, plural, shortSha } from "../../ui/format";
 import { narrate } from "./runWords";
 import { RunLine, withDays } from "./RunStory";
 import { ActivityTable } from "../shared/ActivityTable";
-import { runBy, runResult, runRole, runTook } from "../shared/activityWords";
+import { runResult, runRole, runTook } from "../shared/activityWords";
+import { attemptOf, stepFacts } from "./stepFacts";
 import { useTaskPulse } from "./useTaskPulse";
 
 // Design README: activity 25 at a time.
 export const RUNS_PAGE = 25;
 
-/** The agent's stream as the CLI wrote it, read only when someone opens it. */
-function RawOutput({ run }) {
-  const raw = useResource(["run-output-raw", run.id], (client, options) => getRunOutput(client, run.id, { ...options, raw: true }));
-  if (raw.error) {
-    return (
-      <p className="notice notice--error" role="alert">
-        {raw.error}
-      </p>
-    );
+/** How a downloaded transcript names its file: the task, the step, the run. */
+function transcriptName(task, run) {
+  return `${task.task_key || task.id}-${run.step}-${run.id}.txt`.replace(/[^\w.-]+/g, "-");
+}
+
+/**
+ * The whole record of a run as text: its prompt, every event with what it
+ * recorded, and the agent's raw stream. The page shows a story told from
+ * these; this keeps all of it.
+ */
+export function transcriptText(task, run, output, raw) {
+  const lines = [
+    `${task.task_key || task.id} · ${humanize(run.step)} · ${run.id}`,
+    `Started ${run.started_at ?? "?"} · ${run.status}${run.outcome ? ` · ${run.outcome}` : ""}`,
+    "",
+    "== Prompt ==",
+    output.prompt ?? "(none recorded)",
+    "",
+    "== What happened ==",
+  ];
+  for (const entry of output.transcript ?? []) {
+    const data = entry.data && Object.keys(entry.data).length ? ` ${JSON.stringify(entry.data)}` : "";
+    lines.push(`${entry.at} ${entry.kind}${entry.text ? ` ${entry.text}` : ""}${data}`);
   }
-  if (!raw.data) return null;
+  if (output.transcript_truncated) lines.push(`(Only the first ${output.cap_chars} characters of the record were kept.)`);
+  if (raw?.transcript?.length) {
+    lines.push("", "== Raw output ==", ...raw.transcript.map((entry) => entry.text));
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+/** Download the transcript of a run: one file, read when asked for. */
+function DownloadTranscript({ task, run, output }) {
+  const client = useApiClient();
+  const [state, setState] = useState({ busy: false, error: null });
+  async function download() {
+    setState({ busy: true, error: null });
+    try {
+      const raw = output.raw_entries ? await getRunOutput(client, run.id, { raw: true }) : null;
+      const blob = new Blob([transcriptText(task, run, output, raw)], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = transcriptName(task, run);
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setState({ busy: false, error: null });
+    } catch (error) {
+      setState({ busy: false, error: errorSentence(error) });
+    }
+  }
   return (
     <>
-      {raw.data.transcript_truncated ? (
-        <p className="notice" role="status">
-          The raw output is longer than {raw.data.cap_chars.toLocaleString("en-US")} characters; its start is shown.
+      <Button className="run-facts__download" disabled={state.busy} onClick={download}>
+        {state.busy ? "Preparing…" : "Download the transcript"}
+      </Button>
+      {state.error ? (
+        <p className="notice notice--error" role="alert">
+          {state.error}
         </p>
       ) : null}
-      <pre className="run-output__text run-output__prompt">{raw.data.transcript.map((entry) => entry.text).join("\n")}</pre>
     </>
   );
 }
 
-function RunOutput({ run, task, pulse = 0 }) {
+/** A fact's value: a commit, a run to pick, a link to the settings, or words. */
+function FactValue({ fact, task, onPick }) {
+  if (fact.sha) return <Mono title={fact.sha}>{fact.text}</Mono>;
+  if (fact.run) {
+    return (
+      <button type="button" className="file-pick run-facts__pick" onClick={() => onPick(fact.run)}>
+        {fact.text}
+      </button>
+    );
+  }
+  if (fact.settings) {
+    return (
+      <Link className="row-link" href={paths.projectSettings(task.project_id)}>
+        {fact.text}
+      </Link>
+    );
+  }
+  return <span className={fact.tone ? `tone-${fact.tone}` : undefined}>{fact.text}</span>;
+}
+
+/**
+ * The picked run, one shape for every kind of step (owner, 2026-11-22): on
+ * the left what happened, in order, each line a time, what happened, and
+ * what it ran, wrote or printed, beginning with the prompt an agent was
+ * sent; on the right the step's facts and the transcript to download.
+ */
+function RunOutput({ run, task, previous, next, onPick, pulse = 0 }) {
   const output = useResource(["run-output", run.id], (client, options) => getRunOutput(client, run.id, options));
   const reload = output.reload;
   // `pulse` grows while this run is in progress and printing.
   useEffect(() => {
     if (pulse) reload();
   }, [pulse, reload]);
-  const by = runBy(run, task);
-  const { note: why, tone } = runResult(run);
   const data = output.data;
-  const lines = data ? withDays(narrate(data.transcript), run.started_at) : [];
+  const transcript = data?.transcript ?? [];
+  const told = narrate(transcript);
+  if (data?.prompt) {
+    const promptLines = data.prompt.split("\n").length;
+    told.unshift({
+      at: run.started_at,
+      kind: "prompt",
+      says: `Sent the prompt · ${plural(promptLines, "line")}`,
+      mono: data.prompt_truncated ? `${data.prompt}\n… (only its first ${data.cap_chars.toLocaleString("en-US")} characters were kept)` : data.prompt,
+    });
+  }
+  const lines = data ? withDays(told, run.started_at) : [];
+  const attempt = attemptOf(transcript);
+  const facts = data ? stepFacts(run, transcript, { previous, next, task }) : [];
   return (
     <section className="task-section run-output" aria-labelledby="run-output">
-      {/* The title is the step. Who ran it and when are details beside it. */}
       <SectionHeading
         id="run-output"
         title={humanize(run.step)}
-        note={[by ? `by ${by}` : null, formatDayTime(run.started_at)].filter(Boolean).join(" · ")}
+        note={[attempt > 1 ? `attempt ${attempt}` : null, formatDayTime(run.started_at)].filter(Boolean).join(" · ")}
       />
-      {why ? <p className={`run-output__why tone-${tone}`}>{why}</p> : null}
       {output.error ? (
         <p className="notice notice--error" role="alert">
           {output.error}
         </p>
       ) : null}
-      {data?.transcript_truncated ? (
-        <p className="notice" role="status">
-          This run recorded more than {data.cap_chars.toLocaleString("en-US")} characters; the earliest of its{" "}
-          {data.total_entries} events are shown.
-        </p>
-      ) : null}
-      {data && lines.length === 0 ? <p className="empty">This run recorded nothing to read.</p> : null}
-      {lines.length ? (
-        <ol className="run-story" aria-label="What happened">
-          {lines.map((line, index) => (
-            <RunLine key={index} line={line} />
-          ))}
-        </ol>
-      ) : null}
-      {data?.raw_entries ? (
-        <Disclosure summary={`Show the raw output (${plural(data.raw_entries, "line")})`}>
-          <RawOutput run={run} />
-        </Disclosure>
-      ) : null}
       {data ? (
-        data.prompt ? (
-          <Disclosure summary="Show the prompt this run was given">
-            {data.prompt_truncated ? (
+        <div className="page-overview">
+          <div className="page-overview__main">
+            {data.transcript_truncated ? (
               <p className="notice" role="status">
-                The prompt is longer than {data.cap_chars.toLocaleString("en-US")} characters; its start is shown.
+                This run recorded more than {data.cap_chars.toLocaleString("en-US")} characters; the earliest of its{" "}
+                {data.total_entries} events are shown. The transcript holds what was kept.
               </p>
             ) : null}
-            <pre className="run-output__text run-output__prompt">{data.prompt}</pre>
-          </Disclosure>
-        ) : (
-          <p className="quiet">No prompt was recorded for this run.</p>
-        )
+            {lines.length ? (
+              <ol className="run-story" aria-label="What happened">
+                {lines.map((line, index) => (
+                  <RunLine key={index} line={line} />
+                ))}
+              </ol>
+            ) : (
+              <p className="empty">This run recorded nothing to read.</p>
+            )}
+          </div>
+          <aside className="page-overview__aside run-facts" aria-label="About this step">
+            <dl className="details-list">
+              {facts.map((fact) => (
+                <div key={fact.key} className="details-list__row">
+                  <dt>{fact.term}</dt>
+                  <dd>
+                    <FactValue fact={fact} task={task} onPick={onPick} />
+                  </dd>
+                </div>
+              ))}
+            </dl>
+            <DownloadTranscript task={task} run={run} output={data} />
+          </aside>
+        </div>
       ) : null}
     </section>
   );
@@ -211,7 +296,15 @@ export function ActivityTab({ task, revision }) {
         />
       </section>
       {selected ? (
-        <RunOutput key={selected.id} run={selected} task={task} pulse={selected.status === "running" ? pulse : 0} />
+        <RunOutput
+          key={selected.id}
+          run={selected}
+          task={task}
+          previous={items[items.indexOf(selected) + 1] ?? null}
+          next={items[items.indexOf(selected) - 1] ?? null}
+          onPick={setPicked}
+          pulse={selected.status === "running" ? pulse : 0}
+        />
       ) : null}
     </div>
   );

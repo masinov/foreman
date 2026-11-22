@@ -1,8 +1,13 @@
-import React from "react";
+import React, { useId, useState } from "react";
 
+import { Caret } from "../../ui/Caret";
 import { LongText } from "../../ui/LongText";
+import { Markdown } from "../../ui/Markdown";
 import { Mono } from "../../ui/Mono";
 import { formatClock, formatDay } from "../../ui/format";
+
+/** How many lines of what a program printed show before Show all. */
+export const PRINTED_LINES = 3;
 
 /** The story with a line naming the day wherever it changes from the day the run started. */
 export function withDays(lines, startedAt) {
@@ -17,7 +22,46 @@ export function withDays(lines, startedAt) {
   return out;
 }
 
-/** One line of the story: when, what happened in words, and what it ran, said or printed. */
+/** The last lines of a text, where a program says how it ended; blank lines at the end do not count. */
+export function lastLines(text, count = PRINTED_LINES) {
+  const lines = String(text ?? "").replace(/\s+$/, "").split("\n");
+  return { text: lines.slice(-count).join("\n"), more: lines.length > count };
+}
+
+/**
+ * What a program printed: its last lines, where the result is, with Show all
+ * when there is more. Quieter than what someone wrote.
+ */
+function Printed({ text }) {
+  const id = useId();
+  const [open, setOpen] = useState(false);
+  const tail = lastLines(text);
+  return (
+    <div className="long-text">
+      <pre id={id} className="long-text__text long-text__text--output">
+        {open ? text : tail.text}
+      </pre>
+      {tail.more ? (
+        <button
+          type="button"
+          className="long-text__toggle expander"
+          aria-expanded={open}
+          aria-controls={id}
+          onClick={() => setOpen(!open)}
+        >
+          <Caret direction={open ? "up" : "down"} />
+          {open ? "Show less" : "Show all"}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * One line of the story: when, what happened, and under it what it ran (its
+ * first lines), what someone wrote (whole, formatted) or what a program
+ * printed (its last lines). Every kind of step tells its story in these.
+ */
 export function RunLine({ line }) {
   const tone = line.tone ? ` tone-${line.tone}` : "";
   if (line.day) {
@@ -30,23 +74,18 @@ export function RunLine({ line }) {
         {formatClock(line.at)}
       </Mono>
       <div className="run-line__what">
-        {/* What someone wrote (an agent, a user) is shown whole: it is what
-            the run is about. Code and what a program printed (a command the
-            agent ran, a tool's result, test output, an error) show their
-            first lines, with Show all. */}
-        {line.mono ? (
-          <LongText brief className="run-line__head">
-            {line.says ? <span className={`run-line__says${tone}`}>{line.says}</span> : null}
-            {line.says ? " " : null}
-            <Mono className="run-line__mono">{line.mono}</Mono>
-          </LongText>
-        ) : line.says ? (
+        {line.says ? (
           <p className="run-line__head">
             <span className={`run-line__says${tone}`}>{line.says}</span>
           </p>
         ) : null}
+        {line.mono ? (
+          <LongText output className="run-line__command">
+            {line.mono}
+          </LongText>
+        ) : null}
         {line.body ? (
-          line.prose ? <p className="run-line__words">{line.body}</p> : <LongText output>{line.body}</LongText>
+          line.prose ? <Markdown text={line.body} className="run-line__words" /> : <Printed text={line.body} />
         ) : null}
       </div>
     </li>

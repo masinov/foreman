@@ -82,6 +82,15 @@ Workspace / Project / Sprint / Task.
   hover. A sprint's Activity filters by who (Everyone, each role, Foreman,
   Users) and by Problems. How well agents do over many sprints is a
   statistics view, not a line on these pages (owner, 2026-11-21).
+- **A picked step has one shape for every kind of step** (owner,
+  2026-11-22, from a mockup): on the left what happened, in order, each
+  line a time, what happened in plain words, and what it ran, wrote or
+  printed, beginning with "Sent the prompt" for an agent's step; on the
+  right the step's facts (Result, Why, Decided by, After, the commit it was
+  about, By, Model, May use, Took, Spend, Next), each only where it
+  applies, and one button, Download the transcript. No composed summary,
+  no headings per kind of step, no JSON or event names, and nothing only
+  one line has.
 - **A run's story has one rule for long text** (owner, 2026-11-21): what
   someone wrote (an agent's message, a user's guidance or reason) is shown
   whole; code and what a program printed (a command the agent ran, a

@@ -1,5 +1,32 @@
 # Backlog
 
+## A task's Activity, step by step (owner, 2026-11-22)
+
+From a review of every step of ASS-10 and ASS-16 as a user, and a second
+review that saw only screenshots. The mockup the owner chose:
+https://claude.ai/artifact/5XgyCnzgX7QyeVFCJMj2we (one kind of line, the
+step's facts beside it, the prompt as the first line).
+
+- **Done, the step panel (`feat/task-step-panel`).**
+- **Next, the table:** only the task's own steps, so the count matches
+  the Overview. That means no Orchestrator records and no "Done" step.
+  - Plain "What happened" words ("Approved by setting", "Passed · 186
+    tests").
+  - The commit on Test, Review and Merge rows.
+  - The test count needs Foreman to record it when tests run.
+- **Then, facts that need the repository:** the files a step changed with
+  their added and removed lines, and for a merge what it brought in, where
+  main was before, and whether the branch was kept. Also "Session:
+  continued from attempt 1", which today is only in the agent's command
+  line.
+- **Then, engine fixes found on the way:**
+  - "Ran the tests" is recorded when the tests end, not when they start.
+  - Records about a sprint or the engine (`engine.sprint_ready`, sprint
+    finished, engine shut down) are pinned to a task through a made-up
+    run, because every event must belong to a run and a task. Store them as
+    what they are (an ADR first), say on the sprint that it is ready to
+    finish, and list it in the project's Activity.
+
 ## The sprint page, step by step (owner, 2026-11-21)
 
 The owner asked for the sprint page to be redesigned a little at a time,

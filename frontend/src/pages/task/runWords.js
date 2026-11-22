@@ -1,6 +1,9 @@
 // What a run recorded, said in words. The API gives each event's kind and
-// facts; nothing here is invented, and an event this file does not know is
-// shown by its name with its facts beside it, never dropped.
+// facts; nothing here is invented. A run's story is one kind of line: a
+// time, what happened, and what it ran, wrote or printed (owner, 2026-11-22).
+// What the step's facts say (model, tools, how it ended, the next step) and
+// events this file has no words for are left out of the story; the
+// transcript a person can download keeps everything.
 
 import { formatDuration, formatMoney, formatTokens, humanize, plural, shortSha } from "../../ui/format";
 import { outcomeTone, outcomeWord } from "../shared/activityWords";
@@ -13,7 +16,31 @@ const SILENT = new Set([
   "policy.resolved",
   // The engine records the same task as `engine.task_created`.
   "signal.task_created",
+  // What the step's facts say: its model, what it may use, how it was
+  // started, how it ended, how long it took, what came next.
+  "workflow.step_started",
+  "workflow.model_selected",
+  "engine.role_policy",
+  "agent.started",
+  "agent.completed",
+  "engine.review_recorded",
+  "workflow.step_completed",
+  "workflow.transition",
 ]);
+
+/** The words a role answers with so Foreman can read it: a decision first, a completion marker last. */
+const DECISION = /^\s*(?:(?:Decision|Verdict):\s*)?(?:APPROVE|DENY|STEER|ESCALATE)(?![A-Za-z])[:.\s-]*/;
+const MARKER = /^[A-Z][A-Z0-9_]{2,}$/;
+
+/** What an agent wrote, without the decision word it opens with or the marker it ends with. */
+export function ownWords(text) {
+  const lines = String(text ?? "").replace(/\s+$/, "").split("\n");
+  if (lines.length && MARKER.test(lines[lines.length - 1].trim())) lines.pop();
+  return lines.join("\n").replace(DECISION, "").trim();
+}
+
+/** What a tool says when the role was not given it: "No such tool available: Bash". */
+const REFUSED_TOOL = /No such tool available:\s*([\w-]+)/;
 
 const MODEL_SOURCE = {
   role: "named by the role",
@@ -61,10 +88,12 @@ function clip(text, length = 200) {
   return value.length > length ? `${value.slice(0, length)}…` : value;
 }
 
+/** What a tool was given, as its values: never as JSON. */
 function compact(value) {
   if (value === null || value === undefined) return "";
   if (typeof value !== "object") return String(value);
-  return Object.keys(value).length ? clip(JSON.stringify(value)) : "";
+  const values = Object.values(value).filter((item) => typeof item === "string" || typeof item === "number");
+  return clip(values.join(" "));
 }
 
 function join(parts, separator = " · ") {
@@ -82,9 +111,9 @@ function toolUse(d) {
 
 /**
  * One line of a run's story as `{ says, mono, body, tone, prose }`, or null
- * for bookkeeping. `says` is a sentence; `mono` a command, path or pattern
- * shown beside it; `body` longer text under it (`prose` when it is the
- * agent's own words, not output).
+ * when it is not a line. `says` is what happened; `mono` a command, path or
+ * pattern it ran or opened; `body` longer text under it: someone's own
+ * words (`prose`), or what a program printed.
  */
 export function sayEntry(entry) {
   const kind = entry.kind;
@@ -107,8 +136,10 @@ export function sayEntry(entry) {
     }
     case "agent.started":
       return { says: "Agent started", mono: d.command };
-    case "agent.message":
-      return d.text ? { body: d.text, prose: true } : null;
+    case "agent.message": {
+      const words = ownWords(d.text);
+      return words ? { body: words, prose: true } : null;
+    }
     case "agent.command":
       return { says: "Ran", mono: d.command };
     case "agent.file_change":
@@ -119,6 +150,9 @@ export function sayEntry(entry) {
       // What came back follows the line that asked for it; only a failure
       // needs saying.
       if (!d.is_error && !d.preview) return null;
+      if (d.is_error && REFUSED_TOOL.test(d.preview || "")) {
+        return { says: `Not run: this role may not use ${(d.preview || "").match(REFUSED_TOOL)[1]}` };
+      }
       return {
         says: d.is_error ? "It failed" : "",
         // Blank lines before the first line of output say nothing.
@@ -154,9 +188,11 @@ export function sayEntry(entry) {
     case "agent.killed":
       return { says: `Stopped: ${d.reason || "by the engine"}`, tone: "failed" };
     case "agent.rate_limit":
-      return { says: join([`Usage limit${d.rate_limit_type ? ` (${humanize(d.rate_limit_type).toLowerCase()})` : ""}`, d.status], ": ") };
+      // "allowed" and "allowed_warning" only say the account may go on.
+      if (String(d.status || "").startsWith("allowed")) return null;
+      return { says: `Stopped by the account's usage limit${d.rate_limit_type ? ` (${humanize(d.rate_limit_type).toLowerCase()})` : ""}`, tone: "failed" };
     case "engine.test_started":
-      return { says: "Running the tests", mono: d.command };
+      return { says: "Ran", mono: d.command };
     case "engine.test_run": {
       const passed = d.exit_code === 0;
       return {
@@ -203,9 +239,9 @@ export function sayEntry(entry) {
         says: d.reason === "human_gate" ? `Waiting for a user: ${humanize(d.policy || d.step).toLowerCase()}` : `Paused: ${humanize(d.reason).toLowerCase()}`,
       };
     case "workflow.resumed":
-      return {
-        says: `A user ${d.decision === "approve" ? "approved" : "sent it back"}. Next step: ${humanize(d.next_step)}`,
-      };
+      return { says: `A user ${d.decision === "approve" ? "approved" : "sent it back"}` };
+    case "workflow.gate_auto_approved":
+      return { says: "Approved without asking anyone" };
     case "workflow.no_transition":
       return { says: `Nothing follows "${d.outcome}" at ${humanize(d.step)}. The task stopped.`, tone: "failed" };
     case "workflow.step_visit_reset":
@@ -241,8 +277,8 @@ export function sayEntry(entry) {
       if (BY_HAND[kind]) {
         return { says: join([BY_HAND[kind], d.by ? `by ${d.by}` : ""], " "), body: d.reason || "", prose: true };
       }
-      // Not known here: its name and what it recorded, as recorded.
-      return { says: humanize(kind.replace(".", " ")), mono: compact(entry.data) || entry.text || "" };
+      // Not known here: not a line. The downloaded transcript keeps it.
+      return null;
   }
 }
 
