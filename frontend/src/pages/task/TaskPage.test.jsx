@@ -588,7 +588,8 @@ describe("Overview", () => {
     ]);
     // By names the role; the model is on hover.
     expect(within(table).getByText("Developer")).toHaveAttribute("title", "sonnet-5-5");
-    expect(screen.getByText(/Every step and what it did is under/)).toBeInTheDocument();
+    // No note pointing at the Activity tab, which is beside Overview already.
+    expect(screen.queryByText(/is under/)).toBeNull();
   });
 
   it("has no checks summary: the Steps table and the Checks tab say it", async () => {

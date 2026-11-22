@@ -38,10 +38,6 @@ function Steps({ task, workflow }) {
         </p>
       ) : null}
       {workflow.data ? <Table caption="Steps" columns={columns} rows={stepRows(task, workflow.data, engine)} /> : null}
-      <p className="task-section__foot">
-        Every step and what it did is under{" "}
-        <Link href={paths.taskActivity(task.id)}>Activity</Link>.
-      </p>
     </section>
   );
 }
