@@ -11,6 +11,7 @@ from ..definitions.gate_steps import (
 from ..domain.models import (
     TASK_COMPLEXITIES,
     TASK_TYPES,
+    Sprint,
 )
 from ..engine.limits import resolve_project_settings
 from ..engine.selection import pulled_task_ids
@@ -143,7 +144,30 @@ class SprintService(Service):
             "foreman_limit": resolve_project_settings(project).max_autonomous_tasks if project else None,
             "task_counts": self.store.task_counts(sprint_id=sprint.id),
             "totals": self.store.run_totals(sprint_id=sprint.id),
+            "checkpoint": self._checkpoint(sprint),
         }
+
+    def _checkpoint(self, sprint: Sprint) -> dict[str, Any] | None:
+        """The tag (and note) of the sprint's last completion, or why there is none (spec 6.4)."""
+
+        if sprint.status != "completed":
+            return None
+        events = self.store.list_sprint_events(
+            sprint.id, event_types=["engine.checkpoint", "engine.checkpoint_failed"]
+        )
+        for event in reversed(events):
+            payload = event.payload
+            if payload.get("sprint_id") != sprint.id or payload.get("completed_at") != sprint.completed_at:
+                continue
+            if event.event_type == "engine.checkpoint_failed":
+                return {"tag": None, "sha": None, "note_path": None, "problem": payload.get("reason")}
+            return {
+                "tag": payload.get("tag"),
+                "sha": payload.get("sha"),
+                "note_path": payload.get("note_path"),
+                "problem": None,
+            }
+        return None
 
     def create_sprint(
         self,

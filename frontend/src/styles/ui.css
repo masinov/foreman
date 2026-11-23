@@ -277,6 +277,25 @@
   min-width: 0;
 }
 
+/* A long value on one line, cut with "…" and whole on hover; what follows
+   it (a commit) keeps its place. */
+.details-list__line {
+  display: flex;
+  gap: 0.5ch;
+  min-width: 0;
+}
+
+.details-list__cut {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.details-list__line > :not(.details-list__cut) {
+  flex: none;
+}
+
 /* Table: header line, faint row lines, none above the first or below the last */
 .table-scroll {
   width: 100%;

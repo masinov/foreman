@@ -314,10 +314,8 @@ here.
 
 **Where the product does not hold together yet:**
 
-- **Spec §6.4 is half built.** A completed sprint is marked completed, but
-  the repository is not tagged, no checkpoint note is written and no
-  `engine.checkpoint` event is recorded. The `write_checkpoint_notes`
-  setting exists and does nothing.
+- (Done in sprint 62, slice 2, ADR-0036.) Spec §6.4: a finished sprint is
+  tagged, with a note where the project asks for one.
 - **Who finishes a sprint** (`autonomy_level`, ADR-0025) has no control in
   the dashboard; it is set from a terminal.
 - **`foreman init` and Settings › Runners read the shipped roles and

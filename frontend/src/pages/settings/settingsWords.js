@@ -8,6 +8,12 @@ export const DECIDERS = [
   { value: "auto", word: "Foreman" },
 ];
 
+/** Whether a finished sprint gets a checkpoint note. */
+export const NOTE_CHOICES = [
+  { value: "on", word: "Write one" },
+  { value: "off", word: "No note" },
+];
+
 export const decider = (value) => DECIDERS.find((entry) => entry.value === value)?.word ?? humanize(value);
 
 /** The decisions an exception rule can send elsewhere, in the order the page lists them. */

@@ -119,6 +119,9 @@ class ProjectSettings:
     # Wall-clock cap for ``worktree_setup_command``; 0 disables the timeout.
     worktree_setup_timeout_seconds: int = 1800
     completion_guard_enabled: bool = True
+    # When a sprint is finished, a note listing its tasks is committed to
+    # ``docs/checkpoints/<tag>.md`` before the sprint is tagged (spec 6.4).
+    write_checkpoint_notes: bool = False
     # The git remote the default branch is pushed to after each merge.
     # Empty: merges stay on this machine. Host-level: it makes the engine
     # write to another machine with this host's git credentials.
@@ -195,6 +198,7 @@ class ProjectSettings:
                 raw.get("worktree_setup_timeout_seconds"), default=1800
             ),
             completion_guard_enabled=bool(raw.get("completion_guard_enabled", True)),
+            write_checkpoint_notes=_validate_bool(raw.get("write_checkpoint_notes"), key="write_checkpoint_notes"),
             merge_push_remote=_validate_remote_name(raw.get("merge_push_remote")),
             agent_env_passthrough=_validate_env_names(raw.get("agent_env_passthrough")),
             merge_approval=_validate_policy_default(raw, "merge_approval"),
@@ -240,6 +244,16 @@ def _validate_env_names(value: Any) -> tuple[str, ...]:
         if name not in names:
             names.append(name)
     return tuple(names)
+
+
+def _validate_bool(value: Any, *, key: str, default: bool = False) -> bool:
+    """A yes-or-no setting: true or false, or absent for the default."""
+
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    raise SettingsError(f"{key} must be true or false.")
 
 
 def _validate_remote_name(value: Any) -> str:

@@ -12,6 +12,7 @@ from ..domain.models import (
     SprintStatus,
 )
 from .base import _RESOLVED_TASK_STATUSES, MutationBase, MutationError, slug_id
+from .checkpoint import SprintCheckpoints
 
 #: Where a sprint may go from each status.
 SPRINT_TRANSITIONS: dict[str, tuple[SprintStatus, ...]] = {
@@ -74,7 +75,29 @@ class SprintMutations(MutationBase):
             sprint.started_at = sprint.started_at or (now if target_status == "completed" else None)
             sprint.completed_at = now
         self.store.save_sprint(sprint)
+        if target_status == "completed":
+            self._checkpoint(sprint)
         return sprint
+
+    def _checkpoint(self, sprint: Sprint) -> None:
+        """Tag the finished sprint, and commit its note first where asked (spec 6.4).
+
+        Work outside the database: a proposal applies it after its changes
+        are written (``defer_side_effects``).
+        """
+
+        project = self.store.get_project(sprint.project_id)
+        if project is None:
+            return
+
+        def make() -> str | None:
+            made = SprintCheckpoints(self.store).record(project, sprint)
+            return None if made.problem is None else f"The sprint is finished but not tagged: {made.problem}"
+
+        if self.defer_side_effects:
+            self.deferred.append(make)
+        else:
+            make()
 
     def create_sprint(self, project: Project, *, title: str, goal: str | None = None) -> Sprint:
         """Create a planned sprint at the end of the project's queue."""

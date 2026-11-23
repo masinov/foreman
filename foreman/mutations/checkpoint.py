@@ -1,0 +1,316 @@
+"""A finished sprint's checkpoint (spec 6.4): a tag on the default branch,
+and a note committed before it where the project asks for one.
+
+Whoever finishes a sprint, a user (``transition_sprint``) or the engine
+(``SprintFlow``), the same checkpoint follows. The sprint is finished
+whatever happens here: a tag or a note that could not be made is recorded
+as ``engine.checkpoint_failed``, with the reason, and the sprint stays
+completed.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+import re
+from typing import Any
+
+from ..domain.models import Project, Sprint, Task
+from ..domain.settings import SettingsError, settings_of
+from ..history.records import RunRecords
+from ..notifications.delivery import NotificationDispatcher
+from ..repo.git import (
+    GitError,
+    create_tag,
+    follow_branch_in_checkout,
+    head_sha,
+    push_branch,
+    push_tag,
+    run_git,
+    tag_commit,
+)
+from ..repo.worktrees import WorktreeError, WorktreeManager
+from ..store import ForemanStore
+
+#: Where checkpoint notes go, in the repository.
+NOTES_DIR = "docs/checkpoints"
+
+#: The longest a tag's sprint part may be.
+_SLUG_LIMIT = 48
+
+
+@dataclass(frozen=True, slots=True)
+class Checkpoint:
+    """What the checkpoint did: the tag and where it points, or why not."""
+
+    tag: str | None = None
+    sha: str | None = None
+    note_path: str | None = None
+    problem: str | None = None
+
+
+def tag_name(sprint: Sprint, completed: datetime) -> str:
+    """``checkpoint-20261120-weight-of-evidence``: the day and the sprint's title."""
+
+    slug = re.sub(r"[^a-z0-9]+", "-", (sprint.title or "").lower()).strip("-")
+    slug = slug[:_SLUG_LIMIT].rstrip("-") or re.sub(r"[^a-z0-9]+", "-", sprint.id.lower()).strip("-")
+    return f"checkpoint-{completed.astimezone(timezone.utc):%Y%m%d}-{slug}"
+
+
+def note_text(
+    sprint: Sprint,
+    *,
+    tag: str,
+    completed: datetime,
+    tasks: list[Task],
+    follow_ups: list[Task],
+) -> str:
+    """The checkpoint note: the sprint, its tasks as they ended, and what it left to do."""
+
+    def line(task: Task) -> str:
+        return f"- {task.task_key or task.id}: {task.title}"
+
+    done = [task for task in tasks if task.status == "done"]
+    cancelled = [task for task in tasks if task.status == "cancelled"]
+    parts = [
+        f"# {sprint.title}",
+        "",
+        f"- Finished: {completed.astimezone(timezone.utc):%Y-%m-%d %H:%M} UTC",
+        f"- Tag: `{tag}`",
+    ]
+    if (sprint.goal or "").strip():
+        parts += ["", "## Goal", "", sprint.goal.strip()]
+    parts += ["", "## Done", ""] + ([line(task) for task in done] or ["None."])
+    if cancelled:
+        parts += ["", "## Cancelled", ""] + [line(task) for task in cancelled]
+    parts += ["", "## Follow-ups", ""]
+    if follow_ups:
+        parts += [f"{line(task)} ({_where(task)})" for task in follow_ups]
+    else:
+        parts += ["None filed during the sprint."]
+    return "\n".join(parts) + "\n"
+
+
+def _where(task: Task) -> str:
+    return task.status.replace("_", " ")
+
+
+def _completed_at(sprint: Sprint) -> datetime:
+    text = sprint.completed_at or ""
+    try:
+        moment = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return datetime.now(timezone.utc)
+    return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
+
+
+class SprintCheckpoints:
+    """Tags a finished sprint and, where asked, commits its note first."""
+
+    def __init__(self, store: ForemanStore, records: RunRecords | None = None) -> None:
+        self.store = store
+        self.records = records or RunRecords(store, NotificationDispatcher(store))
+
+    def record(self, project: Project, sprint: Sprint) -> Checkpoint:
+        """Make the checkpoint of a completed sprint, once per time it is completed."""
+
+        done = self._already(sprint)
+        if done is not None:
+            return done
+        records: list[tuple[str, dict[str, Any]]] = []
+        try:
+            checkpoint = self._make(project, sprint, records)
+        except (GitError, WorktreeError, SettingsError, OSError) as exc:
+            checkpoint = Checkpoint(problem=str(exc))
+        if checkpoint.problem is None:
+            records.append(
+                (
+                    "engine.checkpoint",
+                    {
+                        "sprint_id": sprint.id,
+                        "sprint_title": sprint.title,
+                        "completed_at": sprint.completed_at,
+                        "tag": checkpoint.tag,
+                        "sha": checkpoint.sha,
+                        "note_path": checkpoint.note_path,
+                    },
+                )
+            )
+        else:
+            records.append(
+                (
+                    "engine.checkpoint_failed",
+                    {
+                        "sprint_id": sprint.id,
+                        "sprint_title": sprint.title,
+                        "completed_at": sprint.completed_at,
+                        "reason": checkpoint.problem,
+                    },
+                )
+            )
+        self._emit(project, sprint, records)
+        return checkpoint
+
+    def _already(self, sprint: Sprint) -> Checkpoint | None:
+        """The checkpoint made for this completion, if there is one."""
+
+        for event in reversed(self.store.list_sprint_events(sprint.id, event_types=["engine.checkpoint"])):
+            if event.payload.get("sprint_id") == sprint.id and event.payload.get("completed_at") == sprint.completed_at:
+                return Checkpoint(
+                    tag=event.payload.get("tag"),
+                    sha=event.payload.get("sha"),
+                    note_path=event.payload.get("note_path"),
+                )
+        return None
+
+    def _make(
+        self, project: Project, sprint: Sprint, records: list[tuple[str, dict[str, Any]]]
+    ) -> Checkpoint:
+        settings = settings_of(project)
+        repo = Path(project.repo_path)
+        branch = project.default_branch
+        sha = head_sha(repo, f"refs/heads/{branch}")
+        if sha is None:
+            return Checkpoint(problem=f"The repository has no branch {branch!r} to tag.")
+        completed = _completed_at(sprint)
+        tag = self._free_tag(repo, tag_name(sprint, completed))
+
+        note_path: str | None = None
+        integration: Path | None = None
+        if settings.write_checkpoint_notes:
+            integration = WorktreeManager(project).ensure_integration()
+            note_path = f"{NOTES_DIR}/{tag}.md"
+            committed = self._commit_note(integration, project, sprint, tag, completed, note_path)
+            if isinstance(committed, Checkpoint):
+                return committed
+            sha = committed
+            followed = _checkout_record(project, sha)
+            if followed is not None:
+                records.append(followed)
+
+        made = create_tag(repo, tag, sha, f"Sprint finished: {sprint.title}")
+        if made.returncode != 0:
+            return Checkpoint(
+                problem=f"git could not tag {sha[:7]} as {tag}: {made.stderr or made.stdout}".strip(),
+            )
+
+        remote = settings.merge_push_remote
+        if remote:
+            # The default branch first, when the note moved it: a tag on a
+            # commit the remote does not have would point at nothing there.
+            if integration is not None:
+                pushed = push_branch(integration, remote=remote, branch=branch)
+                records.append(_push_record(pushed, {"remote": remote, "branch": branch, "sha": sha}))
+            pushed = push_tag(repo, remote=remote, tag=tag)
+            records.append(_push_record(pushed, {"remote": remote, "tag": tag, "sha": sha}))
+        return Checkpoint(tag=tag, sha=sha, note_path=note_path)
+
+    @staticmethod
+    def _free_tag(repo: Path, name: str) -> str:
+        """``name``, or ``name-2`` and on when a sprint of that title already finished that day."""
+
+        candidate, number = name, 1
+        while tag_commit(repo, candidate) is not None:
+            number += 1
+            candidate = f"{name}-{number}"
+        return candidate
+
+    def _commit_note(
+        self,
+        integration: Path,
+        project: Project,
+        sprint: Sprint,
+        tag: str,
+        completed: datetime,
+        note_path: str,
+    ) -> str | Checkpoint:
+        """Write and commit the note on the default branch; the new head, or why not."""
+
+        tasks = self.store.list_tasks(sprint_id=sprint.id)
+        text = note_text(
+            sprint, tag=tag, completed=completed, tasks=tasks, follow_ups=self._follow_ups(tasks)
+        )
+        path = integration / note_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+        run_git(integration, "add", "--", note_path)
+        commit = run_git(
+            integration,
+            "commit",
+            "--message",
+            f"docs: checkpoint note, {sprint.title}",
+            "--",
+            note_path,
+            check=False,
+        )
+        if commit.returncode != 0:
+            run_git(integration, "reset", "--quiet", "HEAD", "--", note_path, check=False)
+            path.unlink(missing_ok=True)
+            return Checkpoint(
+                problem=f"git could not commit the checkpoint note: {commit.stderr or commit.stdout}".strip(),
+            )
+        new_head = head_sha(integration)
+        if new_head is None:
+            return Checkpoint(problem="The checkpoint note was committed, but its commit could not be read.")
+        return new_head
+
+    def _follow_ups(self, tasks: list[Task]) -> list[Task]:
+        """The tasks agents filed while working on this sprint's tasks."""
+
+        found: list[Task] = []
+        seen: set[str] = set()
+        for task in tasks:
+            for event in self.store.list_events(task_id=task.id):
+                if event.event_type != "engine.task_created":
+                    continue
+                filed_id = str(event.payload.get("task_id") or "")
+                filed = self.store.get_task(filed_id) if filed_id and filed_id not in seen else None
+                if filed is not None:
+                    seen.add(filed_id)
+                    found.append(filed)
+        return found
+
+    def _emit(self, project: Project, sprint: Sprint, records: list[tuple[str, dict[str, Any]]]) -> None:
+        """Keep the records, on the sprint's first task as every sprint record is today."""
+
+        tasks = self.store.list_tasks(sprint_id=sprint.id)
+        anchor = tasks[0] if tasks else self.records.select_project_system_task(project.id)
+        if anchor is None:
+            return
+        run = self.records.create_system_run(
+            anchor, workflow_step="orchestrator", outcome="success", detail=records[-1][0]
+        )
+        for event_type, payload in records:
+            self.records.emit_event(run, event_type, payload)
+
+
+def _checkout_record(project: Project, sha: str) -> tuple[str, dict[str, Any]] | None:
+    """Bring the project's own checkout to the note's commit, as a merge does (ADR-0031)."""
+
+    try:
+        followed = follow_branch_in_checkout(project.repo_path, project.default_branch, sha)
+    except (GitError, OSError) as exc:
+        return (
+            "engine.checkout_behind",
+            {"path": str(project.repo_path), "branch": project.default_branch, "sha": sha, "reason": str(exc)},
+        )
+    if followed.state == "updated":
+        return (
+            "engine.checkout_updated",
+            {"path": str(project.repo_path), "branch": project.default_branch, "from_sha": followed.from_sha, "sha": sha},
+        )
+    if followed.state == "left":
+        return (
+            "engine.checkout_behind",
+            {"path": str(project.repo_path), "branch": project.default_branch, "sha": sha, "reason": followed.reason},
+        )
+    return None
+
+
+def _push_record(result: Any, payload: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    """What pushing a branch or a tag said: pushed, or why not."""
+
+    if result.returncode == 0:
+        return ("engine.push", payload)
+    return ("engine.push_failed", {**payload, "error": result.stderr or result.stdout or "git push failed"})

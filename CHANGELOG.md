@@ -9,6 +9,13 @@ memory changes rather than versioned product releases.
 
 ### Sprint 62
 
+- A finished sprint is tagged, as spec 6.4 says (ADR-0036, sprint 62 slice 2).
+  - Whether a user finishes it (dashboard, `foreman sprint complete`, a manager's proposal) or Foreman does, the default branch's head gets an annotated tag `checkpoint-YYYYMMDD-<sprint-title>`; a name already taken gets `-2`.
+  - With the new setting "Checkpoint note" (`write_checkpoint_notes`, Settings › General › Advanced), a note of the goal, the tasks done and cancelled, and the follow-ups agents filed is committed to `docs/checkpoints/<tag>.md` first.
+  - Both are pushed where merges are pushed.
+  - The sprint's Details show the tag and the note. `foreman sprint complete` prints them.
+  - A tag that could not be made leaves the sprint finished and says why ("Not tagged: …").
+
 - A test step's result reads the same everywhere (owner, 2026-11-23).
   - The task's Overview says "Passed · 1,221 tests in 1 min 54 s" on its Test row, as Activity does.
   - The Checks tab's Tests detail is the sentence the step's log ends with: "186 tests passed in 2 min 58 s at 6332732", or "3 of 186 tests failed (exit code 1) in 12 s at 6332732" followed by the failed tests by name (up to 50, then "and N more").
