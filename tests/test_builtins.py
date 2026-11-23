@@ -98,7 +98,8 @@ class RunTestsReportTests(unittest.TestCase):
             )
         self.assertRegex(result.detail, r"^Tests passed in \d+\.\ds \(exit 0\)\. 3 tests, 1 skipped\.$")
         self.assertEqual(
-            payload["report"], {"tests": 3, "passed": 2, "failed": 0, "skipped": 1, "files": 1}
+            payload["report"],
+            {"tests": 3, "passed": 2, "failed": 0, "skipped": 1, "files": 1, "failed_tests": []},
         )
         self.assertEqual(payload["report_problems"], [])
 

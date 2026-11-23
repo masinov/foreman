@@ -95,7 +95,9 @@ Workspace / Project / Sprint / Task.
   no headings per kind of step, no JSON or event names, and nothing only
   one line has. A test step's result says how many tests ran when the
   test command reported them: "Passed · 1,599 tests, 1 skipped", "Failed ·
-  3 of 186 tests" (ADR-0035).
+  3 of 186 tests" (ADR-0035), on Activity and on the Overview's Steps.
+  The Checks tab's Tests detail is the sentence the step's log ends with,
+  and names the tests that failed.
 - **A run's story has one rule for long text** (owner, 2026-11-21): what
   someone wrote (an agent's message, a user's guidance or reason) is shown
   whole; code and what a program printed (a command the agent ran, a
