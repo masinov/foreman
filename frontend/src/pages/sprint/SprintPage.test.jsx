@@ -322,27 +322,30 @@ describe("edit and the state action", () => {
 describe("a finished sprint's checkpoint", () => {
   const finished = (checkpoint) =>
     sprintRoutes({ sprint: sprintPayload({ status: "completed", completed_at: "2025-01-02T10:00:00Z", checkpoint }) });
+  const stateRow = () => within(screen.getByRole("region", { name: "Details" })).getByText("State").closest(".details-list__row");
 
-  it("names the tag, the commit it marks and the note", async () => {
+  it("says in State which commit the sprint's tag marks, and the tag on hover", async () => {
     await renderSprint(
       "/dashboard/sprints/sprint-56",
       finished({ tag: "checkpoint-20250102-engine-truthfulness", sha: "6332732aa0c0ffee", note_path: "docs/checkpoints/checkpoint-20250102-engine-truthfulness.md", problem: null }),
     );
+    expect(stateRow()).toHaveTextContent(/State\s*Finished 2 Jan 2025 at 6332732$/);
+    expect(within(stateRow()).getByTitle("Tagged checkpoint-20250102-engine-truthfulness")).toBeInTheDocument();
+    // Neither the tag's name nor the note's path is a row of its own.
     const details = screen.getByRole("region", { name: "Details" });
-    expect(details).toHaveTextContent(/Tag\s*checkpoint-20250102-engine-truthfulness at 6332732/);
-    expect(details).toHaveTextContent(/Note\s*docs\/checkpoints\/checkpoint-20250102-engine-truthfulness\.md/);
+    expect(details).not.toHaveTextContent("checkpoint-20250102");
+    expect(details).not.toHaveTextContent("docs/checkpoints");
   });
 
-  it("says why a sprint was not tagged, and shows no note", async () => {
+  it("says when a finished sprint was not tagged, and why on hover", async () => {
     await renderSprint("/dashboard/sprints/sprint-56", finished({ tag: null, sha: null, note_path: null, problem: "The repository has no branch 'main' to tag." }));
-    const details = screen.getByRole("region", { name: "Details" });
-    expect(details).toHaveTextContent("Not tagged: The repository has no branch 'main' to tag.");
-    expect(details).not.toHaveTextContent("Note");
+    expect(stateRow()).toHaveTextContent(/State\s*Finished 2 Jan 2025, not tagged$/);
+    expect(within(stateRow()).getByTitle("The repository has no branch 'main' to tag.")).toBeInTheDocument();
   });
 
-  it("shows nothing about a checkpoint on a sprint that is not finished", async () => {
-    await renderSprint("/dashboard/sprints/sprint-56");
-    expect(screen.getByRole("region", { name: "Details" })).not.toHaveTextContent("Tag");
+  it("says nothing about a tag on a sprint finished before sprints were tagged", async () => {
+    await renderSprint("/dashboard/sprints/sprint-56", finished(null));
+    expect(stateRow()).toHaveTextContent(/State\s*Finished 2 Jan 2025$/);
   });
 });
 

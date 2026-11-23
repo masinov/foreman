@@ -13,12 +13,15 @@ import { Caret } from "./Caret";
  * an error): monospace, quieter, and folded to its first three lines, with
  * the same "Show all" when there is more.
  *
+ * `lines`, where a page knows how many lines fit (the sprint's goal beside
+ * its Details), folds it to that many instead.
+ *
  * The control must not read as one more line of the text above it: it has
  * the look of everything that opens more in place (`expander` in ui.css),
  * with a caret that points down while there is more to show and up once it
  * is all shown.
  */
-export function LongText({ children, className = "", short = false, brief = false, output = false }) {
+export function LongText({ children, className = "", short = false, brief = false, output = false, lines = null }) {
   // Output is preformatted; anything else may hold formatted blocks (lists, paragraphs).
   const Tag = output ? "pre" : "div";
   const ref = useRef(null);
@@ -29,6 +32,13 @@ export function LongText({ children, className = "", short = false, brief = fals
   // Whether it folds is a fact about the rendered text at this width: measure
   // it while folded, and again when the window changes size.
   useLayoutEffect(() => {
+    // A page may say how many lines fit where the text is (`lines`); the
+    // number reaches the stylesheet as the fold's custom property.
+    const el = ref.current;
+    if (el) {
+      if (lines) el.style.setProperty("--long-text-lines", String(lines));
+      else el.style.removeProperty("--long-text-lines");
+    }
     if (open) return undefined;
     const measure = () => {
       const el = ref.current;
@@ -37,7 +47,7 @@ export function LongText({ children, className = "", short = false, brief = fals
     measure();
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
-  }, [children, open, short, brief, output]);
+  }, [children, open, short, brief, output, lines]);
 
   return (
     <div className="long-text">
