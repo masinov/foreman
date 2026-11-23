@@ -41,7 +41,7 @@ Current snapshot only. History up to 2026-09-08 (sprints 1 to 54) is in
 - `main` is pushed to `origin/main`. Work happens on short branches from
   `main`; the operator checkout stays off `main` (the `_integration` worktree
   holds it).
-- Schema version 28. 1568 Python tests, 447 frontend tests. The built bundle
+- Schema version 28. 1599 Python tests, 478 frontend tests (2026-11-23). The built bundle
   is not in git; `foreman dashboard` builds it when it is missing or stale.
 - Foreman's own project in its database is clean (2026-11-18). Sprint 60c is
   completed: FOR-42 is closed as already done (its work was in `main` at
@@ -111,6 +111,12 @@ is no login.
   shipped role, cost accounting and a real-binary smoke test.
 
 ## Documented conflicts between spec, mockup and code
+
+- Spec 6.4 says a completed sprint tags the repository
+  (`checkpoint-YYYYMMDD-<sprint-slug>`), writes a checkpoint note when
+  `write_checkpoint_notes` is set, and records `engine.checkpoint`. The code
+  only marks the sprint completed; the setting does nothing (found
+  2026-11-23, in the backlog under "Left to finish the current product").
 
 - Spec 6.3 says an *autonomous* project has its sprints finished by the
   engine. Since 2026-11-19 (owner) that is the project setting
@@ -212,8 +218,8 @@ is no login.
 
 ## Validation baseline
 
-- `./venv/bin/python -m unittest discover -s tests` (1540 tests)
-- `npm --prefix frontend run lint`, `npm --prefix frontend test` (441 tests) and `npm --prefix frontend run build`
+- `./venv/bin/python -m unittest discover -s tests` (1599 tests)
+- `npm --prefix frontend run lint`, `npm --prefix frontend test` (478 tests) and `npm --prefix frontend run build`
 - `ruff check foreman tests scripts` (pyflakes and syntax rules)
 - `lint-imports`: the layers contract in `.importlinter` (ADR-0032; needs
   Python 3.11, so CI runs it on the 3.12 job)
