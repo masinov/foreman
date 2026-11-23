@@ -28,55 +28,6 @@ step's facts beside it, the prompt as the first line).
     what they are (an ADR first), say on the sprint that it is ready to
     finish, and list it in the project's Activity.
 
-## Owner direction, 2026-11-22: tests Foreman can see and control
-
-Recorded so the design is kept, not scheduled. It needs a survey, an ADR and
-a mockup before any code.
-
-What Foreman knows today: each project has one shell command
-(`test_command`). Foreman keeps its exit code, duration and commit, plus its
-output, and the step's detail shows the last 200 lines. It does not know
-which tests ran. A count, a test's name or a failure is only in the printed
-text.
-
-What the owner wants kept open:
-
-- **Which tests ran, and how each one ended.** Read the report the test
-  tool can already write instead of the printed text. JUnit XML is the
-  common one (pytest, vitest, jest, Go through gotestsum and others).
-  - For each test: its name and file, the result, the time and the failure
-    message.
-  - The count ("Passed · 186 tests") comes from the same report.
-- **What each test checks, in words.**
-  - From the test's own name and docstring: a fact.
-  - A summary written by a model is a claim. It is shown with the claims
-    (ADR-0018).
-- **Where it is shown.** A Tests view on the task, reached from the Checks
-  tab's Tests row or as its own tab. In this order:
-  - the failures;
-  - the tests this task added or changed;
-  - the full list, folded, with a search.
-
-  A long list of passing tests says little on its own.
-- **Control over which tests apply where.**
-  - Several suites per project (backend, frontend, smoke), each with its
-    own command and time limit.
-  - Which suites a task must pass: chosen from the files it touches, or
-    set on the task or the workflow step.
-  - A suite either blocks or only advises.
-  - An acceptance criterion can name the tests that prove it, so a test can
-    check a criterion, not only a review.
-- **Over time**, with the statistics view: flaky tests, slow tests and
-  skipped tests.
-
-Survey first (prefer tools that already do this):
-
-- JUnit XML as the common report.
-- How test tools and CI already pick tests: pytest markers, vitest
-  projects, "affected" in Nx or Bazel.
-- Whether the central server's workers run the tests through an existing
-  CI runner.
-
 ## The sprint page, step by step (owner, 2026-11-21)
 
 The owner asked for the sprint page to be redesigned a little at a time,
@@ -93,7 +44,8 @@ sprint, what should they see first?"
 - **Statistics view (owner):** how well agents do over many sprints, as
   numbers and graphs: first-time passes, send-backs by cause, a user's
   part, cost per merged task, time to merge, by role and model. The data
-  is `GET /projects/{id}/outcomes`; where the view lives is not decided.
+  is `GET /projects/{id}/outcomes`; where the view lives is decided with
+  the other views (owner direction 6).
 - **Proposed next, one at a time, each from a mockup:**
   - a run's raw output and prompt as Copy prompt, Download prompt and
     Download raw output, in place of the caret that prints it on the page;
@@ -266,6 +218,89 @@ Base work that this framing makes necessary:
      records is a step after its tasks, and only a sprint workflow can
      express it. Owner: "A friction noted in favor of the suggestion i made
      before."
+5. **Tests that are designed, not only watched (owner, 2026-11-22 and
+   23).** Who decides what must be tested, how it runs, and whether the
+   requirement is met. The owner's examples:
+   - a test must exist for one function of a component;
+   - a test runs the app's full workflow through the interface and returns
+     a screenshot of the end screen.
+   - **Today:**
+     - Each project has one shell command (`test_command`). Foreman keeps
+       its exit code, duration, commit and output. It does not know which
+       tests ran: a count, a name or a failure is only in the printed text.
+     - Nothing says what must be tested. A task's acceptance criteria come
+       nearest, and a review checks them, not a test.
+     - There is no tester role. Tests are written only if the developer
+       decides to.
+     - The Checks tab has an "Evidence files" section, but the server
+       always sends it empty.
+   - **One place per project, a Tests view, with three parts:**
+     - **What must be tested.** Written by a user, or proposed by the
+       manager and accepted by a user (Foreman stores it). Each one has the
+       behavior, its level (unit, component, or a journey through the
+       interface) and what proves it, such as a passing test or a
+       screenshot. It either blocks a merge or only advises.
+     - **Suites, how tests run.** Kept in a TOML file in the project's
+       repository, like CI configuration, so they stay in step with the
+       code and an agent changes them through review. Each suite has:
+       - its command and its report (JUnit XML is common to pytest,
+         vitest, jest, Playwright and others);
+       - what it needs (a journey starts the app, waits until it is ready,
+         then drives a browser);
+       - what it produces (results, screenshots);
+       - when it runs: every task, tasks touching some files, before a
+         merge, or on a schedule.
+     - **Coverage, each requirement against reality.** Whether a test
+       exists, which one, its last result and its screenshot. A requirement
+       with no test is a gap. Closing a gap is a task for a tester role,
+       and the review checks that the test really proves the requirement.
+   - **On a task:**
+     - the Checks tab shows the requirements the task touched and whether
+       their tests passed;
+     - the tests that failed come first, then the tests the task added or
+       changed, then the full list, folded, with a search;
+     - a test's own name and docstring say what it checks (a fact); a
+       model's summary is a claim (ADR-0018);
+     - a journey's screenshot fills Evidence files.
+   - **Over time, in the statistics view:** flaky, slow and skipped tests.
+   - **Survey before the ADR:**
+     - Playwright and its reports;
+     - how test tools and CI pick tests (pytest markers, vitest projects,
+       "affected" in Nx or Bazel);
+     - tools that track coverage against requirements;
+     - whether the central server's workers run tests through an existing
+       CI runner (direction 3).
+6. **The views, thought through as one system (owner, 2026-11-23).**
+   The owner has proposed several views over time. Before any one of them
+   is built, they are designed together: roadmap stage 5, the left bar.
+   - **The views proposed so far:**
+     - board and sprints;
+     - backlog;
+     - activity;
+     - statistics (agents over many sprints);
+     - tests (direction 5);
+     - docs, from which the spec editor may grow. The spec editor may also
+       be its own app that talks to Foreman;
+     - resources;
+     - people and the manager (roadmap stage 2);
+     - settings;
+     - at workspace level: projects, shared roles and workflows, machines
+       (direction 1);
+     - on the sprint: its workflow's checks and releases (directions 3 and
+       4).
+   - **To settle for all of them at once:**
+     - at which level each view lives (workspace, project, sprint, task);
+     - what is a view of its own and what is a tab inside one;
+     - how a view links to the others (from a test to its task, and from
+       a task to the requirement it touches);
+     - where the manager chat sits beside them;
+     - how it all works on a phone.
+   - **Already decided:**
+     - the four levels;
+     - one screen at a time;
+     - no code browser (owner, 2026-06-16).
+   - **The order:** one design reference for the whole set comes first,
+     then one view at a time, each from a mockup.
 
 ## Carried engineering items (from sprints 56 and 57)
 
