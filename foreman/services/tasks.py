@@ -25,6 +25,7 @@ from .errors import (
     InvalidRequestError,
     NotFoundError,
 )
+from .task_models import test_counts
 from .views import task_source
 from .workspace import foreman_starts_backlog_work
 
@@ -121,8 +122,15 @@ class TaskService(Service):
         gates = self._gate_steps(project)
         events = self.store.list_events(task_id=task.id)
 
+        # How many tests each test step ran, from its last test record (ADR-0035).
+        reports = {
+            event.run_id: event.payload.get("report")
+            for event in sorted(events, key=lambda e: e.timestamp)
+            if event.event_type == "engine.test_run"
+        }
         runs_data = []
         for run in self.store.list_runs(task_id=task_id):
+            counts = test_counts(reports.get(run.id))
             runs_data.append(
                 {
                     "id": run.id,
@@ -143,6 +151,7 @@ class TaskService(Service):
                     "session_id": run.session_id,
                     "branch_name": run.branch_name,
                     "commit_sha": run.commit_sha,
+                    "tests": counts.model_dump() if counts is not None else None,
                 }
             )
 

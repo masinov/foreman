@@ -25,6 +25,9 @@ MAX_REPORT_BYTES = 32 * 1024 * 1024
 #: At most this many report files are read from one run.
 MAX_REPORT_FILES = 200
 
+#: At most this many failed tests are named; the count says how many failed.
+MAX_FAILED_NAMED = 50
+
 # A JUnit report declares no document type. One that does may define
 # entities that expand without bound, and this Python's XML parser may be
 # too old to stop that, so such a file is not parsed at all.
@@ -41,6 +44,8 @@ class TestReport:
     failed: int
     skipped: int
     files: int
+    #: The failed tests, as ``(suite, name)``, at most ``MAX_FAILED_NAMED``.
+    failed_tests: tuple[tuple[str, str], ...] = ()
 
     @property
     def passed(self) -> int:
@@ -53,6 +58,7 @@ class TestReport:
             "failed": self.failed,
             "skipped": self.skipped,
             "files": self.files,
+            "failed_tests": [{"suite": suite, "name": name} for suite, name in self.failed_tests],
         }
 
     def words(self) -> str:
@@ -66,8 +72,8 @@ class TestReport:
         return f"{said}, {self.skipped} skipped" if self.skipped else said
 
 
-def _count(path: Path) -> tuple[int, int, int]:
-    """``(tests, failed, skipped)`` in one report; ``ValueError`` when it cannot be read."""
+def _count(path: Path) -> tuple[int, int, int, list[tuple[str, str]]]:
+    """``(tests, failed, skipped, failed tests)`` in one report; ``ValueError`` when it cannot be read."""
 
     size = path.stat().st_size
     if size > MAX_REPORT_BYTES:
@@ -81,13 +87,15 @@ def _count(path: Path) -> tuple[int, int, int]:
     except ElementTree.ParseError as exc:
         raise ValueError(f"it is not well-formed XML ({exc})") from None
     tests = failed = skipped = 0
+    failed_tests: list[tuple[str, str]] = []
     for case in root.iter("testcase"):
         tests += 1
         if case.find("failure") is not None or case.find("error") is not None:
             failed += 1
+            failed_tests.append((case.get("classname") or "", case.get("name") or ""))
         elif case.find("skipped") is not None:
             skipped += 1
-    return tests, failed, skipped
+    return tests, failed, skipped, failed_tests
 
 
 def read_reports(directory: Path) -> tuple[TestReport | None, list[str]]:
@@ -107,6 +115,7 @@ def read_reports(directory: Path) -> tuple[TestReport | None, list[str]]:
         problems.append(f"{len(paths)} reports; Foreman read the first {MAX_REPORT_FILES}.")
         paths = paths[:MAX_REPORT_FILES]
     tests = failed = skipped = files = 0
+    failed_tests: list[tuple[str, str]] = []
     for path in paths:
         name = path.relative_to(directory).as_posix()
         try:
@@ -117,7 +126,14 @@ def read_reports(directory: Path) -> tuple[TestReport | None, list[str]]:
         tests += counted[0]
         failed += counted[1]
         skipped += counted[2]
+        failed_tests.extend(counted[3])
         files += 1
     if not files:
         return None, problems
-    return TestReport(tests=tests, failed=failed, skipped=skipped, files=files), problems
+    return TestReport(
+        tests=tests,
+        failed=failed,
+        skipped=skipped,
+        files=files,
+        failed_tests=tuple(failed_tests[:MAX_FAILED_NAMED]),
+    ), problems

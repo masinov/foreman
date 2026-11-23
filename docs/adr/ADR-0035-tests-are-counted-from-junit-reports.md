@@ -54,9 +54,13 @@ Two more facts shaped the decision:
 
 ## Consequences
 
-- The pages say "Passed · 1,599 tests, 1 skipped" and "1,599 tests passed
-  (1 skipped)". The Checks tab drops the output's last line when a report
-  counted the tests.
+- The pages say "Passed · 1,599 tests, 1 skipped" (a step's result, on
+  Activity and Overview) and "1,599 tests passed (1 skipped)" (its log line
+  and the Checks tab's detail).
+  - The Checks tab names the failed tests, up to 50, and no longer shows the
+    output's last line.
+  - `report.failed_tests` holds each failed test's suite and name
+    (amended 2026-11-23).
 - A project's test command has to write the report to be counted. For
   pytest that is `--junitxml="$FOREMAN_TEST_REPORT_DIR/pytest.xml"`; for
   vitest it is `--reporter=default --reporter=junit

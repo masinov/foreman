@@ -9,6 +9,13 @@ memory changes rather than versioned product releases.
 
 ### Sprint 62
 
+- A test step's result reads the same everywhere (owner, 2026-11-23).
+  - The task's Overview says "Passed · 1,221 tests in 1 min 54 s" on its Test row, as Activity does.
+  - The Checks tab's Tests detail is the sentence the step's log ends with: "186 tests passed in 2 min 58 s at 6332732", or "3 of 186 tests failed (exit code 1) in 12 s at 6332732" followed by the failed tests by name (up to 50, then "and N more").
+  - The output's last line (the lone "OK") is no longer shown there.
+  - The report reader keeps the failed tests' names.
+- Foreman's own test command writes JUnit reports, and unittest-xml-reporting is in the dev dependencies, so a task's working copy has it.
+
 - Foreman counts the tests (ADR-0035, sprint 62 slice 1).
   - It names an empty directory in `FOREMAN_TEST_REPORT_DIR` for each test run.
   - A test command that writes JUnit XML reports there tells Foreman how many tests ran.

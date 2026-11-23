@@ -32,8 +32,9 @@ class ReadReportsTests(unittest.TestCase):
         _write(self.dir, "frontend/junit.xml", '<testsuites><testsuite><testcase name="z"><error/></testcase>'
                '<testcase name="w"><skipped/></testcase><testcase name="v"/></testsuite></testsuites>')
         report, problems = read_reports(self.dir)
-        self.assertEqual(report, TestReport(tests=5, failed=2, skipped=1, files=2))
+        self.assertEqual((report.tests, report.failed, report.skipped, report.files), (5, 2, 1, 2))
         self.assertEqual(report.passed, 2)
+        self.assertEqual(report.failed_tests, (("", "y"), ("", "z")))
         self.assertEqual(problems, [])
 
     def test_an_unreadable_report_is_named_and_the_rest_counted(self) -> None:
@@ -66,6 +67,15 @@ class ReadReportsTests(unittest.TestCase):
             target.write_text('<testsuite><testcase name="x"/></testsuite>', encoding="utf-8")
             (self.dir / "link.xml").symlink_to(target)
             self.assertEqual(read_reports(self.dir), (None, []))
+
+    def test_failed_tests_are_named_up_to_a_limit(self) -> None:
+        cases = "".join(f'<testcase classname="tests.test_a.ATests" name="test_{i}"><failure/></testcase>' for i in range(60))
+        _write(self.dir, "many.xml", f"<testsuite>{cases}</testsuite>")
+        report, _ = read_reports(self.dir)
+        self.assertEqual(report.failed, 60)
+        self.assertEqual(len(report.failed_tests), test_report.MAX_FAILED_NAMED)
+        self.assertEqual(report.failed_tests[0], ("tests.test_a.ATests", "test_0"))
+        self.assertEqual(report.as_payload()["failed_tests"][0], {"suite": "tests.test_a.ATests", "name": "test_0"})
 
     def test_words(self) -> None:
         self.assertEqual(TestReport(tests=1, failed=0, skipped=0, files=1).words(), "1 test")

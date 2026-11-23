@@ -69,6 +69,13 @@ class FileDiff(BaseModel):
     total_chars: int
 
 
+class FailedTest(BaseModel):
+    """A test that failed: its suite (class or file) and its name."""
+
+    suite: str = ""
+    name: str = ""
+
+
 class TestCounts(BaseModel):
     """How many tests ran and how they ended, from the test command's JUnit reports."""
 
@@ -78,6 +85,8 @@ class TestCounts(BaseModel):
     passed: int
     failed: int
     skipped: int
+    #: The failed tests the report named, at most 50; ``failed`` is how many there were.
+    failed_tests: list[FailedTest] = []
 
 
 def test_counts(report: Any) -> TestCounts | None:
@@ -91,6 +100,11 @@ def test_counts(report: Any) -> TestCounts | None:
             passed=int(report.get("passed", 0)),
             failed=int(report.get("failed", 0)),
             skipped=int(report.get("skipped", 0)),
+            failed_tests=[
+                FailedTest(suite=str(item.get("suite") or ""), name=str(item.get("name") or ""))
+                for item in report.get("failed_tests") or []
+                if isinstance(item, dict)
+            ],
         )
     except (KeyError, TypeError, ValueError):
         return None

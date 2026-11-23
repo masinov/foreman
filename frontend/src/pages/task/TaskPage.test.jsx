@@ -592,6 +592,17 @@ describe("Overview", () => {
     expect(screen.queryByText(/is under/)).toBeNull();
   });
 
+  it("says how many tests the test step ran, as its Activity row does", async () => {
+    const task = taskDetail();
+    task.runs = task.runs.map((entry) =>
+      entry.workflow_step === "test" ? { ...entry, tests: { tests: 1221, passed: 1221, failed: 0, skipped: 0, failed_tests: [] } } : entry,
+    );
+    await renderTask(BASE, taskRoutes({ task }));
+    const table = await screen.findByRole("table", { name: "Steps" });
+    const row = within(table).getByText("Test").closest("tr");
+    expect(within(row).getAllByRole("cell")[1].textContent).toBe("Passed · 1,221 tests in 1 min 54 s");
+  });
+
   it("has no checks summary: the Steps table and the Checks tab say it", async () => {
     await renderTask();
     await screen.findByRole("table", { name: "Steps" });
@@ -871,7 +882,9 @@ describe("Checks", () => {
         .map((row) => within(row).getAllByRole("cell")[0].textContent);
     expect(firstCells(facts)).toEqual(["Tests", "Branch", "Size of change"]);
     expect(firstCells(claims)).toEqual(["Review", "Criterion 1", "Criterion 2"]);
-    expect(facts).toHaveTextContent("Ran 1221 tests in 114.2s OK");
+    // The detail is the sentence the test step's log ends with; the output's last line ("OK") is not repeated.
+    expect(facts).toHaveTextContent("Tests passed in 1 min 54 s at b232eb1");
+    expect(facts).not.toHaveTextContent("Ran 1221 tests in 114.2s OK");
     expect(facts).toHaveTextContent("Up to date with main");
     expect(facts).toHaveTextContent("3 files, +118 −7");
     expect(facts).not.toHaveTextContent("Review");
@@ -890,14 +903,41 @@ describe("Checks", () => {
     expect(screen.queryByRole("heading", { name: "Evidence files" })).toBeNull();
   });
 
-  it("says how many tests ran when the command reported them, and drops the output's last line", async () => {
+  it("says how many tests ran when the command reported them", async () => {
     const checks = checksPayload();
-    checks.facts.tests.counts = { tests: 1221, passed: 1220, failed: 0, skipped: 1 };
+    checks.facts.tests.counts = { tests: 1221, passed: 1220, failed: 0, skipped: 1, failed_tests: [] };
     await renderTask(`${BASE}/checks`, taskRoutes({ checks }));
     const facts = await screen.findByRole("table", { name: "Measured by Foreman" });
     const row = within(facts).getAllByRole("row")[1];
-    expect(row).toHaveTextContent(/Passed\s*1,221 tests, 1 skipped, in 1 min 54 s at b232eb1/);
-    expect(row).not.toHaveTextContent("Ran 1221 tests in 114.2s OK");
+    expect(row).toHaveTextContent(/Passed\s*1,221 tests passed \(1 skipped\) in 1 min 54 s at b232eb1/);
+    expect(within(row).queryByRole("list", { name: "Failed tests" })).toBeNull();
+  });
+
+  it("names the tests that failed", async () => {
+    const checks = checksPayload();
+    checks.facts.tests = {
+      ...checks.facts.tests,
+      status: "failed",
+      exit_code: 1,
+      duration_seconds: 12,
+      counts: {
+        tests: 186,
+        passed: 183,
+        failed: 53,
+        skipped: 0,
+        failed_tests: [
+          { suite: "tests.test_api.ApiTests", name: "test_token_is_required" },
+          { suite: "", name: "test_alone" },
+        ],
+      },
+    };
+    await renderTask(`${BASE}/checks`, taskRoutes({ checks }));
+    const facts = await screen.findByRole("table", { name: "Measured by Foreman" });
+    const row = within(facts).getAllByRole("row")[1];
+    expect(row).toHaveTextContent(/Failed\s*53 of 186 tests failed \(exit code 1\) in 12 s at b232eb1/);
+    const failed = within(row).getByRole("list", { name: "Failed tests" });
+    const items = within(failed).getAllByRole("listitem").map((item) => item.textContent);
+    expect(items).toEqual(["test_token_is_required tests.test_api.ApiTests", "test_alone ", "and 51 more"]);
   });
 
   it("says when nothing was claimed and the tests did not run", async () => {

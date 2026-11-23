@@ -44,6 +44,8 @@ dev = [
   "ruff>=0.6",
   # The layers contract (.importlinter, ADR-0032); it needs Python 3.11.
   "import-linter>=2.5,<3; python_version >= '3.11'",
+  # Writes unittest's results as JUnit XML, so the test step counts them (ADR-0035).
+  "unittest-xml-reporting>=4,<5",
 ]
 e2e = [
   "playwright>=1.40,<2",

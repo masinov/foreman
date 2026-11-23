@@ -24,6 +24,8 @@ const UNJUDGED_EVIDENCE = "Not checked by a judge model.";
 
 function factRows(facts) {
   const tests = testsWords(facts.tests);
+  const failedTests = facts.tests.counts?.failed_tests ?? [];
+  const more = (facts.tests.counts?.failed ?? 0) - failedTests.length;
   const branch = branchWords(facts.branch);
   const ahead = facts.branch.ahead;
   return [
@@ -35,8 +37,17 @@ function factRows(facts) {
       detail: (
         <span className="cell-stack">
           {tests.detail ? <span>{tests.detail}</span> : null}
-          {/* The output's last line only when no report counted the tests: then it is all there is. */}
-          {facts.tests.result_line && !facts.tests.counts ? <Mono quiet>{facts.tests.result_line}</Mono> : null}
+          {/* The tests that failed, by name, when the report named them; the output is in Activity. */}
+          {failedTests.length ? (
+            <ul className="task-checks__failed" aria-label="Failed tests">
+              {failedTests.map((test, index) => (
+                <li key={index}>
+                  <Mono>{test.name}</Mono> {test.suite ? <span className="quiet">{test.suite}</span> : null}
+                </li>
+              ))}
+              {more > 0 ? <li className="quiet">and {more} more</li> : null}
+            </ul>
+          ) : null}
           {facts.tests.status === "not_run" ? <span className="quiet">Foreman has not run the tests on this branch.</span> : null}
         </span>
       ),

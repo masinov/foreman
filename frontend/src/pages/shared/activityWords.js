@@ -1,4 +1,4 @@
-import { formatCount, formatDuration, humanize } from "../../ui/format";
+import { formatCount, formatDuration, humanize, shortSha } from "../../ui/format";
 
 // One vocabulary for what happened, used wherever activity is shown: the
 // task's Activity tab, its Agent side bar and Overview, the decision box and
@@ -186,6 +186,33 @@ export function testCountWords(counts) {
   const skipped = Number(counts.skipped) || 0;
   const said = failed ? `${formatCount(failed)} of ${formatCount(tests)} ${noun}` : `${formatCount(tests)} ${noun}`;
   return skipped ? `${said}, ${formatCount(skipped)} skipped` : said;
+}
+
+/**
+ * How a test run ended, in one sentence, as its log line and the Checks tab
+ * say it: "186 tests passed in 2 min 58 s at 6332732", "3 of 186 tests
+ * failed (exit code 1) in 12 s at 6332732". Without a report the count is
+ * unknown: "Tests passed in 2 min 58 s at 6332732".
+ */
+export function testRunSentence({ passed, exitCode, report, seconds, sha }) {
+  const exit = passed || exitCode === null || exitCode === undefined ? "" : ` (exit code ${exitCode})`;
+  const tests = Number(report?.tests);
+  let said;
+  if (!Number.isFinite(tests)) {
+    said = passed ? "Tests passed" : `Tests failed${exit}`;
+  } else {
+    const noun = tests === 1 ? "test" : "tests";
+    const failed = Number(report.failed) || 0;
+    const skipped = Number(report.skipped) || 0;
+    if (passed) said = `${formatCount(tests)} ${noun} passed`;
+    else if (failed) said = `${formatCount(failed)} of ${formatCount(tests)} ${noun} failed${exit}`;
+    // The command failed though every test it reported passed: a build, or a
+    // second suite that wrote no report.
+    else said = `Tests failed${exit}; the ${formatCount(tests)} reported passed`;
+    if (skipped) said += ` (${formatCount(skipped)} skipped)`;
+  }
+  const took = seconds === null || seconds === undefined ? "" : formatDuration(seconds);
+  return [said, took ? `in ${took}` : "", sha ? `at ${shortSha(sha)}` : ""].filter(Boolean).join(" ");
 }
 
 /**

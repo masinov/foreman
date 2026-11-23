@@ -1,12 +1,13 @@
 import { ENGINE_STATES } from "../../api/workspace";
 import { formatDuration, humanize, plural, shortSha } from "../../ui/format";
-import { FOREMAN, outcomeTone, outcomeWord, runResult, runRole, runTook, SENT_BACK, stepOutcome, testCountWords } from "../shared/activityWords";
+import { FOREMAN, outcomeTone, outcomeWord, runResult, runRole, runTook, SENT_BACK, stepOutcome, testCountWords, testRunSentence } from "../shared/activityWords";
 
 // How the task page puts what the API says into words (design 05, 12, 13,
 // 14). Pure functions, so each sentence is tested on its own.
 
 const HUMAN_GATE = "_builtin:human_gate";
 const MARK_DONE = "_builtin:mark_done";
+const TESTS = "_builtin:run_tests";
 const BUILTIN = "_builtin:";
 
 /** The kinds of decision a task can wait for (design README, "Needs you"). */
@@ -120,7 +121,11 @@ export function stepRows(task, workflow, engine = null) {
       // No one looked: the project's setting decided, as its Activity row says.
       result = stepOutcome(last);
     } else if (last) {
-      const { tone, word } = runResult(last);
+      const ended = runResult(last);
+      const { tone } = ended;
+      // A test step says how many tests ran, as its Activity row does.
+      const counted = step.role === TESTS ? testCountWords(last.tests) : "";
+      const word = counted && ended.word ? `${ended.word} · ${counted}` : ended.word;
       // Under a second is not worth saying ("Merged", not "Merged in 0.1 s").
       const took = runTook(last);
       // A run records the branch head it finished at; it "committed" only
@@ -150,24 +155,21 @@ export function stepRows(task, workflow, engine = null) {
 
 /** The tests fact as `{ tone, word, detail }`. */
 export function testsWords(tests) {
-  const sha = shortSha(tests?.commit);
-  const took = formatDuration(tests?.duration_seconds);
-  const when = [took ? `in ${took}` : "", sha ? `at ${sha}` : ""].filter(Boolean).join(" ");
-  // "1,599 tests, 1 skipped, in 4 min 34 s at abc1234": how many first, when the command reported them.
-  const where = [testCountWords(tests?.counts), when].filter(Boolean).join(", ");
+  // The detail is the sentence the step's log ends with (owner, 2026-11-23).
+  const said = testRunSentence({
+    passed: tests?.exit_code === 0,
+    exitCode: tests?.exit_code,
+    report: tests?.counts,
+    seconds: tests?.duration_seconds,
+    sha: tests?.commit,
+  });
   switch (tests?.status) {
     case "passed":
-      return { tone: "passed", word: "Passed", detail: where };
+      return { tone: "passed", word: "Passed", detail: said };
     case "failed":
-      return {
-        tone: "failed",
-        word: "Failed",
-        detail: [where, tests.exit_code !== null && tests.exit_code !== undefined ? `exit code ${tests.exit_code}` : ""]
-          .filter(Boolean)
-          .join(", "),
-      };
+      return { tone: "failed", word: "Failed", detail: said };
     case "stale":
-      return { tone: "attention", word: "Out of date", detail: `${where}; the branch has moved since` };
+      return { tone: "attention", word: "Out of date", detail: `${said}; the branch has moved since` };
     default:
       return { tone: "idle", word: "Not run", detail: "" };
   }
