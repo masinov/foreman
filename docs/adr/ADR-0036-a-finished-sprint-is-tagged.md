@@ -54,8 +54,12 @@ name exists, or whether the tag is pushed.
    sprint reopened and finished again is a new completion and gets a new
    tag.
 7. **Shown where the sprint is.**
-   - The sprint's Details panel has a Tag row (the tag and its commit) and
-     a Note row.
+   - The sprint's State says which commit the tag marks: "Finished 20 Nov
+     at 6f79f4a", with the tag's name on hover. If tagging failed, it says
+     "Finished 20 Nov, not tagged", with the reason on hover. The note is
+     not shown: it repeats the page's goal and tasks for people who read
+     the repository (owner, 2026-11-23, amended the same day from separate
+     Tag and Note rows).
    - `GET /sprints/{id}` serves `checkpoint` (`tag`, `sha`, `note_path`,
      `problem`).
    - `foreman sprint complete` prints the tag and the note.

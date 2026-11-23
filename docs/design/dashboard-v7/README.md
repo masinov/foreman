@@ -85,10 +85,12 @@ Workspace / Project / Sprint / Task.
   hover. A sprint's Activity filters by who (Everyone, each role, Foreman,
   Users) and by Problems. How well agents do over many sprints is a
   statistics view, not a line on these pages (owner, 2026-11-21).
-- **A finished sprint's Details** add its checkpoint (ADR-0036): Tag (the
-  tag and the commit it marks), Note (the note's path) where one was
-  written, or "Not tagged:" and why. Each is one line, cut with "…" and
-  whole on hover.
+- **A finished sprint's State** says which commit its tag marks (ADR-0036):
+  "Finished 20 Nov at 6f79f4a", with the tag's name on hover; or "Finished
+  20 Nov, not tagged", with why on hover. The note is not shown on the page.
+- **The sprint's goal** shows as many lines as fit beside its Details
+  (never fewer than four), then "Show all". Stacked on a phone, it keeps
+  four.
 - **A picked step has one shape for every kind of step** (owner,
   2026-11-22, from a mockup): on the left what happened, in order, each
   line a time, what happened in plain words, and what it ran, wrote or

@@ -9,6 +9,11 @@ memory changes rather than versioned product releases.
 
 ### Sprint 62
 
+- The sprint's head, after the owner's look (2026-11-23).
+  - The Tag and Note rows are gone. State says "Finished 20 Nov at 6f79f4a", with the tag's name on hover, or "Finished 20 Nov, not tagged", with the reason on hover.
+  - The goal shows as many lines as fit beside the Details, instead of always four.
+- "No code browser" is no longer a rule. A view of the code and one of the repository's history are open questions among the views of owner direction 6.
+
 - A finished sprint is tagged, as spec 6.4 says (ADR-0036, sprint 62 slice 2).
   - Whether a user finishes it (dashboard, `foreman sprint complete`, a manager's proposal) or Foreman does, the default branch's head gets an annotated tag `checkpoint-YYYYMMDD-<sprint-title>`; a name already taken gets `-2`.
   - With the new setting "Checkpoint note" (`write_checkpoint_notes`, Settings › General › Advanced), a note of the goal, the tasks done and cancelled, and the follow-ups agents filed is committed to `docs/checkpoints/<tag>.md` first.

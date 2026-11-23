@@ -288,7 +288,11 @@ Base work that this framing makes necessary:
      - at workspace level: projects, shared roles and workflows, machines
        (direction 1);
      - on the sprint: its workflow's checks and releases (directions 3 and
-       4).
+       4);
+     - open, not decided (owner, 2026-11-23):
+       - a view of the code;
+       - a view of the repository's history: branches, commits, merges and
+         the tags of finished sprints.
    - **To settle for all of them at once:**
      - at which level each view lives (workspace, project, sprint, task);
      - what is a view of its own and what is a tab inside one;
@@ -298,8 +302,12 @@ Base work that this framing makes necessary:
      - how it all works on a phone.
    - **Already decided:**
      - the four levels;
-     - one screen at a time;
-     - no code browser (owner, 2026-06-16).
+     - one screen at a time.
+   - **No longer a rule:** "no code browser" (2026-06-16). It came from
+     seeing Foreman as working beside VS Code. Since 2026-09-03 and
+     2026-11-19, Foreman is where the work is done: people specify, accept,
+     supervise and correct, and VS Code is the occasional hands-on
+     exception (owner, 2026-11-23).
    - **The order:** one design reference for the whole set comes first,
      then one view at a time, each from a mockup.
 

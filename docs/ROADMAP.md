@@ -88,7 +88,9 @@ Workspace level: projects, shared roles and workflows, later machines. The
 views are designed together as one system before any one is built (owner,
 2026-11-23; backlog, owner directions 5 and 6). It revises the approved
 design (v7), so a design reference comes first, then one screen at a time.
-A code browser stays out (owner, 2026-06-16).
+A view of the code and one of the repository's history are open questions
+in that design. The June rule against a code browser no longer holds (owner,
+2026-11-23).
 
 ### Stage 6 — central server and workers (owner direction 1)
 

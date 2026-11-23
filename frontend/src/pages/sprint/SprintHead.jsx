@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 
 import { useApiClient } from "../../api/ApiProvider";
 import { errorSentence } from "../../api/client";
@@ -12,6 +12,7 @@ import { LongText } from "../../ui/LongText";
 import { Mono } from "../../ui/Mono";
 import { SectionHeading } from "../../ui/SectionHeading";
 import { formatDay, formatMoney, formatTokens, shortSha } from "../../ui/format";
+import { useLinesBeside } from "../../ui/useLinesBeside";
 import { TaskCounts } from "../shared/TaskCounts";
 import { ReasonDialog } from "../shared/ReasonDialog";
 import { EditSprintDialog } from "./EditSprintDialog";
@@ -63,6 +64,29 @@ export function sprintActionsFor(sprint) {
   return (sprint.goal || "").trim() ? ["plan", "cancel", "delete"] : ["cancel", "delete"];
 }
 
+/**
+ * The state, and for a finished sprint the commit its tag marks (spec 6.4,
+ * ADR-0036): "Finished 20 Nov at 6f79f4a", the tag's name on hover; or
+ * "Finished 20 Nov, not tagged", the reason on hover.
+ */
+function StateWords({ sprint }) {
+  const said = stateSentence(sprint);
+  const checkpoint = sprint.status === SPRINT_STATUSES.completed ? sprint.checkpoint : null;
+  if (!checkpoint) return said;
+  if (checkpoint.problem) {
+    return (
+      <span title={checkpoint.problem}>
+        {said}, <span className="tone-failed">not tagged</span>
+      </span>
+    );
+  }
+  return (
+    <span title={`Tagged ${checkpoint.tag}`}>
+      {said} at <Mono>{shortSha(checkpoint.sha)}</Mono>
+    </span>
+  );
+}
+
 function stateSentence(sprint) {
   const started = formatDay(sprint.started_at);
   const finished = formatDay(sprint.completed_at);
@@ -81,45 +105,6 @@ function stateSentence(sprint) {
 }
 
 /**
- * A finished sprint's checkpoint (spec 6.4): the tag on the default branch
- * and the commit it marks, the note when one was written, or why there is
- * no tag.
- */
-function checkpointRows(checkpoint) {
-  if (!checkpoint) return [];
-  if (checkpoint.problem) {
-    return [{ key: "tag", term: "Tag", value: <span className="tone-failed">Not tagged: {checkpoint.problem}</span> }];
-  }
-  return [
-    {
-      key: "tag",
-      term: "Tag",
-      value: (
-        <span className="details-list__line">
-          <Mono className="details-list__cut" title={checkpoint.tag}>
-            {checkpoint.tag}
-          </Mono>{" "}
-          <span className="quiet">at {shortSha(checkpoint.sha)}</span>
-        </span>
-      ),
-    },
-    checkpoint.note_path
-      ? {
-          key: "note",
-          term: "Note",
-          value: (
-            <span className="details-list__line">
-              <Mono className="details-list__cut" title={checkpoint.note_path}>
-                {checkpoint.note_path}
-              </Mono>
-            </span>
-          ),
-        }
-      : null,
-  ];
-}
-
-/**
  * The title row (Edit, the state action that applies, More), then the goal
  * beside the sprint's details, as a task's Overview sets what it is beside
  * its facts. `onChanged` runs after a save or a state change so the page
@@ -134,6 +119,9 @@ export function SprintHead({ sprint, onChanged }) {
   const navigate = useNavigate();
   const [chosen, setChosen] = useState(null);
   const more = chosen ? SPRINT_ACTIONS[chosen] : null;
+  // The goal shows as much as fits beside the Details, then "Show all".
+  const goalColumn = useRef(null);
+  const detailsColumn = useRef(null);
 
   async function changeState() {
     setPending(true);
@@ -150,7 +138,7 @@ export function SprintHead({ sprint, onChanged }) {
 
   const totals = sprint.totals ?? {};
   const details = [
-    { key: "state", term: "State", value: stateSentence(sprint) },
+    { key: "state", term: "State", value: <StateWords sprint={sprint} /> },
     { key: "tasks", term: "Tasks", value: <TaskCounts counts={sprint.task_counts} /> },
     {
       key: "spend",
@@ -164,8 +152,8 @@ export function SprintHead({ sprint, onChanged }) {
     sprint.picks_own_tasks
       ? { key: "foreman", term: "Started by Foreman", value: `${sprint.started_by_foreman ?? 0} of ${sprint.foreman_limit ?? 0}` }
       : null,
-    ...checkpointRows(sprint.checkpoint),
   ].filter(Boolean);
+  const goalLines = useLinesBeside(goalColumn, detailsColumn, { deps: [sprint.goal, details.length] });
   return (
     <>
       <div className="sprint__title-row">
@@ -212,17 +200,17 @@ export function SprintHead({ sprint, onChanged }) {
         </p>
       ) : null}
       <div className="page-overview">
-        <section className="page-overview__main page-section" aria-labelledby="sprint-goal">
+        <section ref={goalColumn} className="page-overview__main page-section" aria-labelledby="sprint-goal">
           <SectionHeading id="sprint-goal" title="Goal" />
           {sprint.goal ? (
-            <LongText className="sprint__goal" short>
+            <LongText className="sprint__goal" short lines={goalLines}>
               {sprint.goal}
             </LongText>
           ) : (
             <p className="empty">No goal is written. Edit adds one; the manager plans the sprint from it.</p>
           )}
         </section>
-        <section className="page-overview__aside page-section" aria-labelledby="sprint-details">
+        <section ref={detailsColumn} className="page-overview__aside page-section" aria-labelledby="sprint-details">
           <SectionHeading id="sprint-details" title="Details" />
           <dl className="details-list">
             {details.map((row) => (
