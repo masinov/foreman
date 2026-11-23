@@ -85,6 +85,41 @@ class RunTestsReportTests(unittest.TestCase):
             _, payload = _run(Path(temp_dir), "true")
         self.assertIsNone(payload["head_sha"])
 
+    def test_a_junit_report_says_how_many_tests_ran(self) -> None:
+        report = (
+            '<testsuites><testsuite name="s">'
+            '<testcase name="a"/><testcase name="b"/>'
+            '<testcase name="c"><skipped/></testcase>'
+            "</testsuite></testsuites>"
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            result, payload = _run(
+                Path(temp_dir), f"printf '%s' '{report}' > \"$FOREMAN_TEST_REPORT_DIR/unit.xml\""
+            )
+        self.assertRegex(result.detail, r"^Tests passed in \d+\.\ds \(exit 0\)\. 3 tests, 1 skipped\.$")
+        self.assertEqual(
+            payload["report"], {"tests": 3, "passed": 2, "failed": 0, "skipped": 1, "files": 1}
+        )
+        self.assertEqual(payload["report_problems"], [])
+
+    def test_the_report_directory_is_fresh_and_outside_the_working_copy(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            directory = Path(temp_dir)
+            _, payload = _run(directory, 'ls -A "$FOREMAN_TEST_REPORT_DIR" | wc -l; echo "$FOREMAN_TEST_REPORT_DIR"')
+            left = list(directory.iterdir())
+        count, where = payload["output_tail"].splitlines()
+        self.assertEqual(count.strip(), "0")
+        self.assertFalse(where.startswith(temp_dir))
+        self.assertFalse(Path(where).exists(), "the directory is removed after the run")
+        self.assertEqual(left, [])
+        self.assertIsNone(payload["report"])
+
+    def test_no_report_leaves_the_count_unknown(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            result, payload = _run(Path(temp_dir), "true")
+        self.assertIsNone(payload["report"])
+        self.assertRegex(result.detail, r"^Tests passed in \d+\.\ds \(exit 0\)\.$")
+
     def test_missing_command_keeps_early_return(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             result, payload = _run(Path(temp_dir), "")

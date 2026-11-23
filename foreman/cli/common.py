@@ -304,6 +304,12 @@ def format_transcript_payload(event: Event) -> list[str]:
             f"    command={payload.get('command', '')}",
             f"    exit_code={payload.get('exit_code', '')}",
         ]
+        report = payload.get("report")
+        if isinstance(report, dict):
+            lines.append(
+                "    tests="
+                + " ".join(f"{key}={report.get(key, 0)}" for key in ("tests", "passed", "failed", "skipped"))
+            )
         if "stdout" in payload:
             lines.append("    stdout:")
             lines.extend(indent_lines(str(payload.get("stdout", "")), prefix="      "))

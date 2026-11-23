@@ -3,8 +3,11 @@
 
 from __future__ import annotations
 
+import os
 import selectors
+import shutil
 import subprocess
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, Callable
@@ -13,6 +16,7 @@ from ...domain.models import Project
 from ...domain.settings import settings_of
 from ...runner.process import ManagedProcess
 from .base import BuiltinEventRecord, BuiltinExecutorBase, BuiltinResult, _safe_head_sha
+from .test_report import REPORT_DIR_ENV, read_reports
 
 DEFAULT_TEST_TIMEOUT_SECONDS = 1800
 
@@ -68,6 +72,33 @@ class RunTestsStep(BuiltinExecutorBase):
             return BuiltinResult(outcome="failure", detail=detail, events=tuple(emitted_events))
 
         timeout_seconds = settings.test_timeout_seconds
+        # A fresh directory outside the working copy, so a report left from
+        # an earlier run is never counted and nothing lands in the branch.
+        report_dir = Path(tempfile.mkdtemp(prefix="foreman-test-report-"))
+        try:
+            return self._run_command(
+                command=command,
+                timeout_seconds=timeout_seconds,
+                working_dir=working_dir,
+                report_dir=report_dir,
+                emit=emit,
+                emitted_events=emitted_events,
+            )
+        finally:
+            shutil.rmtree(report_dir, ignore_errors=True)
+
+    def _run_command(
+        self,
+        *,
+        command: str,
+        timeout_seconds: int,
+        working_dir: Path,
+        report_dir: Path,
+        emit: Callable[[str, dict[str, Any]], None],
+        emitted_events: list[BuiltinEventRecord],
+    ) -> BuiltinResult:
+        """Run the test command, stream its output, and record how it ended."""
+
         emit(
             "engine.test_started",
             {
@@ -86,6 +117,7 @@ class RunTestsStep(BuiltinExecutorBase):
             errors="replace",
             bufsize=1,
             start_new_session=True,
+            env={**os.environ, REPORT_DIR_ENV: str(report_dir)},
         )
         assert proc.stdout is not None
         assert proc.stderr is not None
@@ -141,10 +173,13 @@ class RunTestsStep(BuiltinExecutorBase):
         stderr_text = "".join(stderr_chunks).strip()
         output = _combine_output(stdout_text, stderr_text)
         output_tail = _tail_lines(output, 200)
+        report, report_problems = read_reports(report_dir)
+        counted = f" {report.words()}." if report is not None else ""
         if timed_out:
             outcome = "failure"
             detail = (
                 f"Test command timed out after {timeout_seconds}s and was killed."
+                + counted
                 + (f"\n\n{output_tail}" if output_tail else "")
             )
             exit_code: int | None = None
@@ -153,6 +188,7 @@ class RunTestsStep(BuiltinExecutorBase):
             verdict = "passed" if proc.returncode == 0 else "failed"
             detail = (
                 f"Tests {verdict} in {duration_seconds:.1f}s (exit {proc.returncode})."
+                + counted
                 + (f"\n\n{output_tail}" if output_tail else "")
             )
             exit_code = proc.returncode
@@ -169,6 +205,10 @@ class RunTestsStep(BuiltinExecutorBase):
                 "stdout": stdout_text,
                 "stderr": stderr_text,
                 "output_tail": output_tail,
+                # How many tests ran, from the JUnit reports the command
+                # wrote; null when it wrote none Foreman could read.
+                "report": report.as_payload() if report is not None else None,
+                "report_problems": report_problems,
             },
         )
         return BuiltinResult(

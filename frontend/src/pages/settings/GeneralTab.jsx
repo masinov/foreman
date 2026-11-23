@@ -201,7 +201,12 @@ function GeneralForm({ projectId, settings, onSaved }) {
       </SettingsSection>
 
       <SettingsSection id="settings-tests" title="Tests">
-        {textRow("test_command", "Test command", "Run in the task's working copy at the test step", { wide: true })}
+        {textRow(
+          "test_command",
+          "Test command",
+          "Run in the task's working copy at the test step. JUnit XML reports it writes to $FOREMAN_TEST_REPORT_DIR say how many tests ran",
+          { wide: true },
+        )}
         {textRow("test_timeout_seconds", "Give up after", "minutes. Empty: never", { inputMode: "decimal" })}
       </SettingsSection>
 

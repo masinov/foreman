@@ -13,20 +13,21 @@ step's facts beside it, the prompt as the first line).
   - "attempt 2", "Committed" and "Approved by setting";
   - the commit on Test, Review and Merge rows.
 
-  Still to do: the test count ("Passed · 186 tests") needs Foreman to
-  record how many tests ran.
+- **Done, the test count (`feat/test-report-count`, sprint 62 slice 1,
+  ADR-0035):** read from the JUnit XML the test command writes into
+  `FOREMAN_TEST_REPORT_DIR`. A step's records are saved as they happen, so
+  the test step's start is when the tests started.
 - **Then, facts that need the repository:** the files a step changed with
   their added and removed lines, and for a merge what it brought in, where
   main was before, and whether the branch was kept. Also "Session:
   continued from attempt 1", which today is only in the agent's command
   line.
 - **Then, engine fixes found on the way:**
-  - "Ran the tests" is recorded when the tests end, not when they start.
   - Records about a sprint or the engine (`engine.sprint_ready`, sprint
     finished, engine shut down) are pinned to a task through a made-up
     run, because every event must belong to a run and a task. Store them as
     what they are (an ADR first), say on the sprint that it is ready to
-    finish, and list it in the project's Activity.
+    finish, and list it in the project's Activity (sprint 62, slice 3).
 
 ## The sprint page, step by step (owner, 2026-11-21)
 
@@ -359,9 +360,6 @@ here.
 - **The database is in the repository's folder** (`.foreman.db`).
 - **The sprint stream polls SQLite every 500 ms.** It works; an in-process
   bus would let it wake on a write. Low urgency.
-- **`resume_human_gate` and `_run_leased_task`** have their own modules
-  (`foreman/engine/orchestrator/gates.py`, `tasks.py`) but are still
-  methods of the orchestrator class.
 - **No motion for live data** (a row arriving, a step finishing).
 
 **For a later roadmap stage, kept so nothing is lost:**
@@ -397,5 +395,8 @@ here.
 - the task and sprint pages were looked at against real runs (Assay sprints
   1 and 2; ASS-10 and ASS-16 on 2026-11-22);
 - the manager's conversation is kept in SQLite;
+- `resume_human_gate` and `_run_leased_task` each sit in their own module
+  of the orchestrator package; sprint 61 found that was all the item
+  needed;
 - a task's priority and size can be edited (sprint 59).
 - **Decided against:** Python `Enum` classes for statuses (sprint 61).

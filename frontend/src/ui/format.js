@@ -75,6 +75,11 @@ export function formatClock(timestamp) {
 }
 
 /** 28500 -> "28.5K", 1200000 -> "1.2M". */
+/** A count as a person reads it: "1,599". */
+export function formatCount(count) {
+  return (Number(count) || 0).toLocaleString("en-US");
+}
+
 export function formatTokens(count) {
   const value = Number(count) || 0;
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;

@@ -69,6 +69,33 @@ class FileDiff(BaseModel):
     total_chars: int
 
 
+class TestCounts(BaseModel):
+    """How many tests ran and how they ended, from the test command's JUnit reports."""
+
+    __test__ = False  # not a test class, whatever pytest thinks of the name
+
+    tests: int
+    passed: int
+    failed: int
+    skipped: int
+
+
+def test_counts(report: Any) -> TestCounts | None:
+    """The counts a test run recorded, or None when it recorded none."""
+
+    if not isinstance(report, dict):
+        return None
+    try:
+        return TestCounts(
+            tests=int(report["tests"]),
+            passed=int(report.get("passed", 0)),
+            failed=int(report.get("failed", 0)),
+            skipped=int(report.get("skipped", 0)),
+        )
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 class TestsFact(BaseModel):
     __test__ = False  # not a test class, whatever pytest thinks of the name
 
@@ -78,6 +105,8 @@ class TestsFact(BaseModel):
     command: str | None = None
     #: The last line of the test output, which is where runners print totals.
     result_line: str | None = None
+    #: How many tests ran, when the test command wrote a report.
+    counts: TestCounts | None = None
     #: The commit the tests ran on, and the branch head now.
     commit: str | None = None
     head_sha: str | None = None
@@ -179,6 +208,8 @@ class RunItem(BaseModel):
     #: The commit the step was about: the one it made or reviewed, the one
     #: the tests ran on, or the merge commit.
     step_commit: str | None = None
+    #: How many tests a test step ran, when the test command wrote a report.
+    tests: TestCounts | None = None
 
 
 class TaskRuns(BaseModel):

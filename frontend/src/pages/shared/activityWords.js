@@ -1,4 +1,4 @@
-import { formatDuration, humanize } from "../../ui/format";
+import { formatCount, formatDuration, humanize } from "../../ui/format";
 
 // One vocabulary for what happened, used wherever activity is shown: the
 // task's Activity tab, its Agent side bar and Overview, the decision box and
@@ -174,14 +174,32 @@ export function runResult(run) {
 }
 
 /**
+ * How many tests a run counted, from the test command's report: "1,599
+ * tests, 1 skipped", or "3 of 186 tests" when some failed. Empty when
+ * nothing was counted.
+ */
+export function testCountWords(counts) {
+  if (!counts || !Number.isFinite(Number(counts.tests))) return "";
+  const tests = Number(counts.tests);
+  const noun = tests === 1 ? "test" : "tests";
+  const failed = Number(counts.failed) || 0;
+  const skipped = Number(counts.skipped) || 0;
+  const said = failed ? `${formatCount(failed)} of ${formatCount(tests)} ${noun}` : `${formatCount(tests)} ${noun}`;
+  return skipped ? `${said}, ${formatCount(skipped)} skipped` : said;
+}
+
+/**
  * How a step of a task ended, as its Activity says it: a run's result, but
  * a step that made a commit says "Committed", and a gate the project's
  * setting decided says "Approved by setting" in no colour, since no one
- * looked. `earlier` is the run before it, whose commit it is compared with.
+ * looked. A test step adds how many tests ran ("Passed · 1,599 tests").
+ * `earlier` is the run before it, whose commit it is compared with.
  */
 export function stepOutcome(run, earlier = null) {
   const result = runResult(run);
   const role = roleOf(run);
+  const counted = role === TESTS ? testCountWords(run.tests) : "";
+  if (counted && result.word) return { ...result, word: `${result.word} · ${counted}` };
   const outcome = String(run.outcome || "").toLowerCase();
   if (role === HUMAN_GATE && backendOf(run) !== "human" && outcome === "approve") {
     return { ...result, tone: "idle", word: "Approved by setting" };

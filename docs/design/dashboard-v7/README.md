@@ -93,7 +93,9 @@ Workspace / Project / Sprint / Task.
   about, By, Model, May use, Took, Spend, Next), each only where it
   applies, and one button, Download the transcript. No composed summary,
   no headings per kind of step, no JSON or event names, and nothing only
-  one line has.
+  one line has. A test step's result says how many tests ran when the
+  test command reported them: "Passed · 1,599 tests, 1 skipped", "Failed ·
+  3 of 186 tests" (ADR-0035).
 - **A run's story has one rule for long text** (owner, 2026-11-21): what
   someone wrote (an agent's message, a user's guidance or reason) is shown
   whole; code and what a program printed (a command the agent ran, a

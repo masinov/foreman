@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from typing import Any, Sequence
 
@@ -20,6 +21,18 @@ from .rows import (
     _row_to_run,
     _token_usage_from_row,
 )
+
+
+def _json_object(text: Any) -> dict[str, Any] | None:
+    """The object a JSON field held, or None when it held no object."""
+
+    if not isinstance(text, str) or not text:
+        return None
+    try:
+        value = json.loads(text)
+    except ValueError:
+        return None
+    return value if isinstance(value, dict) else None
 
 
 class RunStore(StoreBase):
@@ -154,15 +167,17 @@ class RunStore(StoreBase):
         skip_roles: Sequence[str] = (),
         engine_role: str | None = None,
         commit_events: Sequence[tuple[str, str]] = (),
-    ) -> tuple[list[tuple[Run, int, str | None]], int]:
+        report_event: tuple[str, str] | None = None,
+    ) -> tuple[list[tuple[Run, int, str | None, dict[str, Any] | None]], int]:
         """One page of a task's runs, newest first, and the total count.
 
         Each run comes with its attempt at its step (1 for the first run
-        of that step; records of ``engine_role`` are not attempts) and the
-        commit it was about: its own, else the one the first of
-        ``commit_events`` (event type, field) names. Runs of ``skip_roles``
-        are left out, and so are runs of ``engine_role`` whose detail does
-        not name the task.
+        of that step; records of ``engine_role`` are not attempts), the
+        commit it was about (its own, else the one the first of
+        ``commit_events`` (event type, field) names), and the object the
+        latest ``report_event`` (event type, field) of the run holds, or
+        None. Runs of ``skip_roles`` are left out, and so are runs of
+        ``engine_role`` whose detail does not name the task.
         """
 
         commit_sql = "r.commit_sha"
@@ -174,6 +189,15 @@ class RunStore(StoreBase):
                 " ORDER BY e.timestamp DESC LIMIT 1)"
             )
             commit_params.extend([f"$.{field}", event_type])
+        report_sql = "NULL"
+        report_params: list[Any] = []
+        if report_event is not None:
+            report_sql = (
+                "(SELECT json_extract(e.payload_json, ?) FROM events e"
+                " WHERE e.run_id = r.id AND e.event_type = ?"
+                " ORDER BY e.timestamp DESC LIMIT 1)"
+            )
+            report_params = [f"$.{report_event[1]}", report_event[0]]
         marks = ", ".join("?" for _ in skip_roles) or "NULL"
         steps_sql = f"""
             WITH numbered AS (
@@ -182,7 +206,8 @@ class RunStore(StoreBase):
                            PARTITION BY r.workflow_step, r.role_id = COALESCE(?, '')
                            ORDER BY r.created_at, r.rowid
                        ) AS attempt,
-                       COALESCE({commit_sql}, NULL) AS step_commit
+                       COALESCE({commit_sql}, NULL) AS step_commit,
+                       {report_sql} AS step_report
                 FROM runs r WHERE r.task_id = ?
             )
             SELECT * FROM numbered
@@ -192,7 +217,8 @@ class RunStore(StoreBase):
         """
         # The engine names a task in its records quoted: "during task 'task-1'".
         params: list[Any] = [
-            engine_role, *commit_params, task_id, *skip_roles, engine_role, "'", "'"
+            engine_role, *commit_params, *report_params, task_id, *skip_roles,
+            engine_role, "'", "'",
         ]
         total = self._connection.execute(
             f"SELECT COUNT(*) FROM ({steps_sql})", params
@@ -202,7 +228,8 @@ class RunStore(StoreBase):
             [*params, limit, offset],
         ).fetchall()
         return [
-            (_row_to_run(row), int(row["attempt"]), row["step_commit"]) for row in rows
+            (_row_to_run(row), int(row["attempt"]), row["step_commit"], _json_object(row["step_report"]))
+            for row in rows
         ], int(total)
 
     def list_sprint_activity_page(
