@@ -1,6 +1,6 @@
 import { ENGINE_STATES } from "../../api/workspace";
 import { formatDuration, humanize, plural, shortSha } from "../../ui/format";
-import { FOREMAN, outcomeTone, outcomeWord, runResult, runRole, runTook, SENT_BACK, stepOutcome } from "../shared/activityWords";
+import { FOREMAN, outcomeTone, outcomeWord, runResult, runRole, runTook, SENT_BACK, stepOutcome, testCountWords } from "../shared/activityWords";
 
 // How the task page puts what the API says into words (design 05, 12, 13,
 // 14). Pure functions, so each sentence is tested on its own.
@@ -152,7 +152,9 @@ export function stepRows(task, workflow, engine = null) {
 export function testsWords(tests) {
   const sha = shortSha(tests?.commit);
   const took = formatDuration(tests?.duration_seconds);
-  const where = [took ? `in ${took}` : "", sha ? `at ${sha}` : ""].filter(Boolean).join(" ");
+  const when = [took ? `in ${took}` : "", sha ? `at ${sha}` : ""].filter(Boolean).join(" ");
+  // "1,599 tests, 1 skipped, in 4 min 34 s at abc1234": how many first, when the command reported them.
+  const where = [testCountWords(tests?.counts), when].filter(Boolean).join(", ");
   switch (tests?.status) {
     case "passed":
       return { tone: "passed", word: "Passed", detail: where };

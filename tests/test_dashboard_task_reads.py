@@ -227,7 +227,8 @@ class TaskReadsCase(unittest.TestCase):
             id="e1", run_id="r-test", task_id="t", project_id="p", event_type="engine.test_run",
             timestamp="2026-01-01T00:00:02Z",
             payload={"command": "pytest -q", "exit_code": 0, "duration_seconds": 3.2,
-                     "head_sha": head, "output_tail": "collected\n12 passed in 3.1s\n"}))
+                     "head_sha": head, "output_tail": "collected\n12 passed in 3.1s\n",
+                     "report": {"tests": 12, "passed": 11, "failed": 0, "skipped": 1, "files": 1}}))
         self.store.save_run(Run(
             id="r-rev", task_id="t", project_id="p", role_id="reviewer", workflow_step="review",
             agent_backend="claude_code", status="completed", model="opus", duration_ms=45_000,
@@ -242,6 +243,7 @@ class TaskReadsCase(unittest.TestCase):
         self.assertEqual(tests["status"], "passed")
         self.assertEqual(tests["command"], "pytest -q")
         self.assertEqual(tests["result_line"], "12 passed in 3.1s")
+        self.assertEqual(tests["counts"], {"tests": 12, "passed": 11, "failed": 0, "skipped": 1})
         self.assertEqual(tests["duration_seconds"], 3.2)
         self.assertEqual(tests["commit"], head)
         self.assertEqual(body["facts"]["branch"]["state"], "current")
@@ -343,7 +345,9 @@ class TaskReadsCase(unittest.TestCase):
         run("ready", 7, workflow_step="orchestrator", outcome_detail="engine.sprint_ready", **engine)
         run("head", 8, outcome_detail="Default branch 'main' HEAD changed from 'x' to 'y'.", **engine)
         self.store.save_event(Event(id="e-test", run_id="t1", task_id="t", project_id="p", event_type="engine.test_run",
-                                    timestamp="2026-01-01T00:04:30Z", payload={"head_sha": "b" * 40, "exit_code": 0}))
+                                    timestamp="2026-01-01T00:04:30Z", payload={
+                                        "head_sha": "b" * 40, "exit_code": 0,
+                                        "report": {"tests": 186, "passed": 183, "failed": 3, "skipped": 0, "files": 2}}))
         self.store.save_event(Event(id="e-merge", run_id="m1", task_id="t", project_id="p", event_type="engine.merge",
                                     timestamp="2026-01-01T00:05:30Z", payload={"sha": "c" * 40, "target": "main"}))
 
@@ -359,6 +363,10 @@ class TaskReadsCase(unittest.TestCase):
         self.assertEqual(runs["t1"]["step_commit"], "b" * 40)
         self.assertEqual(runs["m1"]["step_commit"], "c" * 40)
         self.assertIsNone(runs["m1"]["commit_sha"])
+        # How many tests a test step ran; nothing for the other steps.
+        self.assertEqual(runs["t1"]["tests"], {"tests": 186, "passed": 183, "failed": 3, "skipped": 0})
+        self.assertIsNone(runs["d2"]["tests"])
+        self.assertIsNone(runs["m1"]["tests"])
         self.assertEqual([r["id"] for r in self.get("/api/v1/tasks/t/runs?limit=2&offset=2").json()["runs"]], ["d2", "stop"])
 
     def test_runs_say_why_they_ended_as_they_did(self) -> None:

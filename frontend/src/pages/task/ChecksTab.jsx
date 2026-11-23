@@ -35,7 +35,8 @@ function factRows(facts) {
       detail: (
         <span className="cell-stack">
           {tests.detail ? <span>{tests.detail}</span> : null}
-          {facts.tests.result_line ? <Mono quiet>{facts.tests.result_line}</Mono> : null}
+          {/* The output's last line only when no report counted the tests: then it is all there is. */}
+          {facts.tests.result_line && !facts.tests.counts ? <Mono quiet>{facts.tests.result_line}</Mono> : null}
           {facts.tests.status === "not_run" ? <span className="quiet">Foreman has not run the tests on this branch.</span> : null}
         </span>
       ),

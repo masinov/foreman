@@ -890,6 +890,16 @@ describe("Checks", () => {
     expect(screen.queryByRole("heading", { name: "Evidence files" })).toBeNull();
   });
 
+  it("says how many tests ran when the command reported them, and drops the output's last line", async () => {
+    const checks = checksPayload();
+    checks.facts.tests.counts = { tests: 1221, passed: 1220, failed: 0, skipped: 1 };
+    await renderTask(`${BASE}/checks`, taskRoutes({ checks }));
+    const facts = await screen.findByRole("table", { name: "Measured by Foreman" });
+    const row = within(facts).getAllByRole("row")[1];
+    expect(row).toHaveTextContent(/Passed\s*1,221 tests, 1 skipped, in 1 min 54 s at b232eb1/);
+    expect(row).not.toHaveTextContent("Ran 1221 tests in 114.2s OK");
+  });
+
   it("says when nothing was claimed and the tests did not run", async () => {
     const checks = checksPayload();
     checks.facts.tests = { status: "not_run", exit_code: null, duration_seconds: null, command: null, result_line: null, commit: null, head_sha: null };
@@ -903,6 +913,27 @@ describe("Checks", () => {
 });
 
 describe("Activity", () => {
+  it("says how many tests a test step ran, in the table, its result and its story", async () => {
+    const report = { tests: 1221, passed: 1220, failed: 0, skipped: 1 };
+    const routes = taskRoutes({
+      runs: [runItem("run-2", "test", { role_id: "_builtin:run_tests", backend: "builtin", model: null, outcome: "success", tests: report })],
+    });
+    routes[outputUrl("run-2")] = outputPayload("run-2", "", {
+      prompt: null,
+      transcript: [
+        { at: on("11-11"), kind: "engine.test_started", text: "", data: { command: "make test" } },
+        { at: on("11-11"), kind: "engine.test_run", text: "", data: { exit_code: 0, duration_seconds: 114.2, head_sha: COMMIT, report: { ...report, files: 2 } } },
+      ],
+    });
+    await renderTask(`${BASE}/activity`, routes);
+    const table = await screen.findByRole("table", { name: "Steps" });
+    expect(within(table).getAllByRole("row")[1]).toHaveTextContent("Passed · 1,221 tests, 1 skipped");
+    const facts = await screen.findByRole("complementary", { name: "About this step" });
+    expect(facts).toHaveTextContent(/Result\s*Passed · 1,221 tests, 1 skipped/);
+    const story = screen.getByRole("list", { name: "What happened" });
+    expect(story).toHaveTextContent("1,221 tests passed (1 skipped) in 1 min 54 s at b232eb1");
+  });
+
   it("lists runs newest first and shows the picked run: its story, beginning with its prompt, and its facts", async () => {
     const { fetchImpl } = await renderTask(`${BASE}/activity`);
     const table = await screen.findByRole("table", { name: "Steps" });

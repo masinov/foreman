@@ -32,6 +32,7 @@ from .task_models import (
     TaskChecks,
     TaskRuns,
     TestsFact,
+    test_counts,
     TranscriptEntry,
 )
 from .errors import NotFoundError, InvalidRequestError
@@ -46,6 +47,7 @@ from ..domain.activity import (
     RECORD_ROLES,
     RECORD_STEPS,
     STEP_COMMIT_EVENTS,
+    STEP_REPORT_EVENT,
     WHO,
 )
 from ..domain.models import Event, Project, Run, Task
@@ -279,6 +281,7 @@ class TaskReads:
             duration_seconds=float(duration) if isinstance(duration, (int, float)) else None,
             command=str(latest.get("command") or "") or None,
             result_line=lines[-1] if lines else None,
+            counts=test_counts(latest.get("report")),
             commit=tested,
             head_sha=live_head,
         )
@@ -329,11 +332,17 @@ class TaskReads:
             skip_roles=sorted(NOT_STEP_ROLES),
             engine_role=ENGINE_RECORD_ROLE,
             commit_events=STEP_COMMIT_EVENTS,
+            report_event=STEP_REPORT_EVENT,
         )
         return TaskRuns(
             runs=[
-                RunItem(**_run_fields(run), attempt=attempt, step_commit=step_commit)
-                for run, attempt, step_commit in runs
+                RunItem(
+                    **_run_fields(run),
+                    attempt=attempt,
+                    step_commit=step_commit,
+                    tests=test_counts(report),
+                )
+                for run, attempt, step_commit, report in runs
             ],
             total=total,
             limit=limit,

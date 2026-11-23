@@ -103,3 +103,6 @@ STEP_COMMIT_EVENTS: tuple[tuple[str, str], ...] = (
     ("engine.test_run", "head_sha"),
     ("engine.merge", "sha"),
 )
+
+#: Where a test step says how many tests ran: the event, and its field.
+STEP_REPORT_EVENT: tuple[str, str] = ("engine.test_run", "report")

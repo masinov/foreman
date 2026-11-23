@@ -126,6 +126,10 @@ class BuiltinSteps(WorkflowRunnerBase):
             step_id=step,
             carried_output=carried_output,
             store=self.store,
+            # Saved as they happen, so each record carries its own time:
+            # the tests' start is when they started, and their output can
+            # be followed while they run.
+            event_recorder=lambda event_record: self.persist_builtin_event(run, event_record),
             evidence_builder=self.build_completion_evidence,
             working_dir=task_working_dir(project, task),
         )

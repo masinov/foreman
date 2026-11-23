@@ -5,7 +5,7 @@
 // events this file has no words for are left out of the story; the
 // transcript a person can download keeps everything.
 
-import { formatDuration, formatMoney, formatTokens, humanize, plural, shortSha } from "../../ui/format";
+import { formatCount, formatDuration, formatMoney, formatTokens, humanize, plural, shortSha } from "../../ui/format";
 import { outcomeTone, outcomeWord } from "../shared/activityWords";
 
 /** Bookkeeping the engine records for itself; it tells a reader nothing. */
@@ -198,7 +198,7 @@ export function sayEntry(entry) {
       return {
         says: join(
           [
-            passed ? "Tests passed" : `Tests failed${d.exit_code === null || d.exit_code === undefined ? "" : ` (exit code ${d.exit_code})`}`,
+            testVerdict(passed, d.exit_code, d.report),
             d.duration_seconds !== undefined && d.duration_seconds !== null ? `in ${formatDuration(d.duration_seconds)}` : "",
             d.head_sha ? `at ${shortSha(d.head_sha)}` : "",
           ],
@@ -280,6 +280,27 @@ export function sayEntry(entry) {
       // Not known here: not a line. The downloaded transcript keeps it.
       return null;
   }
+}
+
+/**
+ * How a test run ended, with how many tests ran when the command wrote a
+ * report: "1,599 tests passed (1 skipped)" or "3 of 186 tests failed (exit
+ * code 1)". Without a report, "Tests passed" or "Tests failed".
+ */
+function testVerdict(passed, exitCode, report) {
+  const exit = passed || exitCode === null || exitCode === undefined ? "" : ` (exit code ${exitCode})`;
+  const tests = Number(report?.tests);
+  if (!Number.isFinite(tests)) return passed ? "Tests passed" : `Tests failed${exit}`;
+  const noun = tests === 1 ? "test" : "tests";
+  const failed = Number(report.failed) || 0;
+  const skipped = Number(report.skipped) || 0;
+  let said;
+  if (passed) said = `${formatCount(tests)} ${noun} passed`;
+  else if (failed) said = `${formatCount(failed)} of ${formatCount(tests)} ${noun} failed${exit}`;
+  // The command failed though every test it reported passed: a build or a
+  // second suite that wrote no report.
+  else said = `Tests failed${exit}; the ${formatCount(tests)} reported passed`;
+  return skipped ? `${said} (${formatCount(skipped)} skipped)` : said;
 }
 
 /**

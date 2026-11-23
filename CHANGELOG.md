@@ -7,6 +7,17 @@ memory changes rather than versioned product releases.
 
 ## [Unreleased]
 
+### Sprint 62
+
+- Foreman counts the tests (ADR-0035, sprint 62 slice 1).
+  - It names an empty directory in `FOREMAN_TEST_REPORT_DIR` for each test run.
+  - A test command that writes JUnit XML reports there tells Foreman how many tests ran.
+  - A test step then reads "Passed · 1,599 tests, 1 skipped" in a task's Steps table and in its facts, and "1,599 tests passed (1 skipped)" in its story.
+  - The Checks tab's Tests row says the count and no longer shows the output's last line (the lone "OK").
+  - `engine.test_run` carries `report`, the API serves `facts.tests.counts` and `runs[].tests`, and `foreman` prints the counts with the event.
+  - A report that declares a document type, is over 32 MB or is a link is not read.
+- A built-in step's records are saved as they happen. The test step's start is recorded when the tests start, and their output while it prints.
+
 ### After sprint 61
 
 - The dashboard's tab icon is the F of the wordmark (owner, 2026-11-22): Fraunces at weight 600, as the "Foreman" in the top bar is set. It used to be a drawn block F that matched nothing on the page.

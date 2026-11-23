@@ -8,6 +8,7 @@ authorize the merge or the engine may approve it with an audit record.
 
 from __future__ import annotations
 
+from datetime import datetime
 import subprocess
 import tempfile
 import unittest
@@ -325,6 +326,26 @@ class MergeGateFlowTests(unittest.TestCase):
             # The rest of the payload is untouched.
             self.assertEqual(paused[0].payload["step"], "merge_approval")
             self.assertEqual(paused[0].payload["policy"], "merge_approval")
+
+    def test_the_test_steps_records_carry_the_time_they_happened(self) -> None:
+        # Saved as they happen, not all at the end: the start is before the
+        # output, and the output before the end.
+        repo, db_path = self._workspace()
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, task = self._seed(store, repo, settings={"test_command": "sleep 0.3; echo ran; sleep 0.3"})
+            orchestrator = ForemanOrchestrator(
+                store, agent_runners={"claude_code": _ScriptedRunner([self._developer(repo), _reviewer_sees_tests_then_approves])}
+            )
+            orchestrator.run_project(project.id)
+            test_run = next(r for r in store.list_runs(task_id=task.id) if r.workflow_step == "test")
+            at = {e.event_type: e.timestamp for e in store.list_events(run_id=test_run.id)}
+            started, output, ended = (
+                datetime.fromisoformat(at[kind].replace("Z", "+00:00"))
+                for kind in ("engine.test_started", "engine.test_output", "engine.test_run")
+            )
+            self.assertGreaterEqual((output - started).total_seconds(), 0.25)
+            self.assertGreaterEqual((ended - output).total_seconds(), 0.25)
 
     def test_failing_tests_return_to_develop_before_any_review(self) -> None:
         repo, db_path = self._workspace()

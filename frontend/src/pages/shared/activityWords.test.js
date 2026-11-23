@@ -1,5 +1,5 @@
 import { stepRows } from "../task/taskWords";
-import { FOREMAN, runBy, runResult, runRole, stepOutcome, whoWord } from "./activityWords";
+import { FOREMAN, runBy, runResult, runRole, stepOutcome, testCountWords, whoWord } from "./activityWords";
 
 // A run as the task's own record has it (`workflow_step`, `agent_backend`).
 const run = (fields) => ({ status: "completed", agent_backend: "claude_code", model: "sonnet-5-5", ...fields });
@@ -48,6 +48,18 @@ describe("how a step of a task ended, in its row", () => {
     expect(stepOutcome(run({ ...gate, agent_backend: "builtin" }))).toMatchObject({ word: "Approved by setting", tone: "idle" });
     expect(stepOutcome(run({ ...gate, agent_backend: "human" }))).toMatchObject({ word: "Approved", tone: "passed" });
     expect(stepOutcome(run({ role_id: "code_reviewer", outcome: "steer", commit_sha: "c".repeat(40) })).word).toBe("Sent back");
+  });
+
+  it("says how many tests a test step ran, when the command reported them", () => {
+    const tests = { role_id: "_builtin:run_tests", agent_backend: "builtin", model: null };
+    const passed = run({ ...tests, outcome: "success", tests: { tests: 1599, passed: 1598, failed: 0, skipped: 1 } });
+    expect(stepOutcome(passed)).toMatchObject({ word: "Passed · 1,599 tests, 1 skipped", tone: "passed" });
+    const failed = run({ ...tests, outcome: "failure", tests: { tests: 186, passed: 183, failed: 3, skipped: 0 } });
+    expect(stepOutcome(failed)).toMatchObject({ word: "Failed · 3 of 186 tests", tone: "failed" });
+    // No report: the word alone.
+    expect(stepOutcome(run({ ...tests, outcome: "success", tests: null })).word).toBe("Passed");
+    expect(testCountWords({ tests: 1, passed: 1, failed: 0, skipped: 0 })).toBe("1 test");
+    expect(testCountWords(undefined)).toBe("");
   });
 });
 

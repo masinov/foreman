@@ -1662,6 +1662,22 @@ foreman worktree list <project-id>
 foreman worktree prune <project-id>   # done/cancelled tasks + dangling entries
 ```
 
+### How many tests ran
+
+Foreman names an empty directory in `FOREMAN_TEST_REPORT_DIR` each time it
+runs the tests. A `test_command` that writes JUnit XML reports there tells
+Foreman how many tests ran, and the pages say "Passed · 1,599 tests"
+(ADR-0035). A command that writes none still runs; the count is unknown.
+
+```bash
+# pytest
+pytest --junitxml="$FOREMAN_TEST_REPORT_DIR/pytest.xml"
+# vitest
+npx vitest run --reporter=default --reporter=junit --outputFile.junit="$FOREMAN_TEST_REPORT_DIR/vitest.xml"
+# unittest, with unittest-xml-reporting installed
+python -m xmlrunner discover -s tests -o "$FOREMAN_TEST_REPORT_DIR"
+```
+
 ### Giving each worktree its own environment
 
 A worktree is a clean checkout: it has none of your ignored local build state.
