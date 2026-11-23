@@ -10,7 +10,7 @@ import { PolicyRules } from "./PolicyRules";
 import { ReadOnlyRow, SettingRow, SettingsSection } from "./SettingRow";
 import { changedKeys, changesOf, sourceOf, toDraft } from "./settingsForm";
 import { WorkingCopies } from "./WorkingCopies";
-import { DECIDERS, machineRows, NOTIFICATIONS } from "./settingsWords";
+import { DECIDERS, machineRows, NOTE_CHOICES, NOTIFICATIONS } from "./settingsWords";
 
 function Choice({ options, value, onChange, ...controlProps }) {
   return (
@@ -225,6 +225,12 @@ function GeneralForm({ projectId, settings, onSaved }) {
         {textRow("default_branch", "Merges land on", "the branch finished tasks are merged into", { narrow: false })}
         {textRow("spec_path", "Specification", "A file in the repository that agents are pointed to. Empty: none", { wide: true })}
         {textRow("review_diff_max_chars", "Reviewer reads at most", "characters of a change; a longer one is cut and the reviewer is told", { inputMode: "numeric" })}
+        {choiceRow(
+          "write_checkpoint_notes",
+          "Checkpoint note",
+          NOTE_CHOICES,
+          "When a sprint is finished, a note of its tasks is committed to docs/checkpoints/ before the sprint is tagged",
+        )}
       </SettingsSection>
 
       <WorkingCopies projectId={projectId} />

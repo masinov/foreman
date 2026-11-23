@@ -205,9 +205,11 @@ export function sayEntry(entry) {
     case "engine.merge":
       return { says: join([`Merged into ${d.target}`, d.sha ? `at ${shortSha(d.sha)}` : ""], " "), mono: d.branch, tone: "passed" };
     case "engine.push":
-      return { says: `Pushed ${d.branch} to ${d.remote}` };
+      return { says: `Pushed ${d.tag ? `the tag ${d.tag}` : d.branch} to ${d.remote}` };
     case "engine.push_failed":
-      return { says: `Merged, but not pushed to ${d.remote}`, body: d.error || "", tone: "failed" };
+      return d.tag
+        ? { says: `Tagged, but the tag ${d.tag} was not pushed to ${d.remote}`, body: d.error || "", tone: "failed" }
+        : { says: `Merged, but not pushed to ${d.remote}`, body: d.error || "", tone: "failed" };
     case "engine.checkout_updated":
       return { says: `Brought the project's folder to ${d.branch} at ${shortSha(d.sha)}`, mono: d.path };
     case "engine.checkout_behind":

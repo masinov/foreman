@@ -33,6 +33,7 @@ export const EFFECTIVE = {
   worktree_link_paths: ["venv"],
   context_dir: "",
   review_diff_max_chars: 16000,
+  write_checkpoint_notes: false,
 };
 
 export const COPIES_URL = "GET /api/v1/projects/foreman/worktrees";

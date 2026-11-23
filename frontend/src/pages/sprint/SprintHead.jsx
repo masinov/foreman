@@ -11,7 +11,7 @@ import { Menu } from "../../ui/Menu";
 import { LongText } from "../../ui/LongText";
 import { Mono } from "../../ui/Mono";
 import { SectionHeading } from "../../ui/SectionHeading";
-import { formatDay, formatMoney, formatTokens } from "../../ui/format";
+import { formatDay, formatMoney, formatTokens, shortSha } from "../../ui/format";
 import { TaskCounts } from "../shared/TaskCounts";
 import { ReasonDialog } from "../shared/ReasonDialog";
 import { EditSprintDialog } from "./EditSprintDialog";
@@ -81,6 +81,45 @@ function stateSentence(sprint) {
 }
 
 /**
+ * A finished sprint's checkpoint (spec 6.4): the tag on the default branch
+ * and the commit it marks, the note when one was written, or why there is
+ * no tag.
+ */
+function checkpointRows(checkpoint) {
+  if (!checkpoint) return [];
+  if (checkpoint.problem) {
+    return [{ key: "tag", term: "Tag", value: <span className="tone-failed">Not tagged: {checkpoint.problem}</span> }];
+  }
+  return [
+    {
+      key: "tag",
+      term: "Tag",
+      value: (
+        <span className="details-list__line">
+          <Mono className="details-list__cut" title={checkpoint.tag}>
+            {checkpoint.tag}
+          </Mono>{" "}
+          <span className="quiet">at {shortSha(checkpoint.sha)}</span>
+        </span>
+      ),
+    },
+    checkpoint.note_path
+      ? {
+          key: "note",
+          term: "Note",
+          value: (
+            <span className="details-list__line">
+              <Mono className="details-list__cut" title={checkpoint.note_path}>
+                {checkpoint.note_path}
+              </Mono>
+            </span>
+          ),
+        }
+      : null,
+  ];
+}
+
+/**
  * The title row (Edit, the state action that applies, More), then the goal
  * beside the sprint's details, as a task's Overview sets what it is beside
  * its facts. `onChanged` runs after a save or a state change so the page
@@ -125,6 +164,7 @@ export function SprintHead({ sprint, onChanged }) {
     sprint.picks_own_tasks
       ? { key: "foreman", term: "Started by Foreman", value: `${sprint.started_by_foreman ?? 0} of ${sprint.foreman_limit ?? 0}` }
       : null,
+    ...checkpointRows(sprint.checkpoint),
   ].filter(Boolean);
   return (
     <>

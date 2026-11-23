@@ -319,6 +319,33 @@ describe("edit and the state action", () => {
   });
 });
 
+describe("a finished sprint's checkpoint", () => {
+  const finished = (checkpoint) =>
+    sprintRoutes({ sprint: sprintPayload({ status: "completed", completed_at: "2025-01-02T10:00:00Z", checkpoint }) });
+
+  it("names the tag, the commit it marks and the note", async () => {
+    await renderSprint(
+      "/dashboard/sprints/sprint-56",
+      finished({ tag: "checkpoint-20250102-engine-truthfulness", sha: "6332732aa0c0ffee", note_path: "docs/checkpoints/checkpoint-20250102-engine-truthfulness.md", problem: null }),
+    );
+    const details = screen.getByRole("region", { name: "Details" });
+    expect(details).toHaveTextContent(/Tag\s*checkpoint-20250102-engine-truthfulness at 6332732/);
+    expect(details).toHaveTextContent(/Note\s*docs\/checkpoints\/checkpoint-20250102-engine-truthfulness\.md/);
+  });
+
+  it("says why a sprint was not tagged, and shows no note", async () => {
+    await renderSprint("/dashboard/sprints/sprint-56", finished({ tag: null, sha: null, note_path: null, problem: "The repository has no branch 'main' to tag." }));
+    const details = screen.getByRole("region", { name: "Details" });
+    expect(details).toHaveTextContent("Not tagged: The repository has no branch 'main' to tag.");
+    expect(details).not.toHaveTextContent("Note");
+  });
+
+  it("shows nothing about a checkpoint on a sprint that is not finished", async () => {
+    await renderSprint("/dashboard/sprints/sprint-56");
+    expect(screen.getByRole("region", { name: "Details" })).not.toHaveTextContent("Tag");
+  });
+});
+
 describe("new task in the sprint", () => {
   it("writes a task straight into this sprint and reloads", async () => {
     const routes = sprintRoutes();

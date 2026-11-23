@@ -48,3 +48,4 @@ Filename format:
 | ADR-0033 | A Note Is For The Developer | accepted |
 | ADR-0034 | Outcome Numbers | accepted |
 | ADR-0035 | Tests Are Counted From JUnit Reports | accepted |
+| ADR-0036 | A Finished Sprint Is Tagged | accepted |

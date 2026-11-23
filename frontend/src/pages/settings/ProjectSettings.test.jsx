@@ -154,6 +154,18 @@ describe("General: Save and Discard", () => {
     expect(screen.getByRole("button", { name: "Discard" })).toBeEnabled();
   });
 
+  it("turns the checkpoint note on as true, not as the word", async () => {
+    const fetchImpl = await renderGeneral();
+    fetchImpl.routes[SAVE_URL] = settingsPayload();
+    const advanced = screen.getByRole("region", { name: "Advanced" });
+    const note = within(advanced).getByLabelText("Checkpoint note");
+    expect(note.selectedOptions[0]).toHaveTextContent("No note");
+    fireEvent.change(note, { target: { value: "on" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(saves(fetchImpl)).toHaveLength(1));
+    expect(saves(fetchImpl)[0].body.settings).toEqual({ write_checkpoint_notes: true });
+  });
+
   it("lets a user or Foreman finish sprints, beside who approves merges", async () => {
     const fetchImpl = await renderGeneral();
     fetchImpl.routes[SAVE_URL] = settingsPayload();

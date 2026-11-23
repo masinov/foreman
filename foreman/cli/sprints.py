@@ -135,15 +135,23 @@ def handle_sprint_complete(args: argparse.Namespace) -> int:
             return 1
         project = store.get_project(sprint.project_id)
         db_path = store.db_path
+        checkpoint = Services(store).sprints.get_sprint(sprint.id).get("checkpoint")
 
-    print_lines(
+    lines = [
         "Completed sprint",
         f"Database: {db_path}",
         f"Project: {sprint.project_id} | {project.name if project is not None else 'unknown'}",
         f"Sprint: {sprint.id} | {sprint.title}",
         f"Status: {sprint.status}",
         f"Completed at: {sprint.completed_at}",
-    )
+    ]
+    if checkpoint and checkpoint.get("problem"):
+        lines.append(f"Not tagged: {checkpoint['problem']}")
+    elif checkpoint:
+        lines.append(f"Tagged: {checkpoint['tag']} at {str(checkpoint['sha'] or '')[:7]}")
+        if checkpoint.get("note_path"):
+            lines.append(f"Note: {checkpoint['note_path']}")
+    print_lines(*lines)
     return 0
 
 

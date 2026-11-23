@@ -10,6 +10,7 @@ from ..domain.models import Project, Sprint
 from ..domain.settings import settings_of
 from ..store import ForemanStore
 from ..history.records import RunRecords
+from ..mutations.checkpoint import SprintCheckpoints
 
 
 class SprintFlow:
@@ -55,6 +56,8 @@ class SprintFlow:
             "sprint_id": sprint.id,
             "sprint_title": sprint.title,
         }, sprint=sprint)
+        # The same checkpoint as when a user finishes it (spec 6.4).
+        SprintCheckpoints(self.store, self.records).record(project, sprint)
 
         next_sprint = self.store.get_next_planned_sprint(project.id)
         if next_sprint is None:

@@ -34,8 +34,8 @@ The product that exists holds together before stage 2 of `docs/ROADMAP.md`
 
 | # | Slice | Status | Executed by | Deliverable |
 |---|-------|--------|-------------|-------------|
-| 1 | How many tests ran, read from the JUnit XML report the test command writes; the test step's records saved as they happen, so the step shows when the tests started | in_progress | Claude | `feat/test-report-count` |
-| 2 | Finishing a sprint as spec §6.4 says: tag the repository, write the checkpoint note when `write_checkpoint_notes` is on, record `engine.checkpoint` | todo | Claude | |
+| 1 | How many tests ran, read from the JUnit XML report the test command writes; the test step's records saved as they happen, so the step shows when the tests started | done | Claude | `feat/test-report-count` (ADR-0035); after the owner's look, `feat/test-results-said-once`: the count on Overview too, the Checks detail is the log's sentence with the failed tests named, no lone "OK". Foreman's and Assay's test commands write reports; Assay pushed (owner, 2026-11-23) |
+| 2 | Finishing a sprint as spec §6.4 says: tag the repository, write the checkpoint note when `write_checkpoint_notes` is on, record `engine.checkpoint` | done | Claude | `feat/sprint-checkpoint` (ADR-0036): one checkpoint for a user's and the engine's finish; Tag and Note rows in the sprint's Details; "Checkpoint note" in Settings; `foreman sprint complete` prints the tag |
 | 3 | Records about a sprint or the engine kept as what they are, not pinned to a task through a made-up run (an ADR first); the sprint says it is ready to finish | todo | Claude | |
 | 4 | Repository facts per step: files and lines changed; for a merge, what it brought in, where `main` was, whether the branch was kept | todo | Claude | |
 | 5 | The project page's tabs with their controls on the tab line; spend written one way | todo | Claude | |

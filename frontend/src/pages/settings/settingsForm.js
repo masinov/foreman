@@ -39,6 +39,8 @@ function whole({ required = false } = {}) {
 }
 
 const choice = { read: (value) => String(value ?? ""), write: (text) => ({ value: text }) };
+// A yes-or-no setting, shown as a choice of two.
+const toggle = { read: (value) => (value ? "on" : "off"), write: (text) => ({ value: text === "on" }) };
 const text = { read: (value) => String(value ?? ""), write: (value) => ({ value: String(value).trim() }) };
 
 const money = {
@@ -88,6 +90,7 @@ export const CODECS = {
   default_branch: { ...text, required: "Name the branch merges land on." },
   spec_path: text,
   review_diff_max_chars: { ...whole({ required: true }) },
+  write_checkpoint_notes: toggle,
 };
 
 // Kept on the project itself rather than among its settings; the API takes

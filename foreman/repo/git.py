@@ -148,7 +148,23 @@ def push_branch(
     prompt would hold the step open until the timeout.
     """
 
-    args = ("push", remote, f"refs/heads/{branch}:refs/heads/{branch}")
+    return _push(repo_path, remote, f"refs/heads/{branch}:refs/heads/{branch}", timeout)
+
+
+def push_tag(
+    repo_path: str | Path,
+    *,
+    remote: str,
+    tag: str,
+    timeout: float = PUSH_TIMEOUT_SECONDS,
+) -> GitCommandResult:
+    """Push one tag to a remote. Never raises; the result says what happened."""
+
+    return _push(repo_path, remote, f"refs/tags/{tag}:refs/tags/{tag}", timeout)
+
+
+def _push(repo_path: str | Path, remote: str, refspec: str, timeout: float) -> GitCommandResult:
+    args = ("push", remote, refspec)
     try:
         result = subprocess.run(
             ["git", *args],
@@ -171,6 +187,20 @@ def push_branch(
         stdout=result.stdout.strip(),
         stderr=result.stderr.strip(),
     )
+
+
+def tag_commit(repo_path: str | Path, tag: str) -> str | None:
+    """The commit a tag points at, or None when there is no such tag."""
+
+    result = run_git(repo_path, "rev-parse", "--verify", "--quiet", f"refs/tags/{tag}^{{commit}}", check=False)
+    sha = result.stdout.strip()
+    return sha if result.returncode == 0 and sha else None
+
+
+def create_tag(repo_path: str | Path, tag: str, sha: str, message: str) -> GitCommandResult:
+    """Create an annotated tag at ``sha``. Never raises; the result says what happened."""
+
+    return run_git(repo_path, "tag", "--annotate", tag, "--message", message, sha, check=False)
 
 
 def merge_branch(
