@@ -288,6 +288,21 @@ class TaskStore(StoreBase):
         ).fetchone()
         return _row_to_task(row) if row else None
 
+    def find_tasks_by_key(self, task_key: str, *, project_id: str | None = None) -> list[Task]:
+        """Return the tasks carrying ``task_key`` (e.g. ``FOR-56``), one per project.
+
+        A key is unique within a project, not across them. Matching ignores case.
+        """
+
+        sql = "SELECT * FROM tasks WHERE task_key = ? COLLATE NOCASE AND task_key <> ''"
+        params: list[Any] = [task_key.strip()]
+        if project_id is not None:
+            sql += " AND project_id = ?"
+            params.append(project_id)
+        sql += " ORDER BY project_id, id"
+        rows = self._connection.execute(sql, tuple(params)).fetchall()
+        return [_row_to_task(row) for row in rows]
+
     def list_tasks(
         self,
         *,

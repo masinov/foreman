@@ -180,7 +180,7 @@ def handle_backlog_plan(args: argparse.Namespace) -> int:
             return 1
         tasks = []
         for task_id in args.task_ids:
-            task = resolve_task_or_print(store, task_id)
+            task = resolve_task_or_print(store, task_id, project_id=project.id)
             if task is None:
                 return 1
             if task.project_id != project.id:
@@ -303,14 +303,14 @@ def register_backlog(subparsers: argparse._SubParsersAction) -> None:
     backlog_accept = commands.add_parser(
         "accept", help="Accept a filed task. It stays in the backlog until planned."
     )
-    backlog_accept.add_argument("task_id", help="Task identifier.")
+    backlog_accept.add_argument("task_id", help="Task id or key (FOR-56).")
     add_db_option(backlog_accept, help_text=task_db_help)
     set_handler(backlog_accept, handle_task_accept, "backlog accept")
 
     backlog_decline = commands.add_parser(
         "decline", help="Decline a filed task. It is kept, marked declined."
     )
-    backlog_decline.add_argument("task_id", help="Task identifier.")
+    backlog_decline.add_argument("task_id", help="Task id or key (FOR-56).")
     backlog_decline.add_argument("--reason", help="Why it was declined.")
     add_db_option(backlog_decline, help_text=task_db_help)
     set_handler(backlog_decline, handle_backlog_decline, "backlog decline")
@@ -319,7 +319,7 @@ def register_backlog(subparsers: argparse._SubParsersAction) -> None:
         "plan", help="Plan accepted tasks into a planned or active sprint, or a new one."
     )
     backlog_plan.add_argument("project_id", help="Project identifier.")
-    backlog_plan.add_argument("task_ids", nargs="+", metavar="TASK_ID", help="Tasks to plan.")
+    backlog_plan.add_argument("task_ids", nargs="+", metavar="TASK", help="Tasks to plan, by id or key.")
     target = backlog_plan.add_mutually_exclusive_group(required=True)
     target.add_argument("--sprint", dest="sprint_id", help="An existing planned or active sprint.")
     target.add_argument(
@@ -332,6 +332,6 @@ def register_backlog(subparsers: argparse._SubParsersAction) -> None:
     backlog_unplan = commands.add_parser(
         "unplan", help="Move a task that has not started from its sprint back to the backlog."
     )
-    backlog_unplan.add_argument("task_id", help="Task identifier.")
+    backlog_unplan.add_argument("task_id", help="Task id or key (FOR-56).")
     add_db_option(backlog_unplan, help_text=task_db_help)
     set_handler(backlog_unplan, handle_backlog_unplan, "backlog unplan")

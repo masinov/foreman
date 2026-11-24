@@ -324,7 +324,7 @@ def handle_engine_command(args: argparse.Namespace) -> int:
         if project is None:
             return 1
         if task_id is not None:
-            task = resolve_task_or_print(store, task_id)
+            task = resolve_task_or_print(store, task_id, project_id=project.id)
             if task is None:
                 return 1
             if task.project_id != project.id:
@@ -457,7 +457,7 @@ def register_engine(subparsers: argparse._SubParsersAction) -> None:
         sub = engine_commands_parser.add_parser(name, help=help_text)
         sub.add_argument("project_id", help="Project identifier.")
         if needs_task:
-            sub.add_argument("task_id", help="Task identifier.")
+            sub.add_argument("task_id", help="Task id or key (FOR-56).")
         sub.add_argument(
             "--by",
             default=None,

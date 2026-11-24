@@ -392,12 +392,31 @@ def resolve_sprint_or_print(store: ForemanStore, sprint_id: str) -> Sprint | Non
     return sprint
 
 
-def resolve_task_or_print(store: ForemanStore, task_id: str) -> Task | None:
-    task = store.get_task(task_id)
-    if task is None:
-        print(f"Unknown task: {task_id}", file=sys.stderr)
+def resolve_task_or_print(
+    store: ForemanStore, task_ref: str, *, project_id: str | None = None
+) -> Task | None:
+    """Find a task by its id or its key (``FOR-56``); print why when none is found.
+
+    An id wins. A key is looked up in ``project_id`` when the command knows the
+    project; a key several projects carry is refused, naming them.
+    """
+
+    task = store.get_task(task_ref)
+    if task is not None:
+        return task
+    matches = store.find_tasks_by_key(task_ref, project_id=project_id)
+    if len(matches) == 1:
+        return matches[0]
+    if matches:
+        listing = ", ".join(f"{match.project_id} ({match.id})" for match in matches)
+        print(
+            f"The key {task_ref} is in several projects: {listing}. "
+            "Give the task's id instead.",
+            file=sys.stderr,
+        )
         return None
-    return task
+    print(f"Unknown task: {task_ref}", file=sys.stderr)
+    return None
 
 
 def select_task_creation_sprint(store: ForemanStore, project_id: str) -> Sprint | None:

@@ -12,7 +12,7 @@ from ..domain.models import Event
 from ..services.sprints import STREAM_POLL_INTERVAL_SECONDS
 from ..services import Services
 from ..services.errors import NotFoundError
-from ..services.reports import ReportService, event_from_payload
+from ..services.reports import event_from_payload
 from ..store import ForemanStore
 from .common import (
     DB_OPTION_NOTE,
@@ -31,6 +31,7 @@ from .common import (
     render_board_task_line,
     render_event_line,
     resolve_db_path_or_print,
+    resolve_task_or_print,
     set_handler,
     token_split_parts,
     truncate_text,
@@ -162,9 +163,10 @@ def _build_project_watch_plan(store: ForemanStore, project_id: str, *, limit: in
 
 def _report(
     args: argparse.Namespace,
-    read: Callable[[ReportService], dict[str, Any]],
+    read: Callable[..., dict[str, Any]],
     *,
     missing: str | None = None,
+    task_ref: str | None = None,
 ) -> dict[str, Any] | None:
     """Read one report from the services, or say what was not found and return None."""
 
@@ -173,6 +175,16 @@ def _report(
         return None
     with ForemanStore(db_path) as store:
         store.initialize()
+        if task_ref is not None:
+            # A task is named by its id or its key; the read below needs the id.
+            task = resolve_task_or_print(store, task_ref)
+            if task is None:
+                return None
+            try:
+                return read(Services(store).reports, task.id)
+            except NotFoundError as exc:
+                print(str(exc), file=sys.stderr)
+                return None
         try:
             return read(Services(store).reports)
         except NotFoundError as exc:
@@ -270,7 +282,7 @@ def handle_board(args: argparse.Namespace) -> int:
 def handle_history(args: argparse.Namespace) -> int:
     """Handle ``foreman history``."""
 
-    history = _report(args, lambda reports: reports.history(args.task_id))
+    history = _report(args, lambda reports, task_id: reports.history(task_id), task_ref=args.task_id)
     if history is None:
         return 1
     if args.as_json:
@@ -641,7 +653,7 @@ def register_history(subparsers: argparse._SubParsersAction) -> None:
         "history",
         help="Show run and event history for a task.",
     )
-    history_parser.add_argument("task_id", help="Task identifier.")
+    history_parser.add_argument("task_id", help="Task id or key (FOR-56).")
     add_db_option(
         history_parser,
         help_text=f"Path to the SQLite store containing task history. {DB_OPTION_NOTE}",
