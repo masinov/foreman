@@ -698,6 +698,19 @@ describe("Overview", () => {
     expect(within(row).getAllByRole("cell")[1].textContent).toBe("Passed · 1,221 tests in 1 min 54 s");
   });
 
+  it("says a review approved, not committed, when the branch was brought up to date before it", async () => {
+    // FOR-52, 2026-11-24: the merge step merged main into the branch, so the
+    // next review recorded a new head; reviews do not commit.
+    const task = taskDetail();
+    task.runs = task.runs.map((entry) =>
+      entry.workflow_step === "review" ? { ...entry, commit_sha: "299cc5e" + "0".repeat(33) } : entry,
+    );
+    await renderTask(BASE, taskRoutes({ task }));
+    const table = await screen.findByRole("table", { name: "Steps" });
+    const row = within(table).getByText("Review").closest("tr");
+    expect(within(row).getAllByRole("cell")[1].textContent).toBe("Approved in 7 s");
+  });
+
   it("has no checks summary: the Steps table and the Checks tab say it", async () => {
     await renderTask();
     await screen.findByRole("table", { name: "Steps" });

@@ -174,10 +174,15 @@ export function stepRows(task, workflow, engine = null) {
       const word = counted && ended.word ? `${ended.word} · ${counted}` : ended.word;
       // Under a second is not worth saying ("Merged", not "Merged in 0.1 s").
       const took = runTook(last);
-      // A run records the branch head it finished at; it "committed" only
-      // when that head is not the one the run before it left.
+      // A run records the branch head it finished at. A step "committed" only
+      // when it is a step that writes code (an agent's step that ended done)
+      // and that head is not the one the run before it left, as the Activity
+      // tab says it (`stepOutcome`). A review records the head it reviewed,
+      // which moves when the merge step brings the branch up to date.
       const before = runs.filter((run) => run.commit_sha && runTime(run) < runTime(last)).pop();
-      const committed = last.commit_sha && last.commit_sha !== before?.commit_sha ? shortSha(last.commit_sha) : "";
+      const writesCode = String(last.outcome || "").toLowerCase() === "done" && !step.role.startsWith(BUILTIN);
+      const committed =
+        writesCode && last.commit_sha && last.commit_sha !== before?.commit_sha ? shortSha(last.commit_sha) : "";
       // A step that sent the task back before it passed says so: the last
       // run alone would hide it.
       const sentBack = mine.filter((run) => run !== last && SENT_BACK.has(String(run.outcome || "").toLowerCase())).length;

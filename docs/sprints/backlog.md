@@ -379,6 +379,26 @@ Base work that this framing makes necessary:
        release).
 
 
+## Found while running sprint 62 through Foreman (2026-11-24)
+
+- **Several tasks at once in one project.** The engine runs one task at a
+  time (ADR-0039). Real parallelism, several agents each in its own working
+  copy, is a separate decision with its own answer to shared files (owner
+  direction 7) and to the machine's capacity. Owner: "Either sequential or
+  parallel".
+- **A branch is not brought up to date when its working copy is dirty.**
+  `refresh_task_branch` skips the update without a record when the task's
+  worktree has uncommitted changes, which happens when a develop step was
+  cut off (FOR-56, after an engine restart). The merge step's conflict
+  catches it later. Record the skip, or update once the interrupted work is
+  saved.
+- **Agents stall on commands that wait for input.** FOR-53's agent ran a bare
+  `python3 -`, which waits for input, and sat for 18 minutes. Seen once;
+  watch for it again before changing the runner.
+- **Test tiers and a parallel suite** are owner direction 5 and the
+  engineering list: the test step took 5 to 12 minutes on every pass, the
+  largest part of each task's time.
+
 ## Left to finish the current product (checked against the code, 2026-11-23)
 
 What is still open before roadmap stage 2. Each item was checked against
@@ -391,8 +411,8 @@ here.
 
 - (Done in sprint 62, slice 2, ADR-0036.) Spec §6.4: a finished sprint is
   tagged, with a note where the project asks for one.
-- **Who finishes a sprint** (`autonomy_level`, ADR-0025) has no control in
-  the dashboard; it is set from a terminal.
+- (Out of date, found 2026-11-24.) Who finishes a sprint has its control:
+  Settings › General › Finish sprints (`sprint_completion`).
 - (Done in sprint 62, slice 6.) `foreman init` and Settings › Runners
   read the shipped roles and workflows only, not the workspace's or the
   project's own (ADR-0024).
