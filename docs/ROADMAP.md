@@ -156,6 +156,9 @@ already lists "which docs a change updates":
 A proposal comes first, for the owner to correct, then an ADR, then the
 build through Foreman.
 
+The proposal: `docs/proposals/2026-11-24-method-repository-parallel-work.md`
+(written 2026-11-24, waiting for the owner's corrections).
+
 ## History: milestones 0 to 23
 
 ## Milestone 0: Repo reset and bootstrap
