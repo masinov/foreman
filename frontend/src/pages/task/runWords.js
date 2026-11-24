@@ -5,7 +5,7 @@
 // events this file has no words for are left out of the story; the
 // transcript a person can download keeps everything.
 
-import { formatDuration, formatMoney, formatTokens, humanize, plural, shortSha } from "../../ui/format";
+import { formatDuration, humanize, plural, shortSha } from "../../ui/format";
 import { outcomeTone, outcomeWord, testRunSentence } from "../shared/activityWords";
 
 /** Bookkeeping the engine records for itself; it tells a reader nothing. */
@@ -163,11 +163,8 @@ export function sayEntry(entry) {
       };
     case "agent.completed":
       return {
-        says: join([
-          d.duration_ms ? `Finished in ${formatDuration(d.duration_ms / 1000)}` : "Finished",
-          d.token_count ? `${formatTokens(d.token_count)} tokens` : "",
-          d.cost_usd ? formatMoney(d.cost_usd) : "",
-        ]),
+        says: d.duration_ms ? `Finished in ${formatDuration(d.duration_ms / 1000)}` : "Finished",
+        spend: { amount: d.cost_usd, tokens: d.token_count },
       };
     case "agent.error":
       return {

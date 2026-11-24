@@ -12,7 +12,8 @@ import { Button } from "../../ui/Button";
 import { Caret } from "../../ui/Caret";
 import { Mono } from "../../ui/Mono";
 import { SectionHeading } from "../../ui/SectionHeading";
-import { formatDayTime, formatMoney, humanize, plural, shortSha } from "../../ui/format";
+import { formatDayTime, humanize, plural, shortSha } from "../../ui/format";
+import { Spend } from "../../ui/Spend";
 import { narrate } from "./runWords";
 import { RunLine, withDays } from "./RunStory";
 import { ActivityTable } from "../shared/ActivityTable";
@@ -187,6 +188,7 @@ function FactValue({ fact, task, onPick }) {
       <span>{fact.text}</span>
     );
   }
+  if (fact.spend) return <Spend amount={fact.spend.amount} tokens={fact.spend.tokens} />;
   if (fact.sha) return <Mono title={fact.sha}>{fact.text}</Mono>;
   if (fact.run) {
     return (
@@ -350,7 +352,7 @@ export function ActivityTab({ task, revision }) {
       byTitle: by.title,
       commit: commit ? shortSha(commit) : "",
       took: runTook(run),
-      spend: run.cost_usd ? formatMoney(run.cost_usd) : "",
+      spend: run.cost_usd,
     };
   };
 
@@ -362,7 +364,7 @@ export function ActivityTab({ task, revision }) {
           id="task-runs"
           title="Steps"
           count={runs.total ?? undefined}
-          note={`${formatMoney(totals.total_cost_usd)} in all`}
+          note={<><Spend amount={totals.total_cost_usd} /> in all</>}
         />
         {runs.error ? (
           <p className="notice notice--error" role="alert">

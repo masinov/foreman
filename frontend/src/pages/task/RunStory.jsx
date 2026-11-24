@@ -5,6 +5,7 @@ import { LongText } from "../../ui/LongText";
 import { Markdown } from "../../ui/Markdown";
 import { Mono } from "../../ui/Mono";
 import { formatClock, formatDay } from "../../ui/format";
+import { Spend, spendWords } from "../../ui/Spend";
 
 /** How many lines of what a program printed show before Show all. */
 export const PRINTED_LINES = 3;
@@ -77,6 +78,12 @@ export function RunLine({ line }) {
         {line.says ? (
           <p className="run-line__head">
             <span className={`run-line__says${tone}`}>{line.says}</span>
+            {line.spend && spendWords(line.spend.amount, line.spend.tokens, "row") ? (
+              <>
+                {" · "}
+                <Spend amount={line.spend.amount} tokens={line.spend.tokens} where="row" />
+              </>
+            ) : null}
           </p>
         ) : null}
         {line.mono ? (

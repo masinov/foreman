@@ -47,6 +47,7 @@ describe("the sprint page head", () => {
     expect(summary).toHaveTextContent(/State\s*Active since 11 Nov/);
     expect(summary).toHaveTextContent("1 need you · 1 in progress · 2 to do · 1 done");
     expect(summary).toHaveTextContent("$1.31 · 28.5K tokens");
+    expect(within(summary).getByText("$1.31 · 28.5K tokens")).toHaveClass("mono");
     // Nothing about Foreman starting tasks where a user plans them all.
     expect(summary).not.toHaveTextContent(/Foreman/);
   });
@@ -110,7 +111,7 @@ describe("the list", () => {
     expect(within(row).getByText("Waiting for merge approval")).toBeInTheDocument();
     expect(row).toHaveTextContent("tests · review · b232eb1");
     expect(within(row).getByText("12")).toBeInTheDocument();
-    expect(within(row).getByText("$0.72")).toBeInTheDocument();
+    expect(within(row).getByText("$0.72")).toHaveClass("mono");
     // The fixture's engine is on another task, so FOR-13 is not running.
     expect(await within(screen.getByText("FOR-13").closest("tr")).findByText("Stopped · Test")).toBeInTheDocument();
     expect(within(screen.getByText("FOR-17").closest("tr")).getByText("Queued")).toBeInTheDocument();
@@ -531,6 +532,7 @@ describe("activity", () => {
     const rows = within(table).getAllByRole("row").slice(1);
     // The key has its own column, as in the task list above.
     expect(cells(rows[0]).slice(1)).toEqual(["FOR-14", "Title of FOR-14", "Sent back", "Code reviewer", "7 s", "$0.12"]);
+    expect(within(rows[0]).getByText("$0.12")).toHaveClass("mono");
     // By names the role; the model is on hover.
     expect(within(rows[0]).getByText("Code reviewer")).toHaveAttribute("title", "sonnet-5-5");
     // Why is on hover, not under the row.

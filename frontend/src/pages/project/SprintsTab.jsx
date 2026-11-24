@@ -8,11 +8,11 @@ import { paths } from "../../app/paths";
 import { Link } from "../../app/router";
 import { Button } from "../../ui/Button";
 import { Caret } from "../../ui/Caret";
-import { Mono } from "../../ui/Mono";
 import { SectionHeading } from "../../ui/SectionHeading";
 import { StatusDot } from "../../ui/StatusDot";
 import { Table } from "../../ui/Table";
-import { formatDay, formatMoney } from "../../ui/format";
+import { formatDay } from "../../ui/format";
+import { Spend } from "../../ui/Spend";
 import { TaskCounts } from "../shared/TaskCounts";
 import { FinishedSprints } from "./FinishedSprints";
 import { NewSprintDialog } from "./NewSprintDialog";
@@ -55,7 +55,7 @@ const COLUMNS = [
     key: "spend",
     header: "Spend",
     numeric: true,
-    render: (sprint) => <Mono>{formatMoney(sprint.totals?.total_cost_usd)}</Mono>,
+    render: (sprint) => <Spend amount={sprint.totals?.total_cost_usd} where="row" />,
   },
 ];
 

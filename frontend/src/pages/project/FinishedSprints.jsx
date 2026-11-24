@@ -10,9 +10,9 @@ import { Caret } from "../../ui/Caret";
 import { ListPager } from "../../ui/ListPager";
 import { Disclosure } from "../../ui/Disclosure";
 import { Field } from "../../ui/Field";
-import { Mono } from "../../ui/Mono";
 import { Table } from "../../ui/Table";
-import { formatDay, formatMoney, splitTitle } from "../../ui/format";
+import { formatDay, splitTitle } from "../../ui/format";
+import { Spend } from "../../ui/Spend";
 import { describeTaskCounts } from "../shared/words";
 
 // Design README: finished sprints 10 at a time.
@@ -46,7 +46,7 @@ const COLUMNS = [
     key: "spend",
     header: "Spend",
     className: "queue__number",
-    render: (sprint) => <Mono>{formatMoney(sprint.totals?.total_cost_usd)}</Mono>,
+    render: (sprint) => <Spend amount={sprint.totals?.total_cost_usd} where="row" />,
   },
 ];
 

@@ -303,7 +303,7 @@ describe("the Sprints tab", () => {
     // What waits for a user is gold wherever the counts appear.
     expect(within(rows[0]).getByText("3 need you")).toHaveClass("attention");
     expect(within(rows[0]).getByText("since 11 Nov")).toBeInTheDocument();
-    expect(within(rows[0]).getByText("$1.31")).toBeInTheDocument();
+    expect(within(rows[0]).getByText("$1.31")).toHaveClass("mono");
     expect(within(rows[1]).getByText("Planned")).toBeInTheDocument();
     expect(within(rows[1]).getByRole("link", { name: PLANNED.title })).toBeInTheDocument();
     expect(within(queue).queryByText(FINISHED[0].title)).toBeNull();
@@ -342,6 +342,7 @@ describe("the Sprints tab", () => {
     expect(within(table).getAllByRole("row")).toHaveLength(11);
     expect(within(table).getByRole("link", { name: FINISHED[0].title })).toHaveAttribute("href", "/dashboard/sprints/sprint-55");
     expect(within(table).getAllByRole("row")[1]).toHaveTextContent("1 done28 Oct$0.55");
+    expect(within(within(table).getAllByRole("row")[1]).getByText("$0.55")).toHaveClass("mono");
     expect(screen.getByText("Showing 10 of 12, newest first")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Show 2 more" }));

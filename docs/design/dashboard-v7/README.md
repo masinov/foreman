@@ -208,3 +208,7 @@ motion is off under `prefers-reduced-motion`.
   "none required".
 - Identity. The top bar shows who is acting; until a provider is plugged in
   that is the name of the access token in use.
+
+## Spend, written one way (owner, 2026-11-24)
+
+An amount, and the tokens shown with it, is always in the mono number font, the amount first ("$0.09 · 3.5K tokens"); a zero is blank in a table column or a list row and "$0.00" in a details row or a heading. Every page writes it through `ui/Spend`.
