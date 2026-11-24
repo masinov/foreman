@@ -17,7 +17,7 @@ step's facts beside it, the prompt as the first line).
   ADR-0035):** read from the JUnit XML the test command writes into
   `FOREMAN_TEST_REPORT_DIR`. A step's records are saved as they happen, so
   the test step's start is when the tests started.
-- **Then, facts that need the repository:** the files a step changed with
+- **Done (sprint 62 slice 4, by Foreman, ADR-0038), facts that need the repository:** the files a step changed with
   their added and removed lines, and for a merge what it brought in, where
   main was before, and whether the branch was kept. Also "Session:
   continued from attempt 1", which today is only in the agent's command

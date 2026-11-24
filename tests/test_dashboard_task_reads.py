@@ -526,6 +526,80 @@ class TaskReadsCase(unittest.TestCase):
         raw = self.get("/api/v1/runs/r/output?raw=true").json()
         self.assertEqual([e["kind"] for e in raw["transcript"]], ["agent.raw_output"])
 
+    def repo_run(self, run_id: str, step: str, n: int, **kw) -> None:
+        fields = dict(
+            id=run_id, task_id="t", project_id="p", role_id="developer", workflow_step=step,
+            agent_backend="claude_code", created_at=f"2026-01-01T00:00:0{n}Z",
+            started_at=f"2026-01-01T00:00:0{n}Z",
+        )
+        self.store.save_run(Run(**{**fields, **kw}))
+
+    def repo_event(self, run_id: str, kind: str, payload: dict, n: int = 9) -> None:
+        self.store.save_event(Event(
+            id=f"{run_id}-{kind}", run_id=run_id, task_id="t", project_id="p", event_type=kind,
+            timestamp=f"2026-01-01T00:00:0{n}Z", payload=payload))
+
+    def test_a_step_says_its_session_and_what_it_changed_against(self) -> None:
+        self.task()
+        self.repo_run("r1", "develop", 1, session_id="s-1", commit_sha="c248621")
+        self.repo_run("r-review", "review", 2, role_id="code_reviewer", session_id="s-r")
+        self.repo_run("r2", "develop", 3, session_id="s-1", commit_sha="d0d0d0d")
+        self.repo_run("r3", "develop", 4, session_id="s-other")
+        self.repo_run("r-test", "test", 5, role_id="_builtin:test", agent_backend="builtin", session_id="s-1")
+        self.repo_event("r1", "engine.step_changes", {
+            "from_sha": "0db4ca5", "to_sha": "c248621", "from_default_branch": True,
+            "files": [{"path": "assay/serve.py", "added": 300, "removed": 4, "status": "modified"}],
+            "files_total": 9, "added": 327, "removed": 4})
+        self.repo_event("r2", "engine.step_changes", {
+            "from_sha": "c248621", "to_sha": "d0d0d0d",
+            "files": [{"path": "assay/serve.py", "added": 46, "removed": 9, "status": "modified"},
+                      {"path": "tests/test_serve.py", "added": 24, "removed": 5, "status": "added"}],
+            "files_total": 2, "added": 70, "removed": 14})
+        self.repo_event("r3", "engine.step_changes", {
+            "from_sha": "abcdef0", "to_sha": "d0d0d0e", "files": [], "files_total": 0, "added": 0, "removed": 0})
+
+        first = self.get("/api/v1/runs/r1/output").json()
+        second = self.get("/api/v1/runs/r2/output").json()
+        third = self.get("/api/v1/runs/r3/output").json()
+
+        self.assertEqual(first["session"], {"continued_from": None, "continued_attempt": None})
+        self.assertEqual(second["session"], {"continued_from": "r1", "continued_attempt": 1})
+        self.assertEqual(third["session"]["continued_from"], None)
+        self.assertIsNone(self.get("/api/v1/runs/r-test/output").json()["session"])
+        self.assertEqual(
+            first["changes"]["against"], {"kind": "default_branch", "sha": "0db4ca5", "run_id": None, "attempt": None, "branch": "main"}
+        )
+        self.assertEqual((first["changes"]["files_total"], first["changes"]["added"], first["changes"]["removed"]), (9, 327, 4))
+        self.assertEqual(
+            second["changes"]["against"], {"kind": "attempt", "sha": "c248621", "run_id": "r1", "attempt": 1, "branch": None}
+        )
+        self.assertEqual([f["path"] for f in second["changes"]["files"]], ["assay/serve.py", "tests/test_serve.py"])
+        self.assertEqual(third["changes"]["against"]["kind"], "commit")
+
+    def test_a_merge_gives_what_it_brought_in_and_an_older_run_gives_none(self) -> None:
+        self.task()
+        self.repo_run("m", "merge", 1, role_id="_builtin:merge", agent_backend="builtin")
+        self.repo_run("m-old", "merge", 2, role_id="_builtin:merge", agent_backend="builtin")
+        self.repo_run("old-dev", "develop", 3)
+        self.repo_event("m", "engine.merge", {
+            "branch": "feat/x", "target": "main", "sha": "c6aa057", "target_before": "0db4ca5",
+            "commits": [{"sha": "c248621", "subject": "feat: serve"}, {"sha": "0a5b562", "subject": "fix: serve"}],
+            "commits_total": 2,
+            "changes": {"files": [], "files_total": 9, "added": 383, "removed": 4}})
+        self.repo_event("m-old", "engine.merge", {"branch": "feat/x", "target": "main", "sha": "aaaaaaa"})
+
+        merged = self.get("/api/v1/runs/m/output").json()
+        old = self.get("/api/v1/runs/m-old/output").json()
+        dev = self.get("/api/v1/runs/old-dev/output").json()
+
+        self.assertEqual(merged["merge"]["target_before"], "0db4ca5")
+        self.assertEqual([c["sha"] for c in merged["merge"]["commits"]], ["c248621", "0a5b562"])
+        self.assertEqual(merged["merge"]["changes"]["added"], 383)
+        self.assertIsNone(merged["session"])
+        self.assertIsNone(old["merge"])
+        self.assertEqual((dev["changes"], dev["merge"]), (None, None))
+
+
     def test_run_output_is_capped(self) -> None:
         self.task()
         self.store.save_run(Run(

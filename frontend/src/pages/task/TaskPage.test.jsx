@@ -1209,6 +1209,120 @@ describe("Activity", () => {
     await waitFor(() => expect(rows[2]).toHaveClass("table__row--selected"));
   });
 
+  const nineFiles = ["assay/serve.py", "tests/test_serve.py", "README.md", "assay/cli.py", "docs/a.md", "docs/b.md", "assay/__init__.py", "setup.cfg", "tests/conftest.py"].map(
+    (path, index) => ({ path, added: 30 + index, removed: index, status: index === 1 ? "added" : "modified" }),
+  );
+
+  it("says a step's session and what it changed, in the Changes tab's words", async () => {
+    const routes = taskRoutes({
+      runs: [
+        runItem("run-2", "develop", { role_id: "developer", outcome: "done", attempt: 2 }),
+        runItem("run-1", "develop", { role_id: "developer", outcome: "done" }),
+      ],
+    });
+    routes[outputUrl("run-2")] = outputPayload("run-2", "", {
+      prompt: null,
+      transcript: [{ at: on("11-11"), kind: "engine.step_changes", text: "", data: { from_sha: "c248621" } }],
+      session: { continued_from: "run-1", continued_attempt: 1 },
+      changes: {
+        from_sha: "c248621ae45e",
+        to_sha: "d0d0d0d",
+        files: nineFiles,
+        files_total: 9,
+        added: 327,
+        removed: 4,
+        against: { kind: "attempt", sha: "c248621ae45e", run_id: "run-1", attempt: 1, branch: null },
+      },
+    });
+    routes[outputUrl("run-1")] = outputPayload("run-1", "", {
+      prompt: null,
+      session: { continued_from: null, continued_attempt: null },
+      changes: {
+        from_sha: "0db4ca5aaaa",
+        to_sha: "c248621ae45e",
+        files: [{ path: "a.py", added: 1, removed: 0, status: "modified" }],
+        files_total: 1,
+        added: 1,
+        removed: 0,
+        against: { kind: "default_branch", sha: "0db4ca5aaaa", run_id: null, attempt: null, branch: "main" },
+      },
+    });
+    routes[outputUrl("run-3")] = outputPayload("run-3", "", { prompt: null, session: null, changes: null, merge: null });
+    await renderTask(`${BASE}/activity`, routes);
+
+    const facts = await screen.findByRole("complementary", { name: "About this step" });
+    expect(facts).toHaveTextContent(/Session\s*Continued from attempt 1/);
+    expect(facts).toHaveTextContent(/Changed\s*9 files\s*\+327\s*−4/);
+    expect(facts).toHaveTextContent("since attempt 1's commit c248621");
+    // Five files, alphabetical, the new one marked, then the rest on request.
+    const listed = () => Array.from(facts.querySelectorAll(".run-changes__file")).map((item) => item.textContent);
+    expect(listed()).toEqual([
+      "README.md+32 −2",
+      "assay/__init__.py+36 −6",
+      "assay/cli.py+33 −3",
+      "assay/serve.py+30 −0",
+      "docs/a.md+34 −4",
+    ]);
+    expect(within(facts).queryByRole("link", { name: /serve/ })).toBeNull();
+    fireEvent.click(within(facts).getByRole("button", { name: "Show all 9" }));
+    expect(listed()).toHaveLength(9);
+    expect(listed()).toContain("tests/test_serve.py added+31 −1");
+    expect(within(facts).getByRole("button", { name: "Show fewer" })).toBeInTheDocument();
+
+    // The attempt it continued is a link that picks that run.
+    fireEvent.click(within(facts).getByRole("button", { name: "attempt 1" }));
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Develop" }).closest(".section-heading")).not.toHaveTextContent("attempt 2"));
+    const first = await screen.findByRole("complementary", { name: "About this step" });
+    await waitFor(() => expect(first).toHaveTextContent(/Session\s*New/));
+    expect(first).toHaveTextContent("since main at 0db4ca5, where the branch began");
+    expect(first).toHaveTextContent(/Changed\s*1 file\s*\+1\s*−0/);
+    expect(first).not.toHaveTextContent("Show all");
+  });
+
+  it("shows no Changed row for a step that recorded none", async () => {
+    const routes = taskRoutes({ runs: [runItem("run-1", "develop", { role_id: "developer", outcome: "done" })] });
+    routes[outputUrl("run-1")] = outputPayload("run-1", "", { prompt: null, session: { continued_from: null, continued_attempt: null }, changes: null });
+    await renderTask(`${BASE}/activity`, routes);
+    const facts = await screen.findByRole("complementary", { name: "About this step" });
+    await waitFor(() => expect(facts).toHaveTextContent(/Session\s*New/));
+    expect(facts).not.toHaveTextContent("Changed");
+    expect(facts).not.toHaveTextContent("Main before");
+  });
+
+  it("says what a merge brought in, and has no Branch row", async () => {
+    const routes = taskRoutes({
+      runs: [runItem("run-9", "merge", { role_id: "_builtin:merge", backend: "builtin", model: null, outcome: "success", cost_usd: 0, tokens: 0 })],
+    });
+    routes[outputUrl("run-9")] = outputPayload("run-9", "", {
+      prompt: null,
+      transcript: [{ at: on("11-11"), kind: "engine.merge", text: "", data: { branch: "feat/x", target: "main", sha: "c6aa057aaaa" } }],
+      session: null,
+      merge: {
+        target_before: "0db4ca5bbbb",
+        commits: [
+          { sha: "c248621ae45e", subject: "feat: serve the dashboard from a single process" },
+          { sha: "0a5b562ffff", subject: "fix: tests" },
+        ],
+        commits_total: 2,
+        changes: { files: [], files_total: 9, added: 383, removed: 4 },
+      },
+    });
+    await renderTask(`${BASE}/activity`, routes);
+
+    const facts = await screen.findByRole("complementary", { name: "About this step" });
+    expect(facts).toHaveTextContent(/Main before\s*0db4ca5/);
+    expect(within(facts).getByText("0db4ca5")).toHaveAttribute("title", "0db4ca5bbbb");
+    expect(facts).toHaveTextContent(/Merge commit\s*c6aa057/);
+    expect(facts).toHaveTextContent(/Brought in\s*2 commits/);
+    const commits = Array.from(facts.querySelectorAll(".run-changes__commit"));
+    expect(commits.map((item) => item.textContent)).toEqual(["c248621feat: serve the dashboard from a single process", "0a5b562fix: tests"]);
+    expect(commits[0]).toHaveAttribute("title", "feat: serve the dashboard from a single process");
+    expect(facts).toHaveTextContent(/Changed\s*9 files\s*\+383\s*−4/);
+    expect(within(facts).getByRole("link", { name: "9 files" })).toHaveAttribute("href", expect.stringMatching(/\/changes$/));
+    expect(facts).not.toHaveTextContent("Branch");
+    expect(facts).not.toHaveTextContent("Session");
+  });
+
   it("says who decided a gate the project's setting decided, and that no one was asked", async () => {
     const routes = taskRoutes({
       runs: [runItem("run-5", "merge_approval", { role_id: "_builtin:human_gate", backend: "builtin", model: null, outcome: "approve", duration_ms: 10, cost_usd: 0, tokens: 0 })],

@@ -91,8 +91,12 @@ function why(run, gate) {
  * the project's settings.
  *
  * `previous` and `next` are the runs just before and after it on the task.
+ * `repo` is what the step recorded of the repository (the output's `session`,
+ * `changes` and `merge`); a fact is added only for what it holds, and for an
+ * older step that is nothing. Those facts carry `session`, `changed`,
+ * `brought` or `landed` for the page to draw.
  */
-export function stepFacts(run, transcript, { previous = null, next = null, task = null } = {}) {
+export function stepFacts(run, transcript, { previous = null, next = null, task = null, repo = null } = {}) {
   const facts = [];
   // The same words as the step's row.
   const result = stepOutcome(run, previous);
@@ -100,6 +104,8 @@ export function stepFacts(run, transcript, { previous = null, next = null, task 
   facts.push({ key: "result", term: "Result", text: result.word, tone: result.tone });
   const reason = why(run, Boolean(gate));
   if (reason) facts.push({ key: "why", term: "Why", text: reason });
+  const merge = repo?.merge ?? null;
+  if (merge?.target_before) facts.push({ key: "main-before", term: "Main before", text: shortSha(merge.target_before), sha: merge.target_before });
   if (gate) facts.push({ key: "decided", term: "Decided by", text: gate.text, settings: Boolean(gate.settings) });
   // The step just before it sent the task back or failed: this one answers it.
   if (previous) {
@@ -110,6 +116,13 @@ export function stepFacts(run, transcript, { previous = null, next = null, task 
   }
   const commit = commitFact(run, transcript) ?? (run.step_commit ? { term: "Commit", sha: run.step_commit } : null);
   if (commit) facts.push({ key: "commit", term: commit.term, text: shortSha(commit.sha), sha: commit.sha });
+  if (repo?.session) {
+    const { continued_from: from, continued_attempt: attempt } = repo.session;
+    facts.push({ key: "session", term: "Session", text: from ? "Continued from " : "New", session: from ? { run: from, label: `attempt ${attempt}` } : null });
+  }
+  if (repo?.changes) facts.push({ key: "changed", term: "Changed", changed: repo.changes });
+  if (merge?.commits?.length) facts.push({ key: "brought-in", term: "Brought in", brought: { commits: merge.commits, total: merge.commits_total ?? merge.commits.length } });
+  if (merge?.changes) facts.push({ key: "merge-changed", term: "Changed", landed: merge.changes });
   const by = runRole(run, task);
   if (by.text) facts.push({ key: "by", term: "By", text: by.text });
   const chosen = last(transcript, "workflow.model_selected");

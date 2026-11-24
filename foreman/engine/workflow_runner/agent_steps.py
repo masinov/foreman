@@ -26,6 +26,7 @@ from ..branch_sync import context_mirror_dirs
 from ..errors import OrchestratorError, QuotaPauseError
 from ..model_selection import ModelSelection, resolve_step_model_selection
 from ..results import AgentExecutionResult
+from ..repo_facts import step_changes_payload
 from ..output_contract import (
     UNREAD_APPROVAL_DETAIL,
     approved_without_reading,
@@ -290,6 +291,9 @@ class AgentSteps(WorkflowRunnerBase):
         """
 
         role, project, task = attempt.role, attempt.project, attempt.task
+        # Any sync of the branch with the default branch is done before the
+        # step opens, so this is the head the agent starts from.
+        head_before = self._branch_commit(project, task)
         result = self.agent_steps.execute_guarded(
             run=run,
             role=role,
@@ -314,6 +318,7 @@ class AgentSteps(WorkflowRunnerBase):
             # Asked to read, it approved unread again. That is not a review;
             # the task stops for a person.
             result = replace(result, outcome=ERROR, detail=UNREAD_APPROVAL_DETAIL)
+        head_after = self._branch_commit(project, task)
         self.records.complete_run(
             run,
             status=result.status,
@@ -328,9 +333,21 @@ class AgentSteps(WorkflowRunnerBase):
             duration_ms=result.duration_ms,
             retry_count=result.retry_count,
             failure_type=result.failure_type,
-            commit_sha=self._branch_commit(project, task),
+            commit_sha=head_after,
         )
+        self._record_step_changes(run, project, head_before, head_after)
         return result
+
+    def _record_step_changes(
+        self, run: Run, project: Project, head_before: str | None, head_after: str | None
+    ) -> None:
+        """When the step moved the branch, record what it changed (ADR-0038)."""
+
+        payload = step_changes_payload(
+            project.repo_path, project.default_branch, head_before, head_after
+        )
+        if payload is not None:
+            self.records.emit_event(run, "engine.step_changes", payload)
 
     def _corrective_retry(
         self,

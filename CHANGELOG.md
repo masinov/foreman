@@ -9,6 +9,12 @@ memory changes rather than versioned product releases.
 
 ### Sprint 62
 
+- A step's details say what it did to the repository (ADR-0038, sprint 62 slice 4, run through Foreman).
+  - An agent step that changed the branch records `engine.step_changes` (files with lines and kind, totals; main's changes brought in by a branch refresh are not counted). Its panel shows Changed: the files and lines, what they are counted against ("since attempt 1's commit c248621", "since main at 0db4ca5, where the branch began"), each file, five and then "Show all N".
+  - An agent step's panel shows Session: "New", or "Continued from attempt N", which picks that run.
+  - A landed merge records where main was, the commits it brought in and what they changed. Its panel shows Main before, Brought in and Changed.
+  - Steps recorded before this show none of these rows. Spec 2.5's event list is amended.
+
 - The Agent side bar on a task page is closed until you open it (owner, 2026-11-24). It no longer opens by itself while a step is in progress. Opened or closed, it stays as you left it on every task and on the next visit, remembered apart from the manager's side bar (ADR-0029 amendment).
 
 - A task's Status says what it is doing and at which step (owner, 2026-11-24).

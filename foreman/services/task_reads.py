@@ -18,14 +18,18 @@ from .task_models import (
     ChangeTotals,
     ChecksClaims,
     ChecksFacts,
+    ChangedAgainst,
     CommitRef,
     CriterionClaim,
     FileChangeItem,
     FileDiff,
+    MergeFacts,
     ReviewClaim,
     RunItem,
     RunOutput,
+    SessionFact,
     SizeFact,
+    StepChanges,
     SprintActivity,
     SprintActivityItem,
     TaskChanges,
@@ -441,7 +445,99 @@ class TaskReads:
             cap_chars=OUTPUT_CAP_CHARS,
             raw_entries=raw_entries,
             raw_included=raw,
+            session=self._session_fact(run),
+            changes=self._step_changes(run, events),
+            merge=self._merge_facts(run, events),
         )
+
+    # ── what a step did to the repository (recorded when it ended, ADR-0038) ──
+
+    def _attempts(self, run: Run) -> list[tuple[Run, int]]:
+        """The task's runs before this one and this one, each with its attempt at its step."""
+
+        counts: dict[tuple[str, bool], int] = {}
+        numbered: list[tuple[Run, int]] = []
+        for other in self.store.list_runs(task_id=run.task_id):
+            key = (other.workflow_step or "", other.role_id == ENGINE_RECORD_ROLE)
+            counts[key] = counts.get(key, 0) + 1
+            numbered.append((other, counts[key]))
+            if other.id == run.id:
+                break
+        return numbered
+
+    def _session_fact(self, run: Run) -> SessionFact | None:
+        if run.role_id.startswith("_builtin:") or not run.session_id:
+            return None
+        earlier = [
+            (other, attempt)
+            for other, attempt in self._attempts(run)
+            if other.id != run.id
+            and other.role_id == run.role_id
+            and other.session_id == run.session_id
+        ]
+        if not earlier:
+            return SessionFact()
+        other, attempt = earlier[-1]
+        return SessionFact(continued_from=other.id, continued_attempt=attempt)
+
+    def _step_changes(self, run: Run, events: list[Event]) -> StepChanges | None:
+        recorded = _last_payload(events, "engine.step_changes")
+        if recorded is None or not recorded.get("from_sha") or not recorded.get("to_sha"):
+            return None
+        from_sha = str(recorded["from_sha"])
+        against = ChangedAgainst(kind="commit", sha=from_sha)
+        left = [
+            (other, attempt)
+            for other, attempt in self._attempts(run)
+            if other.id != run.id and other.commit_sha == from_sha
+        ]
+        if left:
+            other, attempt = left[-1]
+            against = ChangedAgainst(kind="attempt", sha=from_sha, run_id=other.id, attempt=attempt)
+        elif recorded.get("from_default_branch"):
+            task = self.store.get_task(run.task_id)
+            project = self.store.get_project(task.project_id) if task else None
+            against = ChangedAgainst(
+                kind="default_branch",
+                sha=from_sha,
+                branch=project.default_branch if project else None,
+            )
+        try:
+            return StepChanges(
+                from_sha=from_sha,
+                to_sha=str(recorded["to_sha"]),
+                files=recorded.get("files") or [],
+                files_total=int(recorded.get("files_total", len(recorded.get("files") or []))),
+                added=int(recorded.get("added") or 0),
+                removed=int(recorded.get("removed") or 0),
+                against=against,
+            )
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _merge_facts(run: Run, events: list[Event]) -> MergeFacts | None:
+        recorded = _last_payload(events, "engine.merge")
+        if recorded is None:
+            return None
+        fields = {
+            key: recorded[key]
+            for key in ("target_before", "commits", "commits_total", "changes")
+            if recorded.get(key) is not None
+        }
+        if not fields:
+            return None
+        try:
+            return MergeFacts(**fields)
+        except (TypeError, ValueError):
+            return None
+
+
+def _last_payload(events: list[Event], event_type: str) -> dict[str, Any] | None:
+    """The facts of the last event of a kind, or None."""
+
+    found = [event.payload for event in events if event.event_type == event_type and event.payload]
+    return found[-1] if found else None
 
 
 def _transcript_entry(event: Event) -> TranscriptEntry | None:

@@ -231,7 +231,8 @@ Event types:
 - `gate.time_exceeded` — `{limit_minutes, actual_minutes}`
 
 **Engine actions:**
-- `engine.merge` — `{branch, target}`
+- `engine.merge` — `{branch, target}`. Amendment of 2026-11-24 (ADR-0038): also `{sha, target_before, commits: [{sha, subject}], commits_total, changes: {files, files_total, added, removed}}`; `commits` oldest first, capped at 50; each field is left out when git could not give it
+- `engine.step_changes` — `{from_sha, to_sha, from_default_branch, files: [{path, added, removed, status}], files_total, added, removed}`. Amendment of 2026-11-24 (ADR-0038): recorded on an agent run that moved the task branch; `files` capped at 200; a binary file has null counts
 - `engine.merge_failed` — `{branch, error}`
 - `engine.context_write` — `{path}`
 - `engine.scaffold_write` — `{files}`

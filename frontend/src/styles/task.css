@@ -401,6 +401,42 @@
   text-underline-offset: 3px;
 }
 
+/* What a step changed, and what a merge brought in: lines under the value. */
+.run-changes__files {
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.run-changes__file {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding-block: 2px;
+}
+
+.run-changes__path {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.run-changes__file > :last-child {
+  flex: none;
+}
+
+.run-changes__commit {
+  display: flex;
+  gap: var(--space-2);
+  padding-block: 2px;
+}
+
+.run-changes__subject {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .run-facts__download {
   align-self: flex-start;
 }

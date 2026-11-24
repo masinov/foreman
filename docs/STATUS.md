@@ -107,6 +107,13 @@ MCP connectors. Still true: the process runs as the engine's user with a
 shell and the network (a container per task is later in Phase 5), and there
 is no login.
 
+## Step facts from the repository (2026-11-24)
+
+- A step's panel says what it did to the repository (ADR-0038, sprint 62
+  slice 4). Only steps run after this change have Changed, Main before and
+  Brought in; Session works for every run. A path in Changed is text: the
+  Changes tab cannot be opened at a file.
+
 ## Operating decisions (owner, 2026-11-10)
 
 - Claude drives the work. Whether a slice runs by hand or through Foreman is

@@ -12,6 +12,21 @@ This manual is the detailed reference. For product intent and architecture see
 > virtualenv — `./venv/bin/foreman ...`, `./venv/bin/python ...`. Never use a
 > system `python`/`pip`.
 
+### What a step did to the repository (ADR-0038)
+
+When an agent step ends, the engine compares the task branch's head with the
+head just before the agent started (after any branch refresh) and, when they
+differ, records `engine.step_changes` on the run: `from_sha`, `to_sha`,
+`files` (`path`, `added`, `removed`, `status` of `added`, `modified`,
+`deleted` or `renamed`; null counts for a binary file; at most 200, with
+`files_total`), `added` and `removed`, and `from_default_branch`. A landed
+merge adds `target_before`, `commits` (`sha`, `subject`, oldest first, at
+most 50, with `commits_total`) and `changes` to `engine.merge`. A git read
+that fails leaves its field out and never fails the step. The step's panel
+on the Activity tab shows these as Changed, Main before and Brought in, and
+Session ("New", or "Continued from attempt N", read from the runs' stored
+session ids). A step recorded before this shows none of them.
+
 ---
 
 ## Table of contents

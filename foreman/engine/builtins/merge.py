@@ -18,6 +18,7 @@ from ...repo.git import (
     GitMergeResult,
     commits_behind,
     follow_branch_in_checkout,
+    head_sha,
     is_worktree_clean,
     merge_branch,
     merge_preflight,
@@ -27,6 +28,7 @@ from ...repo.git import (
 )
 from ...repo.worktrees import WorktreeError, WorktreeManager
 from ...store import ForemanStore
+from ..repo_facts import merge_facts
 from .base import BuiltinEventRecord, BuiltinExecutorBase, BuiltinResult, _task_worktree
 from .completion import _completion_guard_payload
 
@@ -81,10 +83,30 @@ def _merge_failed(branch: str, error: str) -> BuiltinResult:
     )
 
 
+def _read_head(repo_path: Path | str, ref: str) -> str | None:
+    """The commit a ref points at, or None; a failed read is not the merge's failure."""
+
+    try:
+        return head_sha(repo_path, ref)
+    except (GitError, OSError):
+        return None
+
+
 def _landed(
-    project: Project, task: Task, integration_path: Path, result: GitMergeResult
+    project: Project,
+    task: Task,
+    integration_path: Path,
+    result: GitMergeResult,
+    *,
+    target_before: str | None = None,
+    branch_head: str | None = None,
 ) -> BuiltinResult:
-    """A merge that landed: bring a person's checkout along and push when asked."""
+    """A merge that landed: bring a person's checkout along and push when asked.
+
+    ``target_before`` and ``branch_head`` are the default branch's and the task
+    branch's commits just before the merge; what the merge brought in is
+    recorded on the event from them (ADR-0038).
+    """
 
     events = [
         BuiltinEventRecord(
@@ -94,6 +116,7 @@ def _landed(
                 "target": project.default_branch,
                 "worktree": str(integration_path),
                 "sha": result.sha,
+                **merge_facts(project.repo_path, target_before, branch_head, result.sha),
             },
         )
     ]
@@ -258,13 +281,22 @@ class MergeStep(BuiltinExecutorBase):
         # The merge lands in Foreman's own integration worktree. A person's
         # checkout sitting on the default branch is then brought along, the
         # way a fast-forward pull would (ADR-0031).
+        target_before = _read_head(integration_path, f"refs/heads/{project.default_branch}")
+        branch_head = _read_head(project.repo_path, f"refs/heads/{task.branch_name}")
         result: GitMergeResult = merge_branch(
             integration_path,
             source_branch=task.branch_name,
             target_branch=project.default_branch,
         )
         if result.success:
-            return _landed(project, task, integration_path, result)
+            return _landed(
+                project,
+                task,
+                integration_path,
+                result,
+                target_before=target_before,
+                branch_head=branch_head,
+            )
         return _not_landed(project, task, result)
 
     def _guard_completion(
