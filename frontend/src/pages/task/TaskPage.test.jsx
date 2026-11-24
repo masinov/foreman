@@ -333,7 +333,7 @@ describe("the decision", () => {
     routes[post("unblock")] = task;
     const { fetchImpl } = await renderTask(BASE, routes);
     const region = await screen.findByRole("region", { name: "Blocked: Tests failed three times." });
-    expect(region).toHaveTextContent("Stopped at test");
+    expect(region).toHaveTextContent("Stopped at Test");
     expect(region).toHaveTextContent("Last run: Test, failed by Foreman");
     fireEvent.click(within(region).getByRole("button", { name: "Unblock" }));
     expect(await screen.findByText("Unblocked. The task is back in the queue.")).toBeInTheDocument();
@@ -614,7 +614,7 @@ describe("Overview", () => {
     await renderTask();
     const details = await screen.findByRole("region", { name: "Details" });
     await waitFor(() => expect(details).toHaveTextContent(/Workflow\s*development/));
-    expect(details).toHaveTextContent(/Stage\s*Waiting for merge approval/);
+    expect(details).toHaveTextContent(/Status\s*Waiting for merge approval/);
     expect(within(details).getByRole("link", { name: "Sprint 56: engine truthfulness" })).toHaveAttribute("href", "/dashboard/sprints/sprint-56");
     expect(details).toHaveTextContent("A user approves merges (project setting)");
     expect(details).not.toHaveTextContent("plans");

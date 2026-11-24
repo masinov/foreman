@@ -210,7 +210,7 @@ describe("Needs you on the project page", () => {
     const { fetchImpl } = await renderProject("/dashboard/projects/foreman", routes);
     const needsYou = screen.getByRole("region", { name: /Needs you/ });
     const row = (await within(needsYou).findByText("FOR-15")).closest("tr");
-    expect(row).toHaveTextContent("Tests failed three times · at test");
+    expect(row).toHaveTextContent("Tests failed three times · at Test");
     fireEvent.click(within(row).getByRole("button", { name: "Unblock FOR-15" }));
     expect(await within(needsYou).findByRole("alert")).toHaveTextContent("Task task-stuck is not blocked.");
     refuse = false;

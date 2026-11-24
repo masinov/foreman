@@ -122,7 +122,7 @@ function Details({ task, workflow }) {
   const who = filedBy(task);
   const when = formatDay(task.created_at);
   const rows = [
-    { key: "stage", term: "Stage", value: <StatusDot tone={stage.tone}>{stage.word}</StatusDot> },
+    { key: "stage", term: "Status", value: <StatusDot tone={stage.tone}>{stage.word}</StatusDot> },
     task.closed_by_hand
       ? {
           key: "closed",

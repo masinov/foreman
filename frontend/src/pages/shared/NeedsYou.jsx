@@ -89,7 +89,7 @@ function OrderProposal({ gate }) {
 /** Why a task is blocked and the step it stopped at: what a person weighs before unblocking it. */
 function BlockedFacts({ blocked }) {
   const reason = blocked?.reason || "No reason recorded";
-  const step = blocked?.step ? ` · at ${humanize(blocked.step).toLowerCase()}` : "";
+  const step = blocked?.step ? ` · at ${humanize(blocked.step)}` : "";
   return (
     <span className="needs-you__blocked" title={`${reason}${step}`}>
       <span className="needs-you__reason">{reason}</span>

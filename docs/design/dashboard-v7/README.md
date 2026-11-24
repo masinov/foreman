@@ -85,6 +85,13 @@ Workspace / Project / Sprint / Task.
   hover. A sprint's Activity filters by who (Everyone, each role, Foreman,
   Users) and by Problems. How well agents do over many sprints is a
   statistics view, not a line on these pages (owner, 2026-11-21).
+- **A task's Status** (the sprint's task list and the task's Overview,
+  owner 2026-11-24): what it is doing, and where it is under way the step,
+  named as Activity and the board name it: "Running · Develop", "Paused ·
+  Develop", "Stopped · Develop", "Blocked · Test"; "Waiting for merge
+  approval", "Queued", "Done" and "Cancelled" as they are. The board's
+  columns are the stages. Elsewhere a step is named the same way ("Stopped
+  at Test" in the decision box, "· at Test" in Needs you).
 - **An active sprint whose every task is done or cancelled** says so in
   State: "Ready to finish", with "Every task is done or cancelled." on
   hover and "Finish sprint" beside the title (ADR-0037).

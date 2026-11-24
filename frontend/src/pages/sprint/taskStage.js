@@ -22,7 +22,17 @@ export function needsPerson(task) {
 }
 
 /**
- * `{ tone, word, group }` for a task. A task part-way through its workflow
+ * A status and the step the task is at, named as Activity and the board name
+ * it: "Running · Develop", "Blocked · Test". The status alone where the task
+ * is at no step.
+ */
+function atStep(status, task) {
+  return task.workflow_current_step ? `${status} · ${humanize(task.workflow_current_step)}` : status;
+}
+
+/**
+ * `{ tone, word, group }` for a task: its status, and where it is under way
+ * the step it is at (owner, 2026-11-24: the list's column is its Status). A task part-way through its workflow
  * is "Running" only while the project's engine is on it; `engine` is the
  * project's engine from the workspace. With the engine paused, stopped or on
  * another task it is stopped at its step, and says so.
@@ -38,7 +48,7 @@ export function stageOf(task, engine = null) {
             : "Waiting for approval";
       return { tone: "attention", word, group: GROUPS.needsYou };
     }
-    return { tone: "attention", word: "Blocked", group: GROUPS.needsYou };
+    return { tone: "attention", word: atStep("Blocked", task), group: GROUPS.needsYou };
   }
   if (task.status === "triage") {
     // In the backlog a request waits for a person only where Foreman would
@@ -51,15 +61,14 @@ export function stageOf(task, engine = null) {
     return { tone: "attention", word: "Waiting to be accepted", group: GROUPS.needsYou };
   }
   if (task.status === "in_progress") {
-    const step = task.workflow_current_step ? humanize(task.workflow_current_step).toLowerCase() : null;
     const onIt = engine?.task_id === task.id;
     if (onIt && engine.state === ENGINE_STATES.running) {
-      return { tone: "running", word: step ? `Running, ${step}` : "Running", group: GROUPS.running };
+      return { tone: "running", word: atStep("Running", task), group: GROUPS.running };
     }
     if (onIt && engine.state === ENGINE_STATES.paused) {
-      return { tone: "idle", word: step ? `Paused at ${step}` : "Paused", group: GROUPS.running };
+      return { tone: "idle", word: atStep("Paused", task), group: GROUPS.running };
     }
-    return { tone: "idle", word: step ? `Stopped at ${step}` : "Stopped", group: GROUPS.running };
+    return { tone: "idle", word: atStep("Stopped", task), group: GROUPS.running };
   }
   if (task.status === "done") return { tone: "passed", word: "Done", group: GROUPS.finished };
   if (task.status === "cancelled") return { tone: "idle", word: "Cancelled", group: GROUPS.finished };

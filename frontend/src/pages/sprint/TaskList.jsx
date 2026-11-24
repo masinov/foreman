@@ -15,7 +15,7 @@ export function TaskList({ tasks, engine, busy, onApprove }) {
   const columns = [
     {
       key: "stage",
-      header: "Stage",
+      header: "Status",
       className: "task-list__stage",
       render: (task) => {
         const { tone, word } = stageOf(task, engine);

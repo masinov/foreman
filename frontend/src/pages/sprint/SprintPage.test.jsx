@@ -112,10 +112,27 @@ describe("the list", () => {
     expect(within(row).getByText("12")).toBeInTheDocument();
     expect(within(row).getByText("$0.72")).toBeInTheDocument();
     // The fixture's engine is on another task, so FOR-13 is not running.
-    expect(await within(screen.getByText("FOR-13").closest("tr")).findByText("Stopped at test")).toBeInTheDocument();
+    expect(await within(screen.getByText("FOR-13").closest("tr")).findByText("Stopped · Test")).toBeInTheDocument();
     expect(within(screen.getByText("FOR-17").closest("tr")).getByText("Queued")).toBeInTheDocument();
     expect(within(screen.getByText("FOR-10").closest("tr")).getByText("Done")).toBeInTheDocument();
     expect(within(screen.getByText("FOR-17").closest("tr")).getByText("Not checked yet")).toBeInTheDocument();
+  });
+
+  it("heads the column Status, and says the step a blocked task stopped at", async () => {
+    await renderSprint(
+      "/dashboard/sprints/sprint-56",
+      sprintRoutes({
+        tasks: [
+          taskPayload("t1", "FOR-1", "blocked", { workflow_current_step: "test" }),
+          taskPayload("t2", "FOR-2", "blocked", { workflow_current_step: null }),
+        ],
+      }),
+    );
+    const table = screen.getByText("FOR-1").closest("table");
+    expect(within(table).getAllByRole("columnheader")[0]).toHaveTextContent("Status");
+    expect(within(screen.getByText("FOR-1").closest("tr")).getByText("Blocked · Test")).toBeInTheDocument();
+    // At no step, the status alone.
+    expect(within(screen.getByText("FOR-2").closest("tr")).getByText("Blocked")).toBeInTheDocument();
   });
 
   it("says a task is running only while the engine is on it", async () => {
@@ -129,9 +146,9 @@ describe("the list", () => {
       view.unmount();
     };
     const onIt = { id: "t-run", task_key: "FOR-13", title: "x", step: "test" };
-    await expectStage("running", onIt, "Running, test");
-    await expectStage("paused", onIt, "Paused at test");
-    await expectStage("not_running", null, "Stopped at test");
+    await expectStage("running", onIt, "Running · Test");
+    await expectStage("paused", onIt, "Paused · Test");
+    await expectStage("not_running", null, "Stopped · Test");
   });
 
   it("offers Approve only where a merge approval waits, and approving reloads", async () => {
