@@ -317,6 +317,7 @@ Base work that this framing makes necessary:
        - **the tests view:** stage 5, designed with the other views.
 
        Language-bound test selection stays inside a project's own command (pytest-testmon or `--changed`), never in Foreman.
+     - **2026-11-25:** the "rule by changed paths" is now part of ADR-0041: a workflow route may test the changed path groups a project names, so a test tier becomes a route to a test step.
 6. **The views, thought through as one system (owner, 2026-11-23).**
    The owner has proposed several views over time. Before any one of them
    is built, they are designed together: roadmap stage 5, the left bar.
@@ -367,7 +368,10 @@ Base work that this framing makes necessary:
    - without frictions and collisions.
 
    "Keep things tidy for now. Discussing the organization of the work
-   requires care and online research." Nothing is decided yet.
+   requires care and online research."
+   - **Decided 2026-11-25** after the research: ADR-0040 (with the
+     proposal `docs/proposals/2026-11-24-method-repository-parallel-work.md`).
+     The notes below are kept as the record.
    - **First raised** as finding 23 of the sprint 54 run
      (`docs/reviews/sprint-54-live-run-notes.md`, 2026-09-08), "major
      (structural)": the shared files every branch edits at the top collide
@@ -409,6 +413,23 @@ Base work that this framing makes necessary:
      - what auditors and users expect to find, and where;
      - what is regenerated, and when it is written (sprint finish,
        release).
+
+8. **A code map for agents, surveyed in depth (owner, 2026-11-25).** What
+   each step is given about the repository so that it starts in the right
+   place without reading its way through (ADR-0041 sets the three layers:
+   project, task, step). The owner likes the idea of a generated map of the
+   code, as Aider's "repo map" does (symbols from tree-sitter, ranked by how
+   much they are referenced). It likely pays more as a codebase grows. "Worth
+   a deep research on tools like this so 1: we can borrow from what already
+   exists ... and 2: we design a truly robust system that saves time AND
+   tokens. But we can save that for later, since nothing depends on it
+   strictly."
+   - **To survey:** Aider's repo map, code indexes (ctags, tree-sitter tags,
+     LSP, Sourcegraph's SCIP), the search agents already do, and published
+     comparisons of indexes against plain search.
+   - **Measure first:** reads before the first edit and tokens per step,
+     which Foreman can count from the tool calls it records (ADR-0041), so
+     the survey can be judged on this repository and Assay.
 
 
 ## Found while running sprint 62 through Foreman (2026-11-24)

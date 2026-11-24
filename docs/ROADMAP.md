@@ -70,6 +70,10 @@ what evidence, when to stop and ask, how a reviewer judges. The planner step
 per task (criteria and a protected test written by someone other than the
 developer) belongs here. Claude writes a proposal for the owner to correct.
 
+**Decided 2026-11-25:** ADR-0040 (the method, the repository layout, parallel
+work, and the build order) and ADR-0041 (the workflow and role model, and
+what each step is given).
+
 ### Stage 4 — resources and environments
 
 Project resources (databases, service accounts, secrets, buckets) recorded
@@ -157,7 +161,7 @@ A proposal comes first, for the owner to correct, then an ADR, then the
 build through Foreman.
 
 The proposal: `docs/proposals/2026-11-24-method-repository-parallel-work.md`
-(written 2026-11-24, waiting for the owner's corrections).
+(written 2026-11-24, corrected by the owner 2026-11-25).
 
 ## History: milestones 0 to 23
 
