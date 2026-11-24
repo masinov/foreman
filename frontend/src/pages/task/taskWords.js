@@ -296,6 +296,7 @@ export function filedBy(task) {
     return [source.reporter, source.system ? `via ${source.system}` : null].filter(Boolean).join(" ");
   }
   if (!task.created_by) return "";
+  if (task.created_by.startsWith("agent:")) return `the ${humanize(task.created_by.slice(6)).toLowerCase()}`;
   return task.created_by === "human" ? "a user" : humanize(task.created_by).toLowerCase();
 }
 

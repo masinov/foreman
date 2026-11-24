@@ -23,6 +23,18 @@ from ..common import (
 )
 
 
+def describe_filed_from(created_by: str | None, filed_from: dict | None) -> str | None:
+    """"Filed by the developer while working on FOR-12", or None for other tasks."""
+
+    if not filed_from:
+        return None
+    role = (created_by or "").removeprefix("agent:")
+    who = f"the {role.replace('_', ' ').replace('-', ' ')}" if role else "an agent"
+    if not filed_from["exists"]:
+        return f"Filed by {who} while working on a task that no longer exists"
+    return f"Filed by {who} while working on {filed_from['task_key'] or filed_from['task_id']}"
+
+
 def handle_task_show(args: argparse.Namespace) -> int:
     """Handle ``foreman task show``."""
 
@@ -61,6 +73,9 @@ def handle_task_show(args: argparse.Namespace) -> int:
         ),
         f"Step visits: {format_step_visits(task['step_visit_counts'])}",
     ]
+    filed_from_line = describe_filed_from(task["created_by"], history["filed_from"])
+    if filed_from_line:
+        lines.append(filed_from_line)
     if task["branch_name"]:
         lines.append(f"Branch: {task['branch_name']}")
     if task["worktree_path"]:

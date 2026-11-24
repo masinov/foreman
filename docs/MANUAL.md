@@ -279,6 +279,15 @@ foreman task edit <task-id> [--title T] [--size small|medium|large|none] [--prio
 foreman task cancel <task-id>         # also removes the task's worktree
 ```
 
+A task an agent filed while working on another says so: `foreman task show` prints
+"Filed by the developer while working on FOR-12", and the task's Overview
+says the same under Details, with FOR-12 linking to the filing step on that
+task's Activity. If that task has since been deleted it reads "while working
+on a task that no longer exists". Tasks filed by a person or another system
+show nothing new.
+
+```
+
 `task done` is for work that was finished without the engine (merged by hand,
 done elsewhere). It runs none of the task's remaining steps and verifies
 nothing; the reason is recorded and shown on the task as "Marked done by

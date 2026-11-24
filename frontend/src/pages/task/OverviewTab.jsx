@@ -114,6 +114,21 @@ function Filed({ task }) {
   );
 }
 
+/** "while working on FOR-12": the task an agent filed this from, linked. */
+function FiledFrom({ from }) {
+  if (!from.exists) return <> while working on a task that no longer exists</>;
+  const label = from.task_key || from.task_id;
+  const href = from.run_id ? paths.taskRun(from.task_id, from.run_id) : paths.taskActivity(from.task_id);
+  return (
+    <>
+      {" while working on "}
+      <Link className="row-link" href={href}>
+        <Mono quiet>{label}</Mono>
+      </Link>
+    </>
+  );
+}
+
 function Details({ task, workflow }) {
   const usage = task.totals?.token_usage ?? {};
   const engine = useProjectEngine(task.project_id);
@@ -190,7 +205,14 @@ function Details({ task, workflow }) {
     {
       key: "filed",
       term: "Filed by",
-      value: who || when ? <span className="secondary">{[who, when ? `on ${when}` : ""].filter(Boolean).join(" ")}</span> : null,
+      value:
+        who || when ? (
+          <span className="secondary">
+            {who}
+            {task.filed_from ? <FiledFrom from={task.filed_from} /> : null}
+            {when ? `${who || task.filed_from ? " " : ""}on ${when}` : ""}
+          </span>
+        ) : null,
     },
     task.assigned_role ? { key: "role", term: "Last role", value: humanize(task.assigned_role) } : null,
   ].filter((row) => row && row.value !== null);
