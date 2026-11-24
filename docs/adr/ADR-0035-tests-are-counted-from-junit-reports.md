@@ -39,11 +39,27 @@ Two more facts shaped the decision:
    `<testsuite>` are not used, because tools fill them in differently.
 3. **A report is refused, not parsed, when it:**
    - declares a document type or an entity (a JUnit report has neither);
-   - is over 32 MB;
+   - ~~is over 32 MB;~~
    - is a link.
 
-   At most 200 files are read. Why a file was not read is recorded with the
-   counts.
+   ~~At most 200 files are read.~~ Why a file was not read is recorded with
+   the counts.
+
+   **Amended 2026-11-24 (owner: "Shouldn't all content be read?"):** every
+   report is read in full, with no limit on how many files or how large.
+   - **Why the limits went.** They were there because each file was loaded
+     whole into memory. On Foreman's own suite they cut the count: its
+     Python tests write one file per test class, 272 files. Files are read
+     in name order and the "TEST-" files sort first, so the frontend's
+     report was never read.
+   - **How each file is read now:** a piece at a time (expat, 64 KB), with
+     only the running totals kept. A file's size costs the time the test
+     command already spent writing it, not memory.
+   - **The refusals that remain are about trickery, not size.** Reading
+     stops where a document type declaration starts, before any entity is
+     defined or used.
+   - **A broken file:** one that breaks half-way adds nothing to the
+     counts, and is named as not read.
 4. **`engine.test_run` carries `report`** (`tests`, `passed`, `failed`,
    `skipped`, `files`, or null) and **`report_problems`**. The checks
    (`facts.tests.counts`) and the task's runs (`runs[].tests`) serve the

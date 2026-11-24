@@ -52,14 +52,34 @@ class ReadReportsTests(unittest.TestCase):
         self.assertIsNone(report)
         self.assertEqual(problems, ["bomb.xml was not read: it declares a document type, which a JUnit report does not."])
 
-    def test_a_report_over_the_size_limit_is_not_read(self) -> None:
-        _write(self.dir, "big.xml", "<testsuite>" + " " * 64 + "</testsuite>")
-        original = test_report.MAX_REPORT_BYTES
-        test_report.MAX_REPORT_BYTES = 16
-        self.addCleanup(setattr, test_report, "MAX_REPORT_BYTES", original)
+    def test_every_report_is_read_however_many_and_however_large(self) -> None:
+        # One file per test class, as unittest-xml-reporting writes them, more
+        # than the 200 Foreman used to stop at, and they sort before the
+        # frontend's file.
+        for i in range(300):
+            _write(self.dir, f"TEST-tests.test_{i:03}.Tests.xml",
+                   '<testsuite><testcase name="a"/><testcase name="b"/></testsuite>')
+        # A large report: 100,000 cases, read a piece at a time.
+        cases = '<testcase classname="c" name="t"/>' * 100_000
+        _write(self.dir, "frontend.xml", f"<testsuites><testsuite>{cases}</testsuite></testsuites>")
         report, problems = read_reports(self.dir)
-        self.assertIsNone(report)
-        self.assertIn("over the 16 Foreman reads", problems[0])
+        self.assertEqual((report.tests, report.files), (300 * 2 + 100_000, 301))
+        self.assertEqual(problems, [])
+
+    def test_a_report_that_breaks_half_way_adds_nothing(self) -> None:
+        _write(self.dir, "cut.xml", '<testsuite><testcase name="x"/><testcase name="y"><failure/></testcase><testcase')
+        _write(self.dir, "good.xml", '<testsuite><testcase name="z"/></testsuite>')
+        report, problems = read_reports(self.dir)
+        self.assertEqual((report.tests, report.failed, report.files), (1, 0, 1))
+        self.assertEqual(report.failed_tests, ())
+        self.assertTrue(problems[0].startswith("cut.xml was not read: it is not well-formed XML"))
+
+    def test_only_a_cases_own_elements_say_how_it_ended(self) -> None:
+        _write(self.dir, "nested.xml", '<testsuite><testcase name="x"><system-out><failure/></system-out></testcase>'
+               '<testcase name="y"><error/><skipped/></testcase></testsuite>')
+        report, _ = read_reports(self.dir)
+        self.assertEqual((report.tests, report.failed, report.skipped), (2, 1, 0))
+        self.assertEqual(report.failed_tests, (("", "y"),))
 
     def test_a_link_is_not_followed(self) -> None:
         with tempfile.TemporaryDirectory() as elsewhere:
@@ -76,6 +96,14 @@ class ReadReportsTests(unittest.TestCase):
         self.assertEqual(len(report.failed_tests), test_report.MAX_FAILED_NAMED)
         self.assertEqual(report.failed_tests[0], ("tests.test_a.ATests", "test_0"))
         self.assertEqual(report.as_payload()["failed_tests"][0], {"suite": "tests.test_a.ATests", "name": "test_0"})
+
+    def test_failures_past_the_named_ones_still_count_across_reports(self) -> None:
+        for n in range(3):
+            cases = "".join(f'<testcase name="t{n}_{i}"><failure/></testcase>' for i in range(30))
+            _write(self.dir, f"r{n}.xml", f"<testsuite>{cases}</testsuite>")
+        report, _ = read_reports(self.dir)
+        self.assertEqual(report.failed, 90)
+        self.assertEqual(len(report.failed_tests), test_report.MAX_FAILED_NAMED)
 
     def test_words(self) -> None:
         self.assertEqual(TestReport(tests=1, failed=0, skipped=0, files=1).words(), "1 test")
