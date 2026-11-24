@@ -45,6 +45,7 @@ const COLUMNS = [
   {
     key: "spend",
     header: "Spend",
+    numeric: true,
     className: "queue__number",
     render: (sprint) => <Spend amount={sprint.totals?.total_cost_usd} where="row" />,
   },
