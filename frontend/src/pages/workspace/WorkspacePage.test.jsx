@@ -58,7 +58,7 @@ describe("WorkspacePage", () => {
     const unblock = within(needsYou).getByText("FOR-15").closest("tr");
     expect(within(unblock).getByText("Blocked")).toBeInTheDocument();
     // What a user weighs before unblocking: why it is blocked and where it stopped.
-    expect(unblock).toHaveTextContent("Tests failed three times · at test");
+    expect(unblock).toHaveTextContent("Tests failed three times · at Test");
     expect(within(unblock).getByRole("button", { name: "Unblock FOR-15" })).toHaveClass("button--gold-outline");
 
     const projects = await waitFor(() => {
