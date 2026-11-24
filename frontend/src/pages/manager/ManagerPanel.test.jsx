@@ -164,6 +164,44 @@ describe("the conversation", () => {
     expect(within(thread).queryByRole("button", { name: "Earlier messages" })).toBeNull();
   });
 
+  const MARKED = "Do this:\n\n- first **bold** step\n- run `make`\n\n```\nmake all\n```";
+
+  it("formats a finished reply and keeps a user's own message plain", async () => {
+    const fetchImpl = await openAt("/dashboard/projects/foreman", projectRoutes(), {
+      turns: [turn("t1", "user", MARKED), turn("t2", "assistant", MARKED)],
+      has_more: false,
+    });
+    const thread = within(panel()).getByRole("log");
+    await within(thread).findAllByText(/Do this/);
+    const [mine, reply] = thread.querySelectorAll(".manager__turn");
+    expect(mine.querySelector("ul, pre, strong, code")).toBeNull();
+    expect(mine.textContent).toContain("**bold**");
+    expect(reply.querySelectorAll("li")).toHaveLength(2);
+    expect(reply.querySelector("strong").textContent).toBe("bold");
+    expect(reply.querySelector("li code").textContent).toBe("make");
+    expect(reply.querySelector("pre").textContent).toBe("make all");
+    expect(reply.textContent).not.toContain("**");
+    expect(fetchImpl).toBeDefined();
+  });
+
+  it("keeps a streaming reply as text, then formats it when it ends", async () => {
+    const stream = controlledStream();
+    const fetchImpl = await openAt("/dashboard/projects/foreman", projectRoutes());
+    fetchImpl.routes[MESSAGE] = () => stream.response;
+    fireEvent.change(within(panel()).getByRole("textbox", { name: "Message to the manager" }), { target: { value: "Go" } });
+    fireEvent.click(within(panel()).getByRole("button", { name: "Send" }));
+    const thread = within(panel()).getByRole("log");
+    await stream.push({ type: "text_delta", text: "Steps:\n\n- one **bo" });
+    await within(thread).findByText(/one \*\*bo/);
+    expect(thread.querySelector("ul, strong")).toBeNull();
+    await stream.push({ type: "text_delta", text: "ld**\n\n```\nx" });
+    await stream.push({ type: "done", session_id: "s1" });
+    await stream.end();
+    await waitFor(() => expect(thread.querySelector(".manager__cursor")).toBeNull());
+    expect(thread.querySelector("li strong").textContent).toBe("bold");
+    expect(thread.querySelector("pre").textContent).toBe("x");
+  });
+
   it("sends a message with the page, and the reply grows as it is written, with a cursor", async () => {
     const stream = controlledStream();
     const routes = sprintRoutes();
@@ -327,6 +365,8 @@ describe("the conversation", () => {
     fireEvent.change(box, { target: { value: "Quick question" } });
     fireEvent.click(within(panel()).getByRole("button", { name: "Send" }));
     const thread = within(panel()).getByRole("log");
+    // The reply is formatted as it ends, replacing the text shown while it arrived.
+    await waitFor(() => expect(document.querySelector(".manager__cursor")).toBeNull());
     expect(await within(thread).findByText("Quick answer.")).toBeInTheDocument();
 
     await act(async () => answerFirstReading(reply(200, { turns: [], has_more: false })));

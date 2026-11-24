@@ -9,6 +9,8 @@ memory changes rather than versioned product releases.
 
 ### Sprint 62
 
+- The manager's replies are formatted (sprint 62 slice 6). A finished reply in the side bar is rendered with the shared `Markdown` component (lists, `code`, code blocks, bold, headings; no raw HTML), in the side bar's text size. A reply still arriving stays plain text with its cursor until it ends, so the thread does not reflow as marks arrive; your own messages stay plain. Proposal cards are unchanged.
+
 - A task an agent filed names the task it came from (sprint 62 slice 6). The task's Overview says "Filed by the developer while working on FOR-12", FOR-12 linking to the filing step on that task's Activity; `foreman task show` prints the same line; a task that no longer exists reads "a task that no longer exists". Served as `filed_from` on the task detail, read in `foreman/services/views.py` from the filing event's `filed_from_task_id` and `filed_from_run_id`. Tasks filed by a person or another system show nothing new.
 
 - `foreman init` and Settings › Runners use the project's own roles and workflows (ADR-0024, sprint 62 slice 6, run through Foreman). `init` accepts a workflow the workspace defines, and run again on a project keeps the workflow it has, whatever its source. Runners lists the models roles use as each project resolves them (shipped, then the workspace's, then the project's), read through the definitions layer; a model only an override uses is shown and one no role uses is not.

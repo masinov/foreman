@@ -60,7 +60,8 @@ Workspace / Project / Sprint / Task.
 - **Manager** is one conversation per project. It is a side bar on the
   right of a project's pages and its sprints, toggled from the same place in
   the top bar, and it stays open as you move. It proposes changes; nothing
-  happens until the person confirms.
+  happens until the person confirms. Its finished replies are
+  formatted text; your own messages stay as typed.
 - **Agent** is the same side bar on a task page (ADR-0029, owner
   2026-11-17): the conversation with the agents doing that task. Its steps
   in order, what each said and did, followed as a running step prints, what
