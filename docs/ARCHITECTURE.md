@@ -677,7 +677,9 @@ if accepted. `app/useLiveData.js` keeps pages current: inside a project it
 follows `GET /projects/{id}/stream` and calls the application-wide
 `refresh()` (every loaded resource loads again and keeps showing what it had
 meanwhile), ignoring agent and test output and the replay a new listener is
-sent, once per burst and at most every two seconds; the workspace reads again
+sent, once per burst and at most every two seconds, and hands every event to
+`app/projectEvents.js` for parts of a page that need the events themselves
+(a running step's output, the task page's reload); the workspace reads again
 every 20 seconds; any page reads again when its tab becomes visible. Forms
 restart their draft only when the values read differ, so a reload never wipes
 typing.
@@ -709,8 +711,10 @@ The task page (`pages/task/`) reads `GET /tasks/{id}`, `/checks` and
 `/changes` once for its head and decision, whichever tab is open; Overview
 adds the project's workflow (steps and who decides), Changes one file's diff
 at a time, Activity the paged runs and the selected run's output. While the
-task is `in_progress` it follows `GET /sprints/{id}/stream` and reads itself
-again 300 ms after the last event about the task. Overview also holds
+task is `in_progress` it listens, through `app/projectEvents.js`, to the
+project's stream that `useLiveData` already holds open (the page opens no
+stream of its own) and reads itself again 300 ms after the last event about
+the task. Overview also holds
 "Overrides for this task": one `PATCH /tasks/{id}` with the whole
 `executor_overrides` (who decides at the workflow's gates, a model per agent
 step), keeping the keys the page does not edit.
