@@ -11,6 +11,8 @@ memory changes rather than versioned product releases.
 
 - A running task's page uses one event stream (sprint 62, run through Foreman). It opened the project's stream and the sprint's, which repeated the project's events; it now listens to the project's alone through `projectEvents`, and reloads on an event about its task as before. The sprint page never had a second stream.
 
+- A task an agent filed names the task it came from (sprint 62 slice 6). The task's Overview says "Filed by the developer while working on FOR-12", FOR-12 linking to the filing step on that task's Activity; `foreman task show` prints the same line; a task that no longer exists reads "a task that no longer exists". Served as `filed_from` on the task detail, read in `foreman/services/views.py` from the filing event's `filed_from_task_id` and `filed_from_run_id`. Tasks filed by a person or another system show nothing new.
+
 - `foreman init` and Settings › Runners use the project's own roles and workflows (ADR-0024, sprint 62 slice 6, run through Foreman). `init` accepts a workflow the workspace defines, and run again on a project keeps the workflow it has, whatever its source. Runners lists the models roles use as each project resolves them (shipped, then the workspace's, then the project's), read through the definitions layer; a model only an override uses is shown and one no role uses is not.
 
 - Every test report is read in full (ADR-0035 amendment, owner 2026-11-24). Foreman stopped at 200 report files of 32 MB at most. Foreman's own suite writes 272, one per test class, so its count left out about 400 Python tests and all the frontend's. Reports are now read a piece at a time, however many and however large.

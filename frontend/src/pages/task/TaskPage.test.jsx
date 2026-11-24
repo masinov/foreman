@@ -666,6 +666,32 @@ describe("Overview", () => {
   });
 });
 
+describe("a task an agent filed", () => {
+  const filed = (from) =>
+    taskRoutes({
+      task: taskDetail({ created_by: "agent:developer", filed_from: from }),
+    });
+
+  it("names the task it came from, linked to that task's run", async () => {
+    await renderTask(BASE, filed({ task_id: "task-12", task_key: "FOR-12", title: "Parent", run_id: "run-9", exists: true }));
+    const details = await screen.findByRole("region", { name: "Details" });
+    await waitFor(() => expect(details).toHaveTextContent(/Filed by\s*the developer while working on FOR-12 on 10 Nov/));
+    expect(within(details).getByRole("link", { name: "FOR-12" })).toHaveAttribute(
+      "href",
+      "/dashboard/tasks/task-12/activity?run=run-9",
+    );
+  });
+
+  it("says so when that task no longer exists", async () => {
+    await renderTask(BASE, filed({ task_id: "gone", task_key: null, title: null, run_id: "run-9", exists: false }));
+    const details = await screen.findByRole("region", { name: "Details" });
+    await waitFor(() =>
+      expect(details).toHaveTextContent(/Filed by\s*the developer while working on a task that no longer exists/),
+    );
+    expect(within(details).queryByRole("link", { name: /gone/ })).toBeNull();
+  });
+});
+
 describe("a merged task", () => {
   it("says it is merged and as which commit, not how far the default branch has moved", async () => {
     const checks = checksPayload();

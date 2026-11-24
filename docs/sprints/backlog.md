@@ -404,8 +404,8 @@ here.
   formatted.
 - **Earlier proposals are shown in full,** with no one-line summary (FOR-43).
   A send-back already names where the task goes.
-- **A task filed by an agent does not say which task the agent was working
-  on.** The event records it (`filed_from_task_id`); no page shows it.
+- ~~**A task filed by an agent does not say which task the agent was working
+  on.**~~ Done (sprint 62 slice 6): Overview and `foreman task show` say it.
 - **A task cannot move from one sprint to another directly.** It goes back
   to the backlog and is added again.
 - **Codex records its cost as 0** (`foreman/runner/codex.py`).
