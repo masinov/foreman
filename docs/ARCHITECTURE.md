@@ -499,7 +499,13 @@ bad one is a 400 `invalid_request` envelope (ADR-0019). Paged lists take
   `task_title` are null) and carries `gate` (`id`, `conflict_description`,
   `suggested_reason`, `suggested_order` as `{sprint_id, title}`); `since` is
   when it was raised and the page settles it with `PATCH /gates/{id}`
-  (`accepted` or `rejected`). It counts in the workspace's `needs_you`. `since` is the end of the task's last run (what parked it),
+  (`accepted` or `rejected`). It counts in the workspace's `needs_you`.
+  A sixth kind, `finish_sprint` (owner, 2026-11-24): an active sprint whose
+  every task is done or cancelled, in a project where a user finishes
+  sprints (`sprint_completion` is not `auto`). It has no task, carries
+  `task_counts`, and its `since` is the sprint's last `engine.sprint_ready`
+  record, else its start. The page finishes it with `PATCH /sprints/{id}`
+  (`completed`), which tags it as the sprint page's Finish sprint does. `since` is the end of the task's last run (what parked it),
   or its creation for filed work never run. A constant number of queries
   whatever the number of projects or tasks.
 - `GET /milestones` and `GET /projects/{id}/milestones` return `milestones`

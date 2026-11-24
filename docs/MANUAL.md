@@ -1005,7 +1005,7 @@ Two related knobs:
     attention turn (with `engine.sprint_ready`) says it is ready to be
     finished. Both are the sprint's own records, not a task's (ADR-0037).
     The sprint page's State reads "Ready to finish" from its tasks, whether
-    an engine runs or not. Later passes
+    an engine runs or not, and Needs you lists it with a Finish button. Later passes
     over the same resolved sprint add nothing; a task added to it is run,
     and the turn is raised again once it is resolved. A person finishes the
     sprint (dashboard "Finish sprint", `foreman sprint

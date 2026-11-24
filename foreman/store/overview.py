@@ -283,6 +283,23 @@ class OverviewStore(StoreBase):
             counts[row["sprint_id"]][str(row["status"])] = int(row["value"])
         return counts
 
+    def latest_sprint_record(
+        self, sprint_ids: Sequence[str], event_type: str
+    ) -> dict[str, str]:
+        """When each named sprint last recorded ``event_type`` as its own, in one statement."""
+
+        if not sprint_ids:
+            return {}
+        rows = self._connection.execute(
+            f"""
+            SELECT sprint_id, MAX(timestamp) AS at FROM events
+            WHERE event_type = ? AND sprint_id IN ({', '.join('?' for _ in sprint_ids)})
+            GROUP BY sprint_id
+            """,
+            (event_type, *sprint_ids),
+        ).fetchall()
+        return {row["sprint_id"]: str(row["at"]) for row in rows}
+
     def spend_by_sprint(self, sprint_ids: Sequence[str]) -> dict[str, float]:
         """Return the cost of every run, in dollars, for each named sprint."""
 

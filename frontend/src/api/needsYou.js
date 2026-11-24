@@ -13,6 +13,9 @@ export const NEEDS_YOU_KINDS = {
   unblock: "unblock",
   // Not a task: a proposed sprint order, settled by accepting or rejecting it.
   settleOrder: "settle_order",
+  // Not a task: an active sprint whose every task is finished, where a user
+  // finishes sprints (`task_counts`).
+  finishSprint: "finish_sprint",
 };
 
 /** One page as `{ items, total }`. Without `projectId`, every project. */

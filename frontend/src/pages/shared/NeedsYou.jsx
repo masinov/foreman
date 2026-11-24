@@ -4,6 +4,7 @@ import { useApiClient } from "../../api/ApiProvider";
 import { errorSentence } from "../../api/client";
 import { GATE_RESOLUTIONS, resolveGate } from "../../api/gates";
 import { listNeedsYou, NEEDS_YOU_KINDS } from "../../api/needsYou";
+import { SPRINT_STATUSES, transitionSprint } from "../../api/sprints";
 import { approveTask, unblockTask } from "../../api/tasks";
 import { useDelayedFlag } from "../../api/useResource";
 import { usePagedList } from "../../api/usePagedList";
@@ -18,6 +19,7 @@ import { Table } from "../../ui/Table";
 import { humanize, plural, shortSha } from "../../ui/format";
 import { useNotice } from "../../ui/Toast";
 import { decisionSentence } from "./decisionWords";
+import { describeTaskCounts } from "./words";
 
 // Design README: Needs you shows at most 5, with a way to see the rest.
 export const NEEDS_YOU_CAP = 5;
@@ -31,9 +33,11 @@ const KIND_WORDS = {
   [NEEDS_YOU_KINDS.approveMerge]: "Approve merge",
   [NEEDS_YOU_KINDS.unblock]: "Blocked",
   [NEEDS_YOU_KINDS.settleOrder]: "Settle sprint order",
+  [NEEDS_YOU_KINDS.finishSprint]: "Finish sprint",
 };
 
-const itemId = (item) => item.gate?.id ?? item.task_id ?? `${item.kind}:${item.project_id}`;
+const itemId = (item) =>
+  item.gate?.id ?? item.task_id ?? (item.kind === NEEDS_YOU_KINDS.finishSprint ? `finish:${item.sprint_id}` : `${item.kind}:${item.project_id}`);
 const itemName = (item) => item.task_key || item.task_title || "the sprint order";
 
 // The same words and colours as a task's checks in the sprint list: a word
@@ -105,6 +109,7 @@ function Detail({ item }) {
   if (item.kind === NEEDS_YOU_KINDS.approveMerge) return <MergeFacts evidence={item.evidence} />;
   if (item.kind === NEEDS_YOU_KINDS.unblock) return <BlockedFacts blocked={item.blocked} />;
   if (item.kind === NEEDS_YOU_KINDS.answerRequests) return <span className="quiet">Backlog</span>;
+  if (item.kind === NEEDS_YOU_KINDS.finishSprint) return <span className="quiet">{describeTaskCounts(item.task_counts ?? {})}</span>;
   return <span className="quiet">{item.sprint_title || ""}</span>;
 }
 
@@ -173,6 +178,14 @@ export function NeedsYou({ projectId = null, note, empty, onChanged }) {
       };
     });
 
+  // Finishing tags the repository as the sprint page's Finish sprint does
+  // (ADR-0036); the sprint page says the tag.
+  const finishSprint = (item) =>
+    decide(item, async () => {
+      await transitionSprint(client, item.sprint_id, SPRINT_STATUSES.completed);
+      return { text: `Finished ${item.sprint_title || "the sprint"}.` };
+    });
+
   function showAll() {
     const missing = (list.total ?? 0) - (list.items?.length ?? 0);
     if (missing > 0) list.loadMore(Math.min(missing, MAX_PAGE));
@@ -202,6 +215,10 @@ export function NeedsYou({ projectId = null, note, empty, onChanged }) {
         item.kind === NEEDS_YOU_KINDS.answerRequests ? (
           <Link className="row-link" href={paths.projectBacklog(item.project_id)}>
             {plural(item.count ?? 0, "request")} from agents and other systems
+          </Link>
+        ) : item.kind === NEEDS_YOU_KINDS.finishSprint ? (
+          <Link className="row-link" href={paths.sprint(item.sprint_id)}>
+            {item.sprint_title}
           </Link>
         ) : item.gate ? (
           <Link className="row-link" href={paths.sprint(item.sprint_id)}>
@@ -254,6 +271,19 @@ export function NeedsYou({ projectId = null, note, empty, onChanged }) {
               onClick={() => approve(item)}
             >
               {approvingId === item.task_id ? "Approving…" : "Approve"}
+            </Button>
+          );
+        }
+        if (item.kind === NEEDS_YOU_KINDS.finishSprint) {
+          return (
+            <Button
+              variant="gold-outline"
+              inRow
+              disabled={approvingId !== null}
+              aria-label={`Finish ${item.sprint_title || "the sprint"}`}
+              onClick={() => finishSprint(item)}
+            >
+              {approvingId === itemId(item) ? "Finishing…" : "Finish"}
             </Button>
           );
         }

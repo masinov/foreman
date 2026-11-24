@@ -224,6 +224,41 @@ describe("Needs you on the project page", () => {
     expect(sent[1].body).toEqual({ note: null });
   });
 
+  it("lists a sprint ready to finish, and finishes it from its row", async () => {
+    // Owner, 2026-11-24: the sprint page said "Ready to finish" and nothing led there.
+    const routes = projectRoutes();
+    const item = {
+      kind: "finish_sprint",
+      project_id: "foreman",
+      project_name: "Foreman",
+      sprint_id: "sprint-62",
+      sprint_title: "Sprint 62: finish what's there",
+      task_id: null,
+      task_key: null,
+      task_title: null,
+      since: "2026-11-24T20:29:46Z",
+      task_counts: { done: 10, cancelled: 0 },
+    };
+    routes[PROJECT_NEEDS_YOU_URL] = { items: [item], total: 1 };
+    routes["PATCH /api/v1/sprints/sprint-62"] = () => {
+      routes[PROJECT_NEEDS_YOU_URL] = { items: [], total: 0 };
+      return { id: "sprint-62", status: "completed" };
+    };
+    const { fetchImpl } = await renderProject("/dashboard/projects/foreman", routes);
+    const needsYou = screen.getByRole("region", { name: /Needs you/ });
+    const row = (await within(needsYou).findByText("Sprint 62: finish what's there")).closest("tr");
+    expect(row).toHaveTextContent("Finish sprint");
+    expect(row).toHaveTextContent("10 done");
+    expect(within(row).getByRole("link", { name: "Sprint 62: finish what's there" })).toHaveAttribute(
+      "href",
+      "/dashboard/sprints/sprint-62",
+    );
+    fireEvent.click(within(row).getByRole("button", { name: "Finish Sprint 62: finish what's there" }));
+    await waitFor(() => expect(within(needsYou).queryByText("Sprint 62: finish what's there")).toBeNull());
+    expect(screen.getByRole("status")).toHaveTextContent("Finished Sprint 62: finish what's there.");
+    expect(calls(fetchImpl, "PATCH", "/api/v1/sprints/sprint-62")[0].body).toEqual({ status: "completed" });
+  });
+
   it("a blocked task with no reason recorded says so", async () => {
     const routes = projectRoutes();
     routes[PROJECT_NEEDS_YOU_URL] = { items: [{ ...UNBLOCK_ITEM, blocked: { reason: null, step: null } }], total: 1 };
