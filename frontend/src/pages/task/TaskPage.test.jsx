@@ -621,6 +621,7 @@ describe("Overview", () => {
     expect(details).toHaveTextContent(/Branch\s*foreman\/for-14/);
     // Spend is money; how many steps there were is on Activity.
     expect(details).toHaveTextContent(/Spend\s*\$0\.72Filed/);
+    expect(within(details).getByText("$0.72")).toHaveClass("mono");
     expect(details).toHaveTextContent(/Filed by\s*a user on 10 Nov/);
     // What was filed is prose for the wide column, not a fact beside it.
     expect(details).not.toHaveTextContent("It should say how long");
@@ -1013,6 +1014,7 @@ describe("Activity", () => {
     // The count is of the steps listed; the spend is the task's.
     const heading = screen.getByRole("heading", { name: /^Steps/ }).closest(".section-heading");
     expect(heading).toHaveTextContent(/^Steps\s*2\s*\$0\.72 in all$/);
+    expect(within(heading).getByText("$0.72")).toHaveClass("mono");
 
     expect(await screen.findByText("Reviewed the change.")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Review" })).toBeInTheDocument();
@@ -1029,6 +1031,7 @@ describe("Activity", () => {
     expect(facts).toHaveTextContent(/Model\s*sonnet-5-5/);
     expect(facts).toHaveTextContent(/Took\s*7 s/);
     expect(facts).toHaveTextContent(/Spend\s*\$0\.12 · 1K tokens/);
+    expect(within(facts).getByText("$0.12 · 1K tokens")).toHaveClass("mono");
     expect(within(facts).getByRole("button", { name: "Download the transcript" })).toBeInTheDocument();
     expect(screen.queryByText(/No prompt was recorded/)).toBeNull();
 

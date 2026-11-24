@@ -11,7 +11,8 @@ import { Mono } from "../../ui/Mono";
 import { SectionHeading } from "../../ui/SectionHeading";
 import { StatusDot } from "../../ui/StatusDot";
 import { Table } from "../../ui/Table";
-import { formatDay, formatMoney, formatTokens, humanize } from "../../ui/format";
+import { formatDay, formatTokens, humanize } from "../../ui/format";
+import { Spend } from "../../ui/Spend";
 import { useProjectEngine } from "../shared/useProjectEngine";
 import { stageOf } from "../sprint/taskStage";
 import { Overrides } from "./Overrides";
@@ -189,7 +190,7 @@ function Details({ task, workflow }) {
     {
       key: "spend",
       term: "Spend",
-      value: <Mono>{formatMoney(task.totals?.total_cost_usd)}</Mono>,
+      value: <Spend amount={task.totals?.total_cost_usd} />,
     },
     usage.input || usage.output || usage.cache_read
       ? {

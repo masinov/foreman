@@ -47,6 +47,7 @@ describe("the sprint page head", () => {
     expect(summary).toHaveTextContent(/State\s*Active since 11 Nov/);
     expect(summary).toHaveTextContent("1 need you · 1 in progress · 2 to do · 1 done");
     expect(summary).toHaveTextContent("$1.31 · 28.5K tokens");
+    expect(within(summary).getByText("$1.31 · 28.5K tokens")).toHaveClass("mono");
     // Nothing about Foreman starting tasks where a user plans them all.
     expect(summary).not.toHaveTextContent(/Foreman/);
   });
@@ -110,7 +111,7 @@ describe("the list", () => {
     expect(within(row).getByText("Waiting for merge approval")).toBeInTheDocument();
     expect(row).toHaveTextContent("tests · review · b232eb1");
     expect(within(row).getByText("12")).toBeInTheDocument();
-    expect(within(row).getByText("$0.72")).toBeInTheDocument();
+    expect(within(row).getByText("$0.72")).toHaveClass("mono");
     // The fixture's engine is on another task, so FOR-13 is not running.
     expect(await within(screen.getByText("FOR-13").closest("tr")).findByText("Stopped · Test")).toBeInTheDocument();
     expect(within(screen.getByText("FOR-17").closest("tr")).getByText("Queued")).toBeInTheDocument();

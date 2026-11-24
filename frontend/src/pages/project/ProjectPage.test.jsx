@@ -303,7 +303,7 @@ describe("the Sprints tab", () => {
     // What waits for a user is gold wherever the counts appear.
     expect(within(rows[0]).getByText("3 need you")).toHaveClass("attention");
     expect(within(rows[0]).getByText("since 11 Nov")).toBeInTheDocument();
-    expect(within(rows[0]).getByText("$1.31")).toBeInTheDocument();
+    expect(within(rows[0]).getByText("$1.31")).toHaveClass("mono");
     expect(within(rows[1]).getByText("Planned")).toBeInTheDocument();
     expect(within(rows[1]).getByRole("link", { name: PLANNED.title })).toBeInTheDocument();
     expect(within(queue).queryByText(FINISHED[0].title)).toBeNull();

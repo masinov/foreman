@@ -56,7 +56,7 @@ sprint, what should they see first?"
   - small frictions seen on the way. Done on 2026-11-22: "Measured by
     Foreman", the APPROVE line, "Merged in 0.1 s", the review named by its
     role. Still to do: the lone "OK" a test's detail shows (with the test
-    count), and spend written three ways.
+    count). Spend written three ways: done 2026-11-24 (`ui/Spend`).
 
 ## Activity, one stream at three depths (owner, 2026-11-21)
 

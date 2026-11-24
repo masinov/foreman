@@ -5,7 +5,8 @@ import { Link } from "../../app/router";
 import { Mono } from "../../ui/Mono";
 import { StatusDot } from "../../ui/StatusDot";
 import { Table } from "../../ui/Table";
-import { formatDayTime, formatMoney, humanize } from "../../ui/format";
+import { formatDayTime, humanize } from "../../ui/format";
+import { Spend } from "../../ui/Spend";
 import { milestoneSentence } from "../shared/milestones";
 import { TaskCounts } from "../shared/TaskCounts";
 import { engineWords } from "../shared/words";
@@ -93,7 +94,7 @@ const COLUMNS = [
     key: "spend",
     header: "Sprint spend",
     numeric: true,
-    render: (p) => (p.active_sprint ? <Mono>{formatMoney(p.active_sprint.spend_usd)}</Mono> : null),
+    render: (p) => (p.active_sprint ? <Spend amount={p.active_sprint.spend_usd} where="row" /> : null),
   },
   { key: "last", header: "Last change", className: "projects__last", render: (p) => <LastChangeCell milestone={p.latest_milestone} /> },
 ];
