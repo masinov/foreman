@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -77,6 +79,19 @@ def installed_foreman_root() -> Path | None:
     return Path(probe.stdout.strip())
 
 
+@contextlib.contextmanager
+def _install_lock():
+    """Hold an exclusive lock on the virtualenv while the package is installed."""
+
+    lock_path = PYTHON.parent.parent / ".foreman-test-install.lock"
+    with open(lock_path, "w") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
+
+
 class ForemanCLISmokeTests(unittest.TestCase):
     """Verify that the initial CLI shell is wired and runnable."""
 
@@ -100,6 +115,20 @@ class ForemanCLISmokeTests(unittest.TestCase):
             # still this one — only the console script on PATH is stale.
             cls.reinstall_skipped_for = str(installed)
             return
+        if installed == REPO_ROOT / "foreman" and FOREMAN.is_file():
+            # Already installed, editable, from this checkout: there is
+            # nothing to update, and reinstalling from several test workers at
+            # once (pytest -n auto) rewrites the console script under the
+            # others (2026-11-24).
+            return
+        # Not installed yet: one worker installs while the others wait.
+        with _install_lock():
+            if installed_foreman_root() == REPO_ROOT / "foreman" and FOREMAN.is_file():
+                return
+            cls._install_editable()
+
+    @classmethod
+    def _install_editable(cls) -> None:
         install_result = subprocess.run(
             [
                 str(PIP),
