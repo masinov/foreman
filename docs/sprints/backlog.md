@@ -251,6 +251,20 @@ Base work that this framing makes necessary:
        - what it produces (results, screenshots);
        - when it runs: every task, tasks touching some files, before a
          merge, or on a schedule.
+     - **Tiers, so a step does not wait for every test (owner,
+       2026-11-24).** Today every task's test step runs the project's whole
+       `test_command`, however small the change. The common practice:
+       - at each step, only the tests the change can affect, picked by a
+         tool that knows which tests run which code (coverage-based, such
+         as pytest-testmon, or by the dependency graph, such as
+         `vitest --changed` or Nx and Bazel "affected"). Groups kept by
+         hand go stale and miss side effects;
+       - before the merge, the whole suite, because `main` must always
+         pass;
+       - before a release or on a schedule, what is too slow for every
+         merge (journeys through the interface).
+       A suite then says which tier it belongs to, and the merge gate
+       stays the full run.
      - **Coverage, each requirement against reality.** Whether a test
        exists, which one, its last result and its screenshot. A requirement
        with no test is a gap. Closing a gap is a task for a tester role,
@@ -360,6 +374,11 @@ here.
   it is skipped here because Playwright is not installed. What is missing is
   a pack for the user's journeys: approve a merge, send back, pause, recover
   from an engine failure. It connects to owner direction 5.
+- **The Python suite runs one test at a time** (1,636 tests, about 4½
+  minutes). Running it in parallel (pytest with pytest-xdist runs the
+  existing unittest tests as they are) could bring it to about a minute on
+  this machine. First check that no tests share state: a fixed port, a
+  shared temporary path, the process environment (owner, 2026-11-24).
 - **No types in the frontend** (no TypeScript, no JSDoc types).
 - **The store still repairs known schema drift every time it opens**
   (`_repair_known_schema_drift`). Migrations are not a deploy step.
