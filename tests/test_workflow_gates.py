@@ -219,7 +219,7 @@ class MergeGateFlowTests(unittest.TestCase):
                 store, agent_runners={"claude_code": _ScriptedRunner([self._developer(repo), _reviewer_sees_tests_then_approves])}
             )
             result = orchestrator.run_project(project.id)
-            self.assertEqual(result.stop_reason, "blocked")
+            self.assertEqual(result.stop_reason, "waiting_for_decision")
             paused = store.get_task(task.id)
             self.assertEqual(paused.status, "blocked")
             self.assertEqual(paused.workflow_current_step, "merge_approval")
@@ -243,7 +243,7 @@ class MergeGateFlowTests(unittest.TestCase):
                 store, agent_runners={"claude_code": _ScriptedRunner([self._developer(repo), _reviewer_sees_tests_then_approves])}
             )
             result = orchestrator.run_project(project.id)
-            self.assertEqual(result.stop_reason, "blocked")
+            self.assertEqual(result.stop_reason, "waiting_for_decision")
             self.assertEqual(store.get_task(task.id).workflow_current_step, "merge_approval")
 
     def test_a_task_type_rule_decides_the_merge_gate(self) -> None:
@@ -258,7 +258,7 @@ class MergeGateFlowTests(unittest.TestCase):
                 store, agent_runners={"claude_code": _ScriptedRunner([self._developer(repo), _reviewer_sees_tests_then_approves])}
             )
             result = orchestrator.run_project(project.id)
-            self.assertEqual(result.stop_reason, "blocked")
+            self.assertEqual(result.stop_reason, "waiting_for_decision")
             self.assertEqual(store.get_task(task.id).workflow_current_step, "merge_approval")
 
     def test_the_first_step_records_the_resolved_policy_matrix_once(self) -> None:
