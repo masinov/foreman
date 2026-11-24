@@ -328,7 +328,7 @@ The surveys' main sources:
   - a panel of judges: https://arxiv.org/abs/2404.18796
   - sycophancy: https://arxiv.org/abs/2310.13548
   - METR on passing but unmergeable PRs: https://metr.org/notes/2026-03-10-many-swe-bench-passing-prs-would-not-be-merged-into-main/
-  - SWE-agent's interface: https://princeton-nlp.github.io/SWE-agent/background/aci
+  - SWE-agent's interface: https://swe-agent.com/latest/background/aci/
   - spec-driven tools reviewed by Thoughtworks: https://martinfowler.com/articles/exploring-gen-ai/sdd-3-tools.html
 - **Repositories:**
   - Diátaxis: https://diataxis.fr/
@@ -344,7 +344,7 @@ The surveys' main sources:
   - GitHub merge queue: https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue
   - GitLab merge trains: https://docs.gitlab.com/ci/pipelines/merge_trains/
   - Zuul gating: https://zuul-ci.org/docs/zuul/9.2.0/gating.html
-  - Uber, keeping main green: https://www.uber.com/blog/research/keeping-master-green-at-scale
+  - Uber, keeping master green at scale (EuroSys 2019): https://doi.org/10.1145/3302424.3303970
   - Jane Street, never break the build: https://blog.janestreet.com/making-never-break-the-build-scale/
   - GitLab's changelog conflicts: https://about.gitlab.com/blog/solving-gitlabs-changelog-conflict-crisis/
   - git's union merge: https://git-scm.com/docs/gitattributes/2.43.0
