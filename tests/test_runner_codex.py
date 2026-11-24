@@ -10,6 +10,7 @@ import unittest
 from unittest.mock import patch
 
 from foreman.runner import AgentRunConfig, CodexRunner, InfrastructureError, PreflightError
+from foreman.runner.env import NON_INTERACTIVE_ENV
 from foreman.runner.codex import _JsonRpcClient
 
 
@@ -154,8 +155,34 @@ class CodexRunnerTests(unittest.TestCase):
 
         self.assertEqual(
             popen.calls[0][1]["env"],
-            {"PATH": "/usr/bin", "OPENAI_API_KEY": "key", "EXTRA": "from the role"},
+            {
+                "PATH": "/usr/bin",
+                "OPENAI_API_KEY": "key",
+                **NON_INTERACTIVE_ENV,
+                "EXTRA": "from the role",
+            },
         )
+
+    def test_the_app_server_gets_no_editor_pager_or_prompt_unless_the_role_sets_one(self) -> None:
+        process = _FakeProcess(
+            lines=[json.dumps({"jsonrpc": "2.0", "id": 1, "result": {"userAgent": "t"}}) + "\n"]
+        )
+        popen = _PopenRecorder(process)
+
+        client = _JsonRpcClient(
+            ["codex", "app-server", "--listen", "stdio://"],
+            cwd=Path("/tmp"),
+            popen_factory=popen,
+            env={"PAGER": "less"},
+        )
+        client.close()
+
+        env = popen.calls[0][1]["env"]
+        for name in ("GIT_EDITOR", "EDITOR", "VISUAL"):
+            self.assertEqual(env[name], "true")
+        self.assertEqual(env["GIT_PAGER"], "cat")
+        self.assertEqual(env["GIT_TERMINAL_PROMPT"], "0")
+        self.assertEqual(env["PAGER"], "less")
 
     def test_a_role_with_an_allowlist_is_refused_what_is_not_on_it(self) -> None:
         from dataclasses import replace
