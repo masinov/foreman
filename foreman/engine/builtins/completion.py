@@ -16,6 +16,82 @@ from ..evidence import EvidenceBuilder
 from .base import BuiltinExecutorBase
 
 
+def _short(sha: str) -> str:
+    """A commit id as every page shows it."""
+
+    return sha[:7]
+
+
+def proof_refusal_text(evidence: CompletionEvidence) -> str:
+    """Say in plain sentences why a merge is refused for lack of proof.
+
+    The first sentence is the heading a person reads; then the facts, each
+    said once; the last says what they can do. The structured evidence is
+    unchanged for the API and the reviewer's prompt.
+    """
+
+    head = evidence.head_sha
+    tests_stale = evidence.tests_status == "stale"
+    review_stale = bool(
+        evidence.review_outcome == "approve"
+        and evidence.reviewed_sha
+        and head
+        and evidence.reviewed_sha != head
+    )
+    tests_failed = evidence.tests_status == "failed"
+    tests_not_run = evidence.tests_status == "not_run"
+    review_missing = evidence.review_outcome != "approve"
+    no_criteria = any("no acceptance criteria" in r.lower() for r in evidence.failure_reasons)
+
+    details: list[str] = []
+    if tests_stale and review_stale and evidence.tested_sha == evidence.reviewed_sha:
+        details.append(
+            f"Tests and review ran on {_short(evidence.tested_sha)}; the branch is now at {_short(head)}."
+        )
+    else:
+        if tests_stale:
+            details.append(f"Tests ran on {_short(evidence.tested_sha)}; the branch is now at {_short(head)}.")
+        if review_stale:
+            details.append(
+                f"Review approved {_short(evidence.reviewed_sha)}; the branch is now at {_short(head)}."
+            )
+    if tests_failed:
+        code = evidence.test_exit_code
+        details.append(
+            f"The tests failed with exit code {code}." if code is not None else "The tests failed."
+        )
+    if review_missing and not review_stale:
+        details.append("No code review has approved the latest change.")
+    if tests_not_run:
+        details.append("The tests have not run.")
+    if no_criteria:
+        details.append("The task has no acceptance criteria.")
+
+    if tests_stale or review_stale:
+        what = (
+            "tested and reviewed" if tests_stale and review_stale else "tested" if tests_stale else "reviewed"
+        )
+        heading = f"Not merged: the branch changed after it was {what}."
+        step = "Unblock it to test and review it again."
+    elif tests_failed:
+        heading = "Not merged: the tests failed."
+        step = "Send it back to fix the tests."
+    elif review_missing:
+        heading = "Not merged: no code review approved the latest change."
+        step = "Unblock it to have the change reviewed."
+    elif tests_not_run:
+        heading = "Not merged: the tests have not run."
+        step = "Unblock it to run the tests."
+    elif no_criteria:
+        heading = "Not merged: the task has no acceptance criteria."
+        step = "Add acceptance criteria to the task, then unblock it."
+    else:
+        heading = "Not merged: the checks have not all passed."
+        step = "Unblock it to run the checks again."
+        details = []
+    return " ".join([heading, *details, step])
+
+
 def _completion_guard_payload(evidence: CompletionEvidence) -> dict[str, Any]:
     """Return the facts a blocked merge is recorded with."""
 
@@ -80,12 +156,7 @@ class CompletionGuard(BuiltinExecutorBase):
                 return block_reason
         # Gate on proof status - require explicit "passed"
         if evidence.proof_status != "passed":
-            listed = evidence.failure_reasons or evidence.outstanding
-            reasons = "; ".join(listed) if listed else "proof_status is " + evidence.proof_status
-            block_reason = (
-                f"Completion proof not passed. Blocking merge until proof_status is 'passed'. "
-                f"Current: {evidence.proof_status}. Reasons: {reasons}"
-            )
+            block_reason = proof_refusal_text(evidence)
             # A waiver can cover missing or unmet criteria, never tests or review.
             waiver_type = self._waiver_type_for_proof_failure(evidence.failure_reasons)
             if waiver_type:

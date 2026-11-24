@@ -304,7 +304,9 @@ class CompletionGuardTests(RepoTestCase):
 
         self.assertEqual(result.outcome, "blocked")
         self.assertEqual(task.status, "blocked")
-        self.assertIn("Completion proof not passed", result.detail)
+        self.assertTrue(result.detail.startswith("Not merged:"), result.detail)
+        for word in ("proof_status", "Current:", "Completion proof"):
+            self.assertNotIn(word, result.detail)
 
     def test_completion_guard_emits_event(self) -> None:
         """The merge-time guard emits an engine.completion_guard event with verdict details."""
@@ -823,7 +825,9 @@ class MarkDoneCompletionGuardTests(RepoTestCase):
 
         self.assertEqual(result.outcome, "blocked")
         self.assertEqual(task.status, "blocked")
-        self.assertIn("Completion proof not passed", result.detail)
+        self.assertTrue(result.detail.startswith("Not merged:"), result.detail)
+        for word in ("proof_status", "Current:", "Completion proof"):
+            self.assertNotIn(word, result.detail)
 
     def test_mark_done_guard_emits_event(self) -> None:
         """The _builtin:mark_done guard emits an engine.completion_guard event on block."""
@@ -1071,3 +1075,75 @@ class MarkDoneCompletionGuardTests(RepoTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ProofRefusalTextTests(unittest.TestCase):
+    """The sentences a person reads when a merge is refused for lack of proof."""
+
+    def _evidence(self, **overrides: object) -> "CompletionEvidence":
+        from foreman.domain.models import CompletionEvidence
+
+        base = dict(
+            task_id="t",
+            task_title="T",
+            acceptance_criteria="c",
+            head_sha="8fa6655d0000",
+            tests_status="passed",
+            tested_sha="8fa6655d0000",
+            review_outcome="approve",
+            reviewed_sha="8fa6655d0000",
+            proof_status="failed",
+        )
+        base.update(overrides)
+        return CompletionEvidence(**base)
+
+    def _check(self, text: str) -> None:
+        for word in ("proof_status", "Current:", "Completion proof", "'"):
+            self.assertNotIn(word, text)
+
+    def test_stale_tests_and_review_are_said_once(self) -> None:
+        from foreman.engine.builtins.completion import proof_refusal_text
+
+        text = proof_refusal_text(
+            self._evidence(
+                tests_status="stale",
+                tested_sha="7d8423b5aaaa",
+                reviewed_sha="7d8423b5aaaa",
+                failure_reasons=("x",),
+            )
+        )
+        self.assertEqual(
+            text,
+            "Not merged: the branch changed after it was tested and reviewed. "
+            "Tests and review ran on 7d8423b; the branch is now at 8fa6655. "
+            "Unblock it to test and review it again.",
+        )
+        self._check(text)
+
+    def test_failed_tests(self) -> None:
+        from foreman.engine.builtins.completion import proof_refusal_text
+
+        text = proof_refusal_text(self._evidence(tests_status="failed", test_exit_code=2))
+        self.assertEqual(
+            text,
+            "Not merged: the tests failed. The tests failed with exit code 2. Send it back to fix the tests.",
+        )
+        self._check(text)
+
+    def test_no_approving_review(self) -> None:
+        from foreman.engine.builtins.completion import proof_refusal_text
+
+        text = proof_refusal_text(self._evidence(review_outcome="", reviewed_sha="", proof_status="pending"))
+        self.assertTrue(text.startswith("Not merged: no code review approved the latest change. "))
+        self.assertTrue(text.endswith("Unblock it to have the change reviewed."))
+        self._check(text)
+
+    def test_tests_not_run(self) -> None:
+        from foreman.engine.builtins.completion import proof_refusal_text
+
+        text = proof_refusal_text(self._evidence(tests_status="not_run", tested_sha="", proof_status="pending"))
+        self.assertEqual(
+            text,
+            "Not merged: the tests have not run. The tests have not run. Unblock it to run the tests.",
+        )
+        self._check(text)
