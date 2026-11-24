@@ -7,31 +7,27 @@ unittest-xml-reporting all write that format, so no tool is special. A
 command that writes none still runs as before, and the count is unknown.
 
 Foreman counts the ``<testcase>`` elements rather than trusting the totals
-on ``<testsuite>``, which tools fill in differently.
+on ``<testsuite>``, which tools fill in differently. Every report is read in
+full, however many there are and however large (ADR-0035 amendment,
+2026-11-24): each is read a piece at a time and only the running totals are
+kept, so its size costs time the test command already spent writing it, not
+memory.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-import xml.etree.ElementTree as ElementTree
+from xml.parsers import expat
 
 #: The variable that names the directory the test command writes reports into.
 REPORT_DIR_ENV = "FOREMAN_TEST_REPORT_DIR"
 
-#: A report larger than this is not read.
-MAX_REPORT_BYTES = 32 * 1024 * 1024
-
-#: At most this many report files are read from one run.
-MAX_REPORT_FILES = 200
-
 #: At most this many failed tests are named; the count says how many failed.
 MAX_FAILED_NAMED = 50
 
-# A JUnit report declares no document type. One that does may define
-# entities that expand without bound, and this Python's XML parser may be
-# too old to stop that, so such a file is not parsed at all.
-_DECLARATIONS = (b"<!doctype", b"<!entity")
+#: How much of a report is handed to the parser at a time.
+_CHUNK_BYTES = 64 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,37 +68,103 @@ class TestReport:
         return f"{said}, {self.skipped} skipped" if self.skipped else said
 
 
-def _count(path: Path) -> tuple[int, int, int, list[tuple[str, str]]]:
-    """``(tests, failed, skipped, failed tests)`` in one report; ``ValueError`` when it cannot be read."""
+class _Refused(Exception):
+    """A report Foreman will not read, and why."""
 
-    size = path.stat().st_size
-    if size > MAX_REPORT_BYTES:
-        raise ValueError(f"it is {size} bytes, over the {MAX_REPORT_BYTES} Foreman reads")
-    data = path.read_bytes()
-    lowered = data.lower()
-    if any(mark in lowered for mark in _DECLARATIONS):
-        raise ValueError("it declares a document type, which a JUnit report does not")
+
+@dataclass
+class _Tally:
+    """Running totals while the reports are read; the failed tests named are capped."""
+
+    tests: int = 0
+    failed: int = 0
+    skipped: int = 0
+    failed_tests: list[tuple[str, str]] = field(default_factory=list)
+
+    def failure(self, suite: str, name: str) -> None:
+        self.failed += 1
+        if len(self.failed_tests) < MAX_FAILED_NAMED:
+            self.failed_tests.append((suite, name))
+
+
+def _count(path: Path, tally: _Tally) -> None:
+    """Add one report's test cases to ``tally``; ``ValueError`` when it cannot be read.
+
+    A case counts as failed when one of its own elements is ``<failure>`` or
+    ``<error>``, else as skipped when one is ``<skipped>``. The file's counts
+    are added only once all of it has been read, so a report that breaks
+    half-way adds nothing.
+
+    A JUnit report declares no document type. One that does may define
+    entities that expand without bound, and this Python's XML parser may be too
+    old to stop that, so reading stops where the declaration starts, before any
+    entity is defined or used.
+    """
+
+    mine = _Tally()
+    depth = 0
+    case: dict[str, object] | None = None
+
+    def start(name: str, attributes: dict[str, str]) -> None:
+        nonlocal depth, case
+        depth += 1
+        if name == "testcase" and case is None:
+            case = {
+                "depth": depth,
+                "suite": attributes.get("classname") or "",
+                "name": attributes.get("name") or "",
+                "failed": False,
+                "skipped": False,
+            }
+        elif case is not None and depth == case["depth"] + 1:
+            if name in ("failure", "error"):
+                case["failed"] = True
+            elif name == "skipped":
+                case["skipped"] = True
+
+    def end(name: str) -> None:
+        nonlocal depth, case
+        if case is not None and depth == case["depth"]:
+            mine.tests += 1
+            if case["failed"]:
+                mine.failure(str(case["suite"]), str(case["name"]))
+            elif case["skipped"]:
+                mine.skipped += 1
+            case = None
+        depth -= 1
+
+    def refuse(*_: object) -> None:
+        raise _Refused("it declares a document type, which a JUnit report does not")
+
+    parser = expat.ParserCreate()
+    parser.StartElementHandler = start
+    parser.EndElementHandler = end
+    parser.StartDoctypeDeclHandler = refuse
+    parser.EntityDeclHandler = refuse
     try:
-        root = ElementTree.fromstring(data)
-    except ElementTree.ParseError as exc:
+        with path.open("rb") as stream:
+            while chunk := stream.read(_CHUNK_BYTES):
+                parser.Parse(chunk, False)
+            parser.Parse(b"", True)
+    except _Refused as exc:
+        raise ValueError(str(exc)) from None
+    except expat.ExpatError as exc:
         raise ValueError(f"it is not well-formed XML ({exc})") from None
-    tests = failed = skipped = 0
-    failed_tests: list[tuple[str, str]] = []
-    for case in root.iter("testcase"):
-        tests += 1
-        if case.find("failure") is not None or case.find("error") is not None:
-            failed += 1
-            failed_tests.append((case.get("classname") or "", case.get("name") or ""))
-        elif case.find("skipped") is not None:
-            skipped += 1
-    return tests, failed, skipped, failed_tests
+
+    tally.tests += mine.tests
+    tally.skipped += mine.skipped
+    for suite, name in mine.failed_tests:
+        tally.failure(suite, name)
+    # Failures past the named ones still count.
+    tally.failed += mine.failed - len(mine.failed_tests)
 
 
 def read_reports(directory: Path) -> tuple[TestReport | None, list[str]]:
     """The totals of the reports in ``directory``, and why any could not be read.
 
-    None when no report could be read: the command wrote none, or every one
-    it wrote was unreadable. Links are not followed.
+    Every report is read in full. None when no report could be read: the
+    command wrote none, or every one it wrote was unreadable. Links are not
+    followed.
     """
 
     if not directory.is_dir():
@@ -111,29 +173,22 @@ def read_reports(directory: Path) -> tuple[TestReport | None, list[str]]:
         path for path in directory.rglob("*.xml") if path.is_file() and not path.is_symlink()
     )
     problems: list[str] = []
-    if len(paths) > MAX_REPORT_FILES:
-        problems.append(f"{len(paths)} reports; Foreman read the first {MAX_REPORT_FILES}.")
-        paths = paths[:MAX_REPORT_FILES]
-    tests = failed = skipped = files = 0
-    failed_tests: list[tuple[str, str]] = []
+    tally = _Tally()
+    files = 0
     for path in paths:
         name = path.relative_to(directory).as_posix()
         try:
-            counted = _count(path)
+            _count(path, tally)
         except (OSError, ValueError) as exc:
             problems.append(f"{name} was not read: {exc}.")
             continue
-        tests += counted[0]
-        failed += counted[1]
-        skipped += counted[2]
-        failed_tests.extend(counted[3])
         files += 1
     if not files:
         return None, problems
     return TestReport(
-        tests=tests,
-        failed=failed,
-        skipped=skipped,
+        tests=tally.tests,
+        failed=tally.failed,
+        skipped=tally.skipped,
         files=files,
-        failed_tests=tuple(failed_tests[:MAX_FAILED_NAMED]),
+        failed_tests=tuple(tally.failed_tests),
     ), problems

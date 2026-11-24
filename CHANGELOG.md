@@ -9,6 +9,8 @@ memory changes rather than versioned product releases.
 
 ### Sprint 62
 
+- Every test report is read in full (ADR-0035 amendment, owner 2026-11-24). Foreman stopped at 200 report files of 32 MB at most. Foreman's own suite writes 272, one per test class, so its count left out about 400 Python tests and all the frontend's. Reports are now read a piece at a time, however many and however large.
+
 - A step's details say what it did to the repository (ADR-0038, sprint 62 slice 4, run through Foreman).
   - An agent step that changed the branch records `engine.step_changes` (files with lines and kind, totals; main's changes brought in by a branch refresh are not counted). Its panel shows Changed: the files and lines, what they are counted against ("since attempt 1's commit c248621", "since main at 0db4ca5, where the branch began"), each file, five and then "Show all N".
   - An agent step's panel shows Session: "New", or "Continued from attempt N", which picks that run.
