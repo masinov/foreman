@@ -80,6 +80,10 @@
   --color-backdrop: rgba(12, 12, 14, 0.72);
   --layer-menu: 10;
   --layer-dialog: 20;
+  --layer-toast: 30;
+  /* How far a toast is lifted where the manager side bar covers the page,
+     so it sits above the bar's composer. */
+  --toast-manager-clearance: 120px;
 
   /* Status */
   --status-dot-size: 6px;

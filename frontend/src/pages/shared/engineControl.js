@@ -4,6 +4,7 @@ import { useApiClient } from "../../api/ApiProvider";
 import { errorSentence } from "../../api/client";
 import { pauseEngine, resumeEngine, startEngine, stopEngine } from "../../api/engine";
 import { ENGINE_STATES } from "../../api/workspace";
+import { useToast } from "../../ui/Toast";
 
 /**
  * The engine's commands and what each says when requested. One module, two
@@ -29,13 +30,14 @@ export function applicableCommands(state) {
 
 /**
  * Send commands to a project's engine. `send(name)` requests one; `pending`
- * names the one in flight and `notice` is `{ error, text }` for the last one:
- * confirmed, or the API's sentence when it refused. `onChanged` runs after a
+ * names the one in flight and `notice` is `{ error, text }` when the API
+ * refused one (a confirmation is said in the toast). `onChanged` runs after a
  * command was accepted.
  */
 export function useEngineControl({ projectId, onChanged }) {
   const client = useApiClient();
   const [pending, setPending] = useState(null);
+  const { show } = useToast();
   const [notice, setNotice] = useState(null);
 
   async function send(name) {
@@ -43,7 +45,7 @@ export function useEngineControl({ projectId, onChanged }) {
     setNotice(null);
     try {
       await ENGINE_COMMANDS[name].call(client, projectId);
-      setNotice({ error: false, text: `${ENGINE_COMMANDS[name].done} The state here changes when the engine acts on it.` });
+      show(`${ENGINE_COMMANDS[name].done} The state here changes when the engine acts on it.`);
       onChanged?.();
     } catch (error) {
       setNotice({ error: true, text: errorSentence(error) });

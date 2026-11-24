@@ -15,6 +15,7 @@ import { onManagerRequest } from "./managerRequests";
 import { ManagerToggle } from "./ManagerToggle";
 import { useRoute } from "./router";
 import { useLiveData } from "./useLiveData";
+import { ToastProvider } from "../ui/Toast";
 import { Shell } from "./Shell";
 import { SignInGate } from "./SignInGate";
 
@@ -70,9 +71,11 @@ function useProjectName(projectId) {
 /** The application behind its sign-in: see SignInGate. */
 export function App() {
   return (
-    <SignInGate>
-      <SignedInApp />
-    </SignInGate>
+    <ToastProvider>
+      <SignInGate>
+        <SignedInApp />
+      </SignInGate>
+    </ToastProvider>
   );
 }
 

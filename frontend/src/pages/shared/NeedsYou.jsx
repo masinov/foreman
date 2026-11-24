@@ -16,6 +16,8 @@ import { SectionHeading } from "../../ui/SectionHeading";
 import { Surface } from "../../ui/Surface";
 import { Table } from "../../ui/Table";
 import { humanize, plural, shortSha } from "../../ui/format";
+import { useNotice } from "../../ui/Toast";
+import { decisionSentence } from "./decisionWords";
 
 // Design README: Needs you shows at most 5, with a way to see the rest.
 export const NEEDS_YOU_CAP = 5;
@@ -130,7 +132,7 @@ export function NeedsYou({ projectId = null, note, empty, onChanged }) {
   const placeholder = useDelayedFlag(list.loading && !list.items);
   const [expanded, setExpanded] = useState(false);
   const [approvingId, setApprovingId] = useState(null);
-  const [notice, setNotice] = useState(null);
+  const [notice, setNotice] = useNotice();
 
   async function decide(item, settle) {
     setApprovingId(itemId(item));
@@ -151,7 +153,7 @@ export function NeedsYou({ projectId = null, note, empty, onChanged }) {
   const approve = (item) =>
     decide(item, async () => {
       const result = await approveTask(client, item.task_id);
-      return { text: result?.message || `Approved ${itemName(item)}.` };
+      return { text: decisionSentence(itemName(item), result) };
     });
 
   const unblock = (item) =>
@@ -278,7 +280,7 @@ export function NeedsYou({ projectId = null, note, empty, onChanged }) {
     <section className="needs-you" aria-labelledby={headingId}>
       <SectionHeading id={headingId} title="Needs you" count={total} attention note={note} plain />
       {notice ? (
-        <p className={notice.error ? "notice notice--error" : "notice"} role={notice.error ? "alert" : "status"}>
+        <p className="notice notice--error" role="alert">
           {notice.text}
         </p>
       ) : null}

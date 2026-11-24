@@ -113,7 +113,7 @@ describe("the list", () => {
     expect(within(row).getByText("12")).toBeInTheDocument();
     expect(within(row).getByText("$0.72")).toHaveClass("mono");
     // The fixture's engine is on another task, so FOR-13 is not running.
-    expect(await within(screen.getByText("FOR-13").closest("tr")).findByText("Stopped · Test")).toBeInTheDocument();
+    expect(await within(screen.getByText("FOR-13").closest("tr")).findByText("Waiting · Test")).toBeInTheDocument();
     expect(within(screen.getByText("FOR-17").closest("tr")).getByText("Queued")).toBeInTheDocument();
     expect(within(screen.getByText("FOR-10").closest("tr")).getByText("Done")).toBeInTheDocument();
     expect(within(screen.getByText("FOR-17").closest("tr")).getByText("Not checked yet")).toBeInTheDocument();
@@ -152,16 +152,40 @@ describe("the list", () => {
     await expectStage("not_running", null, "Stopped · Test");
   });
 
+  it("says Waiting with the engine on another task, Runs next when asked, and Stopped with no engine", async () => {
+    const routes = sprintRoutes({
+      tasks: [
+        taskPayload("t1", "FOR-1", "in_progress", { workflow_current_step: "develop" }),
+        taskPayload("t2", "FOR-2", "in_progress", { workflow_current_step: "develop", run_next: true }),
+        taskPayload("t3", "FOR-3", "todo", { run_next: true }),
+      ],
+    });
+    const workspace = workspacePayload();
+    workspace.projects[0].engine = engine("running", { id: "t-x", task_key: "FOR-53", title: "x", step: "test" });
+    routes["GET /api/v1/workspace"] = workspace;
+    await renderSprint("/dashboard/sprints/sprint-56", routes);
+    const waiting = await screen.findByText("Waiting · Develop");
+    expect(waiting.closest("[title]")).toHaveAttribute("title", "The engine runs it after FOR-53");
+    expect(within(screen.getByText("FOR-2").closest("tr")).getByText("Runs next · Develop")).toBeInTheDocument();
+    expect(within(screen.getByText("FOR-3").closest("tr")).getByText("Runs next")).toBeInTheDocument();
+  });
+
   it("offers Approve only where a merge approval waits, and approving reloads", async () => {
     const routes = sprintRoutes();
-    routes["POST /api/v1/tasks/t-merge/approve"] = { ok: true };
+    routes["POST /api/v1/tasks/t-merge/approve"] = { status: "approved", next_step: "merge", engine_resident: false };
     const { fetchImpl } = await renderSprint("/dashboard/sprints/sprint-56", routes);
     expect(screen.getAllByRole("button", { name: /^Approve/ })).toHaveLength(1);
     const before = calls(fetchImpl, "GET", "/api/v1/sprints/sprint-56").length;
     fireEvent.click(screen.getByRole("button", { name: "Approve FOR-14" }));
     await waitFor(() => expect(calls(fetchImpl, "POST", "/api/v1/tasks/t-merge/approve")).toHaveLength(1));
     await waitFor(() => expect(calls(fetchImpl, "GET", "/api/v1/sprints/sprint-56").length).toBeGreaterThan(before));
-    expect(await screen.findByRole("status")).toHaveTextContent("Approved FOR-14.");
+    const toast = await screen.findByRole("status");
+    expect(toast).toHaveTextContent("Approved FOR-14. It waits at Merge until the engine is started.");
+    // A passing note in the corner: nothing is added between the tabs and the table.
+    const table = screen.getByText("FOR-14").closest("table");
+    const tab = table.closest(".sprint__tab");
+    expect(tab.querySelector("[role=status]")).toBeNull();
+    expect(tab.querySelector(".notice")).toBeNull();
   });
 
   it("shows the API's sentence when an approval is refused", async () => {

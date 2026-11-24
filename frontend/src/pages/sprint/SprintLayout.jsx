@@ -11,6 +11,8 @@ import { Link } from "../../app/router";
 import { Button } from "../../ui/Button";
 import { Tabs } from "../../ui/Tabs";
 import { plural } from "../../ui/format";
+import { useNotice } from "../../ui/Toast";
+import { decisionSentence, taskName } from "../shared/decisionWords";
 import { NewTaskDialog } from "../project/NewTaskDialog";
 import { AddFromBacklogDialog } from "./AddFromBacklogDialog";
 import { SprintActivity } from "./SprintActivity";
@@ -67,7 +69,7 @@ export function SprintLayout({ sprintId, view }) {
   const [adding, setAdding] = useState(false);
   const [writing, setWriting] = useState(false);
   const [approving, setApproving] = useState(false);
-  const [notice, setNotice] = useState(null);
+  const [notice, setNotice] = useNotice();
 
   const reloadSprint = sprint.reload;
   const reloadTasks = tasks.reload;
@@ -80,8 +82,8 @@ export function SprintLayout({ sprintId, view }) {
     setApproving(true);
     setNotice(null);
     try {
-      await approveTask(client, task.id);
-      setNotice({ error: false, text: `Approved ${task.task_key || task.title}.` });
+      const result = await approveTask(client, task.id);
+      setNotice({ error: false, text: decisionSentence(taskName(task), result) });
       changed();
     } catch (error) {
       setNotice({ error: true, text: errorSentence(error) });
@@ -146,7 +148,7 @@ export function SprintLayout({ sprintId, view }) {
           )}
           <div className="sprint__tab">
             {notice ? (
-              <p className={notice.error ? "notice notice--error" : "notice"} role={notice.error ? "alert" : "status"}>
+              <p className="notice notice--error" role="alert">
                 {notice.text}
               </p>
             ) : null}

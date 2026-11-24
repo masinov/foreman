@@ -1731,6 +1731,29 @@ class EngineCommandLoopTests(unittest.TestCase):
         self.assertEqual(settled.status, "completed")
         self.assertIn("task-2", settled.result_detail or "")
 
+    def test_a_run_task_is_completed_when_the_engine_starts_the_task(self) -> None:
+        command = self._enqueue("run_task", task_id="task-2")
+        seen: list[str] = []
+        outer = self
+
+        class _Orchestrator(_StubOrchestrator):
+            def run_project(self, project_id, *, task_id=None, maintenance=True):
+                seen.append(outer._settled(command).status)
+                engine._poll_commands("task-2")  # the engine is on the task
+                seen.append(outer._settled(command).status)
+                return super().run_project(
+                    project_id, task_id=task_id, maintenance=maintenance
+                )
+
+        orchestrator = _Orchestrator([_executed("task-2"), _idle()])
+        engine = self._engine(orchestrator)
+        engine.run(once=True)
+
+        self.assertEqual(seen, ["acknowledged", "completed"])
+        settled = self._settled(command)
+        self.assertEqual(settled.status, "completed")
+        self.assertIn("started", settled.result_detail or "")
+
     def test_a_targeted_task_is_only_run_once(self) -> None:
         self._enqueue("run_task", task_id="task-2")
         orchestrator = _StubOrchestrator([_executed("task-2"), _idle()])

@@ -1129,7 +1129,7 @@ Approve and deny record a decision; they do not run anything. The task moves
 to the step the decision leads to and the project's engine continues it. If a
 resident engine (`foreman serve`) is running it picks the task up at once. If
 none is, the command prints `foreman run <project-id>` to continue, and the
-dashboard shows a notice to press Run. See ADR-0011.
+dashboard says the task waits at its step until the engine is started. See ADR-0011.
 
 The dashboard exposes the same via `POST /api/tasks/{id}/approve|deny` and the
 gates endpoints.

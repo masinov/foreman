@@ -579,7 +579,11 @@ class DashboardApproveDenyIntegrationTests(unittest.TestCase):
         self.assertEqual(result["next_step"], "develop")
         self.assertTrue(result["deferred"])  # the web process never runs steps
         self.assertFalse(result["engine_resident"])
-        self.assertIn("press Run", result["message"])
+        self.assertEqual(
+            result["message"],
+            f"Approved {updated_task.task_key}. It waits at Develop until the engine is started.",
+        )
+        self.assertNotIn("`", result["message"])
 
         updated_store.close()
 
@@ -641,7 +645,7 @@ class DashboardApproveDenyIntegrationTests(unittest.TestCase):
         self.assertEqual(result["next_step"], "plan")  # Deny goes back to plan
         self.assertTrue(result["deferred"])  # the web process never runs steps
         self.assertFalse(result["engine_resident"])
-        self.assertIn("press Run", result["message"])
+        self.assertEqual(result["message"], f"Sent {updated_task.task_key} back to Plan.")
 
         updated_store.close()
 

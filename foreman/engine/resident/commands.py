@@ -80,6 +80,7 @@ class CommandHandling(ResidentEngineBase):
         command once the stack has unwound.
         """
 
+        self._complete_started_run_request(running_task_id)
         while True:
             command = self.store.next_pending_engine_command(self.project_id)
             if command is None:
@@ -344,16 +345,42 @@ class CommandHandling(ResidentEngineBase):
             return None
         return self._run_requests.pop(0)
 
+    def _complete_started_run_request(self, running_task_id: str) -> None:
+        """Close the `run_task` command as soon as the engine is on its task.
+
+        The request is pending only until the engine starts the task; a pass
+        can run for hours, and a command left ``acknowledged`` for all of it
+        would tell the page the request is still waiting.
+        """
+
+        request = self._active_run_request
+        if request is None or request[0] != running_task_id:
+            return
+        self._active_run_request = None
+        self._started_run_requests.add(request[1].id)
+        self._finish_command(
+            request[1], "completed", f"Task {running_task_id!r} was started."
+        )
+
     def _finish_run_request(
         self,
         request: tuple[str, EngineCommand] | None,
         status: str,
         detail: str,
     ) -> None:
-        """Close a `run_task` command once its pass has ended."""
+        """Close a `run_task` command once its pass has ended.
 
-        if request is not None:
-            self._finish_command(request[1], status, detail)
+        A request already closed when its task started is left as it is.
+        """
+
+        if request is None:
+            return
+        if self._active_run_request is request:
+            self._active_run_request = None
+        if request[1].id in self._started_run_requests:
+            self._started_run_requests.discard(request[1].id)
+            return
+        self._finish_command(request[1], status, detail)
 
     def _has_pending_command(self) -> bool:
         """True when a command is waiting for this engine to pick it up."""

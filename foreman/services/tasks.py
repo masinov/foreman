@@ -4,6 +4,7 @@ person's actions on it, each through ``foreman.mutations``.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from ..definitions.gate_steps import (
@@ -61,6 +62,33 @@ def _serialize_completion_evidence(evidence: "Any") -> dict[str, Any] | None:
         "failure_reasons": list(evidence.failure_reasons),
         "built_at": evidence.built_at,
     }
+
+
+def _humanize(identifier: str | None) -> str:
+    """A step id as Activity names it: "code_review" is "Code review"."""
+
+    words = re.sub(r"[_-]+", " ", str(identifier or "")).strip()
+    return words[:1].upper() + words[1:]
+
+
+def decision_sentence(
+    task: Task, *, sent_back: bool, next_step: str | None, engine_resident: bool
+) -> str:
+    """The one sentence an approval or a send-back is answered with.
+
+    The dashboard builds the same sentence (``decisionSentence`` in the
+    frontend); the CLI and other systems read this one.
+    """
+
+    name = task.task_key or task.title
+    step = _humanize(next_step)
+    if sent_back:
+        return f"Sent {name} back to {step}." if step else f"Sent {name} back."
+    if not step:
+        return f"Approved {name}."
+    if engine_resident:
+        return f"Approved {name}. Foreman goes on with {step}."
+    return f"Approved {name}. It waits at {step} until the engine is started."
 
 
 class TaskService(Service):
@@ -163,6 +191,8 @@ class TaskService(Service):
             "task_key": task.task_key,
             "title": task.title,
             "status": task.status,
+            # A "Run next" the engine has not started yet.
+            "run_next": task.id in self.store.run_requested_task_ids(task.project_id),
             # In the backlog: a request, backlog work or declined (ADR-0021, ADR-0028).
             "in_backlog": sprint is not None and sprint.is_backlog,
             # Whether accepting a request has an effect in this project.
@@ -426,13 +456,11 @@ class TaskService(Service):
             "next_step": result.next_step,
             "deferred": result.deferred,
             "engine_resident": resident,
-            "message": (
-                f"Decision recorded. The engine continues from `{result.next_step}`."
-                if resident
-                else (
-                    f"Decision recorded. No engine is running, so the task waits at "
-                    f"`{result.next_step}` until you press Run."
-                )
+            "message": decision_sentence(
+                task,
+                sent_back=outcome != "approve",
+                next_step=result.next_step,
+                engine_resident=resident,
             ),
         }
 

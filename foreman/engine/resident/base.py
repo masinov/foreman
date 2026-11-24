@@ -220,6 +220,10 @@ class ResidentEngineBase:
         #: second must not silently discard the first. Each entry keeps its
         #: command, which stays ``acknowledged`` until the task has run.
         self._run_requests: list[tuple[str, EngineCommand]] = []
+        #: The request whose pass is running and whose task has not started
+        #: yet, and the ids of requests closed because their task started.
+        self._active_run_request: tuple[str, EngineCommand] | None = None
+        self._started_run_requests: set[str] = set()
 
     def run(self, *, once: bool = False) -> ServeResult:
         """Run passes until stopped. Returns why, and with which exit code."""
@@ -345,6 +349,7 @@ class ResidentEngineBase:
         """Run one project pass and settle what it did. True ends the loop."""
 
         target_task_id = run_request[0] if run_request else None
+        self._active_run_request = run_request
         try:
             result = self.orchestrator.run_project(
                 self.project_id,

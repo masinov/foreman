@@ -508,7 +508,7 @@ describe("General: working copies", () => {
     await renderGeneral(routes);
     await within(section()).findByRole("table");
     fireEvent.click(within(section()).getByRole("button", { name: "Remove unused" }));
-    expect(await within(section()).findByRole("status")).toHaveTextContent("Removed 1 working copy.");
+    expect(await screen.findByRole("status")).toHaveTextContent("Removed 1 working copy.");
     await waitFor(() => expect(section()).toHaveTextContent("Working copies 1"));
     // Removing is its own action: it does not save the form.
     expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
@@ -520,7 +520,7 @@ describe("General: working copies", () => {
     await renderGeneral(routes);
     await within(section()).findByRole("table");
     fireEvent.click(within(section()).getByRole("button", { name: "Remove unused" }));
-    expect(await within(section()).findByRole("status")).toHaveTextContent("Nothing to remove");
+    expect(await screen.findByRole("status")).toHaveTextContent("Nothing to remove");
     routes[PRUNE_URL] = reply(400, { error: "git worktree remove failed", code: "invalid_request" });
     fireEvent.click(within(section()).getByRole("button", { name: "Remove unused" }));
     expect(await within(section()).findByRole("alert")).toHaveTextContent("git worktree remove failed.");

@@ -94,10 +94,26 @@ Workspace / Project / Sprint / Task.
 - **A task's Status** (the sprint's task list and the task's Overview,
   owner 2026-11-24): what it is doing, and where it is under way the step,
   named as Activity and the board name it: "Running · Develop", "Paused ·
-  Develop", "Stopped · Develop", "Blocked · Test"; "Waiting for merge
-  approval", "Queued", "Done" and "Cancelled" as they are. The board's
-  columns are the stages. Elsewhere a step is named the same way ("Stopped
-  at Test" in the decision box, "· at Test" in Needs you).
+  Develop", "Blocked · Test"; "Waiting for merge approval", "Queued",
+  "Done" and "Cancelled" as they are. A task in progress that the running
+  engine is not on is "Waiting · Develop" ("The engine runs it after
+  FOR-53" on hover), and "Stopped · Develop" only where no engine runs. A
+  "Run next" the engine has not started yet reads "Runs next · Develop"
+  and its button is a disabled "Runs next". The task's Steps row says the
+  same ("Waiting here", "Runs next") and why a step was returned to ("Waiting
+  here · sent back: merge conflict", "· sent back by review", "· tests
+  failed"); a gate's Attempts counts its pause and its decision as one. The
+  board's columns are the stages. Elsewhere a step is named the same way
+  ("Stopped at Test" in the decision box, "· at Test" in Needs you).
+- **A confirmation is a toast** (owner, 2026-11-24): after an action, its
+  success sentence passes in the bottom left corner of the window on every
+  page for about six seconds (a live region; a new one replaces it; it stays
+  while the pointer or focus is on it; a quiet close control), and never
+  moves the page's content. At phone width it spans the bottom inside the
+  gutter. An error stays inline where the action failed. An approval or a
+  send-back is one sentence everywhere: "Approved FOR-51. Foreman goes on
+  with Merge.", "Approved FOR-51. It waits at Merge until the engine is
+  started.", "Sent FOR-51 back to Develop."
 - **An active sprint whose every task is done or cancelled** says so in
   State: "Ready to finish", with "Every task is done or cancelled." on
   hover and "Finish sprint" beside the title (ADR-0037).

@@ -115,13 +115,13 @@ describe("the engine row", () => {
     expect(within(row).getByRole("button", { name: "Stop" })).toBeEnabled();
 
     fireEvent.click(within(row).getByRole("button", { name: "Pause" }));
-    expect(await within(row).findByRole("status")).toHaveTextContent(/^Pause requested\./);
+    expect(await screen.findByRole("status")).toHaveTextContent(/^Pause requested\./);
     expect(calls(fetchImpl, "POST", "/api/v1/projects/foreman/agent/stop")).toHaveLength(1);
     // The head reloads to show what the engine does next.
     await waitFor(() => expect(calls(fetchImpl, "GET", "/api/v1/workspace").length).toBeGreaterThanOrEqual(3));
 
     fireEvent.click(within(row).getByRole("button", { name: "Stop" }));
-    expect(await within(row).findByText(/^Stop requested\./)).toBeInTheDocument();
+    expect(await screen.findByText(/^Stop requested\./)).toBeInTheDocument();
     expect(calls(fetchImpl, "POST", "/api/v1/projects/foreman/engine/commands").map((call) => call.body)).toEqual([
       { command: "shutdown" },
     ]);
@@ -162,7 +162,7 @@ describe("the engine row", () => {
     expect(within(row).getByRole("button", { name: "Start" })).toBeDisabled();
     expect(within(row).getByRole("button", { name: "Stop" })).toBeEnabled();
     fireEvent.click(within(row).getByRole("button", { name: "Resume" }));
-    expect(await within(row).findByText(/^Resume requested\./)).toBeInTheDocument();
+    expect(await screen.findByText(/^Resume requested\./)).toBeInTheDocument();
     expect(calls(fetchImpl, "POST", "/api/v1/projects/foreman/agent/start")).toHaveLength(1);
   });
 
@@ -216,7 +216,9 @@ describe("Needs you on the project page", () => {
     refuse = false;
     fireEvent.click(within(row).getByRole("button", { name: "Unblock FOR-15" }));
     await waitFor(() => expect(within(needsYou).queryByText("FOR-15")).toBeNull());
-    expect(within(needsYou).getByRole("status")).toHaveTextContent("Unblocked FOR-15. It is back in the queue.");
+    expect(screen.getByRole("status")).toHaveTextContent("Unblocked FOR-15. It is back in the queue.");
+    // Said in the toast, not above the box.
+    expect(within(needsYou).queryByRole("status")).toBeNull();
     const sent = calls(fetchImpl, "POST", "/api/v1/tasks/task-stuck/unblock");
     expect(sent).toHaveLength(2);
     expect(sent[1].body).toEqual({ note: null });
@@ -234,7 +236,7 @@ describe("Needs you on the project page", () => {
     const routes = projectRoutes();
     routes["POST /api/v1/tasks/task-merge/approve"] = () => {
       routes[PROJECT_NEEDS_YOU_URL] = { items: [UNBLOCK_ITEM], total: 1 };
-      return { message: "Decision recorded." };
+      return { status: "approved", next_step: "merge", engine_resident: true, message: "Decision recorded." };
     };
     const { fetchImpl } = await renderProject("/dashboard/projects/foreman", routes);
     const needsYou = screen.getByRole("region", { name: /Needs you/ });
@@ -250,7 +252,8 @@ describe("Needs you on the project page", () => {
     await waitFor(() => expect(within(needsYou).queryByText("FOR-14")).toBeNull());
     expect(calls(fetchImpl, "POST", "/api/v1/tasks/task-merge/approve")).toHaveLength(1);
     expect(calls(fetchImpl, "GET", PROJECT_NEEDS_YOU_URL.slice(4))).toHaveLength(2);
-    expect(within(needsYou).getByRole("status")).toHaveTextContent("Decision recorded.");
+    expect(screen.getByRole("status")).toHaveTextContent("Approved FOR-14. Foreman goes on with Merge.");
+    expect(within(needsYou).queryByRole("status")).toBeNull();
   });
 });
 
@@ -282,7 +285,7 @@ describe("a proposed sprint order", () => {
       const sent = calls(fetchImpl, "PATCH", "/api/v1/gates/gate-1");
       expect(sent).toHaveLength(1);
       expect(sent[0].body).toEqual({ resolution });
-      expect(within(needsYou).getByRole("status")).toHaveTextContent(
+      expect(screen.getByRole("status")).toHaveTextContent(
         name === "Accept" ? "Sprint order accepted" : "Sprint order rejected",
       );
     }

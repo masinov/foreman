@@ -6,6 +6,7 @@ import { paths } from "../../app/paths";
 import { onProjectEvent } from "../../app/projectEvents";
 import { Link, useNavigate } from "../../app/router";
 import { Tabs } from "../../ui/Tabs";
+import { useToast } from "../../ui/Toast";
 import { BacklogDecision } from "./BacklogDecision";
 import { Decision } from "./Decision";
 import { TaskHead } from "./TaskHead";
@@ -35,15 +36,6 @@ function useRefreshWhileRunning(task, refresh) {
   useEffect(() => () => clearTimeout(timer.current), []);
 }
 
-function Notice({ notice }) {
-  if (!notice) return null;
-  return (
-    <p className={notice.error ? "notice notice--error" : "notice"} role={notice.error ? "alert" : "status"}>
-      {notice.text}
-    </p>
-  );
-}
-
 /**
  * The task page, the same on its four tabs (docs/design/dashboard-v7/05, 12,
  * 13, 14): the head, the decision when the task waits for a person, and the
@@ -56,7 +48,7 @@ export function TaskLayout({ taskId, children }) {
   const checks = useResource(["task-checks", taskId], (client, options) => getTaskChecks(client, taskId, options));
   const changes = useResource(["task-changes", taskId], (client, options) => getTaskChanges(client, taskId, options));
   const [revision, setRevision] = useState(0);
-  const [notice, setNotice] = useState(null);
+  const { show } = useToast();
 
   const reloadTask = task.reload;
   const reloadChecks = checks.reload;
@@ -70,10 +62,10 @@ export function TaskLayout({ taskId, children }) {
 
   const changed = useCallback(
     (sentence) => {
-      setNotice(sentence ? { error: false, text: sentence } : null);
+      if (sentence) show(sentence);
       refresh();
     },
-    [refresh],
+    [refresh, show],
   );
 
   useRefreshWhileRunning(task.data, refresh);
@@ -106,7 +98,6 @@ export function TaskLayout({ taskId, children }) {
           {task.error}
         </p>
       ) : null}
-      <Notice notice={notice} />
       {current.in_backlog && (current.status === "triage" || current.status === "todo") ? (
         <BacklogDecision task={current} onDecided={changed} />
       ) : (

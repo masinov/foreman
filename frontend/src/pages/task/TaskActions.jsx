@@ -147,11 +147,19 @@ export function TaskActions({ task, onDone }) {
 
   return (
     <>
-      {buttons.map((name) => (
-        <Button key={name} onClick={() => setChosen(name)}>
-          {TASK_ACTIONS[name].label}
-        </Button>
-      ))}
+      {buttons.map((name) =>
+        // A request the engine has not started yet is asked once: its sign
+        // is a disabled "Runs next" until the engine starts the task.
+        name === "run" && task.run_next ? (
+          <Button key={name} disabled title="The engine runs this task next">
+            Runs next
+          </Button>
+        ) : (
+          <Button key={name} onClick={() => setChosen(name)}>
+            {TASK_ACTIONS[name].label}
+          </Button>
+        ),
+      )}
       {more.length ? (
         <Menu
           label="Task actions"

@@ -5,6 +5,7 @@ import { errorSentence } from "../../api/client";
 import { sendGuidance, steerTask } from "../../api/tasks";
 import { Button } from "../../ui/Button";
 import { formatDayTime, humanize } from "../../ui/format";
+import { useNotice } from "../../ui/Toast";
 
 /** A step an agent is doing right now. */
 export const agentAtWork = (run) => run.status === "running" && !String(run.role_id || "").startsWith("_builtin:");
@@ -35,7 +36,7 @@ export function TellAgent({ task, running, onSent }) {
   const fieldId = useId();
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState(null);
+  const [notice, setNotice] = useNotice();
 
   async function send(request) {
     if (!text.trim()) {
@@ -92,7 +93,7 @@ export function TellAgent({ task, running, onSent }) {
           </Button>
         )}
         {notice ? (
-          <span className={notice.error ? "notice notice--error" : "notice"} role={notice.error ? "alert" : "status"}>
+          <span className="notice notice--error" role="alert">
             {notice.text}
           </span>
         ) : null}

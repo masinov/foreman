@@ -113,6 +113,24 @@ class EngineCommandStore(StoreBase):
         ).fetchall()
         return [_row_to_engine_command(row) for row in rows]
 
+    def run_requested_task_ids(self, project_id: str) -> set[str]:
+        """Ids of the tasks a ``run_task`` command is still waiting to start.
+
+        A command is waiting while it is ``pending`` or ``acknowledged``; the
+        engine completes it when it starts the task, and a rejected one never
+        was a request that would be honoured.
+        """
+
+        rows = self._connection.execute(
+            """
+            SELECT DISTINCT task_id FROM engine_commands
+            WHERE project_id = ? AND command = 'run_task' AND task_id IS NOT NULL
+              AND status IN ('pending', 'acknowledged')
+            """,
+            (project_id,),
+        ).fetchall()
+        return {str(row["task_id"]) for row in rows}
+
     def next_pending_engine_command(self, project_id: str) -> EngineCommand | None:
         """Return the oldest pending command for a project, or None.
 

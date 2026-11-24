@@ -25,7 +25,11 @@ function Steps({ task, workflow }) {
     {
       key: "result",
       header: "Result",
-      render: (row) => <span className={`tone-${row.result.tone}`}>{row.result.word}</span>,
+      render: (row) => (
+        <span className={`tone-${row.result.tone}`} title={row.result.title || undefined}>
+          {row.result.word}
+        </span>
+      ),
     },
     { key: "by", header: "By", className: "secondary", render: (row) => (row.byTitle ? <span title={row.byTitle}>{row.by}</span> : row.by) },
     { key: "runs", header: "Attempts", numeric: true, render: (row) => (row.runs ? <Mono quiet>{row.runs}</Mono> : null) },
@@ -138,7 +142,7 @@ function Details({ task, workflow }) {
   const who = filedBy(task);
   const when = formatDay(task.created_at);
   const rows = [
-    { key: "stage", term: "Status", value: <StatusDot tone={stage.tone}>{stage.word}</StatusDot> },
+    { key: "stage", term: "Status", value: stage.title ? <span title={stage.title}><StatusDot tone={stage.tone}>{stage.word}</StatusDot></span> : <StatusDot tone={stage.tone}>{stage.word}</StatusDot> },
     task.closed_by_hand
       ? {
           key: "closed",

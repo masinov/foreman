@@ -6,6 +6,7 @@ import { getProjectSettings, updateProjectSettings } from "../../api/projects";
 import { useResource } from "../../api/useResource";
 import { Button } from "../../ui/Button";
 import { Mono } from "../../ui/Mono";
+import { useNotice } from "../../ui/Toast";
 import { PolicyRules } from "./PolicyRules";
 import { ReadOnlyRow, SettingRow, SettingsSection } from "./SettingRow";
 import { changedKeys, changesOf, sourceOf, toDraft } from "./settingsForm";
@@ -66,7 +67,7 @@ function GeneralForm({ projectId, settings, onSaved }) {
   const initial = useMemo(() => JSON.parse(read), [read]);
   const [draft, setDraft] = useState(initial);
   const [errors, setErrors] = useState({});
-  const [notice, setNotice] = useState(null);
+  const [notice, setNotice] = useNotice();
   const [saving, setSaving] = useState(false);
 
   // Start over when different values are read (after a save, or when the
@@ -259,7 +260,7 @@ function GeneralForm({ projectId, settings, onSaved }) {
           Discard
         </Button>
         {notice ? (
-          <span className={notice.error ? "notice notice--error" : "notice"} role={notice.error ? "alert" : "status"}>
+          <span className="notice notice--error" role="alert">
             {notice.text}
           </span>
         ) : null}
