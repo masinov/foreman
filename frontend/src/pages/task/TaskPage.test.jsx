@@ -646,10 +646,12 @@ describe("Overview", () => {
   });
 
 
-  it("refreshes from the sprint stream while a step runs", async () => {
+  it("refreshes from the project's stream while a step runs", async () => {
     const { fetchImpl } = await renderTask(BASE, taskRoutes({ task: taskDetail({ status: "in_progress", workflow_current_step: "develop", awaiting_human_gate: false, gate_policy: null, blocked_kind: null }) }));
-    const source = fetchImpl.EventSource.sources.find((entry) => entry.url === "/api/v1/sprints/sprint-56/stream");
+    const source = fetchImpl.EventSource.sources.find((entry) => entry.url === "/api/v1/projects/foreman/stream");
     expect(source).toBeDefined();
+    // The project's stream is the only one the page holds open.
+    expect(fetchImpl.EventSource.sources.map((entry) => entry.url)).toEqual(["/api/v1/projects/foreman/stream"]);
     const before = taskReads(fetchImpl);
     source.emit({ type: "event", event: { id: "e9", task_id: "another-task" } });
     source.emit({ type: "event", event: { id: "e10", task_id: TASK_ID } });
@@ -1073,7 +1075,7 @@ describe("Activity", () => {
     const before = fetchImpl.routes[RUNS_URL];
     fetchImpl.routes[RUNS_URL] = { ...before, runs: [runItem("run-9", "merge", { backend: "builtin", model: null }), ...before.runs], total: before.total + 1 };
     fetchImpl.routes[outputUrl("run-9")] = outputPayload("run-9", "Merged.");
-    const source = fetchImpl.EventSource.sources.find((entry) => entry.url === "/api/v1/sprints/sprint-56/stream");
+    const source = fetchImpl.EventSource.sources.find((entry) => entry.url === "/api/v1/projects/foreman/stream");
     source.emit({ type: "event", event: { id: "e20", task_id: TASK_ID } });
     await waitFor(() => expect(within(screen.getByRole("table", { name: "Steps" })).getAllByRole("row")).toHaveLength(4), { timeout: 3000 });
 

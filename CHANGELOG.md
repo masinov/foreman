@@ -9,6 +9,8 @@ memory changes rather than versioned product releases.
 
 ### Sprint 62
 
+- A running task's page uses one event stream (sprint 62, run through Foreman). It opened the project's stream and the sprint's, which repeated the project's events; it now listens to the project's alone through `projectEvents`, and reloads on an event about its task as before. The sprint page never had a second stream.
+
 - Every test report is read in full (ADR-0035 amendment, owner 2026-11-24). Foreman stopped at 200 report files of 32 MB at most. Foreman's own suite writes 272, one per test class, so its count left out about 400 Python tests and all the frontend's. Reports are now read a piece at a time, however many and however large.
 
 - A step's details say what it did to the repository (ADR-0038, sprint 62 slice 4, run through Foreman).
