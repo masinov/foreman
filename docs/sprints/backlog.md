@@ -285,6 +285,38 @@ Base work that this framing makes necessary:
      - tools that track coverage against requirements;
      - whether the central server's workers run tests through an existing
        CI runner (direction 3).
+   - **Survey done (2026-11-24),** of the company's own projects and of established practice.
+     - **The kinds of check these projects need:**
+       - fast unit tests (pytest or unittest);
+       - tests against services, such as Postgres, Redis, a time-series store, or a client's database reached over VPN;
+       - optimizer quality against reference results (objective value, feasibility, solve time on a fixed set of cases), often comparing two branches;
+       - model training and evaluation against a baseline metric, often on a GPU;
+       - GPU-only jobs;
+       - evaluation of LLM output, which is paid and varies from run to run;
+       - a CAD plugin on Windows with a licence and real drawing files;
+       - long exact-solver and certificate runs;
+       - image builds;
+       - browser flows (several frontends and no browser tests yet).
+
+       Two projects already split their tests into tiers of their own: one into free tests on every commit and paid model tests on request, another into unit, certificate, control and provenance tiers with a `slow` marker. Results are scattered: no common place for metrics or objective values.
+     - **Practice:**
+       - **Selection is an optimisation allowed to miss.** The tools that pick tests from a change are bound to one language or to a build graph (pytest-testmon, `vitest --changed`, Nx, Bazel), or predict from history (Meta, Develocity). The full required set still runs at the merge gate, on the merged result.
+       - **CI tiers:** a fast set on each change, the full required set at merge, and slow, end-to-end, model and performance checks after merge, nightly or before release.
+       - **Machines:** a job states labels (OS, GPU, licence, interactive desktop), and a runner advertises them (GitHub, GitLab, Buildkite).
+       - **Results:** JUnit XML for test cases; metrics checked against a pinned baseline with a tolerance (pytest-benchmark, asv, MLflow evaluation, Evidently); files kept as evidence (screenshots, transcripts).
+       - **Who owns what:** the project defines what runs, in its repository; the platform decides what is required and where it runs (protected config, runner pools).
+       - **Agent- or person-performed checks** are workflow steps that record a verdict with evidence. There is no standard yet.
+     - **Conclusion (Claude, for the owner to decide):** a tier is not a subsystem of its own. It is a verification step in a declarative workflow, as review tiers already are (`development_tiered`), and its parts land with the stages that own them:
+       - **which command a test step runs:** today always the project's one `test_command`;
+       - **a rule by changed paths:** small, and possible now;
+       - **results as counts, metrics with a baseline and files:** the evidence model, ADR-0018;
+       - **the machine it needs:** stage 6, labels;
+       - **an agent-run check:** a tester role, stage 3;
+       - **per-run services:** stage 4;
+       - **slow checks on the integrated `main`:** stage 8;
+       - **the tests view:** stage 5, designed with the other views.
+
+       Language-bound test selection stays inside a project's own command (pytest-testmon or `--changed`), never in Foreman.
 6. **The views, thought through as one system (owner, 2026-11-23).**
    The owner has proposed several views over time. Before any one of them
    is built, they are designed together: roadmap stage 5, the left bar.
