@@ -7,7 +7,6 @@ where it is, and reclaims idle trees so a project stays under its cap.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 from ..domain.models import Project, Task
 from ..store import ForemanStore
@@ -79,33 +78,31 @@ class TaskWorktrees:
         except WorktreeError as exc:
             # Reclaiming is an optimisation; failing it must not stop the task
             # that was about to run from getting its worktree.
-            self.emit_event(
-                task,
+            self.records.emit_project_event(
+                project.id,
                 "engine.worktree_reclaim_failed",
-                {"error": str(exc)},
-                detail=f"Could not enforce max_live_worktrees: {exc}",
+                {"error": str(exc), "for_task_id": task.id},
             )
             return
 
+        # Other tasks' worktrees, removed to make room: the project's own
+        # record, not the task's that needed the room (ADR-0037).
         if outcome.reclaimed:
-            self.emit_event(
-                task,
+            self.records.emit_project_event(
+                project.id,
                 "engine.worktrees_reclaimed",
                 {
                     "limit": outcome.limit,
                     "live_before": outcome.live_before,
                     "live_after": outcome.live_after,
                     "reclaimed": [entry.slug for entry in outcome.reclaimed],
+                    "for_task_id": task.id,
                 },
-                detail=(
-                    f"Reclaimed {len(outcome.reclaimed)} worktree(s) to stay under "
-                    f"max_live_worktrees={outcome.limit}."
-                ),
             )
         if outcome.over_limit:
             # Not a failure: the alternative was destroying uncommitted work.
-            self.emit_event(
-                task,
+            self.records.emit_project_event(
+                project.id,
                 "engine.worktree_limit_exceeded",
                 {
                     "limit": outcome.limit,
@@ -113,32 +110,9 @@ class TaskWorktrees:
                     "retained_dirty": [
                         entry.slug for entry in outcome.retained_dirty
                     ],
+                    "for_task_id": task.id,
                 },
-                detail=(
-                    f"{outcome.live_after} worktrees exceed max_live_worktrees="
-                    f"{outcome.limit}; "
-                    f"{len(outcome.retained_dirty)} hold uncommitted work and were "
-                    f"kept."
-                ),
             )
-
-    def emit_event(
-        self,
-        task: Task,
-        event_type: str,
-        payload: dict[str, Any],
-        *,
-        detail: str,
-    ) -> None:
-        """Record one worktree-lifecycle event on a system run of the task it is about."""
-
-        run = self.records.create_system_run(
-            task,
-            workflow_step="orchestrator",
-            outcome="success",
-            detail=detail,
-        )
-        self.records.emit_event(run, event_type, payload)
 
     def preflight(self, project: Project) -> None:
         """Fail a run at the start when the repository cannot host worktrees.

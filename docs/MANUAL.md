@@ -1780,6 +1780,9 @@ the limit and saying so.
 | `engine.worktree_limit_exceeded` | the cap could not be met; the dirty trees that blocked it |
 | `engine.worktree_reclaim_failed` | reclaiming errored; the task still got its tree |
 
+They are the project's records, not a task's: `for_task_id` names the task
+that needed the room (ADR-0037).
+
 To reclaim on demand rather than waiting for the cap, use
 `foreman worktree prune <project-id>` or the dashboard control below. Both drop
 only done, cancelled, and unclaimed trees, so neither can take a tree a live

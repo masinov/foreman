@@ -275,6 +275,8 @@
 .details-list__row dd {
   margin: 0;
   min-width: 0;
+  /* A long unbroken value (a full commit id in a reason) breaks inside the column. */
+  overflow-wrap: anywhere;
 }
 
 /* Table: header line, faint row lines, none above the first or below the last */

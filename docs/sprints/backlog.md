@@ -24,9 +24,10 @@ step's facts beside it, the prompt as the first line).
   line.
 - **Done, engine fixes found on the way:** records about a sprint or the
   engine are stored as the sprint's or the project's own, not pinned to a
-  task (ADR-0037, sprint 62 slice 3). Still open from it: whether the
-  sprint's own Activity tab lists its own records ("Finished, tagged …")
-  beside its tasks' work.
+  task (ADR-0037, sprint 62 slice 3). After it (owner, 2026-11-24): a
+  task's Activity lists every record the engine kept on it, so it shows at
+  least what its sprint's does; the worktree clean-ups are the project's;
+  a sprint's Activity does not list the sprint's own records.
 
 ## The sprint page, step by step (owner, 2026-11-21)
 

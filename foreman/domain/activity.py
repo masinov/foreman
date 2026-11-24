@@ -2,11 +2,14 @@
 
 A sprint's activity is what happened to each of its tasks: each run that did
 work (an agent's step, tests, a review, a person's decision at a gate, a
-merge, a block) and what a person did to a task by hand (closed it,
+merge, a block), each record the engine kept on a task (a step stopped, a
+run recovered), and what a person did to a task by hand (closed it,
 cancelled it, unblocked it). Left out: runs that only keep a record (a task
-filed or cancelled, the step that marks a task done, the engine's own
-records) and gate runs a person did not decide (Foreman approving by the
-project's setting, or a gate asking a person, whose answer is listed).
+filed or cancelled, the step that marks a task done) and gate runs a person
+did not decide (Foreman approving by the project's setting, or a gate asking
+a person, whose answer is listed). A task's own Activity lists at least what
+the sprint's lists about it. The sprint's and the project's own records are
+not on any task (ADR-0037).
 
 A problem is what sent a task back or stopped it: a send-back, a failure, a
 merge conflict, a block, a cancel.
@@ -18,11 +21,6 @@ from dataclasses import dataclass
 
 #: Roles whose runs only keep a record.
 RECORD_ROLES: frozenset[str] = frozenset({"_builtin:mark_done"})
-
-#: Steps whose runs are the engine's own records about a task (its worktree
-#: made or removed), not work on it. A sprint's and the project's records
-#: have no run at all (ADR-0037).
-RECORD_STEPS: frozenset[str] = frozenset({"orchestrator"})
 
 #: Outcomes of runs that only keep a record: a task filed or cancelled (the
 #: cancel is listed from the person's own event, with who and why).
@@ -88,10 +86,9 @@ WHO = WhoRule(
 
 # A task's own steps (its Activity table): every run of the task but those
 # that are not a step of it. The step that marks a task done only closes
-# it after the merge. Of the engine's records on the task (its role), only
-# one that names the task (a step stopped or paused during it) is listed;
-# the rest (its worktree made or removed) are not steps. Records of a
-# sprint or the project are not on any task (ADR-0037).
+# it after the merge. Every record the engine kept on the task (its role: a
+# block, a step stopped, a run recovered) is about the task and is listed;
+# it is not an attempt at its step (ADR-0037).
 
 #: Roles whose runs are not one of the task's steps.
 NOT_STEP_ROLES: frozenset[str] = frozenset({"_builtin:mark_done"})

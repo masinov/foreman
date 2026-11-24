@@ -159,8 +159,8 @@ export function runResult(run) {
   const role = roleOf(run);
   const note = runNote(run);
   if (role === ORCHESTRATOR && outcome === "success") {
-    // A record the engine kept: of stopping or pausing the step under way,
-    // of resuming, or of something about the sprint or the engine itself.
+    // A record the engine kept on the task: of stopping or pausing the step
+    // under way, of resuming, or of a command about it (ADR-0037).
     if (/^Engine resumed/i.test(note)) return { tone: "idle", word: "Resumed", note: "" };
     if (/^(Shut down|Paused|Stopped task)/i.test(note)) return { tone: "idle", word: "Interrupted", note: firstSentence(note) };
     return { tone: "idle", word: "Recorded", note: firstSentence(note) };

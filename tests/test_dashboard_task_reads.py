@@ -342,8 +342,7 @@ class TaskReadsCase(unittest.TestCase):
         run("t1", 4, role_id="_builtin:run_tests", workflow_step="test", agent_backend="builtin", model=None, outcome="success")
         run("m1", 5, role_id="_builtin:merge", workflow_step="merge", agent_backend="builtin", model=None, outcome="success")
         run("done", 6, role_id="_builtin:mark_done", workflow_step="done", agent_backend="builtin", model=None, outcome="success")
-        run("ready", 7, workflow_step="orchestrator", outcome_detail="engine.sprint_ready", **engine)
-        run("head", 8, outcome_detail="Default branch 'main' HEAD changed from 'x' to 'y'.", **engine)
+        run("head", 8, outcome_detail="Default branch 'main' HEAD changed from 'x' to 'y'.", **{**engine, "outcome": "blocked"})
         self.store.save_event(Event(id="e-test", run_id="t1", task_id="t", project_id="p", event_type="engine.test_run",
                                     timestamp="2026-01-01T00:04:30Z", payload={
                                         "head_sha": "b" * 40, "exit_code": 0,
@@ -353,9 +352,10 @@ class TaskReadsCase(unittest.TestCase):
                                     timestamp="2026-01-01T00:05:30Z", payload={"sha": "c" * 40, "target": "main"}))
 
         page = self.get("/api/v1/tasks/t/runs").json()
-        # Left out: closing the task after its merge, and the engine's records that do not name it.
-        self.assertEqual([r["id"] for r in page["runs"]], ["m1", "t1", "d2", "stop", "d1"])
-        self.assertEqual(page["total"], 5)
+        # Left out: closing the task after its merge. Every record the engine
+        # kept on the task is listed, whether or not it names it (ADR-0037).
+        self.assertEqual([r["id"] for r in page["runs"]], ["head", "m1", "t1", "d2", "stop", "d1"])
+        self.assertEqual(page["total"], 6)
         runs = {r["id"]: r for r in page["runs"]}
         # The engine's record is not an attempt at the step it was kept under.
         self.assertEqual({rid: runs[rid]["attempt"] for rid in ("d1", "d2", "t1")}, {"d1": 1, "d2": 2, "t1": 1})
@@ -374,7 +374,7 @@ class TaskReadsCase(unittest.TestCase):
         detail = {r["id"]: r for r in self.get("/api/v1/tasks/t").json()["runs"]}
         self.assertEqual(detail["t1"]["tests"], counted)
         self.assertIsNone(detail["d2"]["tests"])
-        self.assertEqual([r["id"] for r in self.get("/api/v1/tasks/t/runs?limit=2&offset=2").json()["runs"]], ["d2", "stop"])
+        self.assertEqual([r["id"] for r in self.get("/api/v1/tasks/t/runs?limit=2&offset=3").json()["runs"]], ["d2", "stop"])
 
     def test_runs_say_why_they_ended_as_they_did(self) -> None:
         self.task()
@@ -404,7 +404,7 @@ class TaskReadsCase(unittest.TestCase):
         self.store.save_sprint(Sprint(id="other", project_id="p", title="O", status="planned"))
         self.store.save_task(Task(id="v", sprint_id="other", project_id="p", title="Elsewhere", status="todo"))
         gate = dict(role_id="_builtin:human_gate", workflow_step="merge_approval", model=None)
-        # Left out: filing, the engine's records, marking done, gates no person decided.
+        # Left out: filing, marking done, gates no person decided.
         self.sprint_run("r-file", "t", 0, role_id="human", workflow_step="file", agent_backend="cli", outcome="file")
         self.sprint_run("r-dev", "t", 1)
         self.sprint_run("r-steer", "t", 2, role_id="code_reviewer", workflow_step="review",
@@ -417,8 +417,6 @@ class TaskReadsCase(unittest.TestCase):
         self.sprint_run("r-done", "t", 7, role_id="_builtin:mark_done", workflow_step="done",
                         agent_backend="builtin", outcome="success")
         self.sprint_run("r-killed", "u", 8, status="killed", outcome="error")
-        self.sprint_run("r-engine", "t", 9, role_id="_builtin:orchestrator", workflow_step="orchestrator",
-                        agent_backend="orchestrator", outcome="success", outcome_detail="engine.sprint_ready")
         self.sprint_run("r-cancel-record", "u", 10, role_id="human", workflow_step="cancel",
                         agent_backend="cli", outcome="cancel")
         self.sprint_run("r-elsewhere", "v", 11)
@@ -458,6 +456,25 @@ class TaskReadsCase(unittest.TestCase):
         narrowed = self.get("/api/v1/sprints/s/activity?by=foreman").json()
         self.assertEqual((narrowed["total"], narrowed["who"]), (1, page["who"]))
         self.assertEqual(self.get("/api/v1/sprints/nope/activity").status_code, 404)
+
+
+    def test_the_engines_records_on_a_task_are_listed_by_the_sprint_and_the_task(self) -> None:
+        # A block and a recovery the engine kept on the task, at the step at
+        # hand or at no step: about the task, so on both lists (ADR-0037).
+        self.task("t", task_key="P-1")
+        engine = dict(role_id="_builtin:orchestrator", agent_backend="orchestrator", model=None,
+                      cost_usd=0.0, duration_ms=None)
+        self.sprint_run("r-dev", "t", 1)
+        self.sprint_run("r-block", "t", 2, outcome="blocked",
+                        outcome_detail="Default branch 'main' HEAD changed from 'x' to 'y'.", **engine)
+        self.sprint_run("r-recover", "t", 3, workflow_step="orchestrator", outcome="error",
+                        outcome_detail="Recovered orphaned task without an active run.", **engine)
+        sprint = [i["id"] for i in self.get("/api/v1/sprints/s/activity").json()["items"]]
+        task = [r["id"] for r in self.get("/api/v1/tasks/t/runs").json()["runs"]]
+        self.assertEqual(sprint, ["r-recover", "r-block", "r-dev"])
+        self.assertEqual(task, ["r-recover", "r-block", "r-dev"])
+        problems = [i["id"] for i in self.get("/api/v1/sprints/s/activity?only=problems").json()["items"]]
+        self.assertEqual(problems, ["r-recover", "r-block"])
 
     def test_run_output_has_prompt_and_transcript(self) -> None:
         self.task()
