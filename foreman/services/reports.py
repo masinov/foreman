@@ -16,6 +16,7 @@ from ..engine.control import describe_engine
 from .base import Service
 from .errors import NotFoundError
 from .sprints import SprintService
+from .views import task_filed_from
 
 
 def run_payload(run: Run) -> dict[str, Any]:
@@ -264,6 +265,9 @@ class ReportService(Service):
                 "executor_overrides": task.executor_overrides,
                 "step_visit_counts": dict(task.step_visit_counts),
             },
+            "filed_from": task_filed_from(
+                self.store, self.store.list_events(task_id=task.id)
+            ),
             "project": {"id": task.project_id, "name": project.name if project else None},
             "sprint": {"id": task.sprint_id, "title": sprint.title if sprint else None},
             "totals": self.store.run_totals(task_id=task.id),

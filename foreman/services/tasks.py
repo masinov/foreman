@@ -26,7 +26,7 @@ from .errors import (
     NotFoundError,
 )
 from .task_models import test_counts
-from .views import task_source
+from .views import task_filed_from, task_source
 from .workspace import foreman_starts_backlog_work
 
 
@@ -201,6 +201,7 @@ class TaskService(Service):
             ],
             "closed_by_hand": self._closed_by_hand(task, events),
             "source": task_source(task),
+            "filed_from": task_filed_from(self.store, events),
             "policy": describe_resolution(
                 PolicyMatrix.for_project(project).resolve_task(task)
             )
