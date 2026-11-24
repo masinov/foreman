@@ -278,7 +278,8 @@ class HumanGateTests(OrchestratorTestCase):
 
             first_result = orchestrator.run_project(project.id)
 
-            self.assertEqual(first_result.stop_reason, "blocked")
+            # A task waiting at a gate holds the queue (ADR-0039).
+            self.assertEqual(first_result.stop_reason, "waiting_for_decision")
             resume_orchestrator = ForemanOrchestrator(
                 store,
                 roles=self.roles,

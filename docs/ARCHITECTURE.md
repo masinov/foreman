@@ -77,7 +77,10 @@ leaves the task at that step for the engine (ADR-0011).
 
 `ForemanOrchestrator` (`foreman/engine/orchestrator.py`) is the entry point: it runs
 a project pass, runs one task under a lease, resumes a human gate, and walks a
-task through its workflow one step at a time. The step loop reads as its
+task through its workflow one step at a time. A pass runs one task at a time:
+a task of the active sprint stopped at a human gate holds the queue, and the
+pass ends `waiting_for_decision` until it is decided (ADR-0039,
+`ProjectPass._task_waiting_for_a_decision`). The step loop reads as its
 phases: worktree check, limits, branch refresh, the step itself (human gate,
 built-in, or agent), the record of what happened, and the transition.
 

@@ -125,20 +125,14 @@ class TaskRun(OrchestratorBase):
         project: Project,
         workflow: WorkflowDefinition,
         task: Task,
-        *,
-        only_roles: frozenset[str] | None = None,
     ) -> Task:
-        """Run one task from the workflow entry step, heartbeating its lease throughout.
-
-        ``only_roles`` limits the run to steps of those roles; the task is
-        left resumable at the first step of any other.
-        """
+        """Run one task from the workflow entry step, heartbeating its lease throughout."""
 
         token = self.leases.token_for(task.id)
         if token is not None:
             self.leases.start_heartbeat(task, project, token)
         try:
-            return self._run_leased_task(project, workflow, task, only_roles=only_roles)
+            return self._run_leased_task(project, workflow, task)
         finally:
             self.leases.stop_heartbeat(task.id)
 
@@ -147,8 +141,6 @@ class TaskRun(OrchestratorBase):
         project: Project,
         workflow: WorkflowDefinition,
         task: Task,
-        *,
-        only_roles: frozenset[str] | None = None,
     ) -> Task:
         """Run one task from the workflow entry step."""
 
@@ -236,7 +228,6 @@ class TaskRun(OrchestratorBase):
             current_task,
             step=resume_step,
             carried_output=resume_carried_output,
-            only_roles=only_roles,
         )
         refreshed = self.store.get_task(current_task.id)
         if refreshed is None:

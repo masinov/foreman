@@ -146,6 +146,12 @@ the retry budget.
 project's workflow until it finishes, blocks, or hits a human gate. Use
 `foreman run <project-id> --task <task-id>` to drive a single task.
 
+The engine runs one task at a time (ADR-0039). A task stopped at a gate for
+your decision (a merge approval, say) holds the queue: no other task starts
+until you decide, and then that task is merged before the next one starts,
+from the default branch it left. A run that stops there reports
+`waiting_for_decision`. A task blocked by a failure does not hold the queue.
+
 `foreman serve <project-id>` is the same engine kept resident: instead of
 exiting when the queue empties it waits and picks up work added later, from any
 process. See [§6.1](#61-foreman-serve-the-resident-engine).

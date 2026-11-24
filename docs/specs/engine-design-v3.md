@@ -872,6 +872,11 @@ def run_project(project_id):
         resumed_task.workflow_carried_output = None
 
     while True:
+        # One task at a time (amended 2026-11-24, ADR-0039): a task stopped
+        # at a gate for a person's decision holds the queue. Nothing else
+        # starts until it is decided; the decided task is resumed first.
+        if task_waiting_for_a_decision(project):
+            break
         task = select_next_task(project, workflow)
         if task is None:
             sprint = get_active_sprint(project_id)
