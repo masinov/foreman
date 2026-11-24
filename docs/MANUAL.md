@@ -286,7 +286,6 @@ task's Activity. If that task has since been deleted it reads "while working
 on a task that no longer exists". Tasks filed by a person or another system
 show nothing new.
 
-```
 
 `task done` is for work that was finished without the engine (merged by hand,
 done elsewhere). It runs none of the task's remaining steps and verifies
