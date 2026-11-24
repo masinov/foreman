@@ -284,21 +284,6 @@ class EvidenceBuilder:
         except (GitError, OSError):
             return ""
 
-    def is_stale(
-        self,
-        evidence: CompletionEvidence,
-        task: Task,
-        project: Project,
-    ) -> bool:
-        if not task.branch_name:
-            return False
-        try:
-            current_head = head_sha(project.repo_path, f"refs/heads/{task.branch_name}") or ""
-        except Exception:
-            return False
-        return bool(evidence.head_sha and current_head and evidence.head_sha != current_head)
-
-
 def branch_numstat(repo_path: str, target_branch: str, branch_name: str) -> str:
     """Return ``git diff --numstat -z`` output for one branch, or an empty
     string on failure."""

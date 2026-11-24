@@ -630,11 +630,12 @@ class EvidenceCachingTests(RepoTestCase):
             self.assertIn("Implement scheduler queue", prompt)
             self.assertIsNone(task.completion_evidence)
 
-    def test_build_prompt_caches_evidence_on_second_call(self) -> None:
-        """Second _build_prompt call must reuse the cached evidence without rebuilding.
+    def test_every_reviewer_prompt_builds_the_evidence_afresh(self) -> None:
+        """A reviewer is shown the evidence as it is now, never a copy saved earlier.
 
-        Verifies that build_completion_evidence() is called at most once regardless
-        of how many times _build_prompt is invoked for the same task/role.
+        It used to be built once and reused until the branch head moved; a test
+        run made again on the same commit then went unseen (FOR-52,
+        2026-11-24).
         """
         repo_path, db_path = self.create_workspace()
         self.initialize_repo(repo_path)
@@ -714,32 +715,15 @@ class EvidenceCachingTests(RepoTestCase):
             orchestrator.build_completion_evidence = spying_build  # type: ignore[method-assignment]
 
             role = self.roles["code_reviewer"]
-            # First call — should build and cache evidence
-            orchestrator.prompts.build(role, project, task, None)
-            self.assertGreater(call_count[0], 0, "build_completion_evidence should have been called on first _build_prompt")
-            self.assertIsNotNone(
-                task.completion_evidence,
-                "task.completion_evidence must be set after first _build_prompt",
-            )
-            first_evidence = task.completion_evidence
-
-            # Second call — evidence must be reused, not rebuilt
-            orchestrator.prompts.build(role, project, task, None)
-            self.assertEqual(
-                call_count[0],
-                1,
-                "build_completion_evidence must only be called once; second _build_prompt should reuse cached evidence",
-            )
-            self.assertIs(
-                task.completion_evidence,
-                first_evidence,
-                "task.completion_evidence must be the same object on second call",
-            )
-
-            # Third call — still no rebuild
             orchestrator.prompts.build(role, project, task, None)
             self.assertEqual(call_count[0], 1)
-            self.assertIs(task.completion_evidence, first_evidence)
+            self.assertIsNotNone(task.completion_evidence)
+
+            # Each later prompt builds it again, and saves what it built.
+            orchestrator.prompts.build(role, project, task, None)
+            orchestrator.prompts.build(role, project, task, None)
+            self.assertEqual(call_count[0], 3)
+            self.assertIsNotNone(task.completion_evidence)
 
     def test_reviewer_prompt_rebuilds_completion_evidence_when_branch_head_moves(self) -> None:
         repo_path, db_path = self.create_workspace()
