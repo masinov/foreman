@@ -6,7 +6,7 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
-from ..domain.models import Project, Sprint
+from ..domain.models import FINISHED_TASK_STATUSES, Project, Sprint
 from ..domain.settings import settings_of
 from ..store import ForemanStore
 from ..history.records import RunRecords
@@ -26,7 +26,7 @@ class SprintFlow:
     def fully_resolved(self, sprint: Sprint) -> bool:
         """Return True when every task in the sprint is done or cancelled."""
         tasks = self.store.list_tasks(sprint_id=sprint.id)
-        return bool(tasks) and all(t.status in {"done", "cancelled"} for t in tasks)
+        return bool(tasks) and all(t.status in FINISHED_TASK_STATUSES for t in tasks)
 
     def resolve(self, project: Project, sprint: Sprint) -> str | None:
         """Handle a fully resolved active sprint as the project says.
@@ -102,15 +102,9 @@ class SprintFlow:
         *,
         sprint: Sprint,
     ) -> None:
-        """Emit a sprint-scoped lifecycle event via a synthetic run."""
-        tasks = self.store.list_tasks(sprint_id=sprint.id)
-        task = tasks[0] if tasks else self.records.select_project_system_task(project.id)
-        if task is None:
-            return
-        run = self.records.create_system_run(
-            task, workflow_step="orchestrator", outcome="success", detail=event_type
-        )
-        self.records.emit_event(run, event_type, payload)
+        """Record one event of the sprint itself (ADR-0037)."""
+
+        self.records.emit_sprint_event(sprint, event_type, payload)
 
     def emit_attention(self, project: Project, sprint: Sprint) -> None:
         """Raise one ``sprint_resolved`` attention turn when every task of a
@@ -118,17 +112,8 @@ class SprintFlow:
         supervised sprint left active, or an autonomous one with no successor).
 
         Autonomous runs that auto-advance to the next sprint do not call this.
+        The turn is the sprint's: the digest leads with the sprint handoff, not
+        a single (already-done) task.
         """
-        tasks = self.store.list_tasks(sprint_id=sprint.id)
-        anchor = tasks[0] if tasks else self.records.select_project_system_task(project.id)
-        if anchor is None:
-            return
-        run = self.records.create_system_run(
-            anchor,
-            workflow_step="orchestrator",
-            outcome="success",
-            detail=f"sprint_resolved: {sprint.title}",
-        )
-        # task_id is None: the digest should lead with the sprint handoff, not a
-        # single (already-done) task row.
-        self.records.emit_attention_needed(run, None, "sprint_resolved")
+
+        self.records.emit_sprint_attention(sprint, "sprint_resolved")

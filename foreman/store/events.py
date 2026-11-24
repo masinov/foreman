@@ -48,12 +48,13 @@ class EventStore(StoreBase):
             connection.execute(
                 """
                 INSERT INTO events (
-                    id, run_id, task_id, project_id, event_type, role_id, timestamp,
-                    payload_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    id, run_id, task_id, sprint_id, project_id, event_type, role_id,
+                    timestamp, payload_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     run_id = excluded.run_id,
                     task_id = excluded.task_id,
+                    sprint_id = excluded.sprint_id,
                     project_id = excluded.project_id,
                     event_type = excluded.event_type,
                     role_id = excluded.role_id,
@@ -64,6 +65,7 @@ class EventStore(StoreBase):
                     event.id,
                     event.run_id,
                     event.task_id,
+                    event.sprint_id,
                     event.project_id,
                     event.event_type,
                     event.role_id,
@@ -162,7 +164,7 @@ class EventStore(StoreBase):
         limit: int | None = None,
         event_types: Sequence[str] | None = None,
     ) -> list[Event]:
-        """List sprint-scoped events in display order.
+        """List a sprint's events in display order: its tasks' and its own (ADR-0037).
 
         ``event_types`` keeps only events of those types.
 
@@ -172,71 +174,24 @@ class EventStore(StoreBase):
         (used by the activity panel load-more control).
         """
 
-        params: list[Any] = [sprint_id]
-        type_clause = ""
-        if event_types:
-            type_clause = f" AND e.event_type IN ({', '.join('?' for _ in event_types)})"
-            params.extend(event_types)
-
-        if after_event_id is not None:
-            marker = self._get_event_cursor_marker(after_event_id)
+        sql, params = self._sprint_events_sql(sprint_id, event_types)
+        order = "ASC"
+        if after_event_id is not None or before_event_id is not None:
+            marker = self._get_event_cursor_marker(after_event_id or before_event_id or "")
             if marker is None:
                 return []
-            sql = """
-                SELECT e.*
-                FROM events e
-                INNER JOIN tasks t ON t.id = e.task_id
-                WHERE t.sprint_id = ?{types}
-                AND (
-                    e.timestamp > ?
-                    OR (e.timestamp = ? AND e.rowid > ?)
-                )
-                ORDER BY e.timestamp ASC, e.rowid ASC
-            """
+            beyond = ">" if after_event_id is not None else "<"
+            order = "ASC" if after_event_id is not None else "DESC"
+            sql += f" WHERE timestamp {beyond} ? OR (timestamp = ? AND event_rowid {beyond} ?)"
             params.extend([marker["timestamp"], marker["timestamp"], marker["rowid"]])
-            if limit is not None:
-                sql += " LIMIT ?"
-                params.append(limit)
-            rows = self._connection.execute(sql.replace('{types}', type_clause), tuple(params)).fetchall()
-            return [_row_to_event(row) for row in rows]
-
-        if before_event_id is not None:
-            marker = self._get_event_cursor_marker(before_event_id)
-            if marker is None:
-                return []
-            sql = """
-                SELECT e.*
-                FROM events e
-                INNER JOIN tasks t ON t.id = e.task_id
-                WHERE t.sprint_id = ?{types}
-                AND (
-                    e.timestamp < ?
-                    OR (e.timestamp = ? AND e.rowid < ?)
-                )
-                ORDER BY e.timestamp DESC, e.rowid DESC
-            """
-            params.extend([marker["timestamp"], marker["timestamp"], marker["rowid"]])
-            if limit is not None:
-                sql += " LIMIT ?"
-                params.append(limit)
-            rows = self._connection.execute(sql.replace('{types}', type_clause), tuple(params)).fetchall()
-            events = [_row_to_event(row) for row in rows]
-            events.reverse()
-            return events
-
-        # No cursor — return all events in display order, optionally limited.
-        sql = """
-            SELECT e.*
-            FROM events e
-            INNER JOIN tasks t ON t.id = e.task_id
-            WHERE t.sprint_id = ?{types}
-            ORDER BY e.timestamp ASC, e.rowid ASC
-        """
+        sql += f" ORDER BY timestamp {order}, event_rowid {order}"
         if limit is not None:
             sql += " LIMIT ?"
             params.append(limit)
-        rows = self._connection.execute(sql.replace('{types}', type_clause), tuple(params)).fetchall()
-        return [_row_to_event(row) for row in rows]
+        events = [_row_to_event(row) for row in self._connection.execute(sql, tuple(params)).fetchall()]
+        if order == "DESC":
+            events.reverse()
+        return events
 
     def list_recent_sprint_events(
         self, sprint_id: str, *, limit: int = 50, event_types: Sequence[str] | None = None
@@ -245,27 +200,36 @@ class EventStore(StoreBase):
 
         if limit <= 0:
             return []
-
-        type_clause = ""
-        params: list[Any] = [sprint_id]
-        if event_types:
-            type_clause = f" AND e.event_type IN ({', '.join('?' for _ in event_types)})"
-            params.extend(event_types)
+        sql, params = self._sprint_events_sql(sprint_id, event_types)
+        sql += " ORDER BY timestamp DESC, event_rowid DESC LIMIT ?"
         params.append(limit)
-        rows = self._connection.execute(
-            f"""
-            SELECT e.*
-            FROM events e
-            INNER JOIN tasks t ON t.id = e.task_id
-            WHERE t.sprint_id = ?{type_clause}
-            ORDER BY e.timestamp DESC, e.rowid DESC
-            LIMIT ?
-            """,
-            tuple(params),
-        ).fetchall()
-        events = [_row_to_event(row) for row in rows]
+        events = [_row_to_event(row) for row in self._connection.execute(sql, tuple(params)).fetchall()]
         events.reverse()
         return events
+
+    @staticmethod
+    def _sprint_events_sql(
+        sprint_id: str, event_types: Sequence[str] | None
+    ) -> tuple[str, list[Any]]:
+        """The events of a sprint's tasks and the sprint's own, as one set to filter and order."""
+
+        type_clause = ""
+        type_params: list[Any] = []
+        if event_types:
+            type_clause = f" AND e.event_type IN ({', '.join('?' for _ in event_types)})"
+            type_params = list(event_types)
+        sql = f"""
+            SELECT * FROM (
+                SELECT e.*, e.rowid AS event_rowid
+                FROM events e INNER JOIN tasks t ON t.id = e.task_id
+                WHERE t.sprint_id = ?{type_clause}
+                UNION ALL
+                SELECT e.*, e.rowid AS event_rowid
+                FROM events e
+                WHERE e.sprint_id = ?{type_clause}
+            )
+        """
+        return sql, [sprint_id, *type_params, sprint_id, *type_params]
 
     def list_recent_events(
         self,
@@ -310,7 +274,11 @@ class EventStore(StoreBase):
         project_id: str,
         older_than: str,
     ) -> int:
-        """Delete project events older than one cutoff while preserving active-work history."""
+        """Delete project events older than one cutoff while preserving active-work history.
+
+        A sprint's own records are never pruned: the sprint page reads its
+        tag from them (ADR-0037).
+        """
 
         with self._connection:
             cursor = self._connection.execute(
@@ -318,6 +286,7 @@ class EventStore(StoreBase):
                 DELETE FROM events
                 WHERE project_id = ?
                   AND timestamp < ?
+                  AND sprint_id IS NULL
                   AND NOT EXISTS (
                       SELECT 1
                       FROM tasks

@@ -12,6 +12,7 @@ from ..domain.models import (
     TASK_COMPLEXITIES,
     TASK_TYPES,
     Sprint,
+    sprint_ready_to_finish,
 )
 from ..engine.limits import resolve_project_settings
 from ..engine.selection import pulled_task_ids
@@ -125,6 +126,7 @@ class SprintService(Service):
         sprint = self._require_sprint(sprint_id)
 
         project = self.store.get_project(sprint.project_id)
+        counts = self.store.task_counts(sprint_id=sprint.id)
         return {
             "id": sprint.id,
             "project_id": sprint.project_id,
@@ -142,7 +144,10 @@ class SprintService(Service):
             # own, against the limit per sprint (ADR-0028).
             "started_by_foreman": len(pulled_task_ids(self.store, sprint)),
             "foreman_limit": resolve_project_settings(project).max_autonomous_tasks if project else None,
-            "task_counts": self.store.task_counts(sprint_id=sprint.id),
+            "task_counts": counts,
+            # Every task done or cancelled while the sprint is active: the
+            # rule the engine finishes it by (ADR-0037).
+            "ready_to_finish": sprint_ready_to_finish(sprint.status, counts),
             "totals": self.store.run_totals(sprint_id=sprint.id),
             "checkpoint": self._checkpoint(sprint),
         }

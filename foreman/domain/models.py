@@ -49,6 +49,18 @@ TASK_STATUSES: tuple[TaskStatus, ...] = (
     # record, and is never planned or run (ADR-0021).
     "declined",
 )
+
+#: The statuses of a task that is finished: a sprint whose every task is in
+#: one of them is ready to finish.
+FINISHED_TASK_STATUSES: frozenset[str] = frozenset({"done", "cancelled"})
+
+
+def sprint_ready_to_finish(status: str, task_counts: dict[str, int]) -> bool:
+    """True when an active sprint has tasks and every one is finished."""
+
+    total = sum(task_counts.values())
+    finished = sum(task_counts.get(s, 0) for s in FINISHED_TASK_STATUSES)
+    return status == "active" and total > 0 and finished == total
 #: A backlog task's state as the API and the CLI name it, by task status.
 BACKLOG_STATES: dict[str, str] = {
     "filed": "triage",
@@ -559,16 +571,23 @@ class CompletionEvidence:
 
 @dataclass(slots=True)
 class Event:
-    """A persisted structured event emitted during a run."""
+    """A persisted structured event: of a run, of a sprint, or of the project.
+
+    An event belongs to one owner (ADR-0037): a run of a task (``run_id`` and
+    ``task_id`` set), a sprint (``sprint_id`` set: it started, finished, is
+    ready to finish, was tagged), or the project (none set: a command that
+    names no task, a pruning).
+    """
 
     id: str
-    run_id: str
-    task_id: str
+    run_id: str | None
+    task_id: str | None
     project_id: str
     event_type: str
     timestamp: str = field(default_factory=utc_now_text)
     role_id: str | None = None
     payload: JsonDict = field(default_factory=dict)
+    sprint_id: str | None = None
 
 
 #: A manager's proposal (ADR-0022): waiting for a person, or decided.

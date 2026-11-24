@@ -272,17 +272,10 @@ class SprintCheckpoints:
         return found
 
     def _emit(self, project: Project, sprint: Sprint, records: list[tuple[str, dict[str, Any]]]) -> None:
-        """Keep the records, on the sprint's first task as every sprint record is today."""
+        """Keep the records as the sprint's own (ADR-0037)."""
 
-        tasks = self.store.list_tasks(sprint_id=sprint.id)
-        anchor = tasks[0] if tasks else self.records.select_project_system_task(project.id)
-        if anchor is None:
-            return
-        run = self.records.create_system_run(
-            anchor, workflow_step="orchestrator", outcome="success", detail=records[-1][0]
-        )
         for event_type, payload in records:
-            self.records.emit_event(run, event_type, payload)
+            self.records.emit_sprint_event(sprint, event_type, payload)
 
 
 def _checkout_record(project: Project, sha: str) -> tuple[str, dict[str, Any]] | None:

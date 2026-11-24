@@ -65,12 +65,16 @@ export function sprintActionsFor(sprint) {
 }
 
 /**
- * The state, and for a finished sprint the commit its tag marks (spec 6.4,
- * ADR-0036): "Finished 20 Nov at 6f79f4a", the tag's name on hover; or
+ * The state: "Ready to finish" once an active sprint's every task is done or
+ * cancelled, which is on hover (ADR-0037); for a finished sprint the commit its tag marks (spec
+ * 6.4, ADR-0036): "Finished 20 Nov at 6f79f4a", the tag's name on hover; or
  * "Finished 20 Nov, not tagged", the reason on hover.
  */
 function StateWords({ sprint }) {
   const said = stateSentence(sprint);
+  if (sprint.status === SPRINT_STATUSES.active && sprint.ready_to_finish) {
+    return <span title="Every task is done or cancelled.">{said}</span>;
+  }
   const checkpoint = sprint.status === SPRINT_STATUSES.completed ? sprint.checkpoint : null;
   if (!checkpoint) return said;
   if (checkpoint.problem) {
@@ -92,6 +96,8 @@ function stateSentence(sprint) {
   const finished = formatDay(sprint.completed_at);
   switch (sprint.status) {
     case SPRINT_STATUSES.active:
+      // Every task done or cancelled: the next move is finishing it (ADR-0037).
+      if (sprint.ready_to_finish) return "Ready to finish";
       return started ? `Active since ${started}` : "Active";
     case SPRINT_STATUSES.planned:
       return "Planned, not started";

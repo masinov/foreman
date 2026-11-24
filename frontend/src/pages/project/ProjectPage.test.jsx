@@ -467,6 +467,37 @@ describe("the Activity tab", () => {
     expect(window.location.pathname).toBe("/dashboard/sprints/sprint-55");
   });
 
+  it("says a finished sprint's tag on hover, and when it is not tagged", async () => {
+    const routes = projectRoutes();
+    routes[milestonesUrl()] = {
+      milestones: [
+        milestone("sprint_finished", {
+          sprint_id: "sprint-56",
+          sprint_title: "Sprint 56",
+          merged_count: 2,
+          checkpoint: { tag: null, sha: null, problem: "the repository has no commits" },
+        }),
+        milestone("sprint_finished", {
+          sprint_id: "sprint-55",
+          sprint_title: "Sprint 55",
+          merged_count: 3,
+          checkpoint: { tag: "checkpoint-20261111-sprint-55", sha: "6f79f4a0123456789", problem: null },
+        }),
+      ],
+      total: 2,
+    };
+    await renderProject("/dashboard/projects/foreman/activity", routes);
+    const table = await screen.findByRole("table", { name: "Activity" });
+    const rows = within(table).getAllByRole("row").slice(1);
+    const failed = within(rows[0]).getByText("Finished, not tagged");
+    expect(failed).toHaveClass("tone-failed");
+    expect(failed).toHaveAttribute("title", "2 tasks merged, not tagged: the repository has no commits");
+    expect(within(rows[1]).getByText("Finished")).toHaveAttribute(
+      "title",
+      "3 tasks merged, tagged checkpoint-20261111-sprint-55 at 6f79f4a",
+    );
+  });
+
   it("shows the project's sprint and engine events newest first", async () => {
     await renderProject("/dashboard/projects/foreman/activity");
     const table = await screen.findByRole("table", { name: "Activity" });

@@ -319,6 +319,16 @@ describe("edit and the state action", () => {
   });
 });
 
+describe("an active sprint whose every task is finished", () => {
+  it("says in State that it is ready to finish, with Finish sprint beside the title", async () => {
+    await renderSprint("/dashboard/sprints/sprint-56", sprintRoutes({ sprint: sprintPayload({ ready_to_finish: true }) }));
+    const details = screen.getByRole("region", { name: "Details" });
+    expect(details).toHaveTextContent(/State\s*Ready to finish(?!,)/);
+    expect(within(details).getByTitle("Every task is done or cancelled.")).toHaveTextContent("Ready to finish");
+    expect(screen.getByRole("button", { name: "Finish sprint" })).toBeInTheDocument();
+  });
+});
+
 describe("a finished sprint's checkpoint", () => {
   const finished = (checkpoint) =>
     sprintRoutes({ sprint: sprintPayload({ status: "completed", completed_at: "2025-01-02T10:00:00Z", checkpoint }) });

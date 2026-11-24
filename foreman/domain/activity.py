@@ -19,8 +19,9 @@ from dataclasses import dataclass
 #: Roles whose runs only keep a record.
 RECORD_ROLES: frozenset[str] = frozenset({"_builtin:mark_done"})
 
-#: Steps whose runs are the engine's own records (a sprint became ready or
-#: was resolved, the engine shut down), kept on whichever task was at hand.
+#: Steps whose runs are the engine's own records about a task (its worktree
+#: made or removed), not work on it. A sprint's and the project's records
+#: have no run at all (ADR-0037).
 RECORD_STEPS: frozenset[str] = frozenset({"orchestrator"})
 
 #: Outcomes of runs that only keep a record: a task filed or cancelled (the
@@ -87,9 +88,10 @@ WHO = WhoRule(
 
 # A task's own steps (its Activity table): every run of the task but those
 # that are not a step of it. The step that marks a task done only closes
-# it after the merge; the engine's records (its role) are kept on
-# whichever task and step were at hand, and only one that names the task
-# (a step stopped or paused during it) is about it.
+# it after the merge. Of the engine's records on the task (its role), only
+# one that names the task (a step stopped or paused during it) is listed;
+# the rest (its worktree made or removed) are not steps. Records of a
+# sprint or the project are not on any task (ADR-0037).
 
 #: Roles whose runs are not one of the task's steps.
 NOT_STEP_ROLES: frozenset[str] = frozenset({"_builtin:mark_done"})

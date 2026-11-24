@@ -85,9 +85,15 @@ Workspace / Project / Sprint / Task.
   hover. A sprint's Activity filters by who (Everyone, each role, Foreman,
   Users) and by Problems. How well agents do over many sprints is a
   statistics view, not a line on these pages (owner, 2026-11-21).
+- **An active sprint whose every task is done or cancelled** says so in
+  State: "Ready to finish", with "Every task is done or cancelled." on
+  hover and "Finish sprint" beside the title (ADR-0037).
 - **A finished sprint's State** says which commit its tag marks (ADR-0036):
   "Finished 20 Nov at 6f79f4a", with the tag's name on hover; or "Finished
   20 Nov, not tagged", with why on hover. The note is not shown on the page.
+- **The project's Activity** says "Finished" for a finished sprint, with
+  "3 tasks merged, tagged checkpoint-… at 6f79f4a" on hover; or "Finished,
+  not tagged" in the failure colour, with why on hover (ADR-0037).
 - **The sprint's goal** shows as many lines as fit beside its Details
   (never fewer than four), then "Show all". Stacked on a phone, it keeps
   four.

@@ -331,6 +331,8 @@ def _serialize_milestone(row: MilestoneRow) -> dict[str, Any]:
         "actor": row.actor,
         "merged_count": row.merged_count if row.kind == "sprint_finished" else None,
         "detail": row.detail,
+        # A finished sprint's tag, or why there is none (ADR-0036, ADR-0037).
+        "checkpoint": row.checkpoint,
     }
 
 
