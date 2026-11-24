@@ -41,7 +41,11 @@ Workspace / Project / Sprint / Task.
 
 - **Workspace** is the only place that spans projects. No manager here.
 - **Project** has two tabs: Sprints and Activity. A tab changes what the
-  page shows; it is never a place. The **Backlog** and **Project settings**
+  page shows; it is never a place. As on every tabbed page, a tab's own
+  controls (New sprint on Sprints, All | Sprints | Engine on Activity) sit on
+  the tab line at its right, never in a heading row under it; a heading stays
+  only where it marks one group off from another (Sprints: "Active and
+  planned" and "Finished", folded) (owner, 2026-11-24). The **Backlog** and **Project settings**
   (General and Workflow) are pages of their own, each with a breadcrumb step,
   reached from two buttons in the project's title row. (Revised 2026-11-13;
   `03-project-backlog.html` still draws the backlog as a tab and is kept for

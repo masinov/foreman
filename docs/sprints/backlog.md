@@ -50,7 +50,7 @@ sprint, what should they see first?"
 - **Proposed next, one at a time, each from a mockup:**
   - (Done on 2026-11-22, in the task's step panel: the prompt is the
     step's first line, and one button downloads the transcript.)
-  - the project page's tabs with their controls on the tab line too (its
+  - (Done on 2026-11-24, sprint 62 slice 5.) The project page's tabs with their controls on the tab line too (its
     Activity filters and New sprint are under it, in a heading of their
     own), so every tabbed page works the same;
   - small frictions seen on the way. Done on 2026-11-22: "Measured by

@@ -83,16 +83,18 @@ a{color:#dedcd8}a:hover{color:#c9a55a}
 </div>
 </section>
 
-<div role="tablist" aria-label="Project" style="display: flex; flex-wrap: wrap; gap: 20px; border-bottom: 1px solid #26262b">
-<a href="02-project-sprints.html" role="tab" aria-selected="true" style="display: flex; align-items: center; gap: 5px; height: 30px; border-bottom: 1px solid #c9a55a; text-decoration: none">Sprints</a>
+<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 20px; border-bottom: 1px solid #26262b">
+<div role="tablist" aria-label="Project" style="display: flex; flex-wrap: wrap; gap: 20px">
+<a href="02-project-sprints.html" role="tab" aria-selected="true" style="display: flex; align-items: center; gap: 5px; height: 30px; border-bottom: 1px solid #c9a55a; text-decoration: none">Sprints <span style="color: #85837e">2</span></a>
 <a href="03-project-backlog.html" role="tab" aria-selected="false" style="display: flex; align-items: center; gap: 5px; height: 30px; border-bottom: 1px solid transparent; color: #a3a19c; text-decoration: none">Backlog <span style="color: #85837e">4</span></a>
 <a href="09-project-activity.html" role="tab" aria-selected="false" style="display: flex; align-items: center; gap: 5px; height: 30px; border-bottom: 1px solid transparent; color: #a3a19c; text-decoration: none">Activity</a>
 </div>
+<button type="button" style="height: 26px; padding: 0 10px; border: 1px solid #34343a; border-radius: 3px; background: transparent; color: #dedcd8; font: inherit; font-size: 12px; cursor: pointer">New sprint</button>
+</div>
 
 <section aria-labelledby="sprints" style="display: flex; flex-direction: column; gap: 4px">
-<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px">
-<h2 id="sprints" style="margin: 0; font-size: 12px; font-weight: 500; color: #85837e">Active, then planned in the order they will run</h2>
-<button type="button" style="height: 26px; padding: 0 10px; border: 1px solid #34343a; border-radius: 3px; background: transparent; color: #dedcd8; font: inherit; font-size: 12px; cursor: pointer">New sprint</button>
+<div style="display: flex; align-items: center; gap: 12px; padding-bottom: 6px; border-bottom: 1px solid #26262b">
+<h2 id="sprints" style="margin: 0; font-size: 13px; font-weight: 600">Active and planned</h2>
 </div>
 <div style="overflow-x: auto">
 <table style="width: 100%; min-width: 760px; border-collapse: collapse">
@@ -120,7 +122,9 @@ a{color:#dedcd8}a:hover{color:#c9a55a}
 </tbody>
 </table>
 </div>
-<button type="button" aria-expanded="false" style="align-self: flex-start; display: flex; align-items: center; gap: 8px; height: 26px; margin-top: 12px; padding: 0; border: 0; background: transparent; color: #a3a19c; font: inherit; cursor: pointer"><svg aria-hidden="true" width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="#85837e" stroke-width="1.3"><path d="M2.5 1l3 3-3 3"></path></svg>Finished sprints <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #85837e">3</span><span style="color: #85837e">latest: Sprint 55, 10 Nov</span></button>
+<div style="display: flex; align-items: baseline; gap: 10px; margin-top: 16px; padding-bottom: 6px; border-bottom: 1px solid #26262b">
+<h2 style="margin: 0; font-size: 13px; font-weight: 600"><button type="button" aria-expanded="false" style="display: inline-flex; align-items: baseline; gap: 8px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer"><svg aria-hidden="true" width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="#85837e" stroke-width="1.3"><path d="M2.5 1l3 3-3 3"></path></svg>Finished <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 400; color: #85837e">3</span><span style="font-weight: 400; color: #85837e">latest: Sprint 55, 10 Nov</span></button></h2>
+</div>
 </section>
 </main>
 </div>
