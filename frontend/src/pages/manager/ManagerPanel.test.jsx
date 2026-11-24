@@ -90,12 +90,15 @@ describe("the Manager toggle", () => {
     expect(toggle()).toHaveAttribute("aria-pressed", "true");
     expect(panel()).toBeInTheDocument();
 
-    // A new visit finds it as it was left. On a task the open side bar is the agents'.
+    // On a task the side bar is the agents', remembered apart: it is closed
+    // until the user opens it there (owner, 2026-11-24).
     unmount();
     const onTask = renderApp("/dashboard/tasks/task-merge", createFakeFetch(routes));
     expect(toggle()).toBeNull();
-    expect(await screen.findByRole("complementary", { name: "Agent" })).toBeInTheDocument();
+    await screen.findByRole("button", { name: "Agent" });
+    expect(screen.queryByRole("complementary", { name: "Agent" })).toBeNull();
     onTask.unmount();
+    // A new visit finds the manager's as it was left.
     renderApp("/dashboard/sprints/sprint-56", createFakeFetch(routes));
     expect(toggle()).toHaveAttribute("aria-pressed", "true");
     expect(await within(panel()).findByText("You are on: Sprint 56: engine truthfulness")).toBeInTheDocument();

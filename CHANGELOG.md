@@ -9,6 +9,8 @@ memory changes rather than versioned product releases.
 
 ### Sprint 62
 
+- The Agent side bar on a task page is closed until you open it (owner, 2026-11-24). It no longer opens by itself while a step is in progress. Opened or closed, it stays as you left it on every task and on the next visit, remembered apart from the manager's side bar (ADR-0029 amendment).
+
 - A task's Status says what it is doing and at which step (owner, 2026-11-24).
   - The sprint's task list and the task's Overview head the column and the row "Status", not "Stage": the board's columns are the stages.
   - "Running · Develop", "Paused · Develop", "Stopped · Develop", and now "Blocked · Test" for a blocked task. It used to say "Running, develop" and only "Blocked".

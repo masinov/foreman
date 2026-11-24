@@ -1315,6 +1315,9 @@ describe("The agent's side bar", () => {
     const routes = taskRoutes({ task: taskDetail(task), runs });
     routes[outputUrl("run-9")] = outputPayload("run-9", "Reading the parser.");
     const utils = await renderTask(path, routes);
+    // Closed until the user opens it (owner, 2026-11-24).
+    noBar();
+    fireEvent.click(button());
     return { ...utils, panel: await bar() };
   }
 
@@ -1341,7 +1344,7 @@ describe("The agent's side bar", () => {
     noBar();
   });
 
-  it("is open without being asked while a step is in progress, on what that step is doing", async () => {
+  it("is closed while a step is in progress until the user opens it, then on what that step is doing", async () => {
     const routes = taskRoutes({ task: taskDetail(IN_PROGRESS), runs: working() });
     // The step's own line says how it started; a user's words have their own place.
     routes[outputUrl("run-9")] = outputPayload("run-9", "Reading the parser.", {
@@ -1353,14 +1356,41 @@ describe("The agent's side bar", () => {
       ],
     });
     await renderTask(BASE, routes);
+    // Nothing opens it on its own, not even a step at work.
+    expect(button()).toHaveAttribute("aria-pressed", "false");
+    noBar();
+    fireEvent.click(button());
     const panel = await bar();
     expect(panel).toHaveTextContent("Develop is running");
     expect(await within(panel).findByText("Reading the parser.")).toBeInTheDocument();
     const story = within(panel).getByRole("list", { name: "What develop did" });
     expect(within(story).getAllByRole("listitem")).toHaveLength(1);
     expect(button()).toHaveAttribute("aria-pressed", "true");
-    // Closed by the person, it stays closed on this task.
     fireEvent.click(button());
+    noBar();
+  });
+
+  it("stays as the user left it, on every task and on the next visit, apart from the manager's", async () => {
+    const view = await renderTask();
+    noBar();
+    fireEvent.click(button());
+    await bar();
+    expect(window.localStorage.getItem("foreman.dashboard.agent.open")).toBe("true");
+    // The manager's side bar is remembered on its own.
+    expect(window.localStorage.getItem("foreman.dashboard.manager.open")).toBeNull();
+    view.unmount();
+
+    // Opened, it is open on the next visit.
+    const again = await renderTask();
+    expect(await bar()).toBeInTheDocument();
+    fireEvent.click(button());
+    noBar();
+    expect(window.localStorage.getItem("foreman.dashboard.agent.open")).toBe("false");
+    again.unmount();
+
+    // Closed, it stays closed, even on a task with a step at work.
+    await renderTask(BASE, taskRoutes({ task: taskDetail(IN_PROGRESS), runs: working() }));
+    expect(button()).toHaveAttribute("aria-pressed", "false");
     noBar();
   });
 

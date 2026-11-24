@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect } from "react";
 
 import { getSprint } from "../api/sprints";
 import { getWorkspace } from "../api/workspace";
@@ -10,7 +10,7 @@ import { RebuildingPage } from "../pages/status/RebuildingPage";
 import { BUILT_PAGES, pageKey } from "./pages";
 import { ManagerPanel } from "../pages/manager/ManagerPanel";
 import { AgentPanel } from "../pages/task/AgentPanel";
-import { useManagerOpen, useManagerTarget, useOverlay } from "./manager";
+import { useAgentOpen, useManagerOpen, useManagerTarget } from "./manager";
 import { onManagerRequest } from "./managerRequests";
 import { ManagerToggle } from "./ManagerToggle";
 import { useRoute } from "./router";
@@ -79,23 +79,16 @@ export function App() {
 function SignedInApp() {
   const { route, params } = useRoute();
   const [managerOpen, setManagerOpen] = useManagerOpen();
+  const [agentOpen, setAgentOpen] = useAgentOpen();
   const target = useManagerTarget(route, params);
   // The side bar is the conversation with whoever works at this level: the
-  // manager on a project or a sprint, the task's agents on a task. Open or
-  // closed is one remembered choice. On a task with a step in progress it is
-  // also open without being asked, where it sits beside the page, until the
-  // person closes it on that task.
-  const overlay = useOverlay();
+  // manager on a project or a sprint, the task's agents on a task. Each is
+  // closed until the user opens it and stays as the user left it, across
+  // pages and visits; nothing opens it on its own (owner, 2026-11-24).
   const onTask = route.level === "task";
   const taskId = onTask ? params.taskId : null;
-  const [agentChoice, setAgentChoice] = useState({ taskId: null, open: null });
-  const chosen = agentChoice.taskId === taskId ? agentChoice.open : null;
-  const stepInProgress = target.task?.status === "in_progress" && !overlay;
-  const panelOpen = onTask ? (chosen ?? (managerOpen || stepInProgress)) : managerOpen;
-  const setPanel = (open) => {
-    setManagerOpen(open);
-    if (onTask) setAgentChoice({ taskId, open });
-  };
+  const panelOpen = onTask ? agentOpen : managerOpen;
+  const setPanel = onTask ? setAgentOpen : setManagerOpen;
   const projectName = useProjectName(target.projectId);
   useEffect(() => onManagerRequest(() => setManagerOpen(true)), [setManagerOpen]);
   useLiveData({ projectId: target.projectId, poll: route.name === "workspace" });

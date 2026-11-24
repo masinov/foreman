@@ -4,9 +4,12 @@ import { getSprint } from "../api/sprints";
 import { getTask } from "../api/tasks";
 import { useResource } from "../api/useResource";
 
-// Whether the manager side bar is open is remembered per browser, so it stays
-// as it was across pages and reloads.
+// Whether a side bar is open is remembered per browser, so it stays as it was
+// across pages and reloads. The manager's (project and sprint pages) and the
+// agent's (task pages) are remembered apart, and both are closed until the
+// user opens them (owner, 2026-11-24).
 const STORAGE_KEY = "foreman.dashboard.manager.open";
+export const AGENT_STORAGE_KEY = "foreman.dashboard.agent.open";
 
 function defaultStorage() {
   try {
@@ -16,33 +19,50 @@ function defaultStorage() {
   }
 }
 
-export function readManagerOpen(storage = defaultStorage()) {
+function readOpen(key, storage = defaultStorage()) {
   try {
-    return storage?.getItem(STORAGE_KEY) === "true";
+    return storage?.getItem(key) === "true";
   } catch {
     return false;
   }
 }
 
-function writeManagerOpen(open, storage = defaultStorage()) {
+function writeOpen(key, open, storage = defaultStorage()) {
   try {
-    storage?.setItem(STORAGE_KEY, open ? "true" : "false");
+    storage?.setItem(key, open ? "true" : "false");
   } catch {
     // Storage may be full or blocked; the bar still works for this visit.
   }
 }
 
-/** `[open, setOpen]`, remembered in this browser. */
-export function useManagerOpen() {
-  const [open, setOpenState] = useState(() => readManagerOpen());
-  const setOpen = useCallback((next) => {
-    setOpenState((previous) => {
-      const value = typeof next === "function" ? next(previous) : next;
-      writeManagerOpen(value);
-      return value;
-    });
-  }, []);
+export function readManagerOpen(storage = defaultStorage()) {
+  return readOpen(STORAGE_KEY, storage);
+}
+
+/** `[open, setOpen]` for the side bar remembered under `key`: closed until opened. */
+function useRememberedOpen(key) {
+  const [open, setOpenState] = useState(() => readOpen(key));
+  const setOpen = useCallback(
+    (next) => {
+      setOpenState((previous) => {
+        const value = typeof next === "function" ? next(previous) : next;
+        writeOpen(key, value);
+        return value;
+      });
+    },
+    [key],
+  );
   return [open, setOpen];
+}
+
+/** The manager's side bar: `[open, setOpen]`, remembered in this browser. */
+export function useManagerOpen() {
+  return useRememberedOpen(STORAGE_KEY);
+}
+
+/** The agent's side bar on a task page: `[open, setOpen]`, remembered in this browser. */
+export function useAgentOpen() {
+  return useRememberedOpen(AGENT_STORAGE_KEY);
 }
 
 const PROJECT_PAGES = {
