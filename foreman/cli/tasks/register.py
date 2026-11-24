@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import argparse
 
-from ...domain.models import TASK_COMPLEXITIES
+from ...domain.models import TASK_COMPLEXITIES, TASK_TYPES
 from ..common import (
     DB_OPTION_NOTE,
     add_db_option,
@@ -89,7 +89,7 @@ def _register_override(task_commands: argparse._SubParsersAction) -> None:
         "override",
         help="Set per-task executor model overrides for workflow steps.",
     )
-    task_override.add_argument("task_id", help="Task identifier.")
+    task_override.add_argument("task_id", help="Task id or key (FOR-56).")
     task_override.add_argument(
         "--step",
         dest="step_models",
@@ -161,7 +161,7 @@ def _register_show(task_commands: argparse._SubParsersAction) -> None:
     """`foreman task show`."""
 
     task_show = task_commands.add_parser("show", help="Show one task with recent runs and events.")
-    task_show.add_argument("task_id", help="Task identifier.")
+    task_show.add_argument("task_id", help="Task id or key (FOR-56).")
     task_show.add_argument(
         "--runs",
         type=int,
@@ -186,7 +186,7 @@ def _register_block(task_commands: argparse._SubParsersAction) -> None:
     """`foreman task block`."""
 
     task_block = task_commands.add_parser("block", help="Block a task.")
-    task_block.add_argument("task_id", help="Task identifier.")
+    task_block.add_argument("task_id", help="Task id or key (FOR-56).")
     task_block.add_argument("--reason", required=True, help="Blocking reason.")
     add_db_option(
         task_block,
@@ -199,7 +199,7 @@ def _register_unblock(task_commands: argparse._SubParsersAction) -> None:
     """`foreman task unblock`."""
 
     task_unblock = task_commands.add_parser("unblock", help="Unblock a task.")
-    task_unblock.add_argument("task_id", help="Task identifier.")
+    task_unblock.add_argument("task_id", help="Task id or key (FOR-56).")
     add_db_option(
         task_unblock,
         help_text=f"Path to the SQLite store containing the task. {DB_OPTION_NOTE}",
@@ -214,7 +214,7 @@ def _register_accept(task_commands: argparse._SubParsersAction) -> None:
         "accept",
         help="Accept a filed task. In the backlog it then waits to be planned into a sprint.",
     )
-    task_accept.add_argument("task_id", help="Task identifier.")
+    task_accept.add_argument("task_id", help="Task id or key (FOR-56).")
     add_db_option(
         task_accept,
         help_text=f"Path to the SQLite store containing the task. {DB_OPTION_NOTE}",
@@ -229,7 +229,7 @@ def _register_done(task_commands: argparse._SubParsersAction) -> None:
         "done",
         help="Mark a task done by hand, for work finished outside the engine.",
     )
-    task_done.add_argument("task_id", help="Task identifier.")
+    task_done.add_argument("task_id", help="Task id or key (FOR-56).")
     task_done.add_argument("--reason", required=True, help="Why it is done; recorded on the task.")
     add_db_option(
         task_done,
@@ -245,7 +245,7 @@ def _register_reopen(task_commands: argparse._SubParsersAction) -> None:
         "reopen",
         help="Return a done or cancelled task to the queue; its workflow starts over.",
     )
-    task_reopen.add_argument("task_id", help="Task identifier.")
+    task_reopen.add_argument("task_id", help="Task id or key (FOR-56).")
     add_db_option(
         task_reopen,
         help_text=f"Path to the SQLite store containing the task. {DB_OPTION_NOTE}",
@@ -258,10 +258,35 @@ def _register_edit(task_commands: argparse._SubParsersAction) -> None:
 
     task_edit = task_commands.add_parser(
         "edit",
-        help="Change a task's title, size, priority or what it waits for.",
+        help="Change a task's title, type, texts, size, priority or what it waits for.",
     )
-    task_edit.add_argument("task_id", help="Task identifier.")
+    task_edit.add_argument("task_id", help="Task id or key (FOR-56).")
     task_edit.add_argument("--title", help="New title.")
+    task_edit.add_argument(
+        "--type", dest="task_type", choices=list(TASK_TYPES), help="New task type."
+    )
+    task_edit.add_argument(
+        "--description", help="New description; an empty text clears it."
+    )
+    task_edit.add_argument(
+        "--description-file",
+        metavar="PATH",
+        help="Read the new description from a file; `-` reads standard input.",
+    )
+    task_edit.add_argument(
+        "--criteria", help="New acceptance criteria; an empty text clears them."
+    )
+    task_edit.add_argument(
+        "--criteria-file",
+        metavar="PATH",
+        help="Read the new acceptance criteria from a file; `-` reads standard input.",
+    )
+    task_edit.add_argument(
+        "--edit",
+        choices=["description", "criteria"],
+        help="Edit one text in $VISUAL, else $EDITOR, else nano or vi. Needs a "
+        "terminal. Closing without a change, or with the text emptied, changes nothing.",
+    )
     task_edit.add_argument(
         "--size",
         choices=[*TASK_COMPLEXITIES, "none"],
@@ -293,7 +318,7 @@ def _register_cancel(task_commands: argparse._SubParsersAction) -> None:
     """`foreman task cancel`."""
 
     task_cancel = task_commands.add_parser("cancel", help="Cancel a task.")
-    task_cancel.add_argument("task_id", help="Task identifier.")
+    task_cancel.add_argument("task_id", help="Task id or key (FOR-56).")
     add_db_option(
         task_cancel,
         help_text=f"Path to the SQLite store containing the task. {DB_OPTION_NOTE}",

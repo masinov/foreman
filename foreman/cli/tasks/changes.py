@@ -21,6 +21,15 @@ from ..common import (
     select_task_creation_sprint,
 )
 
+from .texts import (
+    TEXT_FIELDS,
+    TextInputError,
+    check_text_options,
+    edit_in_editor,
+    read_text_option,
+    text_field,
+)
+
 
 def handle_task_add(args: argparse.Namespace) -> int:
     """Handle ``foreman task add``."""
@@ -99,9 +108,8 @@ def handle_task_override(args: argparse.Namespace) -> int:
 
     with ForemanStore(db_path) as store:
         store.initialize()
-        task = store.get_task(args.task_id)
+        task = resolve_task_or_print(store, args.task_id)
         if task is None:
-            print(f"Unknown task: {args.task_id}", file=sys.stderr)
             return 1
 
         project = store.get_project(task.project_id)
@@ -223,6 +231,8 @@ def handle_task_edit(args: argparse.Namespace) -> int:
     changes: dict[str, object] = {}
     if args.title is not None:
         changes["title"] = args.title
+    if args.task_type is not None:
+        changes["task_type"] = args.task_type
     if args.size is not None:
         changes["complexity"] = None if args.size == "none" else args.size
     if args.priority is not None:
@@ -234,10 +244,19 @@ def handle_task_edit(args: argparse.Namespace) -> int:
         changes["depends_on_task_ids"] = []
     elif args.depends_on:
         changes["depends_on_task_ids"] = list(args.depends_on)
-    if not changes:
+    try:
+        check_text_options(args)
+        for field in TEXT_FIELDS:
+            text = read_text_option(field, args)
+            if text is not None:
+                changes[field.mutation_field] = text
+    except TextInputError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    if not changes and args.edit is None:
         print(
-            "Nothing to change. Give --title, --size, --priority, --depends-on "
-            "or --no-dependencies.",
+            "Nothing to change. Give --title, --type, --size, --priority, --description, "
+            "--criteria, --depends-on or --no-dependencies, or --edit description|criteria.",
             file=sys.stderr,
         )
         return 1
@@ -246,23 +265,77 @@ def handle_task_edit(args: argparse.Namespace) -> int:
     if db_path is None:
         return 1
 
+    unchanged: list[str] = []
     with ForemanStore(db_path) as store:
         store.initialize()
         task = resolve_task_or_print(store, args.task_id)
         if task is None:
             return 1
-        try:
-            changed = cli_mutations(store).edit_task(task, changes)
-        except MutationError as exc:
-            print(str(exc), file=sys.stderr)
-            return 1
+        before = {
+            "title": task.title,
+            "task_type": task.task_type,
+            "description": task.description,
+            "acceptance_criteria": task.acceptance_criteria,
+            "complexity": task.complexity,
+            "priority": task.priority,
+            "depends_on_task_ids": list(task.depends_on_task_ids or []),
+        }
+        if args.edit is not None:
+            field = text_field(args.edit)
+            try:
+                edited = edit_in_editor(field, before[field.mutation_field])
+            except TextInputError as exc:
+                print(str(exc), file=sys.stderr)
+                return 1
+            # Closing the editor with nothing, or nothing new, changes nothing.
+            if not edited.strip() or edited.strip() == (before[field.mutation_field] or "").strip():
+                unchanged.append(field.label)
+            else:
+                changes[field.mutation_field] = edited
+        changed: dict[str, object] = {}
+        if changes:
+            try:
+                changed = cli_mutations(store).edit_task(task, changes)
+            except MutationError as exc:
+                print(str(exc), file=sys.stderr)
+                return 1
         db_path = store.db_path
 
     print_lines(
         "Edited task" if changed else "Nothing changed",
         f"Database: {db_path}",
         f"Task: {task.id} | {task.title}",
+        *(f"{label} unchanged." for label in unchanged),
+        *_describe_changes(before, changed),
         f"Size: {task.complexity or 'not said'} | Priority: {task.priority}",
-        "Waits for: " + (", ".join(task.depends_on_task_ids) if task.depends_on_task_ids else "nothing"),
+        "Waits for: "
+        + (", ".join(task.depends_on_task_ids) if task.depends_on_task_ids else "nothing"),
     )
     return 0
+
+
+_CHANGE_LABELS = {
+    "title": "Title",
+    "task_type": "Type",
+    "description": "Description",
+    "acceptance_criteria": "Acceptance criteria",
+}
+# Size, priority and what a task waits for are shown in full on the lines after.
+
+
+def _describe_changes(before: dict[str, object], changed: dict[str, object]) -> list[str]:
+    """One short line per changed field; a long text is counted, never printed."""
+
+    lines = []
+    for field, label in _CHANGE_LABELS.items():
+        if field not in changed:
+            continue
+        old, new = before[field], changed[field]
+        if field in ("description", "acceptance_criteria"):
+            if not new:
+                lines.append(f"{label}: cleared")
+            else:
+                lines.append(f"{label}: {'set' if not old else 'changed'} ({len(str(new))} characters)")
+        else:
+            lines.append(f"{label}: {old or 'not said'} -> {new or 'not said'}")
+    return lines

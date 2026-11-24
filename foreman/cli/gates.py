@@ -16,6 +16,7 @@ from .common import (
     cli_mutations,
     print_lines,
     resolve_db_path_or_print,
+    resolve_task_or_print,
     set_handler,
 )
 
@@ -50,9 +51,8 @@ def handle_waive_merge(args: argparse.Namespace) -> int:
 
     with ForemanStore(db_path) as store:
         store.initialize()
-        task = store.get_task(args.task_id)
+        task = resolve_task_or_print(store, args.task_id, project_id=args.project_id)
         if task is None:
-            print(f"Task not found: {args.task_id}", file=sys.stderr)
             return 1
         if task.project_id != args.project_id:
             print(
@@ -124,13 +124,16 @@ def _handle_human_gate_decision(args: argparse.Namespace, *, outcome: str) -> in
 
     with ForemanStore(db_path) as store:
         store.initialize()
+        task = resolve_task_or_print(store, args.task_id)
+        if task is None:
+            return 1
         orchestrator = ForemanOrchestrator(store)
         try:
             # A decision, not an execution: this process holds neither the
             # project's engine lock nor a task lease, so the step the decision
             # leads to is left for an engine. ADR-0011.
             result = orchestrator.resume_human_gate(
-                args.task_id,
+                task.id,
                 outcome=outcome,
                 note=args.note,
                 defer=True,
@@ -172,7 +175,7 @@ def register_approve(subparsers: argparse._SubParsersAction) -> None:
     """Add `foreman approve` to the parser."""
 
     approve_parser = subparsers.add_parser("approve", help="Approve a paused task.")
-    approve_parser.add_argument("task_id", help="Task identifier.")
+    approve_parser.add_argument("task_id", help="Task id or key (FOR-56).")
     approve_parser.add_argument("--note", help="Optional approval note.")
     add_db_option(
         approve_parser,
@@ -186,7 +189,7 @@ def register_deny(subparsers: argparse._SubParsersAction) -> None:
     """Add `foreman deny` to the parser."""
 
     deny_parser = subparsers.add_parser("deny", help="Deny a paused task.")
-    deny_parser.add_argument("task_id", help="Task identifier.")
+    deny_parser.add_argument("task_id", help="Task id or key (FOR-56).")
     deny_parser.add_argument("--note", help="Optional denial note.")
     add_db_option(
         deny_parser,
@@ -203,7 +206,7 @@ def register_waive_merge(subparsers: argparse._SubParsersAction) -> None:
         "waive-merge",
         help="Issue a human waiver allowing a task to merge despite proof deficiency.",
     )
-    waive_parser.add_argument("task_id", help="Task identifier.")
+    waive_parser.add_argument("task_id", help="Task id or key (FOR-56).")
     waive_parser.add_argument(
         "--project",
         dest="project_id",

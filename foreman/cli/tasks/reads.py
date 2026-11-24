@@ -19,6 +19,7 @@ from ..common import (
     print_lines,
     render_event_line,
     resolve_db_path_or_print,
+    resolve_task_or_print,
     truncate_text,
 )
 
@@ -43,8 +44,11 @@ def handle_task_show(args: argparse.Namespace) -> int:
         return 1
     with ForemanStore(db_path) as store:
         store.initialize()
+        task_row = resolve_task_or_print(store, args.task_id)
+        if task_row is None:
+            return 1
         try:
-            history = Services(store).reports.history(args.task_id)
+            history = Services(store).reports.history(task_row.id)
         except NotFoundError as exc:
             print(str(exc), file=sys.stderr)
             return 1

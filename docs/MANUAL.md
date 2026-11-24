@@ -279,11 +279,33 @@ foreman task block <task-id> --reason "..."  # only a task that has not started;
 foreman task unblock <task-id>
 foreman task done <task-id> --reason "..."   # finished outside the engine; nothing is checked
 foreman task reopen <task-id>         # done or cancelled → todo, workflow from the start
-foreman task edit <task-id> [--title T] [--size small|medium|large|none] [--priority N]
+foreman task edit <task-id> [--title T] [--type TYPE] [--size small|medium|large|none] [--priority N]
+                            [--description TEXT | --description-file PATH|-]
+                            [--criteria TEXT | --criteria-file PATH|-]
+                            [--edit description|criteria]
                             [--depends-on ID ...] [--no-dependencies]
                                       # what it waits for can change only before it starts
 foreman task cancel <task-id>         # also removes the task's worktree
 ```
+
+Wherever a command takes a task, give its id or its key (`FOR-56`). A key is
+unique within a project; one that several projects carry is refused, naming
+them, and you give the id instead.
+
+`task edit` changes what the dashboard's Edit changes, through the same
+mutation, and a change to a task an agent is working on is recorded as
+`human.task_edited` (via `cli`). A text comes one of three ways: on the line
+(`--description TEXT`, `--criteria TEXT`; an empty text clears it, as in the
+dashboard), from a file or standard input (`--description-file PATH`,
+`--criteria-file -`; the way for long texts and scripts), or in your editor
+(`--edit description` or `--edit criteria`, one field per run). The editor is
+`$VISUAL`, else `$EDITOR`, else `nano`, else `vi`; it opens a temporary file
+holding the current text, and closing it unchanged or emptied changes nothing
+("Description unchanged."). It opens only with `--edit` and only on a
+terminal; elsewhere the command refuses and points to `--description-file -`.
+A text option with its `-file` form, `--edit` with an option for the same
+field, and two texts from `-` are refused. The command prints which fields
+changed, with a text counted in characters, never printed.
 
 A task an agent filed while working on another says so: `foreman task show` prints
 "Filed by the developer while working on FOR-12", and the task's Overview
