@@ -639,6 +639,67 @@ class EnvironmentRulesTests(RepoTestCase):
                 self.assertIn("`./venv/bin/python`", prompt)
                 self.assertNotIn("{environment_rules}", prompt)
 
+    def render_for(self, backend: str, files: dict[str, str]) -> str:
+        import dataclasses
+        from foreman.repo.context import build_project_context
+
+        repo, db_path = self.create_workspace()
+        self.initialize_repo(repo)
+        for name, text in files.items():
+            path = repo / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="utf-8")
+        store = ForemanStore(db_path)
+        self.addCleanup(store.close)
+        store.initialize()
+        project, _, task = self.seed_project(store, repo_path=repo)
+        orchestrator = ForemanOrchestrator(store, roles=self.roles, workflows=self.workflows)
+        role = self.roles["developer"]
+        role = dataclasses.replace(role, agent=dataclasses.replace(role.agent, backend=backend))
+        return orchestrator.prompts.build(
+            role, project, task, carried_output=None,
+            context_projection=build_project_context(store, project, current_task=task),
+        )
+
+    AGENTS = "UNIQUE-AGENTS-LINE Use `./venv/bin/python`.\n"
+
+    def test_codex_reads_agents_md_itself_so_the_prompt_does_not_carry_it(self) -> None:
+        prompt = self.render_for("codex", {"AGENTS.md": self.AGENTS})
+        self.assertNotIn("UNIQUE-AGENTS-LINE", prompt)
+        self.assertIn("Never run `python`", prompt)
+
+    def test_claude_code_with_a_claude_md_importing_agents_md_does_not_get_it_pasted(self) -> None:
+        prompt = self.render_for(
+            "claude_code", {"AGENTS.md": self.AGENTS, "CLAUDE.md": "@AGENTS.md\n"}
+        )
+        self.assertNotIn("UNIQUE-AGENTS-LINE", prompt)
+        self.assertIn("Never run `python`", prompt)
+
+    def test_claude_code_with_a_claude_md_that_does_not_import_it_gets_it_once(self) -> None:
+        prompt = self.render_for(
+            "claude_code", {"AGENTS.md": self.AGENTS, "CLAUDE.md": "Other rules.\n"}
+        )
+        self.assertEqual(prompt.count("UNIQUE-AGENTS-LINE"), 1)
+
+    def test_claude_code_without_a_claude_md_falls_back_to_agents_md_itself(self) -> None:
+        # Observed with Claude Code 2.1.331: no CLAUDE.md, AGENTS.md is loaded.
+        prompt = self.render_for("claude_code", {"AGENTS.md": self.AGENTS})
+        self.assertNotIn("UNIQUE-AGENTS-LINE", prompt)
+
+    def test_a_backend_that_is_not_known_to_load_it_gets_it_pasted_once(self) -> None:
+        from foreman.engine.prompts import repo_instructions_for_prompt
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "AGENTS.md").write_text(self.AGENTS, encoding="utf-8")
+            text = repo_instructions_for_prompt(tmp, "other")
+        self.assertEqual(text.count("UNIQUE-AGENTS-LINE"), 1)
+
+    def test_the_developer_prompt_says_interactive_programs_are_not_available(self) -> None:
+        prompt = self.render("developer", None)
+        self.assertIn("Interactive programs are not available", prompt)
+        self.assertIn("write a script file".lower(), prompt.lower())
+
     def test_dot_venv_is_named_in_the_rule(self) -> None:
         prompt = self.render("developer", "Environment lives in .venv\n")
         self.assertIn("`.venv/bin/python`", prompt)

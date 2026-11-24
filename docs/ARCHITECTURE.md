@@ -225,6 +225,37 @@ The current runtime supports:
   as MiniMax M3 through the existing Claude Code harness,
 - persisted `session_id`, `token_count`, `cost_usd`, and `duration_ms`.
 
+#### Agent processes never wait for input (ADR-0040)
+
+- Every agent process, both backends, starts from `agent_environment`
+  (`foreman/runner/env.py`), which sets `GIT_EDITOR`, `EDITOR` and `VISUAL` to
+  `true`, `GIT_PAGER` and `PAGER` to `cat`, and `GIT_TERMINAL_PROMPT=0`
+  (`NON_INTERACTIVE_ENV`). A role's `[agent.env]` wins.
+- Standard input of a shell command is the backend's to give, not Foreman's.
+  Claude Code: checked on 2.1.331 with `python3 -c 'import sys; sys.stdin.read()'`
+  run through its Bash tool; it got end-of-file at once (`/dev/null`). Foreman
+  neither sets nor can change this. Codex: not verified (its sign-in was
+  revoked on the machine where this was checked), so Foreman cannot promise
+  it. Because of that the developer prompt states that interactive programs
+  are not available and to write a script file or pass input explicitly.
+
+#### Repository instructions arrive once
+
+`foreman/engine/prompts.py` (`repo_instructions_for_prompt`) pastes `AGENTS.md`
+into the prompt only when the backend would not load it. Checked by asking each
+backend what its instructions contain, with its tools off, in scratch
+repositories (Claude Code 2.1.331):
+
+| repository has | Claude Code loads |
+|---|---|
+| `AGENTS.md` only | `AGENTS.md` |
+| `CLAUDE.md` with `@AGENTS.md` | `AGENTS.md`, once |
+| `CLAUDE.md` without the import, and `AGENTS.md` | `CLAUDE.md` only |
+
+Codex reads `AGENTS.md` natively (its documented behaviour; not re-checked
+here, see above). When not pasted, the prompt says the agent program loads it.
+`environment_rules` is still derived from the file's text.
+
 ### Resident engine and the project engine lock
 
 ADR-0011 is the active contract for engine residency and concurrency.

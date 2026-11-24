@@ -24,6 +24,51 @@ def load_repo_instructions(repo_path: str) -> str:
     return agents_path.read_text(encoding="utf-8")
 
 
+#: A line of a CLAUDE.md that imports AGENTS.md (``@AGENTS.md``, ``@./AGENTS.md``).
+_AGENTS_IMPORT = re.compile(r"(?m)(?<![\w@])@(?:\./)?AGENTS\.md\b")
+_CLAUDE_FILES = ("CLAUDE.md", ".claude/CLAUDE.md")
+
+
+def backend_loads_agents_md(repo_path: str, backend: str) -> bool:
+    """Whether the agent program reads the repository's AGENTS.md by itself.
+
+    Codex always does. Claude Code reads CLAUDE.md, following its ``@`` imports,
+    and falls back to AGENTS.md only when the repository has no CLAUDE.md. A
+    CLAUDE.md that does not import AGENTS.md leaves it unread. Observed with
+    Claude Code 2.1.331 (docs/ARCHITECTURE.md, Native runner boundary).
+    """
+
+    if backend == "codex":
+        return True
+    if backend != "claude_code":
+        return False
+    claude_files = [
+        Path(repo_path) / name for name in _CLAUDE_FILES if (Path(repo_path) / name).is_file()
+    ]
+    if not claude_files:
+        return True
+    for path in claude_files:
+        try:
+            if _AGENTS_IMPORT.search(path.read_text(encoding="utf-8")):
+                return True
+        except (OSError, UnicodeDecodeError):
+            continue
+    return False
+
+
+def repo_instructions_for_prompt(repo_path: str, backend: str) -> str:
+    """AGENTS.md as the prompt carries it: once, never twice.
+
+    The text itself when the backend would not load it; a one-line pointer
+    when it does, so the prompt's own heading is not left empty.
+    """
+
+    instructions = load_repo_instructions(repo_path)
+    if not instructions or not backend_loads_agents_md(repo_path, backend):
+        return instructions
+    return "AGENTS.md is loaded by the agent program itself; follow it."
+
+
 _VENV_PATH = re.compile(r"(?<![\w./-])(?:(\./)(\.?venv)|(\.venv)|venv(?=/))(?![\w-])")
 
 
@@ -147,6 +192,7 @@ class PromptBuilder:
             evidence = self.build_completion_evidence(task, project)
             task.completion_evidence = evidence
             self.tasks.save(task)
+        # The virtualenv rule comes from the file itself, pasted or not.
         repo_instructions = load_repo_instructions(project.repo_path)
         context = {
             "task_title": task.title,
@@ -156,7 +202,9 @@ class PromptBuilder:
             "branch_name": task.branch_name or "",
             "sprint_context": context_projection.context_markdown,
             "project_status": context_projection.status_markdown,
-            "repo_instructions": repo_instructions,
+            "repo_instructions": repo_instructions_for_prompt(
+                project.repo_path, role.agent.backend
+            ),
             "environment_rules": environment_rules(repo_instructions),
             "spec_path": project.spec_path or "",
             "previous_feedback": carried_output or "",

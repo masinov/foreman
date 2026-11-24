@@ -25,6 +25,20 @@ AGENT_ENV_NAMES: frozenset[str] = frozenset(
 #: per-user directories, and the two backends' own configuration and keys.
 AGENT_ENV_PREFIXES: tuple[str, ...] = ("LC_", "XDG_", "ANTHROPIC_", "CLAUDE_", "OPENAI_", "CODEX_")
 
+#: Set for every agent process, both backends: a command the agent runs must
+#: never stop to ask a person, because nobody is there. Git gets a no-op
+#: editor (a bare ``git commit`` or ``git rebase --continue`` would open one),
+#: no pager, and no credential prompt on a terminal. A role's own
+#: ``[agent.env]`` wins.
+NON_INTERACTIVE_ENV: dict[str, str] = {
+    "GIT_EDITOR": "true",
+    "EDITOR": "true",
+    "VISUAL": "true",
+    "GIT_PAGER": "cat",
+    "PAGER": "cat",
+    "GIT_TERMINAL_PROMPT": "0",
+}
+
 
 def agent_environment(
     extra: Mapping[str, str] | None = None,
@@ -43,6 +57,7 @@ def agent_environment(
         for name, value in source.items()
         if name in AGENT_ENV_NAMES or name.startswith(AGENT_ENV_PREFIXES)
     }
+    environment.update(NON_INTERACTIVE_ENV)
     environment.update(extra or {})
     return environment
 

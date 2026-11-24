@@ -248,6 +248,26 @@ class ClaudeCodeRunnerTests(unittest.TestCase):
         self.assertGreaterEqual(int(env["BASH_DEFAULT_TIMEOUT_MS"]), 600_000)
         self.assertGreaterEqual(int(env["BASH_MAX_TIMEOUT_MS"]), int(env["BASH_DEFAULT_TIMEOUT_MS"]))
 
+    def test_the_agent_gets_no_editor_pager_or_prompt_unless_the_role_sets_one(self) -> None:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        config = self.create_config(Path(temp_dir.name))
+        config.env["PAGER"] = "less"
+        process = _FakeProcess(
+            lines=[json.dumps({"type": "result", "is_error": False, "session_id": "s", "result": "TASK_COMPLETE"}) + "\n"]
+        )
+        popen = _PopenRecorder(process)
+        runner = ClaudeCodeRunner(popen_factory=popen, clock=lambda: 0.0, which=lambda _: "/usr/bin/claude")
+
+        list(runner.run(config))
+
+        env = popen.calls[0][1]["env"]
+        for name in ("GIT_EDITOR", "EDITOR", "VISUAL"):
+            self.assertEqual(env[name], "true")
+        self.assertEqual(env["GIT_PAGER"], "cat")
+        self.assertEqual(env["GIT_TERMINAL_PROMPT"], "0")
+        self.assertEqual(env["PAGER"], "less")
+
     def test_a_role_can_override_the_headless_step_environment(self) -> None:
         temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(temp_dir.cleanup)
