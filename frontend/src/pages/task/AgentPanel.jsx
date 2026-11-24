@@ -9,7 +9,8 @@ import { Link } from "../../app/router";
 import { Button } from "../../ui/Button";
 import { StatusDot } from "../../ui/StatusDot";
 import { wrapTab } from "../../ui/focus";
-import { formatDayTime, formatMoney, humanize } from "../../ui/format";
+import { formatDayTime, humanize } from "../../ui/format";
+import { Spend } from "../../ui/Spend";
 import { stageOf } from "../sprint/taskStage";
 import { narrate } from "./runWords";
 import { RunLine, withDays } from "./RunStory";
@@ -86,15 +87,18 @@ function StepStory({ run, pulse }) {
 function Step({ run, task, open, pulse, onToggle }) {
   const bodyId = useId();
   const result = runResult(run);
-  const facts = [runBy(run, task), runTook(run), run.cost_usd ? formatMoney(run.cost_usd) : null]
-    .filter(Boolean)
-    .join(" · ");
+  const facts = [runBy(run, task), runTook(run)].filter(Boolean);
+  const spend = run.cost_usd ? <Spend amount={run.cost_usd} where="row" /> : null;
   return (
     <li className="agent__step">
       <button type="button" className="agent__step-head" aria-expanded={open} aria-controls={bodyId} onClick={onToggle}>
         <span className="agent__step-name">{humanize(run.step)}</span>
         <span className={`agent__step-result tone-${result.tone}`}>{result.word}</span>
-        <span className="agent__step-facts">{facts}</span>
+        <span className="agent__step-facts">
+          {facts.join(" · ")}
+          {spend ? (facts.length ? " · " : "") : null}
+          {spend}
+        </span>
       </button>
 
       {open ? (

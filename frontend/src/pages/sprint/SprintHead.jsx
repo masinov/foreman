@@ -11,7 +11,8 @@ import { Menu } from "../../ui/Menu";
 import { LongText } from "../../ui/LongText";
 import { Mono } from "../../ui/Mono";
 import { SectionHeading } from "../../ui/SectionHeading";
-import { formatDay, formatMoney, formatTokens, shortSha } from "../../ui/format";
+import { formatDay, shortSha } from "../../ui/format";
+import { Spend } from "../../ui/Spend";
 import { useLinesBeside } from "../../ui/useLinesBeside";
 import { TaskCounts } from "../shared/TaskCounts";
 import { ReasonDialog } from "../shared/ReasonDialog";
@@ -149,11 +150,7 @@ export function SprintHead({ sprint, onChanged }) {
     {
       key: "spend",
       term: "Spend",
-      value: (
-        <Mono>
-          {formatMoney(totals.total_cost_usd)} · {formatTokens(totals.total_token_count)} tokens
-        </Mono>
-      ),
+      value: <Spend amount={totals.total_cost_usd} tokens={totals.total_token_count} />,
     },
     sprint.picks_own_tasks
       ? { key: "foreman", term: "Started by Foreman", value: `${sprint.started_by_foreman ?? 0} of ${sprint.foreman_limit ?? 0}` }

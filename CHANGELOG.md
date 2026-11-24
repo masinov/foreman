@@ -9,6 +9,8 @@ memory changes rather than versioned product releases.
 
 ### Sprint 62
 
+- Spend is written one way everywhere (sprint 62 slice 5, run through Foreman). One shared `ui/Spend` writes every amount in the mono number font, with the amount before its tokens ("$0.09 · 3.5K tokens"); a zero is blank in a table column or a list row (projects, sprints, finished sprints, the task list, activity rows, an Agent step line, a run's story line) and "$0.00" in a details row or a heading (Details, Overview, the Steps heading, a step's Spend). A run's story line now puts the amount before its tokens.
+
 - The manager's replies are formatted (sprint 62 slice 6). A finished reply in the side bar is rendered with the shared `Markdown` component (lists, `code`, code blocks, bold, headings; no raw HTML), in the side bar's text size. A reply still arriving stays plain text with its cursor until it ends, so the thread does not reflow as marks arrive; your own messages stay plain. Proposal cards are unchanged.
 - A running task's page uses one event stream (sprint 62, run through Foreman). It opened the project's stream and the sprint's, which repeated the project's events; it now listens to the project's alone through `projectEvents`, and reloads on an event about its task as before. The sprint page never had a second stream.
 

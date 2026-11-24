@@ -13,6 +13,13 @@ const story = (line) => render(<ul>{<RunLine line={{ at: "2026-11-20T17:00:47Z",
 describe("a line of a run's story", () => {
   afterEach(() => vi.restoreAllMocks());
 
+  it("writes the amount first and the tokens after it, in the mono font", () => {
+    story({ says: "Finished in 3 s", spend: { amount: 0.09, tokens: 3500 } });
+    const spend = screen.getByText("$0.09 · 3.5K tokens");
+    expect(spend).toHaveClass("mono");
+    expect(spend.parentElement).toHaveTextContent("Finished in 3 s · $0.09 · 3.5K tokens");
+  });
+
   it("shows what an agent or a user wrote whole and formatted, with nothing to press", () => {
     heights(900, 54);
     const words = [

@@ -1,4 +1,4 @@
-import { formatDuration, formatMoney, formatTokens, humanize, shortSha } from "../../ui/format";
+import { formatDuration, humanize, shortSha } from "../../ui/format";
 import { RULE_DECISIONS } from "../settings/settingsWords";
 import { gateDecider } from "./taskWords";
 import { FOREMAN, outcomeTone, runResult, runRole, runSeconds, SENT_BACK, stepOf, stepOutcome } from "../shared/activityWords";
@@ -136,9 +136,7 @@ export function stepFacts(run, transcript, { previous = null, next = null, task 
   const seconds = runSeconds(run);
   if (seconds !== null && seconds >= 1) facts.push({ key: "took", term: "Took", text: formatDuration(seconds) });
   const tokens = Number(run.tokens ?? run.token_count ?? 0);
-  if (run.cost_usd || tokens) {
-    facts.push({ key: "spend", term: "Spend", text: [run.cost_usd ? formatMoney(run.cost_usd) : "", tokens ? `${formatTokens(tokens)} tokens` : ""].filter(Boolean).join(" · ") });
-  }
+  if (run.cost_usd || tokens) facts.push({ key: "spend", term: "Spend", spend: { amount: run.cost_usd, tokens } });
   if (next) facts.push({ key: "next", term: "Next", text: humanize(stepOf(next)), run: next.id });
   else {
     const transition = last(transcript, "workflow.transition");

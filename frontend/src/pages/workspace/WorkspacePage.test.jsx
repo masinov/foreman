@@ -77,7 +77,7 @@ describe("WorkspacePage", () => {
     );
     expect(foremanRow).toHaveTextContent("2 need you · 1 to do · 1 done");
     expect(within(foremanRow).getByText("2 need you")).toHaveClass("attention");
-    expect(within(foremanRow).getByText("$1.31")).toBeInTheDocument();
+    expect(within(foremanRow).getByText("$1.31")).toHaveClass("mono");
     expect(within(foremanRow).getByText("2")).toHaveClass("attention");
     expect(within(foremanRow).getByRole("link", { name: "Foreman backlog, 4" })).toHaveAttribute(
       "href",

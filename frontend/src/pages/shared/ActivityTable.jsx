@@ -2,6 +2,7 @@ import React from "react";
 
 import { Link } from "../../app/router";
 import { Mono } from "../../ui/Mono";
+import { Spend } from "../../ui/Spend";
 import { Table } from "../../ui/Table";
 import { formatDayTime } from "../../ui/format";
 
@@ -100,7 +101,7 @@ export function ActivityTable({
       ? { key: "took", header: "Took", numeric: true, className: "activity-table__took", render: ({ row }) => <Mono quiet>{row.took || ""}</Mono> }
       : null,
     numbers.includes("spend")
-      ? { key: "spend", header: "Spend", numeric: true, className: "activity-table__spend", render: ({ row }) => <Mono quiet>{row.spend || ""}</Mono> }
+      ? { key: "spend", header: "Spend", numeric: true, className: "activity-table__spend", render: ({ row }) => <Spend amount={row.spend} where="row" quiet /> }
       : null,
   ].filter(Boolean);
   return (

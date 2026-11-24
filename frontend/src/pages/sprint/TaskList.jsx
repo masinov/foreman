@@ -6,7 +6,7 @@ import { Button } from "../../ui/Button";
 import { Mono } from "../../ui/Mono";
 import { StatusDot } from "../../ui/StatusDot";
 import { Table } from "../../ui/Table";
-import { formatMoney } from "../../ui/format";
+import { Spend } from "../../ui/Spend";
 import { TaskChecks } from "./TaskChecks";
 import { orderTasks, stageOf, waitsForMerge } from "./taskStage";
 
@@ -48,7 +48,7 @@ export function TaskList({ tasks, engine, busy, onApprove }) {
       key: "spend",
       header: "Spend",
       numeric: true,
-      render: (task) => <Mono>{formatMoney(task.totals?.total_cost_usd)}</Mono>,
+      render: (task) => <Spend amount={task.totals?.total_cost_usd} where="row" />,
     },
     {
       key: "decision",

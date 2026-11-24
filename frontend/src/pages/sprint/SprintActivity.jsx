@@ -6,7 +6,7 @@ import { usePagedList } from "../../api/usePagedList";
 import { paths } from "../../app/paths";
 import { Button } from "../../ui/Button";
 import { ListPager } from "../../ui/ListPager";
-import { formatMoney, shortSha } from "../../ui/format";
+import { shortSha } from "../../ui/format";
 import { ActivityTable } from "../shared/ActivityTable";
 import { runRole, runTook, stepEvent, whoWord } from "../shared/activityWords";
 
@@ -38,7 +38,7 @@ function describe(item) {
     byTitle: by.title,
     commit: item.commit_sha ? shortSha(item.commit_sha) : "",
     took: runTook(item),
-    spend: item.cost_usd ? formatMoney(item.cost_usd) : "",
+    spend: item.cost_usd,
     // A run leads to itself on the task's Activity; what a person did, to the task.
     href: item.source === "run" ? paths.taskRun(item.task_id, item.id) : paths.task(item.task_id),
   };
