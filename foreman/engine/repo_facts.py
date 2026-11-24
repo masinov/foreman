@@ -1,4 +1,4 @@
-"""What a step did to the repository, as the facts the engine records (ADR-0040).
+"""What a step did to the repository, as the facts the engine records (ADR-0038).
 
 Git is read here, when a step ends, and the answer is stored on the step's
 events. Nothing that shows it asks git again. A read that fails leaves its

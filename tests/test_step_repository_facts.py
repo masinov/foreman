@@ -1,4 +1,4 @@
-"""A step's repository facts are recorded when it ends (ADR-0040)."""
+"""A step's repository facts are recorded when it ends (ADR-0038)."""
 
 from __future__ import annotations
 

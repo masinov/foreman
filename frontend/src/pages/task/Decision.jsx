@@ -125,7 +125,7 @@ function UnblockFacts({ task }) {
     .pop();
   return (
     <>
-      {task.workflow_current_step ? <Fact tone="idle">{`Stopped at ${humanize(task.workflow_current_step).toLowerCase()}`}</Fact> : null}
+      {task.workflow_current_step ? <Fact tone="idle">{`Stopped at ${humanize(task.workflow_current_step)}`}</Fact> : null}
       {last ? (
         <Fact tone={runResult(last).tone} word={`Last run: ${humanize(last.workflow_step)}, ${runResult(last).word.toLowerCase()}`}>
           {runBy(last, task) ? `by ${runBy(last, task)}` : ""}

@@ -341,7 +341,7 @@ class AgentSteps(WorkflowRunnerBase):
     def _record_step_changes(
         self, run: Run, project: Project, head_before: str | None, head_after: str | None
     ) -> None:
-        """When the step moved the branch, record what it changed (ADR-0040)."""
+        """When the step moved the branch, record what it changed (ADR-0038)."""
 
         payload = step_changes_payload(
             project.repo_path, project.default_branch, head_before, head_after

@@ -450,7 +450,7 @@ class TaskReads:
             merge=self._merge_facts(run, events),
         )
 
-    # ── what a step did to the repository (recorded when it ended, ADR-0040) ──
+    # ── what a step did to the repository (recorded when it ended, ADR-0038) ──
 
     def _attempts(self, run: Run) -> list[tuple[Run, int]]:
         """The task's runs before this one and this one, each with its attempt at its step."""

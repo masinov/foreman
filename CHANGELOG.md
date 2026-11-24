@@ -15,6 +15,13 @@ memory changes rather than versioned product releases.
   - A landed merge records where main was, the commits it brought in and what they changed. Its panel shows Main before, Brought in and Changed.
   - Steps recorded before this show none of these rows. Spec 2.5's event list is amended.
 
+- The Agent side bar on a task page is closed until you open it (owner, 2026-11-24). It no longer opens by itself while a step is in progress. Opened or closed, it stays as you left it on every task and on the next visit, remembered apart from the manager's side bar (ADR-0029 amendment).
+
+- A task's Status says what it is doing and at which step (owner, 2026-11-24).
+  - The sprint's task list and the task's Overview head the column and the row "Status", not "Stage": the board's columns are the stages.
+  - "Running · Develop", "Paused · Develop", "Stopped · Develop", and now "Blocked · Test" for a blocked task. It used to say "Running, develop" and only "Blocked".
+  - A step is named as Activity names it everywhere: "Stopped at Test" in the decision box, "· at Test" in Needs you.
+
 - A task's Activity lists every record the engine kept on it (owner, 2026-11-24).
   - Blocks the engine made, such as "Default branch 'main' HEAD changed", were listed on the sprint's Activity but hidden on the task's own. A task's Activity now shows at least what its sprint's shows about it.
   - The engine's worktree clean-ups (other tasks' worktrees removed to stay under `max_live_worktrees`) are the project's records, not the task's that needed the room.

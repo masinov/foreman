@@ -105,7 +105,7 @@ def _landed(
 
     ``target_before`` and ``branch_head`` are the default branch's and the task
     branch's commits just before the merge; what the merge brought in is
-    recorded on the event from them (ADR-0040).
+    recorded on the event from them (ADR-0038).
     """
 
     events = [
