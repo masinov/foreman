@@ -43,10 +43,14 @@ printed, nothing on the page changed.
    (`app/projectEvents.js`); a running step's output is read again at most
    once a second while events about its task arrive (`useTaskPulse`). The
    Activity tab's output follows the same way.
-4. Open or closed stays one remembered choice for the side bar. On a task
+4. ~~Open or closed stays one remembered choice for the side bar. On a task
    with a step in progress the bar is also open without being asked, where
    it sits beside the page (not where it would cover it), until the person
-   closes it on that task.
+   closes it on that task.~~ Amended 2026-11-24 (owner: "Closed by default,
+   only persist open if I have opened it, persist closed if I collapsed
+   it"): the agent's side bar is closed until the user opens it, nothing
+   opens it on its own, and its open or closed is remembered in the browser
+   apart from the manager's (`foreman.dashboard.agent.open`).
 5. The conversation leaves out what it says elsewhere (the lines the step's
    own line repeats, a person's note inside a run) and the runs that only
    hold a record (filed, planned, cancelled). The Activity tab stays the

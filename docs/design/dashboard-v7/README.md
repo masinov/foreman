@@ -64,8 +64,9 @@ Workspace / Project / Sprint / Task.
 - **Agent** is the same side bar on a task page (ADR-0029, owner
   2026-11-17): the conversation with the agents doing that task. Its steps
   in order, what each said and did, followed as a running step prints, what
-  a person told them, and the box to tell the agent something. It opens by
-  itself while a step is in progress.
+  a person told them, and the box to tell the agent something. It is closed
+  until the user opens it, and stays as the user left it, on every task and
+  the next visit, remembered apart from the manager's (owner, 2026-11-24).
 - **Engine** is one per project. Its state and controls are on the project
   page; below project level they are in the top bar.
 - **Needs you** is one list of four kinds of item: accept filed work,
