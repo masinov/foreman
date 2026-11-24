@@ -9,6 +9,8 @@ memory changes rather than versioned product releases.
 
 ### Sprint 62
 
+- `foreman init` and Settings › Runners use the project's own roles and workflows (ADR-0024, sprint 62 slice 6, run through Foreman). `init` accepts a workflow the workspace defines, and run again on a project keeps the workflow it has, whatever its source. Runners lists the models roles use as each project resolves them (shipped, then the workspace's, then the project's), read through the definitions layer; a model only an override uses is shown and one no role uses is not.
+
 - Every test report is read in full (ADR-0035 amendment, owner 2026-11-24). Foreman stopped at 200 report files of 32 MB at most. Foreman's own suite writes 272, one per test class, so its count left out about 400 Python tests and all the frontend's. Reports are now read a piece at a time, however many and however large.
 
 - A step's details say what it did to the repository (ADR-0038, sprint 62 slice 4, run through Foreman).
