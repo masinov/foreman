@@ -1487,6 +1487,18 @@ describe("The agent's side bar", () => {
     noBar();
   });
 
+  it("writes a step's spend in the mono font after its other facts, and nothing for no spend", async () => {
+    const { panel } = await open([
+      runItem("run-9", "develop", { cost_usd: 0.09, duration_ms: 7000 }),
+      runItem("run-8", "test", { cost_usd: 0, duration_ms: 7000 }),
+    ]);
+    const facts = [...panel.querySelectorAll(".agent__step-facts")];
+    const spend = within(facts[1]).getByText("$0.09");
+    expect(spend).toHaveClass("mono");
+    expect(facts[1].textContent.endsWith(" · $0.09")).toBe(true);
+    expect(facts[0].textContent).not.toContain("$");
+  });
+
   it("is closed while a step is in progress until the user opens it, then on what that step is doing", async () => {
     const routes = taskRoutes({ task: taskDetail(IN_PROGRESS), runs: working() });
     // The step's own line says how it started; a user's words have their own place.

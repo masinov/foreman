@@ -342,6 +342,7 @@ describe("the Sprints tab", () => {
     expect(within(table).getAllByRole("row")).toHaveLength(11);
     expect(within(table).getByRole("link", { name: FINISHED[0].title })).toHaveAttribute("href", "/dashboard/sprints/sprint-55");
     expect(within(table).getAllByRole("row")[1]).toHaveTextContent("1 done28 Oct$0.55");
+    expect(within(within(table).getAllByRole("row")[1]).getByText("$0.55")).toHaveClass("mono");
     expect(screen.getByText("Showing 10 of 12, newest first")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Show 2 more" }));

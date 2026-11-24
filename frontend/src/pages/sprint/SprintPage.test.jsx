@@ -532,6 +532,7 @@ describe("activity", () => {
     const rows = within(table).getAllByRole("row").slice(1);
     // The key has its own column, as in the task list above.
     expect(cells(rows[0]).slice(1)).toEqual(["FOR-14", "Title of FOR-14", "Sent back", "Code reviewer", "7 s", "$0.12"]);
+    expect(within(rows[0]).getByText("$0.12")).toHaveClass("mono");
     // By names the role; the model is on hover.
     expect(within(rows[0]).getByText("Code reviewer")).toHaveAttribute("title", "sonnet-5-5");
     // Why is on hover, not under the row.
