@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from ..domain.models import Project, Task
 from ..store import ForemanStore
 from .layers import project_definitions
+from .workflows import WorkflowDefinition
 
 #: The workflow role that marks a step as a human decision point.
 HUMAN_GATE_ROLE = "_builtin:human_gate"
@@ -77,6 +78,12 @@ def resolve_gate_steps(store: ForemanStore, project: Project | None) -> Workflow
     workflow = workflows.get(project.workflow_id)
     if workflow is None:
         return UNKNOWN_WORKFLOW
+    return workflow_gate_steps(workflow)
+
+
+def workflow_gate_steps(workflow: WorkflowDefinition) -> WorkflowGateSteps:
+    """The human-gate steps of a workflow already loaded."""
+
     return WorkflowGateSteps(
         step_ids=frozenset(step.id for step in workflow.steps),
         gate_step_ids=frozenset(

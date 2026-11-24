@@ -138,13 +138,12 @@ class PromptBuilder:
                 current_task=task,
                 carried_output=carried_output,
             )
-        # Reuse cached evidence on the task record to avoid recomputing on
-        # repeated reviewer prompts. Built once at first reviewer render.
-        evidence = task.completion_evidence
-        if evidence is not None and self.evidence.is_stale(evidence, task, project):
-            evidence = None
-            task.completion_evidence = None
-        if evidence is None and role.completion.output.extract_decision:
+        # A reviewer is shown the evidence as it is now, never a copy saved
+        # earlier: tests can run again on the same commit, and a copy kept
+        # because the branch head had not moved said "tests ran on" the
+        # commit before (FOR-52, 2026-11-24). Building it is a few git reads.
+        evidence = None
+        if role.completion.output.extract_decision:
             evidence = self.build_completion_evidence(task, project)
             task.completion_evidence = evidence
             self.tasks.save(task)

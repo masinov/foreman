@@ -51,3 +51,4 @@ Filename format:
 | ADR-0036 | A Finished Sprint Is Tagged | accepted |
 | ADR-0037 | A Record Belongs To A Run, A Sprint Or The Project | accepted |
 | ADR-0038 | A Step's Repository Facts Are Recorded When It Ends | accepted |
+| ADR-0039 | The Engine Runs One Task at a Time | accepted |

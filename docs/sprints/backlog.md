@@ -420,8 +420,8 @@ here.
 
 **Engineering:**
 
-- **A running task's page opens two event streams,** the project's and the
-  sprint's. One is enough.
+- ~~**A running task's page opens two event streams,** the project's and the
+  sprint's. One is enough.~~ Done in sprint 62 (`fix/task-a-running-task-s-page-uses-one-event-stream`).
 - **No browser tests for the current dashboard.** `tests/test_e2e.py` was
   written for the old one (it checks that "the task page is not built"), and
   it is skipped here because Playwright is not installed. What is missing is

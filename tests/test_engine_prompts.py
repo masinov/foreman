@@ -3,7 +3,7 @@
 from __future__ import annotations
 from pathlib import Path
 import unittest
-from foreman.domain.models import Project, Run, Sprint, Task
+from foreman.domain.models import Event, Project, Run, Sprint, Task
 from foreman.engine.orchestrator import ForemanOrchestrator
 from foreman.store import ForemanStore
 
@@ -279,6 +279,43 @@ class ReviewerPromptHardeningTests(RepoTestCase):
             self.assertIn("Code review: none yet", prompt)
             self.assertIn("Branch head: ", prompt)
             self.assertNotIn("Evidence score", prompt)
+
+    def test_the_reviewer_sees_a_test_run_made_again_on_the_same_commit(self) -> None:
+        """FOR-52, 2026-11-24: evidence saved when the merge was refused said
+        the tests ran on the commit before; the tests then ran again on the
+        branch head, which had not moved, and the reviewer was still shown
+        the saved copy. The reviewer is shown the evidence as it is now."""
+
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+            self.git(repo_path, "checkout", "-b", task.branch_name)
+            self.write_text(repo_path / "queue.py", "def queue(): pass\n")
+            self.commit_all(repo_path, "feat: implement queue")
+            self.git(repo_path, "checkout", "main")
+            head = self.git(repo_path, "rev-parse", task.branch_name).stdout.strip()
+
+            first = self._render_reviewer_prompt(store, project, task)
+            self.assertIn("Tests: not run", first)
+
+            # The test step runs on the same head; the branch does not move.
+            run = self.seed_run(
+                store, project=project, task=task, role_id="_builtin:run_tests",
+                workflow_step="test", agent_backend="builtin", outcome="success",
+                outcome_detail="Tests passed.", created_at="2026-04-22T10:30:00Z",
+            )
+            store.save_event(Event(
+                id="e-test", run_id=run.id, task_id=task.id, project_id=project.id,
+                event_type="engine.test_run", timestamp="2026-04-22T10:31:00Z",
+                payload={"command": "pytest", "exit_code": 0, "head_sha": head},
+            ))
+
+            second = self._render_reviewer_prompt(store, project, store.get_task(task.id))
+            self.assertNotIn("Tests: not run", second)
+            self.assertIn(head[:8], second)
 
     def test_evidence_section_before_git_status_in_reviewer_prompt(self) -> None:
         repo_path, db_path = self.create_workspace()

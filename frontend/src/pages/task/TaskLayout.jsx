@@ -1,10 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 
-import { segment } from "../../api/client";
 import { getTask, getTaskChanges, getTaskChecks } from "../../api/tasks";
-import { useEventStream } from "../../api/useEventStream";
 import { useResource } from "../../api/useResource";
 import { paths } from "../../app/paths";
+import { onProjectEvent } from "../../app/projectEvents";
 import { Link, useNavigate } from "../../app/router";
 import { Tabs } from "../../ui/Tabs";
 import { BacklogDecision } from "./BacklogDecision";
@@ -18,17 +17,21 @@ import "../../styles/task.css";
 export const STREAM_SETTLE_MS = 300;
 
 /**
- * Follow the sprint's stream while a step of this task runs, and call
- * `refresh` once the events about it settle.
+ * Follow the project's stream (the one the app already holds open) while a
+ * step of this task runs, and call `refresh` once the events about it settle.
  */
 function useRefreshWhileRunning(task, refresh) {
   const timer = useRef(null);
+  const taskId = task?.id;
   const running = task?.status === "in_progress" && Boolean(task.sprint_id) && !task.in_backlog;
-  useEventStream(running ? `/sprints/${segment(task.sprint_id)}/stream` : null, (event) => {
-    if (event.task_id !== task.id) return;
-    clearTimeout(timer.current);
-    timer.current = setTimeout(refresh, STREAM_SETTLE_MS);
-  });
+  useEffect(() => {
+    if (!running) return undefined;
+    return onProjectEvent((event) => {
+      if (event.task_id !== taskId) return;
+      clearTimeout(timer.current);
+      timer.current = setTimeout(refresh, STREAM_SETTLE_MS);
+    });
+  }, [running, taskId, refresh]);
   useEffect(() => () => clearTimeout(timer.current), []);
 }
 
