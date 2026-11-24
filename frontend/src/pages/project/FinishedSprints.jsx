@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useId, useState } from "react";
 
 import { listProjectSprints, SPRINT_STATUSES } from "../../api/sprints";
 import { usePagedList } from "../../api/usePagedList";
@@ -8,7 +8,7 @@ import { Link } from "../../app/router";
 import { Button } from "../../ui/Button";
 import { Caret } from "../../ui/Caret";
 import { ListPager } from "../../ui/ListPager";
-import { Disclosure } from "../../ui/Disclosure";
+import { SectionHeading } from "../../ui/SectionHeading";
 import { Field } from "../../ui/Field";
 import { Table } from "../../ui/Table";
 import { formatDay, splitTitle } from "../../ui/format";
@@ -102,7 +102,7 @@ function FinishedList({ projectId }) {
 }
 
 /**
- * Finished sprints: a closed line saying how many and the latest, which
+ * Finished sprints: a heading, folded, saying how many and the latest, which
  * opens in place to the most recent ten, filtered and paged on the server.
  */
 export function FinishedSprints({ projectId, revision }) {
@@ -113,6 +113,8 @@ export function FinishedSprints({ projectId, revision }) {
   useEffect(() => {
     if (revision) reload();
   }, [revision, reload]);
+  const [open, setOpen] = useState(false);
+  const contentId = useId();
 
   if (latest.error) {
     return (
@@ -123,24 +125,29 @@ export function FinishedSprints({ projectId, revision }) {
   }
   if (!latest.data) return null;
   const { total, items } = latest.data;
-  if (total === 0) return <p className="quiet finished__none">No sprint has finished yet.</p>;
+  if (total === 0) {
+    return (
+      <section className="finished__group">
+        <SectionHeading title="Finished" />
+        <p className="empty">No sprint has finished yet.</p>
+      </section>
+    );
+  }
   const newest = items[0];
   const when = formatDay(newest.completed_at);
   return (
-    <Disclosure
-      className="finished__disclosure"
-      summary={
-        <>
-          Finished sprints <span className="finished__count">{total}</span>
-          <span className="quiet">
-            {" · latest: "}
-            {splitTitle(newest.title)[0]}
-            {when ? `, ${when}` : ""}
-          </span>
-        </>
-      }
-    >
-      <FinishedList projectId={projectId} />
-    </Disclosure>
+    <section className="finished__group">
+      <SectionHeading
+        title="Finished"
+        count={total}
+        note={`latest: ${splitTitle(newest.title)[0]}${when ? `, ${when}` : ""}`}
+        expanded={open}
+        onToggle={setOpen}
+        controls={contentId}
+      />
+      <div id={contentId} hidden={!open}>
+        {open ? <FinishedList projectId={projectId} /> : null}
+      </div>
+    </section>
   );
 }

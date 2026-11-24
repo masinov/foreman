@@ -5,7 +5,6 @@ import { useDelayedFlag } from "../../api/useResource";
 import { usePagedList } from "../../api/usePagedList";
 import { Button } from "../../ui/Button";
 import { ListPager } from "../../ui/ListPager";
-import { SectionHeading } from "../../ui/SectionHeading";
 import { MilestoneTable } from "../shared/milestones";
 
 // Design README: activity 25 at a time.
@@ -22,7 +21,7 @@ const EMPTY = {
  * The Activity tab: what happened to the project's sprints and its engine,
  * newest first. What happened to a task is on its sprint's page.
  */
-export function ActivityTab({ projectId }) {
+export function ActivityTab({ projectId, tabLine }) {
   const [filterKey, setFilterKey] = useState("all");
   const filter = MILESTONE_FILTERS.find((entry) => entry.key === filterKey);
   const list = usePagedList(
@@ -33,27 +32,24 @@ export function ActivityTab({ projectId }) {
   const placeholder = useDelayedFlag(list.loading && !list.items);
 
   return (
-    <section className="activity" aria-labelledby="activity-title">
-      <SectionHeading
-        id="activity-title"
-        title="Sprints and engine"
-        actions={
-          <div className="filter-group" role="group" aria-label="Show">
-            {MILESTONE_FILTERS.map((entry) => (
-              <Button
-                key={entry.key}
-                variant="quiet"
-                inRow
-                className="filter-group__option"
-                aria-pressed={entry.key === filterKey}
-                onClick={() => setFilterKey(entry.key)}
-              >
-                {entry.label}
-              </Button>
-            ))}
-          </div>
-        }
-      />
+    <div className="project__tabs">
+      {tabLine(
+        <div className="filter-group" role="group" aria-label="Show">
+          {MILESTONE_FILTERS.map((entry) => (
+            <Button
+              key={entry.key}
+              variant="quiet"
+              inRow
+              className="filter-group__option"
+              aria-pressed={entry.key === filterKey}
+              onClick={() => setFilterKey(entry.key)}
+            >
+              {entry.label}
+            </Button>
+          ))}
+        </div>,
+      )}
+      <section className="activity project__tab">
       {list.error ? (
         <p className="notice notice--error" role="alert">
           {list.error}
@@ -72,6 +68,7 @@ export function ActivityTab({ projectId }) {
         onMore={() => list.loadMore()}
         onFewer={list.collapse}
       />
-    </section>
+      </section>
+    </div>
   );
 }

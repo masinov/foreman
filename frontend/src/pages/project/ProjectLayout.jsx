@@ -1,6 +1,7 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 
 import { useResource } from "../../api/useResource";
+import { listProjectSprints, SPRINT_STATUSES } from "../../api/sprints";
 import { getWorkspace } from "../../api/workspace";
 import { paths } from "../../app/paths";
 import { Link } from "../../app/router";
@@ -73,7 +74,7 @@ function TitleRow({ projectId, project }) {
 /**
  * Everything above the tabs of a project page, the same on every tab
  * (docs/design/dashboard-v7/02, 09 and 11): title row, engine, Needs you and
- * the tabs. `children(revision, changed)` is the tab; `revision` grows whenever
+ * the tabs. `children(revision, changed, { tabLine, queue })` is the tab; `revision` grows whenever
  * something changed the project (an engine command, an approval, or the tab
  * itself calling `changed()`), so the tab can reload what it shows and the
  * head and tab counts are read again.
@@ -86,6 +87,20 @@ export function ProjectLayout({ projectId, children }) {
     reloadWorkspace();
     setRevision((value) => value + 1);
   }, [reloadWorkspace]);
+
+  // The active and planned sprints: the Sprints tab lists them and its tab
+  // carries their count, whichever tab is open.
+  const queue = useResource(["sprint-queue", projectId], (client, options) =>
+    listProjectSprints(client, projectId, {
+      statuses: [SPRINT_STATUSES.active, SPRINT_STATUSES.planned],
+      order: "queue",
+      ...options,
+    }),
+  );
+  const reloadQueue = queue.reload;
+  useEffect(() => {
+    if (revision) reloadQueue();
+  }, [revision, reloadQueue]);
 
   const project = workspace.data?.projects.find((entry) => entry.id === projectId) ?? null;
   if (workspace.data && !project) {
@@ -101,6 +116,18 @@ export function ProjectLayout({ projectId, children }) {
       </div>
     );
   }
+
+  // Each tab puts its own controls on the tab line, as the sprint page does.
+  const tabLine = (controls) => (
+    <Tabs
+      label="Project"
+      controls={controls}
+      items={[
+        { href: paths.project(projectId), label: "Sprints", count: queue.data ? queue.data.items.length : undefined },
+        { href: paths.projectActivity(projectId), label: "Activity" },
+      ]}
+    />
+  );
 
   return (
     <div className="project">
@@ -125,14 +152,7 @@ export function ProjectLayout({ projectId, children }) {
         onChanged={changed}
       />
       <div className="project__tabs">
-        <Tabs
-          label="Project"
-          items={[
-            { href: paths.project(projectId), label: "Sprints" },
-            { href: paths.projectActivity(projectId), label: "Activity" },
-          ]}
-        />
-        <div className="project__tab">{children(revision, changed)}</div>
+        {children(revision, changed, { tabLine, queue })}
       </div>
     </div>
   );

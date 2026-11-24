@@ -97,6 +97,8 @@ describe("WorkspacePage", () => {
     expect(within(otherRow).getByText("nothing yet")).toBeInTheDocument();
 
     const recent = await screen.findByRole("table", { name: "Recent milestones" });
+    expect(within(recent).getAllByRole("columnheader").map((cell) => cell.textContent)).toContain("About");
+    expect(within(recent).queryByRole("columnheader", { name: "Sprint or engine" })).toBeNull();
     const rows = within(recent).getAllByRole("row").slice(1);
     expect(rows.map(withoutClock)).toEqual([
       "11 NovForemanSprint 56engine truthfulnessStarted",

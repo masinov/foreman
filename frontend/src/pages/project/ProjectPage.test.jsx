@@ -69,10 +69,10 @@ describe("the project page head", () => {
 
     const tabs = screen.getByRole("navigation", { name: "Project" });
     expect(within(tabs).getAllByRole("link").map((link) => [link.textContent, link.getAttribute("href")])).toEqual([
-      ["Sprints", "/dashboard/projects/foreman"],
+      ["Sprints 2", "/dashboard/projects/foreman"],
       ["Activity", "/dashboard/projects/foreman/activity"],
     ]);
-    expect(within(tabs).getByRole("link", { name: currentTab })).toHaveAttribute("aria-current", "page");
+    expect(within(tabs).getByRole("link", { name: currentTab === "Sprints" ? "Sprints 2" : currentTab })).toHaveAttribute("aria-current", "page");
     expect(document.title).toBe(`Project, ${currentTab} · Foreman`);
   });
 
@@ -332,8 +332,8 @@ describe("the Sprints tab", () => {
     routes[finishedUrl({ q: "nothing" })] = { sprints: [], total: 0 };
     const { fetchImpl } = await renderProject("/dashboard/projects/foreman", routes);
 
-    const line = await screen.findByRole("button", { name: /^Finished sprints 12/ });
-    expect(line).toHaveTextContent("Finished sprints 12 · latest: Sprint 55, 28 Oct");
+    const line = await screen.findByRole("button", { name: /^Finished 12/ });
+    expect(line).toHaveTextContent("Finished 12 latest: Sprint 55, 28 Oct");
     expect(line).toHaveAttribute("aria-expanded", "false");
     expect(calls(fetchImpl, "GET", finishedUrl().slice(4))).toHaveLength(0);
 
@@ -360,6 +360,35 @@ describe("the Sprints tab", () => {
 
     fireEvent.change(filter, { target: { value: "nothing" } });
     expect(await screen.findByText("No finished sprint matches “nothing”.")).toBeInTheDocument();
+  });
+
+  it("has two headings of one kind: Active and planned, open, and Finished, folded until opened", async () => {
+    await renderProject();
+    const open = await screen.findByRole("heading", { level: 2, name: "Active and planned" });
+    const fold = await screen.findByRole("button", { name: /^Finished 12/ });
+    const folded = fold.closest("h2");
+    expect(folded).toHaveClass("section-heading__title");
+    expect(open).toHaveClass("section-heading__title");
+    expect(fold).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("table", { name: "Finished sprints" })).toBeNull();
+    fireEvent.click(fold);
+    expect(fold).toHaveAttribute("aria-expanded", "true");
+    expect(await screen.findByRole("table", { name: "Finished sprints" })).toBeInTheDocument();
+    fireEvent.click(fold);
+    expect(screen.queryByRole("table", { name: "Finished sprints" })).toBeNull();
+  });
+
+  it("puts New sprint on the tab row, only while Sprints is open", async () => {
+    await renderProject();
+    const tabs = (await screen.findByRole("navigation", { name: "Project" })).closest(".tabs");
+    expect(within(tabs).getByRole("button", { name: "New sprint" })).toBeInTheDocument();
+    expect(within(tabs).queryByRole("group", { name: "Show" })).toBeNull();
+    expect(screen.getAllByRole("button", { name: "New sprint" })).toHaveLength(1);
+  });
+
+  it("counts the active and planned sprints on its tab", async () => {
+    await renderProject();
+    expect(await screen.findByRole("link", { name: "Sprints 2" })).toBeInTheDocument();
   });
 
   it("says so when no sprint has finished", async () => {
@@ -443,7 +472,7 @@ describe("the Activity tab", () => {
     const table = await screen.findByRole("table", { name: "Activity" });
     expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
       "When",
-      "Sprint or engine",
+      "About",
       "Title",
       "What happened",
       "By",
@@ -542,6 +571,10 @@ describe("the Activity tab", () => {
     };
     const { fetchImpl } = await renderProject("/dashboard/projects/foreman/activity", routes);
     const filters = screen.getByRole("group", { name: "Show" });
+    // The filter is on the tab row, and nothing is a heading row under it.
+    expect(filters.closest(".tabs")).toContainElement(screen.getByRole("navigation", { name: "Project" }));
+    expect(screen.queryByRole("heading", { level: 2, name: "Sprints and engine" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "New sprint" })).toBeNull();
     expect(within(filters).getAllByRole("button").map((button) => button.textContent)).toEqual(["All", "Sprints", "Engine"]);
     expect(within(filters).getByRole("button", { name: "All" })).toHaveAttribute("aria-pressed", "true");
 

@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 
 import { useApiClient } from "../../api/ApiProvider";
 import { errorSentence } from "../../api/client";
-import { listProjectSprints, moveSprint, SPRINT_STATUSES } from "../../api/sprints";
-import { useDelayedFlag, useResource } from "../../api/useResource";
+import { moveSprint, SPRINT_STATUSES } from "../../api/sprints";
+import { useDelayedFlag } from "../../api/useResource";
 import { paths } from "../../app/paths";
 import { Link } from "../../app/router";
 import { Button } from "../../ui/Button";
@@ -76,22 +76,12 @@ function EmptyQueue({ active, planned }) {
  * The Sprints tab: the queue only, the active sprint then the planned ones
  * in the order they will run; finished sprints are a closed line below.
  */
-export function SprintsTab({ projectId, revision }) {
-  const queue = useResource(["sprint-queue", projectId], (client, options) =>
-    listProjectSprints(client, projectId, {
-      statuses: [SPRINT_STATUSES.active, SPRINT_STATUSES.planned],
-      order: "queue",
-      ...options,
-    }),
-  );
+export function SprintsTab({ projectId, revision, tabLine, queue }) {
   const placeholder = useDelayedFlag(queue.loading && !queue.data);
   const [creating, setCreating] = useState(false);
   const [notice, setNotice] = useState(null);
   const [allPlanned, setAllPlanned] = useState(false);
   const reload = queue.reload;
-  useEffect(() => {
-    if (revision) reload();
-  }, [revision, reload]);
 
   const sprints = queue.data?.items ?? [];
   const active = sprints.filter((sprint) => sprint.status === SPRINT_STATUSES.active);
@@ -157,16 +147,17 @@ export function SprintsTab({ projectId, revision }) {
       : COLUMNS;
 
   return (
-    <div className="sprints-tab">
+    <div className="project__tabs">
+      {tabLine(
+        <Button icon="plus" onClick={() => setCreating(true)}>
+          New sprint
+        </Button>,
+      )}
+      <div className="sprints-tab project__tab">
       <section className="queue" aria-labelledby="queue-title">
         <SectionHeading
           id="queue-title"
           title="Active and planned"
-          actions={
-            <Button icon="plus" onClick={() => setCreating(true)}>
-              New sprint
-            </Button>
-          }
         />
         {notice ? (
           <p className="notice" role="status">
@@ -206,6 +197,7 @@ export function SprintsTab({ projectId, revision }) {
           queue.reload();
         }}
       />
+      </div>
     </div>
   );
 }

@@ -83,20 +83,26 @@ a{color:#dedcd8}a:hover{color:#c9a55a}
 </div>
 </section>
 
-<div role="tablist" aria-label="Project" style="display: flex; flex-wrap: wrap; gap: 20px; border-bottom: 1px solid #26262b">
-<a href="02-project-sprints.html" role="tab" aria-selected="false" style="display: flex; align-items: center; gap: 5px; height: 30px; border-bottom: 1px solid transparent; color: #a3a19c; text-decoration: none">Sprints</a>
+<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 20px; border-bottom: 1px solid #26262b">
+<div role="tablist" aria-label="Project" style="display: flex; flex-wrap: wrap; gap: 20px">
+<a href="02-project-sprints.html" role="tab" aria-selected="false" style="display: flex; align-items: center; gap: 5px; height: 30px; border-bottom: 1px solid transparent; color: #a3a19c; text-decoration: none">Sprints <span style="color: #85837e">2</span></a>
 <a href="03-project-backlog.html" role="tab" aria-selected="false" style="display: flex; align-items: center; gap: 5px; height: 30px; border-bottom: 1px solid transparent; color: #a3a19c; text-decoration: none">Backlog <span style="color: #85837e">4</span></a>
 <a href="09-project-activity.html" role="tab" aria-selected="true" style="display: flex; align-items: center; gap: 5px; height: 30px; border-bottom: 1px solid #c9a55a; text-decoration: none">Activity</a>
 </div>
-
-<section aria-labelledby="act" style="display: flex; flex-direction: column">
-<div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding-bottom: 6px">
-<h2 id="act" style="margin: 0; font-size: 13px; font-weight: 600">Activity</h2>
-<span style="font-size: 12px; color: #85837e">Milestones only. Each step is on the sprint page; agent output is on the task page.</span>
-<div style="margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 6px"><div role="group" aria-label="Show" style="display: flex; gap: 12px; font-size: 12px"><a href="09-project-activity.html" style="border-bottom: 1px solid #c9a55a; text-decoration: none">All</a><a href="09-project-activity.html" style="color: #a3a19c; text-decoration: none">Sprints</a><a href="09-project-activity.html" style="color: #a3a19c; text-decoration: none">Merges</a><a href="09-project-activity.html" style="color: #a3a19c; text-decoration: none">Engine</a></div></div>
+<div role="group" aria-label="Show" style="display: flex; gap: 12px; font-size: 12px"><a href="09-project-activity.html" style="border-bottom: 1px solid #c9a55a; text-decoration: none">All</a><a href="09-project-activity.html" style="color: #a3a19c; text-decoration: none">Sprints</a><a href="09-project-activity.html" style="color: #a3a19c; text-decoration: none">Merges</a><a href="09-project-activity.html" style="color: #a3a19c; text-decoration: none">Engine</a></div>
 </div>
+
+<section aria-label="Activity" style="display: flex; flex-direction: column">
 <div style="overflow-x: auto">
 <table style="width: 100%; min-width: 620px; border-collapse: collapse">
+<thead>
+<tr style="text-align: left; font-size: 11px; color: #85837e; border-bottom: 1px solid #2c2c33">
+<th scope="col" style="padding: 6px 12px 4px 0; font-weight: 400">When</th>
+<th scope="col" style="padding: 6px 12px 4px; font-weight: 400">About</th>
+<th scope="col" style="padding: 6px 12px 4px; font-weight: 400">What happened</th>
+<th scope="col" style="padding: 6px 0 4px 12px; font-weight: 400">By</th>
+</tr>
+</thead>
 <tbody style="vertical-align: top">
 <tr><td style="padding: 7px 12px 7px 0px; width: 80px; color: #85837e; white-space: nowrap">11 Nov</td><td style="padding: 7px 12px 7px 12px; width: 80px; color: #a3a19c">Sprint</td><td style="padding: 7px 0px 7px 12px; ">Sprint 56 started: <a href="04-sprint-list.html" style="text-decoration: none">engine truthfulness</a></td></tr>
 <tr style="border-top: 1px solid #18181c"><td style="padding: 7px 12px 7px 0px; color: #85837e">10 Nov</td><td style="padding: 7px 12px 7px 12px; color: #a3a19c">Sprint</td><td style="padding: 7px 0px 7px 12px; ">Sprint 55 finished: baseline and host safety, 1 task merged</td></tr>

@@ -15,11 +15,11 @@ import { SprintsTab } from "./SprintsTab";
 export function ProjectPage({ params, routeName }) {
   return (
     <ProjectLayout projectId={params.projectId}>
-      {(revision) =>
+      {(revision, changed, { tabLine, queue }) =>
         routeName === "project-activity" ? (
-          <ActivityTab projectId={params.projectId} />
+          <ActivityTab projectId={params.projectId} tabLine={tabLine} />
         ) : (
-          <SprintsTab projectId={params.projectId} revision={revision} />
+          <SprintsTab projectId={params.projectId} revision={revision} tabLine={tabLine} queue={queue} />
         )
       }
     </ProjectLayout>

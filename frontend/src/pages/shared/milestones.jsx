@@ -73,7 +73,7 @@ export function MilestoneTable({ caption, items, showProject = false, placeholde
       caption={caption}
       items={items}
       describe={describeMilestone}
-      keyHeader="Sprint or engine"
+      keyHeader="About"
       wideKey
       subjectHeader="Title"
       showProject={showProject}
