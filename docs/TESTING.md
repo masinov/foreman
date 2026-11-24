@@ -20,7 +20,12 @@ repo-memory validation and code-level regression coverage:
 - `npm --prefix frontend test`
 - `npm --prefix frontend run build`
 - `./venv/bin/python scripts/dashboard_dev.py --help`
-- `./venv/bin/python -m unittest discover -s tests -v`
+- `./venv/bin/python -m pytest tests -n auto -q`: the whole Python suite,
+  one worker per processor core (pytest-xdist), about a minute on a
+  16-core machine where one worker took five. The tests are unittest
+  `TestCase`s, so `./venv/bin/python -m unittest discover -s tests` still
+  runs them one at a time. While working, run the touched modules alone:
+  `./venv/bin/python -m pytest tests/test_x.py`.
 - `./venv/bin/ruff check foreman tests scripts` (install with
   `./venv/bin/pip install -e ".[dev]"`)
 - `./venv/bin/lint-imports`: the layers contract in `.importlinter`
@@ -73,7 +78,7 @@ Verify both properties after changing either:
 ```bash
 git worktree add --force /tmp/wt-selftest HEAD --detach
 ln -s "$PWD/venv" /tmp/wt-selftest/venv
-(cd /tmp/wt-selftest && ./venv/bin/python -m unittest discover -s tests)
+(cd /tmp/wt-selftest && ./venv/bin/python -m pytest tests -n auto -q)
 # then confirm the operator venv still points at the operator checkout:
 ./venv/bin/python -c "import foreman, pathlib; print(pathlib.Path(foreman.__file__).parent)"
 git worktree remove --force /tmp/wt-selftest

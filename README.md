@@ -458,7 +458,7 @@ Current code-level validation also includes:
 npm --prefix frontend test
 npm --prefix frontend run build
 ./venv/bin/python scripts/dashboard_dev.py --help
-./venv/bin/python -m unittest discover -s tests -v
+./venv/bin/python -m pytest tests -n auto -q
 ./venv/bin/foreman --help
 ./venv/bin/foreman projects
 ./venv/bin/foreman status

@@ -9,6 +9,9 @@ memory changes rather than versioned product releases.
 
 ### Sprint 62
 
+- The Python suite runs in parallel (owner, 2026-11-24): `pytest -n auto` (pytest-xdist) starts one worker per processor core, and the suite takes about a minute on this 16-core machine instead of five. All 1,680 tests passed in parallel three times in a row with no changes. pytest writes the JUnit report itself (`--junitxml`), so unittest-xml-reporting leaves the dev dependencies. CI, AGENTS.md and the docs run the suite this way, and so does Foreman's own test step.
+- pydantic and starlette, which Foreman imports directly, are declared in `pyproject.toml`; they only came with FastAPI before.
+
 - Needs you lists a sprint ready to finish (owner, 2026-11-24). An active sprint whose every task is done or cancelled, where a user finishes sprints, is a "Finish sprint" row on the workspace and project pages, with its tasks and a Finish button. It used to say "Ready to finish" only on its own page.
 
 - The engine runs one task at a time (ADR-0039, owner 2026-11-24). A task waiting for a user's decision at a gate holds the queue: nothing else starts until it is decided, and then it is merged before the next task starts from the default branch it left. The side door that merged approved tasks inside another task's step is removed (ADR-0011's 2026-11-15 amendment withdrawn). A task blocked by a failure does not hold the queue.
