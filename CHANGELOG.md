@@ -9,6 +9,12 @@ memory changes rather than versioned product releases.
 
 ### Sprint 62
 
+- A step's details say what it did to the repository (ADR-0038, sprint 62 slice 4, run through Foreman).
+  - An agent step that changed the branch records `engine.step_changes` (files with lines and kind, totals; main's changes brought in by a branch refresh are not counted). Its panel shows Changed: the files and lines, what they are counted against ("since attempt 1's commit c248621", "since main at 0db4ca5, where the branch began"), each file, five and then "Show all N".
+  - An agent step's panel shows Session: "New", or "Continued from attempt N", which picks that run.
+  - A landed merge records where main was, the commits it brought in and what they changed. Its panel shows Main before, Brought in and Changed.
+  - Steps recorded before this show none of these rows. Spec 2.5's event list is amended.
+
 - A task's Activity lists every record the engine kept on it (owner, 2026-11-24).
   - Blocks the engine made, such as "Default branch 'main' HEAD changed", were listed on the sprint's Activity but hidden on the task's own. A task's Activity now shows at least what its sprint's shows about it.
   - The engine's worktree clean-ups (other tasks' worktrees removed to stay under `max_live_worktrees`) are the project's records, not the task's that needed the room.

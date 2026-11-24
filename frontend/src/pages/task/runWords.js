@@ -24,6 +24,8 @@ const SILENT = new Set([
   "agent.started",
   "agent.completed",
   "engine.review_recorded",
+  // What the step changed is said in its facts.
+  "engine.step_changes",
   "workflow.step_completed",
   "workflow.transition",
 ]);

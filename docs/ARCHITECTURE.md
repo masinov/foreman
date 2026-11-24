@@ -141,6 +141,11 @@ Primary persisted entities:
   (ADR-0037). `RunRecords.emit_event`, `emit_sprint_event` and
   `emit_project_event` write them; a sprint's events are its tasks' and
   its own (`EventStore.list_sprint_events`).
+- a step's repository facts are recorded when it ends (ADR-0038): git is
+  read in `repo/git.py`, shaped in `engine/repo_facts.py`, stored as
+  `engine.step_changes` and extra fields of `engine.merge`, read in
+  `services/task_reads.py` and drawn by the Activity tab. No git call is
+  made when a page is read.
 
 Committed markdown in this repository is still temporary bootstrap memory.
 Once Foreman matures, files like `docs/STATUS.md` and `docs/sprints/current.md`

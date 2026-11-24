@@ -101,8 +101,9 @@ Workspace / Project / Sprint / Task.
   2026-11-22, from a mockup): on the left what happened, in order, each
   line a time, what happened in plain words, and what it ran, wrote or
   printed, beginning with "Sent the prompt" for an agent's step; on the
-  right the step's facts (Result, Why, Decided by, After, the commit it was
-  about, By, Model, May use, Took, Spend, Next), each only where it
+  right the step's facts (Result, Why, Decided by, After, Main before, the
+  commit it was about, Session, Changed, Brought in, By, Model, May use,
+  Took, Spend, Next; ADR-0038), each only where it
   applies, and one button, Download the transcript. No composed summary,
   no headings per kind of step, no JSON or event names, and nothing only
   one line has. A test step's result says how many tests ran when the

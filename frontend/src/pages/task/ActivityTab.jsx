@@ -9,6 +9,7 @@ import { Link, useRoute } from "../../app/router";
 import { useResource } from "../../api/useResource";
 import { ListPager } from "../../ui/ListPager";
 import { Button } from "../../ui/Button";
+import { Caret } from "../../ui/Caret";
 import { Mono } from "../../ui/Mono";
 import { SectionHeading } from "../../ui/SectionHeading";
 import { formatDayTime, formatMoney, humanize, plural, shortSha } from "../../ui/format";
@@ -89,8 +90,103 @@ function DownloadTranscript({ task, run, output }) {
   );
 }
 
+// How many changed files show before "Show all".
+export const FILES_SHOWN = 5;
+
+/** `+70 −14`, as the Changes tab writes and colours it. */
+function Lines({ added, removed }) {
+  return (
+    <Mono>
+      <span className="tone-passed">+{added ?? 0}</span> <span className="tone-failed">−{removed ?? 0}</span>
+    </Mono>
+  );
+}
+
+/** What a step's changes are counted against, in words. */
+function againstWords(against) {
+  if (against.kind === "attempt") return `since attempt ${against.attempt}'s commit ${shortSha(against.sha)}`;
+  if (against.kind === "default_branch") return `since ${against.branch || "the default branch"} at ${shortSha(against.sha)}, where the branch began`;
+  return `since ${shortSha(against.sha)}`;
+}
+
+/** What a step changed: how many files and lines, against what, then each file. */
+function Changed({ changes }) {
+  const [all, setAll] = useState(false);
+  const files = [...(changes.files ?? [])].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  const shown = all ? files : files.slice(0, FILES_SHOWN);
+  const total = changes.files_total ?? files.length;
+  return (
+    <div className="run-changes">
+      <div>
+        {plural(total, "file")} <Lines added={changes.added} removed={changes.removed} />
+      </div>
+      {changes.against ? <div className="quiet">{againstWords(changes.against)}</div> : null}
+      <ul className="run-changes__files">
+        {shown.map((file) => (
+          <li key={file.path} className="run-changes__file">
+            <span className="run-changes__path">
+              <Mono title={file.path}>{file.path}</Mono>
+              {file.status === "added" ? <span className="quiet"> added</span> : null}
+            </span>
+            {file.added === null || file.removed === null ? <span className="quiet">binary</span> : <Lines added={file.added} removed={file.removed} />}
+          </li>
+        ))}
+      </ul>
+      {files.length > FILES_SHOWN ? (
+        <Button variant="quiet" className="expander" aria-expanded={all} onClick={() => setAll(!all)}>
+          <Caret direction={all ? "up" : "down"} />
+          {all ? "Show fewer" : `Show all ${files.length}`}
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+/** What a merge brought in: how many commits, then each, oldest first. */
+function BroughtIn({ brought }) {
+  return (
+    <div className="run-changes">
+      <div>{plural(brought.total, "commit")}</div>
+      <ul className="run-changes__files">
+        {brought.commits.map((commit) => (
+          <li key={commit.sha} className="run-changes__commit" title={commit.subject}>
+            <Mono quiet title={commit.sha}>
+              {shortSha(commit.sha)}
+            </Mono>
+            <span className="run-changes__subject">{commit.subject}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 /** A fact's value: a commit, a run to pick, a link to the settings, or words. */
 function FactValue({ fact, task, onPick }) {
+  if (fact.changed) return <Changed changes={fact.changed} />;
+  if (fact.brought) return <BroughtIn brought={fact.brought} />;
+  if (fact.landed) {
+    return (
+      <>
+        <Link className="row-link" href={paths.taskChanges(task.id)}>
+          {plural(fact.landed.files_total ?? fact.landed.files?.length ?? 0, "file")}
+        </Link>{" "}
+        <Lines added={fact.landed.added} removed={fact.landed.removed} />
+      </>
+    );
+  }
+  if (fact.key === "session") {
+    return fact.session ? (
+      <>
+        {fact.text}
+        <button type="button" className="file-pick run-facts__pick" onClick={() => onPick(fact.session.run)}>
+          {fact.session.label}
+        </button>
+      </>
+    ) : (
+      <span>{fact.text}</span>
+    );
+  }
   if (fact.sha) return <Mono title={fact.sha}>{fact.text}</Mono>;
   if (fact.run) {
     return (
@@ -136,7 +232,7 @@ function RunOutput({ run, task, previous, next, onPick, pulse = 0 }) {
   }
   const lines = data ? withDays(told, run.started_at) : [];
   const attempt = attemptOf(run, transcript);
-  const facts = data ? stepFacts(run, transcript, { previous, next, task }) : [];
+  const facts = data ? stepFacts(run, transcript, { previous, next, task, repo: data }) : [];
   return (
     <section className="task-section run-output" aria-labelledby="run-output">
       <SectionHeading

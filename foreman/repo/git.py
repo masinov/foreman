@@ -513,11 +513,28 @@ def branch_changes(
     spaces or a newline is exact. Raises ``GitError`` when git cannot compare.
     """
 
-    range_arg = f"{base_branch}...{branch_name}"
-    code, numstat = _git_bytes(repo_path, ["diff", "--numstat", "-z", "-M", range_arg, "--"])
+    return _diff_changes(repo_path, [f"{base_branch}...{branch_name}"])
+
+
+def commit_changes(repo_path: str | Path, from_sha: str, to_sha: str) -> list[FileChange]:
+    """Return the files that differ between two commits, ``from_sha`` to ``to_sha``.
+
+    The comparison is of the two trees (not a merge base), so it is what a
+    step did to the branch between the two heads. Raises ``GitError`` when git
+    cannot compare.
+    """
+
+    return _diff_changes(repo_path, [from_sha, to_sha])
+
+
+def _diff_changes(repo_path: str | Path, revisions: list[str]) -> list[FileChange]:
+    """The files one ``git diff`` of ``revisions`` changes, with counts and kinds."""
+
+    range_arg = " ".join(revisions)
+    code, numstat = _git_bytes(repo_path, ["diff", "--numstat", "-z", "-M", *revisions, "--"])
     if code != 0:
         raise GitError(f"git could not compare {range_arg} in {repo_path}")
-    code, name_status = _git_bytes(repo_path, ["diff", "--name-status", "-z", "-M", range_arg, "--"])
+    code, name_status = _git_bytes(repo_path, ["diff", "--name-status", "-z", "-M", *revisions, "--"])
     if code != 0:
         raise GitError(f"git could not compare {range_arg} in {repo_path}")
 
@@ -574,6 +591,37 @@ def branch_changes(
             )
         )
     return changes
+
+
+@dataclass(frozen=True, slots=True)
+class CommitLine:
+    """One commit: its full sha and its subject."""
+
+    sha: str
+    subject: str
+
+
+def commits_between(repo_path: str | Path, from_sha: str, to_ref: str) -> list[CommitLine]:
+    """Return the commits in ``to_ref`` that ``from_sha`` lacks, oldest first.
+
+    Raises ``GitError`` when git cannot list them.
+    """
+
+    result = run_git(
+        repo_path, "log", "--reverse", "--format=%H%x00%s", f"{from_sha}..{to_ref}", "--"
+    )
+    lines: list[CommitLine] = []
+    for line in result.stdout.splitlines():
+        sha, _, subject = line.partition("\0")
+        if sha:
+            lines.append(CommitLine(sha=sha, subject=subject))
+    return lines
+
+
+def is_ancestor(repo_path: str | Path, ancestor: str, descendant: str) -> bool:
+    """Return whether ``ancestor`` is in the history of ``descendant``."""
+
+    return run_git(repo_path, "merge-base", "--is-ancestor", ancestor, descendant, check=False).returncode == 0
 
 
 def file_diff(

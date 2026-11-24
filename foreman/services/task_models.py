@@ -290,6 +290,77 @@ class TranscriptEntry(BaseModel):
     data: dict[str, Any] | None = None
 
 
+class SessionFact(BaseModel):
+    """Whether an agent run started a session or resumed an earlier run's.
+
+    Two runs with the same stored session id are one session.
+    """
+
+    #: The earlier run of the same role on the task whose session this one
+    #: resumed; None for a new session.
+    continued_from: str | None = None
+    #: That run's attempt at its step.
+    continued_attempt: int | None = None
+
+
+class StepFile(BaseModel):
+    path: str
+    #: None for a binary file.
+    added: int | None = None
+    removed: int | None = None
+    status: Literal["added", "modified", "deleted", "renamed"] = "modified"
+
+
+class ChangedAgainst(BaseModel):
+    """What a step's changes are counted against.
+
+    ``attempt``: the commit an earlier run of the task left (``run_id``,
+    ``attempt``); ``default_branch``: a commit on the default branch, where the
+    branch began; ``commit``: only the commit.
+    """
+
+    kind: Literal["attempt", "default_branch", "commit"]
+    sha: str
+    run_id: str | None = None
+    attempt: int | None = None
+    branch: str | None = None
+
+
+class StepChanges(BaseModel):
+    """What an agent step changed on the task branch, as recorded when it ended."""
+
+    from_sha: str
+    to_sha: str
+    files: list[StepFile]
+    #: How many files changed; ``files`` is capped.
+    files_total: int
+    added: int
+    removed: int
+    against: ChangedAgainst
+
+
+class MergeCommit(BaseModel):
+    sha: str
+    subject: str = ""
+
+
+class MergeChanges(BaseModel):
+    files: list[StepFile]
+    files_total: int
+    added: int
+    removed: int
+
+
+class MergeFacts(BaseModel):
+    """What a landed merge brought in, as recorded when it landed. Each field is
+    present only when it was recorded."""
+
+    target_before: str | None = None
+    commits: list[MergeCommit] | None = None
+    commits_total: int | None = None
+    changes: MergeChanges | None = None
+
+
 class RunOutput(BaseModel):
     """``GET /runs/{id}/output``."""
 
@@ -306,3 +377,9 @@ class RunOutput(BaseModel):
     raw_entries: int = 0
     raw_included: bool = False
     cap_chars: int
+    #: Agent runs only: a new session, or the earlier run's it resumed.
+    session: SessionFact | None = None
+    #: What the step changed on the branch, when it recorded that.
+    changes: StepChanges | None = None
+    #: A landed merge's facts, when it recorded them.
+    merge: MergeFacts | None = None
