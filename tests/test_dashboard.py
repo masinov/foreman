@@ -2044,7 +2044,7 @@ class DashboardSprintTaskBacklogTests(unittest.TestCase):
             criteria_checklist=(
                 {"criterion": "c", "status": "failed", "evidence": "missing"},
             ),
-            failure_reasons=("Tests ran on aaaaaaaa; the branch is now at bbbbbbbb.",),
+            failure_reasons=("Tests ran on aaaaaaa; the branch is now at bbbbbbb.",),
         )
         store.save_task(task)
         store.close()
@@ -2066,7 +2066,7 @@ class DashboardSprintTaskBacklogTests(unittest.TestCase):
         self.assertEqual(len(evidence["criteria_checklist"]), 1)
         self.assertEqual(
             evidence["failure_reasons"],
-            ["Tests ran on aaaaaaaa; the branch is now at bbbbbbbb."],
+            ["Tests ran on aaaaaaa; the branch is now at bbbbbbb."],
         )
 
     def test_get_task_completion_evidence_none_when_absent(self):

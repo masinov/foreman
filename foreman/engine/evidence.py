@@ -133,7 +133,7 @@ def _criteria_checklist(criteria_text: str, *, covered: bool, reviewed_sha: str)
         {
             "criterion": criterion,
             "status": CRITERION_COVERED if covered else CRITERION_UNVERIFIED,
-            "evidence": f"Code review approved {reviewed_sha[:8]}." if covered and reviewed_sha else "",
+            "evidence": f"Code review approved {reviewed_sha[:7]}." if covered and reviewed_sha else "",
         }
         for criterion in (c.strip() for c in criteria_text.split("\n"))
         if criterion
@@ -175,7 +175,7 @@ class EvidenceBuilder:
             failure_reasons.append(f"Tests failed (exit code {tests.exit_code}).")
         elif tests.status == "stale":
             failure_reasons.append(
-                f"Tests ran on {tests.tested_sha[:8]}; the branch is now at {git.head[:8]}."
+                f"Tests ran on {tests.tested_sha[:7]}; the branch is now at {git.head[:7]}."
             )
         elif tests.status == "not_run":
             outstanding.append("Tests have not run.")
@@ -186,8 +186,8 @@ class EvidenceBuilder:
         )
         if review_is_stale:
             failure_reasons.append(
-                f"Code review approved {review.sha[:8]}; the branch is now at "
-                f"{git.head[:8]}."
+                f"Code review approved {review.sha[:7]}; the branch is now at "
+                f"{git.head[:7]}."
             )
 
         # An approving code review of the branch head covers the acceptance

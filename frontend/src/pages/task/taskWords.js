@@ -71,9 +71,15 @@ export function decisionOf(task, checks) {
     return { kind: DECISIONS.gate, question: `Approve ${step}?`, approve: "Approve", sendBack };
   }
   const reason = (task.blocked_reason || "").trim();
+  // The first sentence of a reason is its heading; the rest is the detail.
+  const cut = reason.search(/\.\s/);
+  const first = cut === -1 ? reason : reason.slice(0, cut + 1);
+  const rest = cut === -1 ? "" : reason.slice(cut + 1).trim();
+  const heading = /^not merged:/i.test(first) ? first : `Blocked: ${first}`;
   return {
     kind: DECISIONS.unblock,
-    question: reason ? `Blocked: ${reason}` : "Blocked, and no reason was recorded",
+    question: reason ? heading : "Blocked, and no reason was recorded",
+    detail: rest,
     approve: "Unblock",
     sendBack: {
       label: "Send back",

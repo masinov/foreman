@@ -512,7 +512,7 @@ class CompletionEvidenceTests(RepoTestCase):
         evidence, head = self.evidence_for(arrange=arrange)
 
         self.assertEqual([c["status"] for c in evidence.criteria_checklist], ["covered"])
-        self.assertEqual(evidence.criteria_checklist[0]["evidence"], f"Code review approved {head[:8]}.")
+        self.assertEqual(evidence.criteria_checklist[0]["evidence"], f"Code review approved {head[:7]}.")
         self.assertEqual(evidence.criteria_addressed, 1)
         self.assertEqual(evidence.proof_status, "passed")
         self.assertIn("Acceptance criteria: 1, covered by the approving code review", str(evidence))

@@ -320,6 +320,21 @@ describe("the decision", () => {
     await waitFor(() => expect(postCalls(fetchImpl, "accept")).toHaveLength(1));
   });
 
+  it("headlines a refused merge with its first sentence and shows the rest below", async () => {
+    const task = taskDetail({
+      awaiting_human_gate: false,
+      gate_policy: null,
+      blocked_kind: "engine",
+      workflow_current_step: "merge",
+      blocked_reason:
+        "Not merged: the tests failed. The tests failed with exit code 1. Send it back to fix the tests.",
+      runs: [run("run-1", "test", { outcome: "failed" })],
+    });
+    await renderTask(BASE, taskRoutes({ task }));
+    const region = await screen.findByRole("region", { name: "Not merged: the tests failed." });
+    expect(region).toHaveTextContent("The tests failed with exit code 1. Send it back to fix the tests.");
+  });
+
   it("says why a task is blocked; Unblock and Send back call unblock", async () => {
     const task = taskDetail({
       awaiting_human_gate: false,

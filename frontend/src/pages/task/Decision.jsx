@@ -185,6 +185,7 @@ export function Decision({ task, checks, onDecided }) {
         <h2 className="decision__question" id="task-decision">
           {decision.question}
         </h2>
+        {decision.detail ? <p className="decision__detail">{decision.detail}</p> : null}
         <ul className="decision__facts">
           <Facts kind={decision.kind} task={task} checks={checks} />
         </ul>
