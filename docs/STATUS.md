@@ -3,7 +3,7 @@
 Current snapshot only. History up to 2026-09-08 (sprints 1 to 54) is in
 `docs/checkpoints/status-history-through-2026-09-08.md`.
 
-## Where the project is (2026-11-20)
+## Where the project is (2026-11-25)
 
 - Driving document: `docs/reviews/2026-11-10-full-review-and-finish-plan.md`
   (full review of engine, runner, dashboard, frontend and UX, with a six-phase
@@ -34,6 +34,13 @@ Current snapshot only. History up to 2026-09-08 (sprints 1 to 54) is in
   first time. No sprint is open. The next one is stage 2, and it starts
   with an ADR for the identity system inside Foreman
   (`docs/sprints/current.md`).
+- **2026-11-25.** Sprint 62 (finish what's there) is finished; its ten
+  tasks, FOR-50 to FOR-59, ran through Foreman. The roadmap now takes
+  stage 3 (a method for the agents) before stage 2. The method, the
+  repository layout and the rules for parallel work are decided in
+  ADR-0040; the workflow and role model they need, and what each step is
+  given, in ADR-0041. The next sprint builds ADR-0040's build order through
+  Foreman. Until each item lands, the rules in `AGENTS.md` still hold.
 - Nineteen tasks of sprint 58 were run by Foreman itself. On 2026-11-13 the
   owner asked for the engine to be stopped and the rest done by hand; it has
   been stopped since. What the engine did well and badly is in the archived
