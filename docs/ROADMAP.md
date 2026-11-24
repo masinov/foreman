@@ -135,6 +135,27 @@ Stage 1 before everything. Stage 2 before 5 and 6. Stage 3 before 7. Stage 4
 before 5. Stage 6 before the owner's colleagues use Foreman. Stages 7, 8 and
 9 in any order after 6.
 
+### Order changed on 2026-11-24: stage 3 before stage 2 (owner)
+
+The method for the agents comes before the manager and people. It depends
+on nothing else, and it makes every later stage cheaper while Foreman
+develops itself. Sprint 62, the first run through Foreman, showed the cost
+of not having one:
+- reviews passed in seconds;
+- a layout went unchecked at phone width;
+- a reference was invented;
+- tasks collided on shared files;
+- each send-back cost a develop pass, a test run and the owner's attention.
+
+The postponed research is done with it, as one subject, because stage 3
+already lists "which docs a change updates":
+- the method for the agents;
+- how a repository is organised (owner direction 7);
+- the rules that let several tasks work in parallel without colliding.
+
+A proposal comes first, for the owner to correct, then an ADR, then the
+build through Foreman.
+
 ## History: milestones 0 to 23
 
 ## Milestone 0: Repo reset and bootstrap
