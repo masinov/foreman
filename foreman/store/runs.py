@@ -176,8 +176,8 @@ class RunStore(StoreBase):
         commit it was about (its own, else the one the first of
         ``commit_events`` (event type, field) names), and the object the
         latest ``report_event`` (event type, field) of the run holds, or
-        None. Runs of ``skip_roles`` are left out, and so are runs of
-        ``engine_role`` whose detail does not name the task.
+        None. Runs of ``skip_roles`` are left out. Every record the engine
+        kept on the task is about it, and is listed (ADR-0037).
         """
 
         commit_sql = "r.commit_sha"
@@ -212,13 +212,9 @@ class RunStore(StoreBase):
             )
             SELECT * FROM numbered
             WHERE role_id NOT IN ({marks})
-              AND (role_id <> COALESCE(?, '')
-                   OR instr(COALESCE(outcome_detail, ''), ? || task_id || ?) > 0)
         """
-        # The engine names a task in its records quoted: "during task 'task-1'".
         params: list[Any] = [
             engine_role, *commit_params, *report_params, task_id, *skip_roles,
-            engine_role, "'", "'",
         ]
         total = self._connection.execute(
             f"SELECT COUNT(*) FROM ({steps_sql})", params
@@ -239,7 +235,6 @@ class RunStore(StoreBase):
         limit: int,
         offset: int,
         skip_roles: Sequence[str],
-        skip_steps: Sequence[str],
         skip_outcomes: Sequence[str],
         gate_role: str,
         hand_events: dict[str, str],
@@ -250,9 +245,8 @@ class RunStore(StoreBase):
     ) -> tuple[list[dict[str, Any]], int, list[str]]:
         """One page of a sprint's activity, newest first, the total, and who appears in it.
 
-        Runs of the sprint's tasks, less those of ``skip_roles``, at
-        ``skip_steps``, with ``skip_outcomes``, and gate runs no person
-        decided; with the events ``hand_events`` names (event type to the
+        Runs of the sprint's tasks, less those of ``skip_roles``, with
+        ``skip_outcomes``, and gate runs no person decided; with the events ``hand_events`` names (event type to the
         outcome it is listed as), whose ``by`` is the actor and ``reason`` the
         detail. With ``problem_outcomes`` only those outcomes, or runs with
         one of ``problem_statuses``, are kept. Each row's ``who`` is
@@ -282,7 +276,6 @@ class RunStore(StoreBase):
             FROM runs r JOIN tasks t ON t.id = r.task_id
             WHERE t.sprint_id = ?
               AND r.role_id NOT IN ({marks(skip_roles)})
-              AND r.workflow_step NOT IN ({marks(skip_steps)})
               AND COALESCE(r.outcome, '') NOT IN ({marks(skip_outcomes)})
               AND NOT (r.role_id = ? AND r.agent_backend <> 'human')
             UNION ALL
@@ -297,7 +290,7 @@ class RunStore(StoreBase):
         params: list[Any] = [
             *who.user_backends, *who.user_roles, who.user,
             *who.engine_backends, len(who.builtin_prefix), who.builtin_prefix, who.foreman,
-            sprint_id, *skip_roles, *skip_steps, *skip_outcomes, gate_role,
+            sprint_id, *skip_roles, *skip_outcomes, gate_role,
         ]
         for event_type in hand_types:
             params.extend([event_type, hand_events[event_type]])

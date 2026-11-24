@@ -854,11 +854,17 @@ class WorktreeLimitTests(unittest.TestCase):
 
         self.assertTrue(path.is_dir())
         self.assertFalse(victim_path.exists())
-        events = [
-            event.event_type
+        reclaimed = [
+            event
             for event in self.store.list_events(project_id="p1")
+            if event.event_type == "engine.worktrees_reclaimed"
         ]
-        self.assertIn("engine.worktrees_reclaimed", events)
+        self.assertEqual(len(reclaimed), 1)
+        # The project's record: another task's tree went, not this task's
+        # step (ADR-0037). It names the task that needed the room.
+        self.assertEqual((reclaimed[0].run_id, reclaimed[0].task_id), (None, None))
+        self.assertEqual(reclaimed[0].payload["for_task_id"], arriving.id)
+        self.assertEqual(self.store.list_runs(task_id=arriving.id), [])
 
 
 def _age(manager: WorktreeManager, path: Path, *, seconds: int) -> None:

@@ -9,6 +9,12 @@ memory changes rather than versioned product releases.
 
 ### Sprint 62
 
+- A task's Activity lists every record the engine kept on it (owner, 2026-11-24).
+  - Blocks the engine made, such as "Default branch 'main' HEAD changed", were listed on the sprint's Activity but hidden on the task's own. A task's Activity now shows at least what its sprint's shows about it.
+  - The engine's worktree clean-ups (other tasks' worktrees removed to stay under `max_live_worktrees`) are the project's records, not the task's that needed the room.
+  - A sprint's Activity does not list the sprint's own finish and tag: those are in its State and in the project's Activity (ADR-0037, decided).
+  - A long unbroken value in a Details list, such as a full commit id in a block's reason, breaks inside its column instead of running past the page's edge.
+
 - A record belongs to a run, a sprint or the project (ADR-0037, sprint 62 slice 3).
   - A sprint's records (it started, finished, is ready to finish, was tagged) and the project's (a command naming no task, a pruning) are no longer pinned to a task through a made-up run. Schema version 29 moves the old ones and deletes the 22 made-up runs in the live database.
   - A sprint keeps its tag when its first task moves to another sprint. Its records are never pruned, and are deleted with it.

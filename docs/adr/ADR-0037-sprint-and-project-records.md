@@ -51,13 +51,19 @@ made-up runs that hold nothing else.
      `engine.checkpoint_failed`, and the `engine.push`/`engine.push_failed`
      and `engine.checkout_updated`/`engine.checkout_behind` a checkpoint
      makes;
-   - to the project: `engine.run_pruned`, `engine.event_pruned`, and
+   - to the project: `engine.run_pruned`, `engine.event_pruned`,
      `engine.command_applied`/`engine.command_rejected` for a command that
-     names no task.
+     names no task, and (amended 2026-11-24) the worktree clean-ups:
+     `engine.worktrees_reclaimed`, `engine.worktree_limit_exceeded` and
+     `engine.worktree_reclaim_failed`. To stay under `max_live_worktrees`
+     the engine removes other tasks' worktrees; that is about the
+     project's worktrees, not about the task that needed the room, which
+     the payload names as `for_task_id`. The live database held none, so
+     the migration has nothing of these to move.
 
-   What stays on a task's run is what is about that task: its worktree
-   made or removed, a recovered run, a block, a gate decision, a branch
-   violation. Those runs are steps of the task.
+   What stays on a task's run is what is about that task: a recovered
+   run, a block, a gate decision, a branch violation, a command that names
+   the task.
 3. **One writer.** `RunRecords` gains `emit_sprint_event` and
    `emit_project_event`, which save the event and offer it to the notifier
    as `emit_event` does. No run is made for them, and
@@ -67,10 +73,16 @@ made-up runs that hold nothing else.
      order. This covers the sprint's event stream and the checkpoint the
      sprint page reads.
    - The project's records are read by project.
-   - The activity reads still leave out the engine's records about a task
-     that are not steps of it (its worktree made or removed). They no
-     longer have to hide records that belong to a sprint or the project,
-     as none are on a task any more.
+   - A task's Activity lists every record the engine kept on the task
+     (amended 2026-11-24). It used to leave out those whose text did not
+     quote the task's id, to hide records pinned to it from elsewhere.
+     That also hid blocks the sprint's Activity listed, such as FOR-14's
+     "Default branch 'main' HEAD changed". A task's Activity now lists at
+     least what its sprint's Activity lists about it.
+   - The sprint's Activity no longer leaves out runs at the `orchestrator`
+     step. What is left there is about a task: a run recovered, a block
+     before any step.
+
 5. **Old records are moved by the migration that adds the column.** On the
    made-up runs (role `_builtin:orchestrator`, backend `orchestrator`):
    - an event of a sprint type takes the sprint from its payload's
@@ -122,8 +134,14 @@ made-up runs that hold nothing else.
 - The sprint's first task no longer shows records that were never about
   it.
 
-## Not decided here
+## Decided after (owner, 2026-11-24)
 
-- Whether the sprint's Activity tab lists its own records ("Finished,
-  tagged …") beside its tasks' work. Today it lists task work only. The
-  project's Activity is where the sprint's own changes are listed.
+- **The sprint's Activity does not list the sprint's own records.** On
+  every page the Activity tab lists what happened to what the level holds,
+  and the level's own state is in its head:
+  - the project's Activity lists its sprints and its engine;
+  - a sprint's lists its tasks;
+  - a task's lists its steps.
+
+  A sprint's finish and tag are in its State and in the project's
+  Activity.
