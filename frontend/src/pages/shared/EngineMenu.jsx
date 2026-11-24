@@ -31,10 +31,7 @@ export function EngineMenu({ projectId }) {
   return (
     <div className="engine-menu">
       {notice ? (
-        <span
-          className={notice.error ? "engine-menu__notice engine-menu__notice--error" : "visually-hidden"}
-          role={notice.error ? "alert" : "status"}
-        >
+        <span className="engine-menu__notice engine-menu__notice--error" role="alert">
           {notice.text}
         </span>
       ) : null}

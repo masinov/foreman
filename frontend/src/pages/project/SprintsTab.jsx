@@ -13,6 +13,7 @@ import { StatusDot } from "../../ui/StatusDot";
 import { Table } from "../../ui/Table";
 import { formatDay } from "../../ui/format";
 import { Spend } from "../../ui/Spend";
+import { useToast } from "../../ui/Toast";
 import { TaskCounts } from "../shared/TaskCounts";
 import { FinishedSprints } from "./FinishedSprints";
 import { NewSprintDialog } from "./NewSprintDialog";
@@ -79,7 +80,7 @@ function EmptyQueue({ active, planned }) {
 export function SprintsTab({ projectId, revision, tabLine, queue }) {
   const placeholder = useDelayedFlag(queue.loading && !queue.data);
   const [creating, setCreating] = useState(false);
-  const [notice, setNotice] = useState(null);
+  const { show } = useToast();
   const [allPlanned, setAllPlanned] = useState(false);
   const reload = queue.reload;
 
@@ -94,7 +95,6 @@ export function SprintsTab({ projectId, revision, tabLine, queue }) {
   async function move(sprint, direction) {
     setMoving(true);
     setMoveError(null);
-    setNotice(null);
     try {
       await moveSprint(client, sprint.id, direction);
       reload();
@@ -159,11 +159,6 @@ export function SprintsTab({ projectId, revision, tabLine, queue }) {
           id="queue-title"
           title="Active and planned"
         />
-        {notice ? (
-          <p className="notice" role="status">
-            {notice}
-          </p>
-        ) : null}
         {queue.error ? (
           <p className="notice notice--error" role="alert">
             {queue.error}
@@ -193,7 +188,7 @@ export function SprintsTab({ projectId, revision, tabLine, queue }) {
         onClose={() => setCreating(false)}
         onCreated={(sprint) => {
           setCreating(false);
-          setNotice(`${sprint?.title ?? "The sprint"} is planned, last in the queue.`);
+          show(`${sprint?.title ?? "The sprint"} is planned, last in the queue.`);
           queue.reload();
         }}
       />

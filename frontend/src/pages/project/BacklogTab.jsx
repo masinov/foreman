@@ -14,6 +14,7 @@ import { Field } from "../../ui/Field";
 import { SectionHeading } from "../../ui/SectionHeading";
 import { Table } from "../../ui/Table";
 import { formatDay, plural } from "../../ui/format";
+import { useNotice } from "../../ui/Toast";
 import { NewTaskDialog } from "./NewTaskDialog";
 import { PlanNewSprintDialog } from "./PlanNewSprintDialog";
 
@@ -42,12 +43,8 @@ function TaskLink({ task }) {
 
 function Notice({ notice }) {
   if (!notice) return null;
-  return notice.error ? (
+  return (
     <p className="notice notice--error" role="alert">
-      {notice.text}
-    </p>
-  ) : (
-    <p className="notice" role="status">
       {notice.text}
     </p>
   );
@@ -92,7 +89,7 @@ export function BacklogTab({ projectId, revision, onChanged }) {
     }
   }, [revision, reloadList, reloadSprints]);
 
-  const [notice, setNotice] = useState(null);
+  const [notice, setNotice] = useNotice();
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState(() => new Set());
   const [target, setTarget] = useState(NEW_SPRINT);

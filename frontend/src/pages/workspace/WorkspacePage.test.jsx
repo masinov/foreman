@@ -125,7 +125,7 @@ describe("WorkspacePage", () => {
     routes["POST /api/v1/tasks/task-merge/approve"] = () => {
       // After approval the task no longer waits.
       Object.assign(routes, workspaceRoutes({ withGateTask: false }));
-      return { status: "approved", message: "Decision recorded. The engine continues from `merge`." };
+      return { status: "approved", next_step: "merge", engine_resident: true, message: "ignored" };
     };
     const fetchImpl = createFakeFetch(routes);
     renderApp("/dashboard", fetchImpl);
@@ -137,7 +137,7 @@ describe("WorkspacePage", () => {
     expect(fetchImpl.calls.some((call) => call.method === "POST" && call.url === "/api/v1/tasks/task-merge/approve")).toBe(true);
     // The projects table's counts are reloaded too.
     await waitFor(() => expect(fetchImpl.calls.filter((call) => call.url === "/api/v1/workspace")).toHaveLength(2));
-    expect(screen.getByRole("status")).toHaveTextContent("Decision recorded. The engine continues from `merge`.");
+    expect(screen.getByRole("status")).toHaveTextContent("Approved FOR-14. Foreman goes on with Merge.");
   });
 
   it("shows an approval the API refused as a sentence", async () => {

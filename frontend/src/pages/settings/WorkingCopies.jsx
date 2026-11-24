@@ -11,6 +11,7 @@ import { Mono } from "../../ui/Mono";
 import { SectionHeading } from "../../ui/SectionHeading";
 import { Table } from "../../ui/Table";
 import { humanize, plural } from "../../ui/format";
+import { useNotice } from "../../ui/Toast";
 
 // A task that is finished one way or another no longer needs its copy.
 const FINISHED = new Set(["done", "cancelled", "declined"]);
@@ -49,7 +50,7 @@ export function WorkingCopies({ projectId }) {
     listWorkingCopies(apiClient, projectId, options),
   );
   const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState(null);
+  const [notice, setNotice] = useNotice();
 
   async function removeUnused() {
     setBusy(true);
@@ -96,7 +97,7 @@ export function WorkingCopies({ projectId }) {
         </p>
       ) : null}
       {notice ? (
-        <p className={notice.error ? "notice notice--error" : "notice"} role={notice.error ? "alert" : "status"}>
+        <p className="notice notice--error" role="alert">
           {notice.text}
         </p>
       ) : null}

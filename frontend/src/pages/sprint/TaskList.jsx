@@ -18,8 +18,9 @@ export function TaskList({ tasks, engine, busy, onApprove }) {
       header: "Status",
       className: "task-list__stage",
       render: (task) => {
-        const { tone, word } = stageOf(task, engine);
-        return <StatusDot tone={tone}>{word}</StatusDot>;
+        const { tone, word, title } = stageOf(task, engine);
+        const dot = <StatusDot tone={tone}>{word}</StatusDot>;
+        return title ? <span title={title}>{dot}</span> : dot;
       },
     },
     {

@@ -90,10 +90,7 @@ export function EngineRow({ projectId, engine, emptySprint = false, noSprint = f
         </Button>
       </div>
       {notice ? (
-        <p
-          className={notice.error ? "notice notice--error engine__notice" : "notice engine__notice"}
-          role={notice.error ? "alert" : "status"}
-        >
+        <p className="notice notice--error engine__notice" role="alert">
           {notice.text}
         </p>
       ) : null}

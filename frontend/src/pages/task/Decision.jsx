@@ -9,6 +9,7 @@ import { Link } from "../../app/router";
 import { Button } from "../../ui/Button";
 import { Surface } from "../../ui/Surface";
 import { formatDay, formatDuration, humanize } from "../../ui/format";
+import { decisionSentence, taskName } from "../shared/decisionWords";
 import { ReasonDialog } from "../shared/ReasonDialog";
 import {
   branchWords,
@@ -170,7 +171,7 @@ export function Decision({ task, checks, onDecided }) {
     setRefusal(null);
     try {
       const result = await calls.approve(client, task.id);
-      onDecided(done?.approve ?? result?.message ?? "Approved.");
+      onDecided(done?.approve ?? decisionSentence(taskName(task), result));
     } catch (error) {
       setRefusal(errorSentence(error));
     } finally {
@@ -214,7 +215,7 @@ export function Decision({ task, checks, onDecided }) {
         onClose={() => setSendingBack(false)}
         onDone={(result) => {
           setSendingBack(false);
-          onDecided(done?.sendBack ?? result?.message ?? "Sent back.");
+          onDecided(done?.sendBack ?? decisionSentence(taskName(task), result, { sentBack: true }));
         }}
       />
     </Surface>

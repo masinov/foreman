@@ -8,6 +8,7 @@ import { FOREMAN, outcomeTone, outcomeWord, runResult, runRole, runTook, SENT_BA
 const HUMAN_GATE = "_builtin:human_gate";
 const MARK_DONE = "_builtin:mark_done";
 const TESTS = "_builtin:run_tests";
+const ORCHESTRATOR = "_builtin:orchestrator";
 const BUILTIN = "_builtin:";
 
 /** The kinds of decision a task can wait for (design README, "Needs you"). */
@@ -94,6 +95,35 @@ function runTime(run) {
 }
 
 /**
+ * Why the task is at a step it was sent back to, in the words Activity uses
+ * for those outcomes, or "" when it got here by moving forward. The run that
+ * sent it back is the latest one, and it ran at another step: "Sent back:
+ * merge conflict", "Sent back by review", "Tests failed".
+ */
+function sentBackWhy(runs, stepId) {
+  const latest = [...runs].filter((run) => run.workflow_step && run.role_id !== ORCHESTRATOR).pop();
+  if (!latest || latest.workflow_step === stepId) return "";
+  const outcome = String(latest.outcome || "").toLowerCase();
+  if (outcome === "conflict") return "Sent back: merge conflict";
+  if (SENT_BACK.has(outcome)) return latest.role_id === HUMAN_GATE ? "Sent back by a user" : "Sent back by review";
+  if (latest.role_id === TESTS && outcomeTone(outcome) === "failed") return "Tests failed";
+  return "";
+}
+
+const lowerFirst = (text) => text.charAt(0).toLowerCase() + text.slice(1);
+
+/**
+ * How many times a step was attempted. A gate asks a user (a run that
+ * pauses) and is decided (a run that approves or sends back): that is one
+ * attempt, not two, so the larger of the two counts.
+ */
+function attemptsOf(step, mine) {
+  if (step.role !== HUMAN_GATE) return mine.length;
+  const asked = mine.filter((run) => String(run.outcome || "").toLowerCase() === "paused").length;
+  return Math.max(asked, mine.length - asked);
+}
+
+/**
  * The steps table on Overview: one row per step of the workflow (the step
  * that only marks a task done is left out), from the task's runs.
  * `[{ id, label, result: { tone, word }, by, runs }]`.
@@ -111,12 +141,22 @@ export function stepRows(task, workflow, engine = null) {
     } else if (here && task.status === "blocked") {
       result = { tone: "attention", word: "Blocked here" };
     } else if (here && task.status === "in_progress") {
-      // Running only while the project's engine is on this task; a task left
-      // part-way is stopped at its step (the same rule as the task's stage).
+      // Running only while the project's engine is on this task. Otherwise it
+      // waits for its turn, unless no engine runs (the same rule as the
+      // task's stage).
       const onIt = engine?.task_id === task.id;
+      const why = sentBackWhy(runs, step.id);
+      let word;
       if (onIt && engine.state === ENGINE_STATES.running) result = { tone: "running", word: "Running" };
-      else if (onIt && engine.state === ENGINE_STATES.paused) result = { tone: "idle", word: "Paused here" };
-      else result = { tone: "idle", word: "Stopped here" };
+      else {
+        if (task.run_next) word = "Runs next";
+        else if (engine?.state === ENGINE_STATES.paused) word = "Paused here";
+        else if (engine?.state === ENGINE_STATES.running) word = "Waiting here";
+        else word = "Stopped here";
+        const after = engine?.task_key || engine?.task_id;
+        const title = !task.run_next && word === "Waiting here" && after ? `The engine runs it after ${after}` : "";
+        result = { tone: "idle", word: why ? `${word} · ${lowerFirst(why)}` : word, title };
+      }
     } else if (last && stepOutcome(last).word === "Approved by setting") {
       // No one looked: the project's setting decided, as its Activity row says.
       result = stepOutcome(last);
@@ -147,7 +187,7 @@ export function stepRows(task, workflow, engine = null) {
     let by = who.text;
     if (!by && step.role === HUMAN_GATE) by = "a user";
     if (!by && step.role.startsWith(BUILTIN)) by = FOREMAN;
-    return { id: step.id, label: humanize(step.id), result, by, byTitle: who.title, runs: mine.length };
+    return { id: step.id, label: humanize(step.id), result, by, byTitle: who.title, runs: attemptsOf(step, mine) };
   });
 }
 

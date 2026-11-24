@@ -34,8 +34,11 @@ function atStep(status, task) {
  * `{ tone, word, group }` for a task: its status, and where it is under way
  * the step it is at (owner, 2026-11-24: the list's column is its Status). A task part-way through its workflow
  * is "Running" only while the project's engine is on it; `engine` is the
- * project's engine from the workspace. With the engine paused, stopped or on
- * another task it is stopped at its step, and says so.
+ * project's engine from the workspace. A task a person asked to run next
+ * says "Runs next" until the engine starts it. Otherwise, with the engine
+ * paused it is "Paused"; with the engine running on another task it is
+ * "Waiting" for its turn (and `title` says after which task); and it is
+ * "Stopped" only where no engine runs.
  */
 export function stageOf(task, engine = null) {
   if (task.status === "blocked") {
@@ -65,8 +68,18 @@ export function stageOf(task, engine = null) {
     if (onIt && engine.state === ENGINE_STATES.running) {
       return { tone: "running", word: atStep("Running", task), group: GROUPS.running };
     }
-    if (onIt && engine.state === ENGINE_STATES.paused) {
+    if (task.run_next) return { tone: "idle", word: atStep("Runs next", task), group: GROUPS.running };
+    if (engine?.state === ENGINE_STATES.paused) {
       return { tone: "idle", word: atStep("Paused", task), group: GROUPS.running };
+    }
+    if (engine?.state === ENGINE_STATES.running) {
+      const after = engine.task_key || engine.task_id;
+      return {
+        tone: "idle",
+        word: atStep("Waiting", task),
+        title: after ? `The engine runs it after ${after}` : "",
+        group: GROUPS.running,
+      };
     }
     return { tone: "idle", word: atStep("Stopped", task), group: GROUPS.running };
   }
@@ -74,6 +87,7 @@ export function stageOf(task, engine = null) {
   if (task.status === "cancelled") return { tone: "idle", word: "Cancelled", group: GROUPS.finished };
   // In the backlog nothing is queued: it runs once it is in a sprint.
   if (task.in_backlog) return { tone: "idle", word: "In the backlog", group: GROUPS.queued };
+  if (task.run_next) return { tone: "idle", word: "Runs next", group: GROUPS.queued };
   return { tone: "idle", word: "Queued", group: GROUPS.queued };
 }
 

@@ -23,6 +23,7 @@ const PATHS = {
   stop: <rect x="4.25" y="4.25" width="7.5" height="7.5" rx="1" />,
   plus: <path d="M8 3.5v9M3.5 8h9" />,
   check: <path d="M3.5 8.5l3 3 6-7" />,
+  close: <path d="M4 4l8 8M12 4l-8 8" />,
   branch: (
     <>
       <circle cx="4.5" cy="3.75" r="1.5" />

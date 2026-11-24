@@ -178,7 +178,7 @@ describe("the task page header", () => {
 describe("the decision", () => {
   it("asks to approve the merge with the facts, and approving calls approve and reloads", async () => {
     const routes = taskRoutes();
-    routes[post("approve")] = { status: "approved", message: "Decision recorded. The engine continues from `merge`." };
+    routes[post("approve")] = { status: "approved", next_step: "merge", engine_resident: true, message: "ignored" };
     const { fetchImpl } = await renderTask(BASE, routes);
     const region = await screen.findByRole("region", { name: "Approve the merge into main?" });
     await waitFor(() => expect(region).toHaveTextContent("Tests passed in 1 min 54 s at b232eb1"));
@@ -188,14 +188,14 @@ describe("the decision", () => {
     const approve = within(region).getByRole("button", { name: "Approve merge" });
     expect(approve).toHaveClass("button--gold");
     fireEvent.click(approve);
-    expect(await screen.findByText("Decision recorded. The engine continues from `merge`.")).toBeInTheDocument();
+    expect(await screen.findByRole("status")).toHaveTextContent("Approved FOR-14. Foreman goes on with Merge.");
     expect(postCalls(fetchImpl, "approve")).toHaveLength(1);
     await waitFor(() => expect(taskReads(fetchImpl)).toBeGreaterThan(before));
   });
 
   it("sends back with guidance through deny, and needs the guidance", async () => {
     const routes = taskRoutes();
-    routes[post("deny")] = { status: "denied", message: "Decision recorded." };
+    routes[post("deny")] = { status: "denied", next_step: "develop", engine_resident: true, message: "ignored" };
     const { fetchImpl } = await renderTask(BASE, routes);
     const region = await screen.findByRole("region", { name: "Approve the merge into main?" });
     fireEvent.click(within(region).getByRole("button", { name: "Send back" }));
@@ -205,7 +205,7 @@ describe("the decision", () => {
     expect(postCalls(fetchImpl, "deny")).toHaveLength(0);
     fireEvent.change(within(dialog).getByLabelText("Guidance for the agent"), { target: { value: "Count skipped tests." } });
     fireEvent.click(within(dialog).getByRole("button", { name: "Send back" }));
-    expect(await screen.findByText("Decision recorded.")).toBeInTheDocument();
+    expect(await screen.findByRole("status")).toHaveTextContent("Sent FOR-14 back to Develop.");
     expect(postCalls(fetchImpl, "deny")[0].body).toEqual({ note: "Count skipped tests." });
   });
 
@@ -225,13 +225,13 @@ describe("the decision", () => {
       runs: [run("run-1", "plan", { outcome: "done", duration_ms: 12000 })],
     });
     const routes = taskRoutes({ task });
-    routes[post("approve")] = { status: "approved", message: "Decision recorded." };
+    routes[post("approve")] = { status: "approved", next_step: "develop", engine_resident: false, message: "ignored" };
     const { fetchImpl } = await renderTask(BASE, routes);
     const region = await screen.findByRole("region", { name: "Approve this plan?" });
     expect(region).toHaveTextContent("Plan: done by sonnet-5-5 in 12 s");
     expect(within(region).getByRole("link", { name: "Read its output under Activity" })).toHaveAttribute("href", `${BASE}/activity`);
     fireEvent.click(within(region).getByRole("button", { name: "Approve plan" }));
-    await screen.findByText("Decision recorded.");
+    expect(await screen.findByRole("status")).toHaveTextContent("Approved FOR-14. It waits at Develop until the engine is started.");
     expect(postCalls(fetchImpl, "approve")).toHaveLength(1);
   });
 
@@ -377,6 +377,86 @@ describe("a task left part-way", () => {
     expect(await stepWords("running", true)).toBe("Running");
     expect(await stepWords("paused", true)).toBe("Paused here");
     expect(await stepWords("not_running", false)).toBe("Stopped here");
+  });
+});
+
+describe("a task that waits, and one asked to run next", () => {
+  const OTHER = { id: "t-other", task_key: "FOR-53", title: "x", step: "test" };
+  const at = (minute) => `2026-11-11T10:0${minute}:00Z`;
+
+  /** Render the task in progress at `develop`, with the engine in `state` on another task or none. */
+  async function render(fields, state, other = OTHER) {
+    const routes = taskRoutes({
+      task: taskDetail({
+        status: "in_progress",
+        workflow_current_step: "develop",
+        awaiting_human_gate: false,
+        gate_policy: null,
+        blocked_kind: null,
+        ...fields,
+      }),
+    });
+    const workspace = workspacePayload();
+    workspace.projects[0].engine = engine(state, other);
+    routes["GET /api/v1/workspace"] = workspace;
+    await renderTask(BASE, routes);
+    await engineKnown();
+    const row = within(await screen.findByRole("table", { name: "Steps" })).getByText("Develop").closest("tr");
+    return row.querySelectorAll("td");
+  }
+
+  it("is waiting its turn, not stopped, while the engine runs another task", async () => {
+    const cells = await render({}, "running");
+    expect(cells[1]).toHaveTextContent("Waiting here");
+    expect(cells[1].querySelector("span")).toHaveAttribute("title", "The engine runs it after FOR-53");
+    const status = screen.getByText("Status").nextElementSibling;
+    expect(status).toHaveTextContent("Waiting · Develop");
+    expect(status.querySelector("[title]")).toHaveAttribute("title", "The engine runs it after FOR-53");
+  });
+
+  it("is stopped only where no engine runs, and paused while the engine is paused", async () => {
+    expect((await render({}, "not_running", null))[1]).toHaveTextContent("Stopped here");
+    expect(screen.getByText("Status").nextElementSibling).toHaveTextContent("Stopped · Develop");
+  });
+
+  it("says Runs next in place of the Run next button until the engine starts it", async () => {
+    const cells = await render({ run_next: true }, "running");
+    expect(cells[1]).toHaveTextContent("Runs next");
+    expect(screen.getByText("Status").nextElementSibling).toHaveTextContent("Runs next · Develop");
+    expect(screen.queryByRole("button", { name: "Run next" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Runs next" })).toBeDisabled();
+  });
+
+  it("offers Run next while nothing is asked", async () => {
+    await render({ run_next: false }, "running");
+    expect(screen.getByRole("button", { name: "Run next" })).toBeEnabled();
+  });
+
+  it.each([
+    ["a merge conflict", [run("r1", "merge", { role_id: "_builtin:merge", outcome: "conflict", started_at: at(1) })], "Waiting here · sent back: merge conflict"],
+    ["a review's steer", [run("r1", "review", { role_id: "code_reviewer", outcome: "steer", started_at: at(1) })], "Waiting here · sent back by review"],
+    ["a failed test", [run("r1", "test", { outcome: "fail", started_at: at(1) })], "Waiting here · tests failed"],
+  ])("says why the step was returned to after %s", async (_, runs, words) => {
+    expect((await render({ runs }, "running"))[1]).toHaveTextContent(words);
+  });
+
+  it("says nothing of a send-back once the step has run again", async () => {
+    const runs = [
+      run("r1", "review", { role_id: "code_reviewer", outcome: "steer", started_at: at(1) }),
+      run("r2", "develop", { started_at: at(2) }),
+    ];
+    expect((await render({ runs }, "running"))[1].textContent).toBe("Waiting here");
+  });
+
+  it("counts a gate's pause and its decision as one attempt", async () => {
+    const gate = { role_id: "_builtin:human_gate", agent_backend: "builtin" };
+    const runs = [
+      run("r1", "merge_approval", { ...gate, outcome: "paused", started_at: at(1) }),
+      run("r2", "merge_approval", { ...gate, outcome: "approve", started_at: at(2) }),
+    ];
+    await render({ status: "done", workflow_current_step: "done", runs }, "not_running", null);
+    const row = within(await screen.findByRole("table", { name: "Steps" })).getByText("Merge approval").closest("tr");
+    expect(row.querySelectorAll("td")[3]).toHaveTextContent(/^1$/);
   });
 });
 
@@ -756,7 +836,7 @@ describe("Overrides for this task", () => {
       },
     });
     await waitFor(() => expect(taskReads(fetchImpl)).toBeGreaterThan(1));
-    expect(await within(section).findByRole("status")).toHaveTextContent("Saved.");
+    expect(await screen.findByRole("status")).toHaveTextContent("Saved.");
   });
 
   it("clears what was set, in the older gates form too", async () => {
@@ -1591,7 +1671,7 @@ describe("The agent's side bar", () => {
     expect(await within(box).findByRole("alert")).toHaveTextContent("Write what to tell it first.");
     fireEvent.change(within(box).getByRole("textbox", { name: "Tell the agent" }), { target: { value: "Count skipped tests." } });
     fireEvent.click(within(box).getByRole("button", { name: "Save for the developer" }));
-    expect(await within(box).findByRole("status")).toHaveTextContent("The next agent step for this task will read it.");
+    expect(await screen.findByRole("status")).toHaveTextContent("The next agent step for this task will read it.");
     expect(calls(fetchImpl, "POST", `/api/v1/tasks/${TASK_ID}/messages`)[0].body).toEqual({ text: "Count skipped tests." });
   });
 
@@ -1652,7 +1732,7 @@ describe("The agent's side bar", () => {
 
     await waitFor(() => expect(calls(fetchImpl, "POST", `/api/v1/tasks/${TASK_ID}/steer`)).toHaveLength(1));
     expect(calls(fetchImpl, "POST", `/api/v1/tasks/${TASK_ID}/steer`)[0].body).toEqual({ text: "Use the existing parser." });
-    expect(await within(box).findByRole("status")).toHaveTextContent("is being interrupted and starts again");
+    expect(await screen.findByRole("status")).toHaveTextContent("is being interrupted and starts again");
     expect(within(box).getByRole("textbox")).toHaveValue("");
   });
 

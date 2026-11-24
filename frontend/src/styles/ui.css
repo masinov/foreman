@@ -893,3 +893,66 @@ select.field__input {
   font-size: var(--font-size-body, inherit);
   font-weight: normal;
 }
+
+/* The toast: a passing confirmation, the same corner on every page. Fixed, so
+   it never moves the page's content. The bottom left is clear of the manager
+   side bar, which takes the right. */
+.toast-region {
+  position: fixed;
+  inset-inline: var(--page-gutter);
+  bottom: var(--space-4);
+  z-index: var(--layer-toast);
+  display: flex;
+  justify-content: flex-start;
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  max-width: 420px;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-selected);
+  border: var(--line-width) solid var(--color-border-control);
+  border-radius: var(--radius);
+  color: var(--color-text);
+  pointer-events: auto;
+}
+
+.toast__text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.toast__close {
+  flex: none;
+  display: inline-flex;
+  padding: var(--space-1);
+  background: none;
+  border: 0;
+  border-radius: var(--radius);
+  color: var(--color-text-quiet);
+  cursor: pointer;
+}
+
+.toast__close:hover {
+  color: var(--color-text);
+}
+
+/* Phone width: across the bottom, inside the gutter. Where the manager side
+   bar covers the page it is lifted above the bar's composer. */
+@media (max-width: 640px) {
+  .toast-region {
+    inset-inline: var(--page-gutter-narrow);
+  }
+
+  .toast {
+    max-width: none;
+    width: 100%;
+  }
+
+  body:has(.manager-slot[data-open="true"]) .toast-region {
+    bottom: calc(var(--space-4) + var(--toast-manager-clearance));
+  }
+}

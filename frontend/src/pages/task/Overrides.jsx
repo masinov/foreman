@@ -7,6 +7,7 @@ import { setTaskOverrides } from "../../api/tasks";
 import { useResource } from "../../api/useResource";
 import { Button } from "../../ui/Button";
 import { SectionHeading } from "../../ui/SectionHeading";
+import { useNotice } from "../../ui/Toast";
 import {
   applyOverrides,
   currentGateOverride,
@@ -82,7 +83,7 @@ export function Overrides({ task, workflow, onSaved }) {
   const [gateValues, setGateValues] = useState(startGates);
   const [modelValues, setModelValues] = useState(startModels);
   const [saving, setSaving] = useState(false);
-  const [notice, setNotice] = useState(null);
+  const [notice, setNotice] = useNotice();
 
   // Start from what the task has; again only when what it has changed. Done
   // while rendering, not in an effect, so it cannot land on top of an edit
@@ -138,7 +139,7 @@ export function Overrides({ task, workflow, onSaved }) {
             {saving ? "Saving…" : "Save overrides"}
           </Button>
           {notice ? (
-            <span className={notice.error ? "notice notice--error" : "notice"} role={notice.error ? "alert" : "status"}>
+            <span className="notice notice--error" role="alert">
               {notice.text}
             </span>
           ) : null}
