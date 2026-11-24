@@ -6,12 +6,9 @@ import argparse
 import sys
 from pathlib import Path
 
-from ..definitions.roles import RoleLoadError, default_roles_dir, load_roles
-from ..definitions.workflows import (
-    WorkflowLoadError,
-    default_workflows_dir,
-    load_workflows,
-)
+from ..definitions.layers import project_definitions, workspace_definitions
+from ..definitions.roles import RoleLoadError
+from ..definitions.workflows import WorkflowLoadError
 from ..domain.models import Project
 from ..domain.policy import POLICY_DECISIONS, PolicyMatrix
 from ..domain.settings import settings_of
@@ -44,7 +41,6 @@ from .common import (
     print_lines,
     resolve_db_path_or_print,
     resolve_project_or_print,
-    role_outcomes,
     set_handler,
 )
 
@@ -52,27 +48,32 @@ from .common import (
 def handle_init(args: argparse.Namespace) -> int:
     """Handle ``foreman init``."""
 
-    roles_dir = default_roles_dir()
-    workflows_dir = default_workflows_dir()
     repo_path = Path(args.repo_path).expanduser().resolve()
     db_path = resolve_db_path_or_print(args.db, repo_path=repo_path)
     if db_path is None:
         return 1
     try:
-        roles = load_roles(roles_dir)
-        workflows = load_workflows(
-            workflows_dir,
-            available_role_ids=set(roles),
-            role_outcomes=role_outcomes(roles),
-        )
         spec_reference, _ = resolve_spec_path(repo_path, args.spec)
-    except (RoleLoadError, WorkflowLoadError, ScaffoldError) as exc:
+    except ScaffoldError as exc:
         print(f"Failed to initialize project: {exc}", file=sys.stderr)
         return 1
 
     with ForemanStore(db_path) as store:
         store.initialize()
         existing = store.find_project_by_repo_path(str(repo_path))
+        # The roles and workflows the project will run with (ADR-0024): its
+        # own over the workspace's over the shipped ones. A project not yet
+        # registered runs with the workspace's.
+        try:
+            definitions = (
+                workspace_definitions(store)
+                if existing is None
+                else project_definitions(store, existing.id)
+            )
+        except (RoleLoadError, WorkflowLoadError) as exc:
+            print(f"Failed to initialize project: {exc}", file=sys.stderr)
+            return 1
+        workflows = definitions.workflows
         workflow_id = args.workflow or (
             existing.workflow_id if existing is not None else DEFAULT_WORKFLOW_ID
         )

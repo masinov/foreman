@@ -324,6 +324,59 @@ Base work that this framing makes necessary:
      exception (owner, 2026-11-23).
    - **The order:** one design reference for the whole set comes first,
      then one view at a time, each from a mockup.
+7. **How a project's repository is organised (owner, 2026-11-24).** Which
+   documents a project keeps, where each lives, and who writes it when. This
+   is for Foreman's own repository and, through `foreman init`, for every
+   project it runs. The aims, in the owner's words:
+   - standard, and good practice;
+   - useful for robust development;
+   - easy for agents to navigate, easy for users to find things in, and
+     auditable;
+   - without frictions and collisions.
+
+   "Keep things tidy for now. Discussing the organization of the work
+   requires care and online research." Nothing is decided yet.
+   - **First raised** as finding 23 of the sprint 54 run
+     (`docs/reviews/sprint-54-live-run-notes.md`, 2026-09-08), "major
+     (structural)": the shared files every branch edits at the top collide
+     whenever two branches overlap. It was not carried into this backlog
+     then, and was raised again on 2026-11-24.
+   - **The facts, 2026-11-24.** Merges, of the last 300, that touched each
+     file:
+     - `CHANGELOG.md` (one 140 KB file): 216;
+     - `docs/STATUS.md`: 130;
+     - `docs/sprints/current.md`: 130;
+     - `docs/ARCHITECTURE.md` (986 lines): 88;
+     - `docs/MANUAL.md` (2,015 lines): 73;
+     - `docs/sprints/backlog.md`: 66;
+     - the ADR index: 24.
+
+     Folder sizes: `docs/prs/` 314 files (2.6 MB),
+     `docs/sprints/archive/` 50, `docs/checkpoints/` 26.
+
+     Two branches can both take the next ADR number. In sprint 62, FOR-50
+     and FOR-52 each went back to develop once because of these files: a
+     develop pass, a test run and a second approval each.
+   - **A first sketch** (Claude, 2026-11-24; a starting point for the
+     research, not a decision):
+     - each fact has one home: what Foreman's database holds (sprints,
+       backlog, status, what each task did) is not kept by hand in
+       markdown, and any markdown copy is generated;
+     - a task's branch touches only files about its own change;
+     - logs are one file per entry: changelog fragments gathered at
+       release, ADR numbers given at merge with a generated index;
+     - `docs/prs/` becomes the task's own record;
+     - the manual and the architecture split by topic;
+     - `foreman init` sets the standard up.
+   - **To research before deciding:**
+     - how established projects and agent-driven repositories organise
+       docs and agent instructions (AGENTS.md conventions, docs-as-code,
+       Diátaxis);
+     - changelog fragments (towncrier, changesets, scriv);
+     - ADR practice (MADR, numbering at merge, generated indexes);
+     - what auditors and users expect to find, and where;
+     - what is regenerated, and when it is written (sprint finish,
+       release).
 
 
 ## Left to finish the current product (checked against the code, 2026-11-23)
@@ -340,8 +393,9 @@ here.
   tagged, with a note where the project asks for one.
 - **Who finishes a sprint** (`autonomy_level`, ADR-0025) has no control in
   the dashboard; it is set from a terminal.
-- **`foreman init` and Settings › Runners read the shipped roles and
-  workflows only**, not the workspace's or the project's own (ADR-0024).
+- (Done in sprint 62, slice 6.) `foreman init` and Settings › Runners
+  read the shipped roles and workflows only, not the workspace's or the
+  project's own (ADR-0024).
 - **"This machine" settings are read-only on the page.** That covers the
   working copies, their set-up command, linked paths, context folder, push
   remote and extra variables. The page names the `foreman config` command.

@@ -31,7 +31,7 @@ def build_router(ctx: ApiContext) -> APIRouter:
 
     @router.get("/runners")
     def get_runners() -> dict[str, Any]:
-        return access.describe_runner_backends()
+        return with_store(access.describe_runner_backends)
 
     @router.get("/tokens")
     def list_tokens() -> dict[str, Any]:

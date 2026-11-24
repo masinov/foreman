@@ -14,6 +14,8 @@ from foreman import __version__
 from foreman.domain.api_tokens import hash_token_secret
 from foreman.api.app import create_dashboard_app
 from foreman.domain.models import Project
+from foreman.data import ROLES_DIR
+from foreman.definitions.layers import save_role
 from foreman.definitions.roles import load_roles
 from foreman.runner.discovery import describe_runners
 from foreman.store import ForemanStore
@@ -99,6 +101,29 @@ class RunnerTests(AccessApiCase):
                 if model
             }
             self.assertEqual(set(runner["models"]), wanted)
+
+    def test_models_are_the_ones_roles_use_with_workspace_and_project_definitions_laid_over(self) -> None:
+        def models() -> set[str]:
+            runners = self.call("GET", "/runners").json()["runners"]
+            return {model for runner in runners for model in runner["models"]}
+
+        self.assertIn("claude-haiku-5-5", models())
+        triage = (ROLES_DIR / "triage_reviewer.toml").read_text(encoding="utf-8")
+        save_role(
+            self.store, None, triage.replace("claude-haiku-5-5", "workspace-model"), changed_by="test"
+        )
+        developer = (ROLES_DIR / "developer.toml").read_text(encoding="utf-8")
+        save_role(
+            self.store,
+            "beta",
+            developer.replace('model = ""', 'model = "project-model"'),
+            changed_by="test",
+        )
+        shown = models()
+        self.assertIn("workspace-model", shown)
+        self.assertIn("project-model", shown)
+        self.assertNotIn("claude-haiku-5-5", shown)
+        self.assertIn("claude-opus-5-5", shown)
 
     def test_found_follows_the_path_lookup(self) -> None:
         role = types.SimpleNamespace(

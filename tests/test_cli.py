@@ -1766,6 +1766,69 @@ class ForemanCLISmokeTests(unittest.TestCase):
             ".foreman/\n.foreman.db\n.foreman.db-wal\n.foreman.db-shm\n",
         )
 
+    def _workflow_text(self, workflow_id: str) -> str:
+        from foreman.data import WORKFLOWS_DIR
+
+        text = (WORKFLOWS_DIR / "development.toml").read_text(encoding="utf-8")
+        return text.replace('id = "development"', f'id = "{workflow_id}"', 1)
+
+    def test_init_accepts_a_workflow_the_workspace_defines_and_keeps_it_on_a_second_run(self) -> None:
+        from foreman.definitions.layers import save_workflow
+
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        repo_path = Path(temp_dir.name) / "target-repo"
+        (repo_path / "docs").mkdir(parents=True)
+        (repo_path / "docs" / "spec.md").write_text("# Spec\n", encoding="utf-8")
+        db_path = Path(temp_dir.name) / "foreman.db"
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            save_workflow(store, None, self._workflow_text("house_flow"), changed_by="test")
+
+        args = ("init", str(repo_path), "--name", "Sample", "--spec", "docs/spec.md", "--db", str(db_path))
+        first = self.run_cli(*args, "--workflow", "house_flow")
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertIn("Workflow: house_flow", first.stdout)
+        second = self.run_cli(*args)
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertIn("Workflow: house_flow", second.stdout)
+
+    def test_init_again_keeps_a_workflow_only_the_project_defines(self) -> None:
+        from foreman.definitions.layers import save_workflow
+
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        repo_path = Path(temp_dir.name) / "target-repo"
+        (repo_path / "docs").mkdir(parents=True)
+        (repo_path / "docs" / "spec.md").write_text("# Spec\n", encoding="utf-8")
+        db_path = Path(temp_dir.name) / "foreman.db"
+        args = ("init", str(repo_path), "--name", "Sample", "--spec", "docs/spec.md", "--db", str(db_path))
+        self.assertEqual(self.run_cli(*args).returncode, 0)
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project = store.find_project_by_repo_path(str(repo_path.resolve()))
+            assert project is not None
+            save_workflow(store, project.id, self._workflow_text("own_flow"), changed_by="test")
+            project.workflow_id = "own_flow"
+            store.save_project(project)
+
+        again = self.run_cli(*args)
+        self.assertEqual(again.returncode, 0, again.stderr)
+        self.assertIn("Workflow: own_flow", again.stdout)
+
+    def test_init_refuses_an_unknown_workflow_clearly(self) -> None:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        repo_path = Path(temp_dir.name) / "target-repo"
+        (repo_path / "docs").mkdir(parents=True)
+        (repo_path / "docs" / "spec.md").write_text("# Spec\n", encoding="utf-8")
+        result = self.run_cli(
+            "init", str(repo_path), "--name", "Sample", "--spec", "docs/spec.md",
+            "--db", str(Path(temp_dir.name) / "foreman.db"), "--workflow", "nope",
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Unknown workflow: nope", result.stderr)
+
     def test_projects_command_can_read_store_with_db_path(self) -> None:
         store, db_path = self.create_store()
         project = Project(

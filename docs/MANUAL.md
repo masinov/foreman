@@ -229,7 +229,17 @@ foreman config <project-id> [--set key=value]   # read / mutate settings
 ```
 
 `--workflow` defaults to `development`; use `development_secure`,
-or `development_tiered` as needed.
+or `development_tiered` as needed, or a workflow the workspace defines. Run
+again on a project that is already registered, `foreman init` keeps the
+workflow the project has, whether it is shipped, the workspace's or the
+project's own. The workflow and its roles are checked against the roles and
+workflows that project runs with (its own over the workspace's over the
+shipped ones, ADR-0024). An unknown id fails with `Unknown workflow: <id>`.
+
+Settings › Runners (`GET /api/v1/runners`) lists, for each agent program, the
+models roles use as each project resolves them: the shipped roles with the
+workspace's and then each project's own laid over them. A model that only an
+override uses is listed; a shipped model no role uses any more is not.
 
 ### Sprints
 
