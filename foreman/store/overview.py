@@ -9,6 +9,7 @@ here is one statement, however many projects, sprints or tasks there are.
 
 from __future__ import annotations
 
+import json as _json
 from dataclasses import dataclass
 from typing import Any, Sequence
 
@@ -138,6 +139,26 @@ _MILESTONES_SQL = f"""
 """
 
 
+# A finished sprint's checkpoint (spec 6.4, ADR-0036): the sprint's own
+# record of its last completion (ADR-0037), as {tag, sha, problem}; a
+# sprint finished before tagging existed has none. Read over the milestone
+# ``m`` joined to its sprint ``s``.
+_CHECKPOINT_SQL = """
+    CASE WHEN m.kind = 'sprint_finished' THEN (
+      SELECT json_object(
+               'tag', json_extract(e.payload_json, '$.tag'),
+               'sha', json_extract(e.payload_json, '$.sha'),
+               'problem', CASE WHEN e.event_type = 'engine.checkpoint_failed'
+                               THEN json_extract(e.payload_json, '$.reason') END)
+      FROM events e
+      WHERE e.sprint_id = s.id
+        AND e.event_type IN ('engine.checkpoint', 'engine.checkpoint_failed')
+        AND json_extract(e.payload_json, '$.completed_at') = s.completed_at
+      ORDER BY e.timestamp DESC, e.rowid DESC LIMIT 1)
+    END
+"""
+
+
 @dataclass(frozen=True, slots=True)
 class MilestoneRow:
     """One milestone as the database records it, before it is described."""
@@ -153,6 +174,8 @@ class MilestoneRow:
     merged_count: int | None = None
     #: A confirmed plan's reason.
     detail: str | None = None
+    #: A finished sprint's tag: ``{tag, sha, problem}``, or None.
+    checkpoint: dict[str, Any] | None = None
 
 
 class OverviewStore(StoreBase):
@@ -493,7 +516,8 @@ class OverviewStore(StoreBase):
             WITH m AS ({_MILESTONES_SQL})
             SELECT m.kind, m.at, m.project_id, m.actor, m.ref, m.merged_count, m.detail,
                    p.name AS project_name,
-                   s.id AS sprint_id, COALESCE(s.title, m.subject) AS sprint_title
+                   s.id AS sprint_id, COALESCE(s.title, m.subject) AS sprint_title,
+                   {_CHECKPOINT_SQL} AS checkpoint_json
             FROM m
             JOIN projects p ON p.id = m.project_id
             LEFT JOIN sprints s ON s.id = m.sprint_id
@@ -512,4 +536,14 @@ def _row_to_milestone(row: Any) -> MilestoneRow:
         actor=row["actor"],
         merged_count=row["merged_count"],
         detail=row["detail"],
+        checkpoint=_checkpoint(row),
     )
+
+
+def _checkpoint(row: Any) -> dict[str, Any] | None:
+    """The finished sprint's ``{tag, sha, problem}``, where the row was read with it."""
+
+    if "checkpoint_json" not in row.keys() or not row["checkpoint_json"]:
+        return None
+    value = _json.loads(row["checkpoint_json"])
+    return value if isinstance(value, dict) else None

@@ -130,7 +130,7 @@ class TaskWorktrees:
         *,
         detail: str,
     ) -> None:
-        """Record one worktree-lifecycle event against a synthetic system run."""
+        """Record one worktree-lifecycle event on a system run of the task it is about."""
 
         run = self.records.create_system_run(
             task,

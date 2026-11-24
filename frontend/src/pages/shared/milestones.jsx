@@ -2,7 +2,7 @@ import React from "react";
 
 import { MILESTONE_KINDS } from "../../api/milestones";
 import { paths } from "../../app/paths";
-import { plural, splitTitle } from "../../ui/format";
+import { plural, shortSha, splitTitle } from "../../ui/format";
 import { ActivityTable } from "./ActivityTable";
 import { userName } from "./activityWords";
 
@@ -11,11 +11,7 @@ const K = MILESTONE_KINDS;
 // What happened, per kind: the phrase, its colour, and why when there is one.
 const EVENTS = {
   [K.sprintStarted]: () => ({ word: "Started", tone: "idle" }),
-  [K.sprintFinished]: (m) => ({
-    word: "Finished",
-    tone: "passed",
-    why: m.merged_count === null || m.merged_count === undefined ? "" : `${plural(m.merged_count, "task")} merged`,
-  }),
+  [K.sprintFinished]: (m) => finishedEvent(m),
   [K.planConfirmed]: (m) => ({ word: "Plan confirmed", tone: "idle", why: m.detail || "" }),
   [K.engineStarted]: () => ({ word: "Started", tone: "idle" }),
   [K.engineStopped]: () => ({ word: "Stopped", tone: "idle" }),
@@ -27,6 +23,24 @@ const EVENTS = {
   [K.enginePaused]: () => ({ word: "Paused", tone: "idle" }),
   [K.engineResumed]: () => ({ word: "Resumed", tone: "idle" }),
 };
+
+/**
+ * A finished sprint: "Finished", or "Finished, not tagged" when its tag could
+ * not be made (spec 6.4, ADR-0036). On hover, how many tasks it merged and its
+ * tag ("3 tasks merged, tagged checkpoint-20261120-sprint-2 at 6f79f4a") or
+ * why there is none. A sprint finished before tagging existed says only what
+ * it merged.
+ */
+function finishedEvent(m) {
+  const merged = m.merged_count === null || m.merged_count === undefined ? "" : `${plural(m.merged_count, "task")} merged`;
+  const checkpoint = m.checkpoint ?? null;
+  const said = (more) => [merged, more].filter(Boolean).join(", ");
+  if (checkpoint?.problem) {
+    return { word: "Finished, not tagged", tone: "failed", why: said(`not tagged: ${checkpoint.problem}`) };
+  }
+  const tagged = checkpoint?.tag ? `tagged ${checkpoint.tag} at ${shortSha(checkpoint.sha)}` : "";
+  return { word: "Finished", tone: "passed", why: said(tagged) };
+}
 
 const isEngine = (m) => String(m.kind).startsWith("engine_");
 

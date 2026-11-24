@@ -1,8 +1,9 @@
 """Writing what the engine did: runs, events and attention turns.
 
-``RunRecords`` is the engine's only writer of runs and events. Every event
-it saves is offered to the notifier, and a run that ends blocked raises one
-attention turn.
+``RunRecords`` is the engine's only writer of runs and events. An event
+belongs to a run of a task, to a sprint, or to the project (ADR-0037).
+Every event it saves is offered to the notifier, and a run that ends
+blocked raises one attention turn.
 """
 
 from __future__ import annotations
@@ -10,13 +11,16 @@ from __future__ import annotations
 from typing import Any
 from uuid import uuid4
 
-from ..domain.models import Event, Project, Run, Task, TokenUsage, utc_now_text
+from ..domain.models import Event, Project, Run, Sprint, Task, TokenUsage, utc_now_text
 from ..notifications.delivery import NotificationDispatcher
 from ..notifications.policy import resolve_notification_policy
 from ..store import ForemanStore
 from .logs import compact_payload, event_log_level, get_logger, log_event
 
 _LOGGER = get_logger("orchestrator")
+
+#: The role an engine record is written under, as its made-up runs were.
+ENGINE_ROLE = "_builtin:orchestrator"
 
 
 def new_id(prefix: str) -> str:
@@ -31,25 +35,6 @@ class RunRecords:
     def __init__(self, store: ForemanStore, notifier: NotificationDispatcher) -> None:
         self.store = store
         self.notifier = notifier
-
-    def select_project_system_task(self, project_id: str) -> Task | None:
-        """Choose a stable task for project-scoped synthetic orchestrator events."""
-
-        active_tasks = self.store.list_tasks(
-            project_id=project_id,
-            statuses=("in_progress", "blocked"),
-        )
-        if active_tasks:
-            return active_tasks[0]
-
-        active_sprint = self.store.get_active_sprint(project_id)
-        if active_sprint is not None:
-            sprint_tasks = self.store.list_tasks(sprint_id=active_sprint.id)
-            if sprint_tasks:
-                return sprint_tasks[0]
-
-        project_tasks = self.store.list_tasks(project_id=project_id)
-        return project_tasks[0] if project_tasks else None
 
     def session_id_from_events(self, run: Run) -> str | None:
         """Return the backend session id announced during ``run``, if any.
@@ -215,6 +200,8 @@ class RunRecords:
         role_id: str | None = None,
         timestamp: str | None = None,
     ) -> Event:
+        """Record one event of a run of a task."""
+
         event = Event(
             id=new_id("event"),
             run_id=run.id,
@@ -225,6 +212,59 @@ class RunRecords:
             role_id=role_id or run.role_id,
             payload=payload,
         )
+        return self._keep(event, step=run.workflow_step)
+
+    def emit_sprint_event(
+        self, sprint: Sprint, event_type: str, payload: dict[str, Any]
+    ) -> Event:
+        """Record one event of a sprint: it started, finished, is ready to finish, was tagged."""
+
+        event = Event(
+            id=new_id("event"),
+            run_id=None,
+            task_id=None,
+            sprint_id=sprint.id,
+            project_id=sprint.project_id,
+            event_type=event_type,
+            role_id=ENGINE_ROLE,
+            payload=payload,
+        )
+        return self._keep(event)
+
+    def emit_project_event(
+        self, project_id: str, event_type: str, payload: dict[str, Any]
+    ) -> Event:
+        """Record one event of the project: a command naming no task, a pruning."""
+
+        event = Event(
+            id=new_id("event"),
+            run_id=None,
+            task_id=None,
+            project_id=project_id,
+            event_type=event_type,
+            role_id=ENGINE_ROLE,
+            payload=payload,
+        )
+        return self._keep(event)
+
+    def emit_sprint_attention(self, sprint: Sprint, trigger: str) -> Event:
+        """Raise one attention turn about a sprint (``sprint_resolved``)."""
+
+        project = self.store.get_project(sprint.project_id)
+        return self.emit_sprint_event(
+            sprint,
+            "engine.attention_needed",
+            {
+                "trigger": trigger,
+                "task_id": None,
+                "sprint_id": sprint.id,
+                "notify": self.notification_policy(project, None),
+            },
+        )
+
+    def _keep(self, event: Event, *, step: str | None = None) -> Event:
+        """Save an event, write it to the process log and offer it to the notifier."""
+
         self.store.save_event(event)
         # Mirror every persisted event to the process log so `foreman serve`,
         # which has no terminal, can be understood from its log alone. The
@@ -238,11 +278,12 @@ class RunRecords:
             project_id=event.project_id,
             task_id=event.task_id,
             run_id=event.run_id,
-            step=run.workflow_step,
+            sprint_id=event.sprint_id,
+            step=step,
             role_id=event.role_id,
             # Nested rather than flattened: event payloads carry their own
             # ``task_id``/``run_id`` keys whose meaning differs from the row's.
-            payload=compact_payload(payload),
+            payload=compact_payload(event.payload),
         )
         # Notification is a read of the persisted event, not a second source of
         # truth: whatever the audit log says happened is what a destination is

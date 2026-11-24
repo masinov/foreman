@@ -49,4 +49,4 @@ Filename format:
 | ADR-0034 | Outcome Numbers | accepted |
 | ADR-0035 | Tests Are Counted From JUnit Reports | accepted |
 | ADR-0036 | A Finished Sprint Is Tagged | accepted |
-| ADR-0037 | A Record Belongs To A Run, A Sprint Or The Project | proposed |
+| ADR-0037 | A Record Belongs To A Run, A Sprint Or The Project | accepted |

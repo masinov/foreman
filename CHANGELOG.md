@@ -9,6 +9,13 @@ memory changes rather than versioned product releases.
 
 ### Sprint 62
 
+- A record belongs to a run, a sprint or the project (ADR-0037, sprint 62 slice 3).
+  - A sprint's records (it started, finished, is ready to finish, was tagged) and the project's (a command naming no task, a pruning) are no longer pinned to a task through a made-up run. Schema version 29 moves the old ones and deletes the 22 made-up runs in the live database.
+  - A sprint keeps its tag when its first task moves to another sprint. Its records are never pruned, and are deleted with it.
+  - An active sprint whose every task is done or cancelled says "Ready to finish" in State.
+  - The project's Activity says a finished sprint's tag on hover ("3 tasks merged, tagged checkpoint-… at 6f79f4a"), or "Finished, not tagged" with why.
+  - Spec 2.5 is amended: `run_id` and `task_id` may be empty, and `sprint_id` is added.
+
 - The sprint's head, after the owner's look (2026-11-23).
   - The Tag and Note rows are gone. State says "Finished 20 Nov at 6f79f4a", with the tag's name on hover, or "Finished 20 Nov, not tagged", with the reason on hover.
   - The goal shows as many lines as fit beside the Details, instead of always four.

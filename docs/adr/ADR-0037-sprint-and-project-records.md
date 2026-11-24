@@ -1,6 +1,6 @@
 # ADR-0037: A Record Belongs To A Run, A Sprint Or The Project
 
-- **Status:** proposed (for the owner to read before code is written)
+- **Status:** accepted (owner, 2026-11-24: "Go. I like it.")
 - **Date:** 2026-11-24
 - **Sprint:** 62, slice 3
 
@@ -29,7 +29,7 @@ This has four effects:
 - a project with no task cannot keep them at all, so they are dropped.
 
 The live database has 23 records kept this way: 11 about a sprint, and 12
-engine commands that name no task (pause, resume, shutdown). They sit on 25
+engine commands that name no task (pause, resume, shutdown). They sit on 22
 made-up runs that hold nothing else.
 
 ## Decision
@@ -67,8 +67,10 @@ made-up runs that hold nothing else.
      order. This covers the sprint's event stream and the checkpoint the
      sprint page reads.
    - The project's records are read by project.
-   - `RECORD_STEPS` and the "engine's record role" exceptions in the
-     activity reads go, as nothing is pinned to a task any more.
+   - The activity reads still leave out the engine's records about a task
+     that are not steps of it (its worktree made or removed). They no
+     longer have to hide records that belong to a sprint or the project,
+     as none are on a task any more.
 5. **Old records are moved by the migration that adds the column.** On the
    made-up runs (role `_builtin:orchestrator`, backend `orchestrator`):
    - an event of a sprint type takes the sprint from its payload's
@@ -90,15 +92,21 @@ made-up runs that hold nothing else.
 7. **The sprint says it is ready to finish.**
    - The trigger is the rule the engine uses: the sprint is active, has
      tasks, and every one is done or cancelled.
-   - Its State then reads "Ready to finish, every task done or cancelled".
-     "Finish sprint" stays the action beside the title.
+   - Its State then reads "Ready to finish", with "Every task is done or
+     cancelled." on hover; the Tasks row beside it already says so. "Finish
+     sprint" stays the action beside the title.
    - The state is read from the tasks, not from the `engine.sprint_ready`
      record, so it is true even when no engine is running.
-8. **The project's Activity shows the tag.** The "Finished" row for a
-   sprint says "3 tasks merged, tagged at 6f79f4a", with the tag's name on
-   hover. If tagging failed, it says "3 tasks merged, not tagged", with the
-   reason on hover. A sprint finished before tagging existed keeps "3 tasks
-   merged". This stays one row, because it is one moment.
+8. **The project's Activity shows the tag.** Its rows say what happened in
+   a short phrase, and the rest on hover (the owner's rule for activity).
+   - A finished sprint's row says "Finished". On hover it says "3 tasks
+     merged, tagged checkpoint-20261120-sprint-2 at 6f79f4a".
+   - If tagging failed, the row says "Finished, not tagged" in the failure
+     colour. On hover it says "3 tasks merged, not tagged:" and the reason.
+   - A sprint finished before tagging existed keeps "3 tasks merged".
+   - This stays one row, because finishing and tagging are one moment.
+   - The tag is the one of that completion. A sprint reopened and finished
+     again shows its new tag.
 
 ## Consequences
 

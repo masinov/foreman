@@ -166,19 +166,36 @@ CREATE TABLE runs (
 ```sql
 CREATE TABLE events (
     id              TEXT PRIMARY KEY,
-    run_id          TEXT NOT NULL REFERENCES runs(id),
-    task_id         TEXT NOT NULL,
+    run_id          TEXT REFERENCES runs(id),
+    task_id         TEXT,
+    sprint_id       TEXT REFERENCES sprints(id) ON DELETE CASCADE,
     project_id      TEXT NOT NULL,
     event_type      TEXT NOT NULL,
     role_id         TEXT,
     timestamp       TEXT NOT NULL,
-    payload_json    TEXT NOT NULL DEFAULT '{}'
+    payload_json    TEXT NOT NULL DEFAULT '{}',
+    CHECK ((run_id IS NULL) = (task_id IS NULL)),
+    CHECK (run_id IS NULL OR sprint_id IS NULL)
 );
 
 CREATE INDEX idx_events_run ON events(run_id, timestamp);
 CREATE INDEX idx_events_project ON events(project_id, timestamp);
 CREATE INDEX idx_events_type ON events(event_type, timestamp);
+CREATE INDEX idx_events_task ON events(task_id, timestamp);
+CREATE INDEX idx_events_sprint ON events(sprint_id, timestamp);
 ```
+
+An event belongs to one owner (amended 2026-11-24, ADR-0037):
+- **a run of a task** (`run_id` and `task_id`): most events;
+- **a sprint** (`sprint_id`, no run): `engine.sprint_started`,
+  `engine.sprint_completed`, `engine.sprint_ready`, its `sprint_resolved`
+  attention turn, `engine.checkpoint` and what a checkpoint pushes or
+  checks out;
+- **the project** (none of the three): a command that names no task, a
+  pruning.
+
+A sprint's events are its tasks' events and its own. A sprint's own
+events are never pruned, and are deleted with the sprint.
 
 Event types:
 

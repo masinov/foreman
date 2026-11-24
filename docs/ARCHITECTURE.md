@@ -135,7 +135,12 @@ Primary persisted entities:
 - sprints
 - tasks
 - runs
-- events
+- events: each belongs to a run of a task, to a sprint (it started,
+  finished, is ready to finish, was tagged) or to the project (a command
+  that names no task, a pruning), never pinned to a task it is not about
+  (ADR-0037). `RunRecords.emit_event`, `emit_sprint_event` and
+  `emit_project_event` write them; a sprint's events are its tasks' and
+  its own (`EventStore.list_sprint_events`).
 
 Committed markdown in this repository is still temporary bootstrap memory.
 Once Foreman matures, files like `docs/STATUS.md` and `docs/sprints/current.md`
@@ -493,7 +498,9 @@ bad one is a 400 `invalid_request` envelope (ADR-0019). Paged lists take
   filtered by `kind` (repeatable or comma-separated): what happened to a
   project's sprints and its engine, its own level of activity (owner,
   2026-11-21). What happened to a task is its sprint's activity.
-  - `sprint_started`, `sprint_finished` (with `merged_count`),
+  - `sprint_started`, `sprint_finished` (with `merged_count`, and
+    `checkpoint`: that completion's `{tag, sha, problem}` from the sprint's
+    own `engine.checkpoint` or `engine.checkpoint_failed`, or null),
     `plan_confirmed` (a manager proposal a person confirmed: `actor`, its
     reason in `detail`; its sprint is the one its first operation names, or
     `sprint_title` says the backlog or the new sprint it plans).
@@ -508,10 +515,11 @@ bad one is a 400 `invalid_request` envelope (ADR-0019). Paged lists take
     engine died or was killed). An actor that is only a channel
     (`dashboard`, `cli`) is shown as "a user".
 
-  Each has `kind`, `at`, project and sprint fields, `actor`, `merged_count`
-  and `detail` (null where they do not apply). No table backs them: they are
-  derived from sprint columns, proposals, completed `engine_commands` and
-  the engine lock's lease history (`foreman/store/overview.py`). The backlog
+  Each has `kind`, `at`, project and sprint fields, `actor`, `merged_count`,
+  `detail` and `checkpoint` (null where they do not apply). No table backs
+  them: they are derived from sprint columns, a sprint's checkpoint record,
+  proposals, completed `engine_commands` and the engine lock's lease
+  history (`foreman/store/overview.py`). The backlog
   is not a sprint and has no milestones.
 - `GET /projects/{id}/sprints` accepts `status` (`active`, `planned`,
   `completed`; repeatable or comma-separated), `q` (case-insensitive part of

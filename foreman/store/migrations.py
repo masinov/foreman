@@ -940,4 +940,101 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         ON engine_commands(project_id, status, requested_at);
         """,
     ),
+    (
+        29,
+        "events: a record belongs to a run, a sprint or the project (ADR-0037)",
+        """
+        -- An event of a run has run_id and task_id; an event of a sprint has
+        -- sprint_id and neither; an event of the project has none of the
+        -- three. NOT NULL cannot be dropped in place: the table is rebuilt.
+        CREATE TABLE events_v29 (
+            id              TEXT PRIMARY KEY,
+            run_id          TEXT REFERENCES runs(id),
+            task_id         TEXT,
+            sprint_id       TEXT REFERENCES sprints(id) ON DELETE CASCADE,
+            project_id      TEXT NOT NULL,
+            event_type      TEXT NOT NULL,
+            role_id         TEXT,
+            timestamp       TEXT NOT NULL,
+            payload_json    TEXT NOT NULL DEFAULT '{}',
+            CHECK ((run_id IS NULL) = (task_id IS NULL)),
+            CHECK (run_id IS NULL OR sprint_id IS NULL)
+        );
+        INSERT INTO events_v29
+            (id, run_id, task_id, sprint_id, project_id, event_type, role_id,
+             timestamp, payload_json)
+        SELECT id, run_id, task_id, NULL, project_id, event_type, role_id,
+               timestamp, payload_json
+        FROM events ORDER BY rowid;
+        DROP TABLE events;
+        ALTER TABLE events_v29 RENAME TO events;
+        CREATE INDEX IF NOT EXISTS idx_events_run ON events(run_id, timestamp);
+        CREATE INDEX IF NOT EXISTS idx_events_project ON events(project_id, timestamp);
+        CREATE INDEX IF NOT EXISTS idx_events_type ON events(event_type, timestamp);
+        CREATE INDEX IF NOT EXISTS idx_events_task ON events(task_id, timestamp);
+        CREATE INDEX IF NOT EXISTS idx_events_sprint ON events(sprint_id, timestamp);
+
+        -- Records the engine pinned to a task through a made-up run (role
+        -- _builtin:orchestrator, backend orchestrator) go to their owner:
+        -- a sprint's to the sprint its payload names (a sprint_resolved turn
+        -- names none: the sprint of the task it was pinned to; a
+        -- checkpoint's push and checkout: its checkpoint's sprint), a
+        -- project's (a command naming no task, a pruning) to the project.
+        CREATE TEMP TABLE v29_moves AS
+        SELECT e.id AS event_id, e.run_id AS run_id,
+               CASE
+                 WHEN e.event_type IN ('engine.sprint_started', 'engine.sprint_completed',
+                                       'engine.sprint_ready', 'engine.checkpoint',
+                                       'engine.checkpoint_failed')
+                   THEN json_extract(e.payload_json, '$.sprint_id')
+                 WHEN e.event_type = 'engine.attention_needed'
+                   THEN (SELECT t.sprint_id FROM tasks t WHERE t.id = e.task_id)
+                 WHEN e.event_type IN ('engine.push', 'engine.push_failed',
+                                       'engine.checkout_updated', 'engine.checkout_behind')
+                   THEN (SELECT json_extract(c.payload_json, '$.sprint_id') FROM events c
+                          WHERE c.run_id = e.run_id
+                            AND c.event_type IN ('engine.checkpoint', 'engine.checkpoint_failed')
+                          LIMIT 1)
+               END AS sprint_id
+        FROM events e JOIN runs r ON r.id = e.run_id
+        WHERE r.role_id = '_builtin:orchestrator' AND r.agent_backend = 'orchestrator'
+          AND (
+            e.event_type IN ('engine.sprint_started', 'engine.sprint_completed',
+                             'engine.sprint_ready', 'engine.checkpoint',
+                             'engine.checkpoint_failed')
+            OR (e.event_type = 'engine.attention_needed'
+                AND json_extract(e.payload_json, '$.trigger') = 'sprint_resolved')
+            OR (e.event_type IN ('engine.push', 'engine.push_failed',
+                                 'engine.checkout_updated', 'engine.checkout_behind')
+                AND EXISTS (SELECT 1 FROM events c WHERE c.run_id = e.run_id
+                             AND c.event_type IN ('engine.checkpoint',
+                                                  'engine.checkpoint_failed')))
+          );
+        -- A sprint record whose sprint is gone stays where it is.
+        DELETE FROM v29_moves WHERE sprint_id IS NULL
+            OR sprint_id NOT IN (SELECT id FROM sprints);
+        INSERT INTO v29_moves (event_id, run_id, sprint_id)
+        SELECT e.id, e.run_id, NULL
+        FROM events e JOIN runs r ON r.id = e.run_id
+        WHERE r.role_id = '_builtin:orchestrator' AND r.agent_backend = 'orchestrator'
+          AND (
+            e.event_type IN ('engine.run_pruned', 'engine.event_pruned')
+            OR (e.event_type IN ('engine.command_applied', 'engine.command_rejected')
+                AND json_extract(e.payload_json, '$.task_id') IS NULL)
+          );
+        UPDATE events
+        SET run_id = NULL, task_id = NULL,
+            sprint_id = (SELECT m.sprint_id FROM v29_moves m WHERE m.event_id = events.id)
+        WHERE id IN (SELECT event_id FROM v29_moves);
+        UPDATE events
+        SET payload_json = json_set(payload_json, '$.sprint_id', sprint_id)
+        WHERE sprint_id IS NOT NULL AND event_type = 'engine.attention_needed'
+          AND json_extract(payload_json, '$.sprint_id') IS NULL;
+        -- A made-up run left holding nothing is gone with what it held.
+        DELETE FROM runs
+        WHERE id IN (SELECT run_id FROM v29_moves)
+          AND NOT EXISTS (SELECT 1 FROM events e WHERE e.run_id = runs.id);
+        DROP TABLE v29_moves;
+        """,
+    ),
 ]

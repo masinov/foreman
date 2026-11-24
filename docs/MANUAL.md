@@ -942,9 +942,12 @@ Two related knobs:
     task is `done` or `cancelled` the sprint stays
     `active`, the pass stops with `sprint_resolved`, and one `sprint_resolved`
     attention turn (with `engine.sprint_ready`) says it is ready to be
-    finished. Later passes over the same resolved sprint add nothing; a task
-    added to it is run, and the turn is raised again once it is resolved. A
-    person finishes the sprint (dashboard "Finish sprint", `foreman sprint
+    finished. Both are the sprint's own records, not a task's (ADR-0037).
+    The sprint page's State reads "Ready to finish" from its tasks, whether
+    an engine runs or not. Later passes
+    over the same resolved sprint add nothing; a task added to it is run,
+    and the turn is raised again once it is resolved. A person finishes the
+    sprint (dashboard "Finish sprint", `foreman sprint
     complete`, or a confirmed `finish_sprint` proposal). The next planned
     sprint then waits for a person to activate it ("Activate sprint",
     `foreman sprint activate`, or Start on the engine row when no sprint is

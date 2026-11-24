@@ -33,6 +33,7 @@ def event_payload(event: Event) -> dict[str, Any]:
         "id": event.id,
         "run_id": event.run_id,
         "task_id": event.task_id,
+        "sprint_id": event.sprint_id,
         "project_id": event.project_id,
         "event_type": event.event_type,
         "timestamp": event.timestamp,

@@ -240,6 +240,8 @@ class SprintStore(StoreBase):
             self._connection.execute(
                 "DELETE FROM decision_gates WHERE sprint_id = ?", (sprint_id,)
             )
+            # The sprint's own records (ADR-0037).
+            self._connection.execute("DELETE FROM events WHERE sprint_id = ?", (sprint_id,))
             self._connection.execute("DELETE FROM sprints WHERE id = ?", (sprint_id,))
         return {"ok": "deleted"}
 

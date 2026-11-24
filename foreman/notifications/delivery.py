@@ -116,10 +116,9 @@ class NotificationDispatcher:
     def _task_for(self, event: Event) -> Task | None:
         """Return the task an event is about.
 
-        ``engine.attention_needed`` names its subject in the payload rather
-        than in the row: a sprint handoff is raised against a system run whose
-        ``task_id`` is an anchor task the notification should not claim is the
-        one needing attention.
+        ``engine.attention_needed`` names its subject in the payload: a
+        sprint's handoff is the sprint's own record and names no task
+        (ADR-0037).
         """
 
         payload = event.payload or {}

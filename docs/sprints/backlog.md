@@ -22,12 +22,11 @@ step's facts beside it, the prompt as the first line).
   main was before, and whether the branch was kept. Also "Session:
   continued from attempt 1", which today is only in the agent's command
   line.
-- **Then, engine fixes found on the way:**
-  - Records about a sprint or the engine (`engine.sprint_ready`, sprint
-    finished, engine shut down) are pinned to a task through a made-up
-    run, because every event must belong to a run and a task. Store them as
-    what they are (an ADR first), say on the sprint that it is ready to
-    finish, and list it in the project's Activity (sprint 62, slice 3).
+- **Done, engine fixes found on the way:** records about a sprint or the
+  engine are stored as the sprint's or the project's own, not pinned to a
+  task (ADR-0037, sprint 62 slice 3). Still open from it: whether the
+  sprint's own Activity tab lists its own records ("Finished, tagged …")
+  beside its tasks' work.
 
 ## The sprint page, step by step (owner, 2026-11-21)
 

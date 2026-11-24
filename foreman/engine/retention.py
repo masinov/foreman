@@ -85,18 +85,11 @@ class Retention:
         count: int,
         older_than: str,
     ) -> None:
-        """Emit a project-scoped lifecycle event for a completed pruning operation."""
+        """Record a completed pruning as the project's own event (ADR-0037)."""
 
-        task = self.records.select_project_system_task(project.id)
-        if task is None:
-            return
-        run = self.records.create_system_run(
-            task,
-            workflow_step="orchestrator",
-            outcome="success",
-            detail=f"{event_type}: {count} rows older than {older_than}.",
+        self.records.emit_project_event(
+            project.id, event_type, {"count": count, "older_than": older_than}
         )
-        self.records.emit_event(run, event_type, {"count": count, "older_than": older_than})
 
     # Keep the old name as a thin delegate so any existing call sites outside
     # this class continue to work during the transition period.

@@ -255,7 +255,9 @@ def outcome_numbers(
 
     events_by_task: dict[str, list[Event]] = defaultdict(list)
     for event in events:
-        events_by_task[event.task_id].append(event)
+        # A sprint's or the project's own records belong to no task (ADR-0037).
+        if event.task_id is not None:
+            events_by_task[event.task_id].append(event)
     runs_by_task: dict[str, list[Run]] = defaultdict(list)
     for run in runs:
         runs_by_task[run.task_id].append(run)

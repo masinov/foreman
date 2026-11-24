@@ -225,6 +225,7 @@ def _row_to_event(row: sqlite3.Row) -> Event:
         timestamp=row["timestamp"],
         role_id=row["role_id"],
         payload=_load_json_dict(row["payload_json"]),
+        sprint_id=row["sprint_id"],
     )
 
 

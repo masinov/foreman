@@ -128,6 +128,7 @@ class Service:
         return {
             "id": event.id,
             "task_id": event.task_id,
+            "sprint_id": event.sprint_id,
             "project_id": event.project_id,
             "event_type": event.event_type,
             "timestamp": event.timestamp,

@@ -291,21 +291,16 @@ class OrchestratorBase:
         detail: str = "",
         outcome: str = "success",
         workflow_step: str = "orchestrator",
-    ) -> Event | None:
-        """Record one engine-level event on a system run.
+    ) -> Event:
+        """Record one engine-level event: on the task's run when it names a task.
 
-        Anchors on ``task_id`` when the event is about a task and on the
-        project's system task otherwise, because an event row needs a run and a
-        run needs a task. Returns None when the project has no task at all to
-        anchor to — a real situation on an empty project, and not worth failing
-        a command over.
+        An event about a task is kept on a system run of that task, at its
+        current step. One that names no task is the project's own (ADR-0037).
         """
 
         task = self.store.get_task(task_id) if task_id else None
         if task is None:
-            task = self.records.select_project_system_task(project_id)
-        if task is None:
-            return None
+            return self.records.emit_project_event(project_id, event_type, payload)
         run = self.records.create_system_run(
             task,
             workflow_step=task.workflow_current_step or workflow_step,
