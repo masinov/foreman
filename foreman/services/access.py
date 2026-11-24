@@ -15,7 +15,9 @@ import os
 from typing import Any
 
 from .. import __version__
-from ..definitions.roles import RoleLoadError, load_roles
+from ..definitions.layers import project_definitions, workspace_definitions
+from ..definitions.roles import RoleLoadError
+from ..definitions.workflows import WorkflowLoadError
 from ..domain.api_tokens import API_TOKEN_SCOPES, ApiTokenError
 from ..domain.models import ApiToken, NotificationDestination
 from ..notifications.destinations import (
@@ -66,15 +68,21 @@ def describe_machine(*, db_path: str, address: str) -> dict[str, Any]:
     }
 
 
-def describe_runner_backends() -> dict[str, Any]:
-    """The agent backends found on this machine and the models roles ask for."""
+def describe_runner_backends(store: ForemanStore) -> dict[str, Any]:
+    """The agent backends found on this machine and the models roles ask for.
 
+    The roles are the ones each project runs with (ADR-0024): the shipped
+    roles with the workspace's and then the project's own laid over them,
+    read through the definitions layer the engine uses.
+    """
 
     try:
-        roles = load_roles()
-    except RoleLoadError as exc:
+        roles = list(workspace_definitions(store).roles.values())
+        for project in store.list_projects():
+            roles.extend(project_definitions(store, project.id).roles.values())
+    except (RoleLoadError, WorkflowLoadError) as exc:
         raise InvalidRequestError(f"The roles could not be loaded: {exc}") from exc
-    return {"runners": describe_runners(roles.values())}
+    return {"runners": describe_runners(roles)}
 
 
 # ── API tokens ───────────────────────────────────────────────────────────

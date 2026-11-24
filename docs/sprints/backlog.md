@@ -340,8 +340,9 @@ here.
   tagged, with a note where the project asks for one.
 - **Who finishes a sprint** (`autonomy_level`, ADR-0025) has no control in
   the dashboard; it is set from a terminal.
-- **`foreman init` and Settings › Runners read the shipped roles and
-  workflows only**, not the workspace's or the project's own (ADR-0024).
+- (Done in sprint 62, slice 6.) `foreman init` and Settings › Runners
+  read the shipped roles and workflows only, not the workspace's or the
+  project's own (ADR-0024).
 - **"This machine" settings are read-only on the page.** That covers the
   working copies, their set-up command, linked paths, context folder, push
   remote and extra variables. The page names the `foreman config` command.
