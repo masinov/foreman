@@ -236,6 +236,9 @@ class SprintService(Service):
         sprint = self.store.get_sprint(sprint_id)
         project = self.store.get_project(sprint.project_id) if sprint else None
         gates = self._gate_steps(project)
+        run_next = (
+            self.store.run_requested_task_ids(sprint.project_id) if sprint else set()
+        )
         result = []
         for task in self.store.list_tasks(sprint_id=sprint_id):
             metrics = task_totals.get(task.id, {})
@@ -247,6 +250,8 @@ class SprintService(Service):
                     "task_key": task.task_key,
                     "title": task.title,
                     "status": task.status,
+                    # A "Run next" the engine has not started yet.
+                    "run_next": task.id in run_next,
                     "task_type": task.task_type,
                     "priority": task.priority,
                     "branch_name": task.branch_name,
