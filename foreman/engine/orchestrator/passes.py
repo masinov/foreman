@@ -1,10 +1,15 @@
-"""A project pass: the next task, approved merges, the commands read between tasks.
+"""A project pass: the next task, one at a time, and the commands read between tasks.
+
+The engine runs one task at a time (ADR-0039). A task waiting for a user's
+decision at a gate holds the queue: no other task starts until it is
+decided, and then it is carried on before anything else. So every task
+starts from the default branch as the last one left it, and two tasks'
+branches never overlap in time.
 """
 
 from __future__ import annotations
 
-import time
-
+from ...definitions.gate_steps import blocked_kind, workflow_gate_steps
 from ...definitions.workflows import (
     WorkflowDefinition,
 )
@@ -27,12 +32,7 @@ from ..results import (
     ProjectRunResult,
     quota_run_result,
 )
-from .base import _LOGGER, OrchestratorBase
-
-#: The steps a running step may carry out for another task: both are quick
-#: and work in the integration tree.
-MERGE_STEP_ROLES = frozenset({"_builtin:merge", "_builtin:mark_done"})
-
+from .base import OrchestratorBase
 
 class ProjectPass(OrchestratorBase):
     """Running a project pass."""
@@ -47,68 +47,8 @@ class ProjectPass(OrchestratorBase):
         silently ignored.
         """
 
-        if self._carrying_out_merges:
-            # A merge being carried out for another task takes seconds; a
-            # command is heard at the running step's next tick.
-            return
         if self.command_poll is not None:
             self.command_poll(task_id)
-        self._carry_out_approved_merges(task_id)
-
-    def _carry_out_approved_merges(self, running_task_id: str) -> None:
-        """Merge other tasks whose merge a person has approved, now.
-
-        Called from the running step's command poll, so before each step and
-        on every tick of an agent step. An approval made while the engine is
-        busy leaves its task waiting at the merge step; without this it
-        waited until the task in hand had finished or parked, which can be
-        the length of a develop step. Only the merge and mark-done steps are
-        run here: they are quick and work in the integration tree, not in
-        the running task's. A merge that fails or conflicts leaves its task
-        at the step the workflow sends it to, for the queue.
-        """
-
-        now = time.monotonic()
-        last = self._last_approved_merge_check
-        if last is not None and now - last < self.approved_merge_check_seconds:
-            return
-        self._last_approved_merge_check = now
-
-        running = self.store.get_task(running_task_id)
-        project = self.store.get_project(running.project_id) if running else None
-        if project is None:
-            return
-        workflow = self.workflows.get(project.workflow_id)
-        if workflow is None:
-            return
-        waiting = []
-        for task in self.store.list_tasks(project_id=project.id, status="in_progress"):
-            if task.id == running_task_id or not task.workflow_current_step:
-                continue
-            step = workflow.get_step(task.workflow_current_step)
-            if step is not None and step.role == "_builtin:merge":
-                waiting.append(task)
-        if not waiting:
-            return
-
-        self._carrying_out_merges = True
-        try:
-            for task in waiting:
-                if self.leases.acquire(task, project) is None:
-                    continue
-                try:
-                    self.run_task(project, workflow, task, only_roles=MERGE_STEP_ROLES)
-                except LeaseLostError:
-                    continue
-                except Exception as exc:  # noqa: BLE001 - one task's merge must not end another's step
-                    _LOGGER.warning(
-                        "Approved merge of task %s failed while another task was running: %s",
-                        task.id,
-                        exc,
-                    )
-                    self.block_task_for_error(task.id, str(exc))
-        finally:
-            self._carrying_out_merges = False
 
     def run_project(
         self,
@@ -167,6 +107,7 @@ class ProjectPass(OrchestratorBase):
         # to finish the sprint before it; the engine never starts one on its
         # own (owner, 2026-11-21).
         stop_reason = "idle"
+        detail = ""
         while True:
             if (
                 executed_task_ids
@@ -174,6 +115,14 @@ class ProjectPass(OrchestratorBase):
                 and self.yield_between_tasks()
             ):
                 stop_reason = "yielded"
+                break
+            waiting = self._task_waiting_for_a_decision(project, workflow)
+            if waiting is not None:
+                # One task at a time (ADR-0039): nothing else starts until a
+                # user decides. The decision is a database write, which wakes
+                # a resident engine, and the decided task then comes first.
+                stop_reason = "waiting_for_decision"
+                detail = f"{waiting.task_key or waiting.id} waits for a decision."
                 break
             task = self.selector.select_next_task(project)
             if task is not None:
@@ -215,7 +164,26 @@ class ProjectPass(OrchestratorBase):
             executed_task_ids=tuple(executed_task_ids),
             blocked_task_ids=tuple(blocked_task_ids),
             stop_reason=stop_reason,
+            detail=detail,
         )
+
+    def _task_waiting_for_a_decision(
+        self, project: Project, workflow: WorkflowDefinition
+    ) -> Task | None:
+        """The active sprint's task stopped at a gate for a user's decision, if any.
+
+        A task blocked by a failure does not hold the queue: it needs fixing,
+        not a decision, and may wait for days.
+        """
+
+        sprint = self.store.get_active_sprint(project.id)
+        if sprint is None:
+            return None
+        gates = workflow_gate_steps(workflow)
+        for task in self.store.list_tasks(sprint_id=sprint.id, status="blocked"):
+            if blocked_kind(task, gates) == "gate":
+                return task
+        return None
 
     def _run_task_isolated(
         self,

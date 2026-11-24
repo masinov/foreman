@@ -50,7 +50,6 @@ from ..workflow_runner import WorkflowRunner
 _LOGGER = get_logger("orchestrator")
 
 #: How often, at most, a running step looks for approved merges to carry out.
-APPROVED_MERGE_CHECK_SECONDS = 10.0
 
 
 _BRANCH_PREFIXES = {
@@ -222,11 +221,6 @@ class OrchestratorBase:
         #: pass picks another task off the queue. Without it a request to run
         #: a task waited until the whole queue had run.
         self.yield_between_tasks: Callable[[], bool] | None = None
-        #: How often, at most, a running step looks for approved merges of
-        #: other tasks to carry out (see ``_carry_out_approved_merges``).
-        self.approved_merge_check_seconds = APPROVED_MERGE_CHECK_SECONDS
-        self._last_approved_merge_check: float | None = None
-        self._carrying_out_merges = False
 
     def close(self) -> None:
         """Stop the background work this orchestrator started."""

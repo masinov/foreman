@@ -285,6 +285,11 @@ the lease before it could act on the decision.
 
 ## Amendment, 2026-11-15: an approved merge is carried out during another task's step
 
+**Withdrawn on 2026-11-24 by ADR-0039.** The engine now runs one task at a
+time: a task waiting for a decision holds the queue, so no other task's step
+is running when the decision comes, and the decided task is carried on
+first. The side door this amendment describes is removed.
+
 A deferred approval left its task `in_progress` at the merge step until the
 engine next chose a task, which is after the task in hand finishes or parks.
 On 2026-11-12 an approval waited behind a develop step that had started 19
