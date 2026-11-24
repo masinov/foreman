@@ -294,3 +294,8 @@
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
 }
+
+/* A finished reply is formatted: the shared Markdown keeps its own spacing. */
+.manager__text--formatted {
+  white-space: normal;
+}

@@ -4,6 +4,7 @@ import { Button } from "../../ui/Button";
 import { Field } from "../../ui/Field";
 import { wrapTab } from "../../ui/focus";
 import { plural } from "../../ui/format";
+import { Markdown } from "../../ui/Markdown";
 import { ReasonDialog } from "../shared/ReasonDialog";
 import { useDataRefresh } from "../../api/ApiProvider";
 import { useOverlay } from "../../app/manager";
@@ -29,10 +30,16 @@ function Turn({ turn, onRetry, canRetry }) {
     <div className={`manager__turn manager__turn--${turn.role}`}>
       <div className="manager__who">{mine ? "You" : "Manager"}</div>
       {turn.text || turn.state === "streaming" ? (
-        <p className="manager__text">
-          {turn.text}
-          {turn.state === "streaming" ? <span className="manager__cursor" aria-hidden="true" /> : null}
-        </p>
+        // Your words and a reply still arriving stay as written (half-written
+        // Markdown would reflow as it grows); a finished reply is formatted.
+        mine || turn.state === "streaming" ? (
+          <p className="manager__text">
+            {turn.text}
+            {turn.state === "streaming" ? <span className="manager__cursor" aria-hidden="true" /> : null}
+          </p>
+        ) : (
+          <Markdown text={turn.text} className="manager__text manager__text--formatted" />
+        )
       ) : null}
       {turn.tools.length > 0 ? <p className="manager__tools">Ran {toolSummary(turn.tools)}.</p> : null}
       {(turn.proposals || []).map((proposalId) => (
@@ -54,8 +61,8 @@ function Turn({ turn, onRetry, canRetry }) {
 }
 
 /**
- * The manager side bar: one conversation per project. Everything the manager
- * says is shown as written. It cannot change anything itself (ADR-0022): a
+ * The manager side bar: one conversation per project. What you write is shown as written, and so is a reply still arriving; a
+ * finished reply is formatted (Markdown). It cannot change anything itself (ADR-0022): a
  * change it wants is a proposal, shown as a card the person confirms or not.
  *
  * At narrow widths the bar covers the page: focus moves into it, Tab stays
