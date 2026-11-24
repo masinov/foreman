@@ -76,7 +76,10 @@ Workspace / Project / Sprint / Task.
   page; below project level they are in the top bar.
 - **Needs you** is one list of four kinds of item: accept filed work,
   approve a plan, approve a merge, unblock. It appears at workspace level
-  (all projects) and project level.
+  (all projects) and project level. Two more are about sprints, not
+  tasks: settle a proposed sprint order, and finish a sprint whose every
+  task is done or cancelled, where a user finishes sprints. That row has a
+  Finish button (owner, 2026-11-24).
 - **Work flows one way:** filed, accepted, planned into a sprint. The engine
   runs only the active sprint. A task an agent creates goes to the backlog.
 - **History is one click away, not in the way.** The project shows the

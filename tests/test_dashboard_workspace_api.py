@@ -262,6 +262,71 @@ class SprintOrderNeedsYouTests(WorkspaceApiCase):
         self.assertEqual(self.count_queries("/api/v1/needs-you"), small)
 
 
+class FinishSprintNeedsYouTests(WorkspaceApiCase):
+    """A sprint whose every task is finished waits for a person to finish it
+    (owner, 2026-11-24: the sprint page said "Ready to finish" and nothing led there)."""
+
+    def seed(self, *, completion: str = "human") -> None:
+        self.project("p1")
+        project = self.store.get_project("p1")
+        project.settings["sprint_completion"] = completion
+        self.store.save_project(project)
+        self.sprint("s1", "p1", "Sprint 1", status="active", started_at="2026-01-01T00:00:00Z")
+        self.task("t1", "s1", "p1", status="done")
+        self.task("t2", "s1", "p1", status="cancelled")
+
+    def test_a_sprint_ready_to_finish_is_listed_with_its_tasks(self) -> None:
+        self.seed()
+        body = self.get("/api/v1/projects/p1/needs-you").json()
+        self.assertEqual(body["total"], 1)
+        item = body["items"][0]
+        self.assertEqual(
+            (item["kind"], item["sprint_id"], item["sprint_title"], item["task_id"]),
+            ("finish_sprint", "s1", "Sprint 1", None),
+        )
+        self.assertEqual(item["task_counts"]["done"], 1)
+        self.assertEqual(item["task_counts"]["cancelled"], 1)
+        p1 = next(p for p in self.get("/api/v1/workspace").json()["projects"] if p["id"] == "p1")
+        self.assertEqual(p1["needs_you"], 1)
+
+    def test_not_while_a_task_is_open_nor_where_foreman_finishes_sprints(self) -> None:
+        self.seed()
+        self.task("t3", "s1", "p1", status="todo")
+        self.assertEqual(self.get("/api/v1/projects/p1/needs-you").json()["total"], 0)
+
+        # Every task finished again, but Foreman finishes this project's sprints.
+        self.task("t3", "s1", "p1", status="done")
+        project = self.store.get_project("p1")
+        project.settings["sprint_completion"] = "auto"
+        self.store.save_project(project)
+        self.assertNotIn(
+            "finish_sprint",
+            [i["kind"] for i in self.get("/api/v1/projects/p1/needs-you").json()["items"]],
+        )
+
+    def test_since_is_when_foreman_recorded_it_ready(self) -> None:
+        self.seed()
+        sprint = self.store.get_sprint("s1")
+        from foreman.history.records import RunRecords
+        from foreman.notifications.delivery import NotificationDispatcher
+
+        event = RunRecords(self.store, NotificationDispatcher(self.store)).emit_sprint_event(
+            sprint, "engine.sprint_ready", {"sprint_id": "s1"}
+        )
+        item = self.get("/api/v1/projects/p1/needs-you").json()["items"][0]
+        self.assertEqual(item["since"], event.timestamp)
+
+    def test_the_query_count_does_not_grow_with_projects(self) -> None:
+        self.seed()
+        small = self.count_queries("/api/v1/needs-you")
+        for n in range(2, 8):
+            self.project(f"p{n}")
+            self.sprint(f"s{n}", f"p{n}", f"Sprint {n}", status="active")
+            self.task(f"t{n}", f"s{n}", f"p{n}", status="done")
+        self.assertEqual(len(self.get("/api/v1/needs-you").json()["items"]), 7)
+        self.assertEqual(self.count_queries("/api/v1/needs-you"), small)
+
+
 class MilestoneTests(WorkspaceApiCase):
     def seed(self) -> None:
         self.project("p1")

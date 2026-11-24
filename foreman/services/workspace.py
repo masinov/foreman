@@ -21,7 +21,7 @@ from ..definitions.gate_steps import (
     blocked_kind,
     resolve_gate_steps,
 )
-from ..domain.models import DecisionGate, Project, Task
+from ..domain.models import DecisionGate, Project, Task, sprint_ready_to_finish
 from ..engine.control import (
     describe_engine,
 )
@@ -41,12 +41,16 @@ __all__ = [
 #: first four are the design's kinds, each about a task. ``settle_order`` is a
 #: proposed sprint order (a decision gate): it is about a project's sprints, so
 #: it has no task, and is settled by accepting or rejecting the proposal.
+#: ``finish_sprint`` is an active sprint whose every task is done or
+#: cancelled, in a project where a user finishes sprints (owner, 2026-11-24:
+#: the sprint page said "Ready to finish" and nothing led there).
 NEEDS_YOU_KINDS: tuple[str, ...] = (
     "accept_filed_work",
     "approve_plan",
     "approve_merge",
     "unblock",
     "settle_order",
+    "finish_sprint",
 )
 
 #: The gate policy that asks for a plan to be approved. Every other human gate
@@ -65,6 +69,8 @@ class _Attention:
     gate: DecisionGate | None = None
     #: How many things this one line stands for (requests are counted, not listed).
     count: int = 0
+    #: A sprint ready to finish: its tasks by status.
+    task_counts: dict[str, int] | None = None
 
 
 class WorkspaceReader:
@@ -142,6 +148,7 @@ class WorkspaceReader:
                     gate.id, gate=gate,
                 )
             )
+        found.extend(self._sprints_ready_to_finish(projects, project_id))
         for requested_project, (backlog_id, newest, number) in requests.items():
             found.append(
                 _Attention(
@@ -151,6 +158,40 @@ class WorkspaceReader:
                     newest,
                     f"requests:{requested_project}",
                     count=number,
+                )
+            )
+        return found
+
+    def _sprints_ready_to_finish(
+        self, projects: dict[str, Project], project_id: str | None
+    ) -> list[_Attention]:
+        """Active sprints whose every task is finished, where a user finishes sprints.
+
+        Where Foreman finishes sprints (``sprint_completion = "auto"``) the
+        engine does it and nothing waits. Since is when Foreman recorded the
+        sprint ready (``engine.sprint_ready``), else when it started.
+        """
+
+        active = {
+            pid: sprint
+            for pid, sprint in self.store.list_active_sprints().items()
+            if pid in projects and (project_id is None or pid == project_id)
+        }
+        sprint_ids = [sprint.id for sprint in active.values()]
+        counts = self.store.task_counts_by_sprint(sprint_ids)
+        ready_at = self.store.latest_sprint_record(sprint_ids, "engine.sprint_ready")
+        found: list[_Attention] = []
+        for pid, sprint in active.items():
+            if resolve_project_settings(projects[pid]).sprint_completion == "auto":
+                continue
+            sprint_counts = counts.get(sprint.id, {})
+            if not sprint_ready_to_finish(sprint.status, sprint_counts):
+                continue
+            since = ready_at.get(sprint.id) or sprint.started_at or ""
+            found.append(
+                _Attention(
+                    "finish_sprint", pid, sprint.id, since, f"finish:{sprint.id}",
+                    task_counts=dict(sprint_counts),
                 )
             )
         return found
@@ -193,6 +234,8 @@ class WorkspaceReader:
             }
         if item.count:
             entry["count"] = item.count
+        if item.task_counts is not None:
+            entry["task_counts"] = item.task_counts
         return entry
 
     # ── milestones ────────────────────────────────────────────────────────
