@@ -400,8 +400,7 @@ here.
   working copies, their set-up command, linked paths, context folder, push
   remote and extra variables. The page names the `foreman config` command.
   Decide whether that is the rule or a gap.
-- **Manager replies are plain text.** Task descriptions and reviews are
-  formatted.
+- ~~**Manager replies are plain text.**~~ Done (sprint 62 slice 6): a finished reply is formatted; one still arriving and your own messages stay plain.
 - **Earlier proposals are shown in full,** with no one-line summary (FOR-43).
   A send-back already names where the task goes.
 - ~~**A task filed by an agent does not say which task the agent was working
