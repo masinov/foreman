@@ -14,6 +14,10 @@ authors = [
 ]
 dependencies = [
   "fastapi>=0.115,<1",
+  # Imported directly (models, responses, the test client); FastAPI brings
+  # them, but what the code imports is declared here.
+  "pydantic>=2,<3",
+  "starlette>=0.40",
   "uvicorn>=0.30,<1",
   "httpx>=0.27,<1",
   "tomli>=2.0.1; python_version < '3.11'",
@@ -44,13 +48,19 @@ dev = [
   "ruff>=0.6",
   # The layers contract (.importlinter, ADR-0032); it needs Python 3.11.
   "import-linter>=2.5,<3; python_version >= '3.11'",
-  # Writes unittest's results as JUnit XML, so the test step counts them (ADR-0035).
-  "unittest-xml-reporting>=4,<5",
+  # Runs the suite (its tests are unittest TestCases), one worker per core
+  # with pytest-xdist (`-n auto`), and writes the JUnit XML the test step
+  # counts (ADR-0035) with `--junitxml`.
+  "pytest>=8,<9",
+  "pytest-xdist>=3.5,<4",
 ]
 e2e = [
   "playwright>=1.40,<2",
   "pytest-playwright>=0.5,<1",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [tool.ruff]
 target-version = "py310"

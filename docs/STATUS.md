@@ -235,7 +235,9 @@ is no login.
 
 ## Validation baseline
 
-- `./venv/bin/python -m unittest discover -s tests` (1681 tests)
+- `./venv/bin/python -m pytest tests -n auto -q` (1687 tests: the 1681
+  unittest runs and the 6 browser tests of `test_e2e.py`, skipped without
+  Playwright; about a minute)
 - `npm --prefix frontend run lint`, `npm --prefix frontend test` (533 tests) and `npm --prefix frontend run build`
 - `ruff check foreman tests scripts` (pyflakes and syntax rules)
 - `lint-imports`: the layers contract in `.importlinter` (ADR-0032; needs

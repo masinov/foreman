@@ -279,7 +279,9 @@ Current baseline validation for repo-scaffold work:
 - `./venv/bin/python scripts/validate_repo_memory.py`
 - `./venv/bin/python -m py_compile scripts/repo_validation.py`
 - `./venv/bin/python -m py_compile scripts/validate_repo_memory.py`
-- `./venv/bin/python -m unittest discover -s tests`
+- `./venv/bin/python -m pytest tests -n auto -q` (the whole Python suite, in
+  parallel; run a touched module alone with `./venv/bin/python -m pytest
+  tests/test_x.py`)
 
 As implementation lands, add and run:
 

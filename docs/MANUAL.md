@@ -1509,8 +1509,8 @@ Recent migrations:
 # Repo-memory scaffold checks
 ./venv/bin/python scripts/validate_repo_memory.py
 
-# Full backend suite
-./venv/bin/python -m unittest discover -s tests
+# Full backend suite, one worker per core
+./venv/bin/python -m pytest tests -n auto -q
 
 # CLI surface smoke
 ./venv/bin/foreman --help && ./venv/bin/foreman roles && ./venv/bin/foreman workflows
