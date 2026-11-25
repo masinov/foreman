@@ -449,6 +449,19 @@ class WorktreePruningTests(unittest.TestCase):
         self.assertTrue(live_path.is_dir())
         self.assertTrue(integration_path.is_dir())
 
+    def test_prune_keeps_the_sandbox_of_a_live_task(self) -> None:
+        # A review may be running in it (ADR-0041, run scope).
+        manager = WorktreeManager(self.project)
+        live = self.seed_task("live", "in_progress")
+        finished = self.seed_task("finished", "done")
+        manager.ensure(live)
+        manager.ensure(finished)
+        with manager.sandbox(live) as live_box, manager.sandbox(finished) as finished_box:
+            removed, kept = prune_project_worktrees(self.store, self.project)
+            self.assertTrue(live_box.path.is_dir())
+            self.assertIn(live_box.path.name, {entry.slug for entry in kept})
+            self.assertIn(finished_box.path.name, {entry.slug for entry in removed})
+
     def test_prune_removes_a_directory_no_task_claims(self) -> None:
         manager = WorktreeManager(self.project)
         orphan = self.seed_task("orphan", "in_progress")

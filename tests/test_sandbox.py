@@ -81,7 +81,7 @@ class RunScopeLoaderTests(unittest.TestCase):
 
     def test_the_reviewer_prompt_asks_for_checks_and_screenshots(self) -> None:
         template = load_role(ROLES_DIR / "code_reviewer.toml").prompt_template
-        for needle in ("test command", "Playwright", "1440", "390", "docs/design/dashboard-v7/", "cite what you ran"):
+        for needle in ("test command", "1440", "390", "Looking at a page in a review", "not seen in a browser", "never bind a fixed port", "cite what you ran"):
             self.assertIn(needle, template)
 
 
@@ -224,6 +224,28 @@ class SandboxWorktreeTests(SandboxCase):
             )
             self.assertNotEqual(result.returncode, 0)
         self.assertEqual(git(remote, "branch", "--list"), "")
+
+    def test_git_works_in_a_sandbox_of_a_repository_with_a_remote(self) -> None:
+        # The push block must not break every other git command: git before
+        # 2.31 refuses the whole GIT_CONFIG_PARAMETERS variable when an entry
+        # is written in the newer 'key'='value' form (2026-11-25, git 2.25).
+        remote = self.repo.parent / "remote.git"
+        git(self.repo.parent, "init", "--bare", str(remote))
+        git(self.repo, "remote", "add", "origin", str(remote))
+        with WorktreeManager(self.project()).sandbox(self.task) as box:
+            import os
+
+            env = {**os.environ, **box.env}
+            for command in (["status", "--short"], ["log", "--oneline", "-1"], ["diff", "--stat", "HEAD"]):
+                result = subprocess.run(
+                    ["git", *command], cwd=box.path, env=env, capture_output=True, text=True,
+                )
+                self.assertEqual(result.returncode, 0, f"git {' '.join(command)}: {result.stderr}")
+            pushurl = subprocess.run(
+                ["git", "config", "remote.origin.pushurl"],
+                cwd=box.path, env=env, capture_output=True, text=True,
+            )
+            self.assertIn("/nonexistent/", pushurl.stdout)
 
 
 class FakeRunner:
