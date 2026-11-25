@@ -53,6 +53,12 @@ narrows what an agent is handed; it does not confine the process.
 The test command and the worktree set-up command are the operator's own and
 keep the engine's environment.
 
+> **Amended in sprint 63 (ADR-0041 section 5).** `code_reviewer` now also has
+> `Bash`, and runs in a throwaway worktree (`run_scope = "sandbox"`) that
+> Foreman removes after the step and checks against the task's branch. See
+> `docs/ARCHITECTURE.md`, "Run scope and the sandbox". `security_reviewer` is
+> unchanged.
+
 ## Consequences
 
 - A developer agent can no longer reach a forge with the engine's token or

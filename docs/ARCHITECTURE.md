@@ -263,6 +263,54 @@ The current runtime supports:
   falls back to the developer's free text. The task page shows it in the
   develop step's details (`pages/task/DeveloperReport.jsx`).
 
+#### Run scope and the sandbox (ADR-0041 section 5, builds on ADR-0023)
+
+- A role's `[agent] run_scope` says where it may run commands: `none` (no
+  command; the loader refuses `Bash` in its allowlist), `sandbox`, or `branch`.
+  A role that does not set it is `branch`: it works in the task's own worktree,
+  as every role did before. Any other value is refused when the role loads.
+- A `sandbox` step runs in its own git worktree, made by
+  `WorktreeManager.sandbox` (`foreman/repo/worktrees.py`) and used by
+  `AgentStepRunner._execute_sandboxed` (`foreman/engine/agent_step.py`):
+  - at `<worktree root>/_sandbox-<task key>`, checked out **detached** at the
+    commit the task's branch points at when the step starts;
+  - linked with `worktree_link_paths` and prepared with
+    `worktree_setup_command`, run afresh because the tree is new (a setup
+    failure fails the step with the reason before the agent starts);
+  - removed when the step ends, whether it succeeded, failed or was killed
+    (a `finally`, so a shutdown, an operator command and a lost lease clean up
+    too). A tree an engine killed hard left behind is replaced on the next
+    sandbox for that task, and `foreman worktree prune` removes it. Sandboxes
+    do not count against `max_live_worktrees`.
+- The agent's tools and short environment are ADR-0023's: the role's allowlist
+  is the whole tool set, and the process gets the short environment plus what
+  the project passes through. The shipped `code_reviewer` has `Read`, `Grep`,
+  `Glob` and `Bash`, and no `Write`, `Edit` or `NotebookEdit`.
+- Nothing the agent does may reach the task's branch. All worktrees share one
+  `.git`, so a detached head is not enough: a shell can `git branch -f`,
+  `git update-ref` or push.
+  - After the step, `Sandbox.check` compares `refs/heads/<branch>` with the head
+    it had when the sandbox opened. If it moved, or the branch was deleted,
+    Foreman **puts it back** (`git update-ref` with the moved value as the old
+    value) and the step fails: outcome `error`, `failure_type` `sandbox`, the
+    detail names the branch and both commits. Any record the agent returned is
+    dropped. The check also runs when the step is killed, so the branch is
+    restored even though nobody reads a verdict.
+  - Pushes fail: the sandbox's environment sets `remote.<name>.pushurl` for every
+    remote through `GIT_CONFIG_PARAMETERS` (works on every git version;
+    `GIT_CONFIG_COUNT` needs 2.31), which outranks the repository's own config.
+    The agent also has no SSH agent or forge token (ADR-0023).
+- What it does not guard: refs other than the task's branch. Another task may
+  move any of them legitimately while a review runs, so they cannot be told
+  from the agent's work. A branch or tag the agent creates in the sandbox
+  stays in the shared repository. The process still runs as the engine's user
+  with network access (ADR-0023, "Not covered").
+- The `code_reviewer` prompt tells it to run the project's test command, or the
+  tests that cover the change, where it doubts the evidence; for changes under
+  `frontend/` to build, serve and screenshot with Playwright at 1440 px and
+  390 px and compare the screenshots with `docs/design/dashboard-v7/`; and to
+  cite what it ran in its verdict.
+
 #### Repository instructions arrive once
 
 `foreman/engine/prompts.py` (`repo_instructions_for_prompt`) pastes `AGENTS.md`

@@ -8,11 +8,15 @@ backend = "claude_code"
 model = "claude-sonnet-5-5"
 session_persistence = false
 permission_mode = "bypassPermissions"
+# Runs in a throwaway copy of the commit under review, removed after the step
+# (ADR-0041 section 5). Foreman fails the step if the task's branch moved.
+run_scope = "sandbox"
 
 [agent.tools]
-# The whole tool set: this role reads, and does nothing else.
-allowed = ["Read", "Grep", "Glob"]
-disallowed = ["Bash", "Write", "Edit", "NotebookEdit"]
+# The whole tool set: this role reads and runs commands in its sandbox. It
+# writes no file of the change; Bash is for the checks only.
+allowed = ["Read", "Grep", "Glob", "Bash"]
+disallowed = ["Write", "Edit", "NotebookEdit"]
 
 [prompt]
 template = """
@@ -68,6 +72,27 @@ Use Read, Glob, and Grep to verify:
    approve when the tests failed, did not run, or ran on a commit other than
    the branch head, or on the strength of a plausible summary or an approval
    from a prior review cycle.
+
+### Running things
+You work in a sandbox: a throwaway copy of the branch head, with the
+project's environment set up, removed when you finish. You have Bash there.
+Run commands to settle what you doubt; do not take a result on trust that you
+can produce yourself.
+- Where the completion evidence does not show the tests passing on the head,
+  or you doubt it, run the project's test command, or the tests that cover the
+  change, and read the result.
+- Never commit, create or move a branch or tag, or push. Foreman checks the
+  task's branch after your step, and a moved branch ends the step as an error.
+  Write nothing the checks do not need; the copy is discarded.
+- If the change touches files under `frontend/`: build the frontend, serve it,
+  and take screenshots with Playwright (a dev dependency; use the repository
+  virtual environment's `./venv/bin/python`) at a desktop width of 1440 px and
+  a phone width of 390 px. Open the screenshots with Read and compare them with
+  the matching screens in `docs/design/dashboard-v7/`: structure, wording,
+  density, and how the layout holds at 390 px.
+- In your verdict, cite what you ran: the command, and what it showed, in the
+  `evidence` of the criterion it bears on or in a finding. A check you could not
+  run is a criterion `not_verified`, not a pass.
 
 After your verdict, end your message with exactly one line:
 APPROVE

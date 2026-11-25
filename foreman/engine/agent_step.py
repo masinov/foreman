@@ -9,8 +9,10 @@ the run when the step is abandoned.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from dataclasses import replace
 from datetime import datetime
 import json
+from pathlib import Path
 from typing import Any
 
 from ..domain.errors import EngineCommandInterrupt
@@ -21,6 +23,7 @@ from ..runner import AgentRunConfig, PreflightError, run_with_retry
 from ..runner.base import AgentRunner as NativeAgentRunner
 from ..runner.env import passthrough_env, resolve_env
 from ..runner.process import EngineShutdown
+from ..repo.worktrees import WorktreeError, WorktreeManager
 from .branch_sync import task_working_dir
 from .coerce import coerce_float_value, coerce_int_value, optional_string
 from .errors import LeaseLostError, OrchestratorError
@@ -156,8 +159,8 @@ class AgentStepRunner:
         event_recorder: Callable[[AgentEventRecord], None] | None = None,
     ) -> AgentExecutionResult:
         try:
-            if self.agent_executor is not None:
-                return self.agent_executor.execute(
+            if role.run_scope == "sandbox":
+                return self._execute_sandboxed(
                     role=role,
                     project=project,
                     task=task,
@@ -165,14 +168,17 @@ class AgentStepRunner:
                     prompt=prompt,
                     session_id=session_id,
                     carried_output=carried_output,
+                    model=model,
+                    event_recorder=event_recorder,
                 )
-            return self.execute_native(
+            return self._execute_in(
                 role=role,
                 project=project,
                 task=task,
                 workflow_step=workflow_step,
                 prompt=prompt,
                 session_id=session_id,
+                carried_output=carried_output,
                 model=model,
                 event_recorder=event_recorder,
             )
@@ -191,6 +197,110 @@ class AgentStepRunner:
                 ),
             )
 
+    def _execute_sandboxed(
+        self,
+        *,
+        role: RoleDefinition,
+        project: Project,
+        task: Task,
+        workflow_step: str,
+        prompt: str,
+        session_id: str | None,
+        carried_output: str | None,
+        model: str | None,
+        event_recorder: Callable[[AgentEventRecord], None] | None,
+    ) -> AgentExecutionResult:
+        """Run a ``run_scope = "sandbox"`` role in a throwaway worktree (ADR-0041).
+
+        The worktree is gone when this returns or raises, whatever ended the
+        step. A step that moved the task's branch fails with the reason,
+        however it ended otherwise.
+        """
+
+        try:
+            with WorktreeManager(project).sandbox(task) as box:
+                result = self._execute_in(
+                    role=role,
+                    project=project,
+                    task=task,
+                    workflow_step=workflow_step,
+                    prompt=prompt,
+                    session_id=session_id,
+                    carried_output=carried_output,
+                    model=model,
+                    event_recorder=event_recorder,
+                    working_dir=box.path,
+                    extra_env=box.env,
+                )
+                violation = box.check()
+        except WorktreeError as exc:
+            return AgentExecutionResult(
+                outcome=ERROR,
+                detail=f"The sandbox for this step could not be made: {exc}",
+                status="failed",
+                events=(
+                    AgentEventRecord(
+                        event_type="agent.error",
+                        payload={"error": str(exc), "preflight_failed": True},
+                    ),
+                ),
+                failure_type="preflight",
+            )
+        if violation is None:
+            return result
+        return replace(
+            result,
+            outcome=ERROR,
+            detail=violation,
+            status="failed",
+            failure_type="sandbox",
+            record=None,
+            events=(
+                *result.events,
+                AgentEventRecord(event_type="agent.error", payload={"error": violation}),
+            ),
+        )
+
+    def _execute_in(
+        self,
+        *,
+        role: RoleDefinition,
+        project: Project,
+        task: Task,
+        workflow_step: str,
+        prompt: str,
+        session_id: str | None,
+        carried_output: str | None,
+        model: str | None,
+        event_recorder: Callable[[AgentEventRecord], None] | None,
+        working_dir: Path | None = None,
+        extra_env: Mapping[str, str] | None = None,
+    ) -> AgentExecutionResult:
+        """One run of the role, in ``working_dir`` when given, else the task's worktree."""
+
+        if self.agent_executor is not None:
+            return self.agent_executor.execute(
+                role=role,
+                project=project,
+                task=task,
+                workflow_step=workflow_step,
+                prompt=prompt,
+                session_id=session_id,
+                carried_output=carried_output,
+            )
+        return self.execute_native(
+            role=role,
+            project=project,
+            task=task,
+            workflow_step=workflow_step,
+            prompt=prompt,
+            session_id=session_id,
+            model=model,
+            event_recorder=event_recorder,
+            working_dir=working_dir,
+            extra_env=extra_env,
+        )
+
     def execute_native(
         self,
         *,
@@ -202,6 +312,8 @@ class AgentStepRunner:
         session_id: str | None,
         model: str | None = None,
         event_recorder: Callable[[AgentEventRecord], None] | None = None,
+        working_dir: Path | None = None,
+        extra_env: Mapping[str, str] | None = None,
     ) -> AgentExecutionResult:
         runner = self.agent_runners.get(role.agent.backend)
         if runner is None:
@@ -219,7 +331,14 @@ class AgentStepRunner:
             )
         model = model or ""
         config = self._native_config(
-            role=role, project=project, task=task, prompt=prompt, session_id=session_id, model=model
+            role=role,
+            project=project,
+            task=task,
+            prompt=prompt,
+            session_id=session_id,
+            model=model,
+            working_dir=working_dir,
+            extra_env=extra_env,
         )
         if isinstance(config, AgentExecutionResult):
             return config
@@ -287,6 +406,8 @@ class AgentStepRunner:
         prompt: str,
         session_id: str | None,
         model: str,
+        working_dir: Path | None = None,
+        extra_env: Mapping[str, str] | None = None,
     ) -> AgentRunConfig | AgentExecutionResult:
         """What the runner is started with, or the failed result of a role that cannot start."""
 
@@ -323,8 +444,8 @@ class AgentStepRunner:
             model=model or None,
             prompt=prompt,
             # The agent edits its task's own worktree, never the operator's
-            # checkout.
-            working_dir=task_working_dir(project, task),
+            # checkout; a sandboxed step is given its throwaway copy instead.
+            working_dir=working_dir or task_working_dir(project, task),
             session_id=session_id,
             permission_mode=role.agent.permission_mode,
             disallowed_tools=role.agent.tools.disallowed,
@@ -337,6 +458,7 @@ class AgentStepRunner:
             env={
                 **passthrough_env(resolve_project_settings(project).agent_env_passthrough),
                 **resolved_env,
+                **(extra_env or {}),
             },
             timeout_seconds=project_timeout_seconds(
                 project,

@@ -9,6 +9,7 @@ memory changes rather than versioned product releases.
 
 ### Sprint 63
 
+- The code reviewer runs the checks and takes screenshots in a sandbox (ADR-0041 section 5). Roles gain `[agent] run_scope` (`none`, `sandbox` or `branch`; unset is `branch`, as before). A `sandbox` step runs in a detached git worktree at the commit under review, prepared with `worktree_setup_command` and `worktree_link_paths`, and removed when the step ends however it ends. If the step moved or deleted the task's branch, Foreman puts it back and fails the step with the reason; pushes are pointed nowhere. The shipped `code_reviewer` gets `run_scope = "sandbox"` and `Bash`, and its prompt asks it to run the tests it doubts, to screenshot `frontend/` changes at 1440 and 390 px with Playwright, and to cite what it ran.
 - A step's details show the reads before its first edit (ADR-0041 section 6). When an agent run ends, the engine counts, from the run's stored tool events, the reading tool calls before its first change and records them as `engine.step_reads` (`foreman/domain/step_reads.py` holds the rules). The step's facts on the task page say "7 reads before its first edit" or "4 reads, no edit", beside its tokens, and `foreman outcomes` gives the median per role and model.
 
 ### Sprint 62

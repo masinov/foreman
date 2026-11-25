@@ -17,7 +17,9 @@ from foreman.store import ForemanStore
 from engine_support import OrchestratorTestCase, ScriptedNativeRunner
 
 READING_ONLY = ("Read", "Grep", "Glob")
-WRITING = {"Bash", "Write", "Edit", "NotebookEdit"}
+#: The code reviewer also runs commands, in a sandbox (ADR-0041 section 5).
+READING_AND_RUNNING = (*READING_ONLY, "Bash")
+WRITING = {"Write", "Edit", "NotebookEdit"}
 
 
 class ShippedRoleToolTests(unittest.TestCase):
@@ -25,10 +27,15 @@ class ShippedRoleToolTests(unittest.TestCase):
         self.roles = load_roles(default_roles_dir())
 
     def test_the_reviewers_that_read_can_do_nothing_else(self) -> None:
-        for role_id in ("code_reviewer", "security_reviewer"):
-            self.assertEqual(self.roles[role_id].agent.tools.allowed, READING_ONLY, role_id)
+        self.assertEqual(self.roles["security_reviewer"].agent.tools.allowed, READING_ONLY)
+        self.assertEqual(self.roles["security_reviewer"].run_scope, "branch")
 
-    def test_no_reviewer_can_write_or_run_commands(self) -> None:
+    def test_the_code_reviewer_runs_commands_only_in_a_sandbox(self) -> None:
+        role = self.roles["code_reviewer"]
+        self.assertEqual(role.agent.tools.allowed, READING_AND_RUNNING)
+        self.assertEqual(role.run_scope, "sandbox")
+
+    def test_no_reviewer_can_write_or_run_commands_outside_a_sandbox(self) -> None:
         for role_id, role in self.roles.items():
             if not role.completion.output.extract_decision:
                 continue
@@ -36,10 +43,11 @@ class ShippedRoleToolTests(unittest.TestCase):
             if tools.none:
                 continue
             usable = set(tools.allowed) - set(tools.disallowed) if tools.allowed else None
+            runs = {"Bash"} if role.run_scope != "sandbox" else set()
             if usable is not None:
-                self.assertFalse(usable & WRITING, role_id)
+                self.assertFalse(usable & (WRITING | runs), role_id)
             else:
-                self.assertTrue(WRITING <= set(tools.disallowed), role_id)
+                self.assertTrue((WRITING | runs) <= set(tools.disallowed), role_id)
 
 
 class NoToolTests(unittest.TestCase):
@@ -115,7 +123,7 @@ class EngineSandboxTests(OrchestratorTestCase):
 
             developer_config, reviewer_config = configs
             self.assertEqual(developer_config.allowed_tools, ())
-            self.assertEqual(reviewer_config.allowed_tools, READING_ONLY)
+            self.assertEqual(reviewer_config.allowed_tools, READING_AND_RUNNING)
             self.assertEqual(developer_config.env["DATABASE_URL"], "postgres://test")
             self.assertNotIn("NOT_SET_HERE", developer_config.env)
             policies = [
@@ -123,7 +131,7 @@ class EngineSandboxTests(OrchestratorTestCase):
                 if e.event_type == "engine.role_policy"
             ]
             self.assertEqual(
-                [p["allowed_tools"] for p in policies], [[], list(READING_ONLY)]
+                [p["allowed_tools"] for p in policies], [[], list(READING_AND_RUNNING)]
             )
 
 

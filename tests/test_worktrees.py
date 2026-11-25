@@ -1133,7 +1133,14 @@ class EngineWorktreeIsolationTests(unittest.TestCase):
             orchestrator.run_project(project.id)
 
             expected = repo / DEFAULT_WORKTREE_ROOT / task_slug(store.get_task(task.id))
-            self.assertEqual(runner.working_dirs, [expected, expected])
+            # The reviewer runs in a sandbox beside the task's tree (ADR-0041).
+            self.assertEqual(
+                runner.working_dirs,
+                [expected, expected.with_name(f"_sandbox-{expected.name}")],
+            )
+            self.assertFalse(
+                [e for e in WorktreeManager(project).list() if e.slug.startswith("_sandbox-")]
+            )
 
             test_events = [
                 event
