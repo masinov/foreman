@@ -268,6 +268,14 @@ UI validation:
 - human message, filter, and approve or deny flows
 - browser-driven validation for the dedicated frontend
 
+Browser tests (`tests/test_e2e.py`) are skipped in an ordinary run: the
+pytest-playwright plugin is off by default (`addopts` in `pyproject.toml`),
+because once loaded it leaves an event loop running on its worker and later
+`asyncio.run()` calls there fail. Run them with
+`./venv/bin/python -m pytest -o addopts="" tests/test_e2e.py`. A review
+sandbox takes screenshots with `scripts/review_screenshots.py`, which uses
+the playwright package directly and does not need the plugin.
+
 ## Definition of done
 
 Do not mark a task done unless:

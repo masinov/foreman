@@ -62,6 +62,11 @@ e2e = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The pytest-playwright plugin (the `e2e` extra, which a review sandbox
+# installs for screenshots) is off by default. Loaded, it leaves an event
+# loop running on its worker, and every later `asyncio.run()` there fails.
+# Browser tests run with: pytest -o addopts="" tests/test_e2e.py
+addopts = "-p no:playwright"
 
 [tool.ruff]
 target-version = "py310"
