@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 
@@ -17,6 +19,7 @@ from foreman.runner import (
     run_with_retry,
 )
 from foreman.runner.base import AgentEvent
+from foreman.runner.claude_code import NO_STDIN_PREFIX
 
 
 class _FakeInput:
@@ -267,6 +270,66 @@ class ClaudeCodeRunnerTests(unittest.TestCase):
         self.assertEqual(env["GIT_PAGER"], "cat")
         self.assertEqual(env["GIT_TERMINAL_PROMPT"], "0")
         self.assertEqual(env["PAGER"], "less")
+
+    def _run_with_env(self, **role_env: str) -> dict[str, str]:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        config = self.create_config(Path(temp_dir.name))
+        config.env.update(role_env)
+        process = _FakeProcess(
+            lines=[json.dumps({"type": "result", "is_error": False, "session_id": "s", "result": "TASK_COMPLETE"}) + "\n"]
+        )
+        popen = _PopenRecorder(process)
+        runner = ClaudeCodeRunner(popen_factory=popen, clock=lambda: 0.0, which=lambda _: "/usr/bin/claude")
+        list(runner.run(config))
+        return popen.calls[0][1]["env"]
+
+    def test_every_command_runs_through_the_shipped_no_stdin_prefix(self) -> None:
+        env = self._run_with_env()
+
+        self.assertEqual(env["CLAUDE_CODE_SHELL_PREFIX"], str(NO_STDIN_PREFIX))
+        self.assertTrue(NO_STDIN_PREFIX.is_file())
+        self.assertTrue(os.access(NO_STDIN_PREFIX, os.X_OK), "the prefix must keep its executable bit")
+
+    def test_a_role_can_run_commands_without_the_prefix(self) -> None:
+        env = self._run_with_env(CLAUDE_CODE_SHELL_PREFIX="")
+
+        self.assertEqual(env["CLAUDE_CODE_SHELL_PREFIX"], "")
+
+    def test_a_prefix_that_cannot_run_stops_the_step_before_it_starts(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            plain = Path(folder) / "prefix.sh"
+            plain.write_text("#!/bin/sh\n", encoding="utf-8")
+            for prefix in (plain, Path(folder) / "missing.sh"):
+                with self.subTest(prefix=prefix.name), self.assertRaises(PreflightError) as exc:
+                    self._run_with_env(CLAUDE_CODE_SHELL_PREFIX=str(prefix))
+                self.assertIn("shell prefix", str(exc.exception))
+
+    def test_the_prefix_gives_a_command_with_a_heredoc_no_input_to_wait_for(self) -> None:
+        # Claude Code passes the whole command as one argument. Without the
+        # prefix, a command like this one got an open socket as its input,
+        # and ``wc`` waited until the Bash timeout. Here the input is an open
+        # pipe that nobody writes to or closes.
+        command = "cat > heredoc.txt <<'END'\nfrom the heredoc\nEND\nwc -c"
+        with tempfile.TemporaryDirectory() as folder:
+            proc = subprocess.Popen(
+                [str(NO_STDIN_PREFIX), command],
+                cwd=folder,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                text=True,
+            )
+            try:
+                # The output is a few bytes, so waiting before reading
+                # cannot fill the pipe; a hang fails here, not forever.
+                proc.wait(timeout=20)
+                out = proc.stdout.read()
+            finally:
+                proc.kill()
+                proc.stdin.close()
+                proc.stdout.close()
+            self.assertEqual(out.strip(), "0")
+            self.assertEqual((Path(folder) / "heredoc.txt").read_text(encoding="utf-8"), "from the heredoc\n")
 
     def test_a_role_can_override_the_headless_step_environment(self) -> None:
         temp_dir = tempfile.TemporaryDirectory()

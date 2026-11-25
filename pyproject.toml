@@ -37,6 +37,7 @@ foreman = [
   "data/roles/*.toml",
   "data/workflows/*.toml",
   "data/templates/*",
+  "data/shell/*.sh",
 ]
 
 [tool.setuptools.dynamic]

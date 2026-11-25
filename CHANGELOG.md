@@ -7,6 +7,10 @@ memory changes rather than versioned product releases.
 
 ## [Unreleased]
 
+### After sprint 63
+
+- Every command a Claude Code step runs has `/dev/null` as standard input, so a program that reads it ends at once instead of waiting 20 minutes for the Bash timeout (the FOR-53 stall). Claude Code gave a command that holds a heredoc a socket as its input. The runner sets `CLAUDE_CODE_SHELL_PREFIX` to `foreman/data/shell/no-stdin.sh`, which runs the command with `< /dev/null`; the step stops in preflight if that file is missing or not executable, and a role can opt out with an empty value. Checked live with Claude Code 2.1.332.
+
 ### Sprint 63
 
 - The code reviewer runs the checks and takes screenshots in a sandbox (ADR-0041 section 5). Roles gain `[agent] run_scope` (`none`, `sandbox` or `branch`; unset is `branch`, as before). A `sandbox` step runs in a detached git worktree at the commit under review, prepared with `worktree_setup_command` and `worktree_link_paths`, and removed when the step ends however it ends. If the step moved or deleted the task's branch, Foreman puts it back and fails the step with the reason; pushes are pointed nowhere. The shipped `code_reviewer` gets `run_scope = "sandbox"` and `Bash`, and its prompt asks it to run the tests it doubts, to screenshot `frontend/` changes at 1440 and 390 px with Playwright, and to cite what it ran.

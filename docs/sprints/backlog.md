@@ -442,13 +442,10 @@ at once were fixed before the code went live:
 - `fix/stdin-claims`.
 
 These are left:
-- **Commands that read standard input still hang when they hold a
-  heredoc.** Claude Code gives such a command a socket, not `/dev/null`; the
-  FOR-53 stall was this. Candidate fix: wrap every command through
-  `CLAUDE_CODE_SHELL_PREFIX` with `< /dev/null`. It needs a live probe of
-  Claude Code, which the permission check refused on 2026-11-25, so it waits
-  for the owner. Until then the prompt says so, and the 20-minute Bash
-  timeout bounds it.
+- ~~Commands that read standard input still hang when they hold a
+  heredoc.~~ Fixed on 2026-11-25 (`fix/runner-commands-get-no-stdin`): every
+  Claude Code command runs through a shell prefix with `< /dev/null`,
+  checked live with the owner's approval. Codex is still not verified.
 - **Whether `AGENTS.md` reaches the agent once is a guess about Claude
   Code's loading.**
   - Foreman checks `repo_path/CLAUDE.md`, but the agent runs in a worktree

@@ -41,6 +41,11 @@ Current snapshot only. History up to 2026-09-08 (sprints 1 to 54) is in
   ADR-0040; the workflow and role model they need, and what each step is
   given, in ADR-0041. The next sprint builds ADR-0040's build order through
   Foreman. Until each item lands, the rules in `AGENTS.md` still hold.
+- **2026-11-25, after sprint 63.** Every command a Claude Code step runs
+  has `/dev/null` as standard input, through Claude Code's shell prefix
+  (`fix/runner-commands-get-no-stdin`), so the 18-minute stall of FOR-53
+  cannot recur there. `merge_approval` and `sprint_completion` stay `auto`
+  for Foreman's own project, at the owner's word.
 - Nineteen tasks of sprint 58 were run by Foreman itself. On 2026-11-13 the
   owner asked for the engine to be stopped and the rest done by hand; it has
   been stopped since. What the engine did well and badly is in the archived

@@ -233,17 +233,23 @@ The current runtime supports:
   (`foreman/runner/env.py`), which sets `GIT_EDITOR`, `EDITOR` and `VISUAL` to
   `true`, `GIT_PAGER` and `PAGER` to `cat`, and `GIT_TERMINAL_PROMPT=0`
   (`NON_INTERACTIVE_ENV`). A role's `[agent.env]` wins.
-- Standard input of a shell command is the backend's to give, not Foreman's.
-  Claude Code 2.1.331 gives a plain command `/dev/null`, so a read gets
-  end-of-file at once. A command that also holds a heredoc gets a socket
-  instead, and a read in it waits until the Bash timeout
-  (`BASH_DEFAULT_TIMEOUT_MS`, 20 minutes): this was checked live on
-  2026-11-25 by an independent review, and the runs behind the 18-minute
-  stall (FOR-53) were of this shape. Foreman does not change it yet. Wrapping
-  every command through Claude Code's shell prefix with `< /dev/null` is the
-  candidate fix; it needs a live test, and is in the backlog. Codex: not
-  verified. The developer prompt therefore says that nothing can be typed in,
-  and that every input must be given explicitly.
+- Every command a Claude Code step runs has `/dev/null` as standard input.
+  Left to itself, Claude Code 2.1.331 and 2.1.332 give a plain command
+  `/dev/null`, but a command that also holds a heredoc a socket, and a read
+  in it waited until the Bash timeout (`BASH_DEFAULT_TIMEOUT_MS`,
+  20 minutes). The runs behind the 18-minute stall (FOR-53) were of this
+  shape. So the runner sets `CLAUDE_CODE_SHELL_PREFIX` to
+  `foreman/data/shell/no-stdin.sh` (`HEADLESS_STEP_ENV`). Claude Code passes
+  the prefix the whole command as one argument, and the script runs it with
+  `bash -c` (or `zsh -c`, when that is the shell) and `< /dev/null`. A
+  heredoc inside the command still feeds its program. Checked live on
+  2026-11-25 with Claude Code 2.1.332: the heredoc command's read returned at
+  once; quoting, a `cd` carried to the next command and the environment were
+  unchanged. The prefix must be one executable path (`bash <script>` is
+  refused), so the step stops in preflight when the file is missing or has
+  lost its executable bit. A role that sets the variable to an empty string
+  runs without it. Codex: not verified. The developer prompt says that
+  nothing can be typed in, and that every input must be given explicitly.
 
 #### A step's result is a record its role declares (ADR-0041 section 2, ADR-0042)
 
