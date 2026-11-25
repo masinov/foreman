@@ -42,6 +42,12 @@ export function toolsWords(policy) {
   return "Every tool";
 }
 
+/** What a step read before its first edit: "7 before its first edit", or "7, no edit" when it changed nothing. */
+export function readsWords({ reads, edited }) {
+  const count = `${reads} ${reads === 1 ? "read" : "reads"}`;
+  return edited ? `${count} before its first edit` : `${count}, no edit`;
+}
+
 /** The commit a step was about, with what it was to that step. */
 function commitFact(run, transcript) {
   const merged = last(transcript, "engine.merge");
@@ -92,7 +98,7 @@ function why(run, gate) {
  *
  * `previous` and `next` are the runs just before and after it on the task.
  * `repo` is what the step recorded of the repository (the output's `session`,
- * `changes` and `merge`); a fact is added only for what it holds, and for an
+ * `changes`, `reads` and `merge`); a fact is added only for what it holds, and for an
  * older step that is nothing. Those facts carry `session`, `changed`,
  * `brought` or `landed` for the page to draw.
  */
@@ -121,6 +127,7 @@ export function stepFacts(run, transcript, { previous = null, next = null, task 
     facts.push({ key: "session", term: "Session", text: from ? "Continued from " : "New", session: from ? { run: from, label: `attempt ${attempt}` } : null });
   }
   if (repo?.changes) facts.push({ key: "changed", term: "Changed", changed: repo.changes });
+  if (repo?.reads) facts.push({ key: "reads", term: "Reads", text: readsWords(repo.reads) });
   if (merge?.commits?.length) facts.push({ key: "brought-in", term: "Brought in", brought: { commits: merge.commits, total: merge.commits_total ?? merge.commits.length } });
   if (merge?.changes) facts.push({ key: "merge-changed", term: "Changed", landed: merge.changes });
   const by = runRole(run, task);

@@ -27,6 +27,7 @@ from ..errors import OrchestratorError, QuotaPauseError
 from ..model_selection import ModelSelection, resolve_step_model_selection
 from ..results import AgentExecutionResult
 from ..repo_facts import step_changes_payload
+from ...domain.step_reads import STEP_READS_EVENT, reads_before_first_change
 from ..output_contract import (
     UNREAD_APPROVAL_DETAIL,
     approved_without_reading,
@@ -337,7 +338,15 @@ class AgentSteps(WorkflowRunnerBase):
             record=result.record,
         )
         self._record_step_changes(run, project, head_before, head_after)
+        self._record_step_reads(run)
         return result
+
+    def _record_step_reads(self, run: Run) -> None:
+        """Record the reads the run made before its first change (ADR-0041)."""
+
+        events = self.store.list_events(run_id=run.id)
+        reads = reads_before_first_change((event.event_type, event.payload) for event in events)
+        self.records.emit_event(run, STEP_READS_EVENT, reads.payload())
 
     def _record_step_changes(
         self, run: Run, project: Project, head_before: str | None, head_after: str | None

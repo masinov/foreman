@@ -576,6 +576,18 @@ class TaskReadsCase(unittest.TestCase):
         self.assertEqual([f["path"] for f in second["changes"]["files"]], ["assay/serve.py", "tests/test_serve.py"])
         self.assertEqual(third["changes"]["against"]["kind"], "commit")
 
+    def test_a_step_gives_its_reads_before_the_first_edit(self) -> None:
+        self.task()
+        self.repo_run("edit", "develop", 1)
+        self.repo_run("look", "review", 2, role_id="code_reviewer")
+        self.repo_run("old", "develop", 3)
+        self.repo_event("edit", "engine.step_reads", {"reads": 7, "edited": True})
+        self.repo_event("look", "engine.step_reads", {"reads": 4, "edited": False})
+
+        self.assertEqual(self.get("/api/v1/runs/edit/output").json()["reads"], {"reads": 7, "edited": True})
+        self.assertEqual(self.get("/api/v1/runs/look/output").json()["reads"], {"reads": 4, "edited": False})
+        self.assertIsNone(self.get("/api/v1/runs/old/output").json()["reads"])
+
     def test_a_merge_gives_what_it_brought_in_and_an_older_run_gives_none(self) -> None:
         self.task()
         self.repo_run("m", "merge", 1, role_id="_builtin:merge", agent_backend="builtin")

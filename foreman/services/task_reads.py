@@ -30,6 +30,7 @@ from .task_models import (
     SessionFact,
     SizeFact,
     StepChanges,
+    StepReads,
     SprintActivity,
     SprintActivityItem,
     TaskChanges,
@@ -54,6 +55,7 @@ from ..domain.activity import (
     WHO,
 )
 from ..domain.models import Event, Project, Run, Task
+from ..domain.step_reads import STEP_READS_EVENT
 from ..store import ForemanStore
 
 _SUMMARY_CAP = 2000
@@ -447,6 +449,7 @@ class TaskReads:
             raw_included=raw,
             session=self._session_fact(run),
             changes=self._step_changes(run, events),
+            reads=self._step_reads(events),
             merge=self._merge_facts(run, events),
         )
 
@@ -479,6 +482,16 @@ class TaskReads:
             return SessionFact()
         other, attempt = earlier[-1]
         return SessionFact(continued_from=other.id, continued_attempt=attempt)
+
+    @staticmethod
+    def _step_reads(events: list[Event]) -> StepReads | None:
+        recorded = _last_payload(events, STEP_READS_EVENT)
+        if recorded is None:
+            return None
+        try:
+            return StepReads(reads=int(recorded["reads"]), edited=bool(recorded["edited"]))
+        except (KeyError, TypeError, ValueError):
+            return None
 
     def _step_changes(self, run: Run, events: list[Event]) -> StepChanges | None:
         recorded = _last_payload(events, "engine.step_changes")

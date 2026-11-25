@@ -248,6 +248,25 @@ class OutcomeNumbersTests(unittest.TestCase):
         # Only agents' runs are grouped: a person's filing record is not one.
         self.assertNotIn(("human", None), rows)
 
+    def test_reads_before_the_first_edit_are_a_median_per_role_and_model(self) -> None:
+        story = Story("t1").through()
+        # Developer runs: 3 and 9 reads before an edit, one with no edit; the reviewer changed nothing.
+        story.event("engine.step_reads", run_id=story.runs[0].id, reads=3, edited=True)
+        second = story.run("develop", "developer", model="sonnet")
+        story.event("engine.step_reads", run_id=second, reads=9, edited=True)
+        third = story.run("develop", "developer", model="sonnet")
+        story.event("engine.step_reads", run_id=third, reads=5, edited=False)
+        story.event("engine.step_reads", run_id=story.runs[1].id, reads=4, edited=False)
+
+        rows = {(row.role, row.model): row for row in compute(story).by_role_and_model}
+
+        developer = rows[("developer", "sonnet")]
+        self.assertEqual(developer.median_reads_before_first_edit, 6.0)
+        self.assertEqual((developer.runs_with_reads, developer.runs_without_edit), (3, 1))
+        reviewer = rows[("code_reviewer", "sonnet")]
+        self.assertIsNone(reviewer.median_reads_before_first_edit)
+        self.assertEqual((reviewer.runs_with_reads, reviewer.runs_without_edit), (1, 1))
+
     def test_failed_runs_are_counted_for_their_role_and_model(self) -> None:
         story = Story("t1", status="in_progress")
         story.step("develop")
@@ -286,6 +305,13 @@ class OutcomeSurfacesTests(unittest.TestCase):
                 for event in story.events:
                     event.run_id = event.run_id or engine_run
                     store.save_event(event)
+                for run in story.runs:
+                    if run.role_id == "developer":
+                        store.save_event(
+                            Event(id=f"{run.id}-reads", run_id=run.id, task_id=story.task.id,
+                                  project_id="p1", event_type="engine.step_reads",
+                                  payload={"reads": 7, "edited": True})
+                        )
                 # Raw output is not an outcome event and is never read for one.
                 store.save_event(
                     Event(id=f"{story.task.id}-raw", run_id=engine_run, task_id=story.task.id,
@@ -331,6 +357,8 @@ class OutcomeSurfacesTests(unittest.TestCase):
         self.assertIn("Passed first time: 1 of 2 merged (50%)", text)
         self.assertIn("Send-backs: 1: tests 1", text)
         self.assertIn("developer | sonnet", text)
+        self.assertIn("reads before first edit: median 7", text)
+        self.assertIn("reads before first edit: -", text)
 
         code, raw, _ = self.run_cli("outcomes", "p1", "--sprint", "s2", "--json")
         self.assertEqual(code, 0)

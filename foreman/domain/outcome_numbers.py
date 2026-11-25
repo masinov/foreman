@@ -24,6 +24,7 @@ TRANSITION = "workflow.transition"
 PAUSED = "workflow.paused"
 RESUMED = "workflow.resumed"
 MERGED = "engine.merge"
+STEP_READS = "engine.step_reads"
 CLOSED_BY_HAND = "human.task_completed"
 
 #: What a person does to a started task without a gate asking for it.
@@ -44,6 +45,7 @@ OUTCOME_EVENT_TYPES: tuple[str, ...] = (
     PAUSED,
     RESUMED,
     MERGED,
+    STEP_READS,
     *INTERVENTION_EVENTS,
 )
 
@@ -111,6 +113,11 @@ class RoleModelNumbers:
     send_backs_caused: int
     tasks_built_merged: int
     tasks_built_passed_first_time: int
+    #: Median reads before the first change, over the runs that changed something (ADR-0041).
+    median_reads_before_first_edit: float | None = None
+    #: Runs that recorded their reads, and how many of them changed nothing.
+    runs_with_reads: int = 0
+    runs_without_edit: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -337,7 +344,7 @@ def outcome_numbers(
         cost=cost,
         median_minutes_to_merge=round(median(to_merge) / 60, 1) if to_merge else None,
         by_role_and_model=_by_role_and_model(
-            stories, runs_by_task, counted_runs, caused
+            stories, runs_by_task, counted_runs, caused, events
         ),
     )
 
@@ -347,6 +354,7 @@ def _by_role_and_model(
     runs_by_task: dict[str, list[Run]],
     counted_runs: Sequence[Run],
     caused: dict[tuple[str, str | None], int],
+    events: Sequence[Event],
 ) -> list[RoleModelNumbers]:
     groups: dict[tuple[str, str | None], list[Run]] = defaultdict(list)
     for run in counted_runs:
@@ -376,6 +384,15 @@ def _by_role_and_model(
         if story.passed_first_time():
             built_first[key] += 1
 
+    reads_of: dict[str, tuple[int, bool]] = {
+        str(event.run_id): (int(event.payload.get("reads") or 0), bool(event.payload.get("edited")))
+        for event in events
+        if event.event_type == STEP_READS and event.run_id
+    }
+
+    def edited_reads(group: Sequence[Run]) -> list[int]:
+        return [reads_of[run.id][0] for run in group if run.id in reads_of and reads_of[run.id][1]]
+
     rows = [
         RoleModelNumbers(
             role=role,
@@ -392,6 +409,13 @@ def _by_role_and_model(
             send_backs_caused=caused.get((role, model), 0),
             tasks_built_merged=built_merged.get((role, model), 0),
             tasks_built_passed_first_time=built_first.get((role, model), 0),
+            median_reads_before_first_edit=(
+                float(median(reads)) if (reads := edited_reads(group)) else None
+            ),
+            runs_with_reads=sum(1 for run in group if run.id in reads_of),
+            runs_without_edit=sum(
+                1 for run in group if run.id in reads_of and not reads_of[run.id][1]
+            ),
         )
         for (role, model), group in groups.items()
     ]

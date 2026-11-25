@@ -42,6 +42,19 @@ def _wait(seconds: float | None) -> str:
     return f"{seconds / 3600:.1f} h"
 
 
+def _reads_words(row: dict[str, Any]) -> str:
+    """Reads before the first edit, for one role and model (ADR-0041)."""
+
+    total, idle = row["runs_with_reads"], row["runs_without_edit"]
+    median = row["median_reads_before_first_edit"]
+    if not total:
+        return "reads before first edit: -"
+    text = "reads before first edit: " + ("no edit" if median is None else f"median {median:g}")
+    if median is not None and idle:
+        text += f" ({idle} of {total} runs with no edit)"
+    return text
+
+
 def outcome_lines(numbers: dict[str, Any]) -> list[str]:
     """The outcome numbers in plain lines, for a terminal."""
 
@@ -106,6 +119,7 @@ def outcome_lines(numbers: dict[str, Any]) -> list[str]:
             )
         if row["send_backs_caused"]:
             parts.append(f"sent back {row['send_backs_caused']}")
+        parts.append(_reads_words(row))
         parts.append(format_usd(row["cost_usd"]))
         parts.extend(token_split_parts(row["tokens"]))
         lines.append("- " + " | ".join(parts))

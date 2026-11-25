@@ -26,6 +26,7 @@ const SILENT = new Set([
   "engine.review_recorded",
   // What the step changed is said in its facts.
   "engine.step_changes",
+  "engine.step_reads",
   "workflow.step_completed",
   "workflow.transition",
 ]);
