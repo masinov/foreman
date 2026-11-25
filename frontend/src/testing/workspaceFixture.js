@@ -110,6 +110,7 @@ export function workspacePayload({ withGateTask = true } = {}) {
           needs_you: waiting,
           spend_usd: 1.314,
         },
+        planned_sprints: 0,
         needs_you: waiting,
         backlog: 4,
         latest_milestone: milestone("sprint_started", {
@@ -125,6 +126,7 @@ export function workspacePayload({ withGateTask = true } = {}) {
         workflow_id: "development",
         engine: engine("not_running"),
         active_sprint: null,
+        planned_sprints: 0,
         needs_you: 0,
         backlog: 0,
         latest_milestone: null,

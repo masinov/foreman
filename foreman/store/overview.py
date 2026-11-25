@@ -319,6 +319,22 @@ class OverviewStore(StoreBase):
             spend[row["sprint_id"]] = float(row["cost"])
         return spend
 
+    def planned_sprint_counts(self) -> dict[str, int]:
+        """Count each project's sprints still in the planned status, by project id.
+
+        The backlog is a sprint row too, and always planned; it is not a sprint.
+        """
+
+        rows = self._connection.execute(
+            """
+            SELECT project_id, COUNT(*) AS value
+            FROM sprints
+            WHERE status = 'planned' AND kind = 'sprint'
+            GROUP BY project_id
+            """
+        ).fetchall()
+        return {row["project_id"]: int(row["value"]) for row in rows}
+
     def backlog_counts(self) -> dict[str, int]:
         """Count the work waiting in each project's backlog, by project id.
 

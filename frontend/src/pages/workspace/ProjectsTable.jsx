@@ -38,9 +38,18 @@ function EngineCell({ engine }) {
   );
 }
 
-function SprintCell({ sprint }) {
+function plannedWording(count) {
+  return count > 0 ? `${count} planned` : "nothing planned";
+}
+
+function SprintCell({ sprint, planned }) {
   if (!sprint) {
-    return <span className="quiet">None</span>;
+    return (
+      <div className="cell-stack">
+        <span className="quiet">None</span>
+        <span className="quiet">{plannedWording(planned)}</span>
+      </div>
+    );
   }
   return (
     <div className="cell-stack">
@@ -73,7 +82,7 @@ function LastChangeCell({ milestone }) {
 const COLUMNS = [
   { key: "project", header: "Project, location, branch", className: "projects__project", render: (p) => <ProjectCell project={p} /> },
   { key: "engine", header: "Engine", className: "projects__engine", render: (p) => <EngineCell engine={p.engine} /> },
-  { key: "sprint", header: "Active sprint", className: "projects__sprint", render: (p) => <SprintCell sprint={p.active_sprint} /> },
+  { key: "sprint", header: "Active sprint", className: "projects__sprint", render: (p) => <SprintCell sprint={p.active_sprint} planned={p.planned_sprints} /> },
   {
     key: "needs-you",
     header: "Needs you",

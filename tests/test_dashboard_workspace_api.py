@@ -499,6 +499,20 @@ class WorkspaceTests(WorkspaceApiCase):
     def test_empty_workspace(self) -> None:
         self.assertEqual(self.get("/api/v1/workspace").json(), {"projects": []})
 
+    def test_planned_sprints_counts_only_planned_ones(self) -> None:
+        self.project("p1")
+        self.project("p2")
+        self.project("p3")
+        self.sprint("s2a", "p2", "Two a")
+        self.sprint("s2b", "p2", "Two b", order_index=1)
+        self.sprint("s3c", "p3", "Done", status="completed")
+        self.sprint("s3x", "p3", "Gone", status="cancelled")
+        self.sprint("s3a", "p3", "Active", status="active")
+        by_id = {p["id"]: p for p in self.get("/api/v1/workspace").json()["projects"]}
+        self.assertEqual(
+            [by_id[pid]["planned_sprints"] for pid in ("p1", "p2", "p3")], [0, 2, 0]
+        )
+
     def test_a_project_with_nothing_going_on(self) -> None:
         self.project("p1")
         (entry,) = self.get("/api/v1/workspace").json()["projects"]
