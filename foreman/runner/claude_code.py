@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from datetime import datetime, timezone
 import json
+import os
 import re
 from pathlib import Path
 import shlex
@@ -34,10 +35,17 @@ _FILE_TOOLS = {"Read", "Write", "Edit", "NotebookEdit"}
 #: it, which in a step means the work is abandoned and the completion marker
 #: never comes. So background commands are off and the default timeout is
 #: long enough for a project's test suite. A role's own ``[agent.env]`` wins.
+#:
+#: Every command also runs with standard input on ``/dev/null``, through
+#: ``NO_STDIN_PREFIX``. Claude Code gives a command that holds a heredoc a
+#: socket as its input, so a read in it waited until the timeout (FOR-53's
+#: 18-minute stall; checked live on 2026-11-25 with Claude Code 2.1.332).
+NO_STDIN_PREFIX = Path(__file__).resolve().parent.parent / "data" / "shell" / "no-stdin.sh"
 HEADLESS_STEP_ENV: dict[str, str] = {
     "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1",
     "BASH_DEFAULT_TIMEOUT_MS": "1200000",
     "BASH_MAX_TIMEOUT_MS": "1800000",
+    "CLAUDE_CODE_SHELL_PREFIX": str(NO_STDIN_PREFIX),
 }
 
 # Raw stream lines are persisted for the transcript, capped so one tool result
@@ -67,6 +75,24 @@ _QUOTA_ERROR_PATTERN = re.compile(
 )
 #: Rate-limit statuses under which the backend still serves requests.
 _RATE_LIMIT_OK_STATUSES = frozenset({"", "allowed", "allowed_warning"})
+
+
+def _check_shell_prefix(prefix: str) -> None:
+    """Refuse to start when the shell prefix cannot run.
+
+    Claude Code runs every command through it, so a missing or
+    non-executable prefix would fail every command of the step. An install
+    that dropped the file's executable bit is the likely cause. A role that
+    sets the prefix to an empty string runs commands without one.
+    """
+
+    if not prefix:
+        return
+    path = Path(prefix)
+    if not path.is_file() or not os.access(path, os.X_OK):
+        raise PreflightError(
+            f"Claude Code preflight failed: the shell prefix `{prefix}` is missing or not executable."
+        )
 
 
 
@@ -146,13 +172,15 @@ class ClaudeCodeRunner(AgentRunner):
         """
 
         self._preflight()
+        env = {**HEADLESS_STEP_ENV, **config.env}
+        _check_shell_prefix(env["CLAUDE_CODE_SHELL_PREFIX"])
         command = self.build_command(config)
         try:
             proc = self._popen_factory(
                 command,
                 **popen_kwargs(
                     cwd=config.working_dir,
-                    env=agent_environment({**HEADLESS_STEP_ENV, **config.env}),
+                    env=agent_environment(env),
                     inherit_env=False,
                 ),
             )
