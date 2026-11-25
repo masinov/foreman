@@ -296,10 +296,15 @@ The current runtime supports:
     detail names the branch and both commits. Any record the agent returned is
     dropped. The check also runs when the step is killed, so the branch is
     restored even though nobody reads a verdict.
-  - Pushes fail: the sandbox's environment sets `remote.<name>.pushurl` for every
-    remote through `GIT_CONFIG_PARAMETERS` (works on every git version;
-    `GIT_CONFIG_COUNT` needs 2.31), which outranks the repository's own config.
-    The agent also has no SSH agent or forge token (ADR-0023).
+  - Pushes are made to fail: the sandbox's environment sets
+    `remote.<name>.pushurl` for every remote through `GIT_CONFIG_PARAMETERS`,
+    each entry written `'key=value'`. That form is read by every git version.
+    The `'key'='value'` form needs git 2.31, and older git refuses the whole
+    variable, which broke every git command in the sandbox (git 2.25,
+    2026-11-25). The setting outranks the repository's own config. The
+    agent also has no SSH agent or forge token (ADR-0023). This is a
+    deterrent, not a wall: an agent that clears the variable, or pushes to
+    an explicit URL, is not stopped, and a push is not detected.
 - What it does not guard: refs other than the task's branch. Another task may
   move any of them legitimately while a review runs, so they cannot be told
   from the agent's work. A branch or tag the agent creates in the sandbox

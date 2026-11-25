@@ -270,6 +270,18 @@ Create checkpoint notes at meaningful milestones in:
 
 - `docs/checkpoints/<tag>.md`
 
+## Looking at a page in a review
+
+To see dashboard pages as a user would, from a checkout with its own
+virtualenv (a review sandbox has one; it needs the `e2e` extra):
+
+    ./venv/bin/python scripts/review_screenshots.py /dashboard/projects/foreman /dashboard/tasks/<task id>
+
+It builds the frontend, serves this checkout's dashboard on a free localhost
+port from a read-only copy of the database, and writes
+`.review/<page>-1440.png` and `.review/<page>-390.png`. Compare them with
+`docs/design/dashboard-v7/`. Never point a browser at the live dashboard.
+
 ## Validation
 
 Before marking work complete, run the relevant validation for the slice.

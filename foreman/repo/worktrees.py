@@ -400,10 +400,13 @@ class WorktreeManager:
 
         result = run_git(self.repo_path, "remote", check=False)
         remotes = result.stdout.split() if result.returncode == 0 else []
-        # ``GIT_CONFIG_PARAMETERS`` is what ``git -c`` sets, and every git
-        # version reads it (``GIT_CONFIG_COUNT`` needs 2.31).
+        # ``GIT_CONFIG_PARAMETERS`` is what ``git -c`` sets. Each entry is
+        # written ``'key=value'``, the one form every git version reads: the
+        # ``'key'='value'`` form needs git 2.31, and older git refuses the
+        # whole variable, so every git command in the sandbox failed with
+        # "bogus format in GIT_CONFIG_PARAMETERS" (git 2.25, 2026-11-25).
         entries = " ".join(
-            f"'remote.{remote}.pushurl'='/nonexistent/foreman-sandbox-no-push'"
+            f"'remote.{remote}.pushurl=/nonexistent/foreman-sandbox-no-push'"
             for remote in remotes
         )
         return {"GIT_CONFIG_PARAMETERS": entries} if entries else {}
@@ -953,7 +956,10 @@ def prune_project_worktrees(
     removed: list[WorktreeEntry] = []
     kept: list[WorktreeEntry] = []
     for entry in manager.list():
-        if entry.is_integration or entry.slug in slugs_to_keep or not entry.owned:
+        # A sandbox belongs to its task: ``_sandbox-<slug>`` is kept while the
+        # task is live, since a review may be running in it.
+        slug = entry.slug.removeprefix(SANDBOX_WORKTREE_PREFIX) if entry.is_sandbox else entry.slug
+        if entry.is_integration or slug in slugs_to_keep or not entry.owned:
             kept.append(entry)
             continue
         manager.remove_path(entry.path)

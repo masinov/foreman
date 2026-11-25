@@ -223,3 +223,6 @@ frontend/.vite/
 # The built dashboard bundle. Built by `foreman dashboard`, CI and the test
 # step; never committed (ADR-0020, decision 10).
 foreman/dashboard_frontend_dist/
+
+# Screenshots and the database copy a review takes (scripts/review_screenshots.py).
+.review/

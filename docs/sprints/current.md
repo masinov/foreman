@@ -5,7 +5,9 @@
 - **Opened:** 2026-11-25 (owner: "Go ahead, but i want it to run fully
   autonomously and come back tomorrow to check. No supervision on my
   side.")
-- **Status:** active
+- **Status:** completed by Foreman (2026-11-25 01:34); reviewed afterwards by
+  Claude with three independent reviewers, and fixed by hand before the new
+  code went live (below)
 - **Method:** through Foreman, unsupervised. Merges are approved by
   Foreman (`merge_approval = auto`) and the sprint is finished by Foreman
   (`sprint_completion = auto`) for this sprint. Claude keeps a watchdog,
@@ -34,11 +36,11 @@ The first build items of ADR-0040, on the model of ADR-0041:
 
 | Key | Task | Depends on | Status |
 |-----|------|------------|--------|
-| FOR-60 | Agent commands never wait for input, and `AGENTS.md` reaches the agent once | none | todo |
-| FOR-61 | A step's result is a record its role declares, starting with the developer's report | none | todo |
-| FOR-62 | The reviewer's verdict is a record per criterion, and only serious findings send work back | FOR-61 | todo |
-| FOR-63 | A step's details show the reads before its first edit and the tokens it used | none | in_progress |
-| FOR-64 | The code reviewer runs the checks and takes screenshots in a sandbox | FOR-62 | in_progress |
+| FOR-60 | Agent commands never wait for input, and `AGENTS.md` reaches the agent once | none | done |
+| FOR-61 | A step's result is a record its role declares, starting with the developer's report | none | done |
+| FOR-62 | The reviewer's verdict is a record per criterion, and only serious findings send work back | FOR-61 | done |
+| FOR-63 | A step's details show the reads before its first edit and the tokens it used | none | done |
+| FOR-64 | The code reviewer runs the checks and takes screenshots in a sandbox | FOR-62 | done |
 
 The full description and acceptance criteria of each task are in Foreman.
 
@@ -50,6 +52,25 @@ The full description and acceptance criteria of each task are in Foreman.
   (`fix/tests-duplicate-json-import`). By mechanism: Foreman's
   `test_command` now starts with `ruff check foreman tests scripts` and
   `lint-imports`, as CI does.
+
+- **01:34, the sprint finished in 45 minutes.** Every code review had
+  approved in about six seconds: the engine ran the code from before the
+  sprint, so these tasks were reviewed the old way. Claude ran the checks
+  (ruff, layers, 1,756 Python and 547 frontend tests, CI) and had each task
+  reviewed against its criteria by an independent reviewer. Findings and
+  what was done with them:
+  - **FOR-64, the sandbox** (`fix/sandbox-git-and-prune`):
+    - every git command failed in a sandbox on git 2.25 because of the
+      push block's config format; fixed, with a test;
+    - `foreman worktree prune` deleted a running review's sandbox; it now
+      keeps a live task's sandbox;
+    - the reviewer could not take screenshots on this machine. A reviewer
+      that could not see a page had to mark it `not_verified`, which FOR-62's
+      rule refuses on an approval, so every frontend task would have
+      blocked. The reviewer now follows the project's own preview recipe
+      (`scripts/review_screenshots.py`, in `AGENTS.md`), and judges from the
+      code with an S3 finding when it cannot see the page. The worktree
+      setup installs the `e2e` extra (a project setting).
 
 ### Left for later
 
