@@ -67,35 +67,44 @@ project can run at once, the project page shows each one's.
 
 ### 3. The rules that make every button do something
 
-1. **A pause passes down, never up.** A paused sprint holds its tasks.
-   Pausing every task of a sprint does not pause the sprint: it stays
-   started and says "Nothing to run · 3 tasks paused".
-2. **Resume releases everything at and below its level.** Resume on a
-   sprint lifts the sprint's pause and every pause on its tasks. Resume all
-   lifts every pause in the workspace. So Resume is never a button that
-   leaves everything as it was.
+1. **The last action wins, at and below where it is taken.** A Pause or a
+   Resume applies to its level and everything below it, and replaces what
+   was said there before. Whether a task may run is decided by the newest
+   action among its workspace, its sprint and itself.
+   - Pause on a sprint holds every task in it, including tasks added
+     later, and undoes a Resume given to one of them before.
+   - Resume on a task in a paused sprint lets that task run. The sprint
+     stays paused for the others.
+   - Resume on a sprint releases it and every task in it. Resume all
+     releases everything in the workspace.
+   - The workspace works the same way: after Pause all, resuming one
+     sprint or one task lets only that run.
+   So every Pause and Resume is on the page where the user is, and does
+   what it says there. No control is hidden because of a level above.
+2. **A pause passes down, never up.** Pausing every task of a sprint does
+   not pause the sprint: it stays started, and its status line says
+   "Paused · 3 tasks".
 3. **Resume is offered wherever something at or below is paused;** Pause
    and Stop wherever something at or below can run. A started sprint with
    one task paused shows Pause, Stop and Resume: Pause holds everything in
    it, Resume releases everything in it.
 4. **Resume asks no confirmation; its toast says what it released:**
-   "Resumed sprint 64, FOR-66 and FOR-67." Resuming is undone by pausing
-   again, so a question before it would only be friction (owner,
-   2026-11-25).
-5. **Nothing is resumed past a pause above it.** A task of a paused sprint
-   offers no Resume; in its place the page says "Sprint 64 is paused", with
-   a link to it. The same holds for a sprint under a paused workspace.
+   "Resumed the sprint and 2 tasks." Resuming is undone by pausing again,
+   so a question before it would only be friction (owner, 2026-11-25).
+5. **An exception is shown where it is made and above it.** A paused sprint
+   with one task let run says "Paused · FOR-65 running"; the task's own
+   Status reads as any running task's.
 6. **A pause lasts until someone resumes it.** A restart, a reboot or a
-   crashed worker does not lift it. Starting a sprint under a paused
-   workspace starts it; its status line says it waits for the workspace.
+   crashed worker does not lift it. Start sprint is not a Resume: a sprint
+   started under a paused workspace waits, and says "Paused · workspace".
 
 ### 4. What the other actions do
 
 - **Start sprint** replaces "Activate sprint". It is the only way a sprint
   starts. Nothing starts a planned sprint by itself any more.
-- **Run next** only changes the order: the task is first in line, and runs
-  when nothing above it is paused. While it waits it reads "Runs next", and
-  where something above is paused, "Runs next when sprint 64 resumes".
+- **Run next** puts the task first in line. On a task held by a pause above
+  it, it is also that task's Resume (rule 1): a user who names a task wants
+  it run. While it waits for the running step it reads "Runs next".
 - **Stop on a task leaves it paused, not blocked.** Blocked stays what
   Foreman says when it needs a user (a failure, a loop limit, a branch
   violation). A task a user stopped is not in Needs you.
@@ -108,27 +117,34 @@ project can run at once, the project page shows each one's.
   line, and its branch is refreshed from the default branch before its next
   step, as any task's is (ADR-0012).
 - **A decision made while paused is recorded and waits.** Approving a merge
-  in a paused sprint moves the task to Merge, which runs on Resume: "Approved
-  FOR-51. It goes on with Merge when sprint 64 resumes."
+  in a paused sprint moves the task to Merge, which runs on Resume:
+  "Approved FOR-51. It merges on Resume."
 
 ### 5. What the page says
+
+**No name in a status line, a toast or a button.** A sprint's or a
+project's title is free text of any length; these places are fixed and
+short. They use fixed words, task keys and times. Which sprint, who acted
+and the full time are on hover.
 
 One status line per level, the same words wherever it is shown (the
 sprint header, the project header, the top bar, a row of the workspace's
 projects table):
 
-- "Working on FOR-65 · Develop"
-- "Pausing · Develop is finishing" (Stop stays offered, for a step taking
+- "Working · FOR-65 Develop"
+- "Pausing · Develop finishing" (Stop stays offered, for a step taking
   too long)
-- "Paused by you at 14:02"
-- "Stopped by you at 14:02 · Develop runs again"
-- "Nothing to run · 3 tasks paused"
-- "Waiting · no sprint started"
-- "Waits for the workspace · paused by you at 14:02"
+- "Paused · 14:02"
+- "Stopped · 14:02" (hover: the step that runs again)
+- "Paused · 3 tasks"
+- "Paused · FOR-65 running"
+- "Paused · workspace"
+- "Not started"
 
 A task's Status keeps its existing shape: "Paused · Develop", with who
-paused it and when on hover. "Stopped · Develop" (no engine) and "Waiting ·
-Develop" (the engine is on another task) keep their meanings.
+paused it, at which level and when on hover. "Waiting · Develop" (another
+task is running) keeps its meaning. "Stopped · Develop" now means a user
+stopped it.
 
 ### 6. The engine leaves the page
 
@@ -137,8 +153,8 @@ engine's Start, Pause and Stop, and the word "engine" leave the dashboard.
 The program that runs the work is called a **worker**.
 
 - **While no worker holds a project,** the project's status line says so,
-  in the place of the others: "Not running · no worker for this project",
-  with **Start worker**. That is the one worker control on the page. It is
+  in the place of the others: "Not running · no worker", with **Start
+  worker**. That is the one worker control on the page. It is
   a fault to fix, not a switch for the work, and the work's pauses are
   untouched by it.
 - **A supervisor will keep workers running** (a systemd user unit per
@@ -157,28 +173,33 @@ The program that runs the work is called a **worker**.
 A pause is state that every page shows, not a message to a program, so it
 is a row, not a command.
 
-- **A `pauses` table** (a migration): `id`, `scope` (`workspace`, `sprint`,
-  `task`), `scope_id` (null for the workspace), `project_id` (null for the
-  workspace), `mode` (`finish_step`, `now`), `requested_by`,
-  `requested_at`, `released_by`, `released_at`. A level has at most one
-  unreleased pause. Resume releases rows (rule 2) in one transaction.
+- **A `work_switches` table** (a migration), one row per level that has
+  been switched: `scope` (`workspace`, `sprint`, `task`), `scope_id` (null
+  for the workspace), `project_id` (null for the workspace), `state`
+  (`paused`, `running`), `mode` (`finish_step`, `now`; for `paused`),
+  `set_by`, `set_at`. An action replaces its level's row and deletes the
+  rows below it (rule 1) in one transaction; each action is also an event,
+  which is the history.
+- **A task is held** when the newest of the rows for its workspace, its
+  sprint and itself is `paused`. With no row, it may run.
 - **The worker reads it where it reads commands today:** before each step,
   and on every tick of an agent step (ADR-0011's poll sites). Before a step,
-  any unreleased pause covering the task parks it: the task stays
-  `in_progress` at that step and releases its lease. On a tick, a `now`
-  pause covering the running task cuts the step. A `finish_step` pause is
-  not acted on until the step ends.
-- **Choosing a task skips every task a pause covers.** When every candidate
+  a held task is parked: it stays `in_progress` at that step and releases
+  its lease. On a tick, a hold with mode `now` cuts the running step. A hold
+  with mode `finish_step` is not acted on until the step ends.
+- **Choosing a task skips every held task.** When every candidate
   is covered, the pass ends with the stop reason `paused`, and a resident
   worker waits on `data_version` as it does now.
 - **The command table keeps what is a message to a worker:** `run_task`,
   `steer_task` and `shutdown`. `pause`, `resume` and `stop_task` are
-  retired: the API and the CLI write and release pauses instead
-  (`foreman pause <project> [--sprint S | --task T] [--now]`,
-  `foreman resume …`, with the workspace when neither is given).
+  retired: the API and the CLI write switches instead
+  (`foreman pause <project> --sprint S | --task T [--now]`,
+  `foreman pause --all [--now]`, and `foreman resume` with the same
+  choices). Run next writes the task's switch to `running` and queues
+  `run_task`.
 - **Existing state is carried over.** A project whose engine stands paused
-  when the migration runs gets a pause on its active sprint, mode
-  `finish_step`, requested by whoever paused the engine.
+  when the migration runs gets a `paused` row on its active sprint, mode
+  `finish_step`, set by whoever paused the engine.
 
 ## Consequences
 
@@ -215,6 +236,10 @@ is a row, not a command.
   all of them.
 - **Resume releases only its own level.** Rejected by the owner: a sprint
   whose tasks are all paused would offer a Resume that does nothing.
+- **A pause above hides Resume below.** Rejected by the owner: a user could
+  not let one task of a paused sprint run without resuming the sprint and
+  pausing every other task, the page would send them elsewhere to act, and
+  a task named with Run next would be ignored.
 - **Pause cuts the step, as today.** Rejected: the common wish is "let it
   finish, then hold", and cutting throws away a step's work. Stop is there
   for the urgent case.
@@ -227,7 +252,7 @@ is a row, not a command.
 
 ## Order of work
 
-1. The `pauses` table, the worker reading it, and the CLI. Retire the
+1. The `work_switches` table, the worker reading it, and the CLI. Retire the
    engine's Stop on the dashboard in the same slice, since a stop must
    become a pause before anything restarts workers.
 2. The dashboard: the status line, Pause, Stop and Resume at the three
