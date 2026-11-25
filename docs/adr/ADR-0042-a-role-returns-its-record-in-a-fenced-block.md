@@ -182,3 +182,32 @@ later step could turn S3 findings into proposed tasks for a person to confirm.
   latest code review, and says nothing but the reviewer has checked the
   criteria (`foreman/engine/evidence.py`).
 - Review rounds are not capped here (ADR-0041 section 3).
+
+## Amendment, 2026-11-25: after an independent review, before the code went live
+
+Sprint 63's own reviews approved in seconds, so Claude had FOR-61 and FOR-62
+reviewed against their criteria before the live engine ran them. These
+rules changed:
+1. **The last record block that is a JSON object counts.** A later block
+   that is not JSON is a quote: an agent showing the format, or a file it
+   edited. Before, it replaced the record and failed the step. Windows line
+   endings are read.
+2. **A choice is matched without regard to case,** and stored as declared:
+   a severity written `s2` is `S2`. Before, it was a malformed record, and
+   the agent's one correction was spent on it.
+3. **The format example never shows a blocking finding.** It shows the
+   last choice of a list (S4, judgement). An example of S1 had reviewers
+   copy it into an approval.
+4. **A retry for a missing completion marker asks for the record too.**
+   Before, it asked for the summary and the marker only. The answer then
+   had no record, and the task blocked where it used to recover.
+5. **An approval must list the task's criteria when the task has any.**
+   An approving verdict with an empty `criteria` list passed before, so the
+   per-criterion check could be skipped. Entries are still not compared one
+   by one with the task's text.
+6. **A review that sends work back hands the developer its S1 and S2
+   findings,** after the reason. Before, the developer got the one-line
+   reason only.
+7. **A project's role that declares a `developer_report` of another
+   shape** no longer breaks every later prompt of the task. Its report is
+   left out of those prompts.

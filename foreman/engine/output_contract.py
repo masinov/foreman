@@ -15,7 +15,7 @@ from ..domain.outcomes import APPROVE, DONE, ERROR
 from ..definitions.records import RECORD_PROBLEM_PREFIX, read_record, split_record_block
 from ..definitions.roles import RoleDefinition
 from .results import AgentExecutionResult
-from .verdict import REVIEW_VERDICT, VERDICT_PROBLEM_PREFIX, check_verdict
+from .verdict import REVIEW_VERDICT, VERDICT_PROBLEM_PREFIX, check_verdict, findings_text
 
 
 FINAL_MESSAGE_PHASES = frozenset({"result", "final_answer"})
@@ -149,6 +149,7 @@ def read_completion(
     text: str,
     *,
     transcript: str | None = None,
+    task_has_criteria: bool = False,
 ) -> CompletionReading:
     """Apply the role's completion contract to the agent's final message.
 
@@ -182,10 +183,15 @@ def read_completion(
         record = {"kind": declaration.kind, "fields": fields}
         # A verdict that disagrees with its outcome is an error, with the reason;
         # the record stays, so the page shows what the reviewer returned.
-        disagreement = check_verdict(outcome, fields) if declaration.kind == REVIEW_VERDICT else None
+        if declaration.kind != REVIEW_VERDICT:
+            return CompletionReading(outcome, detail, record)
+        disagreement = check_verdict(outcome, fields, task_has_criteria=task_has_criteria)
         if disagreement:
             return CompletionReading(ERROR, disagreement, record)
-        return CompletionReading(outcome, detail, record)
+        # A review that sends work back carries its S1 and S2 findings in the
+        # detail, which is what the developer is handed (carry_output).
+        sent_back = findings_text(fields) if outcome in ("deny", "steer") else ""
+        return CompletionReading(outcome, f"{detail}\n\n{sent_back}" if sent_back else detail, record)
 
     if marker:
         if not contains_completion_marker(cleaned_text, marker):
@@ -345,9 +351,15 @@ def with_retry_instruction(
         correction = (
             "Your previous response did not include the required completion marker.\n"
             "Do not do more work.\n"
-            f"If the work is finished, return your completion summary again and end with "
-            f"`{role.completion.marker}` on its own line.\n"
-            "If it is not finished, do not write the marker: say what is unfinished or "
+            + (
+                f"If the work is finished, return your completion summary again and end with "
+                f"`{role.completion.marker}` on its own line.\n"
+                if declaration is None
+                else "If the work is finished, return your summary and your record again:\n"
+                + declaration.instructions(marker)
+                + f"\nThen end with `{role.completion.marker}` on its own line.\n"
+            )
+            + "If it is not finished, do not write the marker: say what is unfinished or "
             "what blocks it."
         )
     elif reason == "record_format":
@@ -366,8 +378,8 @@ def with_retry_instruction(
             "Your verdict did not agree with your decision.\n"
             "Do not do more review work.\n"
             "- DENY or STEER needs at least one S1 or S2 finding.\n"
-            "- APPROVE needs no S1 or S2 finding, and every criterion verified or "
-            "marked judgement.\n"
+            "- APPROVE needs no S1 or S2 finding, and every acceptance criterion of the "
+            "task listed, each verified or marked judgement.\n"
             "Return your verdict record and decision again so they agree: change the "
             "findings or the decision, whichever you got wrong.\n"
             + (declaration.instructions(marker) if declaration else "")

@@ -349,7 +349,11 @@ class AgentStepRunner:
         if self.runner_sleep is not None:
             retry_kwargs["sleep"] = self.runner_sleep
 
-        tally = _NativeRunTally(role=role, session_id=session_id)
+        tally = _NativeRunTally(
+            role=role,
+            session_id=session_id,
+            task_has_criteria=bool((task.acceptance_criteria or "").strip()),
+        )
         seen_signals: set[str] = set()
         # Heartbeat the task lease while the native runner streams so a long
         # run keeps the lease alive between steps. We track the last heartbeat
@@ -472,8 +476,11 @@ class AgentStepRunner:
 class _NativeRunTally:
     """What one native run's stream adds up to: its messages, totals and ending."""
 
-    def __init__(self, *, role: RoleDefinition, session_id: str | None) -> None:
+    def __init__(
+        self, *, role: RoleDefinition, session_id: str | None, task_has_criteria: bool = False
+    ) -> None:
         self.role = role
+        self.task_has_criteria = task_has_criteria
         self.events: list[AgentEventRecord] = []
         self.message_fragments: list[str] = []
         self.final_message = ""
@@ -528,6 +535,7 @@ class _NativeRunTally:
                 self.role,
                 self.final_message,
                 transcript="\n\n".join(self.message_fragments),
+                task_has_criteria=self.task_has_criteria,
             )
             self.outcome, self.detail, self.record = reading.outcome, reading.detail, reading.record
             self.final_status = "completed"

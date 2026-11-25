@@ -196,9 +196,15 @@ def _parse_fields(raw: Any, where: str, *, nested: bool) -> tuple[RecordField, .
 def split_record_block(text: str) -> tuple[str | None, str]:
     """The last record block of a message, and the message without any record block."""
 
-    blocks = _FENCED_RECORD.findall(text)
-    stripped = _FENCED_RECORD.sub("", text).strip()
+    blocks = record_blocks(text)
+    stripped = _FENCED_RECORD.sub("", text.replace("\r\n", "\n")).strip()
     return (blocks[-1] if blocks else None), stripped
+
+
+def record_blocks(text: str) -> list[str]:
+    """Every record block of a message, in order. Windows line endings are read too."""
+
+    return _FENCED_RECORD.findall(text.replace("\r\n", "\n"))
 
 
 def read_record(
@@ -206,16 +212,30 @@ def read_record(
 ) -> tuple[dict[str, Any] | None, str | None]:
     """Parse and check the record in a final message: ``(fields, None)`` or ``(None, problem)``."""
 
-    block, _ = split_record_block(text)
-    if block is None:
+    blocks = record_blocks(text)
+    if not blocks:
         return None, (
             f"The final message has no ```{RECORD_FENCE}``` block holding the "
             f"{declaration.kind} record."
         )
-    try:
-        value = json.loads(block)
-    except ValueError as exc:
-        return None, f"The {declaration.kind} record is not valid JSON: {exc}."
+    # The last block that is a JSON object is the record. A later block that
+    # is not JSON is a quote (an agent showing the format, or a file it
+    # edits), not the agent's own record.
+    value: Any = None
+    first_error: str | None = None
+    for block in reversed(blocks):
+        try:
+            candidate = json.loads(block)
+        except ValueError as exc:
+            first_error = first_error or str(exc)
+            continue
+        if isinstance(candidate, dict):
+            value = candidate
+            break
+    if value is None:
+        if first_error is None:
+            return None, f"The {declaration.kind} record must be a JSON object."
+        return None, f"The {declaration.kind} record is not valid JSON: {first_error}."
     problems = check_record(declaration, value)
     if problems:
         return None, "; ".join(problems)
@@ -251,8 +271,16 @@ def _check_fields(fields: tuple[RecordField, ...], value: Mapping[str, Any], pat
             if not isinstance(item, list) or any(not isinstance(entry, str) for entry in item):
                 problems.append(f"`{where}` must be a list of text")
         elif spec.type == "choice":
-            if item not in spec.choices:
+            canonical = (
+                next((choice for choice in spec.choices if choice.lower() == item.strip().lower()), None)
+                if isinstance(item, str)
+                else None
+            )
+            if canonical is None:
                 problems.append(f"`{where}` must be one of {', '.join(spec.choices)}; got {item!r}")
+            elif isinstance(value, dict):
+                # "s2" or " S2 " is the declared "S2": stored as declared.
+                value[spec.name] = canonical
         elif spec.type == "records":
             if not isinstance(item, list) or any(not isinstance(entry, dict) for entry in item):
                 problems.append(f"`{where}` must be a list of objects")
@@ -298,7 +326,9 @@ def _example(fields: tuple[RecordField, ...]) -> dict[str, Any]:
         elif spec.type == "text_list":
             out[spec.name] = ["..."]
         elif spec.type == "choice":
-            out[spec.name] = spec.choices[0]
+            # The example must never model a mistake: a severity example of
+            # S1 had reviewers copy it into an approval.
+            out[spec.name] = spec.choices[-1]
         else:
             out[spec.name] = [_example(spec.fields)]
     return out
