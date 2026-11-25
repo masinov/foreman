@@ -46,6 +46,20 @@ def dev_report(summary: str = "Done.") -> str:
 DEV_REPORT = dev_report()
 
 
+def reviewed(message: str) -> str:
+    """A scripted reviewer's final message: the verdict record its decision agrees
+    with (ADR-0042), then the decision text. DENY and STEER carry an S2 finding."""
+
+    blocking = message.lstrip("*- ").upper().startswith(("DENY", "STEER"))
+    verdict = {
+        "criteria": [],
+        "findings": [{"severity": "S2", "finding": "A criterion is not met."}] if blocking else [],
+    }
+    return "```foreman-record\n" + json.dumps(verdict) + "\n```\n" + message
+
+
+
+
 def definitions_with_plan_workflow():
     """The shipped roles and workflows, plus the plan-first pair kept for tests."""
 
@@ -529,7 +543,7 @@ class OrchestratorTestCase(unittest.TestCase):
         return (
             AgentEvent(
                 "agent.message",
-                payload={"text": "APPROVE", "phase": "result"},
+                payload={"text": reviewed("APPROVE"), "phase": "result"},
             ),
             AgentEvent(
                 "agent.completed",
@@ -542,7 +556,7 @@ class OrchestratorTestCase(unittest.TestCase):
         return (
             AgentEvent(
                 "agent.message",
-                payload={"text": "DENY: Please add the ready marker.", "phase": "result"},
+                payload={"text": reviewed("DENY: Please add the ready marker."), "phase": "result"},
             ),
             AgentEvent(
                 "agent.completed",

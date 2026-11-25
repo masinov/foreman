@@ -578,3 +578,20 @@
   margin: 0;
   overflow-wrap: anywhere;
 }
+
+/* A reviewer's verdict reuses the report's layout; a finding leads with its severity. */
+.run-report__finding {
+  overflow-wrap: anywhere;
+}
+
+.run-report__severity {
+  font-family: var(--font-mono);
+  font-size: inherit;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.run-report__severity--s1,
+.run-report__severity--s2 {
+  color: var(--color-gold);
+}

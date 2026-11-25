@@ -9,7 +9,7 @@ from foreman.engine.orchestrator import ForemanOrchestrator
 from foreman.runner.base import AgentEvent, AgentRunConfig
 from foreman.store import ForemanStore
 
-from engine_support import DEV_REPORT, OrchestratorTestCase, ScriptedNativeRunner
+from engine_support import DEV_REPORT, reviewed, OrchestratorTestCase, ScriptedNativeRunner
 
 
 def _approve(*reads: str) -> tuple[AgentEvent, ...]:
@@ -18,7 +18,7 @@ def _approve(*reads: str) -> tuple[AgentEvent, ...]:
     )
     return (
         *opened,
-        AgentEvent("agent.message", payload={"text": "APPROVE", "phase": "result"}),
+        AgentEvent("agent.message", payload={"text": reviewed("APPROVE"), "phase": "result"}),
         AgentEvent("agent.completed", payload={"session_id": "review-1"}),
     )
 

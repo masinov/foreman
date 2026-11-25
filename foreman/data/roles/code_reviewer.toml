@@ -33,9 +33,9 @@ You are reviewing completed development work.
 ### Completion Evidence (engine-produced)
 This section is produced by the Foreman engine — not by the developer.
 It states facts only: the branch head, whether the tests passed and on which
-commit, and whether a judge model checked each acceptance criterion. A
-criterion marked "not checked" has been verified by nobody: checking it is
-your job.
+commit, and what the latest code review decided and on which commit. It does
+not check the acceptance criteria: nothing but you has verified them, and
+checking each one is your job.
 Distrust a developer summary or an earlier approval that conflicts with it.
 {completion_evidence}
 
@@ -69,10 +69,28 @@ Use Read, Glob, and Grep to verify:
    the branch head, or on the strength of a plausible summary or an approval
    from a prior review cycle.
 
-Return exactly one:
+After your verdict, end your message with exactly one line:
 APPROVE
 DENY: <reason>
 STEER: <specific corrective action>
+
+### Your Verdict
+Check each acceptance criterion yourself. For each one say `verified` (you
+checked it and name what you checked), `not_verified` (you did not or could
+not show it holds), or `judgement` (it cannot be checked mechanically and you
+decide on your own reading; say what you read). Then list your findings, each
+with a severity:
+- S1: broken, unsafe or data-losing.
+- S2: an acceptance criterion not met.
+- S3: should be fixed, but does not block.
+- S4: a nit.
+Only S1 and S2 send work back. A change with no S1 or S2 finding is approved,
+with its S3 and S4 findings kept beside the review; do not deny or steer over
+them. Foreman checks the verdict against your decision: DENY or STEER needs at
+least one S1 or S2 finding; APPROVE needs none, and every criterion verified
+or judgement. A verdict that disagrees with its decision ends the step as an
+error.
+{record_format}
 """
 
 [completion]
@@ -84,6 +102,53 @@ max_cost_usd = 5.0
 [completion.output]
 extract_decision = true
 approve_needs_reading = true
+
+[completion.record]
+kind = "review_verdict"
+
+[[completion.record.fields]]
+name = "criteria"
+type = "records"
+required = true
+description = "One entry for each acceptance criterion of the task, in order."
+
+[[completion.record.fields.fields]]
+name = "criterion"
+type = "text"
+required = true
+description = "The criterion, as the task states it."
+
+[[completion.record.fields.fields]]
+name = "status"
+type = "choice"
+choices = ["verified", "not_verified", "judgement"]
+required = true
+description = "verified: you checked it. not_verified: you could not show it holds. judgement: your own reading decides it."
+
+[[completion.record.fields.fields]]
+name = "evidence"
+type = "text"
+required = true
+description = "What you checked: the file, line or command and what it showed."
+
+[[completion.record.fields]]
+name = "findings"
+type = "records"
+required = true
+description = "Everything you found, an empty list when nothing."
+
+[[completion.record.fields.fields]]
+name = "severity"
+type = "choice"
+choices = ["S1", "S2", "S3", "S4"]
+required = true
+description = "S1 broken, unsafe or data-losing; S2 an acceptance criterion not met; S3 should be fixed, does not block; S4 a nit."
+
+[[completion.record.fields.fields]]
+name = "finding"
+type = "text"
+required = true
+description = "What is wrong and what to do, with the file and line."
 
 [signals]
 allowed = ['progress', 'blocker']

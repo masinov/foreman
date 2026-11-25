@@ -15,6 +15,7 @@ from ..domain.outcomes import APPROVE, DONE, ERROR
 from ..definitions.records import RECORD_PROBLEM_PREFIX, read_record, split_record_block
 from ..definitions.roles import RoleDefinition
 from .results import AgentExecutionResult
+from .verdict import REVIEW_VERDICT, VERDICT_PROBLEM_PREFIX, check_verdict
 
 
 FINAL_MESSAGE_PHASES = frozenset({"result", "final_answer"})
@@ -166,9 +167,25 @@ def read_completion(
     output_config = role.completion.output
     marker = role.completion.marker.strip()
 
+    declaration = role.completion.record
+
     if output_config.extract_decision:
-        outcome, detail = extract_decision_output(cleaned_text, allowed=role.completion.outcomes)
-        return CompletionReading(outcome, detail)
+        # The decision is read outside the record block, so a line of JSON
+        # can never count as a verdict.
+        words = split_record_block(cleaned_text)[1] if declaration else cleaned_text
+        outcome, detail = extract_decision_output(words, allowed=role.completion.outcomes)
+        if declaration is None or outcome == ERROR:
+            return CompletionReading(outcome, detail)
+        fields, problem = read_record(declaration, text)
+        if fields is None:
+            return CompletionReading(ERROR, f"{RECORD_PROBLEM_PREFIX}: {problem}")
+        record = {"kind": declaration.kind, "fields": fields}
+        # A verdict that disagrees with its outcome is an error, with the reason;
+        # the record stays, so the page shows what the reviewer returned.
+        disagreement = check_verdict(outcome, fields) if declaration.kind == REVIEW_VERDICT else None
+        if disagreement:
+            return CompletionReading(ERROR, disagreement, record)
+        return CompletionReading(outcome, detail, record)
 
     if marker:
         if not contains_completion_marker(cleaned_text, marker):
@@ -177,7 +194,6 @@ def read_completion(
         if not cleaned_text and transcript:
             cleaned_text = strip_completion_marker(transcript.strip(), marker)
 
-    declaration = role.completion.record
     if declaration is not None:
         fields, problem = read_record(declaration, text)
         if fields is None:
@@ -218,15 +234,18 @@ def contract_retry_reason(
     if result.status != "completed" or result.outcome != "error":
         return None
 
+    if role.completion.record is not None:
+        if result.detail.startswith(VERDICT_PROBLEM_PREFIX):
+            return "verdict_agreement"
+        if result.detail.startswith(RECORD_PROBLEM_PREFIX):
+            return "record_format"
+
     if role.completion.output.extract_decision:
         return "decision_format"
 
     marker = role.completion.marker.strip()
     if marker and result.detail == f"Missing completion marker `{marker}`.":
         return "missing_completion_marker"
-
-    if role.completion.record is not None and result.detail.startswith(RECORD_PROBLEM_PREFIX):
-        return "record_format"
 
     return None
 
@@ -291,22 +310,36 @@ def with_retry_instruction(
     after it.
     """
 
+    options = "\n".join(decision_option_lines(role.completion.outcomes))
+    declaration = role.completion.record
+    marker = role.completion.marker.strip()
     if reason == "decision_format":
-        options = "\n".join(decision_option_lines(role.completion.outcomes))
-        correction = (
-            "Your previous response did not follow the required final output format.\n"
-            "Do not do more review work.\n"
-            "Return exactly one line and nothing else:\n"
-            f"{options}"
-        )
+        if declaration is None:
+            correction = (
+                "Your previous response did not follow the required final output format.\n"
+                "Do not do more review work.\n"
+                "Return exactly one line and nothing else:\n"
+                f"{options}"
+            )
+        else:
+            correction = (
+                "Your previous response did not follow the required final output format.\n"
+                "Do not do more review work.\n"
+                + declaration.instructions(marker)
+                + "\nThen, as the last line of your message, exactly one of:\n"
+                + options
+            )
     elif reason == "approved_unread":
-        options = "\n".join(decision_option_lines(role.completion.outcomes))
         correction = (
             "You approved, but the diff you were given was cut and you opened no file.\n"
             "Read the changed files listed above in full, then decide again.\n"
             "If you cannot open files, do not approve a change you have seen only part of.\n"
-            "End with exactly one line:\n"
-            f"{options}"
+            + (
+                "End with your verdict record and, as the last line, exactly one of:\n"
+                if declaration
+                else "End with exactly one line:\n"
+            )
+            + options
         )
     elif reason == "missing_completion_marker":
         correction = (
@@ -318,12 +351,28 @@ def with_retry_instruction(
             "what blocks it."
         )
     elif reason == "record_format":
-        declaration = role.completion.record
-        marker = role.completion.marker.strip()
         correction = (
             "Your previous response did not return its record in the required form.\n"
             "Do not do more work.\n"
             + (declaration.instructions(marker) if declaration else "")
+            + (
+                "\nThen, as the last line of your message, exactly one of:\n" + options
+                if role.completion.output.extract_decision
+                else ""
+            )
+        )
+    elif reason == "verdict_agreement":
+        correction = (
+            "Your verdict did not agree with your decision.\n"
+            "Do not do more review work.\n"
+            "- DENY or STEER needs at least one S1 or S2 finding.\n"
+            "- APPROVE needs no S1 or S2 finding, and every criterion verified or "
+            "marked judgement.\n"
+            "Return your verdict record and decision again so they agree: change the "
+            "findings or the decision, whichever you got wrong.\n"
+            + (declaration.instructions(marker) if declaration else "")
+            + "\nThen, as the last line of your message, exactly one of:\n"
+            + options
         )
     else:
         return prompt

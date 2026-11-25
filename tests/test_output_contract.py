@@ -15,7 +15,7 @@ import textwrap
 import unittest
 from pathlib import Path
 
-from engine_support import DEV_REPORT
+from engine_support import DEV_REPORT, reviewed
 from foreman.domain.models import Project, Run, Sprint, Task
 from foreman.engine.output_contract import extract_decision_output, with_retry_instruction
 from foreman.engine.orchestrator import ForemanOrchestrator
@@ -453,7 +453,7 @@ class OrchestratorContractTests(unittest.TestCase):
             def reviewer_signals(config: AgentRunConfig):
                 yield AgentEvent("agent.started", payload={"command": "fake"})
                 yield AgentEvent("signal.task_created", payload={"title": "Sneaky", "description": "d", "criteria": "c"})
-                yield AgentEvent("agent.message", payload={"text": "APPROVE", "phase": "result"})
+                yield AgentEvent("agent.message", payload={"text": reviewed("APPROVE"), "phase": "result"})
                 yield AgentEvent("agent.completed", payload={"session_id": "s"})
 
             orchestrator.agent_runners["claude_code"] = _ScriptedRunner([reviewer_signals])
@@ -539,12 +539,12 @@ class OrchestratorContractTests(unittest.TestCase):
 
         def triage_escalates(config: AgentRunConfig):
             yield AgentEvent("agent.started", payload={"command": "fake"})
-            yield AgentEvent("agent.message", payload={"text": "ESCALATE: touches core code", "phase": "result"})
+            yield AgentEvent("agent.message", payload={"text": reviewed("ESCALATE: touches core code"), "phase": "result"})
             yield AgentEvent("agent.completed", payload={"session_id": "s"})
 
         def frontier_approves(config: AgentRunConfig):
             yield AgentEvent("agent.started", payload={"command": "fake"})
-            yield AgentEvent("agent.message", payload={"text": "Reviewed the diff.\n\nAPPROVE", "phase": "result"})
+            yield AgentEvent("agent.message", payload={"text": reviewed("Reviewed the diff.\n\nAPPROVE"), "phase": "result"})
             yield AgentEvent("agent.completed", payload={"session_id": "s"})
 
         with ForemanStore(db_path) as store:

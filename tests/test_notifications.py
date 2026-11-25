@@ -20,7 +20,7 @@ import urllib.error
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from engine_support import DEV_REPORT
+from engine_support import DEV_REPORT, reviewed
 from foreman.store.migrations import MIGRATIONS
 from foreman.domain.models import (
     Event,
@@ -726,7 +726,7 @@ def _reviewer_approves(config: AgentRunConfig):
     yield AgentEvent("agent.started", payload={"command": "fake"})
     yield AgentEvent(
         "agent.message",
-        payload={"text": "Tests passed and the diff is sound.\n\nAPPROVE", "phase": "result"},
+        payload={"text": reviewed("Tests passed and the diff is sound.\n\nAPPROVE"), "phase": "result"},
     )
     yield AgentEvent("agent.completed", payload={"session_id": "s"})
 

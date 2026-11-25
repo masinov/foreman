@@ -22,7 +22,7 @@ from foreman.runner import AgentRunConfig
 from foreman.runner.base import AgentEvent
 from foreman.store import ForemanStore
 
-from engine_support import OrchestratorTestCase, ScriptedAgentExecutor, ScriptedNativeRunner
+from engine_support import OrchestratorTestCase, ScriptedAgentExecutor, ScriptedNativeRunner, reviewed
 
 ROLE = """
 [role]
@@ -122,8 +122,11 @@ class DeclarationTests(unittest.TestCase):
         )
         self.assertTrue(all(f.required for f in record.fields))
         self.assertEqual([f.name for f in record.fields[1].fields], ["criterion", "verification", "verified"])
+        # The reviewers declare the verdict record (tests/test_review_verdict.py).
         for other in ("code_reviewer", "security_reviewer", "triage_reviewer", "frontier_reviewer"):
-            self.assertIsNone(load_roles(default_roles_dir())[other].completion.record)
+            declared = load_roles(default_roles_dir())[other].completion.record
+            assert declared is not None
+            self.assertEqual(declared.kind, "review_verdict")
 
     def test_a_malformed_declaration_is_refused_with_what_is_wrong(self) -> None:
         cases = {
@@ -152,11 +155,11 @@ class DeclarationTests(unittest.TestCase):
                 role_with(record)
             self.assertIn(message, str(caught.exception))
 
-    def test_a_decision_role_cannot_declare_a_record(self) -> None:
+    def test_a_decision_role_may_declare_a_record(self) -> None:
         text = ROLE.replace("{record}", RECORD + "\n[completion.output]\nextract_decision = true\n")
-        with self.assertRaises(RoleLoadError) as caught:
-            load_role_text(text, "r.toml")
-        self.assertIn("returns a decision", str(caught.exception))
+        record = load_role_text(text, "r.toml").completion.record
+        assert record is not None
+        self.assertEqual(record.kind, "note")
 
     def test_the_prompt_says_how_to_return_the_record(self) -> None:
         prompt = role_with(RECORD).render_prompt({})
@@ -281,7 +284,7 @@ class EngineRecordTests(OrchestratorTestCase):
         def review(config: AgentRunConfig):
             prompts.append(config.prompt)
             return (
-                AgentEvent("agent.message", payload={"text": "APPROVE", "phase": "result"}),
+                AgentEvent("agent.message", payload={"text": reviewed("APPROVE"), "phase": "result"}),
                 AgentEvent("agent.completed", payload={}),
             )
 
@@ -320,7 +323,7 @@ class EngineRecordTests(OrchestratorTestCase):
         runs = self.get(db_path, f"/api/v1/tasks/{task.id}/runs").json()["runs"]
         by_step = {r["step"]: r for r in runs}
         self.assertEqual(by_step["develop"]["record"], {"kind": "developer_report", "fields": GOOD_REPORT})
-        self.assertIsNone(by_step["review"]["record"])
+        self.assertEqual(by_step["review"]["record"]["kind"], "review_verdict")
 
     def test_a_missing_report_is_an_error_the_run_explains_and_the_task_is_routed_as_an_error(self) -> None:
         store, task, prompts, runner, db_path = self.run_with("Did it.\nTASK_COMPLETE", bad=True)

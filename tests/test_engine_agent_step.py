@@ -187,7 +187,8 @@ class AgentStepTests(OrchestratorTestCase):
                 carried_output: str | None,
             ) -> AgentExecutionResult:
                 self.assertIn("### Output Correction", prompt)
-                self.assertIn("Return exactly one line and nothing else", prompt)
+                self.assertIn("exactly one of", prompt)
+                self.assertIn("```foreman-record", prompt)
                 return AgentExecutionResult(
                     outcome="approve",
                     detail="APPROVE",

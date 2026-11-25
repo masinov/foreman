@@ -16,7 +16,7 @@ import tempfile
 import time
 import unittest
 
-from engine_support import DEV_REPORT
+from engine_support import DEV_REPORT, reviewed
 from foreman.store.migrations import MIGRATIONS
 from foreman.domain.models import Event, Project, Run, Sprint, Task
 from foreman.engine.orchestrator import ForemanOrchestrator
@@ -1001,7 +1001,7 @@ def _reviewer_approves(config: AgentRunConfig):
     yield AgentEvent("agent.started", payload={"command": "fake"})
     yield AgentEvent(
         "agent.message",
-        payload={"text": "The diff is sound.\n\nAPPROVE", "phase": "result"},
+        payload={"text": reviewed("The diff is sound.\n\nAPPROVE"), "phase": "result"},
     )
     yield AgentEvent("agent.completed", payload={"session_id": "s"})
 

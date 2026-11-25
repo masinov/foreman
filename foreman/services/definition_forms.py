@@ -403,8 +403,6 @@ def role_text_from_fields(base_text: str, role_id: str, fields: Mapping[str, Any
             raise DefinitionError("A role that decides needs at least one decision it may give.")
         completion["marker"] = ""
         completion["outcomes"] = decisions
-        # A verdict is a decision, not a declared record (ADR-0042).
-        completion.pop("record", None)
         output["extract_decision"] = True
     elif ends == "done":
         completion["marker"] = str(completion.get("marker") or "") or DEFAULT_MARKER

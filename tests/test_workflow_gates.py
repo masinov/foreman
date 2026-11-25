@@ -14,7 +14,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from engine_support import DEV_REPORT
+from engine_support import DEV_REPORT, reviewed
 from foreman.domain.models import Project, Sprint, Task, validate_executor_overrides
 from foreman.engine.orchestrator import ForemanOrchestrator
 from foreman.definitions.roles import default_roles_dir, load_role, load_roles
@@ -136,7 +136,7 @@ def _reviewer_sees_tests_then_approves(config: AgentRunConfig):
     # The reviewer prompt now embeds engine evidence that includes the test run.
     assert "Completion Evidence" in config.prompt
     yield AgentEvent("agent.started", payload={"command": "fake"})
-    yield AgentEvent("agent.message", payload={"text": "Tests passed and the diff is sound.\n\nAPPROVE", "phase": "result"})
+    yield AgentEvent("agent.message", payload={"text": reviewed("Tests passed and the diff is sound.\n\nAPPROVE"), "phase": "result"})
     yield AgentEvent("agent.completed", payload={"session_id": "s"})
 
 
