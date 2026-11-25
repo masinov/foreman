@@ -5,8 +5,11 @@ These tests require Playwright and Chromium browser binaries.  Install with:
     ./venv/bin/pip install playwright pytest-playwright
     ./venv/bin/playwright install chromium
 
-The full suite is skipped gracefully if the playwright package or Chromium is
-not available.  All other pytest runs are unaffected.
+The pytest-playwright plugin is off by default (``addopts`` in
+``pyproject.toml``), so these tests are skipped in an ordinary run, as they
+are when the playwright package is missing. Run them with the plugin on:
+
+    ./venv/bin/python -m pytest -o addopts="" tests/test_e2e.py
 
 The fixture starts a real uvicorn server with a seeded SQLite database and
 serves the built React frontend assets from
@@ -41,10 +44,15 @@ try:
 except ImportError:
     _HAS_PLAYWRIGHT = False
 
-pytestmark = pytest.mark.skipif(
-    not _HAS_PLAYWRIGHT,
-    reason="playwright package not installed",
-)
+pytestmark = [
+    pytest.mark.skipif(not _HAS_PLAYWRIGHT, reason="playwright package not installed"),
+    # A string condition is evaluated with the run's ``config``, before any
+    # fixture: the plugin's ``page`` fixture does not exist when it is off.
+    pytest.mark.skipif(
+        "not config.pluginmanager.has_plugin('playwright')",
+        reason='the pytest-playwright plugin is off; run with -o addopts=""',
+    ),
+]
 
 
 # ---------------------------------------------------------------------------
