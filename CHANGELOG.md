@@ -7,6 +7,10 @@ memory changes rather than versioned product releases.
 
 ## [Unreleased]
 
+### Sprint 63
+
+- A step's details show the reads before its first edit (ADR-0041 section 6). When an agent run ends, the engine counts, from the run's stored tool events, the reading tool calls before its first change and records them as `engine.step_reads` (`foreman/domain/step_reads.py` holds the rules). The step's facts on the task page say "7 reads before its first edit" or "4 reads, no edit", beside its tokens, and `foreman outcomes` gives the median per role and model.
+
 ### Sprint 62
 
 - The Python suite runs in parallel (owner, 2026-11-24): `pytest -n auto` (pytest-xdist) starts one worker per processor core, and the suite takes about a minute on this 16-core machine instead of five. All 1,680 tests passed in parallel three times in a row with no changes. pytest writes the JUnit report itself (`--junitxml`), so unittest-xml-reporting leaves the dev dependencies. CI, AGENTS.md and the docs run the suite this way, and so does Foreman's own test step.

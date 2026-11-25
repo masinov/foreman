@@ -329,6 +329,14 @@ class ChangedAgainst(BaseModel):
     branch: str | None = None
 
 
+class StepReads(BaseModel):
+    """How many reading tool calls an agent step made before its first change (ADR-0041)."""
+
+    reads: int
+    #: False when the step changed nothing: ``reads`` is then all of its reads.
+    edited: bool
+
+
 class StepChanges(BaseModel):
     """What an agent step changed on the task branch, as recorded when it ended."""
 
@@ -384,5 +392,7 @@ class RunOutput(BaseModel):
     session: SessionFact | None = None
     #: What the step changed on the branch, when it recorded that.
     changes: StepChanges | None = None
+    #: The reads the step made before its first change, when it recorded them.
+    reads: StepReads | None = None
     #: A landed merge's facts, when it recorded them.
     merge: MergeFacts | None = None
