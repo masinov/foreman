@@ -78,10 +78,10 @@ project can run at once, the project page shows each one's.
    and Stop wherever something at or below can run. A started sprint with
    one task paused shows Pause, Stop and Resume: Pause holds everything in
    it, Resume releases everything in it.
-4. **A Resume that releases more than its own pause says what, before it
-   does it:** "Resume sprint 64. This also resumes FOR-66 and FOR-67, which
-   you paused." Resuming a lone task, or a sprint with nothing paused below
-   it, needs no confirmation.
+4. **Resume asks no confirmation; its toast says what it released:**
+   "Resumed sprint 64, FOR-66 and FOR-67." Resuming is undone by pausing
+   again, so a question before it would only be friction (owner,
+   2026-11-25).
 5. **Nothing is resumed past a pause above it.** A task of a paused sprint
    offers no Resume; in its place the page says "Sprint 64 is paused", with
    a link to it. The same holds for a sprint under a paused workspace.
