@@ -73,7 +73,12 @@ Workspace / Project / Sprint / Task.
   until the user opens it, and stays as the user left it, on every task and
   the next visit, remembered apart from the manager's (owner, 2026-11-24).
 - **Engine** is one per project. Its state and controls are on the project
-  page; below project level they are in the top bar.
+  page; below project level they are in the top bar. It reads "Running"
+  only while it has a task in hand; up with nothing to do, it reads
+  "Waiting" and its dot stays still. Pause and Stop are offered only when
+  there is something for them to act on: a task in hand, or an active
+  sprint with tasks (owner, 2026-11-25: "Running gives the impression that
+  the engine is actually working").
 - **Needs you** is one list of four kinds of item: accept filed work,
   approve a plan, approve a merge, unblock. It appears at workspace level
   (all projects) and project level. Two more are about sprints, not

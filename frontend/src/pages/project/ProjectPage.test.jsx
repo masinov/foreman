@@ -91,7 +91,13 @@ describe("the engine row", () => {
     payload.projects[0].active_sprint.task_counts = { triage: 0, todo: 0, in_progress: 0, blocked: 0, done: 0, cancelled: 0 };
     routes["GET /api/v1/workspace"] = payload;
     await renderProject("/dashboard/projects/foreman", routes);
-    expect(within(engineSection()).getByText(/the active sprint has no tasks/)).toBeInTheDocument();
+    const row = engineSection();
+    expect(within(row).getByText(/The active sprint has no tasks yet/)).toBeInTheDocument();
+    expect(within(row).getByText("Waiting")).toBeInTheDocument();
+    expect(within(row).queryByText("Running")).toBeNull();
+    // Nothing to pause or stop.
+    expect(within(row).getByRole("button", { name: "Pause" })).toBeDisabled();
+    expect(within(row).getByRole("button", { name: "Stop" })).toBeDisabled();
   });
 
   it("says to activate a sprint when the engine runs with none active", async () => {
@@ -101,7 +107,33 @@ describe("the engine row", () => {
     payload.projects[0].engine = { ...payload.projects[0].engine, state: "running", task_id: null };
     routes["GET /api/v1/workspace"] = payload;
     await renderProject("/dashboard/projects/foreman", routes);
-    expect(await screen.findByText("Nothing to work on: no sprint is active. Activate one under Sprints.")).toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        "It works through the active sprint's tasks, one at a time. No sprint is active: activate one under Sprints and it starts.",
+      ),
+    ).toBeInTheDocument();
+    const row = engineSection();
+    expect(within(row).getByText("Waiting")).toBeInTheDocument();
+    // An engine that waits does not move: only a running one breathes.
+    expect(row.querySelector(".status--running")).toBeNull();
+    expect(within(row).getByRole("button", { name: "Start" })).toBeDisabled();
+    expect(within(row).getByRole("button", { name: "Pause" })).toBeDisabled();
+    expect(within(row).getByRole("button", { name: "Stop" })).toBeDisabled();
+  });
+
+  it("waits with Pause and Stop offered when the active sprint has tasks but none is ready", async () => {
+    const routes = projectRoutes();
+    const payload = workspacePayload();
+    payload.projects[0].engine = engine("running", null);
+    payload.projects[0].active_sprint.task_counts = { triage: 0, todo: 0, in_progress: 0, blocked: 2, done: 3, cancelled: 0 };
+    routes["GET /api/v1/workspace"] = payload;
+    await renderProject("/dashboard/projects/foreman", routes);
+    const row = engineSection();
+    expect(within(row).getByText("Waiting")).toBeInTheDocument();
+    expect(within(row).getByText(/It takes the next task in the active sprint/)).toBeInTheDocument();
+    // Pause still means something here: the next task does not start.
+    expect(within(row).getByRole("button", { name: "Pause" })).toBeEnabled();
+    expect(within(row).getByRole("button", { name: "Stop" })).toBeEnabled();
   });
 
   it("offers Pause and Stop while running, and sends them to the engine endpoints", async () => {

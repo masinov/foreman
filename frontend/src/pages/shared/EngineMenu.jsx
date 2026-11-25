@@ -5,7 +5,7 @@ import { getWorkspace } from "../../api/workspace";
 import { Menu } from "../../ui/Menu";
 import { StatusDot } from "../../ui/StatusDot";
 import { applicableCommands, useEngineControl } from "./engineControl";
-import { engineWords } from "./words";
+import { engineHasWork, engineWords } from "./words";
 
 /**
  * The engine below project level: its state in the top bar's right-hand slot,
@@ -16,11 +16,12 @@ export function EngineMenu({ projectId }) {
   const workspace = useResource(["workspace"], getWorkspace);
   const reload = workspace.reload;
   const { busy, notice, send } = useEngineControl({ projectId, onChanged: reload });
-  const engine = workspace.data?.projects.find((project) => project.id === projectId)?.engine ?? null;
+  const project = workspace.data?.projects.find((item) => item.id === projectId) ?? null;
+  const engine = project?.engine ?? null;
   if (!engine) return null;
 
-  const { tone, word } = engineWords(engine.state);
-  const applies = applicableCommands(engine.state);
+  const { tone, word } = engineWords(engine);
+  const applies = applicableCommands(engine.state, { hasWork: engineHasWork(engine, project) });
   const items = [
     applies.start ? { key: "start", label: "Start", onSelect: () => send("start") } : null,
     applies.resume ? { key: "resume", label: "Resume", onSelect: () => send("resume") } : null,

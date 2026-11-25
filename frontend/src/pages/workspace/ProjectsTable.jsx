@@ -24,7 +24,7 @@ function ProjectCell({ project }) {
 }
 
 function EngineCell({ engine }) {
-  const { tone, word } = engineWords(engine?.state);
+  const { tone, word } = engineWords(engine);
   return (
     <div className="cell-stack">
       <StatusDot tone={tone}>{word}</StatusDot>
