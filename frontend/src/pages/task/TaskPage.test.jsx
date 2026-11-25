@@ -1111,6 +1111,38 @@ describe("Activity", () => {
     expect(story).toHaveTextContent("1,221 tests passed (1 skipped) in 1 min 54 s at b232eb1");
   });
 
+  it("shows the developer's report in the develop step's details, beside its story", async () => {
+    const report = {
+      kind: "developer_report",
+      fields: {
+        summary: "Added the loader.",
+        criteria: [{ criterion: "The loader rejects a bad declaration", verification: "pytest tests/x.py: 3 passed", verified: true }],
+        not_verified: ["The page was not opened."],
+        beyond_task: [],
+        docs_touched: ["docs/adr/ADR-0042.md"],
+        follow_ups: [],
+      },
+    };
+    const routes = taskRoutes({
+      runs: [
+        runItem("run-4", "review", { role_id: "code_reviewer", outcome: "approve" }),
+        runItem("run-1", "develop", { record: report }),
+      ],
+    });
+    routes[outputUrl("run-1")] = outputPayload("run-1", "Implemented the loader.");
+    await renderTask(`${BASE}/activity?run=run-1`, routes);
+    const shown = await screen.findByRole("region", { name: "Developer's report" });
+    expect(shown).toHaveTextContent("Added the loader.");
+    expect(within(shown).getByRole("list", { name: "Acceptance criteria" })).toHaveTextContent("pytest tests/x.py: 3 passed");
+    expect(within(shown).getByRole("list", { name: "Docs touched" })).toHaveTextContent("docs/adr/ADR-0042.md");
+    expect(screen.getByRole("heading", { name: "Develop" })).toBeInTheDocument();
+    expect(await screen.findByText("Implemented the loader.")).toBeInTheDocument();
+    // A step with no record shows no report.
+    fireEvent.click(within(screen.getByRole("table", { name: "Steps" })).getAllByRole("row")[1]);
+    await screen.findByRole("heading", { name: "Review" });
+    expect(screen.queryByRole("region", { name: "Developer's report" })).toBeNull();
+  });
+
   it("lists runs newest first and shows the picked run: its story, beginning with its prompt, and its facts", async () => {
     const { fetchImpl } = await renderTask(`${BASE}/activity`);
     const table = await screen.findByRole("table", { name: "Steps" });

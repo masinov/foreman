@@ -15,6 +15,7 @@ import { SectionHeading } from "../../ui/SectionHeading";
 import { formatDayTime, humanize, plural, shortSha } from "../../ui/format";
 import { Spend } from "../../ui/Spend";
 import { narrate } from "./runWords";
+import { DeveloperReport } from "./DeveloperReport";
 import { RunLine, withDays } from "./RunStory";
 import { ActivityTable } from "../shared/ActivityTable";
 import { runRole, runTook, stepOutcome } from "../shared/activityWords";
@@ -256,6 +257,7 @@ function RunOutput({ run, task, previous, next, onPick, pulse = 0 }) {
                 {data.total_entries} events are shown. The transcript holds what was kept.
               </p>
             ) : null}
+            <DeveloperReport record={run.record} />
             {lines.length ? (
               <ol className="run-story" aria-label="What happened">
                 {lines.map((line, index) => (
