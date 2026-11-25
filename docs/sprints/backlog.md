@@ -431,6 +431,38 @@ Base work that this framing makes necessary:
      which Foreman can count from the tool calls it records (ADR-0041), so
      the survey can be judged on this repository and Assay.
 
+9. **Which models and harnesses run which work, configured by the user
+   (owner, 2026-11-25).** One ladder per role ("cheap, then strong") is too
+   simple. A user should be able to define combinations they have found
+   work for kinds of task, for example Kimi for frontend work, DeepSeek for
+   backend work, Fable or Astra for hard mathematics, with their own tiers
+   and handoffs. "Let the user play with it and configure what they
+   empirically determine works best for their workflows", rather than a
+   fixed "hard or easy", "long or short" tier. For the future.
+   - **A runner profile, not a model.** Harness (Claude Code, Codex, later
+     others), model, endpoint and its settings (an Anthropic-compatible
+     endpoint through `[agent.env]` already works) and effort. A ladder is
+     an ordered list of profiles.
+   - **Which ladder, chosen by the same fixed facts as routes** (ADR-0041):
+     a label the project defines, the task type, a changed path group
+     (known after develop; before it, from the planner's expected files).
+     First matching rule wins, and a rule without facts is the default. No
+     free expressions, so every choice can be explained: "Develop runs on
+     Kimi: label frontend".
+   - **A handoff across harnesses cannot resume a session.** The next rung
+     starts fresh from the step's declared inputs: the task, the records
+     (the report, the findings) and the change so far (ADR-0041 section 5).
+     Step records are what make this possible.
+   - **Each profile must pass what Foreman relies on:** records, the
+     completion marker, commands without standard input, the sandbox, cost
+     reporting. A profile that cannot is refused when it is saved.
+   - **Empirical by design:** `foreman outcomes` per rule and profile (cost,
+     send-backs, time, failures), so a user sees what works. Later Foreman
+     could suggest a change to a rule from those numbers.
+   - **Per provider:** keys passed to the agent by name, quotas and prices
+     tracked separately.
+   - Builds on today's decision on moving up after failures (below, "Large
+     tasks ran on the default model"), which works the same with one ladder.
 
 ## Found while reviewing sprint 63 (2026-11-25)
 
@@ -474,7 +506,27 @@ These are left:
     developer's words outside the record.
 - **Large tasks ran on the default model.** FOR-61, FOR-62 and FOR-64 were
   marked large, but no role has a model ladder, so `complexity` changed
-  nothing.
+  nothing. **Decided with the owner, 2026-11-25** (a sprint 64 candidate;
+  the rule goes into ADR-0041 with it):
+  - **The size label goes.** `complexity` only chose the ladder's first
+    rung, and it is a guess ("a bit... ambiguous"). It leaves model choice,
+    the task forms, the planner's output and the dashboard.
+  - **A person or the manager pins a model per task and step** with the
+    override that already exists (`executor_overrides.models`, the task
+    page's overrides).
+  - **A step moves up a rung only after failures of its own work:** the
+    review sent it back with an S1 or S2 finding, the tests failed after
+    it, or the agent could not finish. Not on an engine restart, a branch
+    brought up to date after a conflict, a wait for usage limits, or an
+    infrastructure error. Today every visit to the step counts
+    (`workflow_runner/base.py`), so a conflict send-back climbs the
+    ladder too.
+  - **A role says how many failures on one rung before moving up**
+    (`escalate_after`, default 2), so the cheaper model gets one more pass
+    with the review's findings. Past the top rung, the task blocks for a
+    person (later, ADR-0041's question to a person).
+  - **Every move up is in the Activity with its reason**, and `foreman
+    outcomes` compares cost and send-backs per model.
 
 ## Found while running sprint 62 through Foreman (2026-11-24)
 
