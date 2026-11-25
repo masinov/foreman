@@ -23,9 +23,13 @@ function EngineSentence({ engine, emptySprint, noSprint }) {
   const step = engine?.step ? humanize(engine.step).toLowerCase() : null;
   if (engine?.state === ENGINE_STATES.running) {
     if (!engine.task_id) {
-      // The engine never starts a planned sprint itself; a person activates it.
-      if (noSprint) return "Nothing to work on: no sprint is active. Activate one under Sprints.";
-      if (emptySprint) return "Nothing to work on: the active sprint has no tasks. Add some on its page.";
+      // The engine never starts a planned sprint itself; a user activates it.
+      if (noSprint) {
+        return "It works through the active sprint's tasks, one at a time. No sprint is active: activate one under Sprints and it starts.";
+      }
+      if (emptySprint) {
+        return "It works through the active sprint's tasks, one at a time. The active sprint has no tasks yet: add some on its page.";
+      }
       return "Nothing is being worked on now. It takes the next task in the active sprint when one is ready.";
     }
     return (
@@ -50,14 +54,16 @@ function EngineSentence({ engine, emptySprint, noSprint }) {
 /**
  * The project's engine: its state, a sentence on what that means now, and
  * Start, Pause or Resume, and Stop. A control that does not apply to the
- * state is disabled; a command the API refuses shows its sentence.
+ * state is disabled, as Pause and Stop are while there is nothing to work
+ * on; a command the API refuses shows its sentence.
  */
 export function EngineRow({ projectId, engine, emptySprint = false, noSprint = false, onChanged }) {
   const { pending, busy, notice, send } = useEngineControl({ projectId, onChanged });
   const state = engine?.state ?? null;
-  const applies = applicableCommands(state);
+  const hasWork = Boolean(engine?.task_id) || !(noSprint || emptySprint);
+  const applies = applicableCommands(state, { hasWork });
   const paused = state === ENGINE_STATES.paused;
-  const { tone, word } = engineWords(state);
+  const { tone, word } = engineWords(engine);
 
   return (
     <section className="engine" aria-labelledby="engine-title">

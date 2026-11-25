@@ -9,18 +9,13 @@ import { Icon } from "../../ui/Icon";
 import { Mono } from "../../ui/Mono";
 import { Tabs } from "../../ui/Tabs";
 import { NeedsYou } from "../shared/NeedsYou";
+import { activeSprintIsEmpty } from "../shared/words";
 import { EngineRow } from "./EngineRow";
 
 import "../../styles/lists.css";
 import "../../styles/project.css";
 
 /** True when the project has an active sprint with no tasks in it at all. */
-function activeSprintIsEmpty(project) {
-  const counts = project?.active_sprint?.task_counts;
-  if (!counts) return false;
-  return Object.values(counts).reduce((sum, value) => sum + (Number(value) || 0), 0) === 0;
-}
-
 function TitleRow({ projectId, project }) {
   // Where the project lives, which branch it lands on, how it works: each
   // with the icon that says which is which.

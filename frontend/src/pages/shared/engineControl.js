@@ -18,13 +18,18 @@ export const ENGINE_COMMANDS = {
   stop: { call: stopEngine, done: "Stop requested." },
 };
 
-/** Which commands apply to an engine state. */
-export function applicableCommands(state) {
+/**
+ * Which commands apply to an engine state. Pause and Stop apply to a running
+ * engine only when it has work (`engineHasWork`): with no active sprint, or
+ * an empty one, there is nothing for them to act on.
+ */
+export function applicableCommands(state, { hasWork = true } = {}) {
+  const running = state === ENGINE_STATES.running;
   return {
     start: state === ENGINE_STATES.notRunning,
     resume: state === ENGINE_STATES.paused,
-    pause: state === ENGINE_STATES.running,
-    stop: state === ENGINE_STATES.running || state === ENGINE_STATES.paused,
+    pause: running && hasWork,
+    stop: (running && hasWork) || state === ENGINE_STATES.paused,
   };
 }
 

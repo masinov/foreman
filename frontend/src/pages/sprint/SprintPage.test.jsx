@@ -641,16 +641,16 @@ describe("activity", () => {
 });
 
 describe("the engine menu in the top bar", () => {
-  function routesWithEngine(state) {
+  function routesWithEngine(state, task = null) {
     const routes = sprintRoutes();
     const payload = workspacePayload();
-    payload.projects[0].engine = engine(state);
+    payload.projects[0].engine = engine(state, task);
     routes["GET /api/v1/workspace"] = payload;
     return routes;
   }
 
   it("holds Pause and Stop while the engine runs, and sends the same commands as the project page", async () => {
-    const routes = routesWithEngine("running");
+    const routes = routesWithEngine("running", { id: "task-x", task_key: "FOR-13", title: "A task", step: "develop" });
     routes["POST /api/v1/projects/foreman/agent/stop"] = { command: {} };
     routes["POST /api/v1/projects/foreman/engine/commands"] = { command: {} };
     const { fetchImpl } = await renderSprint("/dashboard/sprints/sprint-56", routes);
@@ -662,6 +662,14 @@ describe("the engine menu in the top bar", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Engine: running/ }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Stop" }));
     await waitFor(() => expect(calls(fetchImpl, "POST", "/api/v1/projects/foreman/engine/commands")[0].body).toEqual({ command: "shutdown" }));
+  });
+
+  it("reads waiting, and offers nothing, when the engine is up with no active sprint", async () => {
+    const routes = routesWithEngine("running");
+    routes["GET /api/v1/workspace"].projects[0].active_sprint = null;
+    await renderSprint("/dashboard/sprints/sprint-56", routes);
+    const trigger = await screen.findByRole("button", { name: /^Engine: waiting/ });
+    expect(trigger).toBeDisabled();
   });
 
   it("holds only Start when the engine is not running", async () => {

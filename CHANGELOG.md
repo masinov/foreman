@@ -9,6 +9,7 @@ memory changes rather than versioned product releases.
 
 ### After sprint 63
 
+- The engine reads "Waiting", with a still dot, when it is up with nothing in hand, and "Running" only while it works on a task: on the project page, in the top bar and in the workspace's projects table (`engineWords` takes the engine, not its state). Pause and Stop are disabled while there is nothing to work on, that is no active sprint or an empty one (`engineHasWork`, `applicableCommands(state, { hasWork })`). The project page's sentence says what the engine does: "It works through the active sprint's tasks, one at a time." Owner's report, 2026-11-25.
 - Every command a Claude Code step runs has `/dev/null` as standard input, so a program that reads it ends at once instead of waiting 20 minutes for the Bash timeout (the FOR-53 stall). Claude Code gave a command that holds a heredoc a socket as its input. The runner sets `CLAUDE_CODE_SHELL_PREFIX` to `foreman/data/shell/no-stdin.sh`, which runs the command with `< /dev/null`; the step stops in preflight if that file is missing or not executable, and a role can opt out with an empty value. Checked live with Claude Code 2.1.332.
 
 ### Sprint 63
