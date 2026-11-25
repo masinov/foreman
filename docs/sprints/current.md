@@ -72,6 +72,19 @@ The full description and acceptance criteria of each task are in Foreman.
       code with an S3 finding when it cannot see the page. The worktree
       setup installs the `e2e` extra (a project setting).
 
+  - **FOR-61 and FOR-62, the records** (`fix/records-robustness`, the
+    ADR-0042 amendment of 2026-11-25):
+    - a quoted block after the record replaced it;
+    - the missing-marker retry did not ask for the record, so a task that
+      used to recover would block;
+    - an approval could list no criteria;
+    - a developer who was sent back did not get the findings;
+    - a lowercase severity spent the correction;
+    - the example showed an S1;
+    - another shape of report could break the prompts.
+
+    All of these are fixed, with tests.
+
 ### Left for later
 
 The rest of ADR-0040's build order:

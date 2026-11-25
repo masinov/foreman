@@ -191,6 +191,32 @@ class ReadingTests(unittest.TestCase):
         last = fenced({"summary": "new", "items": []})
         self.assertEqual(self.read(f"{first}\n{last}\nDONE_WRITING").record["fields"]["summary"], "new")
 
+    def test_a_quoted_block_after_the_record_does_not_replace_it(self) -> None:
+        # An agent that shows the format, or quotes a file it edited, after its
+        # own record: the last block that is a JSON object counts (2026-11-25).
+        record = fenced({"summary": "mine", "items": []})
+        quoted = "```foreman-record\n<the record, as JSON>\n```"
+        reading = self.read(f"{record}\nThe format is:\n{quoted}\nDONE_WRITING")
+        self.assertEqual(reading.outcome, "done")
+        self.assertEqual(reading.record["fields"]["summary"], "mine")
+
+    def test_windows_line_endings_are_read(self) -> None:
+        text = f"Wrote it.\r\n{fenced({'summary': 's', 'items': []})}\r\nDONE_WRITING".replace("\n", "\r\n")
+        reading = self.read(text.replace("\r\r\n", "\r\n"))
+        self.assertEqual(reading.outcome, "done")
+        self.assertEqual(reading.record["fields"]["summary"], "s")
+
+    def test_a_missing_marker_gets_a_correction_that_asks_for_the_record_too(self) -> None:
+        # The retry used to ask only for the summary and the marker, so the
+        # answer had no record and the task blocked (review of FOR-61).
+        reading = self.read(f"Wrote it.\n{fenced({'summary': 's', 'items': []})}")
+        result = AgentExecutionResult(outcome=reading.outcome, detail=reading.detail)
+        reason = contract_retry_reason(self.role, result)
+        self.assertEqual(reason, "missing_completion_marker")
+        correction = with_retry_instruction("FIRST", self.role, reason, resumes_session=True)
+        self.assertIn("```foreman-record", correction)
+        self.assertIn("DONE_WRITING", correction)
+
     def test_a_missing_record_is_an_error_that_says_so(self) -> None:
         reading = self.read("Wrote it.\nDONE_WRITING")
         self.assertEqual(reading.outcome, "error")
@@ -409,6 +435,14 @@ class EngineRecordTests(OrchestratorTestCase):
 
         self.assertIn("### Developer's Report\nPlain words from the developer.", seen[0])
         self.assertIsNone([r for r in store.list_runs(task_id=task.id) if r.workflow_step == "develop"][0].record)
+
+
+class ReportWordsTests(unittest.TestCase):
+    def test_a_report_of_another_shape_is_left_out_rather_than_breaking_the_prompt(self) -> None:
+        from foreman.engine.report_words import record_text
+
+        odd = {"kind": "developer_report", "fields": {"summary": "s", "criteria": ["a", "b"]}}
+        self.assertEqual(record_text(odd), "")
 
 
 class StoreTests(unittest.TestCase):

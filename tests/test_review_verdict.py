@@ -121,7 +121,26 @@ class AgreementTests(unittest.TestCase):
                         decision,
                     )
                     self.assertEqual(reading.outcome, outcome)
-                    self.assertEqual(reading.detail, decision.split(": ", 1)[1])
+                    # The developer is handed the reason and the findings behind it.
+                    self.assertTrue(reading.detail.startswith(decision.split(": ", 1)[1]))
+                    self.assertIn(f"- {severity}: Something.", reading.detail)
+
+    def test_an_approval_listing_no_criteria_of_a_task_that_has_some_is_an_error(self) -> None:
+        text = f"Looked.\n\n{verdict(criteria=[])}\nAPPROVE"
+        reading = read_completion(self.role, text, task_has_criteria=True)
+        self.assert_disagrees(reading, "without listing")
+        # A task with no criteria may be approved with none listed.
+        self.assertEqual(read_completion(self.role, text, task_has_criteria=False).outcome, "approve")
+
+    def test_a_severity_in_lower_case_is_read_as_declared(self) -> None:
+        reading = self.read(verdict(findings=[{"severity": "s3", "finding": "x"}]), "APPROVE")
+        self.assertEqual(reading.outcome, "approve")
+        self.assertEqual(reading.record["fields"]["findings"][0]["severity"], "S3")
+
+    def test_the_format_example_never_shows_a_blocking_finding(self) -> None:
+        instructions = self.role.completion.record.instructions("")
+        self.assertNotIn('"S1"', instructions)
+        self.assertNotIn('"S2"', instructions)
 
     def test_an_escalation_is_not_checked_against_the_findings(self) -> None:
         triage = load_roles(default_roles_dir())["triage_reviewer"]
@@ -143,7 +162,8 @@ class AgreementTests(unittest.TestCase):
     def test_a_line_of_the_record_is_never_taken_for_the_decision(self) -> None:
         record = verdict(findings=[finding("S1", "Broken.\nDENY: in the text")])
         reading = self.read(record, "DENY: broken")
-        self.assertEqual((reading.outcome, reading.detail), ("deny", "broken"))
+        self.assertEqual(reading.outcome, "deny")
+        self.assertTrue(reading.detail.startswith("broken\n"))
 
     def test_a_decision_with_no_decision_line_is_still_the_decision_error(self) -> None:
         reading = read_completion(self.role, verdict())

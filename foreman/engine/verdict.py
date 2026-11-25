@@ -34,12 +34,15 @@ def blocking_findings(fields: Mapping[str, Any]) -> list[Mapping[str, Any]]:
     ]
 
 
-def check_verdict(outcome: str, fields: Mapping[str, Any]) -> str | None:
+def check_verdict(
+    outcome: str, fields: Mapping[str, Any], *, task_has_criteria: bool = False
+) -> str | None:
     """Why the verdict and the outcome disagree, or None when they agree.
 
     - deny or steer needs at least one S1 or S2 finding;
     - approve needs none, and every criterion verified or the reviewer's
-      judgement;
+      judgement; when the task has acceptance criteria, an approval that
+      lists none has checked none;
     - any other outcome (escalate) hands the decision on and is not checked.
     """
 
@@ -58,6 +61,12 @@ def check_verdict(outcome: str, fields: Mapping[str, Any]) -> str | None:
                 f"{len(blocking)} blocking finding(s) ({names})."
             )
         criteria = fields.get("criteria")
+        if task_has_criteria and not (isinstance(criteria, list) and criteria):
+            return (
+                f"{VERDICT_PROBLEM_PREFIX}: the reviewer returned APPROVE without listing "
+                "the task's acceptance criteria. List each one, in order, with its status "
+                "and what you checked."
+            )
         unchecked = [
             str(entry.get("criterion", "")).strip() or f"#{number}"
             for number, entry in enumerate(criteria if isinstance(criteria, list) else [], start=1)
@@ -69,3 +78,13 @@ def check_verdict(outcome: str, fields: Mapping[str, Any]) -> str | None:
                 f"criteria not verified: {'; '.join(unchecked)}."
             )
     return None
+
+
+def findings_text(fields: Mapping[str, Any]) -> str:
+    """The S1 and S2 findings as lines for the developer the review sends back."""
+
+    lines = [
+        f"- {finding.get('severity')}: {str(finding.get('finding') or '').strip()}"
+        for finding in blocking_findings(fields)
+    ]
+    return "Findings that sent it back:\n" + "\n".join(lines) if lines else ""

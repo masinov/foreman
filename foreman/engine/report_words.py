@@ -45,4 +45,10 @@ def record_text(record: dict[str, Any] | None) -> str:
 
     if not record or record.get("kind") != DEVELOPER_REPORT:
         return ""
-    return developer_report_text(record.get("fields") or {})
+    try:
+        return developer_report_text(record.get("fields") or {})
+    except (AttributeError, TypeError):
+        # A project's own role may declare a record of this kind with another
+        # shape. Its record is then not written out, rather than breaking
+        # every later prompt of the task.
+        return ""
