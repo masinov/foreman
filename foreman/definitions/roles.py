@@ -29,6 +29,14 @@ _DECISION_DEFAULT_OUTCOMES: tuple[str, ...] = ("approve", "deny", "steer")
 REVIEW_KINDS: tuple[str, ...] = ("code", "security")
 _AGENT_DEFAULT_OUTCOMES: tuple[str, ...] = ("done", "blocked", "error")
 
+#: Where a role may run commands (ADR-0041 section 5). ``none``: it runs no
+#: command, and is refused a Bash tool. ``sandbox``: it runs in a throwaway
+#: working copy of the commit under review, removed when the step ends.
+#: ``branch``: it works in the task's own worktree, as the developer does; a
+#: role that does not say gets this, which is how every role ran before.
+RUN_SCOPES: tuple[str, ...] = ("none", "sandbox", "branch")
+DEFAULT_RUN_SCOPE = "branch"
+
 
 class RoleLoadError(ForemanError):
     """Raised when a role definition cannot be loaded or validated."""
@@ -112,6 +120,8 @@ class RoleDefinition:
     #: Signals this role is allowed to emit; anything else is recorded as
     #: ``signal.rejected`` and never applied.
     signals: tuple[str, ...] = ALL_SIGNALS
+    #: One of ``RUN_SCOPES``.
+    run_scope: str = DEFAULT_RUN_SCOPE
 
     def render_prompt(self, context: Mapping[str, Any] | None = None) -> str:
         """Render the role prompt template with the provided context."""
@@ -238,6 +248,19 @@ def parse_role(data: Mapping[str, Any], role_path: Path) -> RoleDefinition:
             f"{role_path}: agent.tools says none and also lists allowed tools; keep one."
         )
 
+    run_scope = agent_data.get("run_scope", DEFAULT_RUN_SCOPE)
+    if run_scope not in RUN_SCOPES:
+        raise RoleLoadError(
+            f"{role_path}: agent.run_scope must be one of {', '.join(RUN_SCOPES)}; "
+            f"got {run_scope!r}."
+        )
+    if run_scope == "none" and "Bash" in _require_string_list(
+        tools_data, "allowed", role_path, default=()
+    ):
+        raise RoleLoadError(
+            f"{role_path}: agent.run_scope is none, and agent.tools.allowed lists Bash."
+        )
+
     return RoleDefinition(
         id=_require_string(role_data, "id", role_path),
         name=_require_string(role_data, "name", role_path),
@@ -279,6 +302,7 @@ def parse_role(data: Mapping[str, Any], role_path: Path) -> RoleDefinition:
         source_path=role_path,
         template_variables=_extract_template_variables(prompt_template),
         signals=allowed_signals,
+        run_scope=run_scope,
     )
 
 

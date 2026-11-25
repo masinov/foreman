@@ -135,7 +135,7 @@ class RefusalTests(_Workspace):
             save_role(self.store, "p1", "[role\nid = ", changed_by="alice")
 
     def test_a_tool_name_the_agent_program_does_not_have(self) -> None:
-        text = shipped_role("code_reviewer").replace('allowed = ["Read", "Grep", "Glob"]', 'allowed = ["Read", "Grop"]')
+        text = shipped_role("code_reviewer").replace('allowed = ["Read", "Grep", "Glob", "Bash"]', 'allowed = ["Read", "Grop"]')
 
         with self.refused(r"unknown tool\(s\) Grop\. Known tools: Read, Grep, Glob"):
             save_role(self.store, "p1", text, changed_by="alice")
@@ -442,7 +442,7 @@ class ApiTests(_Workspace):
         self.assertEqual(reviewer["origin"], "shipped")
         self.assertEqual(reviewer["ends"], "decides")
         self.assertEqual(reviewer["decisions"], ["approve", "deny", "steer"])
-        self.assertEqual(reviewer["tools"], {"every": False, "chosen": ["Read", "Grep", "Glob"]})
+        self.assertEqual(reviewer["tools"], {"every": False, "chosen": ["Read", "Grep", "Glob", "Bash"]})
         self.assertIn("Standard Development", reviewer["used_by"])
         development = next(w for w in payload["workflows"] if w["id"] == "development")
         self.assertTrue(development["used"])

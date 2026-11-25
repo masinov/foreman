@@ -259,7 +259,7 @@ class AgentStepTests(OrchestratorTestCase):
             reviewer_capture = runner.capture(2)
             self.assertEqual(developer_capture.model, "claude-sonnet-4-6")
             self.assertIsNone(developer_capture.session_id)
-            self.assertEqual(reviewer_capture.disallowed_tools, ("Bash", "Write", "Edit", "NotebookEdit"))
+            self.assertEqual(reviewer_capture.disallowed_tools, ("Write", "Edit", "NotebookEdit"))
 
             runs = store.list_runs(task_id=task.id)
             workflow_runs = [r for r in runs if r.role_id != "_builtin:orchestrator"]
@@ -1120,7 +1120,7 @@ class AgentStepTests(OrchestratorTestCase):
             self.assertEqual(runner.capture(1).model, "gpt-5.4")
             self.assertEqual(
                 runner.capture(2).disallowed_tools,
-                ("Bash", "Write", "Edit", "NotebookEdit"),
+                ("Write", "Edit", "NotebookEdit"),
             )
 
             runs = store.list_runs(task_id=task.id)

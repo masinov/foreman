@@ -38,7 +38,7 @@ The first build items of ADR-0040, on the model of ADR-0041:
 | FOR-61 | A step's result is a record its role declares, starting with the developer's report | none | todo |
 | FOR-62 | The reviewer's verdict is a record per criterion, and only serious findings send work back | FOR-61 | todo |
 | FOR-63 | A step's details show the reads before its first edit and the tokens it used | none | in_progress |
-| FOR-64 | The code reviewer runs the checks and takes screenshots in a sandbox | FOR-62 | todo |
+| FOR-64 | The code reviewer runs the checks and takes screenshots in a sandbox | FOR-62 | in_progress |
 
 The full description and acceptance criteria of each task are in Foreman.
 

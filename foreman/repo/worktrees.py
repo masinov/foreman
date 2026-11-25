@@ -28,7 +28,9 @@ import os
 import re
 import shutil
 import subprocess
-from dataclasses import dataclass
+from collections.abc import Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..domain.errors import ForemanError
@@ -38,6 +40,7 @@ from ..store import ForemanStore
 from .git import (
     GitError,
     branch_exists,
+    head_sha,
     is_worktree_clean,
     merge_in_progress,
     run_git,
@@ -51,6 +54,9 @@ DEFAULT_WORKTREE_ROOT = ".foreman/worktrees"
 #: Directory name, inside the worktree root, of the shared worktree that the
 #: merge built-in uses to land task branches on the default branch.
 INTEGRATION_WORKTREE_NAME = "_integration"
+
+#: Name prefix, inside the worktree root, of a sandbox worktree (ADR-0041).
+SANDBOX_WORKTREE_PREFIX = "_sandbox-"
 
 #: Default ceiling on live task worktrees when the project does not set
 #: ``max_live_worktrees``. 0 means unlimited.
@@ -85,9 +91,60 @@ class WorktreeEntry:
     slug: str
     exists: bool
     is_integration: bool = False
+    #: A throwaway working copy of a sandboxed step (see ``sandbox``).
+    is_sandbox: bool = False
     # False for a directory under the worktree root that is not a git worktree
     # of this repository. Foreman lists such a directory and never deletes it.
     owned: bool = True
+
+
+@dataclass(slots=True)
+class Sandbox:
+    """One sandboxed step's throwaway worktree and the guard on the task branch.
+
+    The worktree is detached at ``commit``, so a commit made in it moves
+    nothing. All worktrees share one ``.git``, though, so an agent with a shell
+    can still move a ref (``git branch -f``, ``git update-ref``) or push.
+    ``env`` makes every push fail, and ``check`` compares the task branch with
+    the head it had when the sandbox opened, puts it back if it moved, and
+    returns why the step must fail.
+    """
+
+    path: Path
+    repo_path: Path
+    branch: str
+    #: The commit the sandbox is checked out at and the branch head at the start.
+    commit: str
+    env: dict[str, str] = field(default_factory=dict)
+    violation: str | None = None
+
+    @property
+    def ref(self) -> str:
+        return f"refs/heads/{self.branch}"
+
+    def check(self) -> str | None:
+        """Return why the step broke the sandbox, or None; a moved branch is restored."""
+
+        if self.violation is not None:
+            return self.violation
+        current = head_sha(self.repo_path, self.ref)
+        if current == self.commit:
+            return None
+        found = f"moved to {current[:12]}" if current else "was deleted"
+        restore = run_git(
+            self.repo_path, "update-ref", self.ref, self.commit, current or "", check=False
+        )
+        restored = (
+            "Foreman put it back."
+            if restore.returncode == 0
+            else f"Foreman could not put it back: {restore.stderr or restore.stdout}"
+        )
+        self.violation = (
+            f"The sandboxed step changed the task's branch: {self.branch} was at "
+            f"{self.commit[:12]} when the step began and {found}. A sandboxed step may "
+            f"not commit to, move or push the task's branch. {restored}"
+        )
+        return self.violation
 
 
 def worktree_root(project: Project) -> Path:
@@ -285,6 +342,72 @@ class WorktreeManager:
             self._run_setup_command(path)
         return path
 
+    @contextmanager
+    def sandbox(self, task: Task) -> Iterator[Sandbox]:
+        """Open a throwaway worktree of the task's branch head for one step.
+
+        Checked out detached at the commit under review, linked and set up as
+        a task worktree is (``worktree_link_paths``, ``worktree_setup_command``,
+        run afresh because the tree is new), and removed on the way out
+        whether the step succeeded, failed, was killed, or never started
+        because setup failed. A tree an earlier engine left behind under the
+        same name is replaced.
+        """
+
+        branch = (task.branch_name or "").strip()
+        commit = head_sha(self.repo_path, f"refs/heads/{branch}") if branch else None
+        if not commit:
+            raise WorktreeError(
+                f"Task {task.id!r} has no branch with a commit to review, so there is "
+                "nothing to open a sandbox on."
+            )
+        path = self.root / f"{SANDBOX_WORKTREE_PREFIX}{task_slug(task)}"
+        if path.exists() or self._is_registered(path):
+            self.remove_path(path)
+            if path.exists():
+                raise WorktreeError(f"{path} exists and is not a Foreman sandbox. Remove it.")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            run_git(self.repo_path, "worktree", "add", "--detach", str(path), commit)
+        except GitError as exc:
+            raise WorktreeError(f"Could not create sandbox at {path}: {exc}") from exc
+        box = Sandbox(
+            path=path,
+            repo_path=self.repo_path,
+            branch=branch,
+            commit=commit,
+            env=self._no_push_env(),
+        )
+        try:
+            self._link_shared_paths(path)
+            self._run_setup_command(path)
+            yield box
+        finally:
+            try:
+                # Anything the step did to the branch is undone even when the
+                # step was killed and nobody reads the verdict.
+                box.check()
+            finally:
+                self.remove_path(path)
+
+    def _no_push_env(self) -> dict[str, str]:
+        """Git settings, as environment, that point every remote's push nowhere.
+
+        Environment config outranks the repository's own, so an agent cannot
+        undo it with ``git config``; ``git remote set-url --push`` is a
+        repository config write and loses to it too.
+        """
+
+        result = run_git(self.repo_path, "remote", check=False)
+        remotes = result.stdout.split() if result.returncode == 0 else []
+        # ``GIT_CONFIG_PARAMETERS`` is what ``git -c`` sets, and every git
+        # version reads it (``GIT_CONFIG_COUNT`` needs 2.31).
+        entries = " ".join(
+            f"'remote.{remote}.pushurl'='/nonexistent/foreman-sandbox-no-push'"
+            for remote in remotes
+        )
+        return {"GIT_CONFIG_PARAMETERS": entries} if entries else {}
+
     def remove(self, task: Task) -> bool:
         """Remove one task's worktree. Returns whether anything was removed."""
 
@@ -337,6 +460,7 @@ class WorktreeManager:
                     slug=path.name,
                     exists=path.exists(),
                     is_integration=path.name == INTEGRATION_WORKTREE_NAME,
+                    is_sandbox=path.name.startswith(SANDBOX_WORKTREE_PREFIX),
                 )
             )
         if self.root.is_dir():
@@ -350,6 +474,7 @@ class WorktreeManager:
                         slug=child.name,
                         exists=True,
                         is_integration=child.name == INTEGRATION_WORKTREE_NAME,
+                        is_sandbox=child.name.startswith(SANDBOX_WORKTREE_PREFIX),
                         owned=self._is_linked_to_this_repository(child),
                     )
                 )
@@ -711,7 +836,9 @@ def enforce_worktree_limit(
     manager = manager or WorktreeManager(project)
     limit = max_live_worktrees(project)
     entries = [
-        entry for entry in manager.list() if not entry.is_integration and entry.owned
+        entry
+        for entry in manager.list()
+        if not entry.is_integration and not entry.is_sandbox and entry.owned
     ]
     live_before = sum(1 for entry in entries if entry.exists)
     if limit <= 0:
