@@ -12,7 +12,6 @@ import json
 from collections.abc import Iterator
 from dataclasses import dataclass, replace
 from pathlib import Path
-import json
 import subprocess
 import tempfile
 import unittest

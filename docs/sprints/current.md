@@ -42,6 +42,15 @@ The first build items of ADR-0040, on the model of ADR-0041:
 
 The full description and acceptance criteria of each task are in Foreman.
 
+### Found during the run
+
+- **2026-11-25 01:10, CI red on FOR-61's merge** (`310496e`): a duplicate
+  `import json` in `tests/engine_support.py` failed `ruff`. Foreman's test
+  step never ran the linters, so the merge went through. Fixed by hand
+  (`fix/tests-duplicate-json-import`). By mechanism: Foreman's
+  `test_command` now starts with `ruff check foreman tests scripts` and
+  `lint-imports`, as CI does.
+
 ### Left for later
 
 The rest of ADR-0040's build order:
