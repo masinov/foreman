@@ -16,7 +16,7 @@ from foreman.engine.orchestrator import ForemanOrchestrator
 from foreman.runner.base import AgentEvent, AgentRunConfig
 from foreman.store import ForemanStore
 
-from engine_support import OrchestratorTestCase, ScriptedNativeRunner
+from engine_support import DEV_REPORT, OrchestratorTestCase, ScriptedNativeRunner
 
 
 class OneTaskAtATimeTests(OrchestratorTestCase):
@@ -46,7 +46,7 @@ class OneTaskAtATimeTests(OrchestratorTestCase):
         # What the scripted project's test command checks for.
         self.write_text(work_dir / "ready.txt", "ready\n")
         self.commit_all(work_dir, "feat: second task")
-        yield AgentEvent("agent.message", payload={"text": "Done.\nTASK_COMPLETE", "phase": "assistant"})
+        yield AgentEvent("agent.message", payload={"text": "Done.\n" + DEV_REPORT + "\nTASK_COMPLETE", "phase": "assistant"})
         yield AgentEvent("agent.completed", payload={"session_id": "dev-2"})
 
     def _orchestrator(self, store: ForemanStore, runner: ScriptedNativeRunner) -> ForemanOrchestrator:

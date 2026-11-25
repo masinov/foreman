@@ -334,6 +334,7 @@ class AgentSteps(WorkflowRunnerBase):
             retry_count=result.retry_count,
             failure_type=result.failure_type,
             commit_sha=head_after,
+            record=result.record,
         )
         self._record_step_changes(run, project, head_before, head_after)
         return result

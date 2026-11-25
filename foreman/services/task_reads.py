@@ -591,6 +591,7 @@ def _run_fields(run: Run) -> dict[str, Any]:
         "outcome": run.outcome,
         "outcome_detail": run.outcome_detail,
         "commit_sha": run.commit_sha,
+        "record": run.record,
         "started_at": run.started_at,
         "finished_at": run.completed_at,
         "duration_ms": run.duration_ms,

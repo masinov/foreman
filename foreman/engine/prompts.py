@@ -14,6 +14,7 @@ from ..store import ForemanStore
 from .branch_sync import task_working_dir
 from .evidence import EvidenceBuilder, branch_diff_content
 from .limits import resolve_project_settings
+from .report_words import record_text
 from .task_writes import TaskWrites
 
 
@@ -166,6 +167,20 @@ class PromptBuilder:
         ]
         return candidates[-1] if candidates else None
 
+    def developer_report(self, task_id: str, previous_output: str) -> str:
+        """What a reviewer is told of the developer's work.
+
+        The developer's report as sections when its step returned one (the
+        newest on the task); otherwise the step's free text, as before.
+        """
+
+        for run in reversed(self.store.list_runs(task_id=task_id)):
+            if run.status == "completed" and run.record:
+                text = record_text(run.record)
+                if text:
+                    return text
+        return previous_output
+
     def build(
         self,
         role: RoleDefinition,
@@ -176,6 +191,7 @@ class PromptBuilder:
         context_projection: ProjectContextProjection | None = None,
     ) -> str:
         latest_run = self.latest_agent_run(task.id)
+        previous_output = latest_run.outcome_detail if latest_run else ""
         if context_projection is None:
             context_projection = build_project_context(
                 self.store,
@@ -208,7 +224,8 @@ class PromptBuilder:
             "environment_rules": environment_rules(repo_instructions),
             "spec_path": project.spec_path or "",
             "previous_feedback": carried_output or "",
-            "previous_output": latest_run.outcome_detail if latest_run else "",
+            "previous_output": previous_output,
+            "developer_report": self.developer_report(task.id, previous_output),
             # Status describes the tree the agent works in; diffs and log come
             # from refs, which every worktree shares.
             "git_status": safe_git_status(task_working_dir(project, task)),

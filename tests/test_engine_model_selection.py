@@ -3,6 +3,7 @@
 from __future__ import annotations
 from dataclasses import replace
 import unittest
+from engine_support import DEV_REPORT
 from foreman.engine.output_contract import extract_completion_output, extract_decision_output
 from foreman.domain.models import Project, Task
 from foreman.engine.orchestrator import ForemanOrchestrator
@@ -160,7 +161,7 @@ class DecisionExtractionTests(unittest.TestCase):
 
         outcome, detail = extract_completion_output(
             role,
-            "Completed the slice.\n\n**TASK_COMPLETE**",
+            "Completed the slice.\n\n" + DEV_REPORT + "\n**TASK_COMPLETE**",
         )
 
         self.assertEqual(outcome, "done")

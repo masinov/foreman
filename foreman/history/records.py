@@ -167,6 +167,7 @@ class RunRecords:
         failure_type: str | None = None,
         commit_sha: str | None = None,
         session_cost_usd: float | None = None,
+        record: dict[str, Any] | None = None,
     ) -> None:
         run.status = status
         run.outcome = outcome
@@ -187,6 +188,8 @@ class RunRecords:
             run.commit_sha = commit_sha
         if session_cost_usd is not None:
             run.session_cost_usd = session_cost_usd
+        if record is not None:
+            run.record = record
         run.duration_ms = duration_ms
         run.completed_at = utc_now_text()
         self.store.save_run(run)

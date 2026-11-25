@@ -12,6 +12,7 @@ from foreman.runner.base import AgentEvent, AgentRunConfig, InfrastructureError,
 from foreman.store import ForemanStore
 
 from engine_support import (
+    DEV_REPORT,
     OrchestratorTestCase,
     ScriptedAgentExecutor,
     ScriptedNativeRunner,
@@ -172,7 +173,7 @@ class AgentStepTests(OrchestratorTestCase):
                 prompt: str,
                 carried_output: str | None,
             ) -> AgentExecutionResult:
-                self.assertIn("Developer Summary", prompt)
+                self.assertIn("Developer's Report", prompt)
                 return AgentExecutionResult(
                     outcome="error",
                     detail="<invoke name=\"Bash\">bad tool call</invoke>",
@@ -437,7 +438,7 @@ class AgentStepTests(OrchestratorTestCase):
                 self.commit_all(work_dir, "feat: finish after the interruption")
                 yield AgentEvent(
                     "agent.message",
-                    payload={"text": "Finished the slice.\nTASK_COMPLETE", "phase": "assistant"},
+                    payload={"text": "Finished the slice.\n" + DEV_REPORT + "\nTASK_COMPLETE", "phase": "assistant"},
                 )
                 yield AgentEvent(
                     "agent.completed",

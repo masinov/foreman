@@ -27,7 +27,7 @@ from .errors import LeaseLostError, OrchestratorError
 from .leasing import TaskLeases
 from .limits import project_timeout_seconds, resolve_project_settings, run_cost_ceiling
 from .model_selection import resolve_step_model
-from .output_contract import FINAL_MESSAGE_PHASES, extract_completion_output
+from .output_contract import FINAL_MESSAGE_PHASES, read_completion
 from ..history.records import RunRecords
 from .results import AgentEventRecord, AgentExecutionResult, AgentExecutor
 
@@ -359,6 +359,7 @@ class _NativeRunTally:
         self.final_status = "failed"
         self.outcome = "error"
         self.detail = ""
+        self.record: dict[str, Any] | None = None
         self.session_id = session_id
         self.cost_usd = 0.0
         self.session_cost_usd: float | None = None
@@ -401,11 +402,12 @@ class _NativeRunTally:
             )
         elif event_type == "agent.completed":
             self._take_totals(payload)
-            self.outcome, self.detail = extract_completion_output(
+            reading = read_completion(
                 self.role,
                 self.final_message,
                 transcript="\n\n".join(self.message_fragments),
             )
+            self.outcome, self.detail, self.record = reading.outcome, reading.detail, reading.record
             self.final_status = "completed"
         elif event_type == "agent.session":
             self.session_id = optional_string(payload.get("session_id")) or self.session_id
@@ -464,6 +466,7 @@ class _NativeRunTally:
             retry_count=infra_retry_count,
             failure_type=self.failure_type,
             retry_after=self.retry_after,
+            record=self.record,
         )
 
 def _reported_session_cost(payload: Mapping[str, Any], current: float | None) -> float | None:

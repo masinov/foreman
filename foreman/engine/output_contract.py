@@ -8,8 +8,11 @@ functions find and validate that in text; they know nothing about runs.
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
+from typing import Any
 
 from ..domain.outcomes import APPROVE, DONE, ERROR
+from ..definitions.records import RECORD_PROBLEM_PREFIX, read_record, split_record_block
 from ..definitions.roles import RoleDefinition
 from .results import AgentExecutionResult
 
@@ -129,12 +132,23 @@ def extract_json_block(text: str) -> str | None:
     return match.group(1).strip() or None
 
 
-def extract_completion_output(
+@dataclass(frozen=True, slots=True)
+class CompletionReading:
+    """What a role's final message says: the outcome, its detail and the record."""
+
+    outcome: str
+    detail: str
+    #: ``{"kind": ..., "fields": {...}}`` when the role declares a record and
+    #: the message held a well-formed one; None otherwise.
+    record: dict[str, Any] | None = None
+
+
+def read_completion(
     role: RoleDefinition,
     text: str,
     *,
     transcript: str | None = None,
-) -> tuple[str, str]:
+) -> CompletionReading:
     """Apply the role's completion contract to the agent's final message.
 
     ``text`` is the final assistant message: the marker or verdict must
@@ -142,6 +156,10 @@ def extract_completion_output(
     the marker or a reviewer that restates the options never counts.
     ``transcript`` is only a fallback for the returned detail when the
     final message is empty once the marker is stripped.
+
+    A role that declares a record (ADR-0042) must also return it, in the
+    final message: a missing or malformed one is an error outcome whose
+    detail says what is wrong, and the step has no record.
     """
 
     cleaned_text = text.strip()
@@ -149,23 +167,46 @@ def extract_completion_output(
     marker = role.completion.marker.strip()
 
     if output_config.extract_decision:
-        return extract_decision_output(cleaned_text, allowed=role.completion.outcomes)
+        outcome, detail = extract_decision_output(cleaned_text, allowed=role.completion.outcomes)
+        return CompletionReading(outcome, detail)
 
     if marker:
         if not contains_completion_marker(cleaned_text, marker):
-            return (ERROR, f"Missing completion marker `{marker}`.")
+            return CompletionReading(ERROR, f"Missing completion marker `{marker}`.")
         cleaned_text = strip_completion_marker(cleaned_text, marker)
         if not cleaned_text and transcript:
             cleaned_text = strip_completion_marker(transcript.strip(), marker)
 
+    declaration = role.completion.record
+    if declaration is not None:
+        fields, problem = read_record(declaration, text)
+        if fields is None:
+            return CompletionReading(ERROR, f"{RECORD_PROBLEM_PREFIX}: {problem}")
+        # The words around the block stay the step's summary; the block is the record.
+        summary = split_record_block(cleaned_text)[1] or str(fields.get("summary") or "").strip()
+        return CompletionReading(
+            DONE,
+            summary or "Completed.",
+            {"kind": declaration.kind, "fields": fields},
+        )
+
     if output_config.extract_json:
         json_block = extract_json_block(cleaned_text)
-        return (DONE, json_block or cleaned_text or "Completed without JSON output.")
+        return CompletionReading(DONE, json_block or cleaned_text or "Completed without JSON output.")
 
-    if output_config.extract_summary or output_config.extract_branch:
-        return (DONE, cleaned_text or "Completed.")
+    return CompletionReading(DONE, cleaned_text or "Completed.")
 
-    return (DONE, cleaned_text or "Completed.")
+
+def extract_completion_output(
+    role: RoleDefinition,
+    text: str,
+    *,
+    transcript: str | None = None,
+) -> tuple[str, str]:
+    """The outcome and detail of :func:`read_completion`."""
+
+    reading = read_completion(role, text, transcript=transcript)
+    return (reading.outcome, reading.detail)
 
 
 def contract_retry_reason(
@@ -183,6 +224,9 @@ def contract_retry_reason(
     marker = role.completion.marker.strip()
     if marker and result.detail == f"Missing completion marker `{marker}`.":
         return "missing_completion_marker"
+
+    if role.completion.record is not None and result.detail.startswith(RECORD_PROBLEM_PREFIX):
+        return "record_format"
 
     return None
 
@@ -272,6 +316,14 @@ def with_retry_instruction(
             f"`{role.completion.marker}` on its own line.\n"
             "If it is not finished, do not write the marker: say what is unfinished or "
             "what blocks it."
+        )
+    elif reason == "record_format":
+        declaration = role.completion.record
+        marker = role.completion.marker.strip()
+        correction = (
+            "Your previous response did not return its record in the required form.\n"
+            "Do not do more work.\n"
+            + (declaration.instructions(marker) if declaration else "")
         )
     else:
         return prompt

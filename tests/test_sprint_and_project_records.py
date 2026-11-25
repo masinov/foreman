@@ -202,8 +202,18 @@ class MovingOldRecordsTests(unittest.TestCase):
         store.save_task(Task(id="t1", sprint_id="s", project_id="p", title="T1", status="done"))
         store.save_task(Task(id="t2", sprint_id="s2", project_id="p", title="T2", status="in_progress"))
 
+        def save_run(run: Run) -> None:
+            # Raw: the store writes the current runs columns, and this database
+            # is at migration 28, before migration 29 moves these records.
+            store._connection.execute(
+                "INSERT INTO runs (id, task_id, project_id, role_id, workflow_step,"
+                " agent_backend, status, outcome, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (run.id, run.task_id, run.project_id, run.role_id, run.workflow_step,
+                 run.agent_backend, run.status, run.outcome, run.created_at),
+            )
+
         def made_up(run_id: str, task_id: str, step: str = "orchestrator") -> None:
-            store.save_run(Run(
+            save_run(Run(
                 id=run_id, task_id=task_id, project_id="p", role_id="_builtin:orchestrator",
                 workflow_step=step, agent_backend="orchestrator", status="completed",
                 outcome="success", created_at="2026-11-01T00:00:00+00:00",
@@ -232,7 +242,7 @@ class MovingOldRecordsTests(unittest.TestCase):
         made_up("r-own", "t2", step="develop")
         event("e-own", "r-own", "t2", "engine.command_applied", {"command": "stop_task", "task_id": "t2"})
         # A real run's event that happens to share a type stays.
-        store.save_run(Run(
+        save_run(Run(
             id="r-merge", task_id="t1", project_id="p", role_id="_builtin:merge",
             workflow_step="merge", agent_backend="builtin", status="completed",
             outcome="success", created_at="2026-11-01T00:00:00+00:00",

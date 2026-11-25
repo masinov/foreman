@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 import unittest
 
+from engine_support import DEV_REPORT
 from foreman.domain.models import Project, Sprint, Task
 from foreman.engine.orchestrator import ForemanOrchestrator
 from foreman.runner.base import AgentEvent, AgentRunConfig
@@ -158,7 +159,7 @@ class QuotaPauseTests(unittest.TestCase):
             runner = _ScriptedRunner(
                 [
                     _quota_hit,
-                    _finishes("Implemented the feature.\nTASK_COMPLETE"),
+                    _finishes("Implemented the feature.\n" + DEV_REPORT + "\nTASK_COMPLETE"),
                     _finishes("APPROVE"),
                 ]
             )
@@ -208,7 +209,7 @@ class QuotaPauseTests(unittest.TestCase):
                         raise EngineShutdown("SIGTERM")
                     yield AgentEvent(
                         "agent.message",
-                        payload={"text": "Implemented.\nTASK_COMPLETE", "phase": "result"},
+                        payload={"text": "Implemented.\n" + DEV_REPORT + "\nTASK_COMPLETE", "phase": "result"},
                     )
                     yield AgentEvent(
                         "agent.completed",

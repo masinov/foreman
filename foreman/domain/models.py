@@ -338,6 +338,9 @@ class Run:
     # The task branch's head when an agent run finished; None for runs that
     # have no branch to read (system runs, a branch that no longer exists).
     commit_sha: str | None = None
+    # The record the role declared and the step returned (ADR-0042):
+    # ``{"kind": ..., "fields": {...}}``; None for a role that declares none.
+    record: dict[str, Any] | None = None
     prompt_text: str | None = None
     cost_usd: float = 0.0
     # The backend's running total for the run's session when the run ended.

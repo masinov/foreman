@@ -15,6 +15,7 @@ import textwrap
 import unittest
 from pathlib import Path
 
+from engine_support import DEV_REPORT
 from foreman.domain.models import Project, Run, Sprint, Task
 from foreman.engine.output_contract import extract_decision_output, with_retry_instruction
 from foreman.engine.orchestrator import ForemanOrchestrator
@@ -407,7 +408,7 @@ class OrchestratorContractTests(unittest.TestCase):
 
             ended_properly = _messages(
                 ("Plan: I will implement this.", "assistant"),
-                ("Implemented the feature.\nTASK_COMPLETE", "result"),
+                ("Implemented the feature.\n" + DEV_REPORT + "\nTASK_COMPLETE", "result"),
             )
             orchestrator.agent_runners["claude_code"] = _ScriptedRunner([ended_properly])
             result = orchestrator.agent_steps.execute_native(
@@ -533,7 +534,7 @@ class OrchestratorContractTests(unittest.TestCase):
             subprocess.run(["git", "add", "."], cwd=work_dir, check=True, capture_output=True)
             subprocess.run(["git", "commit", "-m", "feat: implement the feature"], cwd=work_dir, check=True, capture_output=True)
             yield AgentEvent("agent.started", payload={"command": "fake"})
-            yield AgentEvent("agent.message", payload={"text": "Implemented the feature with tests.\nTASK_COMPLETE", "phase": "result"})
+            yield AgentEvent("agent.message", payload={"text": "Implemented the feature with tests.\n" + DEV_REPORT + "\nTASK_COMPLETE", "phase": "result"})
             yield AgentEvent("agent.completed", payload={"session_id": "s"})
 
         def triage_escalates(config: AgentRunConfig):

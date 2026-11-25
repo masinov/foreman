@@ -14,6 +14,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from engine_support import DEV_REPORT
 from foreman.domain.models import Project, Sprint, Task, validate_executor_overrides
 from foreman.engine.orchestrator import ForemanOrchestrator
 from foreman.definitions.roles import default_roles_dir, load_role, load_roles
@@ -163,7 +164,7 @@ class MergeGateFlowTests(unittest.TestCase):
             subprocess.run(["git", "add", "."], cwd=work_dir, check=True, capture_output=True)
             subprocess.run(["git", "commit", "-m", "feat: implement the feature"], cwd=work_dir, check=True, capture_output=True)
             yield AgentEvent("agent.started", payload={"command": "fake"})
-            yield AgentEvent("agent.message", payload={"text": "Implemented the feature with tests.\nTASK_COMPLETE", "phase": "result"})
+            yield AgentEvent("agent.message", payload={"text": "Implemented the feature with tests.\n" + DEV_REPORT + "\nTASK_COMPLETE", "phase": "result"})
             yield AgentEvent("agent.completed", payload={"session_id": "s"})
 
         return developer_commits

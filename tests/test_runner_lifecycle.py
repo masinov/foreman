@@ -20,6 +20,7 @@ import time
 import unittest
 from pathlib import Path
 
+from engine_support import DEV_REPORT
 from foreman.engine.builtins import BuiltinExecutor
 from foreman.domain.models import Project, Sprint, Task
 from foreman.engine.orchestrator import ForemanOrchestrator
@@ -602,7 +603,7 @@ def _ticks_then_complete(config: AgentRunConfig):
     yield AgentEvent("agent.started", payload={"command": "fake"})
     for _ in range(3):
         yield AgentEvent("agent.tick", payload={"elapsed_seconds": 1.0})
-    yield AgentEvent("agent.message", payload={"text": "Implemented.\nTASK_COMPLETE", "phase": "result"})
+    yield AgentEvent("agent.message", payload={"text": "Implemented.\n" + DEV_REPORT + "\nTASK_COMPLETE", "phase": "result"})
     yield AgentEvent("agent.completed", payload={"session_id": "dev-session", "cost_usd": 0.5, "duration_ms": 10, "token_count": 100})
 
 

@@ -179,6 +179,7 @@ class TaskService(Service):
                     "session_id": run.session_id,
                     "branch_name": run.branch_name,
                     "commit_sha": run.commit_sha,
+                    "record": run.record,
                     "tests": counts.model_dump() if counts is not None else None,
                 }
             )
