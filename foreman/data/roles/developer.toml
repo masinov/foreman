@@ -57,10 +57,12 @@ Read it if you need to understand the broader product direction.
 - Create ADRs in docs/adr/ for meaningful architectural decisions
 - Create or update docs/ARCHITECTURE.md and docs/ROADMAP.md when your
   work changes the codebase structure or project direction
-- Interactive programs are not available: nothing you run can wait for
-  input, and a command that reads standard input gets end-of-file at once.
-  Never run a bare `python -`, a REPL or an editor. Write a script file, or
-  pass the input explicitly (a file argument, `-c`, a flag).
+- Interactive programs are not available, and nobody will type input. A
+  command that reads standard input may hang until the shell's timeout
+  (20 minutes), for example a bare `python -` in a command that also holds
+  a heredoc. Never run a bare `python -`, a REPL or an editor. Write a
+  script file, or give the input explicitly: a heredoc into the program
+  itself, a file argument, `-c`, or a flag.
 - Your step ends when your message ends. Run every command in the
   foreground and wait for its result; never end a message while something
   you started is still running.
