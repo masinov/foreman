@@ -104,6 +104,7 @@ these parts of `foreman/engine/`, each taking only what it uses:
 | `agent_step` (`AgentStepRunner`) | running a role and reading its event stream |
 | `signals` (`SignalHandler`) | persisting agent events and applying signals |
 | `output_contract` | completion markers, reviewer decisions and a step's record (`read_completion`) |
+| `verdict` | whether a reviewer's `review_verdict` record agrees with its decision: only S1 and S2 send work back (ADR-0042) |
 | `report_words` | a stored record as sections of a later step's prompt |
 | `evidence` (`EvidenceBuilder`) | the facts recorded before a merge (ADR-0018) |
 | `gates`, `sprints`, `retention` | gate policy, sprint flow, history pruning |

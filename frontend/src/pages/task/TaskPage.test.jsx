@@ -1143,6 +1143,33 @@ describe("Activity", () => {
     expect(screen.queryByRole("region", { name: "Developer's report" })).toBeNull();
   });
 
+  it("shows the review's verdict per criterion, and its findings with their severities, in the review step's details", async () => {
+    const verdict = {
+      kind: "review_verdict",
+      fields: {
+        criteria: [{ criterion: "The loader rejects a bad declaration", status: "verified", evidence: "records.py:112" }],
+        findings: [{ severity: "S3", finding: "The helper has no docstring." }],
+      },
+    };
+    const routes = taskRoutes({
+      runs: [
+        runItem("run-4", "review", { role_id: "code_reviewer", outcome: "approve", record: verdict }),
+        runItem("run-1", "develop"),
+      ],
+    });
+    routes[outputUrl("run-4")] = outputPayload("run-4", "APPROVE");
+    await renderTask(`${BASE}/activity?run=run-4`, routes);
+    const shown = await screen.findByRole("region", { name: "Review verdict" });
+    expect(within(shown).getByRole("list", { name: "Criteria checked" })).toHaveTextContent("The loader rejects a bad declaration");
+    expect(within(shown).getByRole("list", { name: "Criteria checked" })).toHaveTextContent("Verified");
+    expect(within(shown).getByRole("list", { name: "Findings" })).toHaveTextContent("S3 The helper has no docstring.");
+    expect(screen.getByRole("heading", { name: "Review" })).toBeInTheDocument();
+    // A step with no verdict shows none.
+    fireEvent.click(within(screen.getByRole("table", { name: "Steps" })).getAllByRole("row")[2]);
+    await screen.findByRole("heading", { name: "Develop" });
+    expect(screen.queryByRole("region", { name: "Review verdict" })).toBeNull();
+  });
+
   it("lists runs newest first and shows the picked run: its story, beginning with its prompt, and its facts", async () => {
     const { fetchImpl } = await renderTask(`${BASE}/activity`);
     const table = await screen.findByRole("table", { name: "Steps" });

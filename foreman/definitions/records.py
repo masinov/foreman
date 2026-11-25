@@ -21,6 +21,8 @@ Field types:
 - ``bool``: true or false.
 - ``text_list``: a list of strings; required means the key is present, and an
   empty list says there is nothing to list.
+- ``choice``: one of the field's own ``choices`` (a list of lowercase or
+  uppercase words, such as ``["S1", "S2"]``).
 - ``records``: a list of objects, each described by the field's own
   ``fields`` (one level; the entries cannot nest further).
 """
@@ -39,9 +41,10 @@ from ..domain.errors import ForemanError
 #: The info string of the fenced block an agent returns its record in.
 RECORD_FENCE = "foreman-record"
 
-FIELD_TYPES: tuple[str, ...] = ("text", "bool", "text_list", "records")
+FIELD_TYPES: tuple[str, ...] = ("text", "bool", "text_list", "choice", "records")
 
 _NAME = re.compile(r"^[a-z][a-z0-9_]*$")
+_CHOICE = re.compile(r"^[A-Za-z0-9_]+$")
 _FENCED_RECORD = re.compile(
     rf"^[ \t]*```[ \t]*{re.escape(RECORD_FENCE)}[ \t]*\n(.*?)^[ \t]*```[ \t]*$",
     re.DOTALL | re.MULTILINE,
@@ -65,6 +68,8 @@ class RecordField:
     description: str = ""
     #: For ``records``: the fields of each entry.
     fields: tuple["RecordField", ...] = ()
+    #: For ``choice``: the values the field may take.
+    choices: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,7 +138,7 @@ def _parse_fields(raw: Any, where: str, *, nested: bool) -> tuple[RecordField, .
         if name in seen:
             raise RecordDeclarationError(f"{label} is declared twice.")
         seen.add(name)
-        unknown = sorted(set(item) - {"name", "type", "required", "description", "fields"})
+        unknown = sorted(set(item) - {"name", "type", "required", "description", "fields", "choices"})
         if unknown:
             raise RecordDeclarationError(f"{label} has unknown key(s) {', '.join(unknown)}.")
         field_type = item.get("type")
@@ -150,6 +155,22 @@ def _parse_fields(raw: Any, where: str, *, nested: bool) -> tuple[RecordField, .
         if not isinstance(description, str):
             raise RecordDeclarationError(f"{label}.description must be a string.")
         inner: tuple[RecordField, ...] = ()
+        choices: tuple[str, ...] = ()
+        if field_type == "choice":
+            raw_choices = item.get("choices")
+            if (
+                not isinstance(raw_choices, list)
+                or not raw_choices
+                or any(not isinstance(c, str) or not _CHOICE.match(c) for c in raw_choices)
+                or len(set(raw_choices)) != len(raw_choices)
+            ):
+                raise RecordDeclarationError(
+                    f"{label}.choices must list the values the field may take, each a "
+                    "word of letters, digits and underscores, none twice."
+                )
+            choices = tuple(raw_choices)
+        elif "choices" in item:
+            raise RecordDeclarationError(f"{label}: only a field of type choice takes choices.")
         if field_type == "records":
             if nested:
                 raise RecordDeclarationError(f"{label}: a record's entries cannot hold records.")
@@ -163,6 +184,7 @@ def _parse_fields(raw: Any, where: str, *, nested: bool) -> tuple[RecordField, .
                 required=required,
                 description=description.strip(),
                 fields=inner,
+                choices=choices,
             )
         )
     return tuple(fields)
@@ -228,6 +250,9 @@ def _check_fields(fields: tuple[RecordField, ...], value: Mapping[str, Any], pat
         elif spec.type == "text_list":
             if not isinstance(item, list) or any(not isinstance(entry, str) for entry in item):
                 problems.append(f"`{where}` must be a list of text")
+        elif spec.type == "choice":
+            if item not in spec.choices:
+                problems.append(f"`{where}` must be one of {', '.join(spec.choices)}; got {item!r}")
         elif spec.type == "records":
             if not isinstance(item, list) or any(not isinstance(entry, dict) for entry in item):
                 problems.append(f"`{where}` must be a list of objects")
@@ -252,6 +277,7 @@ def _field_lines(fields: tuple[RecordField, ...], *, indent: int) -> list[str]:
             "text": "text",
             "bool": "true or false",
             "text_list": "list of text, empty when there is none",
+            "choice": "one of " + ", ".join(spec.choices),
             "records": "list of objects",
         }[spec.type]
         need = "required" if spec.required else "optional"
@@ -271,6 +297,8 @@ def _example(fields: tuple[RecordField, ...]) -> dict[str, Any]:
             out[spec.name] = True
         elif spec.type == "text_list":
             out[spec.name] = ["..."]
+        elif spec.type == "choice":
+            out[spec.name] = spec.choices[0]
         else:
             out[spec.name] = [_example(spec.fields)]
     return out

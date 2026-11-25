@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 import unittest
 
-from engine_support import DEV_REPORT
+from engine_support import DEV_REPORT, reviewed
 from foreman.domain.models import Project, Sprint, Task
 from foreman.engine.orchestrator import ForemanOrchestrator
 from foreman.runner.base import AgentEvent, AgentRunConfig
@@ -160,7 +160,7 @@ class QuotaPauseTests(unittest.TestCase):
                 [
                     _quota_hit,
                     _finishes("Implemented the feature.\n" + DEV_REPORT + "\nTASK_COMPLETE"),
-                    _finishes("APPROVE"),
+                    _finishes(reviewed("APPROVE")),
                 ]
             )
             orchestrator = ForemanOrchestrator(store, agent_runners={"claude_code": runner})

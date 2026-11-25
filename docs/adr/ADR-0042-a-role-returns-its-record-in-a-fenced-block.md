@@ -64,12 +64,13 @@ description = "What changed and why."
 - `kind` and each field `name` are lowercase names. Every field says its
   `type` and `required`; `description` is optional and is shown to the agent.
 - Types: `text` (required means not blank), `bool`, `text_list` (required
-  means the key is present; an empty list says there is nothing to list) and
-  `records`, a list of objects described by the field's own `fields`. A
-  record's entries do not nest further.
+  means the key is present; an empty list says there is nothing to list),
+  `choice` (one of the field's own `choices`) and `records`, a list of
+  objects described by the field's own `fields`. A record's entries do not
+  nest further.
 - A field not declared is refused, so a typo is not stored.
-- A role that returns a decision (a reviewer) cannot declare a record: the
-  reviewer's verdict per criterion is its own record, a later task.
+- A role that returns a decision (a reviewer) may declare a record too; the
+  verdict record is described in "The reviewer's verdict" below.
 - The loader (`foreman/definitions/records.py`) refuses a malformed
   declaration with a message naming the role file, the field and what is
   wrong. The role's prompt takes `{record_format}`, which Foreman fills with
@@ -117,3 +118,67 @@ in their prompts. The task page shows it in the develop step's details.
   `criteria` entries are not yet compared with the task's own list.
 - The block is text an agent writes, so a very long record is a long message.
   The agent's own output limit is the only bound for now.
+
+## The reviewer's verdict (amendment, Sprint 63)
+
+Every shipped reviewer (`code_reviewer`, `security_reviewer`,
+`triage_reviewer`, `frontier_reviewer`) declares a record of kind
+`review_verdict` and still ends its message with its decision line. The
+record is read first (the decision is read outside the block), then checked
+against the decision.
+
+### The record
+
+- `criteria`: one entry for each acceptance criterion, with `criterion`,
+  `status` (`verified`, `not_verified` or `judgement`: the reviewer's own
+  reading) and `evidence` (what it checked).
+- `findings`: each with a `severity` and the `finding`, an empty list when
+  there is nothing. The prompt defines the severities: S1 broken, unsafe or
+  data-losing; S2 an acceptance criterion not met; S3 should be fixed, does
+  not block; S4 a nit.
+
+### Foreman checks that the verdict and the outcome agree
+(`foreman/engine/verdict.py`)
+
+- `deny` or `steer` needs at least one S1 or S2 finding.
+- `approve` needs no S1 or S2 finding, and every criterion `verified` or
+  `judgement`.
+- `escalate` hands the decision on and is not checked.
+- A verdict that disagrees with its outcome makes the step's outcome `error`,
+  with a detail starting "The review's verdict does not agree with its
+  outcome" and the reason. The record stays on the run, so the page shows what
+  the reviewer returned. The step gets the one corrective retry that a
+  malformed record gets, with the rule said again.
+
+So only a serious finding sends work back: a reviewer cannot deny over a nit.
+
+### Decision: S3 and S4 findings stay with the review; they do not become tasks
+
+The findings of an approving review are kept in the review run's record
+(`runs.record_json`) and shown on the task page, in the review step's
+details, with their severities. Foreman does not file them as follow-up
+tasks:
+
+- a reviewer's signals are `progress` and `blocker` only (reviewers cannot
+  create tasks), and an automatic task for each nit would fill the backlog
+  with work nobody asked for and nobody ranked;
+- S3 and S4 are the reviewer's opinion, by definition not blocking; a person
+  or a manager who reads one and agrees files the task, with the finding
+  already in front of them.
+
+Revisit this if findings pile up unread: the record is structured, so a
+later step could turn S3 findings into proposed tasks for a person to confirm.
+
+### Consequences
+
+- A project's own reviewer role in the database that declares no record
+  keeps working as before: nothing is checked and no verdict is stored. A
+  shipped reviewer copied into a project before this change is such a role.
+- The criteria entries are not compared with the task's own list: an
+  approving verdict with no criteria entries passes the check. The prompt
+  asks for one entry for each criterion; comparing is a later change.
+- The completion evidence the reviewers read no longer mentions a judge
+  model (removed 2026-11-19); it states the branch head, the tests and the
+  latest code review, and says nothing but the reviewer has checked the
+  criteria (`foreman/engine/evidence.py`).
+- Review rounds are not capped here (ADR-0041 section 3).

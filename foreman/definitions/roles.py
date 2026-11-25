@@ -213,12 +213,6 @@ def parse_role(data: Mapping[str, Any], role_path: Path) -> RoleDefinition:
         record = parse_record_declaration(completion_data.get("record"), role_path)
     except RecordDeclarationError as exc:
         raise RoleLoadError(str(exc)) from exc
-    if record is not None and extract_decision:
-        raise RoleLoadError(
-            f"{role_path}: completion.record cannot be declared by a role that returns a "
-            "decision; a reviewer's verdict is its own record."
-        )
-
     backend = _require_string(agent_data, "backend", role_path)
     if backend not in BACKENDS:
         raise RoleLoadError(

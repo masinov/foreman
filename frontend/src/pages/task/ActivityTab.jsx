@@ -16,6 +16,7 @@ import { formatDayTime, humanize, plural, shortSha } from "../../ui/format";
 import { Spend } from "../../ui/Spend";
 import { narrate } from "./runWords";
 import { DeveloperReport } from "./DeveloperReport";
+import { ReviewVerdict } from "./ReviewVerdict";
 import { RunLine, withDays } from "./RunStory";
 import { ActivityTable } from "../shared/ActivityTable";
 import { runRole, runTook, stepOutcome } from "../shared/activityWords";
@@ -258,6 +259,7 @@ function RunOutput({ run, task, previous, next, onPick, pulse = 0 }) {
               </p>
             ) : null}
             <DeveloperReport record={run.record} />
+            <ReviewVerdict record={run.record} />
             {lines.length ? (
               <ol className="run-story" aria-label="What happened">
                 {lines.map((line, index) => (
