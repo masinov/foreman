@@ -16,6 +16,7 @@ import tempfile
 import time
 import unittest
 
+from engine_support import DEV_REPORT
 from foreman.store.migrations import MIGRATIONS
 from foreman.domain.models import Event, Project, Run, Sprint, Task
 from foreman.engine.orchestrator import ForemanOrchestrator
@@ -991,7 +992,7 @@ def _developer_commits(config: AgentRunConfig):
     yield AgentEvent("agent.started", payload={"command": "fake"})
     yield AgentEvent(
         "agent.message",
-        payload={"text": "Implemented the feature with tests.\nTASK_COMPLETE", "phase": "result"},
+        payload={"text": "Implemented the feature with tests.\n" + DEV_REPORT + "\nTASK_COMPLETE", "phase": "result"},
     )
     yield AgentEvent("agent.completed", payload={"session_id": "s"})
 

@@ -196,6 +196,7 @@ def _row_to_run(row: sqlite3.Row) -> Run:
         session_id=row["session_id"],
         branch_name=row["branch_name"],
         commit_sha=row["commit_sha"],
+        record=_load_json_dict(row["record_json"]) if row["record_json"] else None,
         prompt_text=row["prompt_text"],
         cost_usd=row["cost_usd"],
         session_cost_usd=row["session_cost_usd"],

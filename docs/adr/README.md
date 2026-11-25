@@ -54,3 +54,4 @@ Filename format:
 | ADR-0039 | The Engine Runs One Task at a Time | accepted |
 | ADR-0040 | A Method For The Agents, And A Repository Without Shared Logs | accepted |
 | ADR-0041 | Workflows Route On Facts, And Roles Declare What They Touch | accepted |
+| ADR-0042 | A Role Returns Its Record In A Fenced Block | accepted |

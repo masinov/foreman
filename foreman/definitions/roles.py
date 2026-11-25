@@ -13,6 +13,7 @@ from ._toml import TOMLDecodeError, load_toml_file, load_toml_text
 from ..domain.outcomes import CANONICAL_OUTCOMES
 from ..domain.errors import ForemanError
 from ..data import ROLES_DIR
+from .records import RecordDeclaration, RecordDeclarationError, parse_record_declaration
 
 _FORMATTER = Formatter()
 
@@ -91,6 +92,9 @@ class CompletionConfig:
     #: For decision roles: which review this verdict counts as in completion
     #: evidence ("code" or "security"). Ignored for non-decision roles.
     review_kind: str = "code"
+    #: The record this role's step returns (ADR-0042); None for a role that
+    #: produces only its summary.
+    record: RecordDeclaration | None = None
 
 
 @dataclass(slots=True)
@@ -205,6 +209,16 @@ def parse_role(data: Mapping[str, Any], role_path: Path) -> RoleDefinition:
             f"{', '.join(sorted(invalid_signals))}."
         )
 
+    try:
+        record = parse_record_declaration(completion_data.get("record"), role_path)
+    except RecordDeclarationError as exc:
+        raise RoleLoadError(str(exc)) from exc
+    if record is not None and extract_decision:
+        raise RoleLoadError(
+            f"{role_path}: completion.record cannot be declared by a role that returns a "
+            "decision; a reviewer's verdict is its own record."
+        )
+
     backend = _require_string(agent_data, "backend", role_path)
     if backend not in BACKENDS:
         raise RoleLoadError(
@@ -266,6 +280,7 @@ def parse_role(data: Mapping[str, Any], role_path: Path) -> RoleDefinition:
             ),
             outcomes=outcomes,
             review_kind=review_kind,
+            record=record,
         ),
         source_path=role_path,
         template_variables=_extract_template_variables(prompt_template),
@@ -301,6 +316,8 @@ def render_prompt(role: RoleDefinition, context: Mapping[str, Any]) -> str:
     values = {name: "" for name in role.template_variables}
     values["completion_marker"] = role.completion.marker
     values["signal_format"] = SIGNAL_FORMAT_DOC
+    record = role.completion.record
+    values["record_format"] = record.instructions(role.completion.marker.strip()) if record else ""
     for key, value in context.items():
         values[key] = _stringify_prompt_value(value)
 

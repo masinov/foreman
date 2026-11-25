@@ -211,6 +211,9 @@ class RunItem(BaseModel):
     #: sending a task back, a failure's message, how a gate was decided.
     outcome_detail: str | None = None
     commit_sha: str | None = None
+    #: The record the step's role declared and the step returned (ADR-0042):
+    #: its ``kind`` and its ``fields``; None for a role that declares none.
+    record: dict[str, Any] | None = None
     started_at: str | None = None
     finished_at: str | None = None
     duration_ms: int | None = None

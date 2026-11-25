@@ -43,6 +43,8 @@ class AgentExecutionResult:
     failure_type: str | None = None
     #: ISO 8601 UTC time after which a quota failure may be retried.
     retry_after: str | None = None
+    #: The record the role declared and returned, ``{"kind", "fields"}`` (ADR-0042).
+    record: dict[str, Any] | None = None
 
 
 @dataclass(slots=True)

@@ -27,8 +27,8 @@ payload below — you have no repository tools. Make the final call.
 ### Acceptance Criteria
 {acceptance_criteria}
 
-### Developer Summary
-{previous_output}
+### Developer's Report
+{developer_report}
 
 ### Branch
 {branch_name}

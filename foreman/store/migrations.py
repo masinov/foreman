@@ -1037,4 +1037,13 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         DROP TABLE v29_moves;
         """,
     ),
+    (
+        30,
+        "runs: the record a step's role declared and the step returned (ADR-0042)",
+        """
+        -- JSON: {"kind": "developer_report", "fields": {...}}. NULL for a
+        -- step whose role declares no record, and for every earlier run.
+        ALTER TABLE runs ADD COLUMN record_json TEXT;
+        """,
+    ),
 ]

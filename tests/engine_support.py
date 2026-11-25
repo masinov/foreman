@@ -7,9 +7,12 @@ stand in for agent backends, so no test launches a real agent.
 """
 
 from __future__ import annotations
+
+import json
 from collections.abc import Iterator
 from dataclasses import dataclass, replace
 from pathlib import Path
+import json
 import subprocess
 import tempfile
 import unittest
@@ -26,6 +29,22 @@ from foreman.definitions.workflows import (
 )
 
 from plan_workflow import ARCHITECT_TOML, PLAN_WORKFLOW, PLAN_WORKFLOW_TOML, install_plan_workflow
+
+
+#: A well-formed developer's report, for a scripted developer's final message
+#: (ADR-0042): the shipped developer role must return one with its marker.
+def dev_report(summary: str = "Done.") -> str:
+    return (
+        "```foreman-record\n"
+        + json.dumps({
+            "summary": summary, "criteria": [], "not_verified": [], "beyond_task": [],
+            "docs_touched": [], "follow_ups": [],
+        })
+        + "\n```"
+    )
+
+
+DEV_REPORT = dev_report()
 
 
 def definitions_with_plan_workflow():
@@ -416,7 +435,7 @@ class OrchestratorTestCase(unittest.TestCase):
         return (
             AgentEvent(
                 "agent.message",
-                payload={"text": "Implemented the workflow slice.\nTASK_COMPLETE", "phase": "assistant"},
+                payload={"text": "Implemented the workflow slice.\n" + DEV_REPORT + "\nTASK_COMPLETE", "phase": "assistant"},
             ),
             AgentEvent(
                 "agent.completed",
@@ -441,7 +460,7 @@ class OrchestratorTestCase(unittest.TestCase):
         return (
             AgentEvent(
                 "agent.message",
-                payload={"text": "Initial implementation complete.\nTASK_COMPLETE", "phase": "assistant"},
+                payload={"text": "Initial implementation complete.\n" + dev_report("Initial implementation complete.") + "\nTASK_COMPLETE", "phase": "assistant"},
             ),
             AgentEvent(
                 "agent.completed",
@@ -466,7 +485,7 @@ class OrchestratorTestCase(unittest.TestCase):
         return (
             AgentEvent(
                 "agent.message",
-                payload={"text": "Updated after review feedback.\nTASK_COMPLETE", "phase": "assistant"},
+                payload={"text": "Updated after review feedback.\n" + DEV_REPORT + "\nTASK_COMPLETE", "phase": "assistant"},
             ),
             AgentEvent(
                 "agent.completed",
@@ -493,7 +512,7 @@ class OrchestratorTestCase(unittest.TestCase):
         return (
             AgentEvent(
                 "agent.message",
-                payload={"text": "Resumed existing session.\nTASK_COMPLETE", "phase": "assistant"},
+                payload={"text": "Resumed existing session.\n" + DEV_REPORT + "\nTASK_COMPLETE", "phase": "assistant"},
             ),
             AgentEvent(
                 "agent.completed",

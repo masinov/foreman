@@ -50,8 +50,8 @@ class RunStore(StoreBase):
                     prompt_text, cost_usd, token_count, duration_ms, retry_count,
                     failure_type, started_at, completed_at, created_at,
                     input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
-                    commit_sha, session_cost_usd
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    commit_sha, session_cost_usd, record_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     task_id = excluded.task_id,
                     project_id = excluded.project_id,
@@ -78,7 +78,8 @@ class RunStore(StoreBase):
                     cache_read_tokens = excluded.cache_read_tokens,
                     cache_creation_tokens = excluded.cache_creation_tokens,
                     commit_sha = excluded.commit_sha,
-                    session_cost_usd = excluded.session_cost_usd
+                    session_cost_usd = excluded.session_cost_usd,
+                    record_json = excluded.record_json
                 """,
                 (
                     run.id,
@@ -108,6 +109,7 @@ class RunStore(StoreBase):
                     run.token_usage.cache_creation,
                     run.commit_sha,
                     run.session_cost_usd,
+                    json.dumps(run.record) if run.record is not None else None,
                 ),
             )
 

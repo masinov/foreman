@@ -25,6 +25,9 @@ Check for:
 - Dependencies with known vulnerabilities
 - Overly permissive file or network access
 
+### Developer's Report
+{developer_report}
+
 ### Changed Files
 {changed_files}
 

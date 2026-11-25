@@ -103,7 +103,8 @@ these parts of `foreman/engine/`, each taking only what it uses:
 | `workflow_runner` (`WorkflowRunner`) | the step loop: checks, the step, the record, the transition |
 | `agent_step` (`AgentStepRunner`) | running a role and reading its event stream |
 | `signals` (`SignalHandler`) | persisting agent events and applying signals |
-| `output_contract` | completion markers and reviewer decisions |
+| `output_contract` | completion markers, reviewer decisions and a step's record (`read_completion`) |
+| `report_words` | a stored record as sections of a later step's prompt |
 | `evidence` (`EvidenceBuilder`) | the facts recorded before a merge (ADR-0018) |
 | `gates`, `sprints`, `retention` | gate policy, sprint flow, history pruning |
 
@@ -238,6 +239,28 @@ The current runtime supports:
   revoked on the machine where this was checked), so Foreman cannot promise
   it. Because of that the developer prompt states that interactive programs
   are not available and to write a script file or pass input explicitly.
+
+#### A step's result is a record its role declares (ADR-0041 section 2, ADR-0042)
+
+- A role's TOML may carry `[completion.record]` (a `kind` and `[[...fields]]`,
+  each with `type` `text`, `bool`, `text_list` or `records`, and `required`).
+  `foreman/definitions/records.py` loads and refuses a malformed declaration,
+  writes the agent's instructions (`{record_format}` in the prompt) and checks
+  a returned record. A role without it behaves as before; a decision role cannot
+  declare one.
+- The agent returns the record as a ```` ```foreman-record ```` JSON block in its
+  final message. `read_completion` (`foreman/engine/output_contract.py`) reads
+  it after the marker check; a missing or malformed record is outcome `error`
+  with a detail starting "The step's record is not usable", gets the one
+  corrective retry (`record_format`), then routes as any error.
+- A well-formed record rides on `AgentExecutionResult.record`, is stored in
+  `runs.record_json` (migration 30, `Run.record` = `{"kind", "fields"}`) and is
+  returned as `record` by `GET /tasks/{id}/runs`.
+- The shipped developer declares `developer_report` (ADR-0040's six parts).
+  `PromptBuilder.developer_report` gives the code, security, triage and frontier
+  reviewers the newest report as sections (`report_words.py`); with no record it
+  falls back to the developer's free text. The task page shows it in the
+  develop step's details (`pages/task/DeveloperReport.jsx`).
 
 #### Repository instructions arrive once
 

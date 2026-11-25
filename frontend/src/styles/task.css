@@ -542,3 +542,39 @@
   margin-top: var(--space-1);
 }
 
+
+/* The developer's report, above the story of the develop step. */
+.run-report {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-width: var(--text-measure);
+  margin-bottom: var(--space-4);
+}
+
+.run-report__title,
+.run-report__heading {
+  margin: 0;
+  font-size: inherit;
+  font-weight: 600;
+}
+
+.run-report__heading {
+  margin-top: var(--space-2);
+  color: var(--color-text-secondary);
+}
+
+.run-report__criteria,
+.run-report__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.run-report__what {
+  margin: 0;
+  overflow-wrap: anywhere;
+}

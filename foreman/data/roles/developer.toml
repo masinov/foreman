@@ -66,9 +66,16 @@ Read it if you need to understand the broader product direction.
   you started is still running.
 - When the task is fully complete, run the test suite yourself to confirm
   all tests pass. The engine may also run tests independently after review.
-  Write a structured completion summary and end your message with:
+  Write a short completion summary, then your report as described below,
+  and end your message with:
   `{completion_marker}`
 - If you discover follow-up work, emit a TASK_CREATED signal
+
+### Your Report
+Report evidence, not claims: for each acceptance criterion, the command you
+ran and what it printed, or the path of a screenshot. A criterion you did not
+verify is listed as not verified, with the reason; do not mark it verified.
+{record_format}
 """
 
 [completion]
@@ -79,3 +86,60 @@ max_cost_usd = 30.0
 [completion.output]
 extract_summary = true
 extract_branch = true
+
+[completion.record]
+kind = "developer_report"
+
+[[completion.record.fields]]
+name = "summary"
+type = "text"
+required = true
+description = "What changed and why."
+
+[[completion.record.fields]]
+name = "criteria"
+type = "records"
+required = true
+description = "One entry for each acceptance criterion of the task, in order."
+
+[[completion.record.fields.fields]]
+name = "criterion"
+type = "text"
+required = true
+description = "The criterion, as the task states it."
+
+[[completion.record.fields.fields]]
+name = "verification"
+type = "text"
+required = true
+description = "How it was verified: the command and its output, or a screenshot path."
+
+[[completion.record.fields.fields]]
+name = "verified"
+type = "bool"
+required = true
+description = "true when the verification shows the criterion holds."
+
+[[completion.record.fields]]
+name = "not_verified"
+type = "text_list"
+required = true
+description = "What was not verified, and why."
+
+[[completion.record.fields]]
+name = "beyond_task"
+type = "text_list"
+required = true
+description = "Behaviour that changed beyond what the task asked."
+
+[[completion.record.fields]]
+name = "docs_touched"
+type = "text_list"
+required = true
+description = "The docs you changed, by path."
+
+[[completion.record.fields]]
+name = "follow_ups"
+type = "text_list"
+required = true
+description = "The follow-up tasks you filed, by title."

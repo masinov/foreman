@@ -9,7 +9,7 @@ from foreman.engine.orchestrator import ForemanOrchestrator
 from foreman.runner.base import AgentEvent, AgentRunConfig
 from foreman.store import ForemanStore
 
-from engine_support import OrchestratorTestCase, ScriptedNativeRunner
+from engine_support import DEV_REPORT, OrchestratorTestCase, ScriptedNativeRunner
 
 
 def _approve(*reads: str) -> tuple[AgentEvent, ...]:
@@ -42,7 +42,7 @@ class ReviewReadingTests(OrchestratorTestCase):
             self.write_text(work / "ready.txt", "ready\n")
             self.commit_all(work, "feat: a long change")
             return (
-                AgentEvent("agent.message", payload={"text": "Done.\nTASK_COMPLETE", "phase": "assistant"}),
+                AgentEvent("agent.message", payload={"text": "Done.\n" + DEV_REPORT + "\nTASK_COMPLETE", "phase": "assistant"}),
                 AgentEvent("agent.completed", payload={"session_id": "dev-1"}),
             )
 
