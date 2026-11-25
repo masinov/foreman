@@ -23,6 +23,27 @@ function projectsSection() {
 describe("WorkspacePage", () => {
   afterEach(() => vi.useRealTimers());
 
+  it("says what is planned for a project with no active sprint", async () => {
+    const routes = workspaceRoutes();
+    const payload = routes["GET /api/v1/workspace"];
+    const [first, other] = payload.projects;
+    routes["GET /api/v1/workspace"] = {
+      projects: [
+        first,
+        { ...other, id: "o1", name: "Zero planned", planned_sprints: 0 },
+        { ...other, id: "o2", name: "One planned", planned_sprints: 1 },
+        { ...other, id: "o3", name: "Three planned", planned_sprints: 3 },
+      ],
+    };
+    renderApp("/dashboard", createFakeFetch(routes));
+    const projects = await screen.findByRole("table", { name: "Projects" });
+    const row = (name) => within(projects).getByRole("link", { name }).closest("tr");
+    expect(within(row("Zero planned")).getByText("nothing planned")).toBeInTheDocument();
+    expect(within(row("One planned")).getByText("1 planned")).toBeInTheDocument();
+    expect(within(row("Three planned")).getByText("3 planned")).toBeInTheDocument();
+    expect(within(row("Foreman")).queryByText(/planned/)).toBeNull();
+  });
+
   it("reads the workspace, needs you and milestones from their endpoints", async () => {
     const { fetchImpl } = renderApp("/dashboard", createFakeFetch(workspaceRoutes()));
     await screen.findByText("FOR-14");
@@ -94,6 +115,7 @@ describe("WorkspacePage", () => {
     // An idle engine says so once; there is no second line repeating it.
     expect(within(otherRow).queryByText(/working on/)).toBeNull();
     expect(within(otherRow).getByText("None")).toBeInTheDocument();
+    expect(within(otherRow).getByText("nothing planned")).toBeInTheDocument();
     expect(within(otherRow).getByText("nothing yet")).toBeInTheDocument();
 
     const recent = await screen.findByRole("table", { name: "Recent milestones" });

@@ -272,6 +272,7 @@ class WorkspaceReader:
         counts = self.store.task_counts_by_sprint(sprint_ids)
         spend = self.store.spend_by_sprint(sprint_ids)
         backlog = self.store.backlog_counts()
+        planned = self.store.planned_sprint_counts()
         latest = self.store.latest_milestones()
 
         needs_by_project: dict[str, int] = {}
@@ -315,6 +316,7 @@ class WorkspaceReader:
                         if sprint is not None
                         else None
                     ),
+                    "planned_sprints": planned.get(project.id, 0),
                     "needs_you": needs_by_project.get(project.id, 0),
                     "backlog": backlog.get(project.id, 0),
                     "latest_milestone": (
