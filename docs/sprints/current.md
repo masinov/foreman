@@ -85,6 +85,14 @@ The full description and acceptance criteria of each task are in Foreman.
 
     All of these are fixed, with tests.
 
+  - **FOR-60, standard input** (`fix/stdin-claims`): a command that holds a
+    heredoc still gets a socket, not end-of-file, so the FOR-53 stall is not
+    fixed. The prompt and `ARCHITECTURE.md` had said it was; they now say what
+    is true. The candidate fix needs a live probe that the permission check
+    refused, and waits for the owner (backlog).
+  - The rest of the reviews' findings are in the backlog, "Found while
+    reviewing sprint 63".
+
 ### Left for later
 
 The rest of ADR-0040's build order:

@@ -432,6 +432,53 @@ Base work that this framing makes necessary:
      the survey can be judged on this repository and Assay.
 
 
+## Found while reviewing sprint 63 (2026-11-25)
+
+Sprint 63 ran unsupervised, and its own reviews approved in seconds. Claude
+then had each task reviewed against its criteria. The faults that would bite
+at once were fixed before the code went live:
+- `fix/sandbox-git-and-prune`;
+- `fix/records-robustness`;
+- `fix/stdin-claims`.
+
+These are left:
+- **Commands that read standard input still hang when they hold a
+  heredoc.** Claude Code gives such a command a socket, not `/dev/null`; the
+  FOR-53 stall was this. Candidate fix: wrap every command through
+  `CLAUDE_CODE_SHELL_PREFIX` with `< /dev/null`. It needs a live probe of
+  Claude Code, which the permission check refused on 2026-11-25, so it waits
+  for the owner. Until then the prompt says so, and the 20-minute Bash
+  timeout bounds it.
+- **Whether `AGENTS.md` reaches the agent once is a guess about Claude
+  Code's loading.**
+  - Foreman checks `repo_path/CLAUDE.md`, but the agent runs in a worktree
+    under `<repo>/.foreman/worktrees/`, and Claude Code walks every ancestor
+    folder. It probably loads the main checkout's `CLAUDE.md` and
+    `AGENTS.md` too: twice, and possibly an older copy.
+  - Where there is no `CLAUDE.md`, the load relies on a built-in plugin
+    (`cc-plugin-agents-md`).
+  - Settle it with Claude Code's debug output from a real worktree.
+- **Reads before the first edit are miscounted in places** (FOR-63):
+  - Codex commands are counted twice (`agent.command` and the
+    `commandExecution` tool use);
+  - a `>` inside quotes counts as a write;
+  - newlines do not separate commands;
+  - `python3 - <<'EOF' ... open(p,'w')` and `git apply`/`mv`/`cp`/`rm` are not
+    seen as changes.
+- **The sandbox (FOR-64):**
+  - `run_scope = "none"` is not enforced;
+  - pushes are deterred, not prevented or detected;
+  - a sandbox left by a hard-killed engine is removed only by prune;
+  - the reviewer in Assay's sandbox has Bash next to its linked `.env` (the
+    app's own login; `.env.admin` is not linked).
+- **Records (FOR-61, FOR-62):**
+  - a verdict's criteria entries are not compared with the task's own list;
+  - a project's own reviewer that uses `{previous_output}` now sees only the
+    developer's words outside the record.
+- **Large tasks ran on the default model.** FOR-61, FOR-62 and FOR-64 were
+  marked large, but no role has a model ladder, so `complexity` changed
+  nothing.
+
 ## Found while running sprint 62 through Foreman (2026-11-24)
 
 - **Several tasks at once in one project.** The engine runs one task at a

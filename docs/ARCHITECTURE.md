@@ -234,12 +234,16 @@ The current runtime supports:
   `true`, `GIT_PAGER` and `PAGER` to `cat`, and `GIT_TERMINAL_PROMPT=0`
   (`NON_INTERACTIVE_ENV`). A role's `[agent.env]` wins.
 - Standard input of a shell command is the backend's to give, not Foreman's.
-  Claude Code: checked on 2.1.331 with `python3 -c 'import sys; sys.stdin.read()'`
-  run through its Bash tool; it got end-of-file at once (`/dev/null`). Foreman
-  neither sets nor can change this. Codex: not verified (its sign-in was
-  revoked on the machine where this was checked), so Foreman cannot promise
-  it. Because of that the developer prompt states that interactive programs
-  are not available and to write a script file or pass input explicitly.
+  Claude Code 2.1.331 gives a plain command `/dev/null`, so a read gets
+  end-of-file at once. A command that also holds a heredoc gets a socket
+  instead, and a read in it waits until the Bash timeout
+  (`BASH_DEFAULT_TIMEOUT_MS`, 20 minutes): this was checked live on
+  2026-11-25 by an independent review, and the runs behind the 18-minute
+  stall (FOR-53) were of this shape. Foreman does not change it yet. Wrapping
+  every command through Claude Code's shell prefix with `< /dev/null` is the
+  candidate fix; it needs a live test, and is in the backlog. Codex: not
+  verified. The developer prompt therefore says that nothing can be typed in,
+  and that every input must be given explicitly.
 
 #### A step's result is a record its role declares (ADR-0041 section 2, ADR-0042)
 
