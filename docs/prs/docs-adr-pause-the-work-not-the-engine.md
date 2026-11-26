@@ -2,7 +2,7 @@
 
 ## Summary
 
-- Proposes ADR-0043: a user holds the work, not an engine. Two holds:
+- Accepts ADR-0043: a user holds the work, not an engine. Two holds:
   **Pause**, soft and per task (on a sprint or the workspace it pauses each
   task, as a torrent client's Pause all does, and any task can be resumed
   alone), and **Block**, hard and with a reason, on a task, a sprint or the

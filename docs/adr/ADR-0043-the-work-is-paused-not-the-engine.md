@@ -1,7 +1,7 @@
 # ADR-0043: The Work Is Paused, Not The Engine
 
-- **Status:** proposed (owner, 2026-11-25: "Go with it"; 2026-11-26, on
-  the model below: "Perfect. I do think so")
+- **Status:** accepted (owner, 2026-11-26: "Accepted"; earlier "Go with
+  it" and, on the model below, "Perfect. I do think so")
 - **Date:** 2026-11-26
 - **Amends:** ADR-0011 (the command table's vocabulary and "a paused
   engine"), ADR-0039 (a paused task does not hold the queue; a request to
