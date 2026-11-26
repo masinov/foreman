@@ -5,6 +5,77 @@ All notable changes to this repository should be documented here.
 The repo is still pre-release, so entries currently track milestone and repo
 memory changes rather than versioned product releases.
 
+<!-- foreman:changelog - sprints below, newest first; earlier history follows -->
+
+## Sprint 65: the method, second part (2026-11-26)
+
+### fix-sprint-65-review: Sprint 65's work, fixed after an independent review
+
+- A merge whose ADR numbering fails is undone, so the integration worktree is never left half merged; two new decisions in one branch that name each other are both numbered; references are rewritten only in the branch's own files; a branch without a decision merges as a plain merge (no pre-commit hook).
+- A checkpoint, changelog or copies write that cannot be committed leaves the integration worktree clean, and the next write works; a change file that is not text is recorded as a checkpoint failure. Foreman refuses to write in a dirty integration worktree, and keeps a sprint archive written by hand.
+- `foreman changelog` names a finished sprint and waits while one is active.
+- The validator asks for the branch's own change file and names a branch that edits `CHANGELOG.md`. The sprint context shows the task's key.
+- A step moves up its models only after failures of its own work: a run stopped by a cost or time limit, a runner that cannot start, a reviewer that approved unread, and tests that fail right after the merge step brought the branch up to date block or run again without counting. A step with several models is still bounded by visits, and a step run again keeps the review's findings.
+- The shipped prompts no longer apply Foreman's own repository layout to every project. MANUAL §9 describes moving up; three ADRs point to the conflicts guide.
+
+### FOR-67: A change writes its own change file, and Foreman generates CHANGELOG.md
+
+- A task describes its change in `changes/<task key>.md` and never edits `CHANGELOG.md`; `AGENTS.md`, the developer's prompt, the code reviewer's prompt and `scripts/validate_repo_memory.py` say so.
+- With the project setting `generate_changelog` on (Settings › General › Advanced › Changelog), finishing a sprint, by a user or by the engine, folds the change files into a new section at the top of `CHANGELOG.md` and removes them, in the checkpoint's commit. What the file held stays below the generated sections.
+- A changelog that cannot be written is recorded as `engine.checkpoint_failed` with the reason; the sprint stays finished.
+- `foreman changelog <project> [--sprint <id>]` writes it by hand.
+
+### FOR-68: An ADR is numbered when it merges, and its index is generated
+
+- A branch writes a decision as `docs/adr/new-<slug>.md` and refers to it by that path. When its task merges, Foreman renames it to `ADR-NNNN-<slug>.md` with the next free number, sets the number in its title line, rewrites the references to it and regenerates `docs/adr/README.md`. Two branches that each add a decision get different numbers.
+- The numbering is in the merge commit, not a commit on the task's branch. The branch is not touched, so what lands is exactly what was tested and reviewed, and the number is chosen against the default branch as it is at that moment, so a merge that landed after the tests cannot take it.
+- The index is generated from each ADR's title and status; the hand-written part above its marker line is kept.
+- A merge that would leave two ADRs with the same number, from the branch or already on the default branch, is refused and the step's outcome names the files.
+- The folder is the project setting `adr_dir` (default `docs/adr`; Settings › General). Empty, or a project without the folder, is left alone. `AGENTS.md`, the developer's prompt and `docs/adr/README.md` say how to add a decision.
+
+### FOR-69: Foreman writes the status and sprint copies, and docs/prs is retired
+
+- With the project setting `generate_copies` on (Settings › General › Advanced › Status and sprint copies; `foreman config <project> --set generate_copies=true`), Foreman writes `docs/STATUS.md` and `docs/sprints/current.md` from its database when a sprint starts and when it finishes (in the checkpoint's commit), and the finished sprint's archive copy, `docs/sprints/archive/sprint-<n>-<slug>.md`, from its record. `foreman copies <project> [--sprint <id>]` writes them by hand. `current.md` describes the active sprint (goal, tasks with keys, what each waits for, state) or says none is active and which comes next; `STATUS.md` names the last finished sprints, the active one, what is held or blocked, and the schema version.
+- A merge commit's message is now `Merge <task key>: <title>` followed by the text of the branch's `changes/<task key>.md`.
+- `docs/prs/` and its template are gone (git keeps them). `AGENTS.md`, the developer's and code reviewer's prompts, `README.md`, `docs/TESTING.md`, `docs/BRANCHING.md`, `docs/RELEASES.md` and `docs/ARCHITECTURE.md` no longer ask for a PR note or edits to the generated files; a conflict between spec, design and code is recorded in `docs/guide/conflicts-spec-design-code.md`. `scripts/validate_repo_memory.py` no longer requires `docs/prs/` or a PR note. New projects no longer get `write_pr_summaries` in their settings.
+- What only the hand-written files held moved out first, nothing dropped:
+- STATUS.md "Documented conflicts between spec, mockup and code" to `docs/guide/conflicts-spec-design-code.md` (with two entries for this change);
+- "Running unattended" to `docs/guide/running-unattended.md`;
+- "Operating decisions" to `docs/guide/operating-decisions.md`;
+- "Validation baseline" to `docs/guide/validation-baseline.md`;
+- "What sprint 56 changed for an operator" and "Step facts from the repository" to `docs/guide/engine-behaviour-for-operators.md`;
+- the Assay, closing-by-hand, backend-layers and branches-and-checkout bullets of "Where the project is" to `docs/guide/assay-project.md`, `closing-a-task-by-hand.md`, `backend-layers.md` and `branches-and-the-operator-checkout.md`;
+- the rest of "Where the project is", as dated history, to `docs/checkpoints/status-history-through-2026-11-26.md`;
+- current.md's method, constraints and "Before the sprint / Before this sprint" for sprint 65 to `docs/checkpoints/sprint-65-opening.md` (its goal and tasks are in the database).
+
+### FOR-70: Foreman writes the backlog's copy, and the owner's directions are one file each
+
+- With the project setting `generate_copies` on, Foreman writes `docs/sprints/backlog.md` from its backlog (the filed, then the accepted work, by priority, with keys) in the commit of the checkpoint when a sprint finishes, and `foreman copies <project>` writes it by hand. A sprint's start leaves it alone. The setting's text (Settings › General › Advanced) names it.
+- The owner's directions and the design decisions taken with the owner are one file each in `docs/directions/` (see its `README.md`), with their date and words as they were written. The backlog's copy links to the folder. `AGENTS.md` says the next work comes from Foreman's backlog and new directions go to `docs/directions/`; ADRs, `docs/ROADMAP.md`, `README.md` and the proposal that said "owner direction N" or "the backlog" now name the file.
+- What the hand-written file held, and where each part went (nothing dropped):
+- "A task's Activity, step by step", "The sprint page, step by step", "Activity, one stream at three depths", "Owner decisions, 2026-11-19: the manager and people": `a-tasks-activity-step-by-step.md`, `the-sprint-page-step-by-step.md`, `activity-one-stream-at-three-depths.md`, `the-manager-and-people.md`.
+- "Owner directions, 2026-11-18": the framing and the base work (outcome numbers, Codex as a second harness) to `software-factory-and-meta-harness.md`; its ten directions to `central-server-and-workers.md`, `shared-compute-through-a-cluster-manager.md`, `releases-and-deployment-through-ci-cd.md`, `workflows-above-the-task.md`, `tests-designed-not-only-watched.md` (with the tiers and the survey), `the-views-as-one-system.md` (with the left bar), `how-a-repository-is-organised.md`, `code-map-for-agents.md`, `models-and-harnesses-set-by-the-user.md`, `dependencies-across-sprints.md`.
+- Directions that were bullets among the faults: "Several tasks at once" to `several-tasks-at-once.md`; "Test tiers and a parallel suite" to `test-tiers-and-a-parallel-suite.md`; "For a later roadmap stage" to `for-a-later-roadmap-stage.md`; "Decided against: Python `Enum` classes for statuses" to `statuses-stay-strings.md`.
+- The decision "Large tasks ran on the default model" (the size label goes, a step moves up only after failures): kept as the decision in `the-size-label-goes-and-a-step-moves-up-after-failures.md`, and built as FOR-71 and FOR-72.
+- Filed in Foreman's backlog: AGENTS.md loading (FOR-73); reads before the first edit (FOR-74); the sandbox (FOR-75); records (FOR-76); a branch with a dirty working copy (FOR-77); "This machine" settings (FOR-78); a task moving between sprints (FOR-79); Codex cost, and Codex's commands without standard input (FOR-80); retention (FOR-81); the three safety items for intake (FOR-82 to FOR-84); browser tests (FOR-85); frontend types (FOR-86); schema drift (FOR-87); the database's place (FOR-88); the sprint stream's polling (FOR-89); motion for live data (FOR-90). Earlier proposals in full: FOR-43.
+- Dropped, checked first: done or out of date (the sprint's tag and note, the finish control, `foreman init` and Settings › Runners, manager replies, a filed task naming its source, one event stream, the "Done since" list); "Agents stall on commands that wait for input" and standard input in the sprint 63 list (fixed on 2026-11-25; Codex is in FOR-80); "The Python suite runs one test at a time" (it runs in parallel); the sprint 63 list's account of three fix branches, and the closing notes on the sprint 62 run, which were history.
+- `scripts/validate_repo_memory.py` requires `docs/directions/README.md`.
+
+### FOR-71: A step moves up its role's models only after failures of its own work, as each role sets
+
+- A role's models, cheapest first (`[agent] model_ladder`), and how many failures on one model before the next (`escalate_after`, at least 1, default 2) are set in the role's TOML and in the role editor (Settings › Roles, for the workspace and for a project's own). One model never moves up; none is the project's default.
+- A step moves up only after failures of its own work: its run ended without a result, the review sent it back, or the tests failed after it. Not a restart, a Stop, a conflict send-back, a usage wait or an infrastructure error. The count is kept on the task per step and model.
+- Every move up is a line in the task's Activity with its reason ("Develop moves up to claude-opus-5-5 · the review sent it back twice"); the step's details say which model ran and why.
+- After `escalate_after` failures on the last model, the task blocks for a person ("Develop failed twice on claude-opus-5-5, the last of its models.").
+- A model pinned for a step never moves up. The task page's overrides and `foreman task override --ladder-start MODEL` name the model a task starts on, by the model.
+- `foreman outcomes` shows, per role and model, the failures of its own work, the send-backs and the moves up beside the runs and the cost.
+
+### FOR-72: The size label goes
+
+- A task has no size (small, medium, large). It only chose the first model of a role's ladder; a ladder now starts on its first model unless the task names one (`foreman task override --ladder-start`, or Overrides on the task page), and moves up only after failures.
+- Gone from `foreman task add --complexity`, `foreman backlog add --complexity`, `foreman task edit --size` and `foreman task show`; from the New task and Edit task dialogs, the task page's details and the manager's cards; from the manager's planning prompt, its operations and the services, schemas and store. A migration drops `tasks.complexity` (a database from before it opens).
+- The intake API accepts a `complexity` and ignores it, so systems that send one do not break; the MANUAL's "Intake API" says so.
+
 ## [Unreleased]
 
 ### Holds on the work (ADR-0043, 2026-11-26)
