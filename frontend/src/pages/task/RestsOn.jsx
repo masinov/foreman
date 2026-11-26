@@ -1,11 +1,13 @@
 import React, { useState } from "react";
 
-import { getTaskDocument } from "../../api/tasks";
+import { getTaskDocument, getTaskDocumentChange } from "../../api/tasks";
 import { useResource } from "../../api/useResource";
 import { Dialog } from "../../ui/Dialog";
 import { Mono } from "../../ui/Mono";
 import { SectionHeading } from "../../ui/SectionHeading";
 import { shortCommit } from "../shared/restsOn";
+import { DiffLines } from "./ChangesTab";
+import { parseDiff } from "./diff";
 
 /** A document as it was at the commit it was named at, in a dialog. */
 function DocumentDialog({ task, document, onClose }) {
@@ -31,12 +33,43 @@ function DocumentDialog({ task, document, onClose }) {
   );
 }
 
+/** What changed in a document since the task named it: the diff between the two commits. */
+function ChangeDialog({ task, document, onClose }) {
+  const change = useResource(["task-document-change", task.id, document.path, document.changed.commit], (client, options) =>
+    getTaskDocumentChange(client, task.id, document.path, options),
+  );
+  const rows = change.data ? parseDiff(change.data.diff) : [];
+  return (
+    <Dialog
+      open
+      title={`${document.path} changed`}
+      description={`From ${shortCommit(document.commit)}, where this task named it, to ${shortCommit(document.changed.commit)}.`}
+      onClose={onClose}
+    >
+      <div className="dialog__body">
+        {change.error ? (
+          <p className="notice notice--error" role="alert">
+            {change.error}
+          </p>
+        ) : null}
+        {change.data?.truncated ? (
+          <p className="notice" role="status">
+            The first {change.data.cap_chars.toLocaleString("en-US")} of {change.data.total_chars.toLocaleString("en-US")} characters are shown.
+          </p>
+        ) : null}
+        {change.data ? <DiffLines rows={rows} /> : null}
+      </div>
+    </Dialog>
+  );
+}
+
 /**
  * The documents the task rests on, each with the commit it was named at and
  * a link that opens the file as it was then. Nothing when none is named.
  */
 export function RestsOn({ task }) {
   const [open, setOpen] = useState(null);
+  const [diff, setDiff] = useState(null);
   const documents = task.rests_on ?? [];
   if (!documents.length) return null;
   return (
@@ -52,9 +85,22 @@ export function RestsOn({ task }) {
             <span className="quiet">
               named at <Mono quiet>{shortCommit(item.commit)}</Mono>
             </span>
+            {item.changed ? (
+              <>
+                {" "}
+                <span className="tone-attention">
+                  changed in {item.changed.task_key ? `${item.changed.task_key}'s` : "a"} merge (<Mono quiet>{shortCommit(item.changed.commit)}</Mono>)
+                  since it was named
+                </span>{" "}
+                <button type="button" className="row-link rests-on__diff" onClick={() => setDiff(item)}>
+                  See what changed
+                </button>
+              </>
+            ) : null}
           </li>
         ))}
       </ul>
+      {diff ? <ChangeDialog task={task} document={diff} onClose={() => setDiff(null)} /> : null}
       {open ? <DocumentDialog task={task} document={open} onClose={() => setOpen(null)} /> : null}
     </section>
   );

@@ -244,7 +244,7 @@ class IntakeTests(_Repo):
         named = intake.intake_task("p1", token=token, title="B", rests_on=[{"path": ADR, "heading": "6"}])
 
         self.assertEqual(plain["rests_on"], [])
-        self.assertEqual(named["rests_on"], [{"path": ADR, "heading": "6", "commit": self.first}])
+        self.assertEqual(named["rests_on"], [{"path": ADR, "heading": "6", "commit": self.first, "changed": None}])
         with self.assertRaises(InvalidRequestError) as caught:
             intake.intake_task("p1", token=token, title="C", rests_on=["docs/nope.md"])
         self.assertIn("does not exist on main", str(caught.exception))

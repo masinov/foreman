@@ -155,6 +155,11 @@ def _register_list(task_commands: argparse._SubParsersAction) -> None:
     task_list = task_commands.add_parser("list", help="List project tasks.")
     task_list.add_argument("project_id", help="Project identifier.")
     task_list.add_argument("--sprint", metavar="SPRINT_ID", help="Filter to a specific sprint.")
+    task_list.add_argument(
+        "--rests-on",
+        metavar="PATH",
+        help="Only the tasks that rest on this document (`path` or `path#heading`), finished ones included.",
+    )
     add_db_option(
         task_list,
         help_text=f"Path to the SQLite store containing the project. {DB_OPTION_NOTE}",

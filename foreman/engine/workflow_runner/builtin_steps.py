@@ -18,8 +18,12 @@ from ...domain.policy import PolicyMatrix, describe_resolution
 from ...history.records import new_id
 from ..branch_sync import task_working_dir
 from ..builtins.base import BuiltinEventRecord
+from ..document_changes import note_document_changes
 from ..gates import gate_policy_decision
+from ...history.logs import get_logger
 from .base import WorkflowRunnerBase
+
+_LOGGER = get_logger("orchestrator")
 
 
 class BuiltinSteps(WorkflowRunnerBase):
@@ -164,6 +168,8 @@ class BuiltinSteps(WorkflowRunnerBase):
             duration_ms=int((time.monotonic() - builtin_started) * 1000),
         )
         self.emit_builtin_events(run, result.events)
+        if step_def.role == "_builtin:merge" and result.outcome == "success":
+            self._note_document_changes(project, task, result.events)
         # A builtin that blocks (e.g. the merge/mark_done completion
         # guard rejecting weak evidence) sets the task to blocked itself
         # and never routes through ``_create_system_run``; raise the one
@@ -177,6 +183,28 @@ class BuiltinSteps(WorkflowRunnerBase):
         outcome = normalize_agent_outcome(result.outcome)
         detail = result.detail
         return run, outcome, detail
+
+    def _note_document_changes(self, project: Project, task: Task, events) -> None:
+        """Tell the unfinished tasks that rest on a document this merge changed.
+
+        The merge is done whatever happens here, so a failure is logged and
+        does not fail the step.
+        """
+
+        merge = next((event for event in events if event.event_type == "engine.merge"), None)
+        if merge is None:
+            return
+        try:
+            note_document_changes(
+                self.records,
+                self.store,
+                project,
+                task,
+                from_sha=merge.payload.get("target_before"),
+                sha=merge.payload.get("sha"),
+            )
+        except Exception:  # noqa: BLE001
+            _LOGGER.exception("Could not note the documents the merge of %s changed", task.id)
 
     def _emit_policy_resolved(self, run: Run, project: Project, task: Task) -> None:
         """Record the resolved policy matrix once, on the task's first step.

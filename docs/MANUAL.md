@@ -272,7 +272,7 @@ foreman task override <task-id> \
     [--gate POLICY=auto|human] [--triage auto|human] \
     [--notification none|attention|all] [--clear]
 
-foreman task list <project-id>
+foreman task list <project-id> [--sprint SPRINT_ID] [--rests-on PATH[#HEADING]]
 foreman task show <task-id>           # task + worktree + recent runs + events
 foreman task accept <task-id>         # triage → todo
 foreman task block <task-id> --reason "..."  # only a task that has not started; a started one is stopped or closed
@@ -315,6 +315,18 @@ document already on it keeps the commit it was named at; `--no-rests-on`
 clears it. The task page's Overview lists them with their commits and opens
 each as it was then, and every agent step is given them as pointers: path,
 heading and commit, not the text (ADR-0041 section 6).
+
+**When a document it rests on changes.** A merge that changes a document that a
+todo, in-progress or blocked task rests on (a paused one too) adds one line to
+that task's Activity ("docs/adr/ADR-0041.md changed in FOR-80's merge (abc1234)
+since this task named it at def5678"), the task page's "Rests on" says so and
+links "See what changed" (the diff between the two commits), and the task's next
+agent step is told in a section "Changed since this task was planned". The task
+is not changed or stopped; a person or the manager decides. Naming the document
+again clears the notice. `foreman task list <project-id> --rests-on PATH`
+(or `PATH#HEADING`) lists every task that rests on a document, finished and
+cancelled ones included, so a person who supersedes an ADR sees what was built
+on it.
 A text option with its `-file` form, `--edit` with an option for the same
 field, and two texts from `-` are refused. The command prints which fields
 changed, with a text counted in characters, never printed.

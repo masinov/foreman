@@ -313,3 +313,31 @@ pointers and not the text. It is added to every role's prompt, a project's own
 templates included, unless the template places `{task_documents}` itself. The
 task page's Overview lists them with their commits and opens each as it was at
 that commit.
+
+## Amendment (2026-11-27, FOR-94; `docs/directions/assay-and-foreman.md`): a task hears when a document it rests on changes
+
+Assay's "stale binding" check, kept small. At each merge Foreman compares the
+files the merge changed (the default branch before and after) with what each
+unfinished task of the project rests on (todo, in progress or blocked, a paused
+task included; not done, cancelled or declined; not the merging task). For each
+document that matches:
+
+- the task's Activity gets one line, a run of the engine's own records named
+  "Document changed": "docs/adr/ADR-0041.md changed in FOR-80's merge (abc1234)
+  since this task named it at def5678", with an `engine.document_changed`
+  event holding both commits;
+- the task page's "Rests on" says the document changed and opens the diff from
+  the commit it was named at to the merge's;
+- the task's next agent step has a section "Changed since this task was
+  planned" in the task layer, naming the document, the merge and the commit it
+  was named at.
+
+**Nothing in the task is changed and it is not stopped.** Its description,
+criteria and documents stay as they were; a person or the manager decides what
+the change means for it (Assay: "Nothing downstream is edited automatically").
+Naming the document again (removing it and adding it, which stamps the commit
+now) ends the notice, because the notice belongs to the commit it was named at.
+A merge git cannot compare notes nothing: the merge is done whatever happens.
+
+`foreman task list <project> --rests-on PATH[#HEADING]` lists every task that
+rests on the document, finished ones included.

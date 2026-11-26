@@ -72,7 +72,7 @@ function FolderCrumbs({ dir, onPick }) {
   );
 }
 
-function DiffLines({ rows }) {
+export function DiffLines({ rows }) {
   return (
     <div className="diff-scroll">
       <table className="diff">

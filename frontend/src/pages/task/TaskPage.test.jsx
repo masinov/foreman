@@ -720,6 +720,33 @@ describe("the documents a task rests on", () => {
     expect(screen.queryByRole("heading", { name: "Rests on" })).toBeNull();
   });
 
+  it("says a document changed in a merge since it was named, and shows what changed", async () => {
+    const changed = { commit: "abc1234" + "0".repeat(33), task_key: "FOR-80", at: "2026-11-27T10:00:00Z" };
+    const rests = [{ ...RESTS_ON[0], changed }, { ...RESTS_ON[1], changed: null }];
+    const routes = taskRoutes({ task: taskDetail({ rests_on: rests }) });
+    routes[`GET /api/v1/tasks/${TASK_ID}/documents/diff?path=${encodeURIComponent("docs/adr/ADR-0041.md")}`] = {
+      task_id: TASK_ID,
+      path: "docs/adr/ADR-0041.md",
+      from_commit: RESTS_ON[0].commit,
+      to_commit: changed.commit,
+      task_key: "FOR-80",
+      diff: "@@ -1,2 +1,2 @@\n # ADR-0041\n-The task layer.\n+Superseded.\n",
+      truncated: false,
+      cap_chars: 200000,
+      total_chars: 50,
+    };
+    await renderTask(BASE, routes);
+    const section = (await screen.findByRole("heading", { name: "Rests on" })).closest("section");
+    const items = within(section).getAllByRole("listitem");
+    expect(items[0]).toHaveTextContent("changed in FOR-80's merge (abc1234) since it was named");
+    expect(items[1]).not.toHaveTextContent("changed in");
+    expect(within(section).getAllByRole("button", { name: "See what changed" })).toHaveLength(1);
+    fireEvent.click(within(section).getByRole("button", { name: "See what changed" }));
+    const dialog = await screen.findByRole("dialog", { name: "docs/adr/ADR-0041.md changed" });
+    expect(dialog).toHaveTextContent("From a4c45fa, where this task named it, to abc1234.");
+    expect(await within(dialog).findByText("Superseded.")).toBeInTheDocument();
+  });
+
   it("opens a document as it was at the commit it was named at", async () => {
     const routes = taskRoutes({ task: taskDetail({ rests_on: RESTS_ON }) });
     routes[`GET /api/v1/tasks/${TASK_ID}/documents?path=${encodeURIComponent("docs/adr/ADR-0041.md")}`] = {

@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Query
 
 from ..schemas import GuidanceNote, RequestedBy, TaskBlock, TaskDenial, TaskUnblock, body_as
 from ...services.task_reads import TaskReads
-from ...services.task_models import FileDiff, RunOutput, TaskDocument, TaskChanges, TaskChecks, TaskRuns
+from ...services.task_models import FileDiff, RunOutput, TaskDocument, TaskDocumentChange, TaskChanges, TaskChecks, TaskRuns
 from ..context import (
     DEFAULT_PAGE_LIMIT,
     MAX_PAGE_LIMIT,
@@ -113,6 +113,10 @@ def build_router(ctx: ApiContext) -> APIRouter:
     @router.get("/tasks/{task_id}/documents", response_model=TaskDocument)
     def get_task_document(task_id: str, path: str = Query(min_length=1)) -> TaskDocument:
         return ctx.with_store(lambda store: TaskReads(store).get_document(task_id, path))
+
+    @router.get("/tasks/{task_id}/documents/diff", response_model=TaskDocumentChange)
+    def get_task_document_change(task_id: str, path: str = Query(min_length=1)) -> TaskDocumentChange:
+        return ctx.with_store(lambda store: TaskReads(store).get_document_change(task_id, path))
 
     @router.get("/tasks/{task_id}/checks", response_model=TaskChecks)
     def get_task_checks(task_id: str) -> TaskChecks:
