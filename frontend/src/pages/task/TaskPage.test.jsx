@@ -1205,7 +1205,16 @@ describe("Activity", () => {
     const verdict = {
       kind: "review_verdict",
       fields: {
-        criteria: [{ criterion: "The loader rejects a bad declaration", status: "verified", evidence: "records.py:112" }],
+        criteria: [
+          {
+            criterion: "The loader rejects a bad declaration",
+            status: "verified",
+            evidence: "records.py:112",
+            ran: ["pytest tests/test_records.py"],
+            read: ["foreman/definitions/records.py"],
+            from_report: false,
+          },
+        ],
         findings: [{ severity: "S3", finding: "The helper has no docstring." }],
       },
     };
@@ -1215,9 +1224,17 @@ describe("Activity", () => {
         runItem("run-1", "develop"),
       ],
     });
-    routes[outputUrl("run-4")] = outputPayload("run-4", "APPROVE");
+    routes[outputUrl("run-4")] = {
+      ...outputPayload("run-4", "APPROVE"),
+      confirmed_commands: ["pytest tests/test_records.py"],
+    };
     await renderTask(`${BASE}/activity?run=run-4`, routes);
     const shown = await screen.findByRole("region", { name: "Review verdict" });
+    // How it was checked: the command as code, marked as one Foreman saw run, and the file read.
+    const basis = within(shown).getByLabelText("How it was checked");
+    expect(within(basis).getByText("pytest tests/test_records.py").tagName).toBe("CODE");
+    expect(basis).toHaveTextContent("Foreman saw it run");
+    expect(basis).toHaveTextContent("foreman/definitions/records.py");
     expect(within(shown).getByRole("list", { name: "Criteria checked" })).toHaveTextContent("The loader rejects a bad declaration");
     expect(within(shown).getByRole("list", { name: "Criteria checked" })).toHaveTextContent("Verified");
     expect(within(shown).getByRole("list", { name: "Findings" })).toHaveTextContent("S3 The helper has no docstring.");

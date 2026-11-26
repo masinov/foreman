@@ -34,6 +34,35 @@ describe("the review's verdict", () => {
     expect(third).toHaveTextContent("ADR not found.");
   });
 
+  it("shows how each criterion was checked, and marks the commands Foreman saw run", () => {
+    const basis = record({
+      criteria: [
+        {
+          criterion: "Tests cover it",
+          status: "verified",
+          evidence: "Passed.",
+          ran: ["pytest tests/test_x.py", "make lint"],
+          read: ["tests/test_x.py"],
+          from_report: false,
+        },
+        { criterion: "The change file", status: "verified", evidence: "As reported.", ran: [], read: [], from_report: true },
+        { criterion: "Old verdict", status: "judgement", evidence: "No basis fields." },
+      ],
+    });
+    render(<ReviewVerdict record={basis} confirmed={["pytest tests/test_x.py"]} />);
+    const [first, second, third] = screen.getByRole("list", { name: "Criteria checked" }).children;
+    const ran = within(within(first).getByLabelText("How it was checked")).getAllByRole("listitem").slice(0, 2);
+    expect(ran[0]).toHaveTextContent("pytest tests/test_x.py");
+    expect(ran[0].querySelector("code")).toHaveTextContent("pytest tests/test_x.py");
+    expect(ran[0]).toHaveTextContent("Foreman saw it run");
+    expect(ran[1]).toHaveTextContent("make lint");
+    expect(ran[1]).toHaveTextContent("Not seen by Foreman");
+    expect(first).toHaveTextContent(/Read\s*tests\/test_x\.py$/);
+    expect(second).toHaveTextContent("The developer's report or the test step's output");
+    expect(within(second).queryByText("Ran")).toBeNull();
+    expect(within(third).queryByLabelText("How it was checked")).toBeNull();
+  });
+
   it("lists the findings with their severities, the most serious first", () => {
     render(<ReviewVerdict record={record()} />);
     const items = within(screen.getByRole("list", { name: "Findings" })).getAllByRole("listitem");

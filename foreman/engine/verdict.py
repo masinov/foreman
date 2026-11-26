@@ -52,7 +52,7 @@ def _texts(entry: Mapping[str, Any], key: str) -> list[str]:
     return [item for item in (value if isinstance(value, list) else []) if isinstance(item, str) and item.strip()]
 
 
-def _was_run(command: str, run: Sequence[str]) -> bool:
+def command_was_run(command: str, run: Sequence[str]) -> bool:
     """Whether a cited command is among the commands the review ran.
 
     Compared with whitespace collapsed; a command the review ran inside a
@@ -74,7 +74,7 @@ def unconfirmed_commands(
         for number, entry in enumerate(criteria if isinstance(criteria, list) else [], start=1)
         if isinstance(entry, Mapping)
         for command in _texts(entry, "ran")
-        if not _was_run(command, commands)
+        if not command_was_run(command, commands)
     ]
 
 

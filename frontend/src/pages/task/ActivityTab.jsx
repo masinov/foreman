@@ -259,7 +259,7 @@ function RunOutput({ run, task, previous, next, onPick, pulse = 0 }) {
               </p>
             ) : null}
             <DeveloperReport record={run.record} />
-            <ReviewVerdict record={run.record} />
+            <ReviewVerdict record={run.record} confirmed={data.confirmed_commands ?? []} />
             {lines.length ? (
               <ol className="run-story" aria-label="What happened">
                 {lines.map((line, index) => (

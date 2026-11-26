@@ -597,6 +597,7 @@ CLAUDE_CONFIG_DIR = "env:EXAMPLE_CONFIG_DIR?~/.foreman/claude-example"
 [completion.output]
 extract_decision = true            # decision role: parse APPROVE/DENY/STEER/ESCALATE
 approve_needs_reading = true       # an approval of a cut diff with no file opened is sent back once, then stops the task
+approve_needs = "checked"          # a reviewer's approval needs: "checked" (default), "ran" or "stated"
 
 [prompt]
 template = """..."""                # supports {task_title}, {acceptance_criteria},
@@ -608,6 +609,40 @@ a virtual environment (`./venv`, `.venv`), the value is a bullet forbidding the
 system `python`, `python3` and `pip` and naming that environment's binaries;
 otherwise it is empty. Put it alone on a line; an empty value removes the line.
 A role without it renders as before.
+
+**How a reviewer checked each criterion.** A role whose record is a
+`review_verdict` lists, for each acceptance criterion, its `status`
+(`verified`, `not_verified`, `judgement`) and `evidence`, and three fields of
+its basis:
+
+| Field | Type | What it says |
+|---|---|---|
+| `ran` | list of text | The commands it ran for the criterion, exactly as it ran them. |
+| `read` | list of text | The files, or parts of the diff, it read for it. |
+| `from_report` | true or false | True when it relied on the developer's report or the test step's output. |
+
+Foreman checks what it can: each command under `ran` is looked for among the
+commands it recorded during that review run (the `agent.command` events). A
+command that was not run makes the verdict disagree with its outcome, with the
+reason ("criterion 2 cites `pytest tests/test_x.py`, which the review did not
+run"), and the step is replayed once like any verdict that disagrees.
+
+`approve_needs` in `[completion.output]` says what an approval needs of each
+criterion marked `verified`:
+
+- `checked` (the default): a command it ran, a file it read, or the criterion
+  marked `judgement` with its reason in `evidence`. A criterion whose only
+  basis is `from_report` is not verified.
+- `ran`: a command it ran, or `judgement` with its reason.
+- `stated`: the reviewer's word, as before.
+
+It is a property of the role, set where models are: the workspace's role is
+every project's default and a project's own role overrides it (ADR-0024), in
+the role's TOML or in Settings › Roles, "An approval needs", shown only for a
+role whose record is a `review_verdict`. There is no separate project setting
+and no rule per task type. The task page shows each criterion's basis in the
+review step's details, the commands as code, and marks the ones Foreman saw
+run.
 
 `extract_decision = true` marks a role as a **decision role**: it receives the
 completion-evidence block and the curated `{completion_diff}` payload, and its
@@ -1123,6 +1158,17 @@ between engine passes and `foreman run` drains once before returning, so
 receiver latency cannot hold a task open. Failed attempts use exponential
 backoff and remain visible in `foreman notify deliveries`; after the fifth
 failure the row stays failed and Foreman emits `notification.failed`.
+
+### What the merge gate reads in a review
+
+The merge gate rests on the approving review of the branch head (§10). Foreman
+accepts that approval only when the verdict agrees with it: no S1 or S2
+finding, each of the task's criteria listed, each one verified or the
+reviewer's judgement, and, as the reviewer role's `approve_needs` asks (§9),
+each verified criterion resting on a command the review ran (`ran`), or on one
+it ran or a file it read (`checked`, the default). A criterion resting only on
+the developer's report is not verified, and a command the verdict cites that
+the review did not run ends the step as an error.
 
 ### Human gates
 

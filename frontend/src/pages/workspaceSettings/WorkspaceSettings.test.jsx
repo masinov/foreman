@@ -60,6 +60,22 @@ describe("Workspace settings", () => {
       await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     });
 
+    it("saves what an approval needs as the workspace's, every project's default", async () => {
+      const routes = accessRoutes();
+      routes["GET /api/v1/definitions"] = definitionsPayload({ roles: [editableRole({ approve_needs: "checked" })] });
+      const fetchImpl = await openPage(routes);
+      fetchImpl.routes["PUT /api/v1/roles/code_reviewer"] = definitionsPayload();
+      fireEvent.click(screen.getByRole("button", { name: "Edit role Code Reviewer" }));
+      const dialog = await screen.findByRole("dialog", { name: "Code Reviewer" });
+      expect(within(dialog).getByLabelText("An approval needs")).toHaveValue("checked");
+      fireEvent.change(within(dialog).getByLabelText("An approval needs"), { target: { value: "ran" } });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+      await waitFor(() => expect(sent(fetchImpl, "PUT")).toHaveLength(1));
+      expect(sent(fetchImpl, "PUT")[0].url).toMatch(/\/api\/v1\/roles\/code_reviewer$/);
+      expect(sent(fetchImpl, "PUT")[0].body.fields.approve_needs).toBe("ran");
+    });
+
     it("edits a workflow's steps and saves them as the workspace's", async () => {
       const fetchImpl = await openPage();
       fetchImpl.routes["PUT /api/v1/workflows/development"] = definitionsPayload();

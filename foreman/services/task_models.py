@@ -396,3 +396,6 @@ class RunOutput(BaseModel):
     reads: StepReads | None = None
     #: A landed merge's facts, when it recorded them.
     merge: MergeFacts | None = None
+    #: A review's verdict: the commands its criteria cite under ``ran`` that
+    #: Foreman found among the commands the run made (ADR-0041 section 2).
+    confirmed_commands: list[str] = []

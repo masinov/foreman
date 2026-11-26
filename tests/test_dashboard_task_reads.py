@@ -588,6 +588,22 @@ class TaskReadsCase(unittest.TestCase):
         self.assertEqual(self.get("/api/v1/runs/look/output").json()["reads"], {"reads": 4, "edited": False})
         self.assertIsNone(self.get("/api/v1/runs/old/output").json()["reads"])
 
+    def test_a_review_gives_the_cited_commands_foreman_found_among_the_ones_it_ran(self) -> None:
+        self.task()
+        record = {"kind": "review_verdict", "fields": {"criteria": [
+            {"criterion": "a", "status": "verified", "evidence": "e", "read": [], "from_report": False,
+             "ran": ["pytest tests/test_x.py", "make lint"]},
+            {"criterion": "b", "status": "verified", "evidence": "e", "read": [], "from_report": False,
+             "ran": ["pytest tests/test_x.py"]},
+        ], "findings": []}}
+        self.repo_run("rev", "review", 1, role_id="code_reviewer", record=record)
+        self.repo_event("rev", "agent.command", {"command": "cd /w && pytest  tests/test_x.py -q", "cwd": "/w"})
+        self.repo_run("dev", "develop", 2)
+        self.repo_event("dev", "agent.command", {"command": "make lint", "cwd": "/w"})
+
+        self.assertEqual(self.get("/api/v1/runs/rev/output").json()["confirmed_commands"], ["pytest tests/test_x.py"])
+        self.assertEqual(self.get("/api/v1/runs/dev/output").json()["confirmed_commands"], [])
+
     def test_a_merge_gives_what_it_brought_in_and_an_older_run_gives_none(self) -> None:
         self.task()
         self.repo_run("m", "merge", 1, role_id="_builtin:merge", agent_backend="builtin")

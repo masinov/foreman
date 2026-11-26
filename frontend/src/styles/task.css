@@ -595,3 +595,22 @@
 .run-report__severity--s2 {
   color: var(--color-gold);
 }
+
+/* How a criterion was checked: what it ran, what it read, what it took from the report. */
+.run-report__basis {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-1) var(--space-2);
+  margin: var(--space-1) 0 0;
+  color: var(--color-text-secondary);
+}
+
+.run-report__basis dt {
+  font-weight: 600;
+}
+
+.run-report__basis dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
