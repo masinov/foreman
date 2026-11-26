@@ -227,10 +227,12 @@ class PromptBuilder:
             "environment_rules": environment_rules(repo_instructions),
             "spec_path": project.spec_path or "",
             "previous_feedback": carried_output or "",
-            # Both are the developer's report: a project's own reviewer that
-            # uses {previous_output} gets the record, not only the words
-            # outside it.
-            "previous_output": developer_report,
+            # A reviewer's {previous_output} is the developer's report (the
+            # record, not only the words outside it); any other role keeps the
+            # last agent run's words, as before (FOR-76).
+            "previous_output": (
+                developer_report if role.completion.output.extract_decision else previous_output
+            ),
             "developer_report": developer_report,
             # Status describes the tree the agent works in; diffs and log come
             # from refs, which every worktree shares.

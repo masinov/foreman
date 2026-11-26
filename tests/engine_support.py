@@ -46,18 +46,27 @@ def dev_report(summary: str = "Done.") -> str:
 DEV_REPORT = dev_report()
 
 
-def reviewed(message: str) -> str:
+#: The acceptance criterion a seeded task carries.
+SEEDED_CRITERIA = "Task reaches done after review, test, and merge."
+
+
+def reviewed(message: str, criteria: str = SEEDED_CRITERIA) -> str:
     """A scripted reviewer's final message: the verdict record its decision agrees
-    with (ADR-0042), then the decision text. DENY and STEER carry an S2 finding."""
+    with (ADR-0042), then the decision text. DENY and STEER carry an S2 finding.
+    The verdict lists ``criteria`` (the seeded task's), one entry per line."""
 
     blocking = message.lstrip("*- ").upper().startswith(("DENY", "STEER"))
     verdict = {
         # An approval lists the task's criteria (a task with criteria may not be
         # approved with none listed); one judgement entry stands for them here.
-        "criteria": [{
-            "criterion": "The task's criteria", "status": "judgement", "evidence": "scripted",
-            "ran": [], "read": [], "from_report": False,
-        }],
+        "criteria": [
+            {
+                "criterion": line.strip(" -*"), "status": "judgement", "evidence": "scripted",
+                "ran": [], "read": [], "from_report": False,
+            }
+            for line in criteria.splitlines()
+            if line.strip()
+        ],
         "findings": [{"severity": "S2", "finding": "A criterion is not met."}] if blocking else [],
     }
     return "```foreman-record\n" + json.dumps(verdict) + "\n```\n" + message
@@ -330,7 +339,7 @@ class OrchestratorTestCase(unittest.TestCase):
         task_title: str = "Implement orchestrator loop",
         test_command: str = "test -f ready.txt",
         branch_name: str | None = None,
-        acceptance_criteria: str | None = "Task reaches done after review, test, and merge.",
+        acceptance_criteria: str | None = SEEDED_CRITERIA,
     ) -> tuple[Project, Sprint, Task]:
         project = Project(
             id="project-1",

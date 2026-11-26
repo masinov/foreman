@@ -20,7 +20,7 @@ import urllib.error
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from engine_support import DEV_REPORT, reviewed
+from engine_support import SEEDED_CRITERIA, DEV_REPORT, reviewed
 from foreman.store.migrations import MIGRATIONS
 from foreman.domain.models import (
     Event,
@@ -794,7 +794,7 @@ class EngineDeliveryTests(unittest.TestCase):
                 project_id="p1",
                 title="Implement",
                 status="todo",
-                acceptance_criteria="Implemented the feature with tests.",
+                acceptance_criteria=SEEDED_CRITERIA,
             )
         )
         store.save_notification_destination(_destination())

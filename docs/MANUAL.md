@@ -649,7 +649,12 @@ Foreman checks what it can: each command under `ran` is looked for among the
 commands it recorded during that review run (the `agent.command` events). A
 command that was not run makes the verdict disagree with its outcome, with the
 reason ("criterion 2 cites `pytest tests/test_x.py`, which the review did not
-run"), and the step is replayed once like any verdict that disagrees.
+run"), and the step is replayed once like any verdict that disagrees. A replay
+that resumes the review's session is checked against the whole session. A
+cited command counts only when it ran as a whole command, program and
+arguments word for word (option flags may differ; a `cd` before it, a pipe
+after it and a shell wrapper do not matter): running one test file is not
+running the suite. `read` is the reviewer's word.
 
 `approve_needs` in `[completion.output]` says what an approval needs of each
 criterion marked `verified`:
@@ -659,6 +664,11 @@ criterion marked `verified`:
   basis is `from_report` is not verified.
 - `ran`: a command it ran, or `judgement` with its reason.
 - `stated`: the reviewer's word, as before.
+
+The reviewer's prompt says its own role's rule. A role that cannot run a
+command (no tools, or no Bash) cannot ask for `ran`: the role is refused when
+it loads. A reviewer role written before criteria had a basis (its record
+declares no `ran`) is taken on its word.
 
 It is a property of the role, set where models are: the workspace's role is
 every project's default and a project's own role overrides it (ADR-0024), in

@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 import unittest
 
-from engine_support import DEV_REPORT, reviewed
+from engine_support import SEEDED_CRITERIA, DEV_REPORT, reviewed
 from foreman.domain.models import Project, Sprint, Task
 from foreman.engine.orchestrator import ForemanOrchestrator
 from foreman.runner.base import AgentEvent, AgentRunConfig
@@ -95,7 +95,7 @@ class QuotaPauseTests(unittest.TestCase):
             project_id="p1",
             title="Implement",
             status="todo",
-            acceptance_criteria="Implemented.",
+            acceptance_criteria=SEEDED_CRITERIA,
         )
         store.save_task(task)
         return project, task

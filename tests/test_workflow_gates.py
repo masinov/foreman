@@ -14,7 +14,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from engine_support import DEV_REPORT, reviewed
+from engine_support import SEEDED_CRITERIA, DEV_REPORT, reviewed
 from foreman.domain.models import Project, Sprint, Task, validate_executor_overrides
 from foreman.engine.orchestrator import ForemanOrchestrator
 from foreman.definitions.roles import default_roles_dir, load_role, load_roles
@@ -178,7 +178,7 @@ class MergeGateFlowTests(unittest.TestCase):
         store.save_sprint(Sprint(id="s1", project_id="p1", title="S", status="active"))
         task = Task(
             id="t1", sprint_id="s1", project_id="p1", title="Implement", status="todo",
-            acceptance_criteria="Implemented the feature with tests.",
+            acceptance_criteria=SEEDED_CRITERIA,
             executor_overrides=dict(overrides or {}),
         )
         store.save_task(task)

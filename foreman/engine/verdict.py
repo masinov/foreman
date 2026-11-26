@@ -10,7 +10,11 @@ sends work back; S3 and S4 findings are kept with the review.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from difflib import SequenceMatcher
+import re
 from typing import Any
+
+from ..domain.step_reads import _segments, _unwrap
 
 #: The kind of record a reviewer role declares.
 REVIEW_VERDICT = "review_verdict"
@@ -41,10 +45,68 @@ def listed_count(fields: Mapping[str, Any]) -> int:
     return len(criteria) if isinstance(criteria, list) else 0
 
 
-def count_criteria(text: str | None) -> int:
-    """How many acceptance criteria a task has: one for each non-blank line."""
+#: A line that starts a criterion of its own: a bullet or a number.
+_ITEM_START = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
 
-    return sum(1 for line in (text or "").splitlines() if line.strip())
+
+def criteria_items(text: str | None) -> list[str]:
+    """A task's acceptance criteria, one item each.
+
+    A line that starts with a bullet or a number starts an item, and the lines
+    under it continue it (a bullet that wraps is one criterion). Without
+    bullets, each non-blank line is an item.
+    """
+
+    lines = [line for line in (text or "").splitlines() if line.strip()]
+    if not any(_ITEM_START.match(line) for line in lines):
+        return [line.strip() for line in lines]
+    items: list[str] = []
+    for line in lines:
+        if _ITEM_START.match(line) or not items:
+            items.append(_ITEM_START.sub("", line).strip())
+        else:
+            items[-1] = f"{items[-1]} {line.strip()}"
+    return items
+
+
+def count_criteria(text: str | None) -> int:
+    """How many acceptance criteria a task has."""
+
+    return len(criteria_items(text))
+
+
+def _normal_text(text: str) -> str:
+    return " ".join(re.sub(r"[`*_\"'.,;:()\[\]]", " ", text.lower()).split())
+
+
+def _same_criterion(listed: str, task: str) -> bool:
+    a, b = _normal_text(listed), _normal_text(task)
+    if not a or not b:
+        return False
+    return a == b or a in b or b in a or SequenceMatcher(None, a, b).ratio() >= 0.6
+
+
+def missing_criteria(fields: Mapping[str, Any], task_items: Sequence[str]) -> list[str]:
+    """The task's criteria no entry of the verdict stands for, each entry standing for one."""
+
+    criteria = fields.get("criteria")
+    listed = [
+        str(entry.get("criterion") or "")
+        for entry in (criteria if isinstance(criteria, list) else [])
+        if isinstance(entry, Mapping)
+    ]
+    used: set[int] = set()
+    missing: list[str] = []
+    for item in task_items:
+        match = next(
+            (index for index, text in enumerate(listed) if index not in used and _same_criterion(text, item)),
+            None,
+        )
+        if match is None:
+            missing.append(item)
+        else:
+            used.add(match)
+    return missing
 
 
 def _texts(entry: Mapping[str, Any], key: str) -> list[str]:
@@ -52,15 +114,80 @@ def _texts(entry: Mapping[str, Any], key: str) -> list[str]:
     return [item for item in (value if isinstance(value, list) else []) if isinstance(item, str) and item.strip()]
 
 
+#: A redirection: ``2>&1``, ``> out.txt``, ``< /dev/null``. It changes where
+#: output goes, not what ran.
+_REDIRECTION = re.compile(r"(?<![\w-])\d*(?:>>?|<)\s*(?:&\d+|[^\s;&|]+)")
+
+
+def command_parts(command: str) -> list[tuple[str, ...]]:
+    """The simple commands of a command line, as words, the way a check compares them.
+
+    A shell wrapper (``bash -lc '...'``, as Codex runs commands) is taken off,
+    redirections are dropped, a line is split at ``&&``, ``||``, ``;`` and
+    ``|``, and a ``cd`` is left out (it names where, not what). Quoting is
+    undone, so ``"a b"`` and ``'a b'`` are the same word.
+    """
+
+    inner = _unwrap(command.strip())
+    inner = _REDIRECTION.sub(" ", inner)
+    return [
+        tuple(words)
+        for words in _segments(inner)
+        if words and words[0] != "cd"
+    ]
+
+
 def command_was_run(command: str, run: Sequence[str]) -> bool:
     """Whether a cited command is among the commands the review ran.
 
-    Compared with whitespace collapsed; a command the review ran inside a
-    longer line (``cd x && pytest y``) counts.
+    Each simple command of the cited line must have run as a whole simple
+    command, its program and arguments word for word (option flags such as
+    ``-q`` may differ): running one test file is not running the suite, and
+    ``echo pytest x`` is not ``pytest x``. Where it ran (a ``cd`` before it),
+    what it was piped into and where its output went do not matter.
     """
 
-    wanted = " ".join(command.split())
-    return any(wanted in " ".join(done.split()) for done in run)
+    wanted = command_parts(command)
+    if not wanted:
+        return False
+    done = {part for line in run for part in command_parts(line)}
+    done_bare = {_without_flags(part) for part in done}
+    return all(part in done or _without_flags(part) in done_bare for part in wanted)
+
+
+def _without_flags(words: tuple[str, ...]) -> tuple[str, ...]:
+    """A simple command without its option flags: ``pytest -q x`` is ``pytest x``.
+
+    The program and its arguments still have to match word for word.
+    """
+
+    return tuple(word for word in words if not word.startswith("-"))
+
+
+def session_commands(store: Any, task_id: str, step: str, session_id: str | None) -> list[str]:
+    """The commands recorded by the earlier runs of one session of one step.
+
+    Only the runs of this review: the same task, step and session, since the
+    task's last run of another agent step (a review after the work changed is
+    a new review, even in the same session).
+    """
+
+    if not session_id:
+        return []
+    runs = [run for run in store.list_runs(task_id=task_id) if not run.role_id.startswith("_builtin:")]
+    since = 0
+    for index, run in enumerate(runs):
+        if run.workflow_step != step:
+            since = index + 1
+    commands: list[str] = []
+    for run in runs[since:]:
+        if run.workflow_step == step and run.session_id == session_id:
+            commands.extend(
+                str(event.payload.get("command") or "")
+                for event in store.list_events(run_id=run.id)
+                if event.event_type == "agent.command"
+            )
+    return commands
 
 
 def unconfirmed_commands(
@@ -79,9 +206,17 @@ def unconfirmed_commands(
 
 
 def _without_basis(entry: Mapping[str, Any], approve_needs: str) -> bool:
-    """Whether a criterion marked verified lacks what ``approve_needs`` asks."""
+    """Whether a criterion lacks what ``approve_needs`` asks.
 
-    if approve_needs == "stated" or entry.get("status") != VERIFIED:
+    Verified: a command it ran (``ran``), or one it ran or a file it read
+    (``checked``). Judgement: its reason, in ``evidence``.
+    """
+
+    if approve_needs == "stated":
+        return False
+    if entry.get("status") == JUDGEMENT:
+        return not str(entry.get("evidence") or "").strip()
+    if entry.get("status") != VERIFIED:
         return False
     if _texts(entry, "ran"):
         return False
@@ -92,7 +227,7 @@ def check_verdict(
     outcome: str,
     fields: Mapping[str, Any],
     *,
-    task_criteria: int = 0,
+    task_criteria: int | Sequence[str] = 0,
     approve_needs: str = "checked",
     commands: Sequence[str] | None = None,
 ) -> str | None:
@@ -119,12 +254,22 @@ def check_verdict(
             "S1 or S2 finding. Only a broken, unsafe or data-losing change (S1) or an "
             "acceptance criterion not met (S2) sends work back."
         )
-    if outcome in ("approve", "deny", "steer") and 0 < listed_count(fields) < task_criteria:
+    items = list(task_criteria) if not isinstance(task_criteria, int) else []
+    count = task_criteria if isinstance(task_criteria, int) else len(items)
+    if outcome in ("approve", "deny", "steer") and 0 < listed_count(fields) < count:
         return (
-            f"{VERDICT_PROBLEM_PREFIX}: the verdict lists {listed_count(fields)} "
-            f"criteria and the task has {task_criteria}. List each one of the task's "
-            "acceptance criteria, in order, with its status and what you checked."
+            f"{VERDICT_PROBLEM_PREFIX}: the verdict lists {listed_count(fields)} of the "
+            f"task's {count} acceptance criteria. List each one of them, in order, with its "
+            "status and what you checked."
         )
+    if outcome == "approve" and items and listed_count(fields):
+        missing = missing_criteria(fields, items)
+        if missing:
+            return (
+                f"{VERDICT_PROBLEM_PREFIX}: the verdict does not list these acceptance "
+                f"criteria of the task: {'; '.join(missing)}. List each one of the task's "
+                "criteria once, as the task states it, with its status and what you checked."
+            )
     if outcome in ("approve", "deny", "steer") and commands is not None:
         missing = unconfirmed_commands(fields, commands)
         if missing:
@@ -145,7 +290,7 @@ def check_verdict(
             )
         criteria = fields.get("criteria")
         listed = len(criteria) if isinstance(criteria, list) else 0
-        if task_criteria and listed == 0:
+        if count and listed == 0:
             return (
                 f"{VERDICT_PROBLEM_PREFIX}: the reviewer returned APPROVE without listing "
                 "the task's acceptance criteria. List each one, in order, with its status "
@@ -174,9 +319,10 @@ def check_verdict(
             )
             return (
                 f"{VERDICT_PROBLEM_PREFIX}: the reviewer returned APPROVE with criteria "
-                f"marked verified that name {needs} for none of them: {'; '.join(bare)}. "
+                f"without what this role's approvals need ({needs}, or judgement with "
+                f"its reason): {'; '.join(bare)}. "
                 "The developer's report is not a check: run something, read the code, "
-                "or mark the criterion judgement and say why."
+                "or mark the criterion judgement and say why in its evidence."
             )
     return None
 

@@ -8,7 +8,7 @@ the run when the step is abandoned.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
 from datetime import datetime
 import json
@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from .verdict import count_criteria
+from .verdict import criteria_items, session_commands
 from ..domain.errors import EngineCommandInterrupt
 from ..domain.models import Project, Run, Task, TokenUsage
 from ..domain.outcomes import ERROR
@@ -361,7 +361,8 @@ class AgentStepRunner:
         tally = _NativeRunTally(
             role=role,
             session_id=session_id,
-            task_criteria=count_criteria(task.acceptance_criteria),
+            task_criteria=criteria_items(task.acceptance_criteria),
+            earlier_commands=self._session_commands(task, workflow_step, session_id),
         )
         seen_signals: set[str] = set()
         # Heartbeat the task lease while the native runner streams so a long
@@ -416,6 +417,11 @@ class AgentStepRunner:
             tally.absorb(event.event_type, event.payload)
 
         return tally.result(model=model or None, events_streamed=event_recorder is not None)
+
+    def _session_commands(self, task: Task, step: str, session_id: str | None) -> list[str]:
+        if not session_id or self.records is None:
+            return []
+        return session_commands(self.records.store, task.id, step, session_id)
 
     def _native_config(
         self,
@@ -493,15 +499,19 @@ class _NativeRunTally:
     """What one native run's stream adds up to: its messages, totals and ending."""
 
     def __init__(
-        self, *, role: RoleDefinition, session_id: str | None, task_criteria: int = 0
+        self,
+        *,
+        role: RoleDefinition,
+        session_id: str | None,
+        task_criteria: int | Sequence[str] = 0,
+        earlier_commands: Sequence[str] = (),
     ) -> None:
         self.role = role
         self.task_criteria = task_criteria
-        #: The commands this run made, which a verdict's ``ran`` is checked against.
-        self.commands: list[str] = []
-        #: A run that resumes a session (a corrective retry) holds the commands
-        #: of the run before it only in that session, so they are not checked.
-        self.resumed = bool(session_id)
+        #: The commands a verdict's ``ran`` is checked against: this run's, and
+        #: those of the earlier runs of the session it resumes (a corrective
+        #: retry continues the same review). Never unchecked.
+        self.commands: list[str] = list(earlier_commands)
         self.events: list[AgentEventRecord] = []
         self.message_fragments: list[str] = []
         self.final_message = ""
@@ -559,7 +569,7 @@ class _NativeRunTally:
                 self.final_message,
                 transcript="\n\n".join(self.message_fragments),
                 task_criteria=self.task_criteria,
-                commands=None if self.resumed else self.commands,
+                commands=self.commands,
             )
             self.outcome, self.detail, self.record = reading.outcome, reading.detail, reading.record
             self.final_status = "completed"
