@@ -6,7 +6,11 @@ Project: Foreman. Default branch: main. Schema version: 33.
 
 ## Active sprint
 
-None is active.
+Sprint 66: the evidence behind a review (started 2026-11-26): 6 todo.
+
+From docs/directions/assay-and-foreman.md: a review says how it verified each criterion and Foreman checks what it can; a task names the documents it rests on, with their commit, and hears when one changes; a gate decision records the version it decided on. Plus FOR-76 and a link fix.
+
+The tasks are in `docs/sprints/current.md`.
 
 ## Held or blocked
 
