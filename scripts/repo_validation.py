@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import re
+import subprocess
 from typing import Iterable
 
 
@@ -98,6 +99,29 @@ def latest_versioned_spec(root: Path) -> Path | None:
     return specs[-1]
 
 
+def branch_changes(root: Path, bases: tuple[str, ...] = ("main", "origin/main")) -> set[str] | None:
+    """The paths a branch changed since it left main, or ``None`` when that is unknown.
+
+    Unknown (no main to compare with, as in a shallow CI checkout) falls back to
+    the weaker check that some change file exists.
+    """
+
+    for base in bases:
+        try:
+            result = subprocess.run(
+                ["git", "-C", str(root), "diff", "--name-only", f"{base}...HEAD"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=60,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if result.returncode == 0:
+            return {line.strip() for line in result.stdout.splitlines() if line.strip()}
+    return None
+
+
 def change_files(root: Path) -> list[Path]:
     """The change files on a branch: ``changes/*.md`` besides the README."""
 
@@ -154,7 +178,29 @@ def validate_repo_scaffold(
         )
 
     if branch_name and branch_name not in {"main", "HEAD"}:
-        if not change_files(root):
+        changed = branch_changes(root)
+        if changed is not None:
+            # What the branch itself changed since it left main.
+            if "CHANGELOG.md" in changed:
+                issues.append(
+                    ValidationIssue(
+                        "CHANGELOG.md",
+                        "the branch edits CHANGELOG.md, which is generated; describe the change "
+                        "in changes/<task key>.md instead",
+                    )
+                )
+            if not any(
+                path.startswith("changes/") and path.endswith(".md") and path != "changes/README.md"
+                for path in changed
+            ):
+                issues.append(
+                    ValidationIssue(
+                        "changes",
+                        "the branch adds no change file: describe its change in changes/<task key>.md "
+                        "(a branch made by hand uses its branch name, slashes as dashes)",
+                    )
+                )
+        elif not change_files(root):
             issues.append(
                 ValidationIssue(
                     "changes",

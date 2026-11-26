@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import posixpath
 import re
 
 from .git import run_git
@@ -48,8 +49,13 @@ class Settlement:
     numbered: tuple[tuple[str, str], ...] = ()
     #: The files that share a number, by number; set when the merge is refused.
     duplicates: tuple[tuple[int, tuple[str, ...]], ...] = ()
+    #: Why a new decision could not be numbered (it is not UTF-8 text); set
+    #: when the merge is refused for it.
+    problem: str | None = None
 
     def refusal(self) -> str | None:
+        if self.problem:
+            return self.problem
         if not self.duplicates:
             return None
         clashes = "; ".join(
@@ -137,30 +143,55 @@ def _new_files(folder: Path) -> list[str]:
     return sorted(path.name for path in folder.iterdir() if _NEW.match(path.name) and path.is_file())
 
 
-def _rewrite_references(root: Path, old: str, new: str) -> list[str]:
-    """Point every tracked text file that names ``old`` at ``new``; returns the files."""
+def _rewrite_references(
+    root: Path, adr_dir: str, old: str, new: str, files: frozenset[str]
+) -> list[str]:
+    """Point the branch's own files that name ``old`` at ``new``; returns the files.
 
-    found = run_git(root, "grep", "-l", "-z", "-I", "-F", "-e", old, check=False)
-    pattern = re.compile(r"(?<![\w-])" + re.escape(old))
+    Only ``files`` (what the branch changed) are rewritten, and only a mention
+    of the decision itself: its name alone, or a path that leads to it in
+    ``adr_dir`` (from the repository's root or from the file's own folder).
+    A file of the same name in another folder is left alone.
+    """
+
+    folder = posixpath.normpath(adr_dir.strip("/"))
+    pattern = re.compile(r"(?<![\w.-])(?P<path>[\w./-]*/)?" + re.escape(old) + r"(?![\w-])")
     changed = []
-    for name in (part for part in found.stdout.split("\0") if part):
+    for name in sorted(files):
         path = root / name
+        if not path.is_file():
+            continue
         try:
             text = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
-        rewritten = pattern.sub(new, text)
+        here = posixpath.dirname(name)
+
+        def point(match: re.Match[str]) -> str:
+            prefix = match.group("path")
+            if prefix:
+                leads = {
+                    posixpath.normpath(prefix.lstrip("/")),
+                    posixpath.normpath(posixpath.join(here, prefix)),
+                }
+                if not any(lead == folder or lead.endswith(f"/{folder}") for lead in leads):
+                    return match.group(0)
+            return f"{prefix or ''}{new}"
+
+        rewritten = pattern.sub(point, text)
         if rewritten != text:
             path.write_text(rewritten, encoding="utf-8")
             changed.append(name)
     return changed
 
 
-def settle(root: Path, adr_dir: str) -> Settlement | None:
+def settle(root: Path, adr_dir: str, changed: list[str] | None = None) -> Settlement | None:
     """Number the new ADRs and regenerate the index, in the tree ``root``.
 
-    Nothing is staged or written when two ADRs share a number (the returned
-    settlement says which). ``None``: the project has no such folder, and is
+    ``changed`` is what the branch brings (the merge's staged paths): only
+    those files have their references rewritten. Nothing is staged or written
+    when two ADRs share a number or a new one is not UTF-8 text (the returned
+    settlement says why). ``None``: the project has no such folder, and is
     left alone. Everything changed is staged, for the caller to commit.
     """
 
@@ -172,25 +203,42 @@ def settle(root: Path, adr_dir: str) -> Settlement | None:
     if duplicates:
         return Settlement(duplicates=duplicates)
 
+    new_names = _new_files(folder)
+    for name in new_names:
+        try:
+            (folder / name).read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            return Settlement(
+                problem=(
+                    f"{adr_dir}/{name} is not UTF-8 text, so it cannot be numbered. "
+                    "Save it as UTF-8 on the branch, then merge again."
+                )
+            )
+
     numbered: list[tuple[str, str]] = []
-    touched = [f"{adr_dir}/{INDEX_FILE}"]
+    # The branch's files, followed through their renames as the loop goes.
+    files = {path for path in (changed or []) if path}
     number = max((adr.number for adr in adrs), default=0)
-    for name in _new_files(folder):
+    for name in new_names:
         number += 1
         slug = _NEW.match(name).group("slug")  # type: ignore[union-attr]
         old, new = f"{adr_dir}/{name}", f"{adr_dir}/ADR-{number:04d}-{slug}.md"
         run_git(root, "mv", old, new)
+        files.discard(old)
+        files.add(new)
         path = root / new
-        text = set_title_number(path.read_text(encoding="utf-8"), number)
-        path.write_text(text.replace("ADR-XXXX", f"ADR-{number:04d}"), encoding="utf-8")
-        touched.append(new)
-        touched.extend(_rewrite_references(root, name, f"ADR-{number:04d}-{slug}.md"))
+        # In its own text, ADR-XXXX is the decision itself.
+        # Read now: numbering an earlier one may have rewritten a reference in it.
+        text = set_title_number(path.read_text(encoding="utf-8"), number).replace("ADR-XXXX", f"ADR-{number:04d}")
+        path.write_text(text, encoding="utf-8")
+        _rewrite_references(root, adr_dir, name, f"ADR-{number:04d}-{slug}.md", frozenset(files))
         numbered.append((old, new))
 
     index = folder / INDEX_FILE
     current = index.read_text(encoding="utf-8") if index.is_file() else ""
     index.write_text(render_index(current, read_adrs(folder)), encoding="utf-8")
-    run_git(root, "add", "--", *sorted(set(touched)))
+    present = sorted(path for path in files | {f"{adr_dir}/{INDEX_FILE}"} if (root / path).exists())
+    run_git(root, "add", "--", *present)
     return Settlement(numbered=tuple(numbered))
 
 

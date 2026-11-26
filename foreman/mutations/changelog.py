@@ -124,10 +124,3 @@ def stage_changelog(root: Path, sprint: Sprint, completed: datetime) -> list[str
     run_git(root, "rm", "--quiet", "--", *paths)
     run_git(root, "add", "--", CHANGELOG_FILE)
     return [CHANGELOG_FILE, *paths]
-
-
-def unstage_changelog(root: Path, paths: list[str]) -> None:
-    """Put back what ``stage_changelog`` changed, after a commit that failed."""
-
-    run_git(root, "reset", "--quiet", "HEAD", "--", *paths, check=False)
-    run_git(root, "checkout", "--", *paths, check=False)

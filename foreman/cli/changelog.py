@@ -42,14 +42,30 @@ def handle_changelog(args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
             return 1
+        active = SprintCheckpoints(store).active_sprint(project)
+        if active is not None:
+            # The change files on the default branch are the active sprint's
+            # now; its finish folds them into its one section.
+            print(
+                f"Sprint {active.title!r} is active: its finish writes the changelog. "
+                "Run this when no sprint is active.",
+                file=sys.stderr,
+            )
+            return 1
         if args.sprint:
             sprint = resolve_sprint_or_print(store, args.sprint)
             if sprint is None:
                 return 1
+            if sprint.project_id != project.id or sprint.status != "completed":
+                print(
+                    f"{args.sprint} is not a finished sprint of project {project.id}.",
+                    file=sys.stderr,
+                )
+                return 1
         else:
             sprint = SprintCheckpoints(store).sprint_for_changelog(project)
             if sprint is None:
-                print(f"Project {project.id} has no sprint to name the section after; use --sprint.", file=sys.stderr)
+                print(f"Project {project.id} has no finished sprint to name the section after.", file=sys.stderr)
                 return 1
         result = SprintCheckpoints(store).write_changelog(project, sprint)
     if result.problem:
@@ -75,7 +91,7 @@ def register_changelog(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument("project_id", help="Project identifier.")
     parser.add_argument(
         "--sprint",
-        help="The sprint the section is named after. Default: the active sprint, else the last finished.",
+        help="The finished sprint the section is named after. Default: the last finished. Refused while a sprint is active.",
     )
     add_db_option(
         parser,

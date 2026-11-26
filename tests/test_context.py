@@ -73,6 +73,7 @@ class ContextProjectionTests(unittest.TestCase):
                 sprint_id=active_sprint.id,
                 project_id=project.id,
                 title="Write context files",
+                task_key="FOR-2",
                 description="Project `.foreman` files from SQLite.",
                 acceptance_criteria="Context files exist and reflect task state.",
                 status="in_progress",
@@ -108,6 +109,8 @@ class ContextProjectionTests(unittest.TestCase):
         self.assertIn("# Sprint Context", projection.context_markdown)
         self.assertIn("Sprint: Context Projection", projection.context_markdown)
         self.assertIn("* [in_progress] Write context files (task-2)", projection.context_markdown)
+        # The key a change file is named after (ADR-0040).
+        self.assertIn("Key: FOR-2", projection.context_markdown)
         self.assertIn("### Description", projection.context_markdown)
         self.assertIn("Project `.foreman` files from SQLite.", projection.context_markdown)
         self.assertIn("Carry the prior reviewer note forward.", projection.context_markdown)

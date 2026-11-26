@@ -150,7 +150,10 @@ class ChangelogTests(unittest.TestCase):
 
     def test_the_command_writes_the_changelog_by_hand(self) -> None:
         self.project(generate_changelog=True)
-        self.sprint()
+        sprint = self.sprint()
+        # Finished without a checkpoint, as an engine older than the changelog would.
+        sprint.status, sprint.completed_at = "completed", "2026-11-26T21:06:54Z"
+        self.store.save_sprint(sprint)
         out = io.StringIO()
         with redirect_stdout(out):
             code = main(["changelog", "p", "--db", str(self.store.db_path)])
@@ -161,6 +164,40 @@ class ChangelogTests(unittest.TestCase):
         with redirect_stdout(again):
             self.assertEqual(main(["changelog", "p", "--db", str(self.store.db_path)]), 0)
         self.assertIn("nothing written", again.getvalue())
+
+    def test_the_command_waits_for_the_active_sprint_to_finish(self) -> None:
+        self.project(generate_changelog=True)
+        self.sprint()
+        err = io.StringIO()
+        with redirect_stderr(err):
+            code = main(["changelog", "p", "--db", str(self.store.db_path)])
+        self.assertEqual(code, 1)
+        self.assertIn("is active", err.getvalue())
+        self.assertTrue((self.repo / "changes" / "P-2.md").exists())
+
+    def test_a_change_file_that_is_not_text_is_recorded_and_the_tree_left_clean(self) -> None:
+        self.project(generate_changelog=True, write_checkpoint_notes=True)
+        self.sprint()
+        (self.repo / "changes" / "P-3.md").write_bytes(b"\xff\xfe not text\n")
+        git(self.repo, "add", ".")
+        git(self.repo, "commit", "-q", "-m", "bad change file")
+        Mutations(self.store, via="cli").transition_sprint(self.store.get_sprint("s"), "completed")
+        self.assertEqual(self.store.get_sprint("s").status, "completed")
+        (event,) = self.events("engine.checkpoint_failed")
+        self.assertIn("could not be written", event.payload["reason"])
+        integration = self.repo / ".foreman" / "worktrees" / "_integration"
+        self.assertEqual(git(integration, "status", "--porcelain"), "")
+
+    def test_a_note_and_a_changelog_that_cannot_be_committed_leave_the_tree_clean(self) -> None:
+        self.project(generate_changelog=True, write_checkpoint_notes=True)
+        self.sprint()
+        hook = self.repo / ".git" / "hooks" / "pre-commit"
+        hook.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+        hook.chmod(0o755)
+        Mutations(self.store, via="cli").transition_sprint(self.store.get_sprint("s"), "completed")
+        self.assertTrue(self.events("engine.checkpoint_failed"))
+        integration = self.repo / ".foreman" / "worktrees" / "_integration"
+        self.assertEqual(git(integration, "status", "--porcelain"), "")
 
     def test_the_command_refuses_a_project_that_has_not_turned_it_on(self) -> None:
         self.project()

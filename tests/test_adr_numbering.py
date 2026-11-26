@@ -144,7 +144,7 @@ class AdrMergeTests(unittest.TestCase):
         self.assertIn("ADR-0002-other.md", result.detail)
         self.assertIn("ADR-0002-second.md", result.detail)
         self.assertEqual(git(self.repo, "rev-parse", "main"), before)
-        self.assertEqual(git(self.repo, "status", "--porcelain"), "")
+        self.assertEqual(git(self.integration(), "status", "--porcelain"), "")
         event = next(e for e in result.events if e.event_type == "engine.merge_blocked")
         self.assertEqual(event.payload["reason"], "duplicate_adr_numbers")
         self.assertEqual(event.payload["duplicates"][0]["number"], 2)
@@ -172,6 +172,68 @@ class AdrMergeTests(unittest.TestCase):
         other = self.branch("feat/b", {"notes/new-thing.md": "# Thing\n"})
         self.assertEqual(self.merge(other).outcome, "success")
         self.assertIn("notes/new-thing.md", git(self.repo, "ls-tree", "-r", "--name-only", "main"))
+
+    def integration(self) -> Path:
+        return self.repo / ".foreman" / "worktrees" / "_integration"
+
+    def test_two_new_decisions_in_one_branch_that_name_each_other(self) -> None:
+        task = self.branch("feat/a", {
+            "docs/adr/new-alpha.md": "# ADR-XXXX: Alpha\n\n- Status: accepted\n\nSee new-beta.md.\n",
+            "docs/adr/new-beta.md": "# ADR-XXXX: Beta\n\n- Status: accepted\n\nAfter docs/adr/new-alpha.md.\n",
+        })
+        result = self.merge(task)
+        self.assertEqual(result.outcome, "success", result.detail)
+        self.assertIn("See ADR-0004-beta.md.", self.on_main("docs/adr/ADR-0003-alpha.md"))
+        self.assertIn("After docs/adr/ADR-0003-alpha.md.", self.on_main("docs/adr/ADR-0004-beta.md"))
+        self.assertEqual(git(self.integration(), "status", "--porcelain"), "")
+        # The next merge is not held up by anything left behind.
+        self.assertEqual(self.merge(self.branch("feat/b", {"other.txt": "x\n"})).outcome, "success")
+
+    def test_a_decision_that_is_not_text_is_refused_and_the_tree_left_clean(self) -> None:
+        task = self.branch("feat/a", {"docs/adr/new-bin.md": "x"})
+        tree = self.root / "feat-a"
+        (tree / "docs/adr/new-bin.md").write_bytes(b"# ADR-XXXX: \xff\xfe\n")
+        self.commit(tree, "feat: not text")
+        result = self.merge(task)
+        self.assertEqual(result.outcome, "blocked")
+        self.assertIn("not UTF-8", result.detail)
+        self.assertEqual(git(self.integration(), "status", "--porcelain"), "")
+        self.assertEqual(self.merge(self.branch("feat/b", {"other.txt": "x\n"})).outcome, "success")
+
+    def test_a_merge_whose_numbering_fails_is_undone(self) -> None:
+        from unittest import mock
+
+        task = self.branch("feat/a", {"docs/adr/new-x.md": self.decision("X")})
+        with mock.patch("foreman.engine.builtins.merge.settle", side_effect=RuntimeError("boom")):
+            result = self.merge(task)
+        self.assertNotEqual(result.outcome, "success")
+        self.assertIn("boom", result.detail)
+        self.assertEqual(git(self.integration(), "status", "--porcelain"), "")
+        self.assertEqual(self.merge(task).outcome, "success")
+
+    def test_only_the_branchs_files_and_only_the_decision_are_rewritten(self) -> None:
+        self.write(self.repo, "other/notes.md", "See other/new-api.md and new-api.md.\n")
+        self.commit(self.repo, "chore: unrelated notes")
+        task = self.branch("feat/a", {
+            "docs/adr/new-api.md": self.decision("API"),
+            "docs/GUIDE.md": "Read adr/new-api.md, not other/new-api.md.\n",
+        })
+        self.assertEqual(self.merge(task).outcome, "success")
+        self.assertEqual(self.on_main("other/notes.md"), "See other/new-api.md and new-api.md.")
+        self.assertEqual(self.on_main("docs/GUIDE.md"), "Read adr/ADR-0003-api.md, not other/new-api.md.")
+
+    def test_a_branch_without_decisions_merges_without_the_commit_hook(self) -> None:
+        plain = self.branch("feat/a", {"other.txt": "x\n"})
+        numbered = self.branch("feat/b", {"docs/adr/new-x.md": self.decision("X")})
+        hooks = self.repo / ".git" / "hooks"
+        hooks.mkdir(exist_ok=True)
+        hook = hooks / "pre-commit"
+        hook.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+        hook.chmod(0o755)
+        self.assertEqual(self.merge(plain).outcome, "success")
+        # A branch with a decision is committed as a plain merge would be.
+        outcomes = [self.merge(numbered).outcome for _ in range(2)]
+        self.assertIn("success", outcomes)
 
     def test_the_folder_is_a_setting(self) -> None:
         self.assertEqual(ProjectSettings.from_raw({}).adr_dir, "docs/adr")
