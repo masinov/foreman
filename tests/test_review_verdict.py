@@ -9,7 +9,8 @@ from foreman.definitions.records import RECORD_PROBLEM_PREFIX
 from foreman.definitions.roles import default_roles_dir, load_roles
 from foreman.engine.output_contract import contract_retry_reason, read_completion, with_retry_instruction
 from foreman.engine.results import AgentExecutionResult
-from foreman.engine.verdict import VERDICT_PROBLEM_PREFIX
+from foreman.definitions.roles import APPROVE_NEEDS_RULES
+from foreman.engine.verdict import VERDICT_PROBLEM_PREFIX, command_was_run, criteria_items, missing_criteria
 
 REVIEWERS = ("code_reviewer", "security_reviewer", "triage_reviewer", "frontier_reviewer")
 
@@ -96,8 +97,11 @@ class BasisTests(unittest.TestCase):
                     [("ran", "text_list"), ("read", "text_list"), ("from_report", "bool")],
                 )
                 prompt = role.render_prompt({"developer_report": "r", "acceptance_criteria": "c"})
-                for word in ("`ran`", "`read`", "`from_report`", "`approve_needs`"):
+                for word in ("`ran`", "`read`", "`from_report`"):
                     self.assertIn(word, prompt)
+                # The reviewer is told its own role's rule, not a list of all three.
+                self.assertIn(APPROVE_NEEDS_RULES["checked"], prompt)
+                self.assertNotIn("`stated`: your word", prompt)
 
     def test_a_command_the_review_did_not_run_disagrees_with_the_outcome(self) -> None:
         criteria = [
@@ -146,7 +150,7 @@ class BasisTests(unittest.TestCase):
         self.assertEqual(self.approve([ran, judged], "ran", ["t"]).outcome, "approve")
         reading = self.approve([ran, read], "ran", ["t"])
         self.assertEqual(reading.outcome, "error")
-        self.assertIn("a command it ran for none", reading.detail)
+        self.assertIn("a command it ran, or judgement with its reason", reading.detail)
         self.assertIn("b", reading.detail)
 
     def test_stated_is_the_reviewers_word(self) -> None:
@@ -188,7 +192,7 @@ class RecordedCommandsTests(unittest.TestCase):
         return tally
 
     def test_a_command_the_run_made_is_confirmed(self) -> None:
-        tally = self.finish(self.tally(), ["pytest tests/test_x.py"], ["ls", "./venv/bin/python -m pytest tests/test_x.py"])
+        tally = self.finish(self.tally(), ["./venv/bin/python -m pytest tests/test_x.py"], ["ls", "./venv/bin/python -m pytest tests/test_x.py -q"])
         self.assertEqual(tally.outcome, "approve")
 
     def test_a_command_the_run_did_not_make_ends_the_step_as_a_disagreement(self) -> None:
@@ -196,9 +200,17 @@ class RecordedCommandsTests(unittest.TestCase):
         self.assertEqual(tally.outcome, "error")
         self.assertIn("criterion 1 cites `pytest tests/test_x.py`, which the review did not run", tally.detail)
 
-    def test_a_run_that_resumes_a_session_is_not_checked_against_its_own_commands_alone(self) -> None:
-        tally = self.finish(self.tally(session_id="s1"), ["pytest tests/test_x.py"], [])
-        self.assertEqual(tally.outcome, "approve")
+    def test_a_run_that_resumes_a_session_is_checked_against_the_whole_session(self) -> None:
+        from foreman.engine.agent_step import _NativeRunTally
+
+        role = load_roles(default_roles_dir())["code_reviewer"]
+        # The retry ran nothing itself; the run before it, in the same session, did.
+        earlier = _NativeRunTally(role=role, session_id="s1", task_criteria=1, earlier_commands=["pytest tests/test_x.py"])
+        self.assertEqual(self.finish(earlier, ["pytest tests/test_x.py"], []).outcome, "approve")
+        # A retry is never taken unchecked: nothing in the session ran it.
+        fabricated = self.finish(self.tally(session_id="s1"), ["pytest tests/test_x.py"], [])
+        self.assertEqual(fabricated.outcome, "error")
+        self.assertIn("which the review did not run", fabricated.detail)
 
 
 class AgreementTests(unittest.TestCase):
@@ -276,7 +288,7 @@ class AgreementTests(unittest.TestCase):
     def test_a_verdict_that_leaves_out_one_of_the_tasks_criteria_is_refused(self) -> None:
         text = f"Looked.\n\n{verdict()}\nAPPROVE"
         reading = read_completion(self.role, text, task_criteria=2)
-        self.assert_disagrees(reading, "lists 1 criteria", "task has 2")
+        self.assert_disagrees(reading, "lists 1 of the task's 2")
         self.assertEqual(read_completion(self.role, text, task_criteria=1).outcome, "approve")
 
     def test_a_severity_in_lower_case_is_read_as_declared(self) -> None:
@@ -337,6 +349,96 @@ class AgreementTests(unittest.TestCase):
         plain = load_role_text(head + "\n[signals]\nallowed = ['progress']\n", "plain.toml")
         reading = read_completion(plain, "APPROVE")
         self.assertEqual((reading.outcome, reading.record), ("approve", None))
+
+
+class CommandMatchTests(unittest.TestCase):
+    """A cited command counts only when it ran as a whole command (review of sprint 66)."""
+
+    def test_a_substring_or_a_neighbour_is_not_the_command(self) -> None:
+        for cited, ran in (
+            ("pytest", "cat pytest.ini"),
+            ("ls", "false"),
+            ("pytest tests/test_x.py", "echo pytest tests/test_x.py"),
+            ("make test", "make test-unit"),
+            ("ruff check foreman", "ruff check foreman/engine/verdict.py"),
+            ("pytest tests/test_x.py", "pytest tests/test_x.pyc_missing"),
+            ("./venv/bin/python -m pytest tests -q", "grep -rn './venv/bin/python -m pytest tests -q' docs/"),
+            ("pytest tests", "pytest tests/test_x.py"),
+        ):
+            with self.subTest(cited=cited, ran=ran):
+                self.assertFalse(command_was_run(cited, [ran]))
+
+    def test_the_same_command_however_it_was_wrapped(self) -> None:
+        for cited, ran in (
+            ("pytest tests/test_x.py", "cd /w && pytest   tests/test_x.py -q"),
+            ("pytest tests/test_x.py", "pytest tests/test_x.py 2>&1 | tail -20"),
+            ("pytest tests/test_x.py", "pytest tests/test_x.py < /dev/null"),
+            ("grep -n 'def check' foreman/engine/verdict.py",
+             "/bin/bash -lc 'grep -n '\"'\"'def check'\"'\"' foreman/engine/verdict.py'"),
+            ('grep -n "x y" f.py', "grep -n 'x y' f.py"),
+            ("ruff check foreman && lint-imports", "ruff check foreman; lint-imports"),
+        ):
+            with self.subTest(cited=cited, ran=ran):
+                self.assertTrue(command_was_run(cited, [ran]))
+        self.assertTrue(command_was_run("a && b", ["a", "b"]))
+        self.assertFalse(command_was_run("a && b", ["a"]))
+
+
+class JudgementAndOldRolesTests(unittest.TestCase):
+    setUp = BasisTests.setUp
+    approve = BasisTests.approve
+    def test_a_judgement_says_why(self) -> None:
+        # The record itself refuses a blank evidence, whatever the role asks.
+        bare = {"criterion": "It works", "status": "judgement", "evidence": "  "}
+        for needs in ("checked", "ran", "stated"):
+            with self.subTest(needs):
+                reading = self.approve([bare], needs)
+                self.assertEqual(reading.outcome, "error")
+                self.assertIn("evidence", reading.detail)
+
+    def test_a_reviewer_written_before_the_basis_is_taken_on_its_word(self) -> None:
+        from foreman.definitions.roles import load_role_text
+
+        text = (default_roles_dir() / "code_reviewer.toml").read_text(encoding="utf-8")
+        start = text.index('[[completion.record.fields.fields]]\nname = "ran"')
+        end = text.index("[[completion.record.fields]]", start)
+        old = load_role_text(text[:start] + text[end:], "old.toml")
+        record = "```foreman-record\n" + json.dumps({
+            "criteria": [{"criterion": "a", "status": "verified", "evidence": "read the code"}],
+            "findings": [],
+        }) + "\n```"
+        reading = read_completion(old, f"Looked.\n\n{record}\nAPPROVE", task_criteria=["a"])
+        self.assertEqual(reading.outcome, "approve", reading.detail)
+
+    def test_a_role_that_cannot_run_commands_cannot_ask_for_ran(self) -> None:
+        from foreman.definitions.roles import RoleLoadError, load_role_text
+
+        text = (default_roles_dir() / "triage_reviewer.toml").read_text(encoding="utf-8")
+        with self.assertRaises(RoleLoadError) as caught:
+            load_role_text(text.replace('approve_needs = "checked"', 'approve_needs = "ran"'), "t.toml")
+        self.assertIn("could never approve", str(caught.exception))
+
+    def test_the_prompt_says_the_roles_own_rule(self) -> None:
+        from foreman.definitions.roles import load_role_text
+
+        text = (default_roles_dir() / "code_reviewer.toml").read_text(encoding="utf-8")
+        role = load_role_text(text.replace('approve_needs = "checked"', 'approve_needs = "ran"'), "r.toml")
+        prompt = role.render_prompt({"developer_report": "r", "acceptance_criteria": "c"})
+        self.assertIn(APPROVE_NEEDS_RULES["ran"], prompt)
+
+
+class CriteriaTextTests(unittest.TestCase):
+    def test_a_bullet_that_wraps_is_one_criterion(self) -> None:
+        text = "- The first one,\n  which wraps.\n- The second.\n"
+        self.assertEqual(criteria_items(text), ["The first one, which wraps.", "The second."])
+        self.assertEqual(criteria_items("one\ntwo"), ["one", "two"])
+
+    def test_each_criterion_must_be_listed_once(self) -> None:
+        items = ["The loader rejects a bad declaration", "The page shows the report"]
+        fields = {"criteria": [{"criterion": items[0]}, {"criterion": items[0]}]}
+        self.assertEqual(missing_criteria(fields, items), [items[1]])
+        fields = {"criteria": [{"criterion": "the loader rejects a bad declaration."}, {"criterion": "The page shows the report"}]}
+        self.assertEqual(missing_criteria(fields, items), [])
 
 
 if __name__ == "__main__":

@@ -15,7 +15,7 @@ import textwrap
 import unittest
 from pathlib import Path
 
-from engine_support import DEV_REPORT, reviewed
+from engine_support import SEEDED_CRITERIA, DEV_REPORT, reviewed
 from foreman.domain.models import Project, Run, Sprint, Task
 from foreman.engine.output_contract import extract_decision_output, with_retry_instruction
 from foreman.engine.orchestrator import ForemanOrchestrator
@@ -381,7 +381,7 @@ class OrchestratorContractTests(unittest.TestCase):
         )
         store.save_project(project)
         store.save_sprint(Sprint(id="s1", project_id="p1", title="S", status="active"))
-        task = Task(id="t1", sprint_id="s1", project_id="p1", title="Implement", status="todo", acceptance_criteria="Implemented.")
+        task = Task(id="t1", sprint_id="s1", project_id="p1", title="Implement", status="todo", acceptance_criteria=SEEDED_CRITERIA)
         store.save_task(task)
         return project, task
 
@@ -550,7 +550,7 @@ class OrchestratorContractTests(unittest.TestCase):
         with ForemanStore(db_path) as store:
             store.initialize()
             project, task = self._seed(store, repo, workflow_id="development_tiered")
-            task.acceptance_criteria = "Implemented the feature with tests."
+            task.acceptance_criteria = SEEDED_CRITERIA
             store.save_task(task)
             orchestrator = ForemanOrchestrator(
                 store,

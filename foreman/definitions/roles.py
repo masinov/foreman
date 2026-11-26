@@ -278,7 +278,7 @@ def parse_role(data: Mapping[str, Any], role_path: Path) -> RoleDefinition:
             f"{role_path}: agent.run_scope is none, and agent.tools.allowed lists Bash."
         )
 
-    return RoleDefinition(
+    role = RoleDefinition(
         id=_require_string(role_data, "id", role_path),
         name=_require_string(role_data, "name", role_path),
         description=_require_string(role_data, "description", role_path),
@@ -323,6 +323,26 @@ def parse_role(data: Mapping[str, Any], role_path: Path) -> RoleDefinition:
         signals=allowed_signals,
         run_scope=run_scope,
     )
+    if role.completion.output.approve_needs == "ran" and not _can_run_commands(role):
+        raise RoleLoadError(
+            f"{role_path}: completion.output.approve_needs is \"ran\", but this role has no "
+            "tool that runs a command, so it could never approve. Use \"checked\" or "
+            "\"stated\", or give it a tool that runs commands."
+        )
+    return role
+
+
+def _can_run_commands(role: RoleDefinition) -> bool:
+    """Whether a role's agent can run a command (Claude Code's Bash; Codex always can)."""
+
+    tools = role.agent.tools
+    if tools.none:
+        return False
+    if role.agent.backend != "claude_code":
+        return True
+    if "Bash" in tools.disallowed:
+        return False
+    return not tools.allowed or "Bash" in tools.allowed
 
 
 def load_roles(directory: str | Path | None = None) -> dict[str, RoleDefinition]:
@@ -343,6 +363,36 @@ def load_roles(directory: str | Path | None = None) -> dict[str, RoleDefinition]
     return roles
 
 
+#: What each value of ``approve_needs`` asks of a reviewer, as its prompt says it.
+APPROVE_NEEDS_RULES = {
+    "checked": (
+        "This role's approvals need, for each criterion: a command you ran, a file you "
+        "read, or `judgement` with your reason in `evidence`. A criterion resting only "
+        "on `from_report` is not verified."
+    ),
+    "ran": (
+        "This role's approvals need, for each criterion: a command you ran (list it "
+        "under `ran`, exactly as you ran it), or `judgement` with your reason in "
+        "`evidence`. Reading the code is not enough here, and a criterion resting on "
+        "`from_report` is not verified."
+    ),
+    "stated": "This role's approvals take your word: say what you checked in `evidence`.",
+}
+
+
+def effective_approve_needs(declaration: Any, configured: str) -> str:
+    """What an approval needs, given what the role's verdict record can say.
+
+    A reviewer role written before criteria had a basis (its record declares
+    no ``ran`` field) cannot name one, so its approvals are taken on its word,
+    as they were, instead of being refused forever.
+    """
+
+    criteria = next((f for f in getattr(declaration, "fields", ()) if f.name == "criteria"), None)
+    names = {inner.name for inner in getattr(criteria, "fields", ())}
+    return configured if "ran" in names else "stated"
+
+
 #: Variables that sit alone on a line; the line goes when the value is empty.
 OPTIONAL_LINE_VARIABLES = ("environment_rules",)
 
@@ -355,6 +405,11 @@ def render_prompt(role: RoleDefinition, context: Mapping[str, Any]) -> str:
     values["signal_format"] = SIGNAL_FORMAT_DOC
     record = role.completion.record
     values["record_format"] = record.instructions(role.completion.marker.strip()) if record else ""
+    values["approve_needs_rule"] = (
+        APPROVE_NEEDS_RULES[effective_approve_needs(record, role.completion.output.approve_needs)]
+        if record is not None and record.kind == "review_verdict"
+        else ""
+    )
     for key, value in context.items():
         values[key] = _stringify_prompt_value(value)
 

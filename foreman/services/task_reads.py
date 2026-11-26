@@ -11,7 +11,7 @@ import json
 from typing import Any
 
 from ..engine.document_changes import changes_by_document
-from ..engine.verdict import REVIEW_VERDICT, command_was_run
+from ..engine.verdict import REVIEW_VERDICT, command_was_run, session_commands
 from ..repo import git
 from .task_models import (
     DIFF_CAP_CHARS,
@@ -506,7 +506,11 @@ class TaskReads:
             changes=self._step_changes(run, events),
             reads=self._step_reads(events),
             merge=self._merge_facts(run, events),
-            confirmed_commands=_confirmed_commands(run, events),
+            confirmed_commands=_confirmed_commands(
+                run,
+                session_commands(self.store, run.task_id, run.workflow_step or "", run.session_id)
+                + [str(e.payload.get("command") or "") for e in events if e.event_type == "agent.command"],
+            ),
         )
 
     # ── what a step did to the repository (recorded when it ended, ADR-0038) ──
@@ -647,17 +651,16 @@ def _clipped(value: Any) -> Any:
     return value
 
 
-def _confirmed_commands(run: Run, events: list[Event]) -> list[str]:
-    """The commands a review's verdict cites that the run made, as the engine checked them."""
+def _confirmed_commands(run: Run, made: list[str]) -> list[str]:
+    """The commands a review's verdict cites that its review ran, as the engine checked them.
+
+    ``made`` is what the review ran: this run's commands and, for a retry that
+    resumed the session, those of the earlier runs of that session.
+    """
 
     record = run.record
     if not record or record.get("kind") != REVIEW_VERDICT or not isinstance(record.get("fields"), dict):
         return []
-    made = [
-        str(event.payload.get("command") or "")
-        for event in events
-        if event.event_type == "agent.command"
-    ]
     cited = {
         command
         for entry in record["fields"].get("criteria") or []

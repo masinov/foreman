@@ -70,13 +70,7 @@ Beside its status, each criterion says how you checked it:
 - `from_report`: true when you relied on the developer's report or the test
   step's output. The developer's report repeated is not a check.
 Leave `ran` or `read` empty when there is none; a role that cannot run
-commands leaves `ran` empty. What an approval needs of each criterion depends
-on this role's setting, `approve_needs`:
-- `checked` (the default): a command you ran, a file you read, or `judgement`
-  with your reason in `evidence`. A criterion resting only on `from_report`
-  is not verified.
-- `ran`: a command you ran, or `judgement` with your reason.
-- `stated`: your word.
+commands leaves `ran` empty. {approve_needs_rule}
 {record_format}
 """
 

@@ -268,10 +268,18 @@ of the diff it read) and `from_report` (true when it relied on the
 developer's report or the test step's output).
 
 **Foreman checks what it can.** Each command under `ran` is looked for among
-the `agent.command` events of the review run. One that was not run makes the
-verdict disagree with its outcome, as the other verdict checks do, with the
-reason, and the step is replayed once. A replay that resumes the session
-cannot see the commands of the run before it, so it is not checked this way.
+the `agent.command` events of the review: this run's, and those of the
+earlier runs of the same session since the task's last other agent step (a
+replay that resumes the session continues the same review, and is never
+taken unchecked). A cited command counts only when each of its simple
+commands ran as a whole simple command, program and arguments word for word;
+option flags may differ, a `cd` before it, a pipe after it, a redirection and
+a shell wrapper (`bash -lc '...'`) do not matter. Running one test file is not
+running the suite, and `echo pytest x` or `grep 'pytest x'` is not `pytest x`.
+One that was not run makes the verdict disagree with its outcome, as the other
+verdict checks do, with the reason, and the step is replayed once. `read` is
+the reviewer's word: every reviewer is given the diff, so a file of it read in
+the prompt is read.
 
 **What an approval needs is a property of the reviewer role,** in
 `[completion.output]`, beside `approve_needs_reading`:
@@ -286,6 +294,18 @@ It is set where models are: the workspace's role is every project's default
 and a project's own role overrides it (ADR-0024). There is no separate project
 setting and no rule per task type. The role editor shows it only for a role
 whose record is a `review_verdict`.
+
+The reviewer's prompt says its own role's rule (`{approve_needs_rule}`), not
+a list of the three. A role that cannot run a command (no tools, or a Claude
+Code tool list without Bash) cannot ask for `ran`: it would never approve, so
+it is refused when it loads. A reviewer role written before criteria had a
+basis (its record declares no `ran`) is taken on its word, as `stated`.
+
+*After an independent review (2026-11-27).* As first built, a replay that
+resumed the session was not checked at all, and a cited command counted when
+it appeared anywhere inside a recorded one; both let an approval through on a
+command that never ran. Fixed in `fix/sprint-66-review`, with tests through
+the engine.
 
 ## Amendment (2026-11-27, FOR-93; `docs/directions/assay-and-foreman.md`): a task names the documents it rests on, with the commit it named them at
 

@@ -16,7 +16,7 @@ import tempfile
 import time
 import unittest
 
-from engine_support import DEV_REPORT, reviewed
+from engine_support import SEEDED_CRITERIA, DEV_REPORT, reviewed
 from foreman.store.migrations import MIGRATIONS
 from foreman.domain.models import Event, Project, Run, Sprint, Task
 from foreman.engine.orchestrator import ForemanOrchestrator
@@ -1082,7 +1082,7 @@ class EngineWorktreeIsolationTests(unittest.TestCase):
             project_id="p1",
             title="Implement the feature",
             status="todo",
-            acceptance_criteria="Implemented the feature with tests.",
+            acceptance_criteria=SEEDED_CRITERIA,
         )
         store.save_task(task)
         return project, task

@@ -14,7 +14,7 @@ from typing import Any
 
 from ..domain.outcomes import APPROVE, DONE, ERROR
 from ..definitions.records import RECORD_PROBLEM_PREFIX, read_record, split_record_block
-from ..definitions.roles import RoleDefinition
+from ..definitions.roles import effective_approve_needs, RoleDefinition
 from .results import AgentExecutionResult
 from .verdict import REVIEW_VERDICT, VERDICT_PROBLEM_PREFIX, check_verdict, findings_text
 
@@ -150,7 +150,7 @@ def read_completion(
     text: str,
     *,
     transcript: str | None = None,
-    task_criteria: int = 0,
+    task_criteria: int | Sequence[str] = 0,
     commands: Sequence[str] | None = None,
 ) -> CompletionReading:
     """Apply the role's completion contract to the agent's final message.
@@ -191,7 +191,7 @@ def read_completion(
             outcome,
             fields,
             task_criteria=task_criteria,
-            approve_needs=output_config.approve_needs,
+            approve_needs=effective_approve_needs(declaration, output_config.approve_needs),
             commands=commands,
         )
         if disagreement:
