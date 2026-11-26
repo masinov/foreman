@@ -37,6 +37,7 @@ from .backlog import BacklogService
 from .decision_gates import DecisionGateService
 from .definitions import DefinitionService
 from .engine import EngineService
+from .holds import HoldService
 from .intake import IntakeService
 from .outcomes import OutcomeService
 from .projects import ProjectService
@@ -73,5 +74,6 @@ class Services:
         self.decision_gates = DecisionGateService(store, **clock)
         self.worktrees = WorktreeService(store, **clock)
         self.workspace = WorkspaceService(store, **clock)
+        self.holds = HoldService(store, **clock)
         self.outcomes = OutcomeService(store, **clock)
         self.reports = ReportService(store, **clock)

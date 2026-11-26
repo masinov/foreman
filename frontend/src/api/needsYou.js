@@ -16,6 +16,8 @@ export const NEEDS_YOU_KINDS = {
   // Not a task: an active sprint whose every task is finished, where a user
   // finishes sprints (`task_counts`).
   finishSprint: "finish_sprint",
+  // Not a task: a sprint a user blocked (ADR-0043), with why (`blocked`).
+  unblockSprint: "unblock_sprint",
 };
 
 /** One page as `{ items, total }`. Without `projectId`, every project. */

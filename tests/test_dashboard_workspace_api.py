@@ -497,7 +497,7 @@ class MilestoneTests(WorkspaceApiCase):
 
 class WorkspaceTests(WorkspaceApiCase):
     def test_empty_workspace(self) -> None:
-        self.assertEqual(self.get("/api/v1/workspace").json(), {"projects": []})
+        self.assertEqual(self.get("/api/v1/workspace").json(), {"projects": [], "block": None})
 
     def test_planned_sprints_counts_only_planned_ones(self) -> None:
         self.project("p1")
@@ -558,7 +558,9 @@ class WorkspaceTests(WorkspaceApiCase):
         self.assertEqual(p2["engine"]["state"], "not_running")
         self.assertEqual((p2["needs_you"], p2["backlog"]), (2, 0))
 
-    def test_a_paused_engine(self) -> None:
+    def test_a_worker_is_running_whatever_commands_it_took(self) -> None:
+        # Pausing is a hold on the work now (ADR-0043); an engine `pause` in
+        # the log stays history, and the worker reads as running.
         self.project("p1")
         with self.store._connection:
             self.store._connection.execute(
@@ -569,9 +571,29 @@ class WorkspaceTests(WorkspaceApiCase):
         self.store.enqueue_engine_command(project_id="p1", command="pause", requested_by="ana", command_id="c")
         self.store.mark_engine_command("c", "completed")
         (entry,) = self.get("/api/v1/workspace").json()["projects"]
-        self.assertEqual(entry["engine"]["state"], "paused")
+        self.assertEqual(entry["engine"]["state"], "running")
         self.assertEqual(entry["latest_milestone"]["kind"], "engine_paused")
         self.assertEqual(entry["latest_milestone"]["actor"], "ana")
+
+    def test_holds_are_in_the_workspace(self) -> None:
+        from foreman.mutations import Mutations
+
+        self.project("p1")
+        self.sprint("s1", "p1", "One", status="active")
+        self.task("t1", "s1", "p1", "todo")
+        self.task("t2", "s1", "p1", "todo")
+        mutations = Mutations(self.store, via="cli", actor="ana")
+        mutations.pause_task(self.store.get_task("t1"))
+        mutations.block_sprint(self.store.get_sprint("s1"), "waiting for the design")
+        mutations.block_all("release freeze")
+        payload = self.get("/api/v1/workspace").json()
+        self.assertEqual(
+            (payload["block"]["scope"], payload["block"]["reason"], payload["block"]["by"]),
+            ("workspace", "release freeze", "ana"),
+        )
+        (entry,) = payload["projects"]
+        self.assertEqual(entry["active_sprint"]["paused"], 1)
+        self.assertEqual(entry["active_sprint"]["block"]["reason"], "waiting for the design")
 
     def test_the_query_count_does_not_grow_with_sprints_or_tasks(self) -> None:
         self.seed_attention()

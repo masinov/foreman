@@ -2,6 +2,7 @@ import React, { useRef, useState } from "react";
 
 import { useApiClient } from "../../api/ApiProvider";
 import { errorSentence } from "../../api/client";
+import { blockSprint } from "../../api/holds";
 import { deleteSprint, SPRINT_STATUSES, transitionSprint } from "../../api/sprints";
 import { askManager, planSprintRequest } from "../../app/managerRequests";
 import { paths } from "../../app/paths";
@@ -16,20 +17,34 @@ import { Spend } from "../../ui/Spend";
 import { useLinesBeside } from "../../ui/useLinesBeside";
 import { TaskCounts } from "../shared/TaskCounts";
 import { ReasonDialog } from "../shared/ReasonDialog";
+import { SprintHoldControls } from "../shared/SprintHoldControls";
+import { WorkStatus } from "../shared/WorkStatus";
 import { EditSprintDialog } from "./EditSprintDialog";
 
 // The one state change that applies to a sprint now.
 const STATE_ACTIONS = {
-  [SPRINT_STATUSES.planned]: { label: "Activate sprint", doing: "Activating…", target: SPRINT_STATUSES.active },
+  [SPRINT_STATUSES.planned]: { label: "Start sprint", doing: "Starting…", target: SPRINT_STATUSES.active },
   [SPRINT_STATUSES.active]: { label: "Finish sprint", doing: "Finishing…", target: SPRINT_STATUSES.completed },
   [SPRINT_STATUSES.completed]: { label: "Reopen sprint", doing: "Reopening…", target: SPRINT_STATUSES.active },
 };
 
 /**
- * What More offers, each with what will happen in words. Cancel exists while
- * a sprint is planned or active; delete always.
+ * What More offers, each with what will happen in words. Block and Cancel
+ * exist while a sprint is planned or active; delete always.
  */
 export const SPRINT_ACTIONS = {
+  block: {
+    label: "Block sprint",
+    title: "Block this sprint",
+    effect:
+      "Nothing in the sprint runs until someone unblocks it: a running step finishes first. It is not finished, and the next sprint does not start. It waits in Needs you.",
+    ask: "Why it is blocked",
+    hint: "Shown wherever it holds work.",
+    required: true,
+    confirm: "Block sprint",
+    doing: "Blocking…",
+    run: (client, sprint, reason) => blockSprint(client, sprint.id, reason),
+  },
   plan: {
     label: "Plan this sprint",
     title: "Plan this sprint",
@@ -61,8 +76,10 @@ export const SPRINT_ACTIONS = {
 export function sprintActionsFor(sprint) {
   const open = sprint.status === SPRINT_STATUSES.planned || sprint.status === SPRINT_STATUSES.active;
   if (!open) return ["delete"];
+  // A blocked sprint is unblocked beside its title, not from More.
+  const block = sprint.block ? [] : ["block"];
   // Planning starts from the goal: a sprint without one has nothing to plan from.
-  return (sprint.goal || "").trim() ? ["plan", "cancel", "delete"] : ["cancel", "delete"];
+  return (sprint.goal || "").trim() ? ["plan", ...block, "cancel", "delete"] : [...block, "cancel", "delete"];
 }
 
 /**
@@ -156,12 +173,26 @@ export function SprintHead({ sprint, onChanged }) {
       ? { key: "foreman", term: "Started by Foreman", value: `${sprint.started_by_foreman ?? 0} of ${sprint.foreman_limit ?? 0}` }
       : null,
   ].filter(Boolean);
+  const open = sprint.status === SPRINT_STATUSES.planned || sprint.status === SPRINT_STATUSES.active;
+  if (open && sprint.work) {
+    // What its work is doing now (ADR-0043), the line the top bar shows.
+    details.splice(1, 0, { key: "work", term: "Work", value: <WorkStatus work={sprint.work} /> });
+  }
   const goalLines = useLinesBeside(goalColumn, detailsColumn, { deps: [sprint.goal, details.length] });
   return (
     <>
       <div className="sprint__title-row">
         <h1 className="page-title sprint__title">{sprint.title}</h1>
         <div className="sprint__actions">
+          {open ? (
+            <SprintHoldControls
+              sprintId={sprint.id}
+              work={sprint.work}
+              planned={sprint.status === SPRINT_STATUSES.planned}
+              showBlock={false}
+              onChanged={onChanged}
+            />
+          ) : null}
           <Button onClick={() => setEditing(true)}>Edit</Button>
           {action ? (
             <Button disabled={pending} onClick={changeState}>
@@ -185,9 +216,12 @@ export function SprintHead({ sprint, onChanged }) {
         open={Boolean(more)}
         title={more?.title}
         effect={more?.effect}
+        ask={more?.ask}
+        hint={more?.hint}
+        required={Boolean(more?.required)}
         confirm={more?.confirm}
         doing={more?.doing}
-        run={() => more.run(client, sprint)}
+        run={(text) => more.run(client, sprint, text)}
         onClose={() => setChosen(null)}
         onDone={() => {
           const name = chosen;

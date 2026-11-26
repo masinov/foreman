@@ -5,6 +5,8 @@
 - **Date:** 2026-11-24
 - **Sprint:** 62
 - **Amends:** ADR-0011 (its 2026-11-15 amendment is withdrawn)
+- **Amended by:** ADR-0043 (2026-11-26): a task a user paused or blocked does
+  not hold the queue, and a request to run a task does not pass a hold
 
 ## Context
 

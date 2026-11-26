@@ -581,7 +581,7 @@ class DashboardApproveDenyIntegrationTests(unittest.TestCase):
         self.assertFalse(result["engine_resident"])
         self.assertEqual(
             result["message"],
-            f"Approved {updated_task.task_key}. It waits at Develop until the engine is started.",
+            f"Approved {updated_task.task_key}. It waits at Develop until a worker runs.",
         )
         self.assertNotIn("`", result["message"])
 
@@ -1378,63 +1378,73 @@ class DashboardSprintLifecycleTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 400)
 
-    def test_stop_agent_enqueues_pause_and_leaves_tasks_alone(self):
-        """POST /api/projects/{id}/agent/stop queues `pause` and touches no task."""
-        project, _, task = self._seed_active_project()
-        response = self._request("POST", f"/api/projects/{project.id}/agent/stop")
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertEqual(data["project_id"], project.id)
-        self.assertEqual(data["command"]["command"], "pause")
-        self.assertEqual(data["command"]["status"], "pending")
-        self.assertTrue(data["command"]["id"])
-
+    def _running_run(self, task) -> None:
         store = ForemanStore(self.db_path)
         store.initialize()
-        unchanged = store.get_task(task.id)
-        self.assertEqual(unchanged.status, "in_progress")
-        self.assertIsNone(unchanged.blocked_reason)
-        queued = store.list_engine_commands(project.id)
-        self.assertEqual([c.command for c in queued], ["pause"])
-        self.assertEqual(queued[0].requested_by, "dashboard")
+        store.save_run(
+            Run(
+                id=self._next_id("run-running"),
+                task_id=task.id,
+                project_id=task.project_id,
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude_code",
+                status="running",
+            )
+        )
         store.close()
 
-    def test_stop_agent_records_the_requester(self):
-        """The pause command carries whoever asked for it."""
-        project, _, _ = self._seed_active_project()
-        response = self._request(
-            "POST",
-            f"/api/projects/{project.id}/agent/stop",
-            json={"requested_by": "ana"},
-        )
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["command"]["requested_by"], "ana")
-
-    def test_stop_agent_returns_404_for_unknown_project(self):
-        """POST /api/projects/{id}/agent/stop 404s rather than queueing an orphan."""
-        response = self._request("POST", "/api/projects/does-not-exist/agent/stop")
-        self.assertEqual(response.status_code, 404)
-
-    def test_stop_task_enqueues_stop_task_command(self):
-        """POST /api/tasks/{id}/stop queues `stop_task` and leaves the status alone."""
-        project, _, task = self._seed_active_project()
-        response = self._request("POST", f"/api/tasks/{task.id}/stop")
+    def test_pausing_a_sprint_pauses_its_tasks_and_queues_no_command(self):
+        """POST /api/sprints/{id}/pause holds the work itself (ADR-0043)."""
+        project, sprint, task = self._seed_active_project()
+        response = self._request("POST", f"/api/sprints/{sprint.id}/pause")
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertEqual(data["task_id"], task.id)
-        self.assertEqual(data["command"]["command"], "stop_task")
-        self.assertEqual(data["command"]["task_id"], task.id)
+        self.assertEqual(data["task_ids"], [task.id])
+        self.assertEqual(data["mode"], "finish_step")
 
         store = ForemanStore(self.db_path)
         store.initialize()
-        unchanged = store.get_task(task.id)
-        self.assertEqual(unchanged.status, "in_progress")
-        commands = store.list_engine_commands(project.id)
-        self.assertEqual([c.command for c in commands], ["stop_task"])
+        paused = store.get_task(task.id)
+        self.assertEqual(paused.status, "in_progress")
+        self.assertIsNotNone(paused.paused_at)
+        self.assertEqual(paused.pause_mode, "finish_step")
+        self.assertEqual(store.list_engine_commands(project.id), [])
+        store.close()
+
+    def test_a_pause_records_the_requester(self):
+        """The pause carries whoever asked for it."""
+        _, sprint, task = self._seed_active_project()
+        response = self._request(
+            "POST", f"/api/sprints/{sprint.id}/pause", json={"requested_by": "ana"}
+        )
+        self.assertEqual(response.status_code, 200)
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        self.assertEqual(store.get_task(task.id).paused_by, "ana")
+        store.close()
+
+    def test_pausing_an_unknown_sprint_is_404(self):
+        response = self._request("POST", "/api/sprints/does-not-exist/pause")
+        self.assertEqual(response.status_code, 404)
+
+    def test_stop_task_pauses_it_and_cuts_its_step(self):
+        """POST /api/tasks/{id}/stop is a pause with mode `now`; no command is queued."""
+        project, _, task = self._seed_active_project()
+        self._running_run(task)
+        response = self._request("POST", f"/api/tasks/{task.id}/stop")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["mode"], "now")
+
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        stopped = store.get_task(task.id)
+        self.assertEqual((stopped.status, stopped.pause_mode), ("in_progress", "now"))
+        self.assertEqual(store.list_engine_commands(project.id), [])
         store.close()
 
     def test_stop_task_rejects_a_task_that_is_not_running(self):
-        """Only an in-progress task can be stopped."""
+        """Stop is offered only while a step runs; Pause is for the rest."""
         store = ForemanStore(self.db_path)
         store.initialize()
         project, sprint, _ = self._seed_active_project()
@@ -1451,6 +1461,7 @@ class DashboardSprintLifecycleTests(unittest.TestCase):
 
         response = self._request("POST", f"/api/tasks/{idle.id}/stop")
         self.assertEqual(response.status_code, 400)
+        self.assertIn("Pause it instead", response.json()["error"])
 
     def test_agent_status_reports_a_resident_engine(self):
         """GET /api/projects/{id}/agent/status reads the lock and the command log."""
@@ -1467,7 +1478,7 @@ class DashboardSprintLifecycleTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertTrue(data["resident"])
-        self.assertFalse(data["paused"])
+        self.assertNotIn("paused", data)
         self.assertEqual(data["state"], "resident")
         self.assertEqual(data["holder_id"], "engine-resident")
         self.assertIsNotNone(data["heartbeat_age_seconds"])
@@ -1486,8 +1497,8 @@ class DashboardSprintLifecycleTests(unittest.TestCase):
         self.assertIsNone(data["holder_id"])
         self.assertIsNone(data["heartbeat_age_seconds"])
 
-    def test_agent_status_reports_paused_from_the_command_log(self):
-        """A completed `pause` with no later `resume` reads as paused."""
+    def test_an_old_pause_command_does_not_pause_the_worker(self):
+        """Pausing is a hold on the work now (ADR-0043); the log is history."""
         project, _, _ = self._seed_active_project()
         store = ForemanStore(self.db_path)
         store.initialize()
@@ -1500,8 +1511,7 @@ class DashboardSprintLifecycleTests(unittest.TestCase):
 
         data = self._request("GET", f"/api/projects/{project.id}/agent/status").json()
         self.assertTrue(data["resident"])
-        self.assertTrue(data["paused"])
-        self.assertEqual(data["state"], "paused")
+        self.assertEqual(data["state"], "resident")
 
     def test_agent_status_returns_404_for_unknown_project(self):
         """GET /api/projects/{id}/agent/status 404s for an unknown project."""
@@ -1510,19 +1520,29 @@ class DashboardSprintLifecycleTests(unittest.TestCase):
 
     def test_engine_commands_endpoint_lists_recent_commands(self):
         """GET /api/projects/{id}/engine/commands lists the log newest first."""
-        project, _, _ = self._seed_active_project()
-        self._request("POST", f"/api/projects/{project.id}/agent/stop")
+        project, _, task = self._seed_active_project()
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        store.enqueue_engine_command(
+            project_id=project.id, command="run_task", requested_by="ana", task_id=task.id
+        )
+        store.close()
         response = self._request("GET", f"/api/projects/{project.id}/engine/commands")
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data["project_id"], project.id)
-        self.assertEqual([c["command"] for c in data["commands"]], ["pause"])
+        self.assertEqual([c["command"] for c in data["commands"]], ["run_task"])
         self.assertEqual(data["commands"][0]["status"], "pending")
 
     def test_engine_commands_endpoint_filters_by_status(self):
         """The command listing honours the `status` filter."""
-        project, _, _ = self._seed_active_project()
-        self._request("POST", f"/api/projects/{project.id}/agent/stop")
+        project, _, task = self._seed_active_project()
+        store = ForemanStore(self.db_path)
+        store.initialize()
+        store.enqueue_engine_command(
+            project_id=project.id, command="run_task", requested_by="ana", task_id=task.id
+        )
+        store.close()
         response = self._request(
             "GET", f"/api/projects/{project.id}/engine/commands?status=completed"
         )
@@ -2785,7 +2805,7 @@ class DashboardTier2Tests(unittest.TestCase):
         self.assertEqual(response.status_code, 404)
 
     def test_start_agent_spawns_serve_when_no_engine_is_resident(self):
-        """Start activates the first planned sprint and spawns a resident engine."""
+        """Start worker spawns a resident engine, queues nothing and starts no sprint."""
         store = ForemanStore(self.db_path)
         store.initialize()
         project = Project(
@@ -2812,23 +2832,21 @@ class DashboardTier2Tests(unittest.TestCase):
         self.assertFalse(payload["resident"])
         self.assertTrue(payload["spawned"])
         self.assertEqual(payload["pid"], spawner.pid)
-        self.assertEqual(payload["command"]["command"], "resume")
-        self.assertEqual(payload["command"]["requested_by"], "ana")
+        self.assertEqual(payload["commands"], [])
+        self.assertEqual(payload["requested_by"], "ana")
 
         self.assertEqual(len(spawner.calls), 1)
         argv, log_path = spawner.calls[0]
         self.assertEqual(argv[1:], ("serve", project.id, "--db", store.db_path))
         self.assertTrue(log_path.endswith("/.foreman/serve.log"))
 
-        queued = store.list_engine_commands(project.id)
-        self.assertEqual([c.command for c in queued], ["resume"])
-        activated = store.get_active_sprint(project.id)
-        self.assertIsNotNone(activated)
-        self.assertEqual(activated.id, sprint.id)
+        self.assertEqual(store.list_engine_commands(project.id), [])
+        # Start sprint starts a sprint; a worker does not (ADR-0043).
+        self.assertIsNone(store.get_active_sprint(project.id))
         store.close()
 
-    def test_start_agent_only_resumes_when_an_engine_is_resident(self):
-        """A resident engine is told to resume; nothing is spawned."""
+    def test_start_agent_does_nothing_more_when_a_worker_holds_the_project(self):
+        """With a worker up there is nothing to spawn and nothing to queue."""
         store = ForemanStore(self.db_path)
         store.initialize()
         project = Project(
@@ -2855,9 +2873,7 @@ class DashboardTier2Tests(unittest.TestCase):
         self.assertFalse(payload["spawned"])
         self.assertNotIn("pid", payload)
         self.assertEqual(spawner.calls, [])
-        self.assertEqual(
-            [c.command for c in store.list_engine_commands(project.id)], ["resume"]
-        )
+        self.assertEqual(store.list_engine_commands(project.id), [])
         store.close()
 
     def test_start_agent_queues_run_task_for_a_task_scoped_start(self):
@@ -2895,9 +2911,7 @@ class DashboardTier2Tests(unittest.TestCase):
             project.id, task_id=task.id
         )
 
-        self.assertEqual(
-            [c["command"] for c in payload["commands"]], ["run_task", "resume"]
-        )
+        self.assertEqual([c["command"] for c in payload["commands"]], ["run_task"])
         queued = store.list_engine_commands(project.id)
         run_task = next(c for c in queued if c.command == "run_task")
         self.assertEqual(run_task.task_id, task.id)
@@ -2978,28 +2992,44 @@ class DashboardTier2Tests(unittest.TestCase):
         data = response.json()
         self.assertTrue(data["spawned"])
         self.assertEqual(data["pid"], 777)
-        self.assertEqual(data["command"]["command"], "resume")
+        self.assertEqual(data["commands"], [])
         self.assertEqual(len(spawner.calls), 1)
 
-    def test_start_agent_returns_400_when_no_sprints(self):
-        """POST /api/projects/{id}/agent/start returns 400 when no planned or active sprint exists."""
+    def test_run_next_is_refused_for_a_held_task(self):
+        """Run next does not pass a user's hold (ADR-0043)."""
         store = ForemanStore(self.db_path)
         store.initialize()
         project = Project(
             id=self._next_id("proj-sa"),
-            name="Empty Project",
-            repo_path="/tmp/sa-empty",
+            name="Held Project",
+            repo_path=str(Path(self.temp_dir.name) / "sa-held"),
             workflow_id="development",
         )
         store.save_project(project)
-        store.close()
-
-        response = self._request(
-            "POST",
-            f"/api/projects/{project.id}/agent/start",
-            json={},
+        sprint = Sprint(
+            id=self._next_id("sprint-sa"),
+            project_id=project.id,
+            title="Held Sprint",
+            status="active",
         )
-        self.assertEqual(response.status_code, 400)
+        store.save_sprint(sprint)
+        task = store.save_task(
+            Task(
+                id=self._next_id("task-sa"),
+                sprint_id=sprint.id,
+                project_id=project.id,
+                title="Paused task",
+                status="todo",
+            )
+        )
+        hold_engine_lock(store, project.id, holder_id="engine-live")
+        services = Services(store, serve_spawner=RecordingSpawner())
+        services.holds.pause_task(task.id, requested_by="ana")
+        with self.assertRaises(InvalidRequestError) as caught:
+            services.engine.start_agent(project.id, task_id=task.id)
+        self.assertIn("held", str(caught.exception))
+        self.assertEqual(store.list_engine_commands(project.id), [])
+        store.close()
 
 
 class DashboardTaskEditEventTests(unittest.TestCase):
@@ -3245,103 +3275,57 @@ class DashboardInterventionTests(unittest.TestCase):
         self.store.save_task(task)
         return task
 
-    def test_stop_task_asks_the_engine_to_stop_it(self):
-        """The engine owns the transition; the dashboard only queues the order."""
+    def _running(self, task_id, run_id):
+        self.store.save_run(
+            Run(
+                id=run_id,
+                task_id=task_id,
+                project_id="proj-intervention",
+                role_id="developer",
+                workflow_step="develop",
+                agent_backend="claude",
+                status="running",
+                started_at=datetime.now(timezone.utc).isoformat(),
+            )
+        )
+
+    def test_stop_task_pauses_it_with_the_cut(self):
+        """A Stop is a pause with mode `now` on the task; no command is queued (ADR-0043)."""
         sprint = self._create_sprint("spr-stop-1", status="active")
         self._create_task("task-stop-1", sprint.id, status="in_progress")
+        self._running("task-stop-1", "run-stop-1")
 
-        result = self._api().engine.stop_task("task-stop-1", requested_by="ana")
-        self.assertEqual(result["command"]["command"], "stop_task")
-        self.assertEqual(result["command"]["task_id"], "task-stop-1")
-        self.assertEqual(result["command"]["requested_by"], "ana")
+        result = self._api().holds.stop_task("task-stop-1", requested_by="ana")
+        self.assertEqual((result["task_id"], result["mode"]), ("task-stop-1", "now"))
 
-        unchanged = self.store.get_task("task-stop-1")
-        self.assertEqual(unchanged.status, "in_progress")
-        self.assertIsNone(unchanged.blocked_reason)
+        stopped = self.store.get_task("task-stop-1")
+        self.assertEqual(stopped.status, "in_progress")
+        self.assertIsNone(stopped.blocked_reason)
+        self.assertEqual((stopped.pause_mode, stopped.paused_by), ("now", "ana"))
+        self.assertEqual(
+            [c for c in self.store.list_engine_commands("proj-intervention") if c.task_id == "task-stop-1"],
+            [],
+        )
 
-    def test_stop_task_rejects_non_in_progress(self):
-        self._create_task("task-stop-2", "spr-stop-1", status="todo")
+    def test_stop_task_is_refused_when_no_step_runs(self):
+        sprint = self._create_sprint("spr-stop-2", status="planned")
+        self._create_task("task-stop-2", sprint.id, status="todo")
 
         with self.assertRaises(InvalidRequestError):
-            self._api().engine.stop_task("task-stop-2")
+            self._api().holds.stop_task("task-stop-2")
 
-    def test_stop_task_records_one_pending_command(self):
-        """The command row is the audit trail: who asked, for which task, when."""
-        # Reuse the sprint from the stop test above (spr-stop-1 is already active).
-        self._create_task("task-stop-3", "spr-stop-1", status="in_progress")
-        run = Run(
-            id="run-stop-3",
-            task_id="task-stop-3",
-            project_id="proj-intervention",
-            role_id="developer",
-            workflow_step="develop",
-            agent_backend="claude",
-            status="running",
-            started_at=datetime.now(timezone.utc).isoformat(),
-        )
-        self.store.save_run(run)
-
-        self._api().engine.stop_task("task-stop-3")
-
-        commands = [
-            command
-            for command in self.store.list_engine_commands("proj-intervention")
-            if command.task_id == "task-stop-3"
-        ]
-        self.assertEqual(len(commands), 1)
-        self.assertEqual(commands[0].command, "stop_task")
-        self.assertEqual(commands[0].status, "pending")
-        self.assertEqual(commands[0].requested_by, "dashboard")
-
-    def test_stop_task_api_route(self):
-        # Use a separate DB for the API route test to avoid connection sharing
-        with tempfile.TemporaryDirectory() as td:
-            api_db = Path(td) / "api.db"
-            store = ForemanStore(api_db)
-            store.initialize()
-            store.save_project(Project(
-                id="proj-api",
-                name="API Test",
-                repo_path="/tmp/api",
-                workflow_id="development",
-            ))
-            store.save_sprint(Sprint(
-                id="spr-stop-api",
-                project_id="proj-api",
-                title="stop-api",
-                goal="test",
-                status="active",
-                order_index=0,
-                created_at=datetime.now(timezone.utc).isoformat(),
-            ))
-            store.save_task(Task(
-                id="task-stop-api",
-                project_id="proj-api",
-                sprint_id="spr-stop-api",
-                title="stop-api-task",
-                task_type="feature",
-                status="in_progress",
-                priority=0,
-                order_index=0,
-                created_at=datetime.now(timezone.utc).isoformat(),
-            ))
-            store.close()
-
-            app = create_dashboard_app(str(api_db))
-            transport = httpx.ASGITransport(app=app)
-
-            async def send():
-                async with httpx.AsyncClient(
-                    transport=transport,
-                    base_url="http://testserver",
-                ) as client:
-                    return await client.post("/api/tasks/task-stop-api/stop")
-
-            resp = asyncio.run(send())
-            self.assertEqual(resp.status_code, 200)
-            body = resp.json()
-            self.assertEqual(body["command"]["command"], "stop_task")
-            self.assertEqual(body["command"]["status"], "pending")
+    def test_stop_turns_a_pause_into_a_cut(self):
+        """Pausing lets the step finish; a Stop pressed meanwhile cuts it."""
+        sprint = self._create_sprint("spr-stop-3", status="planned", order_index=1)
+        self._create_task("task-stop-3", sprint.id, status="in_progress")
+        self._running("task-stop-3", "run-stop-3")
+        api = self._api()
+        api.holds.pause_task("task-stop-3", requested_by="ana")
+        self.assertEqual(self.store.get_task("task-stop-3").pause_mode, "finish_step")
+        api.holds.stop_task("task-stop-3", requested_by="bo")
+        stopped = self.store.get_task("task-stop-3")
+        # Who paused it first stays; the pause now cuts the step.
+        self.assertEqual((stopped.pause_mode, stopped.paused_by), ("now", "ana"))
 
 
 class DashboardDeleteSprintTests(unittest.TestCase):

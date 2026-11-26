@@ -21,6 +21,7 @@ from ..definitions.gate_steps import (
     blocked_kind,
     resolve_gate_steps,
 )
+from ..domain.holds import LevelBlock
 from ..domain.models import DecisionGate, Project, Task, sprint_ready_to_finish
 from ..engine.control import (
     describe_engine,
@@ -28,6 +29,8 @@ from ..engine.control import (
 from ..engine.limits import resolve_project_settings
 from ..store import ForemanStore
 from ..store.overview import MILESTONE_KINDS, MilestoneRow
+from .views import serialize_level_block
+from .work_status import sprint_work_status
 from .base import Service
 from .errors import InvalidRequestError
 
@@ -44,6 +47,8 @@ __all__ = [
 #: ``finish_sprint`` is an active sprint whose every task is done or
 #: cancelled, in a project where a user finishes sprints (owner, 2026-11-24:
 #: the sprint page said "Ready to finish" and nothing led there).
+#: ``unblock_sprint`` is a sprint a user blocked (ADR-0043): nothing in it runs
+#: until someone lifts the block, so it waits for a user like a blocked task.
 NEEDS_YOU_KINDS: tuple[str, ...] = (
     "accept_filed_work",
     "approve_plan",
@@ -51,6 +56,7 @@ NEEDS_YOU_KINDS: tuple[str, ...] = (
     "unblock",
     "settle_order",
     "finish_sprint",
+    "unblock_sprint",
 )
 
 #: The gate policy that asks for a plan to be approved. Every other human gate
@@ -71,6 +77,8 @@ class _Attention:
     count: int = 0
     #: A sprint ready to finish: its tasks by status.
     task_counts: dict[str, int] | None = None
+    #: A blocked sprint: why, and who blocked it.
+    block: LevelBlock | None = None
 
 
 class WorkspaceReader:
@@ -149,6 +157,17 @@ class WorkspaceReader:
                 )
             )
         found.extend(self._sprints_ready_to_finish(projects, project_id))
+        for block in self.store.list_level_blocks():
+            if block.scope != "sprint" or block.project_id not in projects:
+                continue
+            if project_id is not None and block.project_id != project_id:
+                continue
+            found.append(
+                _Attention(
+                    "unblock_sprint", block.project_id, block.scope_id, block.set_at,
+                    f"block:{block.scope_id}", block=block,
+                )
+            )
         for requested_project, (backlog_id, newest, number) in requests.items():
             found.append(
                 _Attention(
@@ -232,6 +251,8 @@ class WorkspaceReader:
                 "reason": (task.blocked_reason or "").strip() or None,
                 "step": task.workflow_current_step,
             }
+        if item.block is not None:
+            entry["blocked"] = {"reason": item.block.reason, "by": item.block.set_by}
         if item.count:
             entry["count"] = item.count
         if item.task_counts is not None:
@@ -281,6 +302,7 @@ class WorkspaceReader:
             needs_by_project[item.project_id] = needs_by_project.get(item.project_id, 0) + 1
             needs_by_sprint[item.sprint_id] = needs_by_sprint.get(item.sprint_id, 0) + 1
 
+        workspace_block = self.store.get_workspace_block()
         entries = []
         for project in projects:
             engine = describe_engine(self.store, project.id, now=self._now)
@@ -295,11 +317,10 @@ class WorkspaceReader:
                     "default_branch": project.default_branch,
                     "workflow_id": project.workflow_id,
                     "engine": {
-                        "state": (
-                            "not_running"
-                            if not engine.resident
-                            else "paused" if engine.paused else "running"
-                        ),
+                        # The program that runs the work (a worker, ADR-0043):
+                        # whether one holds the project. Whether the work may
+                        # go on is the holds' to say.
+                        "state": "running" if engine.resident else "not_running",
                         "task_id": task.id if task else None,
                         "task_key": task.task_key if task else None,
                         "task_title": task.title if task else None,
@@ -312,9 +333,24 @@ class WorkspaceReader:
                             "task_counts": counts[sprint.id],
                             "needs_you": needs_by_sprint.get(sprint.id, 0),
                             "spend_usd": spend[sprint.id],
+                            "block": serialize_level_block(
+                                self.store.get_sprint_block(sprint.id)
+                            ),
+                            "paused": sum(
+                                1
+                                for item in self.store.list_tasks(sprint_id=sprint.id)
+                                if item.paused_at
+                            ),
                         }
                         if sprint is not None
                         else None
+                    ),
+                    # What the project's work is doing now (ADR-0043).
+                    "work": sprint_work_status(
+                        self.store,
+                        sprint,
+                        workspace_block=workspace_block,
+                        resident=engine.resident,
                     ),
                     "planned_sprints": planned.get(project.id, 0),
                     "needs_you": needs_by_project.get(project.id, 0),
@@ -324,7 +360,10 @@ class WorkspaceReader:
                     ),
                 }
             )
-        return {"projects": entries}
+        return {
+            "projects": entries,
+            "block": serialize_level_block(workspace_block),
+        }
 
     # ── helpers ───────────────────────────────────────────────────────────
 

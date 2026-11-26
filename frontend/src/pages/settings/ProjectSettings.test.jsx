@@ -28,7 +28,7 @@ async function renderGeneral(routes = settingsRoutes()) {
 const saves = (fetchImpl) => fetchImpl.calls.filter((call) => `${call.method} ${call.url}` === SAVE_URL);
 
 describe("the page around project settings", () => {
-  it("is a page of its own: breadcrumb, three tabs, no engine row and no Needs you", async () => {
+  it("is a page of its own: breadcrumb, three tabs, no work row and no Needs you", async () => {
     await renderGeneral();
     const crumbs = screen.getByRole("navigation", { name: "Breadcrumb" });
     expect(within(crumbs).queryByRole("link", { name: "Workspace" })).toBeNull();
@@ -44,10 +44,10 @@ describe("the page around project settings", () => {
     expect(within(tabs).getByRole("link", { current: "page" })).toHaveTextContent("General");
     expect(screen.queryByRole("region", { name: /needs you/i })).toBeNull();
     expect(screen.queryByText(/Needs you/i, { selector: "h2" })).toBeNull();
-    expect(document.querySelector(".engine")).toBeNull();
-    // The engine and the manager are in the top bar.
+    expect(document.querySelector(".work")).toBeNull();
+    // The project's work and the manager are in the top bar.
     const banner = screen.getByRole("banner");
-    expect(await within(banner).findByRole("button", { name: /Engine/ })).toBeInTheDocument();
+    expect(await within(banner).findByRole("button", { name: /^Work: / })).toBeInTheDocument();
     expect(within(banner).getByRole("button", { name: "Manager" })).toBeInTheDocument();
   });
 

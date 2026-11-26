@@ -12,14 +12,16 @@ export const ACTIVITY_PAGE = 25;
 
 // What is true when a filter finds nothing, and what would appear.
 const EMPTY = {
-  all: "Nothing has happened yet. Sprints being planned, starting and finishing, and the engine stopping, appear here.",
+  all: "Nothing has happened yet. Sprints being planned, starting and finishing, pauses and blocks, appear here.",
   sprints: "No sprint has been planned, started or finished yet.",
-  engine: "The engine has not started yet.",
+  holds: "Nothing has been paused or blocked yet.",
+  worker: "No worker has run yet.",
 };
 
 /**
- * The Activity tab: what happened to the project's sprints and its engine,
- * newest first. What happened to a task is on its sprint's page.
+ * The Activity tab: what happened to the project's sprints, the pauses and
+ * blocks put on its work (ADR-0043), and its worker, newest first. What
+ * happened to a task is on its sprint's page.
  */
 export function ActivityTab({ projectId, tabLine }) {
   const [filterKey, setFilterKey] = useState("all");

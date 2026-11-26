@@ -52,6 +52,7 @@ class SprintFlow:
         sprint.status = "completed"
         sprint.completed_at = now
         self.store.save_sprint(sprint)
+        self.store.delete_level_block("sprint", sprint.id)
         self.emit_event(project, "engine.sprint_completed", {
             "sprint_id": sprint.id,
             "sprint_title": sprint.title,
@@ -64,6 +65,9 @@ class SprintFlow:
             # Work is exhausted; the manager may want to plan more.
             self.emit_attention(project, sprint)
             return "idle"
+        # A next sprint a user blocked is started all the same and holds
+        # everything in it (ADR-0043): Unblock lets it run, with nobody
+        # having to start it as well.
 
         next_sprint.status = "active"
         next_sprint.started_at = now

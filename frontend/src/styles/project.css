@@ -53,45 +53,30 @@ a.button:hover {
   color: var(--color-text-quiet);
 }
 
-/* Engine */
-/* The label, the state and the sentence are text of different sizes and
+/* Work: the active sprint's status line and its controls (ADR-0043). */
+/* The label, the status and its detail are text of different sizes and
    faces on one line: they share a baseline. The buttons are boxes and centre
    on the line. */
-.engine {
+.work {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   gap: var(--space-2) var(--space-4);
 }
 
-.engine__label {
+.work__label {
   color: var(--color-text-quiet);
   font-size: var(--font-size-control);
   font-weight: var(--font-weight-medium);
 }
 
-.engine__state {
+.work__state {
   display: flex;
   flex: 1 1 auto;
   flex-wrap: wrap;
   align-items: baseline;
   gap: var(--space-1) var(--space-3);
   min-width: 0;
-}
-
-.engine__sentence {
-  color: var(--color-text-secondary);
-}
-
-.engine__controls {
-  display: flex;
-  align-self: center;
-  gap: var(--space-2);
-}
-
-.engine__notice {
-  flex-basis: 100%;
-  padding-block: 0;
 }
 
 /* Sprints tab */

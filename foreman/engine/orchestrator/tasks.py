@@ -96,30 +96,6 @@ class TaskRun(OrchestratorBase):
             task.step_visit_counts = counts
             self.tasks.save(task)
 
-    def stop_task(self, task_id: str, *, reason: str) -> Task | None:
-        """Park one task as ``blocked`` at an operator's request.
-
-        Distinct from :meth:`block_task_for_error`: a requested stop is not an
-        anomaly, so it records no system run of its own and raises no attention
-        turn — the caller records why it stopped the task. ``blocked`` is
-        reused rather than inventing a status because a stopped task needs
-        exactly what ``blocked`` already means: not runnable until a human or
-        the manager says otherwise. Returns the task, or None if it is gone.
-        """
-
-        task = self.store.get_task(task_id)
-        if task is None:
-            return None
-        project = self.store.get_project(task.project_id)
-        if project is not None:
-            self.leases.release(task, project)
-        if task.status in {"done", "cancelled"}:
-            return task
-        task.status = "blocked"
-        task.blocked_reason = reason
-        self.tasks.save(task)
-        return task
-
     def run_task(
         self,
         project: Project,

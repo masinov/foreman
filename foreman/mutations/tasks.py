@@ -73,10 +73,12 @@ class TaskMutations(MutationBase):
         return task
 
     def block_task(self, task: Task, reason: str) -> Task:
-        """Park a task that has not started.
+        """Hold a task, with a reason, until someone unblocks it (ADR-0043).
 
-        A started task is stopped (the engine ends its step and blocks it) or
-        closed; blocking it as well would be a third way to say the same.
+        A task whose step is running is blocked when the step ends: the
+        engine owns the task's status until then, so the Block waits on the
+        task (``block_requested``) and holds it meanwhile. Unblock starts
+        the task's workflow over, as it always has.
         """
 
         if self._in_backlog(task):
@@ -84,22 +86,73 @@ class TaskMutations(MutationBase):
                 f"Task {task.id} is in the backlog, where nothing runs; there is nothing "
                 "to block. Decline it, or plan it into a sprint first."
             )
-        if task.status != "todo":
+        if task.status not in ("todo", "in_progress"):
             raise MutationError(
                 f"Task {task.id} cannot be blocked from status {task.status}; only a task "
-                "that has not started can be. Stop or close a started task."
+                "that is queued or under way can be."
             )
+        if task.block_requested:
+            raise MutationError(f"Task {task.id} is already being blocked.")
+        running = self.store.list_runs(task_id=task.id, status="running")
+        if any(run.role_id in ("_builtin:merge", "_builtin:mark_done") for run in running):
+            # Blocked after its merge, it would start over from the first
+            # step on a branch that is already merged.
+            raise MutationError(
+                f"Task {task.id} is being merged; block it once the merge has ended, "
+                "or reopen it later."
+            )
+        engine_on_it = bool(running) or self.store.get_active_lease(
+            project_id=task.project_id, resource_type="task", resource_id=task.id
+        ) is not None
+        if task.status == "in_progress" and engine_on_it:
+            # The engine owns the task's status while it works on it, and its
+            # next write would undo a block made now: the Block waits on the
+            # task, holds it, and is applied when the engine lets it go.
+            self.store.request_task_block(task.id, reason=reason)
+            fresh = self.store.get_task(task.id) or task
+            self._audit(
+                fresh,
+                "human.task_blocked",
+                step="block",
+                from_status=task.status,
+                reason=reason,
+                after_step=task.workflow_current_step,
+            )
+            return fresh
         from_status = task.status
         task.status = "blocked"
         task.blocked_reason = reason
         task.completed_at = None
+        # Unblock starts the workflow over; a resume step left here could
+        # read as a gate waiting for a decision.
+        task.workflow_current_step = None
+        task.workflow_carried_output = None
         self.store.save_task(task)
+        self.store.clear_task_hold(task.id)
         self._audit(task, "human.task_blocked", step="block", from_status=from_status, reason=reason)
-        return task
+        return self.store.get_task(task.id) or task
 
     def unblock_task(self, task: Task) -> Task:
-        """Return a blocked task to the queue, starting its workflow over."""
+        """Return a blocked task to the queue, starting its workflow over.
 
+        A Block still waiting for the task's step to end is withdrawn
+        instead, and the task carries on where it is.
+        """
+
+        if task.block_requested and self.store.withdraw_task_block_request(task.id):
+            if task.status != "blocked":
+                fresh = self.store.get_task(task.id) or task
+                self._audit(
+                    fresh,
+                    "human.task_unblocked",
+                    step="unblock",
+                    from_status=task.status,
+                    reason=task.block_requested,
+                )
+                return fresh
+            # Blocked meanwhile by the engine itself: the request is moot,
+            # and Unblock goes on to unblock the task.
+            task.block_requested = None
         if task.status != "blocked":
             raise MutationError(f"Task {task.id} is not blocked.")
         project = self.store.get_project(task.project_id)
@@ -138,6 +191,7 @@ class TaskMutations(MutationBase):
         task.completed_at = self._now().isoformat()
         removed, warning = self._discard_worktree(task)
         self.store.save_task(task)
+        self.store.clear_task_hold(task.id)
         self._audit(task, "human.task_cancelled", step="cancel", from_status=from_status)
         return TaskRemoval(task=task, removed_worktree=removed, warning=warning)
 
@@ -170,6 +224,7 @@ class TaskMutations(MutationBase):
         task.workflow_carried_output = None
         task.completed_at = self._now().isoformat()
         self.store.save_task(task)
+        self.store.clear_task_hold(task.id)
         self._audit(
             task,
             "human.task_completed",
@@ -206,8 +261,9 @@ class TaskMutations(MutationBase):
         task.step_visit_counts = {}
         task.completed_at = None
         self.store.save_task(task)
+        self.store.clear_task_hold(task.id)
         self._audit(task, "human.task_reopened", step="reopen", from_status=from_status)
-        return task
+        return self.join_sprint_pause(self.store.get_task(task.id) or task)
 
     def delete_task(self, task: Task) -> TaskRemoval:
         """Delete a task with its history and its worktree.
@@ -429,4 +485,4 @@ class TaskMutations(MutationBase):
             created_by=self.role,
             created_at=self._now().isoformat(),
         )
-        return self.store.save_task(task)
+        return self.join_sprint_pause(self.store.save_task(task))

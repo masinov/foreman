@@ -75,6 +75,10 @@ class SprintMutations(MutationBase):
             sprint.started_at = sprint.started_at or (now if target_status == "completed" else None)
             sprint.completed_at = now
         self.store.save_sprint(sprint)
+        if target_status in ("completed", "cancelled"):
+            # A block does not outlive what it was set on (ADR-0043): a
+            # reopened sprint starts unblocked.
+            self.store.delete_level_block("sprint", sprint.id)
         if target_status == "completed":
             self._checkpoint(sprint)
         return sprint
@@ -187,3 +191,4 @@ class SprintMutations(MutationBase):
         for task in self.store.list_tasks(sprint_id=sprint.id):
             self._refuse_if_running(task, "delete")
         self.store.delete_sprint(sprint.id)
+        self.store.delete_level_block("sprint", sprint.id)

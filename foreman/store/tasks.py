@@ -115,6 +115,9 @@ class TaskStore(StoreBase):
     def save_task(self, task: Task) -> Task:
         """Insert or update a task record.
 
+        A user's pause (``paused_*``, ``pause_mode``, ``block_requested``) is
+        written on insert only; see :meth:`pause_tasks`.
+
         Assigns a Jira-style ``task_key`` (e.g. ``FOR-102``) to brand-new tasks.
         The key is write-once: it is set on INSERT and never changed by updates.
         """
@@ -135,9 +138,10 @@ class TaskStore(StoreBase):
                     workflow_carried_output, step_visit_counts, completion_evidence_json,
                     executor_overrides_json, complexity,
                     source_system, source_ref, source_url, reporter,
-                    created_at, started_at, completed_at
+                    created_at, started_at, completed_at,
+                    paused_at, paused_by, pause_mode, block_requested
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                          ?, ?, ?, ?, ?, ?, ?)
+                          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     sprint_id = excluded.sprint_id,
                     project_id = excluded.project_id,
@@ -199,6 +203,14 @@ class TaskStore(StoreBase):
                     task.created_at,
                     task.started_at,
                     task.completed_at,
+                    # A new row takes its pause from the object (a task that
+                    # joins a paused sprint); an existing row's pause is
+                    # changed only by the pause methods below, so a task
+                    # object read before a user paused it cannot lift it.
+                    task.paused_at,
+                    task.paused_by,
+                    task.pause_mode,
+                    task.block_requested,
                 ),
             )
             return task_key

@@ -167,6 +167,12 @@ def _row_to_task(row: sqlite3.Row) -> Task:
         created_at=row["created_at"],
         started_at=row["started_at"],
         completed_at=row["completed_at"],
+        paused_at=row["paused_at"] if "paused_at" in row.keys() else None,
+        paused_by=row["paused_by"] if "paused_by" in row.keys() else None,
+        pause_mode=row["pause_mode"] if "pause_mode" in row.keys() else None,
+        block_requested=(
+            row["block_requested"] if "block_requested" in row.keys() else None
+        ),
     )
 
 

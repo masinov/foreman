@@ -18,7 +18,7 @@ have. It is never a literal string to render.
 |---|---|
 | `00-screen-map.html` | The four levels, what each page shows and does (text only) |
 | `01-workspace.html` | Workspace: needs you across projects, projects, recent milestones |
-| `02-project-sprints.html` | Project, Sprints tab: engine, needs you, the sprint queue |
+| `02-project-sprints.html` | Project, Sprints tab: the work's status and controls, needs you, the sprint queue |
 | `03-project-backlog.html` | The backlog (now a page of its own): filed work, accepted work, plan into a sprint |
 | `04-sprint-list.html` | Sprint, list view |
 | `05-task-overview.html` | Task, Overview tab, with the manager side bar open (superseded for the side bar: on a task it is the agents', ADR-0029) |
@@ -42,7 +42,7 @@ Workspace / Project / Sprint / Task.
 - **Workspace** is the only place that spans projects. No manager here.
 - **Project** has two tabs: Sprints and Activity. A tab changes what the
   page shows; it is never a place. As on every tabbed page, a tab's own
-  controls (New sprint on Sprints, All | Sprints | Engine on Activity) sit on
+  controls (New sprint on Sprints, All | Sprints | Pauses and blocks | Worker on Activity) sit on
   the tab line at its right, never in a heading row under it; a heading stays
   only where it marks one group off from another (Sprints: "Active and
   planned" and "Finished", folded) (owner, 2026-11-24). The **Backlog** and **Project settings**
@@ -72,26 +72,44 @@ Workspace / Project / Sprint / Task.
   a person told them, and the box to tell the agent something. It is closed
   until the user opens it, and stays as the user left it, on every task and
   the next visit, remembered apart from the manager's (owner, 2026-11-24).
-- **Engine** is one per project. Its state and controls are on the project
-  page; below project level they are in the top bar. It reads "Running"
-  only while it has a task in hand; up with nothing to do, it reads
-  "Waiting" and its dot stays still. Pause and Stop are offered only when
-  there is something for them to act on: a task in hand, or an active
-  sprint with tasks (owner, 2026-11-25: "Running gives the impression that
-  the engine is actually working").
+- **Work** (ADR-0043, owner 2026-11-26) replaces the engine on the page. A
+  user holds the work, not a program. Its status line is one short line
+  with no name in it, the same on the project page's Work row, the sprint's
+  Details and title row, the top bar below project level (a menu; at phone
+  width only its dot) and the workspace's projects table: "Working · FOR-65
+  Develop · 1 paused", "Pausing · Develop finishing", "Stopping · Develop",
+  "Paused · 14:02", "Stopped · 14:02", "2 paused", "Blocked · 14:02",
+  "Blocked · workspace", "Ready to finish", "Waiting", "Not started", each
+  with "· no worker" when no worker runs a project with work to do. Who, why
+  and when are its detail: on hover, and on a tap.
+  - **Pause** lets a running step finish, then nothing after it starts;
+    **Stop** (the one red button) cuts the step, which runs again on
+    Resume, and is offered only while a step runs; **Resume** lifts pauses.
+    No question is asked before any of them; the toast names the tasks
+    ("Resumed FOR-66 and FOR-67."). On a sprint or the workspace ("Pause
+    all", "Stop all", "Resume all") they act on each task in it.
+  - **Block** holds a task, a sprint or the workspace, with a reason, until
+    Unblock where it was set. A sprint's Block is in its More; Unblock is
+    beside its title. A task under a block shows a disabled "Sprint
+    blocked" or "Workspace blocked" in place of Resume.
+  - **Start worker** appears only beside "no worker": a fault to fix, not a
+    switch for the work. **Start sprint** replaces Activate.
 - **Needs you** is one list of four kinds of item: accept filed work,
   approve a plan, approve a merge, unblock. It appears at workspace level
   (all projects) and project level. Two more are about sprints, not
   tasks: settle a proposed sprint order, and finish a sprint whose every
   task is done or cancelled, where a user finishes sprints. That row has a
-  Finish button (owner, 2026-11-24).
-- **Work flows one way:** filed, accepted, planned into a sprint. The engine
+  Finish button (owner, 2026-11-24). A sprint a user blocked is one too
+  ("Blocked sprint", its reason, Unblock; ADR-0043). The workspace's own
+  block is lifted from above its projects (Unblock all).
+- **Work flows one way:** filed, accepted, planned into a sprint. Foreman
   runs only the active sprint. A task an agent creates goes to the backlog.
 - **History is one click away, not in the way.** The project shows the
   sprint queue (active, then planned in run order); finished sprints are a
   closed line that opens in place. A sprint shows all its tasks, done last.
-- **Activity is one stream at three depths:** project shows its sprints and
-  its engine (every change of the engine's state), sprint shows what
+- **Activity is one stream at three depths:** project shows its sprints,
+  the pauses and blocks put on its work and the workspace's (ADR-0043), and
+  its worker (started, stopped, died), sprint shows what
   happened to each of its tasks, task shows every run and its output. Every
   list is one table, one line per row, with the same columns (owner,
   2026-11-21; `frontend/src/pages/shared/ActivityTable.jsx`). By names the
@@ -101,14 +119,20 @@ Workspace / Project / Sprint / Task.
   statistics view, not a line on these pages (owner, 2026-11-21).
 - **A task's Status** (the sprint's task list and the task's Overview,
   owner 2026-11-24): what it is doing, and where it is under way the step,
-  named as Activity and the board name it: "Running · Develop", "Paused ·
-  Develop", "Blocked · Test"; "Waiting for merge approval", "Queued",
-  "Done" and "Cancelled" as they are. A task in progress that the running
-  engine is not on is "Waiting · Develop" ("The engine runs it after
-  FOR-53" on hover), and "Stopped · Develop" only where no engine runs. A
-  "Run next" the engine has not started yet reads "Runs next · Develop"
-  and its button is a disabled "Runs next". The task's Steps row says the
-  same ("Waiting here", "Runs next") and why a step was returned to ("Waiting
+  named as Activity and the board name it: "Running · Develop" while a step
+  of it runs, "Blocked · Test"; "Waiting for merge approval", "Queued",
+  "Done" and "Cancelled" as they are. A user's hold says so first
+  (ADR-0043): "Pausing · Develop" and "Stopping · Develop" while the step
+  still runs, then "Paused · Develop" or "Stopped · Develop", "Blocked" under
+  a block on its sprint or the workspace, "Blocking · Develop" for a Block
+  waiting for the step to end; who, when and why on hover. A task in
+  progress waiting its turn is "Waiting · Develop" ("Foreman runs it after
+  FOR-53", or "No worker runs this project.", on hover); one not started
+  that waits for another, "Waiting · FOR-65". A "Run next" not started yet
+  reads "Runs next · Develop" and its button is a disabled "Runs next". The
+  task's Overview lists "Needed by" beside "Depends on": what holding it
+  holds too. The task's Steps row says the
+  same ("Waiting here", "Runs next", "Paused here") and why a step was returned to ("Waiting
   here · sent back: merge conflict", "· sent back by review", "· tests
   failed"); a gate's Attempts counts its pause and its decision as one. The
   board's columns are the stages. Elsewhere a step is named the same way
@@ -120,8 +144,9 @@ Workspace / Project / Sprint / Task.
   moves the page's content. At phone width it spans the bottom inside the
   gutter. An error stays inline where the action failed. An approval or a
   send-back is one sentence everywhere: "Approved FOR-51. Foreman goes on
-  with Merge.", "Approved FOR-51. It waits at Merge until the engine is
-  started.", "Sent FOR-51 back to Develop."
+  with Merge.", "Approved FOR-51. It goes on with Merge on Resume." (a task a
+  user holds), "Approved FOR-51. It waits at Merge until a worker runs.",
+  "Sent FOR-51 back to Develop."
 - **An active sprint whose every task is done or cancelled** says so in
   State: "Ready to finish", with "Every task is done or cancelled." on
   hover and "Finish sprint" beside the title (ADR-0037).
@@ -219,10 +244,10 @@ say what is true and what happens next.
 `16-identity-and-motion.html`. The mark is an F drawn as a task list with
 one square, the task in hand. On the workspace page the top bar shows the
 mark and the word; inside a project it shows the mark alone, and the square
-breathes while that project's engine is running.
+breathes while a step of that project's work runs.
 
-Something moves only when something is happening: the engine dot while it
-runs, a thin line under a step in progress, placeholder rows if loading
+Something moves only when something is happening: the status dot while a
+step runs, a thin line under a step in progress, placeholder rows if loading
 takes longer than 200 ms, a brief highlight when a task changes stage. All
 motion is off under `prefers-reduced-motion`.
 

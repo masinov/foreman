@@ -22,6 +22,11 @@ const EVENTS = {
   }),
   [K.enginePaused]: () => ({ word: "Paused", tone: "idle" }),
   [K.engineResumed]: () => ({ word: "Resumed", tone: "idle" }),
+  [K.workPaused]: () => ({ word: "Paused", tone: "idle" }),
+  [K.workStopped]: () => ({ word: "Stopped", tone: "idle" }),
+  [K.workResumed]: () => ({ word: "Resumed", tone: "idle" }),
+  [K.workBlocked]: (m) => ({ word: "Blocked", tone: "attention", why: m.detail || "" }),
+  [K.workUnblocked]: () => ({ word: "Unblocked", tone: "idle" }),
 };
 
 /**
@@ -42,28 +47,29 @@ function finishedEvent(m) {
   return { word: "Finished", tone: "passed", why: said(tagged) };
 }
 
+// The worker's own milestones (ADR-0043: the program that runs the work).
 const isEngine = (m) => String(m.kind).startsWith("engine_");
 
-/** A milestone as a row of the activity table: a sprint or the engine, and what happened to it. */
+/** A milestone as a row of the activity table: a sprint, the workspace or the worker, and what happened to it. */
 export function describeMilestone(m) {
   const [name, rest] = splitTitle(m.sprint_title || m.sprint_id || "");
   const event = (EVENTS[m.kind] ?? (() => ({ word: m.kind, tone: "idle" })))(m);
   return {
     at: m.at,
     project: m.project_name,
-    subject: isEngine(m) ? { key: "Engine", title: "" } : { key: name, title: rest },
+    subject: isEngine(m) ? { key: "Worker", title: "" } : { key: name, title: rest },
     event,
     by: m.actor ? userName(m.actor) : "",
     href: !isEngine(m) && m.sprint_id ? paths.sprint(m.sprint_id) : null,
   };
 }
 
-/** A milestone in a few words, for the workspace's Last change: "Sprint 2 finished", "Engine stopped". */
+/** A milestone in a few words, for the workspace's Last change: "Sprint 2 finished", "Worker stopped". */
 export function milestoneSentence(m) {
   const { event } = describeMilestone(m);
   const [name] = splitTitle(m.sprint_title || m.sprint_id || "");
   if (m.kind === K.planConfirmed) return `Plan for ${name} confirmed`;
-  return `${isEngine(m) ? "Engine" : name} ${event.word.toLowerCase()}`;
+  return `${isEngine(m) ? "Worker" : name} ${event.word.toLowerCase()}`;
 }
 
 /** Milestones, newest first, as every activity list shows them. */

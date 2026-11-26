@@ -16,7 +16,8 @@ how to present the result. Nothing here prints or knows about HTTP.
 
 The rules are kept in a part per area, like the store's: ``projects``,
 ``tasks``, ``gates`` (a gate decision, a merge waiver), ``backlog``,
-``sprints`` and ``decision_gates``, over ``base`` (who acts, the audit
+``sprints``, ``decision_gates`` and ``holds`` (Pause, Stop, Resume, Block;
+ADR-0043), over ``base`` (who acts, the audit
 event). No surface writes a project, sprint or task row itself; a test
 holds that (``tests/test_layers.py``). ``Mutations`` puts them together; every part may call the
 others' operations through it, as ``send_back`` unblocks a task.
@@ -28,6 +29,7 @@ from .backlog import BacklogMutations
 from .base import MutationError
 from .decision_gates import DecisionGateMutations
 from .gates import GateMutations
+from .holds import HoldMutations
 from .projects import ProjectMutations
 from .sprints import SprintMutations
 from .tasks import TaskMutations
@@ -42,6 +44,7 @@ class Mutations(
     BacklogMutations,
     SprintMutations,
     DecisionGateMutations,
+    HoldMutations,
 ):
     """Operator changes to the tasks and sprints of one store.
 

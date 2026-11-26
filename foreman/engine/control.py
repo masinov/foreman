@@ -5,8 +5,10 @@ Three consumers ask the same questions about a project's engine — the CLI
 
 * is an engine resident on this project, whose is it, and how fresh is its
   heartbeat,
-* is it paused,
 * and what is it working on, and what has it been told to do lately.
+
+Whether the work may go on is not the engine's state: it is a user's holds
+on the work (ADR-0043, ``foreman.domain.holds``).
 
 Who blocked a blocked task (a human gate, or the engine) is answered by
 ``foreman.definitions.layers.gate_steps``.
@@ -44,7 +46,6 @@ __all__ = [
     "ServeSpawner",
     "default_command_requester",
     "describe_engine",
-    "engine_is_paused",
     "running_task",
     "serve_command",
     "serve_log_path",
@@ -54,12 +55,6 @@ __all__ = [
 #: Filename of the detached ``foreman serve`` log inside the context directory.
 SERVE_LOG_NAME = "serve.log"
 
-#: How far back :func:`engine_is_paused` looks for the last applied
-#: pause/resume. A project that has taken more commands than this since it was
-#: last paused is not paused in any sense an operator cares about.
-PAUSE_LOOKBACK_COMMANDS = 200
-
-
 # ── Engine state ──────────────────────────────────────────────────────────────
 
 
@@ -67,14 +62,11 @@ PAUSE_LOOKBACK_COMMANDS = 200
 class EngineStateView:
     """What is known about one project's engine right now.
 
-    ``resident`` means a live lease is held; ``paused`` is derived from the
-    command log rather than from the engine's memory, because the flag lives in
-    a process nobody else can read.
+    ``resident`` means a live lease is held.
     """
 
     project_id: str
     resident: bool
-    paused: bool
     lock: EngineLockView | None = None
     lease_expired: bool = False
     heartbeat_age_seconds: float | None = None
@@ -89,31 +81,9 @@ class EngineStateView:
 
     @property
     def state(self) -> str:
-        """One word for the header: ``resident``, ``paused``, or ``stopped``."""
+        """One word for the header: ``resident`` or ``stopped``."""
 
-        if not self.resident:
-            return "stopped"
-        return "paused" if self.paused else "resident"
-
-
-def engine_is_paused(store: ForemanStore, project_id: str) -> bool:
-    """True when the last applied pause/resume for a project was a pause.
-
-    ``foreman serve`` keeps the paused flag in memory, so the command log is
-    the only place another process can read it from: the most recent *applied*
-    ``pause``/``shutdown``/``resume`` is the engine's current intent.
-    """
-
-    for command in store.list_engine_commands(
-        project_id, limit=PAUSE_LOOKBACK_COMMANDS
-    ):
-        if command.status != "completed":
-            continue
-        if command.command in {"pause", "shutdown"}:
-            return command.command == "pause"
-        if command.command == "resume":
-            return False
-    return False
+        return "resident" if self.resident else "stopped"
 
 
 def running_task(store: ForemanStore, project_id: str) -> Task | None:
@@ -153,7 +123,6 @@ def describe_engine(
     return EngineStateView(
         project_id=project_id,
         resident=lock is not None,
-        paused=engine_is_paused(store, project_id),
         lock=lock,
         lease_expired=lock.is_expired(moment) if lock is not None else False,
         heartbeat_age_seconds=(
@@ -221,7 +190,8 @@ def spawn_serve(command: Sequence[str], log_path: Path) -> ServeSpawn:
     Detached deliberately: the engine outlives the dashboard request that
     started it, and — with its own session — outlives the dashboard process
     too. Nothing keeps the handle, because nothing is allowed to steer the
-    engine by killing it; ``pause`` and ``shutdown`` commands do that.
+    engine by killing it; a ``shutdown`` command ends it, and a user's holds
+    stop the work (ADR-0043).
     """
 
     log_path.parent.mkdir(parents=True, exist_ok=True)

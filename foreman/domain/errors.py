@@ -23,7 +23,7 @@ class EngineCommandInterrupt(BaseException):
     A ``BaseException`` for the same reason as
     :class:`~foreman.runner.process.EngineShutdown`: the orchestrator's
     defensive ``except Exception`` fallbacks turn an exception into a failed
-    agent outcome, and an operator's `pause` or `stop_task` is not an agent
+    agent outcome, and a user's Stop or a `steer_task` is not an agent
     failure. It propagates through the same guarded-step path a shutdown takes
     — the run is settled as ``killed`` and the task keeps its resume point —
     and the resident engine settles the command once the stack has unwound.
@@ -37,3 +37,22 @@ class EngineCommandInterrupt(BaseException):
         super().__init__(f"Engine command {name!r} stopped the running step.")
         self.command = command
         self.task_id = task_id
+
+
+class TaskStoppedInterrupt(EngineCommandInterrupt):
+    """Raised inside the orchestrator when a user stopped the running task.
+
+    A Stop is a pause with mode ``now`` on the task (ADR-0043), read from the
+    task itself rather than from a command, so it outlives any engine. It
+    unwinds exactly as a command interrupt does: the run is settled as
+    ``killed`` and the task keeps its resume point. ``command`` is None.
+    """
+
+    def __init__(self, task_id: str, *, requested_by: str | None = None) -> None:
+        BaseException.__init__(
+            self,
+            f"Stopped by {requested_by}." if requested_by else "Stopped by a user.",
+        )
+        self.command = None
+        self.task_id = task_id
+        self.requested_by = requested_by

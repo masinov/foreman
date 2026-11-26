@@ -268,6 +268,15 @@ class Task:
     created_at: str = field(default_factory=utc_now_text)
     started_at: str | None = None
     completed_at: str | None = None
+    #: A user's pause (ADR-0043): when, by whom, and whether the running step
+    #: finishes first (``finish_step``) or is cut (``now``, a Stop). Only a
+    #: user's Pause, Stop and Resume write these; the engine reads them.
+    paused_at: str | None = None
+    paused_by: str | None = None
+    pause_mode: str | None = None
+    #: A user's Block of a task whose step was running: the reason, kept
+    #: until the step ends and the engine blocks the task with it.
+    block_requested: str | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -730,6 +739,9 @@ class Lease:
     released_at: str | None = None
 
 
+#: ``pause``, ``resume`` and ``stop_task`` were retired by ADR-0043: a user's
+#: holds are on the work now. They stay in the vocabulary because old rows
+#: carry them; a worker rejects any it finds, saying where they went.
 EngineCommandName = Literal["pause", "resume", "run_task", "stop_task", "steer_task", "shutdown"]
 EngineCommandStatus = Literal["pending", "acknowledged", "completed", "rejected"]
 
@@ -749,10 +761,11 @@ ENGINE_COMMAND_STATUSES: tuple[EngineCommandStatus, ...] = (
 )
 
 #: Commands that only mean something to an engine that is actually resident.
-#: A `pause` or a `stop_task` queued while nothing was running describes an
-#: intent about a process that no longer exists, so a starting engine rejects
-#: them rather than applying them to itself. `resume` and `run_task` describe
-#: work, and work outlives the process, so a starting engine honours them.
+#: A `shutdown` or a `steer_task` queued while nothing was running describes
+#: an intent about a process that no longer exists, so a starting engine
+#: rejects them rather than applying them to itself. `run_task` describes
+#: work, and work outlives the process, so a starting engine honours it.
+#: (The retired `pause` and `stop_task` are rejected here too.)
 ENGINE_COMMANDS_NEEDING_A_RESIDENT_ENGINE: tuple[EngineCommandName, ...] = (
     "pause",
     "stop_task",

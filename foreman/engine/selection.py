@@ -8,6 +8,8 @@ from ..domain.models import Project, Sprint, Task
 from ..mutations import MutationError, Mutations
 from ..store import ForemanStore
 from .errors import OrchestratorError
+from ..domain.holds import task_hold
+from .holds import sprint_block_over
 from .leasing import TaskLeases
 from .limits import resolve_project_settings
 from .task_writes import TaskWrites
@@ -87,9 +89,18 @@ class TaskSelector:
         sprint = self.store.get_active_sprint(project.id)
         if sprint is None:
             return None
+        # A block on the sprint or the workspace holds all of it (ADR-0043).
+        if sprint_block_over(self.store, sprint) is not None:
+            return None
+        self._apply_left_block_requests(sprint)
         sprint_tasks = self.store.list_tasks(sprint_id=sprint.id)
         tasks_by_id = {task.id: task for task in sprint_tasks}
+        # A paused task, or one being blocked, is skipped: the sprint goes on
+        # with what does not wait for it (ADR-0043 amends ADR-0039).
+        held = {task.id for task in sprint_tasks if task_hold(task) is not None}
         for task in sprint_tasks:
+            if task.id in held:
+                continue
             if task.status == "in_progress" and task.workflow_current_step:
                 # For resumption, try to acquire the lease. If the old holder is
                 # still alive (lease not expired), skip this task to avoid stealing
@@ -98,12 +109,14 @@ class TaskSelector:
                     return None  # Another orchestrator holds an active lease.
                 return task
         if any(
-            task.status == "in_progress" and not task.workflow_current_step
+            task.status == "in_progress"
+            and not task.workflow_current_step
+            and task.id not in held
             for task in sprint_tasks
         ):
             return None
         for task in sprint_tasks:
-            if task.status != "todo":
+            if task.status != "todo" or task.id in held:
                 continue
             cancelled = self.cancelled_dependencies(task, tasks_by_id)
             if cancelled:
@@ -128,6 +141,22 @@ class TaskSelector:
         if selection_mode == "autonomous":
             return self.pull_from_backlog(project, sprint)
         return None
+
+    def _apply_left_block_requests(self, sprint: Sprint) -> None:
+        """Block the tasks whose requested Block outlived the step it waited for.
+
+        A Block waits for the running step to end (``block_requested``). A
+        step that was cut (a Stop, a shutdown, a crash) never reaches the
+        point where the engine applies it, so the next choice of a task does.
+        """
+
+        running = {
+            run.task_id
+            for run in self.store.list_runs(project_id=sprint.project_id, status="running")
+        }
+        for task in self.store.list_tasks(sprint_id=sprint.id):
+            if task.block_requested and task.id not in running:
+                self.store.apply_requested_block(task.id)
 
     def pull_from_backlog(self, project: Project, sprint: Sprint) -> Task | None:
         """Take the next accepted backlog task into the active sprint, if Foreman may.

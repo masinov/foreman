@@ -15,22 +15,22 @@ import {
   QUEUE_URL,
   sprint,
 } from "../../testing/projectFixture";
-import { engine, milestone, on, ORDER_ITEM, UNBLOCK_ITEM, workspacePayload } from "../../testing/workspaceFixture";
+import { milestone, on, ORDER_ITEM, UNBLOCK_ITEM, work, workspacePayload } from "../../testing/workspaceFixture";
 
 // An activity row says the day and the clock time; the clock depends on the
 // machine's time zone, so rows are compared without it.
 const CLOCK = /, \d{2}:\d{2}/;
 
 
-function withEngine(routes, state, task = null) {
+function withWork(routes, state, fields = {}) {
   const payload = workspacePayload();
-  payload.projects[0].engine = engine(state, task);
+  payload.projects[0].work = work(state, fields);
   routes["GET /api/v1/workspace"] = payload;
   return routes;
 }
 
-function engineSection() {
-  return screen.getByRole("region", { name: "Engine" });
+function workSection() {
+  return screen.getByRole("region", { name: "Work" });
 }
 
 function calls(fetchImpl, method, url) {
@@ -58,9 +58,9 @@ describe("the project page head", () => {
     expect(backlog).toHaveAttribute("href", "/dashboard/projects/foreman/backlog");
     expect(backlog).toHaveClass("button");
 
-    expect(within(engineSection()).getByText("Running")).toBeInTheDocument();
-    expect(within(engineSection()).getByText(/Working on/)).toHaveTextContent("Working on FOR-13, develop.");
-    expect(within(engineSection()).getByRole("link", { name: "FOR-13" })).toHaveAttribute("href", "/dashboard/tasks/task-x");
+    // The active sprint's status line: no name in it (ADR-0043).
+    expect(within(workSection()).getByText("Working · FOR-13 Develop")).toBeInTheDocument();
+    expect(workSection().querySelector(".status--running")).not.toBeNull();
 
     const needsYou = screen.getByRole("region", { name: /Needs you/ });
     expect(await within(needsYou).findByText("FOR-14")).toBeInTheDocument();
@@ -83,132 +83,104 @@ describe("the project page head", () => {
   });
 });
 
-describe("the engine row", () => {
-  it("says the active sprint has no tasks when the engine runs with nothing to pick up", async () => {
+describe("the work row", () => {
+  it("offers Pause and Stop while a step runs, and sends them for the active sprint", async () => {
     const routes = projectRoutes();
-    const payload = workspacePayload();
-    payload.projects[0].engine = engine("running", null);
-    payload.projects[0].active_sprint.task_counts = { triage: 0, todo: 0, in_progress: 0, blocked: 0, done: 0, cancelled: 0 };
-    routes["GET /api/v1/workspace"] = payload;
-    await renderProject("/dashboard/projects/foreman", routes);
-    const row = engineSection();
-    expect(within(row).getByText(/The active sprint has no tasks yet/)).toBeInTheDocument();
-    expect(within(row).getByText("Waiting")).toBeInTheDocument();
-    expect(within(row).queryByText("Running")).toBeNull();
-    // Nothing to pause or stop.
-    expect(within(row).getByRole("button", { name: "Pause" })).toBeDisabled();
-    expect(within(row).getByRole("button", { name: "Stop" })).toBeDisabled();
-  });
-
-  it("says to activate a sprint when the engine runs with none active", async () => {
-    const routes = projectRoutes();
-    const payload = structuredClone(routes["GET /api/v1/workspace"]);
-    payload.projects[0].active_sprint = null;
-    payload.projects[0].engine = { ...payload.projects[0].engine, state: "running", task_id: null };
-    routes["GET /api/v1/workspace"] = payload;
-    await renderProject("/dashboard/projects/foreman", routes);
-    expect(
-      await screen.findByText(
-        "It works through the active sprint's tasks, one at a time. No sprint is active: activate one under Sprints and it starts.",
-      ),
-    ).toBeInTheDocument();
-    const row = engineSection();
-    expect(within(row).getByText("Waiting")).toBeInTheDocument();
-    // An engine that waits does not move: only a running one breathes.
-    expect(row.querySelector(".status--running")).toBeNull();
-    expect(within(row).getByRole("button", { name: "Start" })).toBeDisabled();
-    expect(within(row).getByRole("button", { name: "Pause" })).toBeDisabled();
-    expect(within(row).getByRole("button", { name: "Stop" })).toBeDisabled();
-  });
-
-  it("waits with Pause and Stop offered when the active sprint has tasks but none is ready", async () => {
-    const routes = projectRoutes();
-    const payload = workspacePayload();
-    payload.projects[0].engine = engine("running", null);
-    payload.projects[0].active_sprint.task_counts = { triage: 0, todo: 0, in_progress: 0, blocked: 2, done: 3, cancelled: 0 };
-    routes["GET /api/v1/workspace"] = payload;
-    await renderProject("/dashboard/projects/foreman", routes);
-    const row = engineSection();
-    expect(within(row).getByText("Waiting")).toBeInTheDocument();
-    expect(within(row).getByText(/It takes the next task in the active sprint/)).toBeInTheDocument();
-    // Pause still means something here: the next task does not start.
-    expect(within(row).getByRole("button", { name: "Pause" })).toBeEnabled();
-    expect(within(row).getByRole("button", { name: "Stop" })).toBeEnabled();
-  });
-
-  it("offers Pause and Stop while running, and sends them to the engine endpoints", async () => {
-    const routes = projectRoutes();
-    routes["POST /api/v1/projects/foreman/agent/stop"] = { command: { command: "pause", status: "pending" } };
-    routes["POST /api/v1/projects/foreman/engine/commands"] = { command: { command: "shutdown", status: "pending" } };
+    routes["POST /api/v1/sprints/sprint-56/pause"] = { task_ids: ["task-x"], task_keys: ["FOR-13", "FOR-14"] };
+    routes["POST /api/v1/sprints/sprint-56/stop"] = { task_ids: ["task-x"], task_keys: ["FOR-13"] };
     const { fetchImpl } = await renderProject("/dashboard/projects/foreman", routes);
-    const row = engineSection();
-    expect(within(row).getByRole("button", { name: "Start" })).toBeDisabled();
-    expect(within(row).getByRole("button", { name: "Pause" })).toBeEnabled();
-    expect(within(row).getByRole("button", { name: "Stop" })).toBeEnabled();
+    const row = workSection();
+    // Nothing is paused: no Resume, and no Start worker while one runs.
+    expect(within(row).queryByRole("button", { name: "Resume" })).toBeNull();
+    expect(within(row).queryByRole("button", { name: "Start worker" })).toBeNull();
+    expect(within(row).getByRole("button", { name: "Stop" })).toHaveClass("button--stop");
 
     fireEvent.click(within(row).getByRole("button", { name: "Pause" }));
-    expect(await screen.findByRole("status")).toHaveTextContent(/^Pause requested\./);
-    expect(calls(fetchImpl, "POST", "/api/v1/projects/foreman/agent/stop")).toHaveLength(1);
-    // The head reloads to show what the engine does next.
+    expect(await screen.findByRole("status")).toHaveTextContent("Paused FOR-13 and FOR-14.");
+    expect(calls(fetchImpl, "POST", "/api/v1/sprints/sprint-56/pause")).toHaveLength(1);
+    // The head reloads to show what the work does next.
     await waitFor(() => expect(calls(fetchImpl, "GET", "/api/v1/workspace").length).toBeGreaterThanOrEqual(3));
 
     fireEvent.click(within(row).getByRole("button", { name: "Stop" }));
-    expect(await screen.findByText(/^Stop requested\./)).toBeInTheDocument();
-    expect(calls(fetchImpl, "POST", "/api/v1/projects/foreman/engine/commands").map((call) => call.body)).toEqual([
-      { command: "shutdown" },
-    ]);
+    expect(await screen.findByText("Stopped FOR-13.")).toBeInTheDocument();
+    expect(calls(fetchImpl, "POST", "/api/v1/sprints/sprint-56/stop")).toHaveLength(1);
   });
 
-  it("offers only Start when not running, and shows a refused start's sentence", async () => {
-    const routes = withEngine(projectRoutes(), "not_running");
+  it("says the work is paused, with who and when on a tap, and offers Resume", async () => {
+    const routes = withWork(projectRoutes(), "paused", {
+      paused: 3, unfinished: 3, by: "ana", at: "2026-11-02T14:02:00Z",
+    });
+    routes["POST /api/v1/sprints/sprint-56/resume"] = { task_keys: ["FOR-13", "FOR-14", "FOR-15", "FOR-16"] };
+    const { fetchImpl } = await renderProject("/dashboard/projects/foreman", routes);
+    const row = workSection();
+    const line = within(row).getByRole("button", { name: /^Paused · / });
+    expect(line).toHaveTextContent("Paused · 2 Nov");
+    expect(line).toHaveAttribute("title", "Paused by ana");
+    fireEvent.click(line);
+    expect(within(row).getByText("Paused by ana")).toBeInTheDocument();
+    // Everything is paused: nothing to pause, nothing running to stop.
+    expect(within(row).queryByRole("button", { name: "Pause" })).toBeNull();
+    expect(within(row).queryByRole("button", { name: "Stop" })).toBeNull();
+    fireEvent.click(within(row).getByRole("button", { name: "Resume" }));
+    expect(await screen.findByText("Resumed FOR-13, FOR-14, FOR-15 and 1 more.")).toBeInTheDocument();
+    expect(calls(fetchImpl, "POST", "/api/v1/sprints/sprint-56/resume")).toHaveLength(1);
+  });
+
+  it("offers only Unblock for a blocked sprint, its reason on hover", async () => {
+    const routes = withWork(projectRoutes(), "blocked", {
+      scope: "sprint", reason: "waiting for the design", by: "ana", at: "2026-11-02T14:02:00Z", unfinished: 3,
+    });
+    routes["POST /api/v1/sprints/sprint-56/unblock"] = { unblocked: { reason: "waiting for the design" } };
+    const { fetchImpl } = await renderProject("/dashboard/projects/foreman", routes);
+    const row = workSection();
+    expect(within(row).getByRole("button", { name: /^Blocked · / })).toHaveAttribute(
+      "title",
+      "Blocked by ana · waiting for the design",
+    );
+    expect(within(row).getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "Blocked · 2 Nov",
+      "Unblock",
+    ]);
+    fireEvent.click(within(row).getByRole("button", { name: "Unblock" }));
+    expect(await screen.findByText("Unblocked the sprint.")).toBeInTheDocument();
+    expect(calls(fetchImpl, "POST", "/api/v1/sprints/sprint-56/unblock")).toHaveLength(1);
+  });
+
+  it("says when no worker runs the project, and starts one", async () => {
+    const routes = withWork(projectRoutes(), "waiting", { unfinished: 2, no_worker: true });
     routes["POST /api/v1/projects/foreman/agent/start"] = reply(400, {
-      error: "No active or planned sprint. Add a sprint to the queue before running.",
-      code: "invalid_request",
+      error: "Could not start a resident engine for foreman: no space left.",
+      code: "action_failed",
     });
     const { fetchImpl } = await renderProject("/dashboard/projects/foreman", routes);
-    const row = engineSection();
-    expect(within(row).getByText("Not running")).toBeInTheDocument();
-    expect(
-      within(row).getByText("Nothing is being worked on."),
-    ).toBeInTheDocument();
-    expect(within(row).getByRole("button", { name: "Pause" })).toBeDisabled();
-    expect(within(row).getByRole("button", { name: "Stop" })).toBeDisabled();
-
-    fireEvent.click(within(row).getByRole("button", { name: "Start" }));
-    expect(await within(row).findByRole("alert")).toHaveTextContent(
-      "No active or planned sprint. Add a sprint to the queue before running.",
-    );
-    expect(calls(fetchImpl, "POST", "/api/v1/projects/foreman/agent/start")).toHaveLength(1);
+    const row = workSection();
+    expect(within(row).getByText("Waiting · no worker")).toBeInTheDocument();
+    fireEvent.click(within(row).getByRole("button", { name: "Start worker" }));
+    expect(await within(row).findByRole("alert")).toHaveTextContent("Could not start a resident engine for foreman: no space left.");
+    expect(calls(fetchImpl, "POST", "/api/v1/projects/foreman/agent/start").map((call) => call.body)).toEqual([{}]);
   });
 
-  it("offers Resume in place of Pause while paused", async () => {
-    const routes = withEngine(projectRoutes(), "paused", { id: "task-x", task_key: "FOR-13", title: "x", step: "develop" });
-    routes["POST /api/v1/projects/foreman/agent/start"] = { started: true };
-    const { fetchImpl } = await renderProject("/dashboard/projects/foreman", routes);
-    const row = engineSection();
-    expect(within(row).getByText("Paused")).toBeInTheDocument();
-    expect(within(row).getByText(/^Paused\. Nothing new starts/)).toHaveTextContent(
-      "Paused. Nothing new starts until it is resumed; FOR-13 resumes from develop.",
-    );
-    expect(within(row).queryByRole("button", { name: "Pause" })).toBeNull();
-    expect(within(row).getByRole("button", { name: "Start" })).toBeDisabled();
-    expect(within(row).getByRole("button", { name: "Stop" })).toBeEnabled();
-    fireEvent.click(within(row).getByRole("button", { name: "Resume" }));
-    expect(await screen.findByText(/^Resume requested\./)).toBeInTheDocument();
-    expect(calls(fetchImpl, "POST", "/api/v1/projects/foreman/agent/start")).toHaveLength(1);
-  });
-
-  it("shows a refused stop's sentence", async () => {
+  it("says Not started with no controls when no sprint is active", async () => {
     const routes = projectRoutes();
-    routes["POST /api/v1/projects/foreman/engine/commands"] = reply(400, {
-      error: "The engine for foreman is not running, so there is nothing to stop.",
+    const payload = workspacePayload();
+    payload.projects[0].active_sprint = null;
+    payload.projects[0].work = work("not_started");
+    routes["GET /api/v1/workspace"] = payload;
+    await renderProject("/dashboard/projects/foreman", routes);
+    const row = workSection();
+    expect(within(row).getByText("Not started")).toBeInTheDocument();
+    expect(within(row).queryAllByRole("button")).toEqual([]);
+  });
+
+  it("shows a refused pause's sentence where the controls are", async () => {
+    const routes = projectRoutes();
+    routes["POST /api/v1/sprints/sprint-56/pause"] = reply(400, {
+      error: "Nothing in sprint 'Sprint 56' can be paused.",
       code: "invalid_request",
     });
     await renderProject("/dashboard/projects/foreman", routes);
-    fireEvent.click(within(engineSection()).getByRole("button", { name: "Stop" }));
-    expect(await within(engineSection()).findByRole("alert")).toHaveTextContent(
-      "The engine for foreman is not running, so there is nothing to stop.",
-    );
+    fireEvent.click(within(workSection()).getByRole("button", { name: "Pause" }));
+    expect(await within(workSection()).findByRole("alert")).toHaveTextContent("Nothing in sprint 'Sprint 56' can be paused.");
   });
 });
 
@@ -229,6 +201,36 @@ describe("Needs you on the project page", () => {
     expect(within(needsYou).queryByText("FOR-205")).toBeNull();
     fireEvent.click(within(needsYou).getByRole("button", { name: "Show all 8" }));
     expect(await within(needsYou).findByText("FOR-207")).toBeInTheDocument();
+  });
+
+  it("lists a blocked sprint with its reason, and unblocks it from its row", async () => {
+    const routes = projectRoutes();
+    routes[PROJECT_NEEDS_YOU_URL] = {
+      items: [
+        {
+          kind: "unblock_sprint",
+          project_id: "foreman",
+          project_name: "Foreman",
+          sprint_id: "sprint-56",
+          sprint_title: "Sprint 56: engine truthfulness",
+          task_id: null,
+          task_key: null,
+          task_title: null,
+          since: on("11-10"),
+          blocked: { reason: "waiting for the design", by: "ana" },
+        },
+      ],
+      total: 1,
+    };
+    routes["POST /api/v1/sprints/sprint-56/unblock"] = { unblocked: { reason: "waiting for the design" } };
+    const { fetchImpl } = await renderProject("/dashboard/projects/foreman", routes);
+    const needsYou = screen.getByRole("region", { name: /Needs you/ });
+    const row = (await within(needsYou).findByText("Blocked sprint")).closest("tr");
+    expect(row).toHaveTextContent("waiting for the design");
+    expect(within(row).getByRole("link", { name: "Sprint 56: engine truthfulness" })).toHaveAttribute("href", "/dashboard/sprints/sprint-56");
+    fireEvent.click(within(row).getByRole("button", { name: "Unblock Sprint 56: engine truthfulness" }));
+    expect(await screen.findByText("Unblocked Sprint 56: engine truthfulness.")).toBeInTheDocument();
+    expect(calls(fetchImpl, "POST", "/api/v1/sprints/sprint-56/unblock")).toHaveLength(1);
   });
 
   it("unblocks a blocked task from its row, and says a refusal", async () => {
@@ -524,7 +526,7 @@ describe("the Activity tab", () => {
   const sprintKinds = ["sprint_started", "sprint_finished", "plan_confirmed"];
   const cells = (row) => within(row).getAllByRole("cell").map((cell) => cell.textContent.replace(CLOCK, ""));
 
-  it("is one line per row: when, the sprint or the engine, what happened, who", async () => {
+  it("is one line per row: when, the sprint, the workspace or the worker, what happened, who", async () => {
     const routes = projectRoutes();
     routes[milestonesUrl()] = {
       milestones: [
@@ -535,8 +537,9 @@ describe("the Activity tab", () => {
         milestone("sprint_started", { sprint_id: "sprint-54", sprint_title: "Sprint 54" }),
         // Started from the dashboard: Foreman recorded the channel, not a name.
         milestone("engine_started", { actor: "dashboard" }),
+        milestone("work_blocked", { sprint_title: "Workspace", actor: "ana", detail: "release freeze" }),
       ],
-      total: 6,
+      total: 7,
     };
     await renderProject("/dashboard/projects/foreman/activity", routes);
     const table = await screen.findByRole("table", { name: "Activity" });
@@ -549,13 +552,15 @@ describe("the Activity tab", () => {
     ]);
     const rows = within(table).getAllByRole("row").slice(1);
     expect(rows.map(cells)).toEqual([
-      ["11 Nov", "Engine", "", "Died", ""],
-      ["11 Nov", "Engine", "", "Stopped", "ana"],
+      ["11 Nov", "Worker", "", "Died", ""],
+      ["11 Nov", "Worker", "", "Stopped", "ana"],
       ["11 Nov", "Sprint 55", "baseline", "Finished", ""],
       ["11 Nov", "Sprint 57", "structure", "Plan confirmed", "masis"],
       ["11 Nov", "Sprint 54", "", "Started", ""],
-      ["11 Nov", "Engine", "", "Started", "a user"],
+      ["11 Nov", "Worker", "", "Started", "a user"],
+      ["11 Nov", "Workspace", "", "Blocked", "ana"],
     ]);
+    expect(within(rows[6]).getByText("Blocked")).toHaveAttribute("title", "release freeze");
     // Why is on hover, never under the row.
     expect(within(rows[2]).getByText("Finished")).toHaveAttribute("title", "3 tasks merged");
     expect(within(rows[3]).getByText("Plan confirmed")).toHaveAttribute("title", "Eight tasks reach the goal.");
@@ -598,12 +603,12 @@ describe("the Activity tab", () => {
     );
   });
 
-  it("shows the project's sprint and engine events newest first", async () => {
+  it("shows the project's sprint and worker events newest first", async () => {
     await renderProject("/dashboard/projects/foreman/activity");
     const table = await screen.findByRole("table", { name: "Activity" });
     expect(within(table).getAllByRole("row").slice(1).map((row) => cells(row).slice(1, 5))).toEqual([
       ["Sprint 56", "engine truthfulness", "Started", ""],
-      ["Engine", "", "Stopped", "ana"],
+      ["Worker", "", "Stopped", "ana"],
     ]);
     expect(within(table).getByRole("link", { name: "engine truthfulness" })).toHaveAttribute(
       "href",
@@ -645,7 +650,12 @@ describe("the Activity tab", () => {
     expect(filters.closest(".tabs")).toContainElement(screen.getByRole("navigation", { name: "Project" }));
     expect(screen.queryByRole("heading", { level: 2, name: "Sprints and engine" })).toBeNull();
     expect(screen.queryByRole("button", { name: "New sprint" })).toBeNull();
-    expect(within(filters).getAllByRole("button").map((button) => button.textContent)).toEqual(["All", "Sprints", "Engine"]);
+    expect(within(filters).getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "All",
+      "Sprints",
+      "Pauses and blocks",
+      "Worker",
+    ]);
     expect(within(filters).getByRole("button", { name: "All" })).toHaveAttribute("aria-pressed", "true");
 
     fireEvent.click(within(filters).getByRole("button", { name: "Sprints" }));
@@ -653,8 +663,8 @@ describe("the Activity tab", () => {
     expect(within(filters).getByRole("button", { name: "Sprints" })).toHaveAttribute("aria-pressed", "true");
     expect(calls(fetchImpl, "GET", milestonesUrl({ kinds: sprintKinds }).slice(4))).toHaveLength(1);
 
-    fireEvent.click(within(filters).getByRole("button", { name: "Engine" }));
-    expect(await screen.findByText("The engine has not started yet.")).toBeInTheDocument();
+    fireEvent.click(within(filters).getByRole("button", { name: "Worker" }));
+    expect(await screen.findByText("No worker has run yet.")).toBeInTheDocument();
   });
 });
 

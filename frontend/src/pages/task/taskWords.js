@@ -1,4 +1,5 @@
 import { ENGINE_STATES } from "../../api/workspace";
+import { holdStage } from "../sprint/taskStage";
 import { formatDuration, humanize, plural, shortSha } from "../../ui/format";
 import { FOREMAN, outcomeTone, outcomeWord, runResult, runRole, runTook, SENT_BACK, stepOutcome, testCountWords, testRunSentence } from "../shared/activityWords";
 
@@ -147,20 +148,19 @@ export function stepRows(task, workflow, engine = null) {
     } else if (here && task.status === "blocked") {
       result = { tone: "attention", word: "Blocked here" };
     } else if (here && task.status === "in_progress") {
-      // Running only while the project's engine is on this task. Otherwise it
-      // waits for its turn, unless no engine runs (the same rule as the
-      // task's stage).
+      // The same rule as the task's stage: a user's hold first (ADR-0043),
+      // then Running while a step of it runs, else waiting for its turn.
       const onIt = engine?.task_id === task.id;
       const why = sentBackWhy(runs, step.id);
+      const held = holdStage(task);
       let word;
-      if (onIt && engine.state === ENGINE_STATES.running) result = { tone: "running", word: "Running" };
+      if (held) result = { tone: held.tone, word: `${held.word} here`, title: held.title };
+      else if (task.step_running || (onIt && engine.state === ENGINE_STATES.running)) result = { tone: "running", word: "Running" };
       else {
-        if (task.run_next) word = "Runs next";
-        else if (engine?.state === ENGINE_STATES.paused) word = "Paused here";
-        else if (engine?.state === ENGINE_STATES.running) word = "Waiting here";
-        else word = "Stopped here";
+        word = task.run_next ? "Runs next" : "Waiting here";
         const after = engine?.task_key || engine?.task_id;
-        const title = !task.run_next && word === "Waiting here" && after ? `The engine runs it after ${after}` : "";
+        const noWorker = engine && engine.state !== ENGINE_STATES.running;
+        const title = task.run_next ? "" : noWorker ? "No worker runs this project." : after ? `Foreman runs it after ${after}` : "";
         result = { tone: "idle", word: why ? `${word} · ${lowerFirst(why)}` : word, title };
       }
     } else if (last && stepOutcome(last).word === "Approved by setting") {

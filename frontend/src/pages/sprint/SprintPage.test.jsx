@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { cleanup as cleanupApp, fireEvent, screen, waitFor, within } from "@testing-library/react";
 
 import { createFakeFetch, renderApp, reply } from "../../testing/fakeApi";
 import { backlogTask } from "../../testing/projectFixture";
@@ -16,7 +16,7 @@ import {
   TASKS,
   taskPayload,
 } from "../../testing/sprintFixture";
-import { engine, workspacePayload } from "../../testing/workspaceFixture";
+import { engine, work, workspacePayload } from "../../testing/workspaceFixture";
 
 async function renderSprint(path = "/dashboard/sprints/sprint-56", routes = sprintRoutes()) {
   const fetchImpl = createFakeFetch(routes);
@@ -112,7 +112,7 @@ describe("the list", () => {
     expect(row).toHaveTextContent("tests · review · b232eb1");
     expect(within(row).getByText("12")).toBeInTheDocument();
     expect(within(row).getByText("$0.72")).toHaveClass("mono");
-    // The fixture's engine is on another task, so FOR-13 is not running.
+    // No step of FOR-13 runs: it waits its turn.
     expect(await within(screen.getByText("FOR-13").closest("tr")).findByText("Waiting · Test")).toBeInTheDocument();
     expect(within(screen.getByText("FOR-17").closest("tr")).getByText("Queued")).toBeInTheDocument();
     expect(within(screen.getByText("FOR-10").closest("tr")).getByText("Done")).toBeInTheDocument();
@@ -136,23 +136,37 @@ describe("the list", () => {
     expect(within(screen.getByText("FOR-2").closest("tr")).getByText("Blocked")).toBeInTheDocument();
   });
 
-  it("says a task is running only while the engine is on it", async () => {
-    const expectStage = async (state, task, words) => {
-      const routes = sprintRoutes();
-      const workspace = workspacePayload();
-      workspace.projects[0].engine = engine(state, task);
-      routes["GET /api/v1/workspace"] = workspace;
-      const view = await renderSprint("/dashboard/sprints/sprint-56", routes);
-      expect(await within(screen.getByText("FOR-13").closest("tr")).findByText(words)).toBeInTheDocument();
-      view.unmount();
-    };
-    const onIt = { id: "t-run", task_key: "FOR-13", title: "x", step: "test" };
-    await expectStage("running", onIt, "Running · Test");
-    await expectStage("paused", onIt, "Paused · Test");
-    await expectStage("not_running", null, "Stopped · Test");
+  it("says a task is running while a step of it runs, and what a user's hold makes of it", async () => {
+    const at = "2026-11-02T14:02:00Z";
+    const routes = sprintRoutes({
+      tasks: [
+        taskPayload("t1", "FOR-1", "in_progress", { workflow_current_step: "develop", step_running: true }),
+        taskPayload("t2", "FOR-2", "in_progress", {
+          workflow_current_step: "develop", step_running: true, hold: { scope: "task", kind: "pause", mode: "finish_step", by: "ana", at },
+        }),
+        taskPayload("t3", "FOR-3", "in_progress", {
+          workflow_current_step: "test", hold: { scope: "task", kind: "pause", mode: "now", by: "ana", at },
+        }),
+        taskPayload("t4", "FOR-4", "todo", { hold: { scope: "sprint", kind: "block", mode: "finish_step", by: "ana", at, reason: "design review" } }),
+        taskPayload("t5", "FOR-5", "todo", { waits_for: ["FOR-1"] }),
+      ],
+    });
+    await renderSprint("/dashboard/sprints/sprint-56", routes);
+    const stage = (key) => within(screen.getByText(key).closest("tr"));
+    expect(await stage("FOR-1").findByText("Running · Develop")).toBeInTheDocument();
+    expect(stage("FOR-2").getByText("Pausing · Develop")).toBeInTheDocument();
+    expect(stage("FOR-3").getByText("Stopped · Test").closest("[title]")).toHaveAttribute(
+      "title",
+      "Stopped by ana at 2 Nov; the cut step runs again on Resume.",
+    );
+    expect(stage("FOR-4").getByText("Blocked").closest("[title]")).toHaveAttribute(
+      "title",
+      "The sprint is blocked: design review",
+    );
+    expect(stage("FOR-5").getByText("Waiting · FOR-1")).toBeInTheDocument();
   });
 
-  it("says Waiting with the engine on another task, Runs next when asked, and Stopped with no engine", async () => {
+  it("says Waiting with another task running, Runs next when asked, and that no worker runs", async () => {
     const routes = sprintRoutes({
       tasks: [
         taskPayload("t1", "FOR-1", "in_progress", { workflow_current_step: "develop" }),
@@ -165,7 +179,7 @@ describe("the list", () => {
     routes["GET /api/v1/workspace"] = workspace;
     await renderSprint("/dashboard/sprints/sprint-56", routes);
     const waiting = await screen.findByText("Waiting · Develop");
-    expect(waiting.closest("[title]")).toHaveAttribute("title", "The engine runs it after FOR-53");
+    expect(waiting.closest("[title]")).toHaveAttribute("title", "Foreman runs it after FOR-53");
     expect(within(screen.getByText("FOR-2").closest("tr")).getByText("Runs next · Develop")).toBeInTheDocument();
     expect(within(screen.getByText("FOR-3").closest("tr")).getByText("Runs next")).toBeInTheDocument();
   });
@@ -180,7 +194,7 @@ describe("the list", () => {
     await waitFor(() => expect(calls(fetchImpl, "POST", "/api/v1/tasks/t-merge/approve")).toHaveLength(1));
     await waitFor(() => expect(calls(fetchImpl, "GET", "/api/v1/sprints/sprint-56").length).toBeGreaterThan(before));
     const toast = await screen.findByRole("status");
-    expect(toast).toHaveTextContent("Approved FOR-14. It waits at Merge until the engine is started.");
+    expect(toast).toHaveTextContent("Approved FOR-14. It waits at Merge until a worker runs.");
     // A passing note in the corner: nothing is added between the tabs and the table.
     const table = screen.getByText("FOR-14").closest("table");
     const tab = table.closest(".sprint__tab");
@@ -324,7 +338,7 @@ describe("edit and the state action", () => {
     const routes = sprintRoutes();
     routes["PATCH /api/v1/sprints/sprint-56"] = { id: "sprint-56", status: "completed" };
     const { fetchImpl } = await renderSprint("/dashboard/sprints/sprint-56", routes);
-    expect(screen.queryByRole("button", { name: "Activate sprint" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Start sprint" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Finish sprint" }));
     await waitFor(() => expect(calls(fetchImpl, "PATCH", "/api/v1/sprints/sprint-56")[0].body).toEqual({ status: "completed" }));
   });
@@ -340,13 +354,13 @@ describe("edit and the state action", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Sprint cannot be completed while unresolved tasks remain: FOR-14.");
   });
 
-  it("activates a planned sprint and offers no Finish", async () => {
+  it("starts a planned sprint and offers no Finish", async () => {
     const routes = sprintRoutes({ sprint: sprintPayload({ status: "planned", started_at: null }) });
     routes["PATCH /api/v1/sprints/sprint-56"] = { id: "sprint-56", status: "active" };
     const { fetchImpl } = await renderSprint("/dashboard/sprints/sprint-56", routes);
     expect(screen.getByText("Planned, not started")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Finish sprint" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Activate sprint" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start sprint" }));
     await waitFor(() => expect(calls(fetchImpl, "PATCH", "/api/v1/sprints/sprint-56")[0].body).toEqual({ status: "active" }));
   });
 
@@ -640,56 +654,62 @@ describe("activity", () => {
   });
 });
 
-describe("the engine menu in the top bar", () => {
-  function routesWithEngine(state, task = null) {
+describe("the work menu in the top bar", () => {
+  function routesWithWork(state, fields = {}) {
     const routes = sprintRoutes();
     const payload = workspacePayload();
-    payload.projects[0].engine = engine(state, task);
+    payload.projects[0].work = work(state, fields);
     routes["GET /api/v1/workspace"] = payload;
     return routes;
   }
 
-  it("holds Pause and Stop while the engine runs, and sends the same commands as the project page", async () => {
-    const routes = routesWithEngine("running", { id: "task-x", task_key: "FOR-13", title: "A task", step: "develop" });
-    routes["POST /api/v1/projects/foreman/agent/stop"] = { command: {} };
-    routes["POST /api/v1/projects/foreman/engine/commands"] = { command: {} };
+  it("holds Pause and Stop while a step runs, for the active sprint", async () => {
+    const routes = routesWithWork("working", { task_key: "FOR-13", step: "develop", unfinished: 3, step_running: true });
+    routes["POST /api/v1/sprints/sprint-56/pause"] = { task_keys: ["FOR-13"] };
+    routes["POST /api/v1/sprints/sprint-56/stop"] = { task_keys: ["FOR-13"] };
     const { fetchImpl } = await renderSprint("/dashboard/sprints/sprint-56", routes);
-    const trigger = await screen.findByRole("button", { name: /^Engine: running/ });
+    const trigger = await screen.findByRole("button", { name: /^Work: Working · FOR-13 Develop/ });
     fireEvent.click(trigger);
     expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Pause", "Stop"]);
     fireEvent.click(screen.getByRole("menuitem", { name: "Pause" }));
-    await waitFor(() => expect(calls(fetchImpl, "POST", "/api/v1/projects/foreman/agent/stop")).toHaveLength(1));
-    fireEvent.click(screen.getByRole("button", { name: /^Engine: running/ }));
+    await waitFor(() => expect(calls(fetchImpl, "POST", "/api/v1/sprints/sprint-56/pause")).toHaveLength(1));
+    fireEvent.click(screen.getByRole("button", { name: /^Work: / }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Stop" }));
-    await waitFor(() => expect(calls(fetchImpl, "POST", "/api/v1/projects/foreman/engine/commands")[0].body).toEqual({ command: "shutdown" }));
+    await waitFor(() => expect(calls(fetchImpl, "POST", "/api/v1/sprints/sprint-56/stop")).toHaveLength(1));
   });
 
-  it("reads waiting, and offers nothing, when the engine is up with no active sprint", async () => {
-    const routes = routesWithEngine("running");
+  it("offers nothing when no sprint is active", async () => {
+    const routes = routesWithWork("not_started");
     routes["GET /api/v1/workspace"].projects[0].active_sprint = null;
     await renderSprint("/dashboard/sprints/sprint-56", routes);
-    const trigger = await screen.findByRole("button", { name: /^Engine: waiting/ });
-    expect(trigger).toBeDisabled();
+    expect(await screen.findByRole("button", { name: /^Work: Not started/ })).toBeDisabled();
   });
 
-  it("holds only Start when the engine is not running", async () => {
-    await renderSprint("/dashboard/sprints/sprint-56", routesWithEngine("not_running"));
-    fireEvent.click(await screen.findByRole("button", { name: /^Engine: not running/ }));
-    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Start"]);
+  it("holds Resume when everything is paused, and Start worker when none runs", async () => {
+    await renderSprint(
+      "/dashboard/sprints/sprint-56",
+      routesWithWork("paused", { paused: 3, unfinished: 3, at: "2026-11-02T14:02:00Z", no_worker: false }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: /^Work: Paused/ }));
+    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Resume"]);
   });
 
-  it("holds Resume and Stop when the engine is paused", async () => {
-    await renderSprint("/dashboard/sprints/sprint-56", routesWithEngine("paused"));
-    fireEvent.click(await screen.findByRole("button", { name: /^Engine: paused/ }));
-    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Resume", "Stop"]);
+  it("holds Unblock for a blocked sprint", async () => {
+    await renderSprint(
+      "/dashboard/sprints/sprint-56",
+      routesWithWork("blocked", { scope: "sprint", reason: "design review", at: "2026-11-02T14:02:00Z", unfinished: 2 }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: /^Work: Blocked/ }));
+    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Unblock"]);
   });
 
-  it("shows the API's sentence when a command is refused", async () => {
-    const routes = routesWithEngine("not_running");
+  it("shows the API's sentence when an action is refused", async () => {
+    const routes = routesWithWork("waiting", { unfinished: 2, no_worker: true });
     routes["POST /api/v1/projects/foreman/agent/start"] = reply(409, { error: "Another engine holds the lock.", code: "conflict" });
     await renderSprint("/dashboard/sprints/sprint-56", routes);
-    fireEvent.click(await screen.findByRole("button", { name: /^Engine: not running/ }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Start" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Work: Waiting · no worker/ }));
+    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Pause", "Start worker"]);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Start worker" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Another engine holds the lock.");
   });
 });
@@ -700,6 +720,54 @@ describe("when the sprint cannot be read", () => {
     renderApp("/dashboard/sprints/sprint-56", fetchImpl);
     expect(await screen.findByText("This sprint could not be shown")).toBeInTheDocument();
     expect(screen.getByRole("alert")).toHaveTextContent("Sprint not found: sprint-56");
+  });
+});
+
+describe("the sprint's own holds (ADR-0043)", () => {
+  it("shows its work in Details and Pause and Stop beside its title", async () => {
+    const routes = sprintRoutes({
+      sprint: sprintPayload({ work: work("working", { task_key: "FOR-13", step: "test", unfinished: 4, step_running: true }) }),
+    });
+    routes["POST /api/v1/sprints/sprint-56/pause"] = { task_keys: ["FOR-13"] };
+    const { fetchImpl } = await renderSprint("/dashboard/sprints/sprint-56", routes);
+    const details = screen.getByRole("region", { name: "Details" });
+    expect(within(details).getByText("Working · FOR-13 Test")).toBeInTheDocument();
+    const actions = document.querySelector(".sprint__actions");
+    expect([...actions.querySelectorAll(":scope > .hold-controls > button")].map((button) => button.textContent)).toEqual([
+      "Pause",
+      "Stop",
+    ]);
+    fireEvent.click(within(actions).getByRole("button", { name: "Pause" }));
+    expect(await screen.findByText("Paused FOR-13.")).toBeInTheDocument();
+    expect(calls(fetchImpl, "POST", "/api/v1/sprints/sprint-56/pause")).toHaveLength(1);
+  });
+
+  it("is blocked from More, with a reason, and unblocked beside its title", async () => {
+    const routes = sprintRoutes({ sprint: sprintPayload({ work: work("waiting", { unfinished: 4 }) }) });
+    routes["POST /api/v1/sprints/sprint-56/block"] = { block: { reason: "design review" } };
+    const { fetchImpl } = await renderSprint("/dashboard/sprints/sprint-56", routes);
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Block sprint" }));
+    const dialog = screen.getByRole("dialog", { name: "Block this sprint" });
+    expect(dialog).toHaveTextContent("the next sprint does not start");
+    fireEvent.change(within(dialog).getByLabelText("Why it is blocked"), { target: { value: "design review" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Block sprint" }));
+    await waitFor(() => expect(calls(fetchImpl, "POST", "/api/v1/sprints/sprint-56/block")[0].body).toEqual({ reason: "design review" }));
+
+    const blocked = sprintRoutes({
+      sprint: sprintPayload({
+        block: { scope: "sprint", reason: "design review", by: "ana", at: "2026-11-02T14:02:00Z" },
+        work: work("blocked", { scope: "sprint", reason: "design review", by: "ana", at: "2026-11-02T14:02:00Z", unfinished: 4 }),
+      }),
+    });
+    blocked["POST /api/v1/sprints/sprint-56/unblock"] = { unblocked: { reason: "design review" } };
+    cleanupApp();
+    const second = await renderSprint("/dashboard/sprints/sprint-56", blocked);
+    const actions = document.querySelector(".sprint__actions");
+    fireEvent.click(within(actions).getByRole("button", { name: "Unblock" }));
+    await waitFor(() => expect(calls(second.fetchImpl, "POST", "/api/v1/sprints/sprint-56/unblock")).toHaveLength(1));
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    expect(screen.queryByRole("menuitem", { name: "Block sprint" })).toBeNull();
   });
 });
 

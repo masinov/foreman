@@ -9,13 +9,11 @@ import { Icon } from "../../ui/Icon";
 import { Mono } from "../../ui/Mono";
 import { Tabs } from "../../ui/Tabs";
 import { NeedsYou } from "../shared/NeedsYou";
-import { activeSprintIsEmpty } from "../shared/words";
-import { EngineRow } from "./EngineRow";
+import { WorkRow } from "./WorkRow";
 
 import "../../styles/lists.css";
 import "../../styles/project.css";
 
-/** True when the project has an active sprint with no tasks in it at all. */
 function TitleRow({ projectId, project }) {
   // Where the project lives, which branch it lands on, how it works: each
   // with the icon that says which is which.
@@ -68,9 +66,9 @@ function TitleRow({ projectId, project }) {
 
 /**
  * Everything above the tabs of a project page, the same on every tab
- * (docs/design/dashboard-v7/02, 09 and 11): title row, engine, Needs you and
- * the tabs. `children(revision, changed, { tabLine, queue })` is the tab; `revision` grows whenever
- * something changed the project (an engine command, an approval, or the tab
+ * (docs/design/dashboard-v7/02, 09 and 11): title row, the work's status and
+ * controls, Needs you and the tabs. `children(revision, changed, { tabLine, queue })`
+ * is the tab; `revision` grows whenever something changed the project (a hold, an approval, or the tab
  * itself calling `changed()`), so the tab can reload what it shows and the
  * head and tab counts are read again.
  */
@@ -133,13 +131,7 @@ export function ProjectLayout({ projectId, children }) {
             {workspace.error}
           </p>
         ) : null}
-        <EngineRow
-          projectId={projectId}
-          engine={project?.engine ?? null}
-          emptySprint={activeSprintIsEmpty(project)}
-          noSprint={Boolean(project) && !project.active_sprint}
-          onChanged={changed}
-        />
+        <WorkRow projectId={projectId} project={project} onChanged={changed} />
       </div>
       <NeedsYou
         projectId={projectId}

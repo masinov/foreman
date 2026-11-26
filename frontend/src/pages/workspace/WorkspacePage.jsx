@@ -11,6 +11,7 @@ import { MilestoneTable } from "../shared/milestones";
 import { NeedsYou } from "../shared/NeedsYou";
 import { AddProjectDialog } from "./AddProjectDialog";
 import { ProjectsTable } from "./ProjectsTable";
+import { WorkspaceHoldControls } from "./WorkspaceHoldControls";
 
 import "../../styles/lists.css";
 import "../../styles/workspace.css";
@@ -46,9 +47,16 @@ export function WorkspacePage() {
           id="projects-title"
           title="Projects"
           actions={
-            <Button icon="plus" onClick={() => setAdding(true)}>
-              Add project
-            </Button>
+            <>
+              <WorkspaceHoldControls
+                projects={workspace.data?.projects}
+                block={workspace.data?.block ?? null}
+                onChanged={workspace.reload}
+              />
+              <Button icon="plus" onClick={() => setAdding(true)}>
+                Add project
+              </Button>
+            </>
           }
         />
         {workspace.error ? (
@@ -70,7 +78,7 @@ export function WorkspacePage() {
         ) : null}
         {recentPlaceholder ? <MilestoneTable caption="Recent milestones" showProject placeholderRows={3} /> : null}
         {recent.data && recent.data.items.length === 0 ? (
-          <p className="empty">Nothing has happened yet. Sprints starting and finishing and the engine stopping appear here.</p>
+          <p className="empty">Nothing has happened yet. Sprints starting and finishing appear here.</p>
         ) : null}
         {recent.data && recent.data.items.length > 0 ? (
           <MilestoneTable caption="Recent milestones" items={recent.data.items} showProject />

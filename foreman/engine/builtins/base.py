@@ -100,8 +100,14 @@ class BuiltinExecutorBase:
         event_recorder: Callable[[BuiltinEventRecord], None] | None = None,
         evidence_builder: Callable[[Task, Project], CompletionEvidence | None] | None = None,
         working_dir: Path | None = None,
+        interrupt_poll: Callable[[], None] | None = None,
     ) -> BuiltinResult:
         """Dispatch one built-in role by identifier.
+
+        ``interrupt_poll`` is called every few seconds while the tests run;
+        it raises to stop them (a user's Stop, an engine command), and the
+        test processes are killed on the way out. A merge is never cut: half
+        a merge is worse than waiting for it (ADR-0043).
 
         ``evidence_builder`` lets the orchestrator supply its own completion
         evidence builder, so the merge guard sees the same role definitions
@@ -119,6 +125,7 @@ class BuiltinExecutorBase:
                 project=project,
                 working_dir=task_dir,
                 event_recorder=event_recorder,
+                interrupt_poll=interrupt_poll,
             )
         if role_id == "_builtin:context_write":
             return self._context_write(

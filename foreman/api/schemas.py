@@ -65,6 +65,18 @@ class EngineCommandBody(RequestedBy):
     command: str = ""
 
 
+class HoldPause(RequestedBy):
+    """A Pause: ``finish_step`` lets the running step end, ``now`` cuts it (Stop)."""
+
+    mode: str | None = None
+
+
+class HoldBlock(RequestedBy):
+    """A Block of a sprint or the workspace, with the reason (required)."""
+
+    reason: str = ""
+
+
 class AgentStart(RequestedBy):
     task_id: str | None = None
 

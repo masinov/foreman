@@ -217,7 +217,10 @@ class SprintStore(StoreBase):
             for task_id in task_ids:
                 cursor = self._connection.execute(
                     f"""
-                    UPDATE tasks SET sprint_id = ?, order_index = ?
+                    UPDATE tasks SET sprint_id = ?, order_index = ?,
+                        -- A hold does not move with the task (ADR-0043).
+                        paused_at = NULL, paused_by = NULL, pause_mode = NULL,
+                        block_requested = NULL
                     WHERE id = ? AND sprint_id = ? AND status IN ({status_marks})
                     """,
                     (to_sprint_id, next_index, task_id, from_sprint_id, *from_statuses),

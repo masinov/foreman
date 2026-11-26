@@ -4,8 +4,64 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..domain.holds import Hold, LevelBlock, task_hold
 from ..domain.models import Event, Task
 from ..engine.control import EngineStateView
+from ..store import ForemanStore
+
+
+def serialize_level_block(block: LevelBlock | None) -> dict[str, Any] | None:
+    """A block on a sprint or the workspace (ADR-0043), or None."""
+
+    if block is None:
+        return None
+    return {
+        "scope": block.scope,
+        "scope_id": block.scope_id,
+        "reason": block.reason,
+        "by": block.set_by,
+        "at": block.set_at,
+    }
+
+
+def serialize_hold(hold: Hold | None) -> dict[str, Any] | None:
+    """What keeps a task from its next step (ADR-0043), or None."""
+
+    if hold is None:
+        return None
+    return {
+        "scope": hold.scope,
+        "kind": hold.kind,
+        "mode": hold.mode,
+        "by": hold.by,
+        "at": hold.at,
+        "reason": hold.reason,
+    }
+
+
+class HoldReader:
+    """Reads the blocks above tasks once, for a page of tasks."""
+
+    def __init__(self, store: ForemanStore) -> None:
+        self.store = store
+        self.workspace_block = store.get_workspace_block()
+        self._sprint_blocks: dict[str, LevelBlock | None] = {}
+
+    def sprint_block(self, sprint_id: str | None) -> LevelBlock | None:
+        if not sprint_id:
+            return None
+        if sprint_id not in self._sprint_blocks:
+            self._sprint_blocks[sprint_id] = self.store.get_sprint_block(sprint_id)
+        return self._sprint_blocks[sprint_id]
+
+    def hold(self, task: Task) -> dict[str, Any] | None:
+        return serialize_hold(
+            task_hold(
+                task,
+                sprint_block=self.sprint_block(task.sprint_id),
+                workspace_block=self.workspace_block,
+            )
+        )
 
 
 def serialize_engine_state(engine: EngineStateView) -> dict[str, Any]:
@@ -14,7 +70,6 @@ def serialize_engine_state(engine: EngineStateView) -> dict[str, Any]:
     task = engine.current_task
     return {
         "resident": engine.resident,
-        "paused": engine.paused,
         "state": engine.state,
         "holder_id": engine.holder_id,
         "heartbeat_age_seconds": engine.heartbeat_age_seconds,
@@ -71,3 +126,25 @@ def task_filed_from(store: Any, events: list[Event]) -> dict[str, Any] | None:
             "exists": origin is not None,
         }
     return None
+
+
+def waits_for(store: ForemanStore, task: Task) -> list[str]:
+    """The keys of the unfinished tasks ``task`` waits for, in its order."""
+
+    keys: list[str] = []
+    for dependency_id in task.depends_on_task_ids or []:
+        dependency = store.get_task(dependency_id)
+        if dependency is None or dependency.status == "done":
+            continue
+        keys.append(dependency.task_key or dependency.id)
+    return keys
+
+
+def needed_by(store: ForemanStore, task: Task) -> list[dict[str, Any]]:
+    """The tasks of its sprint that wait for ``task``: what holding it holds."""
+
+    return [
+        {"id": other.id, "task_key": other.task_key, "title": other.title, "status": other.status}
+        for other in store.list_tasks(sprint_id=task.sprint_id)
+        if task.id in (other.depends_on_task_ids or [])
+    ]

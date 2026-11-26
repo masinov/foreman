@@ -1,42 +1,63 @@
 import React, { useState } from "react";
 
 import { useApiClient } from "../../api/ApiProvider";
+import { errorSentence } from "../../api/client";
 import { runTaskNext } from "../../api/engine";
 import { declineTask } from "../../api/backlog";
-import { blockTask, deleteTask, reopenTask, stopTask } from "../../api/tasks";
-import { ENGINE_STATES } from "../../api/workspace";
+import { pauseTask, resumeTask, stopTask } from "../../api/holds";
+import { blockTask, deleteTask, reopenTask, unblockTask } from "../../api/tasks";
 import { askManager, splitTaskRequest } from "../../app/managerRequests";
 import { paths } from "../../app/paths";
 import { useNavigate } from "../../app/router";
 import { Button } from "../../ui/Button";
 import { Menu } from "../../ui/Menu";
 import { ReasonDialog } from "../shared/ReasonDialog";
-import { useProjectEngine } from "../shared/useProjectEngine";
 import { CloseTaskDialog } from "./CloseTaskDialog";
 
 /**
  * What a person can do to a task besides answering its question, each with
  * what will happen in words. `done` is the sentence shown once the API
  * accepted it. Closing a task has its own dialog (`CloseTaskDialog`).
+ * Actions marked `direct` act at once, with no dialog: Pause, Stop and Resume
+ * are undone by one another (ADR-0043), and Run next only changes the order.
  */
 export const TASK_ACTIONS = {
   run: {
     label: "Run next",
-    title: "Run this task next",
-    effect: "The project's engine is asked to run this task before any other. If no engine is running, one is started.",
-    confirm: "Run next",
-    doing: "Asking…",
+    direct: true,
     run: (client, task) => runTaskNext(client, task.project_id, task.id),
-    done: "Requested. The task starts when the engine picks the request up.",
+    done: (task) => `${task.task_key || "The task"} runs next.`,
+  },
+  pause: {
+    label: "Pause",
+    icon: "pause",
+    direct: true,
+    run: (client, task) => pauseTask(client, task.id),
+    done: (task) =>
+      task.step_running
+        ? `Paused ${task.task_key || "the task"}. Its running step finishes first.`
+        : `Paused ${task.task_key || "the task"}.`,
   },
   stop: {
     label: "Stop",
-    title: "Stop this task",
-    effect: "The engine stops the step it is running and blocks the task, saying you stopped it. Its branch and commits stay.",
-    confirm: "Stop task",
-    doing: "Stopping…",
+    icon: "stop",
+    variant: "stop",
+    direct: true,
     run: (client, task) => stopTask(client, task.id),
-    done: "Stop requested. The task is blocked when the engine acts on it.",
+    done: (task) => `Stopped ${task.task_key || "the task"}. The step runs again on Resume.`,
+  },
+  resume: {
+    label: "Resume",
+    icon: "play",
+    direct: true,
+    run: (client, task) => resumeTask(client, task.id),
+    done: (task) => `Resumed ${task.task_key || "the task"}.`,
+  },
+  withdraw: {
+    label: "Unblock",
+    direct: true,
+    run: (client, task) => unblockTask(client, task.id),
+    done: (task) => `Unblocked ${task.task_key || "the task"}. Its step goes on.`,
   },
   reopen: {
     label: "Reopen",
@@ -51,7 +72,8 @@ export const TASK_ACTIONS = {
   block: {
     label: "Block",
     title: "Block this task",
-    effect: "The task is parked before it starts. It waits in Needs you until someone unblocks it.",
+    effect:
+      "The task is held until someone unblocks it, and what waits for it waits too. A running step finishes first. It waits in Needs you; Unblock starts its workflow over.",
     ask: "Why it is blocked",
     hint: "Shown on the task and in Needs you.",
     required: true,
@@ -97,39 +119,47 @@ const OPEN = new Set(["todo", "in_progress", "blocked"]);
 const CLOSED = new Set(["done", "cancelled"]);
 
 /**
- * The actions that exist for a task in its state: `{ buttons, more }`.
+ * The actions that exist for a task in its state: `{ buttons, more, heldAbove }`.
  *
- * `buttons` are in plain sight beside the title. They are what depends on
- * the task's state (Run next, Stop, Reopen) and the one thing that is the
- * same in every open state, ending the task by hand (Close). `more` is what
- * is rare: Block, Split, Delete. Answering the task's question (approve,
- * unblock, send back) is the decision's, not listed here. Block exists only
- * for a task that has not started: a started one has Stop and Close.
- *
- * `engine` is the project's engine, null until it is known. Stop is a
- * request to a running engine, so it exists only while one is running this
- * task, and while it does the task can be neither closed nor deleted (the
- * API refuses both until the step stops). Until the engine is known, a task
- * in progress shows neither Run next nor Stop.
+ * `buttons` are in plain sight beside the title: what depends on the task's
+ * state and its holds (ADR-0043) and ending it by hand (Close). Run next is
+ * for a task that may run; a paused task shows Resume instead, never both.
+ * Pause where it could run, Stop while a step of it runs, Unblock for a Block
+ * still waiting for the running step. `heldAbove` is the block on its sprint
+ * or the workspace: Resume is then disabled, saying which.
+ * `more` is what is rare: Block, Split, Decline, Delete. Answering the task's
+ * question (approve, unblock, send back) is the decision's, not listed here.
+ * While a step runs the task can be neither closed nor deleted (the API
+ * refuses both until the step stops).
  */
-export function actionsFor(task, engine) {
+export function actionsFor(task) {
   const planned = !task.in_backlog;
-  const inProgress = task.status === "in_progress";
-  const engineOnIt = inProgress && engine?.state === ENGINE_STATES.running && engine.task_id === task.id;
-  const engineKnown = !inProgress || Boolean(engine);
+  const hold = task.hold ?? null;
+  const running = Boolean(task.step_running);
+  const heldAbove = hold?.kind === "block" ? hold : null;
+  const paused = hold?.kind === "pause";
+  const blocking = hold?.kind === "blocking";
+  const startable = task.status === "todo" || task.status === "in_progress";
   const buttons = [];
   const more = [];
-  if (planned && engineKnown && (task.status === "todo" || (inProgress && !engineOnIt))) buttons.push("run");
-  if (engineOnIt) buttons.push("stop");
+  if (planned && startable && !hold && !running) buttons.push("run");
+  // Lifting a hold comes first, as on a sprint: Resume (or why not), Unblock.
+  if (paused || heldAbove) buttons.push("resume");
+  if (blocking) buttons.push("withdraw");
+  // A task blocked by a failure cannot run anyway; one waiting at a gate can
+  // be paused, which lets the sprint go on without it (ADR-0043).
+  const pausable = startable || (task.status === "blocked" && task.awaiting_human_gate);
+  if (planned && pausable && !hold) buttons.push("pause");
+  if (running && !(paused && hold.mode === "now") && !blocking) buttons.push("stop");
   if (CLOSED.has(task.status)) buttons.push("reopen");
-  if (planned && engineKnown && OPEN.has(task.status) && !engineOnIt) buttons.push("close");
-  if (planned && task.status === "todo") more.push("block");
+  if (planned && OPEN.has(task.status) && !running) buttons.push("close");
+  if (planned && startable && !blocking) more.push("block");
   if (task.status === "todo" || task.status === "triage") more.push("split");
   // In the backlog, "we won't do this" is Decline, the one way (owner,
   // 2026-11-18): a filed task has it in its decision, an accepted one here.
   if (!planned && task.status === "todo") more.push("decline");
-  if (engineKnown && !engineOnIt) more.push("delete");
-  return { buttons, more };
+  if (!running) more.push("delete");
+  return { buttons, more, heldAbove };
 }
 
 /**
@@ -139,27 +169,62 @@ export function actionsFor(task, engine) {
  */
 export function TaskActions({ task, onDone }) {
   const client = useApiClient();
-  const engine = useProjectEngine(task.project_id);
   const navigate = useNavigate();
   const [chosen, setChosen] = useState(null);
+  const [acting, setActing] = useState(null);
+  const [refusal, setRefusal] = useState(null);
   const action = chosen && chosen !== "close" ? TASK_ACTIONS[chosen] : null;
-  const { buttons, more } = actionsFor(task, engine);
+  const { buttons, more, heldAbove } = actionsFor(task);
+
+  async function direct(name) {
+    setActing(name);
+    setRefusal(null);
+    try {
+      await TASK_ACTIONS[name].run(client, task);
+      onDone(name, TASK_ACTIONS[name].done(task));
+    } catch (error) {
+      setRefusal(errorSentence(error));
+    } finally {
+      setActing(null);
+    }
+  }
+
+  function button(name) {
+    const spec = TASK_ACTIONS[name];
+    // A request not started yet is asked once: its sign is a disabled
+    // "Runs next" until the task starts.
+    if (name === "run" && task.run_next) {
+      return (
+        <Button key={name} disabled title="Foreman runs this task next">
+          Runs next
+        </Button>
+      );
+    }
+    // Under a block on its sprint or the workspace, Resume would do
+    // nothing: it says why instead, and the block is lifted where it was set.
+    if (name === "resume" && heldAbove) {
+      return (
+        <Button key={name} icon="play" disabled title={heldAbove.reason}>
+          {heldAbove.scope === "workspace" ? "Workspace blocked" : "Sprint blocked"}
+        </Button>
+      );
+    }
+    return (
+      <Button
+        key={name}
+        icon={spec.icon ?? null}
+        variant={spec.variant ?? "default"}
+        disabled={acting !== null}
+        onClick={() => (spec.direct ? direct(name) : setChosen(name))}
+      >
+        {spec.label}
+      </Button>
+    );
+  }
 
   return (
     <>
-      {buttons.map((name) =>
-        // A request the engine has not started yet is asked once: its sign
-        // is a disabled "Runs next" until the engine starts the task.
-        name === "run" && task.run_next ? (
-          <Button key={name} disabled title="The engine runs this task next">
-            Runs next
-          </Button>
-        ) : (
-          <Button key={name} onClick={() => setChosen(name)}>
-            {TASK_ACTIONS[name].label}
-          </Button>
-        ),
-      )}
+      {buttons.map(button)}
       {more.length ? (
         <Menu
           label="Task actions"
@@ -194,6 +259,11 @@ export function TaskActions({ task, onDone }) {
           onDone(name, TASK_ACTIONS[name].done);
         }}
       />
+      {refusal ? (
+        <p className="notice notice--error task__action-refusal" role="alert">
+          {refusal}
+        </p>
+      ) : null}
       <CloseTaskDialog
         open={chosen === "close"}
         task={task}

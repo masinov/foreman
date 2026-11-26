@@ -370,8 +370,8 @@ class ConfirmTests(ProposalCase):
         self.assertEqual(
             failed.outcome["sentence"],
             "Operation 2 of 3 (block a task) was refused: Task todo1 cannot be blocked from "
-            "status cancelled; only a task that has not started can be. Stop or close a started "
-            "task. Nothing was applied.",
+            "status cancelled; only a task that is queued or under way can be. Nothing was "
+            "applied.",
         )
         self.assertEqual(self.snapshot(), before)
         self.assertEqual(self.store.get_task(filed.id).status, "triage")
@@ -695,7 +695,11 @@ class ManagerSessionTests(ProposalCase):
             ("task", "cancel", "todo1"),
             ("task", "block", "todo1", "--reason", "x"),
             ("approve", "todo1"),
-            ("engine", "pause", "p1"),
+            ("engine", "shutdown", "p1"),
+            ("pause", "p1", "--task", "todo1"),
+            ("resume", "--all"),
+            ("block", "--all", "--reason", "x"),
+            ("unblock", "--all"),
             ("run", "p1"),
             ("proposal", "confirm", "prop-x"),
             ("proposal", "decline", "prop-x"),

@@ -1,5 +1,6 @@
 import { ENGINE_STATES } from "../../api/workspace";
 import { humanize } from "../../ui/format";
+import { whenSet } from "../shared/workWords";
 
 // How a task reads on the sprint page: its stage in words, where it sorts,
 // the checks it carries, and which board column it is in. The words are the
@@ -31,18 +32,53 @@ function atStep(status, task) {
 }
 
 /**
+ * What a user's hold on a task says (ADR-0043): `{ tone, word, title }`, or
+ * null. A block above (on the sprint or the workspace) reads "Blocked"; a
+ * Block waiting for the running step to end, "Blocking"; a pause, "Pausing"
+ * or "Stopping" while the step still runs, then "Paused" or "Stopped". Who,
+ * why and when are the title.
+ */
+export function holdStage(task) {
+  const hold = task.hold;
+  if (!hold) return null;
+  const when = whenSet(hold.at);
+  const who = [hold.by ? `by ${hold.by}` : "", when ? `at ${when}` : ""].filter(Boolean).join(" ");
+  if (hold.kind === "block") {
+    return { tone: "attention", word: "Blocked", title: `The ${hold.scope} is blocked: ${hold.reason}` };
+  }
+  if (hold.kind === "blocking") {
+    return {
+      tone: task.step_running ? "running" : "attention",
+      word: task.step_running ? "Blocking" : "Blocked",
+      title: `Blocked when its step ends: ${hold.reason}`,
+    };
+  }
+  const stopped = hold.mode === "now";
+  if (task.step_running) {
+    return { tone: "running", word: stopped ? "Stopping" : "Pausing", title: `${stopped ? "Stopped" : "Paused"} ${who}`.trim() };
+  }
+  return {
+    tone: "idle",
+    word: stopped ? "Stopped" : "Paused",
+    title: stopped ? `Stopped ${who}; the cut step runs again on Resume.` : `Paused ${who}`.trim(),
+  };
+}
+
+/**
  * `{ tone, word, group }` for a task: its status, and where it is under way
- * the step it is at (owner, 2026-11-24: the list's column is its Status). A task part-way through its workflow
- * is "Running" only while the project's engine is on it; `engine` is the
- * project's engine from the workspace. A task a person asked to run next
- * says "Runs next" until the engine starts it. Otherwise, with the engine
- * paused it is "Paused"; with the engine running on another task it is
- * "Waiting" for its turn (and `title` says after which task); and it is
- * "Stopped" only where no engine runs.
+ * the step it is at (owner, 2026-11-24: the list's column is its Status).
+ * A user's hold says so first (`holdStage`, ADR-0043). A task part-way
+ * through its workflow is "Running" while a step of it runs; a task a person
+ * asked to run next says "Runs next" until it starts; otherwise it is
+ * "Waiting" for its turn (`title` says after which task, or that no worker
+ * runs the project; `engine` is the project's worker from the workspace).
+ * A task not started that waits for another reads "Waiting · FOR-65".
  */
 export function stageOf(task, engine = null) {
+  const held = holdStage(task);
   if (task.status === "blocked") {
     if (task.awaiting_human_gate) {
+      if (held) return { ...held, word: atStep(held.word, task), group: GROUPS.needsYou };
       const word =
         task.gate_policy === MERGE_APPROVAL
           ? "Waiting for merge approval"
@@ -64,30 +100,36 @@ export function stageOf(task, engine = null) {
     return { tone: "attention", word: "Waiting to be accepted", group: GROUPS.needsYou };
   }
   if (task.status === "in_progress") {
+    if (held) return { ...held, word: atStep(held.word, task), group: GROUPS.running };
     const onIt = engine?.task_id === task.id;
-    if (onIt && engine.state === ENGINE_STATES.running) {
+    if (task.step_running || (onIt && engine.state === ENGINE_STATES.running)) {
       return { tone: "running", word: atStep("Running", task), group: GROUPS.running };
     }
     if (task.run_next) return { tone: "idle", word: atStep("Runs next", task), group: GROUPS.running };
-    if (engine?.state === ENGINE_STATES.paused) {
-      return { tone: "idle", word: atStep("Paused", task), group: GROUPS.running };
-    }
-    if (engine?.state === ENGINE_STATES.running) {
-      const after = engine.task_key || engine.task_id;
-      return {
-        tone: "idle",
-        word: atStep("Waiting", task),
-        title: after ? `The engine runs it after ${after}` : "",
-        group: GROUPS.running,
-      };
-    }
-    return { tone: "idle", word: atStep("Stopped", task), group: GROUPS.running };
+    const after = engine?.task_key || engine?.task_id;
+    const noWorker = engine && engine.state !== ENGINE_STATES.running;
+    return {
+      tone: "idle",
+      word: atStep("Waiting", task),
+      title: noWorker ? "No worker runs this project." : after ? `Foreman runs it after ${after}` : "",
+      group: GROUPS.running,
+    };
   }
   if (task.status === "done") return { tone: "passed", word: "Done", group: GROUPS.finished };
   if (task.status === "cancelled") return { tone: "idle", word: "Cancelled", group: GROUPS.finished };
   // In the backlog nothing is queued: it runs once it is in a sprint.
   if (task.in_backlog) return { tone: "idle", word: "In the backlog", group: GROUPS.queued };
+  if (held) return { ...held, group: GROUPS.queued };
   if (task.run_next) return { tone: "idle", word: "Runs next", group: GROUPS.queued };
+  const waits = task.waits_for ?? [];
+  if (waits.length) {
+    return {
+      tone: "idle",
+      word: `Waiting · ${waits[0]}`,
+      title: `Starts when ${waits.join(", ")} ${waits.length === 1 ? "is" : "are"} done.`,
+      group: GROUPS.queued,
+    };
+  }
   return { tone: "idle", word: "Queued", group: GROUPS.queued };
 }
 

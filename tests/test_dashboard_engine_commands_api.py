@@ -1,4 +1,4 @@
-"""POST /api/v1/projects/{id}/engine/commands: pause, resume and stop a running engine."""
+"""POST /api/v1/projects/{id}/engine/commands: shutdown a running worker; steer a task."""
 
 from __future__ import annotations
 
@@ -44,17 +44,25 @@ class EngineCommandApiTests(unittest.TestCase):
     def queued(self) -> list[str]:
         return [c.command for c in self.store.list_engine_commands("p1", limit=10)]
 
-    def test_queues_each_steering_command_for_a_running_engine(self) -> None:
+    def test_queues_a_shutdown_for_a_running_engine(self) -> None:
         self.hold_engine()
-        for command in ("pause", "resume", "shutdown"):
+        response = self.post("/api/v1/projects/p1/engine/commands", {"command": "shutdown", "requested_by": "ana"})
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["command"]["command"], "shutdown")
+        self.assertEqual(body["command"]["status"], "pending")
+        self.assertEqual(body["requested_by"], "ana")
+        self.assertEqual(self.queued(), ["shutdown"])
+
+    def test_pause_and_resume_are_holds_on_the_work_now(self) -> None:
+        """ADR-0043: pausing is not an engine command; the refusal says where it went."""
+        self.hold_engine()
+        for command in ("pause", "resume"):
             with self.subTest(command=command):
-                response = self.post("/api/v1/projects/p1/engine/commands", {"command": command, "requested_by": "ana"})
-                self.assertEqual(response.status_code, 200)
-                body = response.json()
-                self.assertEqual(body["command"]["command"], command)
-                self.assertEqual(body["command"]["status"], "pending")
-                self.assertEqual(body["requested_by"], "ana")
-        self.assertEqual(sorted(self.queued()), ["pause", "resume", "shutdown"])
+                response = self.post("/api/v1/projects/p1/engine/commands", {"command": command})
+                self.assertEqual(response.status_code, 400)
+                self.assertIn("pause and resume the work itself", response.json()["error"])
+        self.assertEqual(self.queued(), [])
 
     def test_refuses_when_no_engine_is_running_and_queues_nothing(self) -> None:
         response = self.post("/api/v1/projects/p1/engine/commands", {"command": "shutdown"})

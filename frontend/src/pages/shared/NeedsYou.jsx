@@ -5,6 +5,7 @@ import { errorSentence } from "../../api/client";
 import { GATE_RESOLUTIONS, resolveGate } from "../../api/gates";
 import { listNeedsYou, NEEDS_YOU_KINDS } from "../../api/needsYou";
 import { SPRINT_STATUSES, transitionSprint } from "../../api/sprints";
+import { unblockSprint as liftSprintBlock } from "../../api/holds";
 import { approveTask, unblockTask } from "../../api/tasks";
 import { useDelayedFlag } from "../../api/useResource";
 import { usePagedList } from "../../api/usePagedList";
@@ -34,10 +35,13 @@ const KIND_WORDS = {
   [NEEDS_YOU_KINDS.unblock]: "Blocked",
   [NEEDS_YOU_KINDS.settleOrder]: "Settle sprint order",
   [NEEDS_YOU_KINDS.finishSprint]: "Finish sprint",
+  [NEEDS_YOU_KINDS.unblockSprint]: "Blocked sprint",
 };
 
+const SPRINT_KINDS = new Set([NEEDS_YOU_KINDS.finishSprint, NEEDS_YOU_KINDS.unblockSprint]);
+
 const itemId = (item) =>
-  item.gate?.id ?? item.task_id ?? (item.kind === NEEDS_YOU_KINDS.finishSprint ? `finish:${item.sprint_id}` : `${item.kind}:${item.project_id}`);
+  item.gate?.id ?? item.task_id ?? (SPRINT_KINDS.has(item.kind) ? `${item.kind}:${item.sprint_id}` : `${item.kind}:${item.project_id}`);
 const itemName = (item) => item.task_key || item.task_title || "the sprint order";
 
 // The same words and colours as a task's checks in the sprint list: a word
@@ -107,7 +111,9 @@ function BlockedFacts({ blocked }) {
 function Detail({ item }) {
   if (item.gate) return <OrderProposal gate={item.gate} />;
   if (item.kind === NEEDS_YOU_KINDS.approveMerge) return <MergeFacts evidence={item.evidence} />;
-  if (item.kind === NEEDS_YOU_KINDS.unblock) return <BlockedFacts blocked={item.blocked} />;
+  if (item.kind === NEEDS_YOU_KINDS.unblock || item.kind === NEEDS_YOU_KINDS.unblockSprint) {
+    return <BlockedFacts blocked={item.blocked} />;
+  }
   if (item.kind === NEEDS_YOU_KINDS.answerRequests) return <span className="quiet">Backlog</span>;
   if (item.kind === NEEDS_YOU_KINDS.finishSprint) return <span className="quiet">{describeTaskCounts(item.task_counts ?? {})}</span>;
   return <span className="quiet">{item.sprint_title || ""}</span>;
@@ -178,6 +184,12 @@ export function NeedsYou({ projectId = null, note, empty, onChanged }) {
       };
     });
 
+  const unblockSprint = (item) =>
+    decide(item, async () => {
+      await liftSprintBlock(client, item.sprint_id);
+      return { text: `Unblocked ${item.sprint_title || "the sprint"}.` };
+    });
+
   // Finishing tags the repository as the sprint page's Finish sprint does
   // (ADR-0036); the sprint page says the tag.
   const finishSprint = (item) =>
@@ -216,7 +228,7 @@ export function NeedsYou({ projectId = null, note, empty, onChanged }) {
           <Link className="row-link" href={paths.projectBacklog(item.project_id)}>
             {plural(item.count ?? 0, "request")} from agents and other systems
           </Link>
-        ) : item.kind === NEEDS_YOU_KINDS.finishSprint ? (
+        ) : SPRINT_KINDS.has(item.kind) ? (
           <Link className="row-link" href={paths.sprint(item.sprint_id)}>
             {item.sprint_title}
           </Link>
@@ -284,6 +296,19 @@ export function NeedsYou({ projectId = null, note, empty, onChanged }) {
               onClick={() => finishSprint(item)}
             >
               {approvingId === itemId(item) ? "Finishing…" : "Finish"}
+            </Button>
+          );
+        }
+        if (item.kind === NEEDS_YOU_KINDS.unblockSprint) {
+          return (
+            <Button
+              variant="gold-outline"
+              inRow
+              disabled={approvingId !== null}
+              aria-label={`Unblock ${item.sprint_title || "the sprint"}`}
+              onClick={() => unblockSprint(item)}
+            >
+              {approvingId === itemId(item) ? "Unblocking…" : "Unblock"}
             </Button>
           );
         }

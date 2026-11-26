@@ -72,17 +72,16 @@ def handle_run(args: argparse.Namespace) -> int:
 
         install_shutdown_handlers()
         # While this run holds the project it is the only process that can act
-        # on a `pause` or a `stop_task`, so it answers engine commands the way
-        # a resident engine does. It ends after its pass, so it takes no run
-        # requests, and running it is itself the instruction to work, so a
-        # standing pause does not hold it back.
+        # on a `shutdown` or a `steer_task`, so it answers engine commands the
+        # way a resident engine does. It ends after its pass, so it takes no
+        # run requests. A user's holds on the work (ADR-0043) hold it as they
+        # hold any engine.
         commands = ResidentEngine(
             store=store,
             project_id=project.id,
             orchestrator=orchestrator,
             lock=lock,
             accepts_run_requests=False,
-            honour_standing_pause=False,
         )
         try:
             commands.attach()
@@ -90,10 +89,14 @@ def handle_run(args: argparse.Namespace) -> int:
         except EngineCommandInterrupt as exc:
             commands.settle_interrupt(exc)
             command = exc.command
+            who = (
+                f"engine command `{command.command}` from {command.requested_by}"
+                if command is not None
+                else f"a Stop from {getattr(exc, 'requested_by', None) or 'a user'}"
+            )
             print(
-                f"Run stopped by engine command `{command.command}` from "
-                f"{command.requested_by}. The agent process was terminated and its "
-                "run settled as killed.",
+                f"Run stopped by {who}. The process was terminated and its run "
+                "settled as killed.",
                 file=sys.stderr,
             )
             return 130
@@ -282,7 +285,7 @@ def handle_engine_status(args: argparse.Namespace) -> int:
     else:
         age = status["heartbeat_age_seconds"]
         age_text = "unknown" if age is None else f"{age:.0f}s ago"
-        state = "paused" if status["paused"] else "running"
+        state = "running"
         if status["lease_expired"]:
             state = "stale lease (no heartbeat since it expired)"
         lines.extend(
@@ -353,14 +356,14 @@ def handle_engine_command(args: argparse.Namespace) -> int:
     if command.task_id:
         lines.append(f"Task: {command.task_id}")
     if resident is None:
-        # Not an error: `resume` and `run_task` are honoured by the next engine
-        # to start. The others will be rejected as stale, and saying so now is
-        # kinder than letting the operator discover it in the command log.
+        # Not an error: a `run_task` is honoured by the next engine to start.
+        # The others will be rejected as stale, and saying so now is kinder
+        # than letting the operator discover it in the command log.
         lines.append(
             "No engine is resident on this project. "
             + (
                 "The next `foreman serve` will apply it."
-                if command.command in {"resume", "run_task"}
+                if command.command == "run_task"
                 else "It will be rejected when an engine next starts."
             )
         )
@@ -473,19 +476,8 @@ def register_engine(subparsers: argparse._SubParsersAction) -> None:
         sub.set_defaults(engine_command_name=command_name)
         set_handler(sub, handle_engine_command, f"engine {name}")
 
-    _add_engine_command(
-        "pause",
-        command_name="pause",
-        help_text=(
-            "Stop the engine picking up new work and stop the running agent "
-            "step, leaving its task resumable."
-        ),
-    )
-    _add_engine_command(
-        "resume",
-        command_name="resume",
-        help_text="Let a paused engine start picking up work again.",
-    )
+    # Pausing and resuming the work, and stopping a task, are holds on the
+    # work now (ADR-0043): `foreman pause`, `foreman resume`.
     _add_engine_command(
         "shutdown",
         command_name="shutdown",
@@ -495,12 +487,6 @@ def register_engine(subparsers: argparse._SubParsersAction) -> None:
         "run-task",
         command_name="run_task",
         help_text="Run one task next, regardless of sprint order.",
-        needs_task=True,
-    )
-    _add_engine_command(
-        "stop-task",
-        command_name="stop_task",
-        help_text="Stop the task the engine is running and block it.",
         needs_task=True,
     )
 
