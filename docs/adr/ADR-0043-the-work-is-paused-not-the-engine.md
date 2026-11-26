@@ -1,12 +1,13 @@
 # ADR-0043: The Work Is Paused, Not The Engine
 
-- **Status:** proposed (owner, 2026-11-25: "Go with it", on the model below;
-  the resume rule was settled in the same message)
-- **Date:** 2026-11-25
+- **Status:** proposed (owner, 2026-11-25: "Go with it"; 2026-11-26, on
+  the model below: "Perfect. I do think so")
+- **Date:** 2026-11-26
 - **Amends:** ADR-0011 (the command table's vocabulary and "a paused
   engine"), ADR-0039 (a paused task does not hold the queue; a request to
-  run a task does not pass a pause), ADR-0025's amendment on finishing
-  sprints (no pause may hold a sprint Foreman finishes or starts)
+  run a task does not pass a pause or a block), ADR-0025's amendment on
+  finishing sprints (Foreman does not finish or start a sprint that a
+  pause or a block holds)
 
 ## Context
 
@@ -36,60 +37,88 @@ stopping it changes. The honest answers:
 
 The owner and Claude compared three models as trees of actions and
 outcomes: today's, one switch per project, and a pause at the level of the
-work. The owner chose the third, and then pointed at its weak spot: a
-sprint's Resume that leaves its paused tasks paused does nothing when all
-of them are paused. The rules below close that. A second opinion
-(Fable 5.2, 2026-11-25) then found that a higher pause erased a user's
-deliberate holds, that Stop could claim a step was cut when it was not,
-and that a paused sprint still finished and started the next one. The
-owner answered the last (2026-11-26): "Pause should pause the task and
-everything downstream that depends on it", and Foreman should finish and
-start sprints itself "unless they have been deliberately blocked".
+work. The owner chose the third. Drafts of it tried a pause that is
+inherited from sprint to task, with exceptions for a task resumed under a
+paused sprint. The owner found it "weird", and a survey of other products
+(Alternatives) found no product that lets one item run while its parent is
+paused. Two patterns exist:
+
+- **The parent wins, and both must be released:** a paused Windows print
+  queue does not print a resumed job, CUPS holds a printer's jobs,
+  Temporal needs a workflow and its activity both unpaused, Prefect and
+  Airflow leave runs waiting under a paused pool or workflow, Buildkite
+  shows a paused queue's note on every build it holds.
+- **Pause all is a bulk action, and there is no parent state:** a torrent
+  client pauses every torrent, and any one can then be resumed.
+
+The owner chose the second for Pause, and asked for a true parent hold
+beside it ("a 'Lock' button that is a true parent action"), which is Block
+at every level. A second opinion (Fable 5.2, 2026-11-25) shaped Stop and
+the storage, and found that a paused sprint still finished and started the
+next one. The owner answered that (2026-11-26): "Pause should pause the
+task and everything downstream that depends on it", and Foreman should
+finish and start sprints itself "unless they have been deliberately
+blocked".
 
 ## Decision
 
-### 1. A pause is put on the work, at one of three levels
+### 1. Two holds: Pause and Block
 
-| Level | Where the controls are | What a pause there holds |
+| | Pause | Block |
 |---|---|---|
-| Workspace | workspace page header | every sprint and task of every project |
-| Sprint | sprint page header; the project page header and the top bar show the active sprint's | the sprint and every task in it |
-| Task | task page header | that task |
+| What it is | a soft hold, on tasks only | a hard hold, with a reason, on a task, a sprint or the workspace |
+| On a sprint or the workspace | pauses each unfinished task under it, as one bulk action; the sprint or workspace has no paused state of its own | one hold on the sprint or the workspace itself; nothing under it runs |
+| A task under it | can be resumed on its own | cannot be resumed: its Resume is disabled and reads "Sprint blocked" or "Workspace blocked", with the reason on hover |
+| Lifted by | Resume, on the task or on any level above it | Unblock, only where it was set |
+| In Needs you | no | yes, with its reason |
+| For | "hold this for now, I'll look" | "nothing here runs until I say", and parking for days |
 
-A project has no pause of its own. It has one active sprint, so a project
-pause would be the sprint's under another name. When several sprints of a
-project can run at once, the project page shows each one's.
+- **Resume on a sprint** resumes its paused tasks. **Resume all** resumes
+  every paused task in the workspace. Neither touches a block.
+- **Unblock lifts only the block.** Tasks a user paused one by one stay
+  paused: a block never erases a user's own pauses.
+- **A task planned into a sprint joins paused** when every other unfinished
+  task of that sprint is paused, so a sprint that reads "Paused" stays
+  paused when work is added to it.
+- **A project has no hold of its own.** It has one active sprint, so a
+  project hold would be the sprint's under another name. When several
+  sprints of a project can run at once, the project page shows each one's.
 
-### 2. A pause holds what comes after
+Where the controls are: the task page header; the sprint page header (the
+project page header and the top bar show the active sprint's); the
+workspace page header ("Pause all", "Resume all", "Block all").
 
-A pause holds the thing paused and everything downstream of it: whatever
+### 2. A hold holds what comes after
+
+A hold holds the thing held and everything downstream of it: whatever
 cannot start until it is done (owner, 2026-11-26). Downstream is the
 dependency chain that already exists:
 
 - **a task's next step,** built-in steps included (tests, Merge, Mark
-  done), so a paused task never becomes Done;
+  done), so a held task never becomes Done;
 - **the tasks that wait for it** ("Waits for", set on a task before it
-  starts; ADR-0039 and `foreman/engine/selection.py`). They wait until it
-  is done, so they wait through its pause;
+  starts; `foreman/engine/selection.py`). They wait until it is done, so
+  they wait through its hold;
 - **the sprint's finish,** which waits for every task in it;
 - **the next sprint's start,** which waits for that finish.
 
-So a paused sprint is neither finished nor followed by the next one. When
-its work is all done it reads "Paused · ready to finish"; on Resume it is
-finished and the next sprint starts, where the project lets Foreman finish
-sprints (`sprint_completion = auto`). Foreman finishes and starts sprints
-by itself unless a pause holds them, on the sprint or the workspace.
+A blocked sprint is neither finished nor followed by the next one either,
+even when its work is all done ("Blocked · ready to finish"). So Foreman
+finishes and starts sprints by itself, where the project lets it
+(`sprint_completion = auto`), unless a hold stops it: a task that is not
+done, a blocked sprint, a blocked workspace.
 
-Tasks of the same sprint that do not wait for a paused task go on: a task
-pause pauses only that task and what depends on it.
+Tasks of the same sprint that do not wait for a held task go on: a task's
+hold holds only that task and what depends on it.
 
-### 3. Two ways to pause, one paused state, one Resume
+### 3. Holding now, and holding after the step
 
-- **Pause.** A step that is running finishes. Then nothing downstream
-  starts. Nothing is cut. Offered wherever something may run.
-- **Stop.** A step that is running is cut now. Offered only while a step is
-  running in what it would stop; with nothing running, Pause is all there
-  is to do.
+- **Pause and Block let a running step finish.** Then the hold applies.
+  Nothing is cut.
+- **Stop cuts the running step now,** and pauses what it was pressed on (a
+  task; on a sprint or the workspace, each unfinished task under it, as
+  Pause does).
+  - Offered only while a step is running in what it would stop.
   - An agent step's process group is ended and its run settled as killed,
     as today. A test run's process is ended the same way.
   - A merge is never cut: cutting it half way is worse than waiting for it.
@@ -99,111 +128,91 @@ pause pauses only that task and what depends on it.
   - The step runs again from its start on Resume. The cut visit is not
     counted against the step's visit limit, as with `steer_task` (ADR-0011,
     2026-11-16): a user cut it, it did not fail.
-  - Stop is a red button and asks for no confirmation, because what it
-    cuts is one step and that step runs again.
-- **Resume** follows either. Both end in the same state, paused; the status
-  line says which way it was paused.
+  - Stop is a red button and asks for no confirmation, because what it cuts
+    is one step and that step runs again.
+- **A hold lasts until a user lifts it.** A restart, a reboot or a crashed
+  worker does not lift it.
 
-### 4. The rules that make every button do something
+### 4. Every button does something
 
-1. **The last action wins, at and below where it is taken.** A Pause or a
-   Resume applies to its level and everything below it, and replaces what
-   was said there before.
-   - Pause on a sprint holds every task in it, including tasks added
-     later, and undoes a Resume given to one of them before.
-   - Resume on a task in a paused sprint lets that task run. The sprint
-     stays paused for the others.
-   - Resume on a sprint releases it and every task in it. Resume all
-     releases everything in the workspace.
-   - The workspace works the same way: after Pause all, resuming one
-     sprint or one task lets only that run.
-   So every Pause and Resume is on the page where the user is, and does
-   what it says there. No control is hidden because of a level above.
-2. **A pause is a short hold; Block is the long one.** Any Resume above
-   releases a task's pause. A task a user means to park for days is
-   blocked, with a reason: it is listed in Needs you, and only Unblock
-   lifts it. No Pause or Resume touches a block.
-3. **A pause passes down, never up.** Pausing every task of a sprint does
-   not pause the sprint: it stays started, and its status line says
-   "3 tasks paused".
-4. **Resume is offered wherever something is held:** at the level of a
-   pause, below it (where it lets one thing run, rule 1), and above it
-   (where it releases what is below). A started sprint with one task paused
-   shows Pause and Resume: Pause holds everything in it, Resume releases
-   everything in it. A sprint already paused shows Resume, and Stop while a
-   step of it still runs.
-5. **Resume asks no confirmation; its toast says what it released,** by
-   key: "Resumed the sprint, FOR-66 and FOR-67." Past three keys it says
-   "and 4 more". Resuming is undone by pausing again, so a question before
-   it would only be friction (owner, 2026-11-25).
-6. **An exception is shown above it.** A paused sprint with one task let
-   run says "Paused · except FOR-65", with two "Paused · except 2 tasks".
-7. **A pause lasts until someone resumes it.** A restart, a reboot or a
-   crashed worker does not lift it. Start sprint is not a Resume: a sprint
-   started under a paused workspace waits, and says "Paused · workspace".
+- **Pause** is offered where something unpaused could run; **Resume** where
+  something is paused; **Stop** where a step is running; **Block** where
+  nothing is blocked at that level; **Unblock** where it is.
+- **A task under a block offers no Resume or Run next that would do
+  nothing:** they are shown disabled with "Sprint blocked" or "Workspace
+  blocked". That is the one disabled control in the model, and the user
+  chose it by blocking.
+- **Resume asks no confirmation; its toast says what it resumed,** by key:
+  "Resumed FOR-66 and FOR-67." Past three keys it says "and 4 more".
+  Resuming is undone by pausing again, so a question before it would only
+  be friction (owner, 2026-11-25).
+- **Block asks for its reason,** as a task's Block does today; the reason is
+  required.
 
 ### 5. What the other actions do
 
 - **Start sprint** replaces "Activate sprint". It is how a user starts a
   sprint; Foreman starts the next one itself only as §2 says.
-- **Run next** puts a task that may run first in line. A held task shows
+- **Run next** puts a task that may run first in line. A paused task shows
   Resume instead, never both: one button per intent. A `run_task` request
   for a task that is held when the worker takes it up is rejected, saying
   so; ADR-0039's rule 5, that a request to run a named task passes over a
-  task waiting for a decision, does not pass over a pause.
-- **Stop on a task leaves it paused, not blocked.** Blocked stays what
-  Foreman says when it needs a user (a failure, a loop limit, a branch
-  violation) and what a user sets with a reason (rule 4.2). A task a user
-  stopped is not in Needs you.
-- **A paused task does not hold the queue** (amends ADR-0039, which lets
-  only a task waiting for a decision hold it). The sprint goes on with
-  the tasks that do not wait for it, as it does past a blocked one; after
-  a Stop that is seconds later. On Resume the task is first in line, and
-  its branch is refreshed from the default branch before its next step, as
-  any task's is (ADR-0012). A task paused at a gate is the same: pausing it
-  releases the queue, and the collisions ADR-0039 removed are possible for
-  that task, as for a blocked one.
-- **A decision made while paused is recorded and waits.** Approving a merge
-  in a paused sprint moves the task to Merge, which runs on Resume:
-  "Approved FOR-51. It merges on Resume." A task paused while it waits for
-  a decision stays in Needs you, and its Status reads "Paused · Approval".
+  task waiting for a decision, does not pass over a hold.
+- **Stop on a task leaves it paused, not blocked.** A task a user stopped
+  is not in Needs you. Blocked is what Foreman says when it needs a user
+  (a failure, a loop limit, a branch violation) and what a user sets with
+  a reason.
+- **Block on a running task** lets its step finish, then blocks it. Today
+  Block exists only for a task that has not started.
+- **A paused or blocked task does not hold the queue** (amends ADR-0039,
+  which lets only a task waiting for a decision hold it). The sprint goes
+  on with the tasks that do not wait for it; after a Stop that is seconds
+  later. When the task is resumed it is first in line, and its branch is
+  refreshed from the default branch before its next step, as any task's
+  is (ADR-0012). A task held at a gate is the same: holding it releases
+  the queue, and the collisions ADR-0039 removed are possible for that
+  task, as they already are for a blocked one.
+- **A decision made while held is recorded and waits.** Approving a merge
+  of a paused task moves it to Merge, which runs on Resume: "Approved
+  FOR-51. It merges on Resume." A held task waiting for a decision stays in
+  Needs you, and its Status reads "Paused · Approval".
 
 ### 6. What the page says
 
 **No name in a status line, a toast or a button.** A sprint's or a
 project's title is free text of any length; these places are fixed and
 short. They use fixed words, task keys, dates and times. Which sprint, who
-acted and the full time are on hover; at phone width a tap on the status
-line shows them.
+acted, the reason and the full time are on hover; at phone width a tap on
+the status line shows them.
 
-One status line per level, the same words wherever it is shown (the
-sprint header, the project header, the top bar, a row of the workspace's
-projects table). When more than one is true, the first in this list wins:
+One status line for a sprint, the same wherever it is shown (the sprint
+header, the project header, the top bar, a row of the workspace's projects
+table). When more than one is true, the first in this list wins:
 
+- "Blocked · 14:02", "Blocked · 24 Nov" after the day it was set
+  (the reason on hover)
+- "Blocked · workspace"
 - "Stopping · Develop"
 - "Pausing · Develop finishing" (Stop stays offered, for a step taking
   too long)
 - "Stopped · 14:02" (hover: the step that runs again)
-- "Paused · 14:02", "Paused · 24 Nov" after the day it was set
-- "Paused · ready to finish"
-- "Paused · workspace"
-- "Paused · except FOR-65"
-- "Working · FOR-65 Develop", with "· 3 tasks paused" after it when some
-  are
-- "3 tasks paused" (nothing runs, the sprint is not paused)
+- "Paused · 14:02": every unfinished task is paused
+- "Working · FOR-65 Develop", with "· 3 paused" after it when some are
+- "3 paused": nothing runs, and some tasks are paused
+- "Ready to finish", "Blocked · ready to finish"
 - "Not started"
 
 **A worker fault stands beside the line, not in its place:** "Paused ·
-14:02 · no worker". The user sees both that the work is paused and that
-no program could run it.
+14:02 · no worker". The user sees both that the work is held and that no
+program could run it.
 
-**A task's Status** keeps its existing shape: "Paused · Develop", with who
-paused it, at which level and when on hover. "Waiting · Develop" (another
-task is running) keeps its meaning; a task that waits for another reads
-"Waiting · FOR-65". "Stopped · Develop" now means a user stopped it.
+**A task's Status** keeps its existing shape: "Paused · Develop", "Blocked ·
+Develop", with who, when and the reason on hover. "Waiting · Develop"
+(another task is running) keeps its meaning; a task that waits for another
+reads "Waiting · FOR-65". "Stopped · Develop" now means a user stopped it.
 
 **A task shows what waits for it:** beside "Depends on", its Overview lists
-"Needed by", so a user sees what a Pause on it will hold.
+"Needed by", so a user sees what holding it will hold.
 
 ### 7. The engine leaves the page
 
@@ -213,8 +222,8 @@ The program that runs the work is called a **worker**.
 
 - **While no worker holds a project,** the status line carries "no
   worker", with **Start worker**. That is the one worker control on the
-  page. It is a fault to fix, not a switch for the work, and the work's
-  pauses are untouched by it.
+  page. It is a fault to fix, not a switch for the work, and holds are
+  untouched by it.
 - **A supervisor will keep workers running** (a systemd user unit per
   project, restarting with a growing wait; a separate slice). With it,
   "no worker" appears only after its restarts have given up, and the
@@ -223,69 +232,71 @@ The program that runs the work is called a **worker**.
   or on which task, and their restart) comes with the supervisor or with
   the machine pool, whichever is first.
 - **The command line keeps worker control:** `foreman serve` starts one and
-  `foreman engine shutdown` ends one. Ending a worker does not pause the
-  work: another worker, or the supervisor, carries on with it.
+  `foreman engine shutdown` ends one. Ending a worker holds nothing:
+  another worker, or the supervisor, carries on with the work.
 - **A crashed worker's run is settled by the next worker** (crash recovery,
   as today). Until then a "Pausing" or "Stopping" line stays, with "no
   worker" beside it.
 
 ### 8. How it is stored, and how the worker hears it
 
-A pause is state that every page shows, not a message to a program, so it
+A hold is state that every page shows, not a message to a program, so it
 is a row, not a command.
 
-- **A `work_switches` table** (a migration), at most one row per level:
-  `scope` (`workspace`, `sprint`, `task`), `scope_id` (the fixed id
+- **A pause is on the task:** `paused_at`, `paused_by`, and `pause_mode`
+  (`finish_step`, `now`) on `tasks` (a migration). A sprint's Pause, Stop
+  and Resume, and the workspace's, write these fields on each unfinished
+  task in one transaction. There is no sprint or workspace pause to store.
+- **A block on a task stays what it is:** status `blocked` with
+  `blocked_reason`. A block on a sprint or the workspace is a row in a
+  `holds` table: `scope` (`sprint`, `workspace`), `scope_id` (the fixed id
   `workspace` for the workspace, never null, so the unique index on
   `(scope, scope_id)` holds), `project_id` (null for the workspace),
-  `state` (`paused`, `running`), `mode` (`finish_step`, `now`; for
-  `paused`), `set_by`, `set_at`.
-- **An action** replaces its level's row and deletes the rows below it
-  (rule 4.1), in one transaction. Each action is also an event, which is
-  the history. A `running` row is written only as an exception under a
-  pause (a task resumed in a paused sprint); a Resume with nothing paused
-  above deletes its level's row instead.
-- **The most specific row decides.** A task is held when the row nearest
-  to it (its own, else its sprint's, else the workspace's) is `paused`.
-  Because every action deletes the rows below it, this gives the
-  last-action-wins answer without comparing times written by different
-  processes' clocks. One function, `is_held`, answers it for the API, the
-  pages and the worker.
-- **Rows do not outlive what they describe.** A task's row is deleted when
-  it moves to another sprint or the backlog, is closed, or is reopened. A
-  sprint's row is deleted when it is finished; reopening a sprint starts
-  it unpaused.
-- **The worker reads it where it reads commands today:** before each step,
-  and on every tick of an agent step (ADR-0011's poll sites), and, for
+  `reason`, `set_by`, `set_at`. Unblock deletes the row. Each Pause,
+  Resume, Block and Unblock is also an event, which is the history.
+- **A task is held** when it is paused, or blocked, or its sprint or the
+  workspace has a `holds` row. One function, `is_held`, answers it for the
+  API, the pages and the worker, with the reason.
+- **Holds do not outlive what they describe.** A task's pause is cleared
+  when it moves to another sprint or the backlog, is closed, or is
+  reopened. A sprint's block row is deleted when the sprint is finished or
+  cancelled.
+- **The worker reads them where it reads commands today:** before each
+  step, on every tick of an agent step (ADR-0011's poll sites), and, for
   Stop, while a test run waits. Before a step, a held task is parked: it
-  stays `in_progress` at that step and releases its lease. A hold with mode
-  `now` cuts the running agent step or test run; a hold with mode
-  `finish_step` is not acted on until the step ends.
+  stays where it is and releases its lease. A pause with mode `now` cuts the
+  running agent step or test run; one with mode `finish_step`, and every
+  block, wait for the step to end.
 - **Choosing a task skips every held task,** and finishing a sprint or
-  starting the next checks the sprint's and the workspace's rows first
-  (§2). When nothing may run, the pass ends with the stop reason `paused`,
+  starting the next checks the sprint's and the workspace's holds first
+  (§2). When nothing may run, the pass ends with the stop reason `held`,
   and a resident worker waits on `data_version` as it does now.
 - **The command table keeps what is a message to a worker:** `run_task`,
   `steer_task` and `shutdown`. `pause`, `resume` and `stop_task` are
-  retired: the API and the CLI write switches instead
-  (`foreman pause <project> --sprint S | --task T [--now]`,
-  `foreman pause --all [--now]`, and `foreman resume` with the same
-  choices). Run next queues `run_task` in the same transaction that checks
-  the task is not held.
+  retired. The API and the CLI write holds instead:
+  `foreman pause <project> --sprint S | --task T [--now]`,
+  `foreman pause --all [--now]`, `foreman resume` with the same choices,
+  `foreman block <project> --sprint S "reason"`,
+  `foreman block --all "reason"`, and `foreman unblock` with the same
+  choices; `foreman task block` and `unblock` stay for a task. Run next
+  queues `run_task` in the same transaction that checks the task is not
+  held.
 - **Existing state is carried over.**
   - A project whose engine stands paused, or was last stopped with the
-    engine's Stop (which `engine_is_paused` reads as not paused), gets a
-    `paused` row on its active sprint, mode `finish_step`, set by whoever
-    did it.
+    engine's Stop (which `engine_is_paused` reads as not paused), gets each
+    unfinished task of its active sprint paused, mode `finish_step`, by
+    whoever did it.
   - A task blocked as "Stopped by …" becomes a paused task: `in_progress`
-    at its step, no blocked reason, a `paused` row of its own.
+    at its step, no blocked reason, paused by that user.
 
 ## Consequences
 
 - **One way to start work:** start a sprint; after that Foreman carries on
-  from sprint to sprint where the project lets it. One way to hold work:
-  pause, at the level you mean, and what depends on it waits too. Every
-  Resume releases something.
+  from sprint to sprint where the project lets it. **Two ways to hold it:**
+  Pause, soft and per task, and Block, hard and with a reason, at the
+  level meant. What depends on a held thing waits too.
+- **No hidden or dead Resume,** except under a block a user set, where it
+  is disabled with the reason.
 - **A user's stop is never lost to a restart,** because it is a pause and
   pauses outlive programs. This is why the engine's Stop goes before a
   supervisor comes: today a supervisor would restart a stopped engine and
@@ -293,69 +304,82 @@ is a row, not a command.
 - **Pause is slower than it was.** It waits for the running step, which may
   take many minutes. The status line says "Pausing" with the step, and Stop
   stays offered meanwhile.
-- **A paused task's branch can fall behind** while the sprint goes on. The
+- **Resume on a sprint resumes tasks a user paused one by one,** as a
+  torrent client's Resume all does. A task meant to stay held is blocked.
+- **A held task's branch can fall behind** while the sprint goes on. The
   refresh before its next step merges the default branch in; a conflict is
   handled by the workflow as for an unblocked task.
-- **Two programs now share pause state through the database only,** which is
-  the product's premise (ADR-0011): a dashboard on another host, the CLI,
-  the intake API and every worker read the same rows.
+- **Every program shares holds through the database only,** which is the
+  product's premise (ADR-0011): a dashboard on another host, the CLI, the
+  intake API and every worker read the same rows.
 - **Dependencies stay within a sprint.** "Waits for" names tasks of the
   same sprint, and sprints follow each other in queue order. That is all §2
-  needs. Dependencies across sprints are recorded in the backlog, for when
-  sprints can run side by side.
+  needs. Dependencies across sprints are in the backlog (owner direction
+  10), for when sprints can run side by side.
 - **The design changes** (`docs/design/dashboard-v7/README.md`): the Engine
-  bullet becomes the status line and the three levels' controls; "Activate"
-  becomes "Start sprint"; the task Status bullet gains who paused and
-  "Waiting · FOR-65"; the Overview gains "Needed by"; the toast for an
-  approval in a paused sprint; "the engine dot" in Mark and motion becomes
-  "the status dot while something is working". The drawing
-  `02-project-sprints.html` loses its engine row.
+  bullet becomes the status line and the controls of §1; "Activate"
+  becomes "Start sprint"; the task Status bullet gains who held it and
+  "Waiting · FOR-65"; the Overview gains "Needed by"; Needs you gains a
+  blocked sprint and a blocked workspace; the toast for an approval of a
+  paused task; "the engine dot" in Mark and motion becomes "the status dot
+  while something is working". The drawing `02-project-sprints.html` loses
+  its engine row.
 
 ## Alternatives considered
 
 - **Keep the engine as the switch.** Rejected for the reasons in Context:
   two switches for one job, a Pause and a Stop that differ only for the
   program, and no meaning once a project has several workers.
-- **One switch per project, no sprint or task pause.** Simple, with no
-  combinations, but a user cannot hold one task to look at it while the
-  others go on, and with parallel workers inspecting one task would halt
-  all of them.
-- **Resume releases only its own level.** Rejected by the owner: a sprint
-  whose tasks are all paused would offer a Resume that does nothing.
-- **A pause above hides Resume below.** Rejected by the owner: a user could
-  not let one task of a paused sprint run without resuming the sprint and
-  pausing every other task, the page would send them elsewhere to act, and
-  a task named with Run next would be ignored.
-- **Pause replaces Block.** Proposed in the first draft and withdrawn: a
-  pause has no reason, is lifted by any Resume above, and is in no list,
-  so a task parked for days would be released by a ten-minute pause of its
-  sprint and forgotten in between.
-- **A paused sprint may finish, and the pause moves to the next.** Rejected
-  for the simpler rule of §2: what is paused does not finish.
+- **One switch per project, no sprint or task hold.** Simple, but a user
+  cannot hold one task to look at it while the others go on, and with
+  parallel workers inspecting one task would halt all of them.
+- **A sprint pause inherited by its tasks, with a task's Resume as an
+  exception under it** (the drafts of 2026-11-25). It needed a rule for
+  which level wins, exceptions shown on the sprint, and storage ordered by
+  specificity. The owner found resuming a task inside a paused sprint
+  "weird", and no product surveyed does it. Pause as a bulk action gives
+  the same reach with no parent state.
+- **The parent always wins, for Pause too** (print queues, CUPS, Temporal,
+  Prefect, Airflow, Buildkite). Rejected for Pause: a task's Resume would
+  do nothing under a paused sprint, which is the failure Microsoft's
+  support pages for print queues describe. Kept for Block, where the user
+  asks for exactly that and the reason is shown, as Buildkite shows a
+  paused queue's note on every build it holds.
+- **Resume on a sprint resumes only tasks paused by the sprint's Pause.**
+  Rejected: it needs the sprint to remember which pauses were its own, a
+  hidden state; parking a task is what Block is for.
 - **Pause cuts the step, as today.** Rejected: the common wish is "let it
   finish, then hold", and cutting throws away a step's work. Stop is there
   for the urgent case.
-- **A fourth level, the project.** Redundant while a project has one active
+- **A hold on the project.** Redundant while a project has one active
   sprint; the project page shows the sprint's controls instead.
 - **Keep pause as commands in `engine_commands`.** Rejected: a command is
   addressed to a program and expires with it (ADR-0011 rejects a pending
-  `pause` when a new engine starts), while a pause must outlive programs and
+  `pause` when a new engine starts), while a hold must outlive programs and
   be visible on every page.
-- **Decide by the newest `set_at`.** Rejected: times are written by
-  different processes, and commit order can differ from their clocks; the
-  most specific row gives the same answer with no clock.
+
+Surveyed on 2026-11-26:
+[Windows print jobs](https://msdn.microsoft.com/en-us/library/ms584322.aspx),
+[CUPS](https://man7.org/linux/man-pages/man8/cupsenable.8.html),
+[Temporal workflow pause](https://docs.temporal.io/encyclopedia/workflow/workflow-pause),
+[Temporal activity pause](https://docs.temporal.io/activity-operations/pause),
+[Prefect work pools](https://docs.prefect.io/concepts/work-pools),
+[Airflow trigger on a paused DAG](https://docs.arenadata.io/en/ADO/current/airflow-cli/dags-trigger.html),
+[Buildkite queues](https://buildkite.com/docs/clusters/manage-queues),
+[qBittorrent "Resume all"](https://forum.qbittorrent.org/viewtopic.php?p=19882).
 
 ## Order of work
 
-1. The `work_switches` table, `is_held`, the worker reading it (built-in
-   steps and the sprint's finish and next start included), the CLI, and
-   the migration. Retire the engine's Stop on the dashboard in the same
-   slice, since a stop must become a pause before anything restarts
-   workers.
-2. The dashboard: the status line, Pause, Stop and Resume at the three
-   levels, Start sprint, Run next for tasks that may run, "Needed by" and
-   "Waiting · FOR-65", the engine row and menu removed, "no worker" with
-   Start worker. The design README and drawing change with it.
+1. The task pause fields, the `holds` table, `is_held`, the worker reading
+   them (built-in steps and the sprint's finish and next start included),
+   the CLI, and the migration. Retire the engine's Stop on the dashboard
+   in the same slice, since a stop must become a pause before anything
+   restarts workers.
+2. The dashboard: the status line, Pause, Stop, Resume, Block and Unblock
+   at the three levels, Start sprint, Run next for tasks that may run,
+   "Needed by" and "Waiting · FOR-65", blocked sprints and the workspace in
+   Needs you, the engine row and menu removed, "no worker" with Start
+   worker. The design README and drawing change with it.
 3. Before relying on restarts: a test that a worker killed hard (SIGKILL)
    leaves no agent process running. Then the supervisor, and the Workers
    view.

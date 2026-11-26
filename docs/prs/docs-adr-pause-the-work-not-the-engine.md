@@ -2,21 +2,24 @@
 
 ## Summary
 
-- Proposes ADR-0043: a user pauses the work (workspace, sprint or task), not
-  an engine. Pause lets the running step finish; Stop cuts it now; both end
-  paused; Resume releases everything at and below its level, so no Resume
-  does nothing. Start sprint is the only way a sprint starts; Run next only
-  orders; a task a user stops is paused, not blocked. The engine leaves the
-  page; the program is a worker, with Start worker only on a fault line.
-- Pauses become rows in a `pauses` table that workers read at their
-  existing poll sites; `pause`, `resume` and `stop_task` leave the command
-  table.
-- Revised after the owner's review and a second opinion (Fable 5.2): the
-  last action wins at and below its level; Block stays as the long park;
-  Stop only while a step runs, with "Stopping"; a pause holds everything
-  downstream, so a paused sprint neither finishes nor starts the next; no
-  names in status lines, toasts or buttons; storage decided by the most
-  specific row, not by clocks.
+- Proposes ADR-0043: a user holds the work, not an engine. Two holds:
+  **Pause**, soft and per task (on a sprint or the workspace it pauses each
+  task, as a torrent client's Pause all does, and any task can be resumed
+  alone), and **Block**, hard and with a reason, on a task, a sprint or the
+  workspace (nothing under it runs until Unblock). **Stop** cuts the
+  running step now and pauses. A hold holds everything downstream, so a
+  held sprint neither finishes nor starts the next; otherwise Foreman
+  finishes and starts sprints itself where the project lets it.
+- Start sprint replaces Activate; Run next only orders; a task a user stops
+  is paused, not blocked. The engine leaves the page; the program is a
+  worker, with Start worker only when none runs. No names in status lines,
+  toasts or buttons.
+- Pauses are fields on tasks, sprint and workspace blocks are rows in
+  `holds`, and workers read them at their existing poll sites; `pause`,
+  `resume` and `stop_task` leave the command table.
+- Shaped by the owner's review, a second opinion (Fable 5.2) and a survey
+  of how print queues, workflow engines, CI queues and torrent clients
+  handle pausing.
 
 ## Scope
 
