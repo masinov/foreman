@@ -22,8 +22,8 @@ describe("a proposal in words", () => {
     [{ kind: "file_task", title: "New", accept: true }, [["File", null, "New, accepted", false]]],
     [{ kind: "file_task", title: "New" }, [["File", null, "New, in the backlog", false]]],
     [
-      { kind: "add_task", sprint_id: "s2", title: "API", ref: "api", complexity: "small", waits_for: ["schema"], description: "Add the route.", acceptance_criteria: "It answers 200." },
-      [["Add", null, "API, to Sprint 2, small, after Schema", false], ["What", null, "Add the route.", false], ["Done when", null, "It answers 200.", false]],
+      { kind: "add_task", sprint_id: "s2", title: "API", ref: "api", waits_for: ["schema"], description: "Add the route.", acceptance_criteria: "It answers 200." },
+      [["Add", null, "API, to Sprint 2, after Schema", false], ["What", null, "Add the route.", false], ["Done when", null, "It answers 200.", false]],
     ],
     [{ kind: "add_task", sprint_id: "next", title: "Tokens", waits_for: ["t1"] }, [["Add", null, "Tokens, to Sprint 3, after One", false]]],
     [{ kind: "plan_tasks", task_ids: ["schema"], sprint_id: "next" }, [["Into", null, "Sprint 3", false], ["Plan in", null, "Schema", false]]],
@@ -43,8 +43,8 @@ describe("a proposal in words", () => {
     ],
     [{ kind: "reopen_task", task_id: "t1" }, [["Reopen", "FOR-1 One", "its steps start over", false]]],
     [
-      { kind: "edit_task", task_id: "t1", complexity: "large", depends_on_task_ids: [] },
-      [["Change", "FOR-1 One", "its size and dependencies", false]],
+      { kind: "edit_task", task_id: "t1", priority: 3, depends_on_task_ids: [] },
+      [["Change", "FOR-1 One", "its priority and dependencies", false]],
     ],
     [{ kind: "send_back", task_id: "t1", guidance: "More tests." }, [["Send back", "FOR-1 ", "One", false], ["Guidance", null, "More tests.", false]]],
     [

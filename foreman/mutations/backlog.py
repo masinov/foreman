@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..domain.models import (
-    TASK_COMPLEXITIES,
     TASK_TYPES,
     Project,
     Sprint,
@@ -54,7 +53,6 @@ class BacklogMutations(MutationBase):
         description: str | None = None,
         acceptance_criteria: str | None = None,
         priority: int = 0,
-        complexity: str | None = None,
         created_by: str | None = None,
         source: Mapping[str, str | None] | None = None,
         accept: bool = False,
@@ -83,11 +81,6 @@ class BacklogMutations(MutationBase):
             raise MutationError(
                 f"Unsupported task type: {task_type}. Expected one of: {', '.join(TASK_TYPES)}."
             )
-        if complexity is not None and complexity not in TASK_COMPLEXITIES:
-            raise MutationError(
-                f"Unsupported complexity: {complexity}. "
-                f"Expected one of: {', '.join(TASK_COMPLEXITIES)}."
-            )
         if into is not None and into.project_id != project.id:
             raise MutationError(f"Sprint {into.id} belongs to another project.")
 
@@ -111,7 +104,6 @@ class BacklogMutations(MutationBase):
             task_type=task_type,  # type: ignore[arg-type]
             description=(description or "").strip() or None,
             acceptance_criteria=(acceptance_criteria or "").strip() or None,
-            complexity=complexity,
             priority=int(priority or 0),
             order_index=self.store.next_task_order_index(target.id),
             created_by=created_by or self.actor or self.role,

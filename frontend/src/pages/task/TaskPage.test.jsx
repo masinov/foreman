@@ -122,19 +122,17 @@ describe("the task page header", () => {
       task_type: "fix",
       description: taskDetail().description,
       acceptance_criteria: taskDetail().acceptance_criteria,
-      complexity: taskDetail().complexity ?? null,
       priority: taskDetail().priority ?? 0,
     });
     await waitFor(() => expect(taskReads(fetchImpl)).toBeGreaterThan(1));
   });
 
-  it("changes a queued task's size, priority and what it waits for", async () => {
+  it("changes a queued task's priority and what it waits for", async () => {
     const task = taskDetail({
       status: "todo",
       blocked_kind: null,
       awaiting_human_gate: false,
       workflow_current_step: null,
-      complexity: null,
       priority: 0,
       depends_on_task_ids: [],
       dependencies: [],
@@ -144,7 +142,6 @@ describe("the task page header", () => {
     const { fetchImpl } = await renderTask(BASE, routes);
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     const dialog = screen.getByRole("dialog", { name: "Edit task" });
-    fireEvent.change(within(dialog).getByLabelText("Size"), { target: { value: "large" } });
     fireEvent.change(within(dialog).getByLabelText("Priority"), { target: { value: "2" } });
     fireEvent.click(await within(dialog).findByRole("button", { name: "Make it wait for other tasks" }));
     const boxes = within(dialog).getAllByRole("checkbox");
@@ -155,7 +152,7 @@ describe("the task page header", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     const body = calls(fetchImpl, "PATCH", `/api/v1/tasks/${TASK_ID}`)[0].body;
-    expect(body.complexity).toBe("large");
+    expect(body).not.toHaveProperty("complexity");
     expect(body.priority).toBe(2);
     expect(body.depends_on_task_ids).toHaveLength(1);
     expect(body.depends_on_task_ids[0]).not.toBe(TASK_ID);
@@ -1635,9 +1632,8 @@ describe("the page keeps its parts apart", () => {
 });
 
 describe("details beyond the usual", () => {
-  it("names what the task waits for, its size and a priority that was set", async () => {
+  it("names what the task waits for and a priority that was set", async () => {
     const task = taskDetail({
-      complexity: "small",
       priority: 2,
       dependencies: [
         { id: "task-a", task_key: "FOR-11", title: "Record the result line", status: "done" },
@@ -1651,7 +1647,6 @@ describe("details beyond the usual", () => {
     expect(details).toHaveTextContent(/Record the result line\s*done/);
     expect(details).toHaveTextContent(/Time the test step\s*queued/i);
     expect(details).toHaveTextContent("A task that no longer exists");
-    expect(details).toHaveTextContent(/Size\s*Small/);
     expect(details).toHaveTextContent(/Priority\s*2/);
   });
 

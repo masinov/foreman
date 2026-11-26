@@ -71,7 +71,7 @@ says so.
 | Edit the sprint's title and goal in place | `PATCH /sprints/{id}` | sprint page | built (a dialog, not in place) |
 | See the tasks on a board with columns Triage, Todo, In Progress, Blocked, Done | `GET /sprints/{id}/tasks` | `/dashboard/sprints/{id}/board` | built (columns follow the workflow's steps, Queued first and Done last; Triage is now the backlog) |
 | See the tasks as a list | `GET /sprints/{id}/tasks` | `/dashboard/sprints/{id}` | built |
-| Add a task to the sprint: title, type, description, acceptance criteria, complexity, dependencies | `POST /sprints/{id}/tasks` | sprint page | built as adding work from the backlog; filing a new task is on the backlog tab (title, description and criteria; type, complexity and dependencies are not in the design) |
+| Add a task to the sprint: title, type, description, acceptance criteria, dependencies | `POST /sprints/{id}/tasks` | sprint page | built as adding work from the backlog; filing a new task is on the backlog tab (title, description and criteria; type and dependencies are not in the design) |
 | Run, pause and resume the engine from the sprint | `POST /projects/{id}/agent/start`, `/agent/stop` | sprint page, engine menu | built |
 | Cancel the sprint, delete it | `PATCH`/`DELETE /sprints/{id}` | sprint page, More | built |
 | Approve, deny, stop or accept a task from its card | `POST /tasks/{id}/approve`, `/deny`, `/stop`, `/accept` | task page; Needs you; sprint list and board | approve a merge is built (Needs you, sprint list and board); approve, send back (deny), stop and accept are built on the task page |
@@ -86,7 +86,7 @@ says so.
 | Capability | Endpoint | Route | Status |
 |---|---|---|---|
 | See title, description, acceptance criteria, key, type | `GET /tasks/{id}` | `/dashboard/tasks/{id}` | built |
-| See step, branch, worktree path, role, priority, tokens and split, step visits, complexity, model overrides | `GET /tasks/{id}` | task page, Overview | built for step, branch, spend, runs and model overrides (set and cleared in Overrides for this task); worktree path, priority, token split, step visits and complexity **no home yet** |
+| See step, branch, worktree path, role, priority, tokens and split, step visits, model overrides | `GET /tasks/{id}` | task page, Overview | built for step, branch, spend, runs and model overrides (set and cleared in Overrides for this task); worktree path, priority, token split, step visits **no home yet** |
 | See dependencies as chips with their titles | `GET /tasks/{id}` | task page, Overview | **no home yet** |
 | See the blocked reason | `GET /tasks/{id}` | task page, the decision | built |
 | See the human gate and approve it | `POST /tasks/{id}/approve` | task page; Needs you | built (Needs you and the task page's decision) |

@@ -78,7 +78,6 @@ class TaskWrites:
             "order_index",
             "depends_on_task_ids",
             "executor_overrides",
-            "complexity",
             "sprint_id",
         ):
             setattr(task, name, getattr(fresh, name))

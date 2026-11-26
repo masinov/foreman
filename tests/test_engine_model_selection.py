@@ -113,11 +113,9 @@ class ResolveStepModelTests(unittest.TestCase):
         task = self._task(executor_overrides={"ladder_start": 2})
         self.assertEqual(self._models(task, role).model, "C")
 
-    def test_the_size_label_may_still_choose_the_first_model(self) -> None:
+    def test_a_ladder_starts_on_its_first_model_unless_the_task_names_one(self) -> None:
         role = self._role(ladder=("A", "B", "C"))
-        self.assertEqual(self._models(self._task(complexity="large"), role).model, "B")
-        task = self._task(complexity="large", executor_overrides={"ladder_start": "C"})
-        self.assertEqual(self._models(task, role).model, "C")
+        self.assertEqual(self._models(self._task(), role).model, "A")
 
     def test_branch3_role_model(self) -> None:
         self.assertEqual(

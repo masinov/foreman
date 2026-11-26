@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import argparse
 
-from ...domain.models import TASK_COMPLEXITIES, TASK_TYPES
+from ...domain.models import TASK_TYPES
 from ..common import (
     DB_OPTION_NOTE,
     add_db_option,
@@ -69,11 +69,6 @@ def _register_add(task_commands: argparse._SubParsersAction) -> None:
         dest="depends_on",
         metavar="TASK_IDS",
         help="Comma-separated task ids this task depends on (must exist in the same project).",
-    )
-    task_add.add_argument(
-        "--complexity",
-        choices=TASK_COMPLEXITIES,
-        help="How big the task is. A role with a model ladder starts a large task one model up.",
     )
     add_db_option(
         task_add,
@@ -261,7 +256,7 @@ def _register_edit(task_commands: argparse._SubParsersAction) -> None:
 
     task_edit = task_commands.add_parser(
         "edit",
-        help="Change a task's title, type, texts, size, priority or what it waits for.",
+        help="Change a task's title, type, texts, priority or what it waits for.",
     )
     task_edit.add_argument("task_id", help="Task id or key (FOR-56).")
     task_edit.add_argument("--title", help="New title.")
@@ -289,11 +284,6 @@ def _register_edit(task_commands: argparse._SubParsersAction) -> None:
         choices=["description", "criteria"],
         help="Edit one text in $VISUAL, else $EDITOR, else nano or vi. Needs a "
         "terminal. Closing without a change, or with the text emptied, changes nothing.",
-    )
-    task_edit.add_argument(
-        "--size",
-        choices=[*TASK_COMPLEXITIES, "none"],
-        help="How big the task is; `none` clears it.",
     )
     task_edit.add_argument(
         "--priority", type=int, help="Lower runs first; 0 is the default."

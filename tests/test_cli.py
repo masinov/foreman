@@ -722,7 +722,7 @@ class ForemanCLISmokeTests(unittest.TestCase):
         add = self.run_cli(
             "task", "add", project.id,
             "--title", "Ladder task", "--criteria", "c",
-            "--complexity", "large", "--db", str(db_path),
+            "--db", str(db_path),
         )
         self.assertEqual(add.returncode, 0, add.stderr)
         task_id = store.list_tasks(sprint_id=sprint.id)[0].id
@@ -738,7 +738,6 @@ class ForemanCLISmokeTests(unittest.TestCase):
 
         stored = store.get_task(task_id)
         assert stored is not None
-        self.assertEqual(stored.complexity, "large")
         self.assertEqual(
             stored.executor_overrides,
             {"models": {"develop": "MiniMax-M2", "review": "claude-opus-4-8"}, "ladder_start": 1},
@@ -746,7 +745,6 @@ class ForemanCLISmokeTests(unittest.TestCase):
 
         show = self.run_cli("task", "show", task_id, "--db", str(db_path))
         self.assertEqual(show.returncode, 0, show.stderr)
-        self.assertIn("Complexity: large", show.stdout)
         self.assertIn("MiniMax-M2", show.stdout)
 
         # Unknown step is rejected; --clear resets.

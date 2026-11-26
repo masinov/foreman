@@ -447,7 +447,6 @@ for the next sprint as a JSON array. Each task object must have:
 - "task_type": "feature" | "fix" | "refactor" | "docs" | "spike" | "chore"
 - "description": string
 - "acceptance_criteria": string
-- "complexity": "small" | "medium" | "large"
 - "depends_on": [list of task titles this depends on]
 
 Output the array inside a ```json fenced block.

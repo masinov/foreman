@@ -58,7 +58,6 @@ def serialize_backlog_task(
         "status": task.status,
         "task_type": task.task_type,
         "priority": task.priority,
-        "complexity": task.complexity,
         "description": task.description,
         "acceptance_criteria": task.acceptance_criteria,
         "created_by": task.created_by,
@@ -174,7 +173,6 @@ class BacklogService(Service):
         description: str | None = None,
         acceptance_criteria: str | None = None,
         priority: int = 0,
-        complexity: str | None = None,
         accept: bool = False,
         requested_by: str | None = None,
     ) -> dict[str, Any]:
@@ -189,7 +187,6 @@ class BacklogService(Service):
                 description=description,
                 acceptance_criteria=acceptance_criteria,
                 priority=priority,
-                complexity=complexity,
                 created_by=(requested_by or "").strip() or "human",
                 accept=accept,
             )

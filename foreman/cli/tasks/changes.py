@@ -76,7 +76,6 @@ def handle_task_add(args: argparse.Namespace) -> int:
                 task_type=args.task_type,
                 description=getattr(args, "description", None),
                 acceptance_criteria=args.criteria,
-                complexity=getattr(args, "complexity", None),
                 depends_on=(getattr(args, "depends_on", None) or "").split(","),
             )
         except MutationError as exc:
@@ -93,7 +92,6 @@ def handle_task_add(args: argparse.Namespace) -> int:
         f"Type: {task.task_type}",
         f"Criteria: {task.acceptance_criteria or 'n/a'}",
         f"Depends on: {', '.join(task.depends_on_task_ids) if task.depends_on_task_ids else 'none'}",
-        f"Complexity: {task.complexity or 'n/a'}",
         f"Status: {task.status}",
     )
     return 0
@@ -235,8 +233,6 @@ def handle_task_edit(args: argparse.Namespace) -> int:
         changes["title"] = args.title
     if args.task_type is not None:
         changes["task_type"] = args.task_type
-    if args.size is not None:
-        changes["complexity"] = None if args.size == "none" else args.size
     if args.priority is not None:
         changes["priority"] = args.priority
     if args.no_dependencies and args.depends_on:
@@ -257,7 +253,7 @@ def handle_task_edit(args: argparse.Namespace) -> int:
         return 1
     if not changes and args.edit is None:
         print(
-            "Nothing to change. Give --title, --type, --size, --priority, --description, "
+            "Nothing to change. Give --title, --type, --priority, --description, "
             "--criteria, --depends-on or --no-dependencies, or --edit description|criteria.",
             file=sys.stderr,
         )
@@ -278,7 +274,6 @@ def handle_task_edit(args: argparse.Namespace) -> int:
             "task_type": task.task_type,
             "description": task.description,
             "acceptance_criteria": task.acceptance_criteria,
-            "complexity": task.complexity,
             "priority": task.priority,
             "depends_on_task_ids": list(task.depends_on_task_ids or []),
         }
@@ -309,7 +304,7 @@ def handle_task_edit(args: argparse.Namespace) -> int:
         f"Task: {task.id} | {task.title}",
         *(f"{label} unchanged." for label in unchanged),
         *_describe_changes(before, changed),
-        f"Size: {task.complexity or 'not said'} | Priority: {task.priority}",
+        f"Priority: {task.priority}",
         "Waits for: "
         + (", ".join(task.depends_on_task_ids) if task.depends_on_task_ids else "nothing"),
     )
@@ -322,7 +317,7 @@ _CHANGE_LABELS = {
     "description": "Description",
     "acceptance_criteria": "Acceptance criteria",
 }
-# Size, priority and what a task waits for are shown in full on the lines after.
+# Priority and what a task waits for are shown in full on the lines after.
 
 
 def _describe_changes(before: dict[str, object], changed: dict[str, object]) -> list[str]:

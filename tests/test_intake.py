@@ -431,7 +431,6 @@ class IntakeServiceTests(unittest.TestCase):
         cases = [
             {"title": "   "},
             {"title": "x", "task_type": "invention"},
-            {"title": "x", "complexity": "enormous"},
             {"title": "x", "priority": "high"},
             {"title": "x", "source": {"system": "pd", "unexpected": "v"}},
             {"title": "x", "source": {"system": 7}},
@@ -590,6 +589,17 @@ class IntakeEndpointTests(unittest.TestCase):
         self.assertEqual(payload["created_by"], "api:pagerduty")
         self.assertEqual(payload["description"], "The disk on web-3 is at 98%.")
         self.assertEqual(payload["acceptance_criteria"], "Free space stays above 20%.")
+
+    def test_a_complexity_a_system_still_sends_is_accepted_and_ignored(self) -> None:
+        # Foreman keeps no task size. Callers that send one are not broken.
+        for value in ("large", "enormous", None):
+            with self.subTest(complexity=value):
+                body = {**self.BODY, "complexity": value,
+                        "source": {**self.BODY["source"], "external_ref": f"INC-{value}"}}
+                response = self.post_intake(body, token=self.secret)
+
+                self.assertEqual(response.status_code, 201, response.text)
+                self.assertNotIn("complexity", response.json())
 
     def test_a_missing_title_is_400(self) -> None:
         response = self.post_intake({"source": {"system": "ci"}}, token=self.secret)

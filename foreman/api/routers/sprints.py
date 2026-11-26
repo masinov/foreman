@@ -87,7 +87,6 @@ def build_router(ctx: ApiContext) -> APIRouter:
                 task_type=body.task_type,
                 acceptance_criteria=body.acceptance_criteria,
                 description=body.description,
-                complexity=body.complexity or None,
                 depends_on=body.depends_on,
             )
         )

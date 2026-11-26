@@ -454,7 +454,6 @@ describe("new task in the sprint", () => {
     await waitFor(() =>
       expect(calls(fetchImpl, "POST", "/api/v1/sprints/sprint-56/tasks")[0].body).toMatchObject({
         title: "Tighten the retry",
-        complexity: null,
         depends_on: [open[0].id],
       }),
     );

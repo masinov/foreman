@@ -16,7 +16,6 @@ const TASK_FIELDS = {
   description: "description",
   acceptance_criteria: "acceptance criteria",
   priority: "priority",
-  complexity: "size",
   depends_on_task_ids: "dependencies",
 };
 
@@ -74,11 +73,10 @@ function rowsOf(operation, names) {
       return [{ term: "File", text: `${operation.title}, ${operation.accept ? "accepted" : "in the backlog"}` }];
     case "add_task": {
       // Everything a person confirms is on the card: what the task is and what will prove it.
-      const size = operation.complexity ? `, ${operation.complexity}` : "";
       const after = (operation.waits_for || []).length
         ? `, after ${list(operation.waits_for.map((taskId) => taskOf(names, taskId).title || taskId))}`
         : "";
-      const rows = [{ term: "Add", text: `${operation.title}, to ${sprint}${size}${after}` }];
+      const rows = [{ term: "Add", text: `${operation.title}, to ${sprint}${after}` }];
       if (operation.description) rows.push({ term: "What", text: operation.description });
       if (operation.acceptance_criteria) rows.push({ term: "Done when", text: operation.acceptance_criteria });
       return rows;

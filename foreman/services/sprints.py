@@ -9,7 +9,6 @@ from ..definitions.gate_steps import (
     blocked_kind,
 )
 from ..domain.models import (
-    TASK_COMPLEXITIES,
     TASK_TYPES,
     Sprint,
     sprint_ready_to_finish,
@@ -211,14 +210,12 @@ class SprintService(Service):
             if not task_title:
                 continue
             task_type = str(task_data.get("task_type", "feature"))
-            complexity = task_data.get("complexity") or None
             task = mutations.add_task(
                 sprint,
                 title=task_title,
                 task_type=task_type if task_type in TASK_TYPES else "feature",
                 acceptance_criteria=str(task_data.get("acceptance_criteria") or "") or None,
                 description=str(task_data.get("description") or "") or None,
-                complexity=complexity if complexity in TASK_COMPLEXITIES else None,
                 order_index=i,
             )
             created_tasks.append(
@@ -282,7 +279,6 @@ class SprintService(Service):
                     "awaiting_human_gate": self._at_human_gate(task, gates),
                     "gate_policy": self._gate_policy(task, gates),
                     "blocked_kind": blocked_kind(task, gates),
-                    "complexity": task.complexity,
                     "executor_overrides": task.executor_overrides,
                     "source": task_source(task),
                     "checks": _serialize_task_checks(task.completion_evidence),

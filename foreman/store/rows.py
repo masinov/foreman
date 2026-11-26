@@ -161,7 +161,6 @@ def _row_to_task(row: sqlite3.Row) -> Task:
             if "executor_overrides_json" in row.keys()
             else {}
         ),
-        complexity=row["complexity"] if "complexity" in row.keys() else None,
         completion_evidence=completion_evidence,
         source_system=row["source_system"] if "source_system" in row.keys() else None,
         source_ref=row["source_ref"] if "source_ref" in row.keys() else None,

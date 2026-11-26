@@ -88,8 +88,6 @@ def handle_task_show(args: argparse.Namespace) -> int:
         lines.append(f"Assigned role: {task['assigned_role']}")
     if task["workflow_current_step"]:
         lines.append(f"Current step: {task['workflow_current_step']}")
-    if task["complexity"]:
-        lines.append(f"Complexity: {task['complexity']}")
     if task["executor_overrides"]:
         lines.append(
             f"Executor overrides: {json.dumps(task['executor_overrides'], sort_keys=True)}"

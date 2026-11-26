@@ -384,7 +384,7 @@ class ConfirmTests(ProposalCase):
         proposal = self.propose(
             {"kind": "complete_task", "task_id": "stuck", "reason": "Merged by hand on Friday."},
             {"kind": "reopen_task", "task_id": "old"},
-            {"kind": "edit_task", "task_id": "old", "complexity": "small", "depends_on_task_ids": ["first"]},
+            {"kind": "edit_task", "task_id": "old", "priority": 4, "depends_on_task_ids": ["first"]},
         )
 
         self.assertEqual(self.proposals.confirm(proposal.id).state, "confirmed")
@@ -397,8 +397,8 @@ class ConfirmTests(ProposalCase):
         self.assertEqual(closed[-1].payload["reason"], "Merged by hand on Friday.")
         reopened = self.store.get_task("old")
         self.assertEqual(
-            (reopened.status, reopened.complexity, reopened.depends_on_task_ids),
-            ("todo", "small", ["first"]),
+            (reopened.status, reopened.priority, reopened.depends_on_task_ids),
+            ("todo", 4, ["first"]),
         )
 
     def test_a_task_can_be_proposed_to_wait_for_nothing_but_not_for_itself(self) -> None:

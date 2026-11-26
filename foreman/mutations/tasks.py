@@ -10,7 +10,6 @@ from typing import Any
 
 from ..definitions.gate_steps import blocked_kind, resolve_gate_steps
 from ..domain.models import (
-    TASK_COMPLEXITIES,
     TASK_TYPES,
     Event,
     Sprint,
@@ -28,7 +27,6 @@ TASK_EDIT_FIELDS: tuple[str, ...] = (
     "acceptance_criteria",
     "description",
     "priority",
-    "complexity",
     "depends_on_task_ids",
     "executor_overrides",
 )
@@ -337,17 +335,6 @@ class TaskMutations(MutationBase):
             if priority != task.priority:
                 changed["priority"] = priority
             task.priority = priority
-        if "complexity" in changes:
-            value = changes["complexity"]
-            complexity = str(value).strip() if value else None
-            if complexity is not None and complexity not in TASK_COMPLEXITIES:
-                raise MutationError(
-                    f"Unsupported complexity: {complexity}. "
-                    f"Expected one of: {', '.join(TASK_COMPLEXITIES)}."
-                )
-            if complexity != task.complexity:
-                changed["complexity"] = complexity
-            task.complexity = complexity
         if "depends_on_task_ids" in changes:
             wanted = self._checked_dependencies(task, changes["depends_on_task_ids"])
             if wanted != list(task.depends_on_task_ids or []):
@@ -431,7 +418,6 @@ class TaskMutations(MutationBase):
         task_type: str = "feature",
         description: str | None = None,
         acceptance_criteria: str | None = None,
-        complexity: str | None = None,
         depends_on: Sequence[str] = (),
         order_index: int | None = None,
     ) -> Task:
@@ -454,11 +440,6 @@ class TaskMutations(MutationBase):
         if task_type not in TASK_TYPES:
             raise MutationError(
                 f"Unsupported task type: {task_type}. Expected one of: {', '.join(TASK_TYPES)}."
-            )
-        if complexity is not None and complexity not in TASK_COMPLEXITIES:
-            raise MutationError(
-                f"Unsupported complexity: {complexity}. "
-                f"Expected one of: {', '.join(TASK_COMPLEXITIES)}."
             )
         depends_on_ids: list[str] = []
         for raw in depends_on:
@@ -483,7 +464,6 @@ class TaskMutations(MutationBase):
             task_type=task_type,  # type: ignore[arg-type]
             acceptance_criteria=(acceptance_criteria or "").strip() or None,
             description=(description or "").strip() or None,
-            complexity=complexity,
             depends_on_task_ids=depends_on_ids,
             order_index=order_index,
             created_by=self.role,

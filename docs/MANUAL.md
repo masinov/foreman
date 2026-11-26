@@ -202,7 +202,7 @@ All entities live in SQLite (`foreman/store.py` is the only data-access layer).
   `task_type` (`feature`/`fix`/`refactor`/…), `status`
   (`triage`/`todo`/`in_progress`/`blocked`/`done`/`cancelled`),
   `acceptance_criteria`,
-  `branch_name`, `depends_on_task_ids`, `complexity` (`small`/`medium`/`large`),
+  `branch_name`, `depends_on_task_ids`,
   `executor_overrides` (per-step model pins and per-task policy), plus workflow
   runtime fields
   (`workflow_current_step`, `workflow_carried_output`, `step_visit_counts`,
@@ -265,7 +265,7 @@ reopened.
 ```bash
 foreman task add <project-id> --title TITLE --criteria CRITERIA \
     [--type TYPE] [--description DESC] [--sprint SPRINT_ID] \
-    [--depends-on id1,id2] [--complexity {small,medium,large}]
+    [--depends-on id1,id2]
 
 foreman task override <task-id> \
     [--step STEP=MODEL ...] [--ladder-start N] \
@@ -279,7 +279,7 @@ foreman task block <task-id> --reason "..."  # only a task that has not started;
 foreman task unblock <task-id>
 foreman task done <task-id> --reason "..."   # finished outside the engine; nothing is checked
 foreman task reopen <task-id>         # done or cancelled → todo, workflow from the start
-foreman task edit <task-id> [--title T] [--type TYPE] [--size small|medium|large|none] [--priority N]
+foreman task edit <task-id> [--title T] [--type TYPE] [--priority N]
                             [--description TEXT | --description-file PATH|-]
                             [--criteria TEXT | --criteria-file PATH|-]
                             [--edit description|criteria]
@@ -332,7 +332,7 @@ way: filed, accepted, planned.
 foreman backlog list <project-id> [--status filed|accepted|declined] \
     [--query TEXT] [--limit N] [--offset N] [--json]
 foreman backlog add <project-id> --title TITLE [--type TYPE] [--criteria C] \
-    [--description D] [--priority N] [--complexity C] [--accept]
+    [--description D] [--priority N] [--accept]
 foreman backlog accept <task-id>      # filed → accepted (same as task accept)
 foreman backlog decline <task-id> [--reason TEXT]
 foreman backlog plan <project-id> <task-id>... --sprint SPRINT_ID
@@ -817,7 +817,7 @@ model_ladder = ["claude-haiku-4-5-20251001", "claude-sonnet-4-6", "claude-opus-4
 A manager differentiates dispatch per task:
 
 ```bash
-foreman task add <project> --title ... --criteria ... --complexity large
+foreman task add <project> --title ... --criteria ...
 foreman task override <task-id> --step develop=MiniMax-M2 --step review=claude-opus-4-8 --ladder-start 1
 ```
 
@@ -827,8 +827,7 @@ foreman task override <task-id> --step develop=MiniMax-M2 --step review=claude-o
    ladder, escalation resumes from its index on later visits; otherwise it's
    pinned for every visit (the manager chose it deliberately).
 2. Role `model_ladder`, indexed by `ladder_start + (visit − 1)`, where
-   `ladder_start` comes from the override, else a complexity map
-   (`small/medium`→0, `large`→1), else 0.
+   `ladder_start` comes from the override, else 0. A task has no size.
 3. Role `model`.
 4. Project `default_model` setting.
 5. `None` (harness default).
@@ -1496,7 +1495,7 @@ Recent migrations:
 | # | Contents |
 |---|---|
 | 11 | `meta_sessions`, `meta_turns` + index (manager persistence) |
-| 12 | `tasks.executor_overrides_json`, `tasks.complexity` |
+| 12 | `tasks.executor_overrides_json`, `tasks.complexity` (dropped by 33) |
 | 13 | `projects.task_key_prefix`, `tasks.task_key` (Jira-style keys) |
 | 14 | gate tables rebuilt with `ON DELETE` rules, `events(task_id, timestamp)` index, `projects.task_key_seq` + unique task keys |
 | 15 | `engine_commands` + `(project_id, status, requested_at)` index (the control channel to a resident engine) |
@@ -1965,7 +1964,8 @@ curl -sS -X POST http://localhost:8000/api/projects/foreman/intake \
 | `title` | yes | |
 | `description` · `acceptance_criteria` | no | free text |
 | `task_type` | no | defaults to `fix` (not `feature`: most work arriving from outside is a problem report) |
-| `priority` · `complexity` | no | integer; `small`/`medium`/`large` |
+| `priority` | no | integer |
+| `complexity` | no | Accepted and ignored: Foreman keeps no task size. A system that still sends it is not refused, and what it sends is not read (not even an unknown value) |
 | `source` | no | `system`, `external_ref`, `url`, `reporter` — all strings |
 | `sprint_id` | no | omit to file into the project's backlog |
 
@@ -2030,7 +2030,7 @@ Every intake task records where it came from:
 |---|---|
 | **401** | No bearer token, an unknown or revoked one, or the dashboard's shared token (it is not accepted here) |
 | **403** | A live token belonging to another project, or one without the `intake` scope |
-| **400** | Missing `title`, an unknown `task_type`/`complexity`, or a malformed `source` |
+| **400** | Missing `title`, an unknown `task_type`, or a malformed `source` |
 
 A project API token is refused with **403** on every other `/api` route,
 whether or not a dashboard token is configured — a leaked intake token can

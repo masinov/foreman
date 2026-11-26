@@ -934,7 +934,7 @@ class DashboardSettingsTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 404)
 
-    def test_create_task_accepts_description_complexity_and_dependencies(self):
+    def test_create_task_accepts_description_and_dependencies(self):
         project, sprint = self._seed_project()
         first = self._request(
             "POST",
@@ -949,14 +949,12 @@ class DashboardSettingsTests(unittest.TestCase):
                 "task_type": "feature",
                 "acceptance_criteria": "Must pass",
                 "description": "Lots of context here.",
-                "complexity": "large",
                 "depends_on": [first["id"]],
             },
         )
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data["description"], "Lots of context here.")
-        self.assertEqual(data["complexity"], "large")
         self.assertEqual(data["depends_on_task_ids"], [first["id"]])
 
     def test_create_task_assigns_and_exposes_jira_style_key(self):
@@ -987,14 +985,15 @@ class DashboardSettingsTests(unittest.TestCase):
         detail = self._request("GET", f"/api/tasks/{first['id']}").json()
         self.assertEqual(detail["task_key"], first["task_key"])
 
-    def test_create_task_rejects_invalid_complexity(self):
+    def test_create_task_ignores_a_complexity_it_is_sent(self):
         _, sprint = self._seed_project()
         response = self._request(
             "POST",
             f"/api/sprints/{sprint.id}/tasks",
-            json={"title": "Bad complexity", "complexity": "huge"},
+            json={"title": "Sized", "complexity": "huge"},
         )
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("complexity", response.json())
 
     def test_create_task_rejects_unknown_dependency(self):
         _, sprint = self._seed_project()
@@ -1943,8 +1942,8 @@ class DashboardSprintTaskBacklogTests(unittest.TestCase):
         self.assertEqual(tasks[1].title, "Second task")
         store.close()
 
-    def test_create_sprint_initial_tasks_persist_description_and_complexity(self):
-        """initial_tasks carry the unified form's description + complexity."""
+    def test_create_sprint_initial_tasks_persist_description(self):
+        """initial_tasks carry the unified form's description."""
         store = ForemanStore(self.db_path)
         store.initialize()
         project = Project(
@@ -1966,9 +1965,7 @@ class DashboardSprintTaskBacklogTests(unittest.TestCase):
                         "title": "Rich task",
                         "task_type": "feature",
                         "description": "context here",
-                        "complexity": "large",
                     },
-                    {"title": "Bad complexity", "complexity": "huge"},
                 ],
             },
         )
@@ -1980,9 +1977,6 @@ class DashboardSprintTaskBacklogTests(unittest.TestCase):
         tasks = {t.title: t for t in store.list_tasks(sprint_id=sprint_id)}
         store.close()
         self.assertEqual(tasks["Rich task"].description, "context here")
-        self.assertEqual(tasks["Rich task"].complexity, "large")
-        # An invalid complexity is dropped, not persisted or errored.
-        self.assertIsNone(tasks["Bad complexity"].complexity)
 
     def test_create_sprint_without_initial_tasks_still_works(self):
         """POST /api/projects/{id}/sprints without initial_tasks creates no tasks."""

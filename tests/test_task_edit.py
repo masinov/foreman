@@ -1,4 +1,4 @@
-"""Changing a task's size, priority and what it waits for, after it is filed."""
+"""Changing a task's priority and what it waits for, after it is filed."""
 
 from __future__ import annotations
 
@@ -51,15 +51,11 @@ class EditMutationTests(_Workspace):
         super().setUp()
         self.mutations = Mutations(self.store, via="cli", actor="alice")
 
-    def test_size_can_be_set_changed_and_cleared(self) -> None:
+    def test_a_task_has_no_size_to_edit(self) -> None:
         task = self.task("t1")
 
-        self.assertEqual(self.mutations.edit_task(task, {"complexity": "large"}), {"complexity": "large"})
-        self.assertEqual(self.stored("t1").complexity, "large")
-        self.assertEqual(self.mutations.edit_task(task, {"complexity": None}), {"complexity": None})
-        self.assertIsNone(self.stored("t1").complexity)
         with self.assertRaises(MutationError):
-            self.mutations.edit_task(task, {"complexity": "huge"})
+            self.mutations.edit_task(task, {"complexity": "large"})
 
     def test_what_a_task_waits_for_can_be_replaced_and_cleared(self) -> None:
         self.task("a")
@@ -102,9 +98,9 @@ class EditMutationTests(_Workspace):
         self.assertIn("only change before it starts", str(caught.exception))
 
         # Sending back what it already waits for is not a change.
-        self.assertEqual(self.mutations.edit_task(task, {"depends_on_task_ids": [], "complexity": "small"}), {"complexity": "small"})
+        self.assertEqual(self.mutations.edit_task(task, {"depends_on_task_ids": [], "priority": 5}), {"priority": 5})
         events = [e for e in self.store.list_events(task_id="t1") if e.event_type == "human.task_edited"]
-        self.assertEqual(events[-1].payload["changed_fields"], {"complexity": "small"})
+        self.assertEqual(events[-1].payload["changed_fields"], {"priority": 5})
 
 
 class EditApiTests(_Workspace):
@@ -117,15 +113,15 @@ class EditApiTests(_Workspace):
 
         return asyncio.run(send())
 
-    def test_the_task_page_can_change_size_priority_and_what_it_waits_for(self) -> None:
+    def test_the_task_page_can_change_priority_and_what_it_waits_for(self) -> None:
         self.task("a")
         self.task("t1")
 
-        response = self.patch("t1", {"complexity": "medium", "priority": 3, "depends_on_task_ids": ["a"]})
+        response = self.patch("t1", {"priority": 3, "depends_on_task_ids": ["a"]})
 
         self.assertEqual(response.status_code, 200, response.text)
         body = response.json()
-        self.assertEqual((body["complexity"], body["priority"], body["depends_on_task_ids"]), ("medium", 3, ["a"]))
+        self.assertEqual((body["priority"], body["depends_on_task_ids"]), (3, ["a"]))
 
     def test_a_loop_is_refused_with_the_reason(self) -> None:
         self.task("a", depends_on_task_ids=["t1"])
@@ -150,21 +146,20 @@ class EditCommandTests(_Workspace):
         self.task("t1")
 
         code, out, err = self.run_cli(
-            "task", "edit", "t1", "--size", "large", "--priority", "2",
+            "task", "edit", "t1", "--priority", "2",
             "--depends-on", "a", "--depends-on", "b",
         )
 
         self.assertEqual(code, 0, err)
-        self.assertIn("Size: large | Priority: 2", out)
+        self.assertIn("Priority: 2", out)
         self.assertIn("Waits for: a, b", out)
         stored = ForemanStore(self.db_path)
         self.addCleanup(stored.close)
         task = stored.get_task("t1")
-        self.assertEqual((task.complexity, task.priority, task.depends_on_task_ids), ("large", 2, ["a", "b"]))
+        self.assertEqual((task.priority, task.depends_on_task_ids), (2, ["a", "b"]))
 
-        code, out, _ = self.run_cli("task", "edit", "t1", "--size", "none", "--no-dependencies")
+        code, out, _ = self.run_cli("task", "edit", "t1", "--no-dependencies")
         self.assertEqual(code, 0)
-        self.assertIn("Size: not said", out)
         self.assertIn("Waits for: nothing", out)
 
     def test_it_says_when_there_is_nothing_to_change_or_the_change_is_refused(self) -> None:

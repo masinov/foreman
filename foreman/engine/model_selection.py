@@ -16,12 +16,6 @@ from ..definitions.roles import RoleDefinition
 from .limits import resolve_project_settings
 
 
-# Complexity → ladder start index when the task names no model to start on.
-# The size label goes in the next task (FOR-72); until then it may still
-# choose the first model.
-_COMPLEXITY_LADDER_START: dict[str, int] = {"small": 0, "medium": 0, "large": 1}
-
-
 @dataclass(slots=True)
 class ModelSelection:
     """The model chosen for one agent step plus the rule that chose it."""
@@ -41,7 +35,7 @@ def ladder_start_index(task: Task, ladder: tuple[str, ...]) -> int:
     """Where on *ladder* the task's step starts.
 
     The task names a model of the ladder (``executor_overrides.ladder_start``;
-    a number is still read as a position), else the size label chooses.
+    a number is still read as a position), else it is the first.
     """
 
     start = (task.executor_overrides or {}).get("ladder_start")
@@ -52,7 +46,7 @@ def ladder_start_index(task: Task, ladder: tuple[str, ...]) -> int:
     if isinstance(start, str):
         # A model this role does not list: the role starts at its first.
         return 0
-    return min(_COMPLEXITY_LADDER_START.get(task.complexity or "", 0), len(ladder) - 1)
+    return 0
 
 
 def failures_on(task: Task, step_id: str, model: str | None) -> int:

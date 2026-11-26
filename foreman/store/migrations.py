@@ -18,6 +18,10 @@ Rules for adding a migration:
 
 from __future__ import annotations
 
+import re
+import sqlite3
+from collections.abc import Callable
+
 # Each tuple: (version: int, description: str, sql: str)
 MIGRATIONS: list[tuple[int, str, str]] = [
     (
@@ -1126,4 +1130,64 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         ALTER TABLE tasks ADD COLUMN step_failures TEXT NOT NULL DEFAULT '{}';
         """,
     ),
+    (
+        33,
+        "tasks: the size label goes; complexity is dropped",
+        """
+        -- Its work is in PYTHON_MIGRATIONS (the table is rebuilt: DROP COLUMN
+        -- needs a newer SQLite than the store runs on). The script only has
+        -- to be a statement that does nothing.
+        SELECT 1;
+        """,
+    ),
 ]
+
+
+def _drop_tasks_complexity(connection: sqlite3.Connection) -> None:
+    """Drop ``tasks.complexity`` and the two triggers that guarded it.
+
+    ``ALTER TABLE ... DROP COLUMN`` needs SQLite 3.35; the store runs on
+    older ones, so the table is rebuilt as SQLite documents it: the new table
+    is created from the old table's own definition without the column, the
+    rows are copied, and the table's indexes and other triggers are made
+    again. The runner turns foreign keys off around this step, so dropping
+    the old table does not cascade to the tables that refer to tasks.
+    """
+
+    objects = connection.execute(
+        "SELECT type, name, sql FROM sqlite_master"
+        " WHERE tbl_name = 'tasks' AND sql IS NOT NULL"
+    ).fetchall()
+    table_sql = next((sql for kind, name, sql in objects if kind == "table"), None)
+    if table_sql is None:
+        return
+    columns = [row[1] for row in connection.execute("PRAGMA table_info(tasks)")]
+    if "complexity" not in columns:
+        for kind, name, sql in objects:
+            if kind == "trigger" and "complexity" in sql:
+                connection.execute(f'DROP TRIGGER IF EXISTS "{name}"')
+        return
+    kept = [column for column in columns if column != "complexity"]
+    new_sql, removed = re.subn(
+        r',\s*"?complexity"?\s+TEXT(?=\s*[,)])', "", table_sql, count=1
+    )
+    if removed != 1:
+        raise RuntimeError("tasks.complexity is not a plain TEXT column in the tasks table")
+    new_sql = re.sub(r'^CREATE TABLE\s+"?tasks"?', "CREATE TABLE tasks_v33", new_sql, count=1)
+    connection.execute(new_sql)
+    names = ", ".join(f'"{column}"' for column in kept)
+    connection.execute(
+        f"INSERT INTO tasks_v33 ({names}) SELECT {names} FROM tasks ORDER BY rowid"
+    )
+    connection.execute("DROP TABLE tasks")
+    connection.execute("ALTER TABLE tasks_v33 RENAME TO tasks")
+    for kind, name, sql in objects:
+        if kind in ("index", "trigger") and "complexity" not in sql:
+            connection.execute(sql)
+
+
+# Migrations that are code, not a script, by version: the runner calls the
+# function inside the migration's transaction, with foreign keys off.
+PYTHON_MIGRATIONS: dict[int, Callable[[sqlite3.Connection], None]] = {
+    33: _drop_tasks_complexity,
+}

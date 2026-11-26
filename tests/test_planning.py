@@ -28,7 +28,7 @@ def add(title: str, *, sprint: str = "s2", **fields: object) -> dict:
 class AddTaskTests(ProposalCase):
     def test_tasks_are_added_to_the_sprint_ready_to_run_and_wait_for_each_other_by_name(self) -> None:
         proposal = self.propose(
-            add("Schema", ref="schema", complexity="small", acceptance_criteria="The table exists."),
+            add("Schema", ref="schema", acceptance_criteria="The table exists."),
             add("API", ref="api", waits_for=["schema"]),
             add("Page", waits_for=["api", "schema"]),
         )
@@ -39,7 +39,6 @@ class AddTaskTests(ProposalCase):
         tasks = {task.title: task for task in self.store.list_tasks(sprint_id="s2")}
         self.assertEqual(set(tasks), {"Schema", "API", "Page"})
         self.assertEqual({task.status for task in tasks.values()}, {"todo"})
-        self.assertEqual(tasks["Schema"].complexity, "small")
         self.assertEqual(tasks["Schema"].acceptance_criteria, "The table exists.")
         self.assertEqual(tasks["API"].depends_on_task_ids, [tasks["Schema"].id])
         self.assertEqual(set(tasks["Page"].depends_on_task_ids), {tasks["API"].id, tasks["Schema"].id})
