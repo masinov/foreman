@@ -12,6 +12,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import replace
 from datetime import datetime
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +37,10 @@ from .results import AgentEventRecord, AgentExecutionResult, AgentExecutor
 
 #: How often a silent agent step renews its lease and polls for commands.
 DEFAULT_NATIVE_STEP_HEARTBEAT_SECONDS = 30.0
+
+#: How often an agent that keeps printing is checked for a user's Stop and
+#: for engine commands. A silent agent is checked on every tick.
+COMMAND_POLL_SECONDS = 5.0
 
 
 class AgentStepRunner:
@@ -361,6 +366,7 @@ class AgentStepRunner:
         # elapsed to avoid hammering SQLite on every event.
         heartbeat_interval = self.heartbeat_seconds
         last_heartbeat: datetime | None = None
+        last_poll = time.monotonic()
 
         for event in run_with_retry(runner, config, **retry_kwargs):
             now = self.utc_now()
@@ -376,10 +382,16 @@ class AgentStepRunner:
             if event.event_type == "agent.tick":
                 # Silent-child ticks exist only to drive the heartbeat above
                 # and the command poll below; they are never persisted. This is
-                # the only place a `pause` can reach an agent that has been
+                # the only place a Stop can reach an agent that has been
                 # working quietly for twenty minutes.
+                last_poll = time.monotonic()
                 self.poll_commands(task.id)
                 continue
+            if time.monotonic() - last_poll >= COMMAND_POLL_SECONDS:
+                # An agent that keeps printing never ticks; a Stop must
+                # still reach it within seconds.
+                last_poll = time.monotonic()
+                self.poll_commands(task.id)
             if event.event_type.startswith("signal."):
                 # A backend may surface the same signal from more than one
                 # stream event, and a replayed attempt re-emits earlier ones.

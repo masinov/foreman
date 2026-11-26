@@ -20,6 +20,9 @@ from .test_report import REPORT_DIR_ENV, read_reports
 
 DEFAULT_TEST_TIMEOUT_SECONDS = 1800
 
+#: How often a running test command checks whether it has been stopped.
+INTERRUPT_POLL_SECONDS = 2.0
+
 
 def _combine_output(stdout: str, stderr: str) -> str:
     stdout = stdout.strip()
@@ -45,6 +48,7 @@ class RunTestsStep(BuiltinExecutorBase):
         project: Project,
         working_dir: Path,
         event_recorder: Callable[[BuiltinEventRecord], None] | None = None,
+        interrupt_poll: Callable[[], None] | None = None,
     ) -> BuiltinResult:
         settings = settings_of(project)
         command = settings.test_command.strip()
@@ -83,6 +87,7 @@ class RunTestsStep(BuiltinExecutorBase):
                 report_dir=report_dir,
                 emit=emit,
                 emitted_events=emitted_events,
+                interrupt_poll=interrupt_poll,
             )
         finally:
             shutil.rmtree(report_dir, ignore_errors=True)
@@ -96,8 +101,13 @@ class RunTestsStep(BuiltinExecutorBase):
         report_dir: Path,
         emit: Callable[[str, dict[str, Any]], None],
         emitted_events: list[BuiltinEventRecord],
+        interrupt_poll: Callable[[], None] | None = None,
     ) -> BuiltinResult:
-        """Run the test command, stream its output, and record how it ended."""
+        """Run the test command, stream its output, and record how it ended.
+
+        ``interrupt_poll`` raising (a user's Stop) kills the test process
+        group and lets the exception through.
+        """
 
         emit(
             "engine.test_started",
@@ -132,6 +142,8 @@ class RunTestsStep(BuiltinExecutorBase):
         stderr_chunks: list[str] = []
         deadline = time.monotonic() + timeout_seconds if timeout_seconds > 0 else None
         timed_out = False
+        interrupted = False
+        last_poll = time.monotonic()
 
         try:
             while selector.get_map():
@@ -141,7 +153,17 @@ class RunTestsStep(BuiltinExecutorBase):
                     if remaining <= 0:
                         timed_out = True
                         break
-                for key, _ in selector.select(timeout=remaining):
+                wait = remaining
+                if interrupt_poll is not None:
+                    wait = INTERRUPT_POLL_SECONDS if wait is None else min(wait, INTERRUPT_POLL_SECONDS)
+                    if time.monotonic() - last_poll >= INTERRUPT_POLL_SECONDS:
+                        last_poll = time.monotonic()
+                        try:
+                            interrupt_poll()
+                        except BaseException:
+                            interrupted = True
+                            raise
+                for key, _ in selector.select(timeout=wait):
                     stream_name = str(key.data)
                     line = key.fileobj.readline()
                     if line == "":
@@ -162,7 +184,7 @@ class RunTestsStep(BuiltinExecutorBase):
                     )
         finally:
             selector.close()
-            if timed_out:
+            if timed_out or interrupted:
                 managed.kill()
             else:
                 proc.wait()

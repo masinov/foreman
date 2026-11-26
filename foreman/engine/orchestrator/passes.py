@@ -13,11 +13,13 @@ from ...definitions.gate_steps import blocked_kind, workflow_gate_steps
 from ...definitions.workflows import (
     WorkflowDefinition,
 )
-from ...domain.errors import EngineCommandInterrupt
+from ...domain.errors import EngineCommandInterrupt, TaskStoppedInterrupt
+from ...domain.holds import Hold, cuts_running_step, task_hold
 from ...domain.models import (
     Project,
     Task,
 )
+from ...runner import process
 from ...runner.process import EngineShutdown
 from ..errors import (
     LeaseLostError,
@@ -25,6 +27,7 @@ from ..errors import (
     QuotaPauseError,
     TaskExecutionError,
 )
+from ..holds import hold_of, sprint_block_over
 from ..limits import (
     resolve_project_settings,
 )
@@ -34,19 +37,40 @@ from ..results import (
 )
 from .base import OrchestratorBase
 
+#: How long the agent's process group is given to die after a user's Stop.
+STOP_TERMINATE_GRACE_SECONDS = 2.0
+
+
+def describe_hold(hold: Hold) -> str:
+    """One line on a hold, for a run result or a rejected request."""
+
+    if hold.kind == "block":
+        return f"the {hold.scope} is blocked ({hold.reason})"
+    if hold.kind == "blocking":
+        return f"it is being blocked ({hold.reason})"
+    return f"paused by {hold.by}" if hold.by else "paused"
+
+
 class ProjectPass(OrchestratorBase):
     """Running a project pass."""
 
     def _poll_commands(self, task_id: str) -> None:
-        """Give the resident engine a chance to interrupt this task.
+        """Give a user's Stop, and the resident engine, a chance to interrupt this task.
 
-        Raises ``EngineCommandInterrupt`` when the engine wants the step
-        stopped. Any *other* exception from the callback is deliberately not
-        caught: a command poll that cannot read the database is a broken
-        control channel, and hiding it would leave an operator's `pause`
-        silently ignored.
+        A user who stopped the task (a pause with mode ``now``, ADR-0043)
+        gets the running step cut: the agent's process group is ended and
+        ``TaskStoppedInterrupt`` settles the run as killed on the way out.
+        Otherwise the resident engine reads its commands and raises
+        ``EngineCommandInterrupt`` when one needs the step stopped. Any
+        *other* exception is deliberately not caught: a poll that cannot read
+        the database is a broken control channel, and hiding it would leave a
+        user's Stop silently ignored.
         """
 
+        task = self.store.get_task(task_id)
+        if task is not None and cuts_running_step(task):
+            process.terminate_all(grace_seconds=STOP_TERMINATE_GRACE_SECONDS)
+            raise TaskStoppedInterrupt(task_id, requested_by=task.paused_by)
         if self.command_poll is not None:
             self.command_poll(task_id)
 
@@ -83,6 +107,16 @@ class ProjectPass(OrchestratorBase):
                 raise OrchestratorError(
                     f"Task {task_id!r} does not belong to project {project.id!r}."
                 )
+            # A request to run a task does not pass a user's hold (ADR-0043).
+            hold = hold_of(self.store, task)
+            if hold is not None:
+                return ProjectRunResult(
+                    project_id=project.id,
+                    executed_task_ids=(),
+                    blocked_task_ids=(),
+                    stop_reason="held",
+                    detail=f"{task.task_key or task.id} is held: {describe_hold(hold)}",
+                )
             # Acquire the lease before running; skip if task is already leased
             # by another orchestrator.
             if self.leases.acquire(task, project) is None:
@@ -103,9 +137,9 @@ class ProjectPass(OrchestratorBase):
                 stop_reason="task_complete",
             )
 
-        # A planned sprint waits for a person to activate it, or for Foreman
-        # to finish the sprint before it; the engine never starts one on its
-        # own (owner, 2026-11-21).
+        # A planned sprint waits for a user to start it, or for Foreman to
+        # finish the sprint before it where the project lets Foreman finish
+        # sprints; a block on either holds it (ADR-0043).
         stop_reason = "idle"
         detail = ""
         while True:
@@ -139,7 +173,11 @@ class ProjectPass(OrchestratorBase):
 
             # No runnable task — check sprint state.
             sprint = self.store.get_active_sprint(project.id)
-            if sprint is not None and self.sprints.fully_resolved(sprint):
+            if sprint is not None and sprint_block_over(self.store, sprint) is not None:
+                # A blocked sprint, or workspace, holds what comes after it
+                # too: it is not finished and the next one does not start.
+                stop_reason = "held"
+            elif sprint is not None and self.sprints.fully_resolved(sprint):
                 result = self.sprints.resolve(project, sprint)
                 if result is None:
                     # Autonomous mode: next sprint now active — keep looping.
@@ -153,6 +191,11 @@ class ProjectPass(OrchestratorBase):
                 )
                 if any(t.status == "blocked" for t in remaining):
                     stop_reason = "blocked"
+                elif any(
+                    t.status in {"todo", "in_progress"} and task_hold(t) is not None
+                    for t in remaining
+                ):
+                    stop_reason = "held"
                 elif any(t.status in {"todo", "in_progress"} for t in remaining):
                     stop_reason = "waiting"
                 else:
@@ -181,7 +224,9 @@ class ProjectPass(OrchestratorBase):
             return None
         gates = workflow_gate_steps(workflow)
         for task in self.store.list_tasks(sprint_id=sprint.id, status="blocked"):
-            if blocked_kind(task, gates) == "gate":
+            # A user's pause releases the queue (ADR-0043): the decision is
+            # still recorded, and the task carries on when it is resumed.
+            if blocked_kind(task, gates) == "gate" and task_hold(task) is None:
                 return task
         return None
 

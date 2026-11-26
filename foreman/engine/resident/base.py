@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Callable
 
-from ...domain.errors import EngineCommandInterrupt
+from ...domain.errors import EngineCommandInterrupt, TaskStoppedInterrupt
 from ...domain.models import (
     EngineCommand,
     Task,
@@ -20,8 +20,8 @@ from ...notifications.delivery import NotificationDeliveryWorker
 from ...runner import process
 from ...runner.process import EngineShutdown
 from ...store import ForemanStore
-from ..control import engine_is_paused
 from ..errors import LeaseLostError, OrchestratorError, TaskExecutionError
+from ..holds import hold_of
 from ..lock import EngineLock
 from ..orchestrator import ForemanOrchestrator
 from ..results import ProjectRunResult
@@ -87,7 +87,6 @@ class _ServeLoop:
     detail: str | None = None
     last_pass_reason: str | None = None
     idle_streak: int = 0
-    paused_streak: int = 0
 
     def stop(self, reason: str, detail: str | None, *, exit_code: int = 0) -> None:
         self.stop_reason, self.detail, self.exit_code = reason, detail, exit_code
@@ -155,13 +154,6 @@ def _runnable_on_request(task: Task) -> bool:
     )
 
 
-def _standing_pause(store: ForemanStore, project_id: str) -> bool:
-    """True when the project's last applied pause/resume was a pause."""
-
-
-    return engine_is_paused(store, project_id)
-
-
 class ResidentEngineBase:
     """The loop, attaching to a project, and the engine's log."""
 
@@ -180,7 +172,6 @@ class ResidentEngineBase:
         utc_now: Callable[[], datetime] | None = None,
         notification_worker: NotificationDeliveryWorker | None = None,
         accepts_run_requests: bool = True,
-        honour_standing_pause: bool = True,
     ) -> None:
         self.store = store
         self.project_id = project_id
@@ -202,14 +193,9 @@ class ResidentEngineBase:
             else NotificationDeliveryWorker(store, utc_now=self._utc_now)
         )
         self._backoff = _Backoff()
-        #: Set by a `pause`, cleared by a `resume`. A paused engine picks no
-        #: new work but stays resident, keeps heartbeating its lock, and keeps
-        #: reading commands — so it can still be resumed or shut down. A pause
-        #: outlives the process that applied it: an engine that is restarted
-        #: (by a supervisor, or by hand) while the project is paused starts
-        #: paused, so what every other process reads from the command log is
-        #: what this engine does.
-        self._paused = honour_standing_pause and _standing_pause(store, project_id)
+        #: Whether the work may go on is not this engine's to remember: a
+        #: user's holds are rows every process reads (ADR-0043), so a
+        #: restarted engine honours them without being told.
         #: False for a one-shot `foreman run`, which ends after its pass and
         #: so cannot promise to run a task later.
         self._accepts_run_requests = accepts_run_requests
@@ -234,7 +220,6 @@ class ResidentEngineBase:
             poll_seconds=self.poll_seconds,
             once=once,
             holder_id=self.orchestrator.holder_id,
-            paused=self._paused,
         )
         self.attach()
         if not once:
@@ -309,24 +294,6 @@ class ResidentEngineBase:
             self._log("serve.stopping", reason=loop.detail)
             return True
 
-        if self._paused:
-            # Idle by instruction rather than for lack of work. The wait is
-            # the same one an idle engine uses, so a `resume` committed from
-            # another process wakes it immediately.
-            if loop.once:
-                loop.stop("once", "Engine is paused.")
-                return True
-            loop.paused_streak += 1
-            # Entering the paused state is worth narrating; staying paused is
-            # not, and a pause can last all day.
-            self._log(
-                "serve.paused",
-                level=logging.INFO if loop.paused_streak == 1 else logging.DEBUG,
-            )
-            self._wait_for_change(self.poll_seconds)
-            return False
-        loop.paused_streak = 0
-
         loop.passes += 1
         run_request = self._take_run_request()
         if run_request is not None:
@@ -339,6 +306,15 @@ class ResidentEngineBase:
                     "completed",
                     f"Task {run_request[0]!r} was not run on request: it is "
                     f"{target.status if target else 'gone'!r} now.",
+                )
+                return False
+            # A request to run a task does not pass a user's hold (ADR-0043).
+            if hold_of(self.store, target) is not None:
+                self._finish_run_request(
+                    run_request,
+                    "rejected",
+                    f"Task {run_request[0]!r} was not run on request: it is held "
+                    "(paused or blocked) now.",
                 )
                 return False
         return self._run_pass(loop, run_request)
@@ -360,8 +336,12 @@ class ResidentEngineBase:
             self._finish_run_request(
                 run_request,
                 "completed",
-                f"Task {target_task_id!r} was started and then interrupted by "
-                f"`{exc.command.command}`.",
+                f"Task {target_task_id!r} was started and then "
+                + (
+                    "stopped by a user."
+                    if isinstance(exc, TaskStoppedInterrupt)
+                    else f"interrupted by `{exc.command.command}`."
+                ),
             )
             self._settle_interrupt(exc)
             loop.maintenance_due = True

@@ -1046,4 +1046,65 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         ALTER TABLE runs ADD COLUMN record_json TEXT;
         """,
     ),
+    (
+        31,
+        "holds: a user's pause on a task, and blocks on a sprint or the workspace (ADR-0043)",
+        """
+        -- A pause belongs to the task. The engine never writes these columns;
+        -- only a user's Pause, Stop and Resume do (foreman.mutations.holds).
+        ALTER TABLE tasks ADD COLUMN paused_at TEXT;
+        ALTER TABLE tasks ADD COLUMN paused_by TEXT;
+        ALTER TABLE tasks ADD COLUMN pause_mode TEXT
+            CHECK (pause_mode IS NULL OR pause_mode IN ('finish_step', 'now'));
+        -- A user's Block of a task whose step is running: the step finishes,
+        -- then the engine blocks the task with this reason.
+        ALTER TABLE tasks ADD COLUMN block_requested TEXT;
+        -- A block on a sprint, or on the whole workspace (scope_id
+        -- 'workspace', never NULL, so the primary key holds one).
+        CREATE TABLE IF NOT EXISTS holds (
+            scope       TEXT NOT NULL CHECK (scope IN ('sprint', 'workspace')),
+            scope_id    TEXT NOT NULL,
+            project_id  TEXT REFERENCES projects(id) ON DELETE CASCADE,
+            reason      TEXT NOT NULL,
+            set_by      TEXT NOT NULL,
+            set_at      TEXT NOT NULL,
+            PRIMARY KEY (scope, scope_id)
+        );
+        -- A project whose engine stood paused, or was last stopped with the
+        -- engine's Stop, keeps its work held: each unfinished task of its
+        -- active sprint is paused, by whoever paused or stopped the engine.
+        WITH last_word AS (
+            SELECT project_id, command, requested_by,
+                   COALESCE(completed_at, requested_at) AS said_at,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY project_id
+                       ORDER BY requested_at DESC, rowid DESC
+                   ) AS n
+            FROM engine_commands
+            WHERE status = 'completed' AND command IN ('pause', 'shutdown', 'resume')
+        )
+        UPDATE tasks
+        SET paused_at = (SELECT said_at FROM last_word w
+                         WHERE w.project_id = tasks.project_id AND w.n = 1),
+            paused_by = (SELECT requested_by FROM last_word w
+                         WHERE w.project_id = tasks.project_id AND w.n = 1),
+            pause_mode = 'finish_step'
+        WHERE paused_at IS NULL
+          AND status IN ('todo', 'in_progress', 'blocked')
+          AND sprint_id IN (SELECT id FROM sprints WHERE status = 'active')
+          AND project_id IN (SELECT project_id FROM last_word
+                             WHERE n = 1 AND command IN ('pause', 'shutdown'));
+        -- A task a user stopped was blocked "Stopped by <who>". It is now a
+        -- paused task, resumable at its step, and not in Needs you.
+        UPDATE tasks
+        SET status = 'in_progress',
+            paused_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+            paused_by = substr(blocked_reason, 12),
+            pause_mode = 'now',
+            blocked_reason = NULL
+        WHERE status = 'blocked'
+          AND blocked_reason LIKE 'Stopped by %'
+          AND workflow_current_step IS NOT NULL;
+        """,
+    ),
 ]

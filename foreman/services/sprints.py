@@ -20,7 +20,7 @@ from ..mutations import MutationError
 from ..store.overview import SPRINT_LIST_ORDERS, SPRINT_LIST_STATUSES
 from .base import Service
 from .errors import InvalidRequestError, NotFoundError
-from .views import task_source
+from .views import HoldReader, serialize_level_block, task_source
 
 ACTIVITY_EVENT_LIMIT = 50
 
@@ -150,6 +150,9 @@ class SprintService(Service):
             "ready_to_finish": sprint_ready_to_finish(sprint.status, counts),
             "totals": self.store.run_totals(sprint_id=sprint.id),
             "checkpoint": self._checkpoint(sprint),
+            # A user's block on this sprint, and on the workspace (ADR-0043).
+            "block": serialize_level_block(self.store.get_sprint_block(sprint.id)),
+            "workspace_block": serialize_level_block(self.store.get_workspace_block()),
         }
 
     def _checkpoint(self, sprint: Sprint) -> dict[str, Any] | None:
@@ -239,6 +242,12 @@ class SprintService(Service):
         run_next = (
             self.store.run_requested_task_ids(sprint.project_id) if sprint else set()
         )
+        holds = HoldReader(self.store)
+        running = (
+            {run.task_id for run in self.store.list_runs(project_id=sprint.project_id, status="running")}
+            if sprint
+            else set()
+        )
         result = []
         for task in self.store.list_tasks(sprint_id=sprint_id):
             metrics = task_totals.get(task.id, {})
@@ -257,6 +266,8 @@ class SprintService(Service):
                     "branch_name": task.branch_name,
                     "assigned_role": task.assigned_role,
                     "blocked_reason": task.blocked_reason,
+                    "hold": holds.hold(task),
+                    "step_running": task.id in running,
                     "acceptance_criteria": task.acceptance_criteria,
                     "workflow_current_step": task.workflow_current_step,
                     "step_visit_counts": dict(task.step_visit_counts),

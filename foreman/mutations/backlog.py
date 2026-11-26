@@ -172,6 +172,7 @@ class BacklogMutations(MutationBase):
         task.status = "declined"
         task.completed_at = self._now().isoformat()
         self.store.save_task(task)
+        self.store.clear_task_hold(task.id)
         self._audit(
             task,
             "human.task_declined",
@@ -268,6 +269,8 @@ class BacklogMutations(MutationBase):
             if fresh.id in requests:
                 fresh.status = "todo"
                 self.store.save_task(fresh)
+            # Work planned into a sprint a user paused waits with it.
+            fresh = self.join_sprint_pause(fresh, newcomers=seen)
             self._audit(
                 fresh,
                 "engine.task_pulled" if pulled else "human.task_planned",

@@ -31,6 +31,7 @@ from ..errors import (
     TaskCancelledError,
 )
 from ..evidence import EvidenceBuilder
+from ..holds import hold_of
 from ..leasing import TaskLeases
 from ..limits import resolve_project_settings
 from ..prompts import PromptBuilder
@@ -219,6 +220,13 @@ class WorkflowRunnerBase:
                 current_task.blocked_reason = stored.blocked_reason
                 self.leases.release(current_task, project)
                 return stored
+            # A user's hold stops the task here, before its next step
+            # (ADR-0043): built-in steps too, so a held task never merges or
+            # becomes done, and nothing that waits for it starts.
+            if hold_of(self.store, current_task) is not None:
+                return self._park_held_task(
+                    project, current_task, step=current_step, carried_output=carried_output
+                )
 
             step_def = workflow.get_step(current_step)
             if step_def is None:
@@ -375,6 +383,35 @@ class WorkflowRunnerBase:
             self.leases.release(current_task, project)
 
         return current_task
+
+    def _park_held_task(
+        self,
+        project: Project,
+        task: Task,
+        *,
+        step: str,
+        carried_output: str | None,
+    ) -> Task:
+        """Leave a held task waiting at ``step``, resumable, and let it go.
+
+        A Block that waited for the step to end is applied now: the task
+        becomes ``blocked`` with its reason. A pause, or a block on the
+        sprint or the workspace, leaves it ``in_progress`` at ``step``, no
+        visit counted, so Resume (or Unblock) carries on from there.
+        """
+
+        reason = self.store.apply_requested_block(task.id)
+        if reason is not None:
+            self.leases.release(task, project)
+            blocked = self.store.get_task(task.id) or task
+            # Unblock starts the workflow over, as for any blocked task.
+            return blocked
+        task.status = "in_progress"
+        task.workflow_current_step = step
+        task.workflow_carried_output = carried_output
+        self.tasks.save(task)
+        self.leases.release(task, project)
+        return self.store.get_task(task.id) or task
 
     def _block_at_step(
         self,

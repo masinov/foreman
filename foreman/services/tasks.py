@@ -27,7 +27,7 @@ from .errors import (
     NotFoundError,
 )
 from .task_models import test_counts
-from .views import task_filed_from, task_source
+from .views import HoldReader, task_filed_from, task_source
 from .workspace import foreman_starts_backlog_work
 
 
@@ -207,6 +207,10 @@ class TaskService(Service):
             "created_by": task.created_by,
             "created_at": task.created_at,
             "blocked_reason": task.blocked_reason,
+            # A user's hold on the task, or on its sprint or the workspace
+            # (ADR-0043), and whether a step of it is running (Stop).
+            "hold": HoldReader(self.store).hold(task),
+            "step_running": bool(self.store.list_runs(task_id=task.id, status="running")),
             "acceptance_criteria": task.acceptance_criteria,
             "workflow_current_step": task.workflow_current_step,
             "step_visit_counts": task.step_visit_counts or {},

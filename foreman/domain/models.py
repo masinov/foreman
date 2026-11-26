@@ -268,6 +268,15 @@ class Task:
     created_at: str = field(default_factory=utc_now_text)
     started_at: str | None = None
     completed_at: str | None = None
+    #: A user's pause (ADR-0043): when, by whom, and whether the running step
+    #: finishes first (``finish_step``) or is cut (``now``, a Stop). Only a
+    #: user's Pause, Stop and Resume write these; the engine reads them.
+    paused_at: str | None = None
+    paused_by: str | None = None
+    pause_mode: str | None = None
+    #: A user's Block of a task whose step was running: the reason, kept
+    #: until the step ends and the engine blocks the task with it.
+    block_requested: str | None = None
 
 
 @dataclass(slots=True, frozen=True)

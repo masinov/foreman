@@ -28,6 +28,7 @@ from ..engine.control import (
 from ..engine.limits import resolve_project_settings
 from ..store import ForemanStore
 from ..store.overview import MILESTONE_KINDS, MilestoneRow
+from .views import serialize_level_block
 from .base import Service
 from .errors import InvalidRequestError
 
@@ -295,11 +296,10 @@ class WorkspaceReader:
                     "default_branch": project.default_branch,
                     "workflow_id": project.workflow_id,
                     "engine": {
-                        "state": (
-                            "not_running"
-                            if not engine.resident
-                            else "paused" if engine.paused else "running"
-                        ),
+                        # The program that runs the work (a worker, ADR-0043):
+                        # whether one holds the project. Whether the work may
+                        # go on is the holds' to say.
+                        "state": "running" if engine.resident else "not_running",
                         "task_id": task.id if task else None,
                         "task_key": task.task_key if task else None,
                         "task_title": task.title if task else None,
@@ -312,6 +312,14 @@ class WorkspaceReader:
                             "task_counts": counts[sprint.id],
                             "needs_you": needs_by_sprint.get(sprint.id, 0),
                             "spend_usd": spend[sprint.id],
+                            "block": serialize_level_block(
+                                self.store.get_sprint_block(sprint.id)
+                            ),
+                            "paused": sum(
+                                1
+                                for item in self.store.list_tasks(sprint_id=sprint.id)
+                                if item.paused_at
+                            ),
                         }
                         if sprint is not None
                         else None
@@ -324,7 +332,10 @@ class WorkspaceReader:
                     ),
                 }
             )
-        return {"projects": entries}
+        return {
+            "projects": entries,
+            "block": serialize_level_block(self.store.get_workspace_block()),
+        }
 
     # ── helpers ───────────────────────────────────────────────────────────
 

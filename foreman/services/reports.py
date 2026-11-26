@@ -163,9 +163,8 @@ class ReportService(Service):
         """The project's engine: who holds it, its heartbeat, its task in hand, recent orders."""
 
         project = self._require_project(project_id)
-        # A `pause` that has been applied but not yet resumed is the engine's
-        # current state, so the most recent applied pause/resume is what
-        # makes "paused" visible to an operator who did not queue it.
+        # Whether the work may go on is the holds' to say (ADR-0043); this is
+        # the program that runs it: who holds the project, and its heartbeat.
         engine = describe_engine(self.store, project.id, command_limit=command_limit)
         lock = engine.lock
         now = self._now()
@@ -176,7 +175,6 @@ class ReportService(Service):
             "project_name": project.name,
             "state": engine.state,
             "resident": lock is not None,
-            "paused": engine.paused,
             "holder_id": lock.holder_id if lock is not None else None,
             "heartbeat_at": lock.heartbeat_at if lock is not None else None,
             "heartbeat_age_seconds": lock.heartbeat_age_seconds(now) if lock is not None else None,

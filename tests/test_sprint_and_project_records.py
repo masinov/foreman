@@ -199,8 +199,18 @@ class MovingOldRecordsTests(unittest.TestCase):
         store.save_project(Project(id="p", name="P", repo_path=temp.name, workflow_id="development"))
         store.save_sprint(Sprint(id="s", project_id="p", title="S", status="active"))
         store.save_sprint(Sprint(id="s2", project_id="p", title="S2", status="planned", order_index=1))
-        store.save_task(Task(id="t1", sprint_id="s", project_id="p", title="T1", status="done"))
-        store.save_task(Task(id="t2", sprint_id="s2", project_id="p", title="T2", status="in_progress"))
+        for task in (
+            Task(id="t1", sprint_id="s", project_id="p", title="T1", status="done"),
+            Task(id="t2", sprint_id="s2", project_id="p", title="T2", status="in_progress"),
+        ):
+            # Raw, as the runs below: the store writes the current tasks
+            # columns, and this database is at migration 28.
+            store._connection.execute(
+                "INSERT INTO tasks (id, sprint_id, project_id, title, task_key, status,"
+                " task_type, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (task.id, task.sprint_id, task.project_id, task.title, task.id,
+                 task.status, task.task_type, task.created_by, task.created_at),
+            )
 
         def save_run(run: Run) -> None:
             # Raw: the store writes the current runs columns, and this database

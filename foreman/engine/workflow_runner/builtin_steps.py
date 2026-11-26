@@ -6,10 +6,12 @@ from __future__ import annotations
 import time
 
 from ...definitions.workflows import WorkflowStep
+from ...domain.errors import EngineCommandInterrupt
 from ...domain.models import HumanGateDecision, Project, Run, Task, utc_now_text
 from ...domain.outcomes import (
     APPROVE,
     BLOCKED,
+    ERROR,
     normalize_agent_outcome,
 )
 from ...domain.policy import PolicyMatrix, describe_resolution
@@ -119,20 +121,38 @@ class BuiltinSteps(WorkflowRunnerBase):
         )
         self._emit_policy_resolved(run, project, task)
         builtin_started = time.monotonic()
-        result = self.builtin_executor.execute(
-            step_def.role,
-            project=project,
-            task=task,
-            step_id=step,
-            carried_output=carried_output,
-            store=self.store,
-            # Saved as they happen, so each record carries its own time:
-            # the tests' start is when they started, and their output can
-            # be followed while they run.
-            event_recorder=lambda event_record: self.persist_builtin_event(run, event_record),
-            evidence_builder=self.build_completion_evidence,
-            working_dir=task_working_dir(project, task),
-        )
+        try:
+            result = self.builtin_executor.execute(
+                step_def.role,
+                project=project,
+                task=task,
+                step_id=step,
+                carried_output=carried_output,
+                store=self.store,
+                # Saved as they happen, so each record carries its own time:
+                # the tests' start is when they started, and their output can
+                # be followed while they run.
+                event_recorder=lambda event_record: self.persist_builtin_event(run, event_record),
+                evidence_builder=self.build_completion_evidence,
+                working_dir=task_working_dir(project, task),
+                # A user's Stop, or an engine command, may cut a test run.
+                interrupt_poll=lambda: self._poll_commands(task.id),
+            )
+        except EngineCommandInterrupt as exc:
+            # Settled as an agent step is (``execute_guarded``): killed, the
+            # task resumable at this step, and the interrupt goes on up.
+            self.records.emit_event(
+                run, "agent.killed", {"reason": str(exc), "gate_type": "command"}
+            )
+            self.records.complete_run(
+                run,
+                status="killed",
+                outcome=ERROR,
+                detail=str(exc),
+                duration_ms=int((time.monotonic() - builtin_started) * 1000),
+            )
+            self.leases.release(task, project)
+            raise
         self.tasks.save(task)
         self.records.complete_run(
             run,

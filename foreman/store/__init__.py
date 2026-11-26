@@ -19,6 +19,7 @@ connection and write helper in ``base``:
 - ``definitions``: ``DefinitionStore``, a project's own roles and workflows (ADR-0024)
 - ``overview``: ``OverviewStore``, the grouped cross-project reads
 - ``outcomes``: ``OutcomeStore``, the records outcome numbers are computed from (ADR-0034)
+- ``holds``: ``HoldStore``, a user's pauses and blocks (ADR-0043)
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ from .commands import EngineCommandStore
 from .definitions import DefinitionStore
 from .events import EventStore
 from .gates import GateStore
+from .holds import HoldStore
 from .leases import LeaseStore
 from .meta import MetaSessionStore
 from .notifications import NotificationStore
@@ -58,6 +60,7 @@ class ForemanStore(
     DefinitionStore,
     OverviewStore,
     OutcomeStore,
+    HoldStore,
 ):
     """Persist and query Foreman entities in SQLite."""
 

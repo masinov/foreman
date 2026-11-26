@@ -18,6 +18,7 @@ from . import (
     definitions,
     engine,
     gates,
+    holds,
     monitor,
     notify,
     outcomes,
@@ -103,6 +104,7 @@ def build_parser() -> argparse.ArgumentParser:
     engine.register_run(subparsers)
     engine.register_serve(subparsers)
     engine.register_engine(subparsers)
+    holds.register_holds(subparsers)
     monitor.register_status(subparsers)
     monitor.register_board(subparsers)
     monitor.register_watch(subparsers)

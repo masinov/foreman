@@ -39,6 +39,7 @@ class SprintFlow:
         Returns:
             None              — Foreman finishes: next sprint is active, keep looping.
             "idle"            — Foreman finishes: sprint completed, no further sprint.
+            "held"            — Foreman finishes: the next sprint is blocked, not started.
             "sprint_resolved" — a person finishes: sprint left active for them.
         """
         if settings_of(project).sprint_completion == "auto":
@@ -52,6 +53,7 @@ class SprintFlow:
         sprint.status = "completed"
         sprint.completed_at = now
         self.store.save_sprint(sprint)
+        self.store.delete_level_block("sprint", sprint.id)
         self.emit_event(project, "engine.sprint_completed", {
             "sprint_id": sprint.id,
             "sprint_title": sprint.title,
@@ -64,6 +66,12 @@ class SprintFlow:
             # Work is exhausted; the manager may want to plan more.
             self.emit_attention(project, sprint)
             return "idle"
+        if (
+            self.store.get_sprint_block(next_sprint.id) is not None
+            or self.store.get_workspace_block() is not None
+        ):
+            # A user blocked what comes next (ADR-0043): it is not started.
+            return "held"
 
         next_sprint.status = "active"
         next_sprint.started_at = now

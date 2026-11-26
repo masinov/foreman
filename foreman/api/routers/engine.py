@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends
 from ...services.engine import (
     ENGINE_COMMAND_LIMIT,
 )
-from ..schemas import AgentStart, EngineCommandBody, RequestedBy, body_as
+from ..schemas import AgentStart, EngineCommandBody, body_as
 from ..context import (
     ApiContext,
 )
@@ -24,13 +24,6 @@ def build_router(ctx: ApiContext) -> APIRouter:
     @router.get("/projects/{project_id}/agent/status")
     def agent_status(project_id: str) -> dict[str, Any]:
         return with_api(lambda api: api.engine.agent_status(project_id))
-
-    @router.post("/projects/{project_id}/agent/stop")
-    def stop_agent(
-        project_id: str, body: RequestedBy = Depends(body_as(RequestedBy))
-    ) -> dict[str, Any]:
-        requested_by = body.requested_by or None
-        return with_api(lambda api: api.engine.stop_agent(project_id, requested_by=requested_by))
 
     @router.post("/projects/{project_id}/agent/start")
     def start_agent(

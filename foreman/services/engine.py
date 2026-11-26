@@ -1,11 +1,11 @@
-"""A project's engine, from any surface.
+"""A project's engine (its worker, on the page), from any surface.
 
-Steering the engine is the ``engine_commands`` table's job: Run enqueues a
-``resume``, Pause enqueues a ``pause``, and a task Stop enqueues a
-``stop_task``. The one exception is the single-machine bootstrap: when no
-engine is resident there is nothing to send a command to, so the service
-spawns a detached ``foreman serve`` through an injectable spawner and then
-talks to it like any other resident engine.
+Whether the work may go on is a user's holds on it (ADR-0043,
+``services.holds``), not the engine's state. What is left here is the
+program: starting a worker where none holds the project (the single-machine
+bootstrap, through an injectable spawner), its state, and the messages a
+worker takes from the ``engine_commands`` table: ``run_task`` (Run next),
+``steer_task`` and ``shutdown``.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Callable
 
+from ..domain.holds import task_hold
 from ..domain.models import (
     EngineCommand,
     Project,
@@ -38,9 +39,10 @@ from .views import serialize_engine_state
 ENGINE_COMMAND_LIMIT = 10
 
 
-#: Engine commands a person sends to a running engine from the project page.
-#: ``run_task`` and ``stop_task`` name a task and have their own routes.
-ENGINE_STEERING_COMMANDS: tuple[str, ...] = ("pause", "resume", "shutdown")
+#: Engine commands a person sends to a running worker. ``run_task`` and
+#: ``steer_task`` name a task and have their own routes; pausing and
+#: resuming the work are holds (ADR-0043).
+ENGINE_STEERING_COMMANDS: tuple[str, ...] = ("shutdown",)
 
 
 def _serialize_engine_command(command: EngineCommand) -> dict[str, Any]:
@@ -82,47 +84,45 @@ class EngineService(Service):
         task_id: str | None = None,
         requested_by: str | None = None,
     ) -> dict[str, Any]:
-        """Ask the project's engine to start working.
+        """Run a task next, and make sure a worker holds the project.
 
-        When an engine is resident the whole of "start" is a ``resume``
-        command: the engine may be paused, or merely idle, and either way it
-        is the engine that decides what to run next. When none is resident
-        there is nobody to send that command to, so a detached ``foreman
-        serve`` is spawned first — the single-machine fallback — and the
-        command is queued for it to pick up on its first pass.
+        With a ``task_id`` this is Run next: a ``run_task`` command puts the
+        task first in line, and survives whether or not a worker is up yet.
+        A task a user holds (paused, or under a block) is refused: Run next
+        does not pass a hold (ADR-0043).
 
-        A ``task_id`` becomes a ``run_task`` command rather than a CLI flag,
-        so the request survives whether or not an engine is up yet.
+        Without one it is Start worker: nothing is queued, because a worker
+        works on whatever is started and not held. Nothing starts a sprint
+        here either; Start sprint does (ADR-0043).
 
-        If no sprint is currently active and a planned sprint exists, the first
-        planned sprint (by queue order) is activated before the engine starts.
+        When no worker holds the project, a detached ``foreman serve`` is
+        spawned, the single-machine fallback.
         """
 
         project = self.store.get_project(project_id)
         if project is None:
             raise NotFoundError(f"Project not found: {project_id}")
 
+        who = self._requester(requested_by)
+        commands: list[EngineCommand] = []
         if task_id is not None:
             task = self._require_task(task_id)
             if task.project_id != project_id:
                 raise InvalidRequestError(
                     f"Task {task_id} belongs to project {task.project_id}, not {project_id}."
                 )
-
-        if task_id is None and self.store.get_active_sprint(project_id) is None:
-            next_sprint = self.store.get_next_planned_sprint(project_id)
-            if next_sprint is None:
-                raise InvalidRequestError(
-                    "No active or planned sprint. Add a sprint to the queue before running."
+            if (
+                task_hold(
+                    task,
+                    sprint_block=self.store.get_sprint_block(task.sprint_id),
+                    workspace_block=self.store.get_workspace_block(),
                 )
-            try:
-                self._mutations(requested_by).transition_sprint(next_sprint, "active")
-            except MutationError as exc:
-                raise InvalidRequestError(str(exc)) from exc
-
-        who = self._requester(requested_by)
-        commands: list[EngineCommand] = []
-        if task_id is not None:
+                is not None
+            ):
+                raise InvalidRequestError(
+                    f"{task.task_key or task.id} is held (paused or blocked); resume or "
+                    "unblock it first."
+                )
             commands.append(
                 self.store.enqueue_engine_command(
                     project_id=project_id,
@@ -131,16 +131,10 @@ class EngineService(Service):
                     task_id=task_id,
                 )
             )
-        resume = self.store.enqueue_engine_command(
-            project_id=project_id,
-            command="resume",
-            requested_by=who,
-        )
-        commands.append(resume)
 
-        # Read residency after queueing: a `resume` queued for an engine that
-        # is starting right now is honoured by it, so the only case that needs
-        # a spawn is "still nothing holding the lock".
+        # Read residency after queueing: a request queued for a worker that is
+        # starting right now is honoured by it, so the only case that needs a
+        # spawn is "still nothing holding the lock".
         resident = self.store.get_engine_lock(project_id) is not None
         payload: dict[str, Any] = {
             "project_id": project_id,
@@ -148,7 +142,6 @@ class EngineService(Service):
             "resident": resident,
             "spawned": False,
             "requested_by": who,
-            "command": _serialize_engine_command(resume),
             "commands": [_serialize_engine_command(command) for command in commands],
         }
         if not resident:
@@ -174,7 +167,7 @@ class EngineService(Service):
         }
 
     def agent_status(self, project_id: str) -> dict[str, Any]:
-        """Report the engine's residency, pause state, work, and recent orders."""
+        """Report the worker's residency, its work, and recent orders."""
 
         project = self.store.get_project(project_id)
         if project is None:
@@ -212,45 +205,23 @@ class EngineService(Service):
             "commands": [_serialize_engine_command(command) for command in commands],
         }
 
-    def stop_agent(self, project_id: str, *, requested_by: str | None = None) -> dict[str, Any]:
-        """Ask the project's engine to pause, and return once the order is queued.
-
-        Pausing is about the engine, not about the work: the engine terminates
-        the running agent step and leaves its task resumable at the persisted
-        step. Nothing here touches task status — a dashboard that blocked every
-        in-progress task on Pause was inventing a dead letter the engine never
-        declared.
-        """
-
-        if self.store.get_project(project_id) is None:
-            raise NotFoundError(f"Project not found: {project_id}")
-
-        who = self._requester(requested_by)
-        command = self.store.enqueue_engine_command(
-            project_id=project_id,
-            command="pause",
-            requested_by=who,
-        )
-        return {
-            "project_id": project_id,
-            "resident": self.store.get_engine_lock(project_id) is not None,
-            "requested_by": who,
-            "command": _serialize_engine_command(command),
-        }
-
     def send_engine_command(
         self, project_id: str, *, command: str, requested_by: str | None = None
     ) -> dict[str, Any]:
-        """Queue a ``pause``, ``resume`` or ``shutdown`` for a running engine.
+        """Queue a ``shutdown`` for a running worker.
 
-        These steer an engine that is already running, so they are refused
-        when none is: a ``shutdown`` queued for nobody would be the first
-        thing the next engine to start reads, and it would stop at once.
-        Starting an engine that is not running is ``start_agent``'s job.
+        Refused when none is running: a ``shutdown`` queued for nobody would
+        be the first thing the next worker to start reads, and it would stop
+        at once. Pausing the work is a hold (ADR-0043), not a command.
         """
 
         if self.store.get_project(project_id) is None:
             raise NotFoundError(f"Project not found: {project_id}")
+        if command in ("pause", "resume"):
+            raise InvalidRequestError(
+                f"{command} is no longer an engine command: pause and resume the "
+                "work itself (a task, a sprint or the workspace; ADR-0043)."
+            )
         if command not in ENGINE_STEERING_COMMANDS:
             raise InvalidRequestError(
                 f"command: unknown {command or '(none)'}; expected "
@@ -272,37 +243,6 @@ class EngineService(Service):
             "resident": True,
             "requested_by": who,
             "command": _serialize_engine_command(queued),
-        }
-
-    def stop_task(self, task_id: str, *, requested_by: str | None = None) -> dict[str, Any]:
-        """Ask the engine to stop one running task.
-
-        The engine owns the transition: it terminates the agent step it is
-        running and blocks the task with a reason naming the requester. A task
-        the engine is not running is rejected on the command row rather than
-        being blocked here behind the engine's back.
-        """
-
-        task = self._require_task(task_id)
-        if task.status != "in_progress":
-            raise InvalidRequestError(
-                f"Cannot stop a task with status '{task.status}'; only in_progress tasks can be stopped."
-            )
-
-        who = self._requester(requested_by)
-        command = self.store.enqueue_engine_command(
-            project_id=task.project_id,
-            command="stop_task",
-            requested_by=who,
-            task_id=task.id,
-        )
-        return {
-            "task_id": task.id,
-            "project_id": task.project_id,
-            "status": task.status,
-            "resident": self.store.get_engine_lock(task.project_id) is not None,
-            "requested_by": who,
-            "command": _serialize_engine_command(command),
         }
 
     def steer_task(

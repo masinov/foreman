@@ -35,13 +35,6 @@ def build_router(ctx: ApiContext) -> APIRouter:
     def update_task(task_id: str, data: dict[str, Any] = Depends(read_json_body)) -> dict[str, Any]:
         return with_api(lambda api: api.tasks.update_task_fields(task_id, updates=data))
 
-    @router.post("/tasks/{task_id}/stop")
-    def stop_task(
-        task_id: str, body: RequestedBy = Depends(body_as(RequestedBy))
-    ) -> dict[str, Any]:
-        requested_by = body.requested_by or None
-        return with_api(lambda api: api.engine.stop_task(task_id, requested_by=requested_by))
-
     @router.post("/tasks/{task_id}/block")
     def block_task(task_id: str, body: TaskBlock = Depends(body_as(TaskBlock))) -> dict[str, Any]:
         return with_api(

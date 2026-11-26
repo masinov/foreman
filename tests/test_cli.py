@@ -2611,8 +2611,8 @@ class EngineCommandCliTests(unittest.TestCase):
         self.assertEqual(len(commands), 1)
         return commands[0]
 
-    def test_pause_resume_and_shutdown_queue_a_command_and_print_its_id(self) -> None:
-        for verb in ("pause", "resume", "shutdown"):
+    def test_shutdown_queues_a_command_and_prints_its_id(self) -> None:
+        for verb in ("shutdown",):
             with self.subTest(verb=verb):
                 result = self.run_cli(
                     "engine", verb, "project-1", "--db", str(self.db_path), "--by", "alice"
@@ -2631,8 +2631,8 @@ class EngineCommandCliTests(unittest.TestCase):
                 self.assertIn(queued[0].id, result.stdout)
                 self.assertIn("Command id:", result.stdout)
 
-    def test_run_task_and_stop_task_carry_the_task_id(self) -> None:
-        for verb, name in (("run-task", "run_task"), ("stop-task", "stop_task")):
+    def test_run_task_carries_the_task_id(self) -> None:
+        for verb, name in (("run-task", "run_task"),):
             with self.subTest(verb=verb):
                 result = self.run_cli(
                     "engine", verb, "project-1", "task-1", "--db", str(self.db_path)
@@ -2651,7 +2651,7 @@ class EngineCommandCliTests(unittest.TestCase):
     def test_the_requester_defaults_to_the_os_user_name(self) -> None:
         from foreman.engine.control import default_command_requester
 
-        result = self.run_cli("engine", "pause", "project-1", "--db", str(self.db_path))
+        result = self.run_cli("engine", "shutdown", "project-1", "--db", str(self.db_path))
 
         self.assertEqual(result.returncode, 0, result.stderr)
         command = self._only_command()
@@ -2659,7 +2659,7 @@ class EngineCommandCliTests(unittest.TestCase):
         self.assertTrue(command.requested_by, "a command must always name a requester")
 
     def test_an_unknown_project_is_refused_without_queueing(self) -> None:
-        result = self.run_cli("engine", "pause", "nope", "--db", str(self.db_path))
+        result = self.run_cli("engine", "shutdown", "nope", "--db", str(self.db_path))
 
         self.assertEqual(result.returncode, 1)
         self.assertIn("Unknown project", result.stderr)
@@ -2697,7 +2697,7 @@ class EngineCommandCliTests(unittest.TestCase):
         )
 
         result = self.run_cli(
-            "engine", "stop-task", "project-1", "task-2", "--db", str(self.db_path)
+            "engine", "run-task", "project-1", "task-2", "--db", str(self.db_path)
         )
 
         self.assertEqual(result.returncode, 1)
@@ -2705,12 +2705,14 @@ class EngineCommandCliTests(unittest.TestCase):
         self.assertEqual(self.store.list_engine_commands("project-1"), [])
 
     def test_queueing_without_a_resident_engine_says_what_will_happen(self) -> None:
-        pause = self.run_cli("engine", "pause", "project-1", "--db", str(self.db_path))
-        self.assertIn("No engine is resident", pause.stdout)
-        self.assertIn("rejected", pause.stdout)
+        shutdown = self.run_cli("engine", "shutdown", "project-1", "--db", str(self.db_path))
+        self.assertIn("No engine is resident", shutdown.stdout)
+        self.assertIn("rejected", shutdown.stdout)
 
-        resume = self.run_cli("engine", "resume", "project-1", "--db", str(self.db_path))
-        self.assertIn("next `foreman serve` will apply it", resume.stdout)
+        run_task = self.run_cli(
+            "engine", "run-task", "project-1", "task-1", "--db", str(self.db_path)
+        )
+        self.assertIn("next `foreman serve` will apply it", run_task.stdout)
 
     def test_status_without_a_resident_engine(self) -> None:
         result = self.run_cli("engine", "status", "project-1", "--db", str(self.db_path))
@@ -2746,7 +2748,8 @@ class EngineCommandCliTests(unittest.TestCase):
             "secret-token", result.stdout, "status must never print the lease token"
         )
 
-    def test_status_reports_a_paused_engine(self) -> None:
+    def test_an_old_pause_command_does_not_pause_the_engine(self) -> None:
+        """Pausing is a hold on the work now (ADR-0043); the log is history."""
         self.store.acquire_lease(
             project_id="project-1",
             resource_type="engine",
@@ -2758,24 +2761,6 @@ class EngineCommandCliTests(unittest.TestCase):
             project_id="project-1", command="pause", requested_by="alice"
         )
         self.store.mark_engine_command(command.id, "completed", detail="Engine paused.")
-
-        result = self.run_cli("engine", "status", "project-1", "--db", str(self.db_path))
-
-        self.assertIn("State: paused", result.stdout)
-
-    def test_a_resumed_engine_is_reported_as_running_again(self) -> None:
-        self.store.acquire_lease(
-            project_id="project-1",
-            resource_type="engine",
-            resource_id="project-1",
-            holder_id="holder-resident",
-            lease_token="token",
-        )
-        for name in ("pause", "resume"):
-            command = self.store.enqueue_engine_command(
-                project_id="project-1", command=name, requested_by="alice"
-            )
-            self.store.mark_engine_command(command.id, "completed", detail=name)
 
         result = self.run_cli("engine", "status", "project-1", "--db", str(self.db_path))
 
@@ -2825,8 +2810,11 @@ class EngineCommandCliTests(unittest.TestCase):
         result = self.run_cli("engine", "--help")
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        for verb in ("status", "pause", "resume", "shutdown", "run-task", "stop-task"):
+        for verb in ("status", "shutdown", "run-task"):
             self.assertIn(verb, result.stdout)
+        # Pausing, resuming and stopping are holds on the work (ADR-0043).
+        for retired in ("    pause ", "    resume ", "stop-task"):
+            self.assertNotIn(retired, result.stdout)
 
     def test_a_queued_command_is_applied_by_a_serve_pass(self) -> None:
         """End to end: the CLI queues, `foreman serve` picks it up."""

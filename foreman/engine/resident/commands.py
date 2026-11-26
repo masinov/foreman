@@ -1,16 +1,22 @@
 """The engine command table: reading, applying and finishing commands (ADR-0011).
+
+What is left in the table is what is a message to a worker: ``run_task``,
+``steer_task`` and ``shutdown``. ``pause``, ``resume`` and ``stop_task``
+were retired by ADR-0043: a user's holds are rows on the work, read by
+every worker, and a command naming one is rejected with where it went.
 """
 
 from __future__ import annotations
 
 import logging
 
-from ...domain.errors import EngineCommandInterrupt
+from ...domain.errors import EngineCommandInterrupt, TaskStoppedInterrupt
 from ...domain.models import (
     ENGINE_COMMANDS_NEEDING_A_RESIDENT_ENGINE,
     EngineCommand,
 )
 from ...runner import process
+from ..holds import hold_of
 from .base import ResidentEngineBase, _runnable_on_request
 
 #: Recorded on commands a starting engine refuses because they were addressed
@@ -27,18 +33,30 @@ UNFINISHED_COMMAND_DETAIL = "the engine stopped before it finished applying this
 COMMAND_TERMINATE_GRACE_SECONDS = 2.0
 
 
+#: The commands ADR-0043 retired, and what replaced each.
+RETIRED_COMMANDS: dict[str, str] = {
+    "pause": "a pause is now on the work: `foreman pause`, or Pause in the dashboard",
+    "resume": "a pause is lifted on the work: `foreman resume`, or Resume in the dashboard",
+    "stop_task": "a Stop is now a pause that cuts the step: `foreman pause --now`, or Stop",
+}
+
+
+def retired_detail(name: str) -> str:
+    return f"`{name}` is no longer an engine command (ADR-0043); {RETIRED_COMMANDS[name]}."
+
+
 class CommandHandling(ResidentEngineBase):
     """Applying engine commands."""
 
     def _reject_stale_commands(self) -> None:
         """Settle commands left over from an engine that is gone.
 
-        A pending `pause`, `stop_task`, or `shutdown` describes an intent
-        about a process that is no longer running: applying them to *this*
-        engine would pause a service nobody asked to pause, or block a task
-        nobody is working on. A `resume` and a `run_task` describe work rather
-        than a process, and work outlives the engine, so both are left pending
-        for the first pass to pick up.
+        A pending `shutdown` or `steer_task` describes an intent about a
+        process that is no longer running: applying it to *this* engine would
+        stop a service nobody asked to stop. A `run_task` describes work
+        rather than a process, and work outlives the engine, so it is left
+        pending for the first pass to pick up. A retired command (`pause`,
+        `resume`, `stop_task`) is rejected with where it went (ADR-0043).
 
         A command the previous engine had acknowledged but not finished (it
         stopped in between) gets the same treatment: a `run_task` is queued
@@ -87,9 +105,8 @@ class CommandHandling(ResidentEngineBase):
                 return
             self._acknowledge(command)
 
-            if command.command in {"pause", "shutdown"} or (
-                command.command in {"stop_task", "steer_task"}
-                and command.task_id == running_task_id
+            if command.command == "shutdown" or (
+                command.command == "steer_task" and command.task_id == running_task_id
             ):
                 # Kill the agent's whole process group first: the run must be
                 # settled against a child that is already gone, not one still
@@ -115,31 +132,15 @@ class CommandHandling(ResidentEngineBase):
         """Apply one command that does not need the running step stopped."""
 
         name = command.command
-        if name == "pause":
-            self._paused = True
-            self._finish_command(command, "completed", "Engine paused; no task was running.")
+        if name in RETIRED_COMMANDS:
+            self._finish_command(command, "rejected", retired_detail(name))
         elif name == "shutdown":
-            self._paused = True
             self._stopping = True
             self._finish_command(
                 command, "completed", "Engine shutting down; no task was running."
             )
-        elif name == "resume":
-            was_paused = self._paused
-            self._paused = False
-            self._finish_command(
-                command,
-                "completed",
-                "Engine resumed." if was_paused else "Engine was already running.",
-            )
         elif name == "run_task":
             self._apply_run_task(command)
-        elif name == "stop_task":
-            self._finish_command(
-                command,
-                "rejected",
-                self._stop_task_rejection(command, running_task_id),
-            )
         elif name == "steer_task":
             # Nothing to interrupt. The guidance is recorded and the task's
             # next agent step reads it, as it would have without the command.
@@ -199,6 +200,15 @@ class CommandHandling(ResidentEngineBase):
                 "point, can be run on request.",
             )
             return
+        if hold_of(self.store, task) is not None:
+            # A request to run a task does not pass a user's hold (ADR-0043).
+            self._finish_command(
+                command,
+                "rejected",
+                f"Task {task_id!r} is held (paused or blocked); resume or unblock "
+                "it first.",
+            )
+            return
         self._run_requests.append((task_id, command))
         position = len(self._run_requests)
         self.store.mark_engine_command(
@@ -211,45 +221,23 @@ class CommandHandling(ResidentEngineBase):
             ),
         )
 
-    def _stop_task_rejection(
-        self, command: EngineCommand, running_task_id: str | None
-    ) -> str:
-        """Explain why a `stop_task` could not be applied."""
-
-        if not command.task_id:
-            return "stop_task needs a task id."
-        if running_task_id is None:
-            return (
-                f"Task {command.task_id!r} is not running: the engine is idle. "
-                "Use `foreman task block` to park a task that is not running."
-            )
-        return (
-            f"Task {command.task_id!r} is not the task this engine is running "
-            f"({running_task_id!r})."
-        )
-
     def _settle_interrupt(self, interrupt: EngineCommandInterrupt) -> None:
         """Finish the command whose interrupt just unwound the stack.
 
-        By now the orchestrator has settled the agent run as ``killed`` and the
-        task is resumable at its persisted step. What remains is the difference
-        between the two stops: a `pause` leaves the task exactly as it is, a
-        `stop_task` parks it as ``blocked`` naming who stopped it.
+        By now the orchestrator has settled the run as ``killed`` and the task
+        is resumable at its persisted step. A user's Stop leaves it paused
+        there; a `steer_task` starts the step again; a `shutdown` ends the
+        engine.
         """
 
+        if isinstance(interrupt, TaskStoppedInterrupt):
+            self._settle_stop(interrupt)
+            return
         command = interrupt.command
         assert isinstance(command, EngineCommand)  # only this module raises it
         task_id = interrupt.task_id
 
-        if command.command == "stop_task":
-            reason = f"Stopped by {command.requested_by}"
-            self.orchestrator.stop_task(command.task_id or task_id, reason=reason)
-            detail = (
-                f"Stopped task {command.task_id!r}: the agent process group was "
-                f"terminated, its run settled as killed, and the task is blocked "
-                f"({reason})."
-            )
-        elif command.command == "steer_task":
+        if command.command == "steer_task":
             # The task stays exactly where it was, in progress at the step
             # that was interrupted, and the engine keeps going: its next pass
             # starts that step again, with the guidance in the prompt and, for
@@ -265,21 +253,55 @@ class CommandHandling(ResidentEngineBase):
                 "starts again."
             )
         else:
-            # `pause` and `shutdown` both leave the task resumable. The lease
-            # goes back so the task is not pinned to an engine that has stopped
-            # working on it; the guarded step usually released it already, and
-            # releasing twice is a no-op.
+            # `shutdown` leaves the task resumable. The lease goes back so the
+            # task is not pinned to an engine that has stopped working on it;
+            # the guarded step usually released it already, and releasing
+            # twice is a no-op.
             if task_id:
                 self.orchestrator.release_task(task_id)
-            self._paused = True
-            if command.command == "shutdown":
-                self._stopping = True
+            self._stopping = True
             detail = (
-                f"{'Shut down' if command.command == 'shutdown' else 'Paused'} "
-                f"during task {task_id!r}: the agent process group was terminated, "
-                "its run settled as killed, and the task is resumable."
+                f"Shut down during task {task_id!r}: the agent process group was "
+                "terminated, its run settled as killed, and the task is resumable."
             )
         self._finish_command(command, "completed", detail, task_id=task_id)
+
+    def _settle_stop(self, interrupt: TaskStoppedInterrupt) -> None:
+        """Finish a user's Stop once the cut step's run is settled.
+
+        The task stays paused at the step that was cut, resumable; Resume
+        runs that step again from its start. The cut visit is not counted
+        against the step's limit: a user cut it, it did not fail.
+        """
+
+        task_id = interrupt.task_id
+        if not task_id:
+            return
+        self.orchestrator.forgive_step_visit(task_id)
+        self.orchestrator.release_task(task_id)
+        detail = (
+            f"Stopped task {task_id!r}: the running step was cut, its run settled "
+            "as killed, and the task waits, paused, to run that step again."
+        )
+        self._log(
+            "serve.task_stopped",
+            task_id=task_id,
+            requested_by=interrupt.requested_by,
+        )
+        try:
+            self.orchestrator.record_engine_event(
+                project_id=self.project_id,
+                event_type="engine.task_stopped",
+                task_id=task_id,
+                detail=detail,
+                payload={"task_id": task_id, "requested_by": interrupt.requested_by},
+            )
+        except Exception as exc:  # noqa: BLE001 - a lost trace must not stop the engine
+            self._log(
+                "serve.command_event_failed",
+                level=logging.ERROR,
+                reason=str(exc),
+            )
 
     def _acknowledge(self, command: EngineCommand) -> None:
         """Record that this engine has picked a command up."""
