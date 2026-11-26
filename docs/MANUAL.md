@@ -268,7 +268,7 @@ foreman task add <project-id> --title TITLE --criteria CRITERIA \
     [--depends-on id1,id2]
 
 foreman task override <task-id> \
-    [--step STEP=MODEL ...] [--ladder-start N] \
+    [--step STEP=MODEL ...] [--ladder-start MODEL] \
     [--gate POLICY=auto|human] [--triage auto|human] \
     [--notification none|attention|all] [--clear]
 
@@ -363,7 +363,7 @@ of `triage`, the status filed work waits in until a person takes it; `task
 cancel` works from `triage` too. Example:
 
 ```bash
-foreman task override task-123 --step develop=MiniMax-M2 --step review=claude-opus-4-8 --ladder-start 1
+foreman task override task-123 --step develop=MiniMax-M2 --ladder-start claude-opus-5-5
 foreman task override task-123 --gate merge_approval=human --notification all
 foreman task override task-123 --triage ""      # drop just that override
 ```
@@ -576,8 +576,9 @@ backend = "claude_code"            # or "codex"
 model = "claude-sonnet-4-6"        # "" → project default_model
 session_persistence = true         # reuse --resume session across runs
 permission_mode = "bypassPermissions"
-# Optional escalation ladder (see §9):
-model_ladder = ["claude-haiku-4-5-20251001", "claude-sonnet-4-6", "claude-opus-4-8"]
+# Optional: models to move up after failures of the step's own work (see §9):
+model_ladder = ["claude-sonnet-5-5", "claude-opus-5-5"]
+escalate_after = 2                 # failures on one model before the next
 
 # What the agent can use (ADR-0023). A non-empty `allowed` is its whole tool
 # set; `disallowed` is taken away on top. Both empty: every tool.
@@ -800,17 +801,36 @@ Manual smoke:
 claude --print --model minimax-m3 'Reply with exactly: minimax-ok'
 ```
 
-### Escalation ladder
+### Moving up a role's models
 
-Give a role a `model_ladder`. The engine picks the rung by step-visit count, so
-repeated failures escalate automatically:
+Give a role its models, cheapest first, and how many failures of its own work
+on one model it takes to move to the next (ADR-0041; also in Settings › Roles,
+for the workspace's roles and a project's own):
 
 ```toml
 [agent]
-model_ladder = ["claude-haiku-4-5-20251001", "claude-sonnet-4-6", "claude-opus-4-8"]
+model_ladder = ["claude-sonnet-5-5", "claude-opus-5-5"]
+escalate_after = 2   # failures on one model before the next; default 2
 ```
 
-`model` remains the single-model fallback when no ladder is present.
+One model (or `model`) never moves up; none uses the project's default.
+
+A step moves up only after `escalate_after` failures of its own work on its
+model: its run ended without a result, the review sent the work back with an
+S1 or S2 finding, or the tests failed after it. These never count: an engine
+restart, a Stop, a send-back after a conflict, tests that fail right after the
+merge step brought the branch up to date, a wait for usage limits, an
+infrastructure error, a run stopped by a cost or time limit, and a reviewer
+that approved unread. Those block the task for a person as before, or run the
+step again without counting. After `escalate_after` failures on the last model
+the task blocks for a person with the reason. The counts are kept on the task
+per step and model; unblocking or reopening the task starts them over. A step
+that moves up still has a visit limit: `max_step_visits` plus
+`escalate_after` × its number of models.
+
+Every move up is a line in the task's Activity ("Develop moves up to
+claude-opus-5-5 · the review sent it back twice"), and `foreman outcomes`
+compares models.
 
 ### Per-task overrides
 
@@ -818,16 +838,16 @@ A manager differentiates dispatch per task:
 
 ```bash
 foreman task add <project> --title ... --criteria ...
-foreman task override <task-id> --step develop=MiniMax-M2 --step review=claude-opus-4-8 --ladder-start 1
+foreman task override <task-id> --step develop=MiniMax-M2 --ladder-start claude-opus-5-5
 ```
 
-**Model resolution precedence** (`resolve_step_model`):
+**Model resolution precedence** (`resolve_step_model_selection`):
 
-1. Per-task override for the step. If the override model is *in* the role
-   ladder, escalation resumes from its index on later visits; otherwise it's
-   pinned for every visit (the manager chose it deliberately).
-2. Role `model_ladder`, indexed by `ladder_start + (visit − 1)`, where
-   `ladder_start` comes from the override, else 0. A task has no size.
+1. A model pinned for the step (`--step`): it runs on every visit and never
+   moves up.
+2. The role's models: the step starts on the task's start model
+   (`--ladder-start MODEL`; the role's first when it does not list it) and
+   moves up after `escalate_after` failures of its own work on each.
 3. Role `model`.
 4. Project `default_model` setting.
 5. `None` (harness default).
@@ -1220,7 +1240,7 @@ offending value, rather than running on silent defaults.
 | `agent_env_passthrough` | `[]` | names of host environment variables given to every agent process on top of the short list all agents get (ADR-0023); for example a database address the tests need |
 | `write_checkpoint_notes` | `false` | when a sprint is finished, commit a note of its goal, tasks and follow-ups to `docs/checkpoints/<tag>.md` on the default branch before the sprint is tagged (ADR-0036). The tag is made either way |
 | `generate_changelog` | `false` | when a sprint is finished, fold the `changes/<task key>.md` files into a section of `CHANGELOG.md` (newest sprint first, above what the file held before) and remove them, in the checkpoint's commit (ADR-0040). Off: the file and `changes/` are left as they are. `foreman changelog <project> [--sprint <id>]` does the same by hand |
-| `generate_copies` | `false` | Foreman writes `docs/STATUS.md` and `docs/sprints/current.md` from its database when a sprint starts and when it finishes (in the checkpoint's commit), and a finished sprint's archive copy `docs/sprints/archive/sprint-<n>-<slug>.md` (ADR-0040). No task edits them. `foreman copies <project> [--sprint <id>]` writes them by hand |
+| `generate_copies` | `false` | Foreman writes `docs/STATUS.md` and `docs/sprints/current.md` from its database when a sprint starts and when it finishes (in the checkpoint's commit), and a finished sprint's archive copy `docs/sprints/archive/sprint-<n>-<slug>.md` (ADR-0040); a sprint's finish and the command also write `docs/sprints/backlog.md`. An archive file written by hand is never replaced. No task edits them. `foreman copies <project> [--sprint <id>]` writes them by hand |
 | `adr_dir` | `docs/adr` | the folder whose decisions are numbered when a task merges (ADR-0040): a branch writes `<adr_dir>/new-<slug>.md`; the merge commit renames it to `ADR-NNNN-<slug>.md` (next free number), sets the number in its title line, rewrites references to it and regenerates the folder's `README.md` index from each ADR's title and status (the hand-written part above the list is kept). A merge that would leave two ADRs with one number is refused, naming the files. Empty, or no such folder: left alone |
 | `merge_push_remote` | `""` | name of the git remote the default branch is pushed to after each merge (for example `origin`). Empty: merges stay on this machine. A push that fails is recorded (`engine.push_failed`) and the merge stands |
 | `worktree_setup_timeout_seconds` | `1800` | wall-clock cap for `worktree_setup_command`; `0` disables the timeout |

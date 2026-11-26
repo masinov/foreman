@@ -57,7 +57,7 @@ Delete were offered and the API refuses all three until the step stops.
 ## Consequences
 
 - Design v7 draws Edit and More beside a task's title and no row button for
-  a blocked task; it names the kind "unblock". Recorded in `docs/STATUS.md`.
+  a blocked task; it names the kind "unblock". Recorded in `docs/guide/conflicts-spec-design-code.md`.
 - The order beside the title is Edit, the state's button, Close, More. Edit
   and More do not move between states.
 - Block on a running task overlapped with Stop (Stop ends the step now,

@@ -23,7 +23,8 @@ on the result: "the base is ready for implementation".
 1. `docs/design/dashboard-v7/` is the UI reference: structure, wording and
    look. Its `README.md` states the rules; the HTML files are the screens.
    Where it and the spec disagree about system behaviour, the spec wins and
-   the conflict is recorded in `docs/STATUS.md`.
+   the conflict is recorded in `docs/guide/conflicts-spec-design-code.md` (in `docs/STATUS.md`
+   until 2026-11-26).
 2. `docs/mockups/foreman-mockup-v6.html` stays in the repository as history.
    It is no longer a reference for anything.
 3. The screens are drawings. The product does not copy their inline-styled
@@ -33,7 +34,8 @@ on the result: "the base is ready for implementation".
 
 4. React 18 and Vite, plain JavaScript, as today. No component library and
    no router library. Dependencies are added only with a reason written in
-   the PR summary.
+   the change file (`changes/<task key>.md`; the PR summary until
+   2026-11-26, ADR-0040).
 5. Source layout under `frontend/src/`:
 
    | Path | Holds |
