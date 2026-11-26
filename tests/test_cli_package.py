@@ -18,7 +18,7 @@ from foreman.store import ForemanStore
 
 COMMANDS_IN_HELP_ORDER = [
     "init", "projects", "project", "sprint", "task", "backlog", "proposal", "worktree", "token", "notify",
-    "run", "serve", "engine", "pause", "resume", "block", "unblock", "changelog", "status", "board", "watch", "cost", "outcomes", "history",
+    "run", "serve", "engine", "pause", "resume", "block", "unblock", "changelog", "copies", "status", "board", "watch", "cost", "outcomes", "history",
     "transcript", "approve", "deny", "waive-merge", "revoke-waiver", "roles",
     "workflows", "role", "workflow", "config", "db", "dashboard",
 ]

@@ -47,7 +47,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--branch",
         default=None,
-        help="Override the branch name used for PR-summary validation",
+        help="Override the branch name used to decide whether a change file is required",
     )
     return parser.parse_args()
 

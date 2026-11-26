@@ -63,9 +63,9 @@ def default_project_settings(
         "test_command": test_command or DEFAULT_TEST_COMMAND,
         "max_step_visits": 5,
         "max_infra_retries": 3,
-        "write_pr_summaries": False,
         "write_checkpoint_notes": False,
         "generate_changelog": False,
+        "generate_copies": False,
         "adr_dir": "docs/adr",
     }
 

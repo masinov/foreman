@@ -9,7 +9,8 @@ Core rules:
 - never work directly on `main`
 - one branch per coherent sprint task or tightly scoped follow-up
 - prefer reversible progress over broad, unfinished rewrites
-- document paused work in `docs/STATUS.md` or `docs/prs/<branch-name>.md`
+- document paused work in the task's own record in Foreman (its guidance or its
+  blocked reason); `docs/STATUS.md` is generated and is not edited
 
 ## Branch names
 
@@ -34,14 +35,15 @@ Examples:
 Before creating a branch:
 
 1. read `AGENTS.md`
-2. read `docs/STATUS.md`
-3. read `docs/sprints/current.md`
+2. read `docs/STATUS.md` and `docs/sprints/current.md` (Foreman writes both
+   from its database)
+3. read `docs/guide/` for the topic at hand
 4. confirm the task belongs to the active sprint or backlog
 
 Then:
 
 1. create the branch
-2. update sprint status if the task is now `in_progress`
+2. leave sprint and task state to Foreman: it is in its database
 3. keep the branch scoped to that deliverable
 
 ## Before calling work complete
@@ -50,5 +52,5 @@ Required:
 
 - relevant validation run
 - docs updated
-- `docs/prs/<branch-name>.md` written
+- `changes/<task key>.md` written (it becomes the merge commit's message)
 - follow-up work recorded if anything remains

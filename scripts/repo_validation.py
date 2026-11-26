@@ -25,7 +25,6 @@ REQUIRED_FILES = (
     Path("docs/sprints/archive/README.md"),
     Path("docs/adr/README.md"),
     Path("docs/checkpoints/TEMPLATE.md"),
-    Path("docs/prs/TEMPLATE.md"),
     Path("docs/specs/engine-design-v3.md"),
     Path("docs/mockups/foreman-mockup-v6.html"),
     Path("docs/design/dashboard-v7/README.md"),
@@ -43,7 +42,6 @@ REQUIRED_FILES = (
 REQUIRED_DIRECTORIES = (
     Path("docs/adr"),
     Path("docs/checkpoints"),
-    Path("docs/prs"),
     Path("docs/specs"),
     Path("docs/mockups"),
     Path("docs/sprints"),
@@ -97,12 +95,6 @@ def latest_versioned_spec(root: Path) -> Path | None:
     if not specs:
         return None
     return specs[-1]
-
-
-def branch_summary_path(branch_name: str) -> Path:
-    """Map a branch name to its PR summary path."""
-
-    return Path("docs/prs") / f"{branch_name.replace('/', '-')}.md"
 
 
 def change_files(root: Path) -> list[Path]:
@@ -161,15 +153,6 @@ def validate_repo_scaffold(
         )
 
     if branch_name and branch_name not in {"main", "HEAD"}:
-        summary_path = root / branch_summary_path(branch_name)
-        if not summary_path.is_file():
-            issues.append(
-                ValidationIssue(
-                    str(branch_summary_path(branch_name)),
-                    "branch-specific PR summary is missing",
-                )
-            )
-
         if not change_files(root):
             issues.append(
                 ValidationIssue(

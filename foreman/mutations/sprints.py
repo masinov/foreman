@@ -81,7 +81,31 @@ class SprintMutations(MutationBase):
             self.store.delete_level_block("sprint", sprint.id)
         if target_status == "completed":
             self._checkpoint(sprint)
+        if target_status == "active":
+            self._copies_on_start(sprint)
         return sprint
+
+    def _copies_on_start(self, sprint: Sprint) -> None:
+        """Write the status and sprint copies where the project asks for them (ADR-0040).
+
+        Work outside the database, like the checkpoint: deferred for a proposal.
+        """
+
+        project = self.store.get_project(sprint.project_id)
+        if project is None:
+            return
+        checkpoints = SprintCheckpoints(self.store)
+        if not checkpoints.copies_on(project):
+            return
+
+        def make() -> str | None:
+            made = checkpoints.write_copies(project, sprint, why=f"{sprint.title} started")
+            return None if made.problem is None else f"The sprint started but its copies were not written: {made.problem}"
+
+        if self.defer_side_effects:
+            self.deferred.append(make)
+        else:
+            make()
 
     def _checkpoint(self, sprint: Sprint) -> None:
         """Tag the finished sprint, and commit its note first where asked (spec 6.4).

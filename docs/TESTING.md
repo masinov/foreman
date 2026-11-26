@@ -289,5 +289,5 @@ For product UI work, "done" should include API contract coverage, frontend
 behavior coverage, and browser or bundle-level validation rather than only
 backend tests that inspect HTML strings.
 
-If a slice cannot reasonably add tests yet, explain why in the PR summary and
+If a slice cannot reasonably add tests yet, explain why in the developer's report and
 record the follow-up explicitly.

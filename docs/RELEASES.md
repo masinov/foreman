@@ -48,9 +48,10 @@ The first dedicated React dashboard frontend checkpoint is recorded in
 The production-hardening reset checkpoint is recorded in
 `docs/checkpoints/production-hardening-audit.md`.
 
-The dashboard runtime and local development workflow cleanup is currently
-tracked in `docs/prs/refactor-dashboard-runtime-dev-workflow.md` as part of
-the active product-surface hardening sprint.
+The dashboard runtime and local development workflow cleanup was tracked in
+a PR note, `docs/prs/refactor-dashboard-runtime-dev-workflow.md`, as part of
+the product-surface hardening sprint. `docs/prs/` was retired in sprint 65
+(ADR-0040); git keeps the note.
 
 ## Near-term policy
 
@@ -79,9 +80,10 @@ While product-surface hardening and migration bootstrap are still incomplete:
 Confirm:
 
 1. relevant tests pass
-2. `docs/STATUS.md` is current
+2. `docs/STATUS.md` and `docs/sprints/current.md` are current (Foreman writes
+   them when a sprint starts and finishes, or `foreman copies <project>`)
 3. sprint state is current
-4. `CHANGELOG.md` is updated
+4. `CHANGELOG.md` is generated from the sprints' `changes/` files
 5. open risks are documented
 6. a checkpoint note exists if the milestone matters long-term
 

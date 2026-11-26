@@ -24,6 +24,7 @@ from ...repo.git import (
     merge_branch,
     merge_preflight,
     push_branch,
+    read_file_at,
     run_git,
     sync_branch_with_base,
 )
@@ -91,6 +92,21 @@ def _read_head(repo_path: Path | str, ref: str) -> str | None:
         return head_sha(repo_path, ref)
     except (GitError, OSError):
         return None
+
+
+def _merge_message(project: Project, task: Task) -> str:
+    """The merge commit's message (ADR-0040): the task's key and title, then its change file's text.
+
+    The change file is the branch's own, ``changes/<task key>.md`` (a branch
+    with no key uses its name, slashes as dashes). A branch without one gets
+    the first line only.
+    """
+
+    key = task.task_key or (task.branch_name or "").replace("/", "-")
+    subject = f"Merge {key}: {task.title}".strip() if key else f"Merge {task.title}".strip()
+    change = read_file_at(project.repo_path, task.branch_name or "", f"changes/{key}.md") if key else None
+    body = (change or "").strip()
+    return f"{subject}\n\n{body}" if body else subject
 
 
 def _landed(
@@ -313,6 +329,7 @@ class MergeStep(BuiltinExecutorBase):
             source_branch=task.branch_name,
             target_branch=project.default_branch,
             finish=number_adrs if adr_dir else None,
+            message=_merge_message(project, task),
         )
         if result.refused:
             return self._block_task(

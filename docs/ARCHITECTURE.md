@@ -152,11 +152,15 @@ Primary persisted entities:
   `services/task_reads.py` and drawn by the Activity tab. No git call is
   made when a page is read.
 
-Committed markdown in this repository is still temporary bootstrap memory.
-Once Foreman matures, files like `docs/STATUS.md` and `docs/sprints/current.md`
-should become planning artifacts or projections rather than operational state.
-That bootstrap memory status does not relax implementation quality standards
-for product code.
+`docs/STATUS.md`, `docs/sprints/current.md` and a finished sprint's archive
+copy are projections: Foreman writes them from its database
+(`foreman/mutations/copies.py`) when a sprint starts, when it finishes (in the
+checkpoint's commit, `mutations/checkpoint.py`) and from `foreman copies`,
+where the project setting `generate_copies` is on (ADR-0040). A merge commit's
+message carries the task's key, title and change file's text
+(`engine/builtins/merge.py`); `docs/prs/` is retired. The rest of the
+committed markdown is still bootstrap memory, which does not relax
+implementation quality standards for product code.
 
 ## Runtime repo boundary
 

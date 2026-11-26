@@ -15,6 +15,7 @@ from . import (
     backlog,
     catalog,
     changelog,
+    copies,
     db,
     definitions,
     engine,
@@ -107,6 +108,7 @@ def build_parser() -> argparse.ArgumentParser:
     engine.register_engine(subparsers)
     holds.register_holds(subparsers)
     changelog.register_changelog(subparsers)
+    copies.register_copies(subparsers)
     monitor.register_status(subparsers)
     monitor.register_board(subparsers)
     monitor.register_watch(subparsers)

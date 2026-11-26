@@ -126,6 +126,11 @@ class ProjectSettings:
     # ``changes/`` files, which are removed, in the checkpoint's commit
     # (ADR-0040). Off: the file and ``changes/`` are left as they are.
     generate_changelog: bool = False
+    # Foreman writes ``docs/STATUS.md`` and ``docs/sprints/current.md`` from its
+    # database when a sprint starts and when it finishes (in the checkpoint's
+    # commit), and the finished sprint's archive copy (ADR-0040). Off: the
+    # files are left to whoever edits them.
+    generate_copies: bool = False
     # The repository folder whose ADRs are numbered when a task merges and
     # whose index is generated (ADR-0040). Empty: none. A project without the
     # folder is left alone.
@@ -208,6 +213,7 @@ class ProjectSettings:
             completion_guard_enabled=bool(raw.get("completion_guard_enabled", True)),
             write_checkpoint_notes=_validate_bool(raw.get("write_checkpoint_notes"), key="write_checkpoint_notes"),
             generate_changelog=_validate_bool(raw.get("generate_changelog"), key="generate_changelog"),
+            generate_copies=_validate_bool(raw.get("generate_copies"), key="generate_copies"),
             adr_dir=_validate_adr_dir(raw.get("adr_dir")),
             merge_push_remote=_validate_remote_name(raw.get("merge_push_remote")),
             agent_env_passthrough=_validate_env_names(raw.get("agent_env_passthrough")),
