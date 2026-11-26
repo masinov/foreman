@@ -25,6 +25,8 @@ PAUSED = "workflow.paused"
 RESUMED = "workflow.resumed"
 MERGED = "engine.merge"
 STEP_READS = "engine.step_reads"
+STEP_FAILED = "workflow.step_failed"
+STEP_MOVES_UP = "workflow.step_moves_up"
 CLOSED_BY_HAND = "human.task_completed"
 
 #: What a person does to a started task without a gate asking for it.
@@ -46,6 +48,8 @@ OUTCOME_EVENT_TYPES: tuple[str, ...] = (
     RESUMED,
     MERGED,
     STEP_READS,
+    STEP_FAILED,
+    STEP_MOVES_UP,
     *INTERVENTION_EVENTS,
 )
 
@@ -118,6 +122,13 @@ class RoleModelNumbers:
     #: Runs that recorded their reads, and how many of them changed nothing.
     runs_with_reads: int = 0
     runs_without_edit: int = 0
+    #: Failures of this role's own work on this model (ADR-0041): its run
+    #: ended without a result, the review sent it back, the tests failed.
+    own_failures: int = 0
+    #: Of those, the times the review sent its work back.
+    sent_back: int = 0
+    #: How many times a step of this role moved up to this model.
+    moves_up_to: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -390,6 +401,20 @@ def _by_role_and_model(
         if event.event_type == STEP_READS and event.run_id
     }
 
+    failures: dict[tuple[str, str | None], int] = defaultdict(int)
+    sent_back: dict[tuple[str, str | None], int] = defaultdict(int)
+    moved_up_to: dict[tuple[str, str | None], int] = defaultdict(int)
+    for event in events:
+        if event.task_id is None:
+            continue
+        key = (str(event.payload.get("role_id") or ""), event.payload.get("model"))
+        if event.event_type == STEP_FAILED:
+            failures[key] += 1
+            if event.payload.get("kind") == "review":
+                sent_back[key] += 1
+        elif event.event_type == STEP_MOVES_UP:
+            moved_up_to[(key[0], event.payload.get("to_model"))] += 1
+
     def edited_reads(group: Sequence[Run]) -> list[int]:
         return [reads_of[run.id][0] for run in group if run.id in reads_of and reads_of[run.id][1]]
 
@@ -416,6 +441,9 @@ def _by_role_and_model(
             runs_without_edit=sum(
                 1 for run in group if run.id in reads_of and not reads_of[run.id][1]
             ),
+            own_failures=failures.get((role, model), 0),
+            sent_back=sent_back.get((role, model), 0),
+            moves_up_to=moved_up_to.get((role, model), 0),
         )
         for (role, model), group in groups.items()
     ]

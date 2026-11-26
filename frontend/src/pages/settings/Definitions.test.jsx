@@ -89,7 +89,8 @@ describe("Editing a role", () => {
       fields: {
         name: "Code Reviewer",
         description: "Reviews completed work and returns APPROVE, DENY, or STEER",
-        model: "claude-opus-5-5",
+        models: ["claude-opus-5-5"],
+        escalate_after: 2,
         tools: { every: false, chosen: ["Read", "Grep", "Glob", "Bash"] },
         ends: "decides",
         decisions: ["approve", "deny"],
@@ -217,7 +218,7 @@ describe("A role's model", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(sent(fetchImpl, "PUT")).toHaveLength(1));
-    expect(sent(fetchImpl, "PUT")[0].body.fields.model).toBe("");
+    expect(sent(fetchImpl, "PUT")[0].body.fields.models).toEqual([]);
   });
 
   it("takes a model the list does not have", async () => {
@@ -229,7 +230,67 @@ describe("A role's model", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(sent(fetchImpl, "PUT")).toHaveLength(1));
-    expect(sent(fetchImpl, "PUT")[0].body.fields.model).toBe("some-new-model");
+    expect(sent(fetchImpl, "PUT")[0].body.fields.models).toEqual(["some-new-model"]);
+  });
+});
+
+describe("A role's models and when a step moves up", () => {
+  it("has one model that never moves up, and no number to set", async () => {
+    const { dialog } = await openRole();
+    expect(within(dialog).getByText("With one model it never moves up.")).toBeInTheDocument();
+    expect(within(dialog).queryByLabelText("Failures on one model before it moves up")).toBeNull();
+  });
+
+  it("lists the models cheapest first and how many failures on one before the next", async () => {
+    const { fetchImpl, dialog } = await openRole();
+    fetchImpl.routes[`PUT ${ROLE_URL}/code_reviewer`] = definitionsPayload();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add a model it moves up to" }));
+    fireEvent.change(within(dialog).getByLabelText("Moves up to 1"), { target: { value: "claude-opus-5-5" } });
+    fireEvent.change(within(dialog).getByLabelText("Failures on one model before it moves up"), {
+      target: { value: "3" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(sent(fetchImpl, "PUT")).toHaveLength(1));
+    const { fields } = sent(fetchImpl, "PUT")[0].body;
+    expect(fields.models).toEqual(["claude-sonnet-5-5", "claude-opus-5-5"]);
+    expect(fields.escalate_after).toBe(3);
+  });
+
+  it("opens a role that has several models with each of them", async () => {
+    const routes = settingsRoutes();
+    routes[DEFINITIONS_URL] = definitionsPayload({
+      roles: [editableRole({ models: ["claude-sonnet-5-5", "claude-opus-5-5", "a-model-not-listed"], escalate_after: 4 })],
+    });
+    const { dialog } = await openRole("Code Reviewer", routes);
+    expect(within(dialog).getByLabelText("Model")).toHaveValue("claude-sonnet-5-5");
+    expect(within(dialog).getByLabelText("Moves up to 1")).toHaveValue("claude-opus-5-5");
+    // A model the list does not have is shown as typed.
+    expect(within(dialog).getByLabelText("Moves up to 2")).toHaveValue("_other");
+    expect(within(dialog).getByLabelText("Moves up to 2 id")).toHaveValue("a-model-not-listed");
+    expect(within(dialog).getByLabelText("Failures on one model before it moves up")).toHaveValue("4");
+  });
+
+  it("refuses a model it moves up to that is not named, or a number below one", async () => {
+    const { fetchImpl, dialog } = await openRole();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add a model it moves up to" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    expect(await within(dialog).findByText(/Name each model it moves up to/)).toBeInTheDocument();
+    fireEvent.change(within(dialog).getByLabelText("Moves up to 1"), { target: { value: "claude-opus-5-5" } });
+    fireEvent.change(within(dialog).getByLabelText("Failures on one model before it moves up"), {
+      target: { value: "0" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    expect(await within(dialog).findByText(/whole number, 1 or more/)).toBeInTheDocument();
+    expect(sent(fetchImpl, "PUT")).toHaveLength(0);
+  });
+
+  it("takes a model away from the ones it moves up to", async () => {
+    const { dialog } = await openRole();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add a model it moves up to" }));
+    expect(within(dialog).getByLabelText("Moves up to 1")).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove moves up to 1" }));
+    expect(within(dialog).queryByLabelText("Moves up to 1")).toBeNull();
   });
 });
 

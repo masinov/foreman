@@ -1,5 +1,5 @@
 import { stepRows } from "../task/taskWords";
-import { FOREMAN, runBy, runResult, runRole, stepOutcome, testCountWords, whoWord } from "./activityWords";
+import { FOREMAN, modelSourceWords, runBy, runResult, runRole, stepOutcome, testCountWords, whoWord } from "./activityWords";
 
 // A run as the task's own record has it (`workflow_step`, `agent_backend`).
 const run = (fields) => ({ status: "completed", agent_backend: "claude_code", model: "sonnet-5-5", ...fields });
@@ -131,5 +131,30 @@ describe("a step on Overview", () => {
     const review = stepRows(task, workflow).find((row) => row.id === "review");
     expect(review.result).toEqual({ tone: "passed", word: "Approved after 1 send-back" });
     expect(review.runs).toBe(2);
+  });
+});
+
+describe("a step moving up its role's models", () => {
+  const moved = {
+    role_id: "_builtin:orchestrator",
+    agent_backend: "orchestrator",
+    status: "completed",
+    outcome: "success",
+    outcome_detail: "Develop moves up to claude-opus-5-5 · the review sent it back twice",
+  };
+
+  it("is one sober line with its reason", () => {
+    expect(runResult(moved)).toEqual({
+      tone: "idle",
+      word: "Moved up",
+      note: "Develop moves up to claude-opus-5-5 · the review sent it back twice",
+    });
+  });
+
+  it("says why a step ran on its model", () => {
+    expect(modelSourceWords({ source: "override" })).toBe("set for this task");
+    expect(modelSourceWords({ source: "ladder", moves_up: 1 })).toMatch(/moved up the role's models/);
+    expect(modelSourceWords({ source: "ladder", moves_up: 0 })).toMatch(/first model/);
+    expect(modelSourceWords({ source: "role" })).toBe("set by the role");
   });
 });

@@ -267,6 +267,28 @@ class OutcomeNumbersTests(unittest.TestCase):
         self.assertIsNone(reviewer.median_reads_before_first_edit)
         self.assertEqual((reviewer.runs_with_reads, reviewer.runs_without_edit), (1, 1))
 
+    def test_failures_of_a_models_own_work_and_moves_up_to_it_are_counted(self) -> None:
+        story = Story("t1", status="in_progress")
+        story.step("develop")
+        first = story.run("develop", "developer", model="haiku")
+        story.run("develop", "developer", model="opus")
+        story.event("workflow.step_failed", run_id=first, step="develop", role_id="developer",
+                    model="haiku", kind="tests", count=1)
+        story.event("workflow.step_failed", run_id=first, step="develop", role_id="developer",
+                    model="haiku", kind="review", count=2)
+        story.event("workflow.step_moves_up", run_id=first, step="develop", role_id="developer",
+                    from_model="haiku", to_model="opus")
+
+        rows = {(row.role, row.model): row for row in compute(story).by_role_and_model}
+
+        self.assertEqual(
+            (rows[("developer", "haiku")].own_failures, rows[("developer", "haiku")].sent_back,
+             rows[("developer", "haiku")].moves_up_to),
+            (2, 1, 0),
+        )
+        self.assertEqual(rows[("developer", "opus")].moves_up_to, 1)
+        self.assertEqual(rows[("developer", "opus")].own_failures, 0)
+
     def test_failed_runs_are_counted_for_their_role_and_model(self) -> None:
         story = Story("t1", status="in_progress")
         story.step("develop")

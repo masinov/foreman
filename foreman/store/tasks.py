@@ -66,6 +66,7 @@ class TaskStore(StoreBase):
             "workflow_current_step = ?",
             "workflow_carried_output = ?",
             "step_visit_counts = ?",
+            "step_failures = ?",
             "completion_evidence_json = ?",
             "started_at = ?",
             "completed_at = ?",
@@ -79,6 +80,7 @@ class TaskStore(StoreBase):
             task.workflow_current_step,
             task.workflow_carried_output,
             _json_dumps(task.step_visit_counts),
+            _json_dumps(task.step_failures),
             _serialize_evidence(getattr(task, "completion_evidence", None)),
             task.started_at,
             task.completed_at,
@@ -135,13 +137,13 @@ class TaskStore(StoreBase):
                     priority, order_index, branch_name, worktree_path, assigned_role,
                     acceptance_criteria, blocked_reason, created_by,
                     depends_on_task_ids, workflow_current_step,
-                    workflow_carried_output, step_visit_counts, completion_evidence_json,
+                    workflow_carried_output, step_visit_counts, step_failures, completion_evidence_json,
                     executor_overrides_json, complexity,
                     source_system, source_ref, source_url, reporter,
                     created_at, started_at, completed_at,
                     paused_at, paused_by, pause_mode, block_requested
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     sprint_id = excluded.sprint_id,
                     project_id = excluded.project_id,
@@ -161,6 +163,7 @@ class TaskStore(StoreBase):
                     workflow_current_step = excluded.workflow_current_step,
                     workflow_carried_output = excluded.workflow_carried_output,
                     step_visit_counts = excluded.step_visit_counts,
+                    step_failures = excluded.step_failures,
                     completion_evidence_json = excluded.completion_evidence_json,
                     executor_overrides_json = excluded.executor_overrides_json,
                     complexity = excluded.complexity,
@@ -193,6 +196,7 @@ class TaskStore(StoreBase):
                     task.workflow_current_step,
                     task.workflow_carried_output,
                     _json_dumps(task.step_visit_counts),
+                    _json_dumps(task.step_failures),
                     _serialize_evidence(getattr(task, "completion_evidence", None)),
                     _json_dumps(getattr(task, "executor_overrides", {}) or {}),
                     getattr(task, "complexity", None),

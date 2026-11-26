@@ -11,6 +11,7 @@ import { useNotice } from "../../ui/Toast";
 import {
   applyOverrides,
   currentGateOverride,
+  currentStart,
   gateChoices,
   overrideGates,
   overrideSteps,
@@ -57,6 +58,27 @@ function StepRow({ step, value, models, onChange }) {
   );
 }
 
+/** The model every step starts on among its role's models, when not the first of each. */
+function StartRow({ value, models, onChange }) {
+  const id = useId();
+  const choices = value && !models.includes(value) ? [value, ...models] : models;
+  return (
+    <div className="overrides__row">
+      <label className="field__label" htmlFor={id}>
+        Start on
+      </label>
+      <select id={id} className="field__input" value={value} onChange={(event) => onChange(event.target.value)}>
+        <option value="">The first model of each role</option>
+        {choices.map((model) => (
+          <option key={model} value={model}>
+            {model}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 /**
  * Overrides for this task: who decides at its gates, and which model runs a
  * step. Only what is set here applies to this task; empty means the
@@ -82,6 +104,7 @@ export function Overrides({ task, workflow, onSaved }) {
     Object.fromEntries(steps.map((step) => [step.id, task.executor_overrides?.models?.[step.id] ?? ""]));
   const [gateValues, setGateValues] = useState(startGates);
   const [modelValues, setModelValues] = useState(startModels);
+  const [startValue, setStartValue] = useState(() => currentStart(task));
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useNotice();
 
@@ -94,6 +117,7 @@ export function Overrides({ task, workflow, onSaved }) {
     setShown(read);
     setGateValues(startGates());
     setModelValues(startModels());
+    setStartValue(currentStart(task));
   }
 
   if (!gates.length && !steps.length) return null;
@@ -103,7 +127,7 @@ export function Overrides({ task, workflow, onSaved }) {
     setSaving(true);
     setNotice(null);
     try {
-      await setTaskOverrides(client, task.id, applyOverrides(task.executor_overrides, { gates: gateValues, models: modelValues }));
+      await setTaskOverrides(client, task.id, applyOverrides(task.executor_overrides, { gates: gateValues, models: modelValues, start: startValue === currentStart(task) ? undefined : startValue }));
       setNotice({ error: false, text: "Saved." });
       onSaved();
     } catch (error) {
@@ -134,6 +158,7 @@ export function Overrides({ task, workflow, onSaved }) {
             onChange={(value) => setModelValues((all) => ({ ...all, [step.id]: value }))}
           />
         ))}
+        {steps.length ? <StartRow value={startValue} models={models} onChange={setStartValue} /> : null}
         <div className="overrides__actions">
           <Button type="submit" disabled={saving}>
             {saving ? "Saving…" : "Save overrides"}

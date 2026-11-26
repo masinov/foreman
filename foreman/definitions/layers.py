@@ -254,12 +254,16 @@ def save_role(
     own_roles, own_workflows = _own_texts(store, project_id)
     own_roles[role.id] = text
     definitions = _checked(store, project_id, (own_roles, own_workflows))
-    if check_model is not None and role.agent.model:
+    if check_model is not None:
         before = project_definitions(store, project_id).roles.get(role.id)
-        if before is None or (before.agent.model, before.agent.backend) != (role.agent.model, role.agent.backend):
-            problem = check_model(role.agent.backend, role.agent.model)
-            if problem:
-                raise DefinitionError(problem)
+        known = set()
+        if before is not None and before.agent.backend == role.agent.backend:
+            known = {before.agent.model, *before.agent.model_ladder}
+        for model in dict.fromkeys((role.agent.model, *role.agent.model_ladder)):
+            if model and model not in known:
+                problem = check_model(role.agent.backend, model)
+                if problem:
+                    raise DefinitionError(problem)
     store.add_definition_revision(
         project_id=project_id,
         kind=ROLE,

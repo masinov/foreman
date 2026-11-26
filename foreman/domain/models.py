@@ -90,7 +90,7 @@ def validate_executor_overrides(
 
     Shape:
 
-        {"models": {"<step>": "<model>", ...}, "ladder_start": <int>,
+        {"models": {"<step>": "<model>", ...}, "ladder_start": "<model>",
          "gates": {"merge_approval": "human", ...},
          "policy": {"triage": "auto", "notification": "all", ...}}
 
@@ -161,8 +161,14 @@ def validate_executor_overrides(
 
     ladder_start = value.get("ladder_start")
     if ladder_start is not None:
-        if isinstance(ladder_start, bool) or not isinstance(ladder_start, int):
-            raise ValueError("executor_overrides.ladder_start must be an integer.")
+        # The model a step starts on among its role's models; a number (a
+        # position) is still read.
+        if isinstance(ladder_start, bool) or not isinstance(ladder_start, (int, str)):
+            raise ValueError("executor_overrides.ladder_start must be a model name.")
+        if isinstance(ladder_start, str):
+            ladder_start = ladder_start.strip()
+            if not ladder_start:
+                raise ValueError("executor_overrides.ladder_start must be a model name.")
         result["ladder_start"] = ladder_start
 
     return result
@@ -254,6 +260,11 @@ class Task:
     workflow_current_step: str | None = None
     workflow_carried_output: str | None = None
     step_visit_counts: dict[str, int] = field(default_factory=dict)
+    #: Failures of a step's own work, per step and model:
+    #: ``{"develop": {"claude-sonnet-5-5": 2}}``. Decides when the step moves
+    #: up its role's models (ADR-0041); unlike the visit counts it is not
+    #: reset by a restart or a conflict send-back.
+    step_failures: dict[str, dict[str, int]] = field(default_factory=dict)
     executor_overrides: dict[str, Any] = field(default_factory=dict)
     complexity: str | None = None
     completion_evidence: CompletionEvidence | None = None

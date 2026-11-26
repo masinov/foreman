@@ -261,9 +261,24 @@ class WorkflowRunnerBase:
             self.tasks.save(current_task)
 
             settings = resolve_project_settings(project)
-            limit = self._limit_reached(current_task, current_step, visit_count, settings)
+            # A step with several models is limited by them (ADR-0041): it
+            # blocks after its last model fails, not after so many visits.
+            limit = self._limit_reached(
+                current_task,
+                current_step,
+                visit_count,
+                settings,
+                visits_counted=not self._has_models_to_move_up(
+                    current_task, current_step, workflow
+                ),
+            )
             if limit is not None:
                 self._block_at_step(current_task, current_step, **limit)
+                break
+
+            exhausted = self._models_exhausted(project, current_task, step_def, current_step)
+            if exhausted is not None:
+                self._block_at_step(current_task, current_step, **exhausted)
                 break
 
             branch_sync_event: tuple[str, dict[str, Any]] | None = None
@@ -362,6 +377,9 @@ class WorkflowRunnerBase:
                 )
                 break
 
+            failed_step = self._charge_failure(
+                project, workflow, current_task, run, step_def, current_step, outcome
+            )
             current_step, carried_output = self._follow_transition(
                 project,
                 workflow,
@@ -370,6 +388,7 @@ class WorkflowRunnerBase:
                 step=current_step,
                 outcome=outcome,
                 detail=detail,
+                failed_step=failed_step,
             )
 
             # Renew lease after each step (heartbeat during workflow execution).

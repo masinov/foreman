@@ -152,7 +152,9 @@ def handle_task_override(args: argparse.Namespace) -> int:
             else:
                 overrides.pop("models", None)
             if args.ladder_start is not None:
-                overrides["ladder_start"] = args.ladder_start
+                overrides["ladder_start"] = (
+                    int(args.ladder_start) if args.ladder_start.isdigit() else args.ladder_start
+                )
             gates = dict(overrides.get("gates") or {})
             for raw in args.gate_policies:
                 if "=" not in raw:

@@ -38,6 +38,8 @@ def _serialize_role(role: "Any") -> dict[str, Any]:
         "description": role.description,
         "backend": role.agent.backend,
         "model": role.agent.model,
+        "model_ladder": list(role.agent.model_ladder),
+        "escalate_after": role.agent.escalate_after,
         "permission_mode": role.agent.permission_mode,
         "session_persistence": role.agent.session_persistence,
         "timeout_minutes": role.completion.timeout_minutes,

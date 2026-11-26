@@ -222,17 +222,23 @@ with `--permission-mode bypassPermissions`.
 
 ### Escalation ladder and per-task overrides
 
-A role may define `[agent] model_ladder = ["cheap", "mid", "frontier"]`. The
-engine selects the rung by workflow step-visit count, so repeated failures
-escalate the model automatically; `model` stays the single-model fallback. Each
-agent step emits a `workflow.model_selected` event recording the chosen model
-and the rule (`override` / `ladder` / `role` / `project_default`).
+A role may define `[agent] model_ladder = ["cheap", "mid", "frontier"]` (its
+models, cheapest first) and `escalate_after = 2` (failures on one model before
+the next; at least 1, default 2). A step moves up a model only after failures of
+its own work: its run ended without a result, the review sent it back, or the
+tests failed. A restart, a Stop, a conflict send-back, a usage wait or an
+infrastructure error never counts. After `escalate_after` failures on the last
+model the task blocks for a person. Each move up is a line in the task's
+Activity, and each agent step emits a `workflow.model_selected` event recording
+the chosen model and the rule (`override` / `ladder` / `role` /
+`project_default`). Both can be set in Settings › Roles. `model` stays the
+single-model fallback; a model pinned for a step never moves up (ADR-0041).
 
 A manager can differentiate dispatch per task:
 
 ```bash
 foreman task add <project> --title ... --criteria ... --complexity large
-foreman task override <task-id> --step develop=MiniMax-M2 --step review=claude-opus-4-8 --ladder-start 1
+foreman task override <task-id> --step develop=MiniMax-M2 --step review=claude-opus-4-8 --ladder-start claude-opus-4-8
 ```
 
 Different ladder rungs share one role's `[agent.env]`; rungs that need different

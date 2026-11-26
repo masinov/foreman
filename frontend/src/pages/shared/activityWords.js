@@ -105,6 +105,28 @@ const OUTCOME_WORDS = {
   cancel: "Cancelled",
 };
 
+const MODEL_SOURCES = {
+  role: "set by the role",
+  project_default: "the project's default",
+  override: "set for this task",
+  task_override: "set for this task",
+};
+
+/**
+ * Why a step ran on its model, from its `workflow.model_selected` facts: set
+ * by the role, the project or the task, or taken from the role's models
+ * (where it moved up after failures of its own work, or not yet).
+ */
+export function modelSourceWords(data) {
+  const source = data?.source;
+  if (source === "ladder") {
+    return data.moves_up > 0
+      ? "moved up the role's models after failures of its own work"
+      : "the role's first model, or the one this task starts on";
+  }
+  return MODEL_SOURCES[source] ?? (source ? humanize(source).toLowerCase() : "");
+}
+
 /** An outcome or a review decision in words: "approve" is "Approved", "steer" is "Sent back". */
 export function outcomeWord(outcome) {
   return OUTCOME_WORDS[String(outcome || "").toLowerCase()] ?? humanize(outcome);
@@ -159,6 +181,8 @@ export function runResult(run) {
   const role = roleOf(run);
   const note = runNote(run);
   if (role === ORCHESTRATOR && outcome === "success") {
+    // A step moving up its role's models after failures of its own work.
+    if (/ moves up to /.test(note)) return { tone: "idle", word: "Moved up", note };
     // A record the engine kept on the task: of stopping or pausing the step
     // under way, of resuming, or of a command about it (ADR-0037).
     if (/^Engine resumed/i.test(note)) return { tone: "idle", word: "Resumed", note: "" };

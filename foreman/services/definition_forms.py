@@ -27,7 +27,7 @@ from ..definitions.layers import (
 )
 from ..runner.model_check import check_model
 from ..domain.outcomes import CANONICAL_OUTCOMES
-from ..definitions.roles import KNOWN_TOOLS, RoleDefinition, load_role_text
+from ..definitions.roles import DEFAULT_ESCALATE_AFTER, KNOWN_TOOLS, RoleDefinition, load_role_text
 from ..domain.settings import settings_of
 from ..definitions.workflows import _BUILTIN_OUTCOMES, WorkflowDefinition, load_workflow_text
 
@@ -213,6 +213,9 @@ def _describe_role(role: RoleDefinition, definitions: ProjectDefinitions) -> dic
         "description": role.description,
         "backend": role.agent.backend,
         "model": role.agent.model,
+        # Its models, cheapest first; none means the project's default.
+        "models": list(role.agent.model_ladder) or ([role.agent.model] if role.agent.model else []),
+        "escalate_after": role.agent.escalate_after,
         "tools": _tools(role),
         "ends": "decides" if decides else "done",
         "decisions": [word for word in DECISIONS if decides and word in role.completion.outcomes],
@@ -311,7 +314,8 @@ def describe_project_definitions(store, project_id: str | None) -> dict[str, Any
         default_model = settings_of(project).default_model or ""
         users = [project]
     models: list[str] = []
-    for model in [default_model, *(role.agent.model for role in definitions.roles.values())]:
+    named = [model for role in definitions.roles.values() for model in (role.agent.model, *role.agent.model_ladder)]
+    for model in [default_model, *named]:
         if model and model not in models:
             models.append(model)
     done_by = [
@@ -369,6 +373,21 @@ def _names(value: Any, key: str, allowed: tuple[str, ...]) -> list[str]:
     return [item for item in allowed if item in value]
 
 
+def _role_models(fields: Mapping[str, Any]) -> list[str]:
+    """The models the form names, cheapest first (an older form names one ``model``)."""
+
+    if "models" not in fields:
+        single = _string(fields, "model").strip()
+        return [single] if single else []
+    models = fields["models"]
+    if not isinstance(models, list) or any(not isinstance(item, str) for item in models):
+        raise DefinitionError("'models' must be a list of model ids.")
+    cleaned = [item.strip() for item in models if item.strip()]
+    if len(set(cleaned)) != len(cleaned):
+        raise DefinitionError("A model is listed once; a step moves up to a different model.")
+    return cleaned
+
+
 def role_text_from_fields(base_text: str, role_id: str, fields: Mapping[str, Any]) -> str:
     """Return ``base_text`` with the form's fields written into it."""
 
@@ -379,7 +398,20 @@ def role_text_from_fields(base_text: str, role_id: str, fields: Mapping[str, Any
     role["description"] = _string(fields, "description").strip()
     if not role["name"]:
         raise DefinitionError("A role needs a name.")
-    agent["model"] = _string(fields, "model").strip()
+    models = _role_models(fields)
+    agent["model"] = models[0] if models else ""
+    # One model never moves up, so it is the role's model and no ladder.
+    if len(models) > 1:
+        agent["model_ladder"] = models
+    else:
+        agent.pop("model_ladder", None)
+    escalate_after = fields.get("escalate_after", DEFAULT_ESCALATE_AFTER)
+    if isinstance(escalate_after, bool) or not isinstance(escalate_after, int) or escalate_after < 1:
+        raise DefinitionError(
+            "The failures before a step moves up to the next model are a whole number, 1 or more."
+        )
+    if len(models) > 1 or "escalate_after" in agent:
+        agent["escalate_after"] = escalate_after
 
     tools = fields.get("tools") or {}
     known = KNOWN_TOOLS.get(str(agent.get("backend", "")), ())

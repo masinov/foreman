@@ -101,8 +101,11 @@ def _register_override(task_commands: argparse._SubParsersAction) -> None:
     task_override.add_argument(
         "--ladder-start",
         dest="ladder_start",
-        type=int,
-        help="Override the model-ladder start index for this task.",
+        metavar="MODEL",
+        help=(
+            "Start each step on this one of its role's models (cheapest first); a "
+            "role that does not list it starts on its first."
+        ),
     )
     task_override.add_argument(
         "--gate",

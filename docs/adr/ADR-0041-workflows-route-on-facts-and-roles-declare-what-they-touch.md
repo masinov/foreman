@@ -188,3 +188,67 @@ of ADR-0040 land.
 - **Not decided here:** the exact TOML syntax, and how a role's record is
   returned. That might be a fenced JSON block, or the backend's structured
   output. Each is settled with its build item, from the shapes above.
+
+## Amendment (2026-11-26, owner: "The moving up the ladder must be configurable"): a step moves up its role's models only after failures of its own work
+
+Decided with the owner on 2026-11-25 (`docs/directions/the-size-label-goes-and-a-step-moves-up-after-failures.md`),
+built as FOR-71. It replaces the rule of ADR-0010, where a role's
+`model_ladder` moved up one model on every visit to the step. A send-back
+after a merge conflict, or a restart, climbed it too.
+
+**What a role sets.** A workspace's default roles and a project's own roles
+(ADR-0024) each say it, in the role's TOML and in the role editor:
+
+- `[agent] model_ladder`: its models, cheapest first. One model never moves
+  up. None means the project's default model.
+- `[agent] escalate_after`: how many failures on one model before the next.
+  At least 1, default 2, so the cheaper model gets another pass with the
+  review's findings.
+
+**What a task sets,** with the overrides that already exist
+(`executor_overrides`): a model pinned for a step never moves up, and
+`ladder_start` names the model of the ladder a step starts on, by the model
+(a role that does not list it starts on its first). The size label may still
+choose the first model until FOR-72 removes it.
+
+**What counts as a failure of a step's own work:**
+
+- its run ended without a result (an error, or no completion after the
+  retry), whatever the step;
+- the review sent the work back (deny or steer, which already need an S1 or
+  S2 finding), counted against the step the workflow sends the work back to;
+- the tests failed after it, counted against the step they send the work
+  back to.
+
+Not counted: an engine restart, a step cut by Stop (ADR-0043), a
+send-back after a conflict or a branch brought up to date, a failed merge, a
+wait for usage limits, an infrastructure error (git, the sandbox, the
+network, a preflight), a limit the project set, a test run with no test
+command, a person's send-back at a gate. Failures are kept on the task per
+step and model (`tasks.step_failures`), so they survive a restart; a
+person's unblock or reopen starts them over.
+
+**The step's model** is the first model from where it starts whose failures
+are fewer than `escalate_after`. Each move up is one line in the task's
+Activity, "Develop moves up to claude-opus-5-5 · the review sent it back
+twice", and the step's details say which model ran and whether it had moved
+up. A run that ended without a result in a workflow with no route for that
+outcome is run again on the next model rather than blocking, when its role
+has more than one.
+
+**Past the last model,** after `escalate_after` failures on it, the task
+blocks for a person: "Develop failed twice on claude-opus-5-5, the last of
+its models." A step with several models is limited by them, not by
+`max_step_visits`; a role with one model keeps the loop limits.
+
+**The session.** Both runners pass the model on every resume: Claude Code
+starts `--resume <session> --model <model>`, and Codex sends `model` with its
+`thread/resume`. A step that moves up therefore resumes its session on the
+new model, and the new model sees what the earlier one did. When no session
+exists for the role (it keeps none, or none ran yet) the step starts fresh
+from its records: the task, the report, the findings.
+
+`foreman outcomes` shows, per role and model, the steps, the failures of its
+own work, the send-backs by review and the moves up to it, with the cost.
+The word "escalate" stays the reviewer's ESCALATE signal; users read "moves up"
+and "models".
