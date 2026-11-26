@@ -16,16 +16,19 @@ from ..definitions.workflows import WorkflowLoadError
 from ..domain.guidance import guidance_notes
 from ..domain.models import (
     Event,
+    Project,
     Task,
 )
 from ..domain.policy import PolicyMatrix, describe_resolution
 from ..engine.document_changes import changes_by_document
 from ..mutations import MutationError
+from ..mutations.gates import GateVersionChanged, current_gate_version
 from .base import Service
 from .errors import (
     ActionFailedError,
     InvalidRequestError,
     NotFoundError,
+    VersionChangedError,
 )
 from .task_models import test_counts
 from .views import HoldReader, needed_by, task_filed_from, task_source
@@ -251,6 +254,8 @@ class TaskService(Service):
             "executor_overrides": task.executor_overrides or {},
             "awaiting_human_gate": self._at_human_gate(task, gates),
             "gate_policy": self._gate_policy(task, gates),
+            # What a person at the gate is looking at, to name in the decision.
+            "gate_version": self._gate_version(task, project, gates),
             "blocked_kind": blocked_kind(task, gates),
             "completion_evidence": _serialize_completion_evidence(task.completion_evidence),
             "guidance": [
@@ -458,10 +463,25 @@ class TaskService(Service):
             raise InvalidRequestError(str(exc)) from exc
         return {"ok": "deleted", "task_id": task_id, "project_id": project_id}
 
-    def approve_task(self, task_id: str) -> dict[str, Any]:
-        """Resume one human gate with an approval outcome."""
+    def _gate_version(
+        self, task: Task, project: Project | None, gates: WorkflowGateSteps
+    ) -> dict[str, str | None] | None:
+        """The version in front of a person at the gate a task waits at, or ``None``."""
 
-        return self._decide_human_gate(task_id, outcome="approve", note=None)
+        policy = self._gate_policy(task, gates)
+        if project is None or policy is None:
+            return None
+        version = current_gate_version(self.store, project, task, policy)
+        return version.to_dict() if version.kind else None
+
+    def approve_task(self, task_id: str, *, version: str | None = None) -> dict[str, Any]:
+        """Resume one human gate with an approval outcome.
+
+        ``version`` is what the person saw (``gate_version`` of the task); an
+        approval of a version that has changed is refused with the new one.
+        """
+
+        return self._decide_human_gate(task_id, outcome="approve", note=None, version=version)
 
     def deny_task(self, task_id: str, *, note: str | None = None) -> dict[str, Any]:
         """Resume one human gate with a denial outcome."""
@@ -469,7 +489,7 @@ class TaskService(Service):
         return self._decide_human_gate(task_id, outcome="deny", note=note)
 
     def _decide_human_gate(
-        self, task_id: str, *, outcome: str, note: str | None
+        self, task_id: str, *, outcome: str, note: str | None, version: str | None = None
     ) -> dict[str, Any]:
         """Record a gate decision and leave the work to the project's engine.
 
@@ -481,7 +501,11 @@ class TaskService(Service):
 
         task = self._require_task(task_id)
         try:
-            result = self._mutations().decide_gate(task, outcome, note)
+            result = self._mutations().decide_gate(
+                task, outcome, note, seen_version=version
+            )
+        except GateVersionChanged as exc:
+            raise VersionChangedError(str(exc), exc.current.to_dict()) from exc
         except MutationError as exc:
             raise ActionFailedError(f"Failed to {outcome}: {exc}") from exc
         resident = self.store.get_engine_lock(task.project_id) is not None
@@ -492,6 +516,8 @@ class TaskService(Service):
             "next_step": result.next_step,
             "deferred": result.deferred,
             "engine_resident": resident,
+            "version": result.version.to_dict(),
+            "version_named": result.version_named,
             # A user's hold on it (ADR-0043): the decision waits for Resume.
             "held": held,
             "message": decision_sentence(

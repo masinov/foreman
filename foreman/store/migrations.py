@@ -1147,6 +1147,22 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         ALTER TABLE tasks ADD COLUMN rests_on_json TEXT NOT NULL DEFAULT '[]';
         """,
     ),
+    (
+        35,
+        "human_gate_decisions: the version a decision was made on",
+        """
+        -- A merge approval: the task branch's head and the default branch's
+        -- head at the decision. A plan approval: a fingerprint of the task's
+        -- description and criteria, and the run whose plan it was.
+        -- version_named is 1 when the request named the version it saw (and
+        -- it was current); decisions from before the columns have NULLs.
+        ALTER TABLE human_gate_decisions ADD COLUMN branch_sha TEXT;
+        ALTER TABLE human_gate_decisions ADD COLUMN base_sha TEXT;
+        ALTER TABLE human_gate_decisions ADD COLUMN plan_fingerprint TEXT;
+        ALTER TABLE human_gate_decisions ADD COLUMN plan_run_id TEXT;
+        ALTER TABLE human_gate_decisions ADD COLUMN version_named INTEGER NOT NULL DEFAULT 0;
+        """,
+    ),
 ]
 
 

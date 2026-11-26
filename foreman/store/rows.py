@@ -355,6 +355,11 @@ def _row_to_human_gate_decision(row: sqlite3.Row) -> HumanGateDecision:
         decided_by=row["decided_by"] or "human",
         decided_at=row["decided_at"],
         run_id=row["run_id"],
+        branch_sha=row["branch_sha"],
+        base_sha=row["base_sha"],
+        plan_fingerprint=row["plan_fingerprint"],
+        plan_run_id=row["plan_run_id"],
+        version_named=bool(row["version_named"]),
     )
 
 

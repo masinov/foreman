@@ -89,8 +89,10 @@ class GateStore(StoreBase):
                 """
                 INSERT INTO human_gate_decisions (
                     id, task_id, project_id, workflow_step,
-                    decision, note, decided_by, decided_at, run_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    decision, note, decided_by, decided_at, run_id,
+                    branch_sha, base_sha, plan_fingerprint, plan_run_id,
+                    version_named
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     decision.id,
@@ -102,6 +104,11 @@ class GateStore(StoreBase):
                     decision.decided_by,
                     decision.decided_at,
                     decision.run_id,
+                    decision.branch_sha,
+                    decision.base_sha,
+                    decision.plan_fingerprint,
+                    decision.plan_run_id,
+                    int(decision.version_named),
                 ),
             )
         return decision

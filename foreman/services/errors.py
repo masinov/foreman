@@ -32,6 +32,17 @@ class ActionFailedError(ServiceError):
     """The action could not be carried out (HTTP 500)."""
 
 
+class VersionChangedError(ServiceError):
+    """An approval names a version that is no longer current (HTTP 409).
+
+    ``current`` is the version now, so the client shows it.
+    """
+
+    def __init__(self, message: str, current: dict[str, str | None]) -> None:
+        super().__init__(message)
+        self.current = current
+
+
 class UnauthenticatedError(ServiceError):
     """The request presents no usable credential (HTTP 401)."""
 

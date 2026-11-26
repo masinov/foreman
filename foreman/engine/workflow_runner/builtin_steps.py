@@ -16,6 +16,7 @@ from ...domain.outcomes import (
 )
 from ...domain.policy import PolicyMatrix, describe_resolution
 from ...history.records import new_id
+from ...mutations.gates import current_gate_version
 from ..branch_sync import task_working_dir
 from ..builtins.base import BuiltinEventRecord
 from ..document_changes import note_document_changes
@@ -242,7 +243,14 @@ class BuiltinSteps(WorkflowRunnerBase):
             "workflow.gate_auto_approved",
             {"step": step.id, "policy": step.policy},
         )
-        self.records.complete_run(run, status="completed", outcome=APPROVE, detail=detail)
+        version = current_gate_version(self.store, project, task, step.policy)
+        self.records.complete_run(
+            run,
+            status="completed",
+            outcome=APPROVE,
+            detail=detail,
+            commit_sha=version.branch_sha,
+        )
         self.store.save_human_gate_decision(
             HumanGateDecision(
                 id=new_id("hg"),
@@ -254,6 +262,10 @@ class BuiltinSteps(WorkflowRunnerBase):
                 decided_by=f"policy:{step.policy}",
                 decided_at=utc_now_text(),
                 run_id=run.id,
+                branch_sha=version.branch_sha,
+                base_sha=version.base_sha,
+                plan_fingerprint=version.fingerprint,
+                plan_run_id=version.plan_run_id,
             )
         )
         return (APPROVE, detail)

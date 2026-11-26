@@ -47,6 +47,10 @@ describe("how a step of a task ended, in its row", () => {
     const gate = { role_id: "_builtin:human_gate", outcome: "approve", model: null };
     expect(stepOutcome(run({ ...gate, agent_backend: "builtin" }))).toMatchObject({ word: "Approved by setting", tone: "idle" });
     expect(stepOutcome(run({ ...gate, agent_backend: "human" }))).toMatchObject({ word: "Approved", tone: "passed" });
+    // A person's approval names the commit it was made at.
+    expect(stepOutcome(run({ ...gate, agent_backend: "human", commit_sha: "abc1234".padEnd(40, "0") })).word).toBe(
+      "Approved at abc1234",
+    );
     expect(stepOutcome(run({ role_id: "code_reviewer", outcome: "steer", commit_sha: "c".repeat(40) })).word).toBe("Sent back");
   });
 

@@ -156,6 +156,14 @@ function Facts({ kind, task, checks }) {
  * (asking for the words that go with it) and the one filled gold button.
  * `onDecided(sentence)` runs once the API accepted the decision.
  */
+const GATE_KINDS = new Set([DECISIONS.merge, DECISIONS.plan, DECISIONS.gate]);
+
+/** The version the page showed: the branch's head (merge) or the plan's fingerprint. */
+function gateToken(version) {
+  if (!version) return undefined;
+  return version.kind === "merge_approval" ? version.branch_sha : version.fingerprint;
+}
+
 export function Decision({ task, checks, onDecided }) {
   const client = useApiClient();
   const [pending, setPending] = useState(false);
@@ -170,10 +178,13 @@ export function Decision({ task, checks, onDecided }) {
     setPending(true);
     setRefusal(null);
     try {
-      const result = await calls.approve(client, task.id);
+      const named = GATE_KINDS.has(decision.kind) ? { version: gateToken(task.gate_version) } : undefined;
+      const result = await calls.approve(client, task.id, named);
       onDecided(done?.approve ?? decisionSentence(taskName(task), result));
     } catch (error) {
       setRefusal(errorSentence(error));
+      // The version may have changed under the page: show the new one.
+      onDecided();
     } finally {
       setPending(false);
     }
