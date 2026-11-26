@@ -10,6 +10,7 @@ from ..repo.context import ProjectContextProjection, build_project_context
 from ..repo.git import GitError, changed_files, recent_commits, status_text
 from ..domain.models import CompletionEvidence, Project, Run, Task
 from ..domain.rests_on import pointers_text
+from .document_changes import changes_by_document
 from ..definitions.roles import RoleDefinition
 from ..store import ForemanStore
 from .branch_sync import task_working_dir
@@ -274,7 +275,7 @@ class PromptBuilder:
                 "completion_builtin_test_result": evidence.builtin_test_result,
                 "completion_builtin_test_detail": evidence.builtin_test_detail,
             })
-        documents = pointers_text(task.rests_on)
+        documents = pointers_text(task.rests_on, changes_by_document(self.store, task) if task.rests_on else None)
         context["task_documents"] = documents
         rendered = role.render_prompt(context)
         if documents and "{task_documents}" not in role.prompt_template:

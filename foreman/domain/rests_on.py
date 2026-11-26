@@ -102,10 +102,15 @@ def documents_from_json(items: Any) -> list[DocumentRef]:
     return refs
 
 
-def pointers_text(refs: Sequence[DocumentRef]) -> str:
+def pointers_text(
+    refs: Sequence[DocumentRef],
+    changed: Mapping[tuple[str, str], Mapping[str, str]] | None = None,
+) -> str:
     """The task layer's section for a step (ADR-0041 section 6): pointers, not text.
 
-    Empty when the task names no document.
+    Empty when the task names no document. ``changed`` holds, by (path,
+    heading), the latest merge that changed a document since it was named:
+    the step is told so, and that the task is not changed to match.
     """
 
     if not refs:
@@ -121,4 +126,23 @@ def pointers_text(refs: Sequence[DocumentRef]) -> str:
         heading = f", {ref.heading}" if ref.heading else ""
         at = f" (named at {ref.commit[:10]})" if ref.commit else ""
         lines.append(f"- {ref.path}{heading}{at}")
+    moved = [(ref, (changed or {}).get(ref.key)) for ref in refs]
+    moved = [(ref, change) for ref, change in moved if change]
+    if moved:
+        lines += [
+            "",
+            "### Changed since this task was planned",
+            "",
+            "These documents were changed by a merge after the task named them. Nothing in the task "
+            "was updated to match. Read what changed (`git diff <named commit> <merge commit> -- <path>`) "
+            "before relying on the task's description or criteria, and say in your report where the "
+            "change matters.",
+            "",
+        ]
+        for ref, change in moved:
+            who = change.get("merged_task_key") or "another task"
+            lines.append(
+                f"- {ref.label()}: changed in {who}'s merge ({str(change.get('merge_sha', ''))[:10]}), "
+                f"named at {ref.commit[:10]}"
+            )
     return "\n".join(lines)

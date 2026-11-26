@@ -111,6 +111,11 @@ export function getTaskDocument(client, taskId, path, options) {
   return client.get(`${task(taskId)}/documents${queryString({ path })}`, options);
 }
 
+/** What a merge changed in a document the task rests on, since the task named it. */
+export function getTaskDocumentChange(client, taskId, path, options) {
+  return client.get(`${task(taskId)}/documents/diff${queryString({ path })}`, options);
+}
+
 /** Checks as facts (measured by the engine) and claims (reported by an agent). */
 export function getTaskChecks(client, taskId, options) {
   return client.get(`${task(taskId)}/checks`, options);

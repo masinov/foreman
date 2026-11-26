@@ -19,6 +19,7 @@ from ..domain.models import (
     Task,
 )
 from ..domain.policy import PolicyMatrix, describe_resolution
+from ..engine.document_changes import changes_by_document
 from ..mutations import MutationError
 from .base import Service
 from .errors import (
@@ -101,6 +102,26 @@ def decision_sentence(
 
 class TaskService(Service):
     """Tasks: one task as its page shows it, creating, editing, and a person's actions on it."""
+
+    def _rests_on(self, task: Task) -> list[dict[str, Any]]:
+        """The documents the task rests on; one that a merge changed since it was named says which."""
+
+        changes = changes_by_document(self.store, task) if task.rests_on else {}
+        items = []
+        for ref in task.rests_on:
+            item: dict[str, Any] = ref.as_dict()
+            change = changes.get(ref.key)
+            item["changed"] = (
+                {
+                    "commit": change.get("merge_sha"),
+                    "task_key": change.get("merged_task_key") or None,
+                    "at": change.get("timestamp"),
+                }
+                if change
+                else None
+            )
+            items.append(item)
+        return items
 
     def _dependencies(self, task: Task) -> list[dict[str, Any]]:
         """The tasks ``task`` waits for, named, in the order they were given.
@@ -220,7 +241,7 @@ class TaskService(Service):
             "hold": HoldReader(self.store).hold(task),
             "step_running": bool(self.store.list_runs(task_id=task.id, status="running")),
             "acceptance_criteria": task.acceptance_criteria,
-            "rests_on": [ref.as_dict() for ref in task.rests_on],
+            "rests_on": self._rests_on(task),
             "workflow_current_step": task.workflow_current_step,
             "step_visit_counts": task.step_visit_counts or {},
             "depends_on_task_ids": task.depends_on_task_ids or [],

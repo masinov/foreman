@@ -816,6 +816,21 @@ def merge_preflight(
     return MergePreflightResult(success=True, detail="Merge preflight passed.")
 
 
+def path_diff(repo_path: str | Path, from_sha: str, to_sha: str, path: str) -> str:
+    """The unified diff of one path between two commits, as text.
+
+    The path is a literal pathspec after ``--``, never parsed as a glob, a
+    revision or an option.
+    """
+
+    code, output = _git_bytes(
+        repo_path, ["--literal-pathspecs", "diff", from_sha, to_sha, "--", path]
+    )
+    if code != 0:
+        raise GitError(f"git could not diff {path} between {from_sha[:10]} and {to_sha[:10]} in {repo_path}")
+    return _decode(output)
+
+
 def read_file_at(repo_path: str | Path, ref: str, path: str) -> str | None:
     """A file as it is at ``ref``, or None when there is no such file there."""
 

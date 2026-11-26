@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from ..engine.document_changes import changes_by_document
 from ..engine.verdict import REVIEW_VERDICT, command_was_run
 from ..repo import git
 from .task_models import (
@@ -25,6 +26,7 @@ from .task_models import (
     FileChangeItem,
     FileDiff,
     TaskDocument,
+    TaskDocumentChange,
     MergeFacts,
     ReviewClaim,
     RunItem,
@@ -216,6 +218,33 @@ class TaskReads:
             heading=ref.heading,
             commit=ref.commit,
             text=text[:DIFF_CAP_CHARS],
+            truncated=len(text) > DIFF_CAP_CHARS,
+            cap_chars=DIFF_CAP_CHARS,
+            total_chars=len(text),
+        )
+
+    def get_document_change(self, task_id: str, path: str) -> TaskDocumentChange:
+        """What a merge changed in a document the task rests on, since it was named."""
+
+        task, project = self._task_and_project(task_id)
+        ref = next((ref for ref in task.rests_on if ref.path == path), None)
+        if ref is None:
+            raise InvalidRequestError(f"{path!r} is not a document this task rests on.")
+        change = changes_by_document(self.store, task).get(ref.key)
+        if change is None:
+            raise NotFoundError(f"{ref.path} has not changed since this task named it.")
+        sha = str(change.get("merge_sha") or "")
+        try:
+            text = git.path_diff(project.repo_path, ref.commit, sha, ref.path)
+        except git.GitError as exc:
+            raise NotFoundError(str(exc)) from exc
+        return TaskDocumentChange(
+            task_id=task.id,
+            path=ref.path,
+            from_commit=ref.commit,
+            to_commit=sha,
+            task_key=str(change.get("merged_task_key") or "") or None,
+            diff=text[:DIFF_CAP_CHARS],
             truncated=len(text) > DIFF_CAP_CHARS,
             cap_chars=DIFF_CAP_CHARS,
             total_chars=len(text),

@@ -172,7 +172,9 @@ def handle_task_list(args: argparse.Namespace) -> int:
     listing = read_or_print(
         args,
         lambda store: Services(store).reports.tasks(
-            args.project_id, sprint_id=getattr(args, "sprint", None)
+            args.project_id,
+            sprint_id=getattr(args, "sprint", None),
+            rests_on=getattr(args, "rests_on", None),
         ),
     )
     if listing is None:
@@ -189,7 +191,11 @@ def handle_task_list(args: argparse.Namespace) -> int:
         f"Project: {listing['project_id']} | {listing['project_name']}",
     ]
     if not listing["tasks"]:
-        lines.append("No tasks are defined for this project.")
+        lines.append(
+            f"No task rests on {args.rests_on}."
+            if getattr(args, "rests_on", None)
+            else "No tasks are defined for this project."
+        )
     for sprint in listing["sprints"]:
         sprint_tasks = [task for task in listing["tasks"] if task["sprint_id"] == sprint["id"]]
         if not sprint_tasks:
@@ -202,6 +208,11 @@ def handle_task_list(args: argparse.Namespace) -> int:
                 f"tokens={task['tokens']} | "
                 f"cost_usd={format_usd(task['cost_usd'])}"
             )
+            for ref in task["rests_on"] if getattr(args, "rests_on", None) else ():
+                lines.append(
+                    f"    rests on {ref['path']}{'#' + ref['heading'] if ref['heading'] else ''}"
+                    f" (named at {ref['commit'][:10]})"
+                )
 
     print_lines(*lines)
     return 0

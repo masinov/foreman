@@ -246,6 +246,10 @@ export function sayEntry(entry) {
       return { says: "Working copy removed" };
     case "engine.attention_needed":
       return { says: `Needs a user: ${humanize(d.trigger).toLowerCase()}` };
+    case "engine.document_changed":
+      return {
+        says: `${d.path}${d.heading ? `, ${d.heading}` : ""} changed in ${d.merged_task_key ? `${d.merged_task_key}'s` : "another task's"} merge (${shortSha(d.merge_sha)}) since this task named it at ${shortSha(d.named_commit)}`,
+      };
     case "engine.task_created":
       return { says: "Filed a task", body: d.title || "", prose: true };
     case "signal.progress":

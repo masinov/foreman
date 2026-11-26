@@ -11,12 +11,23 @@ from dataclasses import asdict
 from typing import Any
 
 from ..definitions.gate_steps import blocked_kind, blocked_kind_counts, resolve_gate_steps
-from ..domain.models import Event, Run
+from ..domain.models import Event, Run, Task
+from ..domain.rests_on import DocumentRef, RestsOnError, parse_entry
 from ..engine.control import describe_engine
 from .base import Service
-from .errors import NotFoundError
+from .errors import InvalidRequestError, NotFoundError
 from .sprints import SprintService
 from .views import task_filed_from
+
+
+def _names(ref: DocumentRef, wanted: DocumentRef) -> bool:
+    """Whether a task's document is the wanted one: the path, and the heading when one is asked for."""
+
+    return ref.path == wanted.path and (not wanted.heading or ref.heading == wanted.heading)
+
+
+def _rests_on(task: Task, wanted: DocumentRef) -> bool:
+    return any(_names(ref, wanted) for ref in task.rests_on)
 
 
 def run_payload(run: Run) -> dict[str, Any]:
@@ -117,8 +128,14 @@ class ReportService(Service):
             ],
         }
 
-    def tasks(self, project_id: str, *, sprint_id: str | None = None) -> dict[str, Any]:
-        """A project's tasks, sprint by sprint, each with its run totals."""
+    def tasks(
+        self, project_id: str, *, sprint_id: str | None = None, rests_on: str | None = None
+    ) -> dict[str, Any]:
+        """A project's tasks, sprint by sprint, each with its run totals.
+
+        With ``rests_on`` (``path`` or ``path#heading``), only the tasks that
+        name that document, whatever their status: finished ones included.
+        """
 
         project = self._require_project(project_id)
         sprints = self.store.list_sprints(project.id)
@@ -128,6 +145,12 @@ class ReportService(Service):
         tasks = [
             task for task in self.store.list_tasks(project_id=project.id) if task.sprint_id in sprint_ids
         ]
+        try:
+            wanted = parse_entry(rests_on) if rests_on else None
+        except RestsOnError as exc:
+            raise InvalidRequestError(str(exc)) from exc
+        if wanted is not None:
+            tasks = [task for task in tasks if _rests_on(task, wanted)]
         totals = {
             str(row["task_id"]): row for row in self.store.task_run_totals(project_id=project.id)
         }
@@ -151,6 +174,7 @@ class ReportService(Service):
                     "blocked_reason": task.blocked_reason,
                     "branch_name": task.branch_name,
                     "workflow_current_step": task.workflow_current_step,
+                    "rests_on": [ref.as_dict() for ref in task.rests_on if wanted is None or _names(ref, wanted)],
                     "runs": totals.get(task.id, {}).get("run_count", 0),
                     "tokens": totals.get(task.id, {}).get("total_token_count", 0),
                     "cost_usd": float(totals.get(task.id, {}).get("total_cost_usd", 0.0)),

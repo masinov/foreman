@@ -83,6 +83,21 @@ class TaskDocument(BaseModel):
     total_chars: int
 
 
+class TaskDocumentChange(BaseModel):
+    """``GET /tasks/{id}/documents/diff``: what changed in a document the task
+    rests on, from the commit it was named at to the merge that changed it."""
+
+    task_id: str
+    path: str
+    from_commit: str
+    to_commit: str
+    task_key: str | None
+    diff: str
+    truncated: bool
+    cap_chars: int
+    total_chars: int
+
+
 class FailedTest(BaseModel):
     """A test that failed: its suite (class or file) and its name."""
 
