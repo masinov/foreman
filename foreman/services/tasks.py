@@ -8,6 +8,7 @@ import re
 from typing import Any
 
 from ..definitions.gate_steps import (
+    WorkflowGateSteps,
     blocked_kind,
 )
 from ..definitions.layers import project_definitions
