@@ -20,6 +20,7 @@ import { SprintHead } from "./SprintHead";
 import { useProjectEngine } from "../shared/useProjectEngine";
 import { TaskBoard } from "./TaskBoard";
 import { TaskList } from "./TaskList";
+import { approvalVersion } from "./taskStage";
 
 import "../../styles/lists.css";
 import "../../styles/sprint.css";
@@ -82,7 +83,9 @@ export function SprintLayout({ sprintId, view }) {
     setApproving(true);
     setNotice(null);
     try {
-      const result = await approveTask(client, task.id);
+      // The approval names the commit the row shows: refused if the branch moved since.
+      const version = approvalVersion(task);
+      const result = await approveTask(client, task.id, version ? { version } : undefined);
       setNotice({ error: false, text: decisionSentence(taskName(task), result) });
       changed();
     } catch (error) {

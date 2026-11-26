@@ -345,9 +345,10 @@ export function ActivityTab({ task, revision }) {
   // A row of the task's activity: the step and its attempt, how it ended,
   // who, the commit it was about, how long, what it cost. Why is on hover.
   const describe = (run) => {
-    const result = stepOutcome(run, items[items.indexOf(run) + 1] ?? null);
-    const by = runRole(run, task);
     const commit = run.step_commit ?? run.commit_sha;
+    // The commit has its own column; the words do not say it again.
+    const result = stepOutcome(run, items[items.indexOf(run) + 1] ?? null, { commitShown: Boolean(commit) });
+    const by = runRole(run, task);
     return {
       at: run.started_at,
       subject: { key: null, title: humanize(run.step), note: run.attempt > 1 ? `attempt ${run.attempt}` : "" },

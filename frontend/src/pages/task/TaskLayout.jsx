@@ -9,6 +9,7 @@ import { Tabs } from "../../ui/Tabs";
 import { useToast } from "../../ui/Toast";
 import { BacklogDecision } from "./BacklogDecision";
 import { Decision } from "./Decision";
+import { useSeenGateVersion } from "./seenVersion";
 import { TaskHead } from "./TaskHead";
 
 import "../../styles/task.css";
@@ -39,8 +40,9 @@ function useRefreshWhileRunning(task, refresh) {
 /**
  * The task page, the same on its four tabs (docs/design/dashboard-v7/05, 12,
  * 13, 14): the head, the decision when the task waits for a person, and the
- * tabs. `children({ task, checks, changes, revision, changed })` renders the
- * current tab; `revision` grows whenever the page read the task again.
+ * tabs. `children({ task, checks, changes, revision, changed, sawDiff })`
+ * renders the current tab; `revision` grows whenever the page read the task
+ * again; `sawDiff(sha)` says the person opened the diff read at that head.
  */
 export function TaskLayout({ taskId, children }) {
   const navigate = useNavigate();
@@ -69,6 +71,8 @@ export function TaskLayout({ taskId, children }) {
   );
 
   useRefreshWhileRunning(task.data, refresh);
+  // The version a person at a gate is looking at, kept across reloads.
+  const seen = useSeenGateVersion(task.data);
 
   if (!task.data) {
     return task.error ? (
@@ -101,7 +105,7 @@ export function TaskLayout({ taskId, children }) {
       {current.in_backlog && (current.status === "triage" || current.status === "todo") ? (
         <BacklogDecision task={current} onDecided={changed} />
       ) : (
-        <Decision task={current} checks={checks.data} onDecided={changed} />
+        <Decision task={current} checks={checks.data} seen={seen} onDecided={changed} />
       )}
       <div className="task__tabs">
         <Tabs
@@ -117,7 +121,7 @@ export function TaskLayout({ taskId, children }) {
           ]}
         />
         <div className="task__tab">
-          {children({ task: current, checks, changes, revision, changed })}
+          {children({ task: current, checks, changes, revision, changed, sawDiff: seen.sawDiff })}
         </div>
       </div>
     </div>

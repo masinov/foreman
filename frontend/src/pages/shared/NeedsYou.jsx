@@ -20,6 +20,7 @@ import { Table } from "../../ui/Table";
 import { humanize, plural, shortSha } from "../../ui/format";
 import { useNotice } from "../../ui/Toast";
 import { decisionSentence } from "./decisionWords";
+import { shownCommit } from "./gateVersion";
 import { describeTaskCounts } from "./words";
 
 // Design README: Needs you shows at most 5, with a way to see the rest.
@@ -54,9 +55,20 @@ const TESTS_PARTS = {
 };
 const GOOD_REVIEWS = new Set(["approve", "approved", "pass", "passed"]);
 
+/** The commit a merge row shows, and so the one its Approve names. */
+const rowCommit = (item) => shownCommit(item.evidence?.head_sha, item.gate_version);
+
 /** The facts a person weighs at the merge gate (ADR-0018), as words. */
-function MergeFacts({ evidence }) {
-  if (!evidence) return <span className="quiet">Nothing checked yet</span>;
+function MergeFacts({ evidence, commit }) {
+  if (!evidence) {
+    return commit ? (
+      <span className="checks">
+        <span className="quiet">Nothing checked yet</span> · <Mono quiet>{shortSha(commit)}</Mono>
+      </span>
+    ) : (
+      <span className="quiet">Nothing checked yet</span>
+    );
+  }
   const words = [];
   if (TESTS_PARTS[evidence.tests_status]) words.push({ key: "tests", ...TESTS_PARTS[evidence.tests_status] });
   if (evidence.review_outcome) {
@@ -66,7 +78,7 @@ function MergeFacts({ evidence }) {
         : { key: "review", tone: "attention", text: `review ${humanize(evidence.review_outcome).toLowerCase()}` },
     );
   }
-  const sha = shortSha(evidence.head_sha);
+  const sha = shortSha(commit);
   return (
     <span className="checks">
       {words.map((word, index) => (
@@ -110,7 +122,7 @@ function BlockedFacts({ blocked }) {
 
 function Detail({ item }) {
   if (item.gate) return <OrderProposal gate={item.gate} />;
-  if (item.kind === NEEDS_YOU_KINDS.approveMerge) return <MergeFacts evidence={item.evidence} />;
+  if (item.kind === NEEDS_YOU_KINDS.approveMerge) return <MergeFacts evidence={item.evidence} commit={rowCommit(item)} />;
   if (item.kind === NEEDS_YOU_KINDS.unblock || item.kind === NEEDS_YOU_KINDS.unblockSprint) {
     return <BlockedFacts blocked={item.blocked} />;
   }
@@ -163,7 +175,9 @@ export function NeedsYou({ projectId = null, note, empty, onChanged }) {
 
   const approve = (item) =>
     decide(item, async () => {
-      const result = await approveTask(client, item.task_id);
+      // The approval names the commit the row shows: refused if the branch moved since.
+      const version = rowCommit(item);
+      const result = await approveTask(client, item.task_id, version ? { version } : undefined);
       return { text: decisionSentence(itemName(item), result) };
     });
 

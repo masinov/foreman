@@ -216,6 +216,76 @@ describe("the decision", () => {
     expect(await within(region).findByRole("alert")).toHaveTextContent("Failed to approve: the task is not at a gate.");
   });
 
+  const SEEN = "a11ce00000000000000000000000000000000001";
+  const MOVED = "d00d000000000000000000000000000000000002";
+  const mergeVersion = (sha) => ({ kind: "merge_approval", branch_sha: sha, base_sha: "aaaaaaa0000", fingerprint: null, plan_run_id: null, token: sha });
+
+  it("names the version it showed, keeps it when a reload brings another, and takes the new one only when asked", async () => {
+    const head = (sha) => changesPayload({ head: { branch: "foreman/for-14", sha } });
+    const routes = taskRoutes({ task: taskDetail({ gate_version: mergeVersion(SEEN) }), changes: head(SEEN) });
+    let approvals = 0;
+    routes[post("approve")] = () => {
+      approvals += 1;
+      if (approvals === 1) {
+        // The branch moved under the page: the server refuses, and the page reads it again.
+        routes[TASK_URL] = taskDetail({ gate_version: mergeVersion(MOVED) });
+        routes[CHANGES_URL] = head(MOVED);
+        return reply(409, { error: "The branch moved: you saw a11ce00, it is now at d00d000. Review the new version and decide again.", code: "version_changed" });
+      }
+      if (approvals === 2) return reply(409, { error: "The branch moved: you saw a11ce00, it is now at d00d000.", code: "version_changed" });
+      return { status: "approved", next_step: "merge", engine_resident: true, version: mergeVersion(MOVED), version_named: true };
+    };
+    const { fetchImpl } = await renderTask(BASE, routes);
+    const region = await screen.findByRole("region", { name: "Approve the merge into main?" });
+    expect(region).toHaveTextContent("Approving a11ce00");
+
+    fireEvent.click(within(region).getByRole("button", { name: "Approve merge" }));
+    expect(await within(region).findByRole("alert")).toHaveTextContent("The branch moved: you saw a11ce00");
+    expect(postCalls(fetchImpl, "approve")[0].body).toEqual({ version: SEEN });
+    // The reload brought the new head; the page still approves what it showed, and says the branch moved.
+    expect(await within(region).findByText(/The branch moved since/)).toBeInTheDocument();
+    expect(region).toHaveTextContent("Approving a11ce00");
+    expect(region).toHaveTextContent("it is now at d00d000");
+
+    fireEvent.click(within(region).getByRole("button", { name: "Approve merge" }));
+    await waitFor(() => expect(postCalls(fetchImpl, "approve")).toHaveLength(2));
+    expect(postCalls(fetchImpl, "approve")[1].body).toEqual({ version: SEEN });
+
+    // Looking at the new version takes it, and shows its diff.
+    fireEvent.click(await within(region).findByRole("button", { name: "Look at d00d000" }));
+    await waitFor(() => expect(window.location.pathname).toBe(`${BASE}/changes`));
+    await waitFor(() => expect(region).toHaveTextContent("Approving d00d000"));
+    expect(region).not.toHaveTextContent("The branch moved since");
+    fireEvent.click(within(region).getByRole("button", { name: "Approve merge" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Approved FOR-14 at d00d000. Foreman goes on with Merge.");
+    expect(postCalls(fetchImpl, "approve")[2].body).toEqual({ version: MOVED });
+  });
+
+  it("names the head the diff was read at when the Changes tab is opened", async () => {
+    const DIFF_HEAD = "c0ffee1000000000000000000000000000000003";
+    const routes = taskRoutes({
+      task: taskDetail({ gate_version: mergeVersion(MOVED) }),
+      changes: changesPayload({ head: { branch: "foreman/for-14", sha: DIFF_HEAD } }),
+    });
+    routes[post("approve")] = reply(409, { error: "The branch moved.", code: "version_changed" });
+    const { fetchImpl } = await renderTask(`${BASE}/changes`, routes);
+    const region = await screen.findByRole("region", { name: "Approve the merge into main?" });
+    await waitFor(() => expect(region).toHaveTextContent("Approving c0ffee1"));
+    expect(region).toHaveTextContent("The branch moved since: it is now at d00d000");
+    fireEvent.click(within(region).getByRole("button", { name: "Approve merge" }));
+    await waitFor(() => expect(postCalls(fetchImpl, "approve")).toHaveLength(1));
+    expect(postCalls(fetchImpl, "approve")[0].body).toEqual({ version: DIFF_HEAD });
+  });
+
+  it("says which version an approval that named none was recorded against", async () => {
+    const routes = taskRoutes();
+    routes[post("approve")] = { status: "approved", next_step: "merge", engine_resident: true, version: mergeVersion(SEEN), version_named: false };
+    await renderTask(BASE, routes);
+    const region = await screen.findByRole("region", { name: "Approve the merge into main?" });
+    fireEvent.click(within(region).getByRole("button", { name: "Approve merge" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Approved FOR-14 (recorded at a11ce00). Foreman goes on with Merge.");
+  });
+
   it("asks to approve a plan, and approving calls approve", async () => {
     const task = taskDetail({
       workflow_current_step: "plan_approval",

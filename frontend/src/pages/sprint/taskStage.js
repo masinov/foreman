@@ -1,5 +1,6 @@
 import { ENGINE_STATES } from "../../api/workspace";
 import { humanize } from "../../ui/format";
+import { shownCommit } from "../shared/gateVersion";
 import { whenSet } from "../shared/workWords";
 
 // How a task reads on the sprint page: its stage in words, where it sorts,
@@ -161,7 +162,15 @@ export function checksOf(task) {
         : { key: "review", tone: "attention", text: `review ${humanize(checks.review).toLowerCase()}` },
     );
   }
-  return { parts, commit: checks?.commit ?? null };
+  // A task at the merge gate shows the commit an Approve names: the one its
+  // checks ran on, else the branch's head.
+  const commit = waitsForMerge(task) ? shownCommit(checks?.commit, task.gate_version) : (checks?.commit ?? null);
+  return { parts, commit };
+}
+
+/** The version a row's Approve names: the commit the row shows (`checksOf`). */
+export function approvalVersion(task) {
+  return checksOf(task).commit;
 }
 
 /**
