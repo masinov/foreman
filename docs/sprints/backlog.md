@@ -463,6 +463,15 @@ Base work that this framing makes necessary:
      tracked separately.
    - Builds on today's decision on moving up after failures (below, "Large
      tasks ran on the default model"), which works the same with one ladder.
+10. **Dependencies across sprints** (owner, 2026-11-26, from ADR-0043:
+   "Pause should pause the task and everything downstream that depends on
+   it. We need a way to define and set dependency so that this works").
+   Today a task can wait only for tasks of its own sprint, set before it
+   starts, and sprints follow each other in queue order. That is enough
+   for ADR-0043's pause, and ADR-0043 adds the reverse view ("Needed by").
+   When sprints or workers run side by side, a task (or a sprint) will
+   need to wait for work in another sprint, and a pause will follow those
+   links too. For the future.
 
 ## Found while reviewing sprint 63 (2026-11-25)
 
