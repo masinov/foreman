@@ -35,6 +35,7 @@ export const EFFECTIVE = {
   review_diff_max_chars: 16000,
   write_checkpoint_notes: false,
   generate_changelog: false,
+  adr_dir: "docs/adr",
 };
 
 export const COPIES_URL = "GET /api/v1/projects/foreman/worktrees";

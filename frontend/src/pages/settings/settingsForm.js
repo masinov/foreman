@@ -92,6 +92,7 @@ export const CODECS = {
   review_diff_max_chars: { ...whole({ required: true }) },
   write_checkpoint_notes: toggle,
   generate_changelog: toggle,
+  adr_dir: text,
 };
 
 // Kept on the project itself rather than among its settings; the API takes

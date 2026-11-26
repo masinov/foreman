@@ -232,6 +232,7 @@ function GeneralForm({ projectId, settings, onSaved }) {
           NOTE_CHOICES,
           "When a sprint is finished, a note of its tasks is committed to docs/checkpoints/ before the sprint is tagged",
         )}
+        {textRow("adr_dir", "Decisions folder", "ADRs written as new-<slug>.md in this folder are numbered when a task merges, and its README.md index is generated. Empty: none", { wide: true })}
         {choiceRow(
           "generate_changelog",
           "Changelog",

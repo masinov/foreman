@@ -126,6 +126,10 @@ class ProjectSettings:
     # ``changes/`` files, which are removed, in the checkpoint's commit
     # (ADR-0040). Off: the file and ``changes/`` are left as they are.
     generate_changelog: bool = False
+    # The repository folder whose ADRs are numbered when a task merges and
+    # whose index is generated (ADR-0040). Empty: none. A project without the
+    # folder is left alone.
+    adr_dir: str = "docs/adr"
     # The git remote the default branch is pushed to after each merge.
     # Empty: merges stay on this machine. Host-level: it makes the engine
     # write to another machine with this host's git credentials.
@@ -204,6 +208,7 @@ class ProjectSettings:
             completion_guard_enabled=bool(raw.get("completion_guard_enabled", True)),
             write_checkpoint_notes=_validate_bool(raw.get("write_checkpoint_notes"), key="write_checkpoint_notes"),
             generate_changelog=_validate_bool(raw.get("generate_changelog"), key="generate_changelog"),
+            adr_dir=_validate_adr_dir(raw.get("adr_dir")),
             merge_push_remote=_validate_remote_name(raw.get("merge_push_remote")),
             agent_env_passthrough=_validate_env_names(raw.get("agent_env_passthrough")),
             merge_approval=_validate_policy_default(raw, "merge_approval"),
@@ -259,6 +264,20 @@ def _validate_bool(value: Any, *, key: str, default: bool = False) -> bool:
     if isinstance(value, bool):
         return value
     raise SettingsError(f"{key} must be true or false.")
+
+
+def _validate_adr_dir(value: Any) -> str:
+    """A folder inside the repository. Absent: ``docs/adr``; empty: none."""
+
+    if value is None:
+        return "docs/adr"
+    if not isinstance(value, str):
+        raise SettingsError("adr_dir must be a folder in the repository, or empty for none.")
+    folder = value.strip().strip("/")
+    parts = folder.split("/") if folder else []
+    if value.strip().startswith("/") or ".." in parts or "." in parts:
+        raise SettingsError("adr_dir must be a folder inside the repository, such as docs/adr.")
+    return folder
 
 
 def _validate_remote_name(value: Any) -> str:

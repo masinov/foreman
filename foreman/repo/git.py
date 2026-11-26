@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import os
 from pathlib import Path
 import subprocess
+from typing import Callable
 
 from ..domain.errors import ForemanError
 
@@ -33,6 +34,8 @@ class GitMergeResult:
     conflict: bool = False
     #: The commit the target branch points at after a successful merge.
     sha: str | None = None
+    #: The merge was undone because ``finish`` refused it; ``detail`` says why.
+    refused: bool = False
 
 
 def run_git(repo_path: str | Path, *args: str, check: bool = True) -> GitCommandResult:
@@ -207,19 +210,37 @@ def merge_branch(
     repo_path: str | Path,
     source_branch: str,
     target_branch: str,
+    *,
+    finish: Callable[[Path], str | None] | None = None,
 ) -> GitMergeResult:
-    """Merge one source branch into the target branch."""
+    """Merge one source branch into the target branch.
+
+    With ``finish``, the merge is made without its commit and ``finish`` is
+    called on the tree: it may change and stage files, which then land in the
+    merge commit, or return a reason to refuse, which undoes the merge.
+    """
 
     checkout_branch(repo_path, target_branch)
     result = run_git(
         repo_path,
         "merge",
         "--no-ff",
+        *(("--no-commit",) if finish else ()),
         "--no-edit",
         source_branch,
         check=False,
     )
     if result.returncode == 0:
+        if finish and merge_in_progress(repo_path):
+            refusal = finish(Path(repo_path))
+            if refusal is not None:
+                run_git(repo_path, "reset", "--hard", "HEAD", check=False)
+                return GitMergeResult(success=False, detail=refusal, refused=True)
+            committed = run_git(repo_path, "commit", "--no-edit", check=False)
+            if committed.returncode != 0:
+                run_git(repo_path, "reset", "--hard", "HEAD", check=False)
+                detail = committed.stderr or committed.stdout or "git commit failed"
+                return GitMergeResult(success=False, detail=detail)
         detail = result.stdout or f"Merged {source_branch} into {target_branch}."
         head = run_git(repo_path, "rev-parse", "HEAD", check=False)
         sha = head.stdout.strip() if head.returncode == 0 else ""
