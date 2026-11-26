@@ -284,6 +284,7 @@ foreman task edit <task-id> [--title T] [--type TYPE] [--priority N]
                             [--criteria TEXT | --criteria-file PATH|-]
                             [--edit description|criteria]
                             [--rests-on PATH[#HEADING] ...] [--no-rests-on]
+                            [--restamp PATH[#HEADING] ...]
                             [--depends-on ID ...] [--no-dependencies]
                                       # what it waits for can change only before it starts
 foreman task cancel <task-id>         # also removes the task's worktree
@@ -311,22 +312,27 @@ of the repository the work is judged against, such as an ADR section or a spec
 heading. The path must be a file on the project's default branch, or the
 command is refused saying so. Foreman records that branch's commit when each
 is named (never typed); `task edit --rests-on` replaces the list, and a
-document already on it keeps the commit it was named at; `--no-rests-on`
-clears it. The task page's Overview lists them with their commits and opens
+document already on it keeps the commit it was named at, also when only its
+heading changes; `--no-rests-on` clears it. A path with a `#` in it is written
+with a space before the heading's `#`: `--rests-on "docs/a#b.md #Heading"`, or
+`"docs/a#b.md #"` for the whole file. A directory or a symbolic link is refused. The task page's Overview lists them with their commits and opens
 each as it was then, and every agent step is given them as pointers: path,
 heading and commit, not the text (ADR-0041 section 6).
 
 **When a document it rests on changes.** A merge that changes a document that a
-todo, in-progress or blocked task rests on (a paused one too) adds one line to
+task in triage, todo, in progress or blocked rests on (in a sprint or in the
+backlog, a paused one too) adds one line per changed file to
 that task's Activity ("docs/adr/ADR-0041.md changed in FOR-80's merge (abc1234)
 since this task named it at def5678"), the task page's "Rests on" says so and
 links "See what changed" (the diff between the two commits), and the task's next
 agent step is told in a section "Changed since this task was planned". The task
-is not changed or stopped; a person or the manager decides. Naming the document
-again clears the notice. `foreman task list <project-id> --rests-on PATH`
-(or `PATH#HEADING`) lists every task that rests on a document, finished and
-cancelled ones included, so a person who supersedes an ADR sees what was built
-on it.
+is not changed or stopped; a person or the manager decides. Once read, the
+document is marked as read: "Mark as read at <commit>" beside it on the task
+page, or `foreman task edit <task-id> --restamp PATH[#HEADING]`, stamps that
+entry with the default branch's commit now, which clears the notice.
+`foreman task list <project-id> --rests-on PATH` (or `PATH#HEADING`) lists every
+task that rests on a document, finished, cancelled and backlog ones included,
+so a person who supersedes an ADR sees what was built on it.
 A text option with its `-file` form, `--edit` with an option for the same
 field, and two texts from `-` are refused. The command prints which fields
 changed, with a text counted in characters, never printed.

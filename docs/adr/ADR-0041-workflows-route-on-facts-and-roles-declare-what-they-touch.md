@@ -299,13 +299,21 @@ repository: a path, and optionally a heading (`docs/adr/ADR-0041-....md`,
 section 6; `docs/specs/engine-design-v3.md`, a section). For each, Foreman
 records the commit of the project's default branch at the moment it was named.
 The commit is captured, not typed. A document already on the list keeps its
-commit when the list is edited; only a new one is stamped.
+commit when the list is edited, also when only its heading changes (a new
+heading of a path already named takes that path's commit); only a new path is
+stamped. The text form is `path` or `path#heading`; a space before the `#`
+(`path #heading`, or `path #` with none) separates them when the path itself
+has a `#`. A path and a heading are each one line.
 
 **A path that is not a file on the default branch is refused,** with the
 reason, wherever the list is set: the task form and page, `foreman task add`
-and `foreman task edit`, `foreman backlog add`, the manager's proposals (the
-check runs when the proposal is made, as the others do), the planning prompt
-and the intake API (where the field `rests_on` is optional).
+and `foreman task edit`, `foreman backlog add`, a new sprint's first tasks
+(the sprint is then not made either), the manager's proposals, the planning
+prompt and the intake API (where the field `rests_on` is optional). A directory,
+a symbolic link and a submodule are not files; a project whose repository is
+not on the machine is refused with that reason. A manager's proposal checks
+and stamps its documents when it is made, not when it is confirmed, so a merge
+in between is reported to the task.
 
 **Each agent step is given them in the task layer:** a section
 "Documents this task rests on" with the path, the heading and the commit, as
@@ -318,9 +326,10 @@ that commit.
 
 Assay's "stale binding" check, kept small. At each merge Foreman compares the
 files the merge changed (the default branch before and after) with what each
-unfinished task of the project rests on (todo, in progress or blocked, a paused
-task included; not done, cancelled or declined; not the merging task). For each
-document that matches:
+unfinished task of the project rests on (in triage, todo, in progress or
+blocked, wherever it is, the backlog included, and a paused task too; not done,
+cancelled or declined; not the merging task). For each changed path that
+matches, once per merge however many headings of it the task names:
 
 - the task's Activity gets one line, a run of the engine's own records named
   "Document changed": "docs/adr/ADR-0041.md changed in FOR-80's merge (abc1234)
@@ -335,9 +344,12 @@ document that matches:
 **Nothing in the task is changed and it is not stopped.** Its description,
 criteria and documents stay as they were; a person or the manager decides what
 the change means for it (Assay: "Nothing downstream is edited automatically").
-Naming the document again (removing it and adding it, which stamps the commit
-now) ends the notice, because the notice belongs to the commit it was named at.
+A person ends the notice by marking the document as read: "Mark as read at
+<commit>" beside the changed document on the task page, or `foreman task edit
+<task> --restamp PATH[#HEADING]`, stamps that entry with the default branch's
+commit now (the notice belongs to the commit it was named at). Changing only
+the heading keeps the commit, and so the notice.
 A merge git cannot compare notes nothing: the merge is done whatever happens.
 
 `foreman task list <project> --rests-on PATH[#HEADING]` lists every task that
-rests on the document, finished ones included.
+rests on the document, finished ones and the backlog's included.
