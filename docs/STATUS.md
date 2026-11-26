@@ -52,6 +52,10 @@ Current snapshot only. History up to 2026-09-08 (sprints 1 to 54) is in
   a sprint's work, and the engine off the page. Left for later: a
   supervisor that keeps workers running, and a Workers view (ADR-0043
   "Order of work", part 3).
+- **2026-11-26, sprint 65 opened** (`docs/sprints/current.md`): ADR-0040's
+  build items 4 to 6 and the rule for moving up a role's models, through
+  Foreman. The open items of `docs/sprints/backlog.md` are in Foreman's
+  backlog as FOR-73 to FOR-91.
 - Nineteen tasks of sprint 58 were run by Foreman itself. On 2026-11-13 the
   owner asked for the engine to be stopped and the rest done by hand; it has
   been stopped since. What the engine did well and badly is in the archived

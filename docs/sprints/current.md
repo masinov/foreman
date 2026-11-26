@@ -1,28 +1,26 @@
 # Current Sprint
 
-## Sprint 63 — the method, first part
+## Sprint 65 — the method, second part
 
-- **Opened:** 2026-11-25 (owner: "Go ahead, but i want it to run fully
-  autonomously and come back tomorrow to check. No supervision on my
-  side.")
-- **Status:** completed by Foreman (2026-11-25 01:34); reviewed afterwards by
-  Claude with three independent reviewers, and fixed by hand before the new
-  code went live (below)
-- **Method:** through Foreman, unsupervised. Merges are approved by
-  Foreman (`merge_approval = auto`) and the sprint is finished by Foreman
-  (`sprint_completion = auto`) for this sprint. Claude keeps a watchdog,
-  which steps in only for faults: a blocked task, a stopped engine, or a red
-  CI run. The owner checks on 2026-11-26.
+- **Opened:** 2026-11-26 (owner: "Go on. The 'moving up the ladder' must be
+  configurable." Then: "Go".)
+- **Method:** through Foreman, as sprint 63: merges are approved by Foreman
+  (`merge_approval = auto`) and the sprint is finished by Foreman
+  (`sprint_completion = auto`). Claude keeps a watchdog that steps in only
+  for faults (a blocked task, a stopped worker, a red CI run), and has each
+  task reviewed independently once the sprint is finished. It is the first
+  sprint run under the holds of ADR-0043.
 
 ### Goal
 
-The first build items of ADR-0040, on the model of ADR-0041:
-- agent commands never wait for input;
-- `AGENTS.md` reaches the agent once;
-- a step's result is a record its role declares;
-- the reviewer judges each criterion and gives severities;
-- each step shows how much it read before its first edit;
-- the code reviewer can run the checks and look at the page.
+ADR-0040's build items 4 to 6, and the rule for moving up a role's models:
+- a change writes its own change file, and Foreman generates the changelog;
+- an ADR is numbered when it merges, with a generated index;
+- Foreman writes the status, sprint and backlog copies, and `docs/prs/` is
+  retired;
+- a step moves up its role's models only after failures of its own work,
+  as each role sets (configurable per role, at the workspace and the
+  project, and per task); the size label goes.
 
 ### Constraints
 
@@ -31,84 +29,34 @@ The first build items of ADR-0040, on the model of ADR-0041:
   ADR-0032 for where code goes.
 - Until each ADR-0040 item lands, the rules in `AGENTS.md` still hold.
 - One task at a time (ADR-0039).
+- The worker runs the code it started with, so its prompts are the ones
+  from before the sprint; each branch's own `AGENTS.md` carries the new
+  rules as they land.
 
 ### Tasks
 
 | Key | Task | Depends on | Status |
 |-----|------|------------|--------|
-| FOR-60 | Agent commands never wait for input, and `AGENTS.md` reaches the agent once | none | done |
-| FOR-61 | A step's result is a record its role declares, starting with the developer's report | none | done |
-| FOR-62 | The reviewer's verdict is a record per criterion, and only serious findings send work back | FOR-61 | done |
-| FOR-63 | A step's details show the reads before its first edit and the tokens it used | none | done |
-| FOR-64 | The code reviewer runs the checks and takes screenshots in a sandbox | FOR-62 | done |
+| FOR-67 | A change writes its own change file, and Foreman generates `CHANGELOG.md` | none | todo |
+| FOR-68 | An ADR is numbered when it merges, and its index is generated | FOR-67 | todo |
+| FOR-69 | Foreman writes the status and sprint copies, and `docs/prs/` is retired | FOR-67 | todo |
+| FOR-70 | Foreman writes the backlog's copy, and the owner's directions are one file each | FOR-69 | todo |
+| FOR-71 | A step moves up its role's models only after failures of its own work, as each role sets | none | todo |
+| FOR-72 | The size label goes | FOR-71 | todo |
 
 The full description and acceptance criteria of each task are in Foreman.
 
-### Found during the run
+### Before the sprint
 
-- **2026-11-25 01:10, CI red on FOR-61's merge** (`310496e`): a duplicate
-  `import json` in `tests/engine_support.py` failed `ruff`. Foreman's test
-  step never ran the linters, so the merge went through. Fixed by hand
-  (`fix/tests-duplicate-json-import`). By mechanism: Foreman's
-  `test_command` now starts with `ruff check foreman tests scripts` and
-  `lint-imports`, as CI does.
-
-- **01:34, the sprint finished in 45 minutes.** Every code review had
-  approved in about six seconds: the engine ran the code from before the
-  sprint, so these tasks were reviewed the old way. Claude ran the checks
-  (ruff, layers, 1,756 Python and 547 frontend tests, CI) and had each task
-  reviewed against its criteria by an independent reviewer. Findings and
-  what was done with them:
-  - **FOR-64, the sandbox** (`fix/sandbox-git-and-prune`):
-    - every git command failed in a sandbox on git 2.25 because of the
-      push block's config format; fixed, with a test;
-    - `foreman worktree prune` deleted a running review's sandbox; it now
-      keeps a live task's sandbox;
-    - the reviewer could not take screenshots on this machine. A reviewer
-      that could not see a page had to mark it `not_verified`, which FOR-62's
-      rule refuses on an approval, so every frontend task would have
-      blocked. The reviewer now follows the project's own preview recipe
-      (`scripts/review_screenshots.py`, in `AGENTS.md`), and judges from the
-      code with an S3 finding when it cannot see the page. The worktree
-      setup installs the `e2e` extra (a project setting).
-
-  - **FOR-61 and FOR-62, the records** (`fix/records-robustness`, the
-    ADR-0042 amendment of 2026-11-25):
-    - a quoted block after the record replaced it;
-    - the missing-marker retry did not ask for the record, so a task that
-      used to recover would block;
-    - an approval could list no criteria;
-    - a developer who was sent back did not get the findings;
-    - a lowercase severity spent the correction;
-    - the example showed an S1;
-    - another shape of report could break the prompts.
-
-    All of these are fixed, with tests.
-
-  - **FOR-60, standard input** (`fix/stdin-claims`): a command that holds a
-    heredoc still gets a socket, not end-of-file, so the FOR-53 stall is not
-    fixed. The prompt and `ARCHITECTURE.md` had said it was; they now say what
-    is true. The fix was made after the sprint, once the owner approved a
-    live probe of Claude Code (`fix/runner-commands-get-no-stdin`): every
-    command now runs with `< /dev/null` through Claude Code's shell prefix.
-  - The rest of the reviews' findings are in the backlog, "Found while
-    reviewing sprint 63".
-
-### Left for later
-
-The rest of ADR-0040's build order:
-- change files and a generated changelog;
-- ADR numbers given at merge;
-- generated status files;
-- routes on facts, rules across steps, and the question to a person;
-- write scope and the planner;
-- the escape log;
-- the layout in `foreman init`.
+- The open items of `docs/sprints/backlog.md` ("Found while reviewing
+  sprint 63", "Found while running sprint 62", "Left to finish the current
+  product") were filed into Foreman's backlog as FOR-73 to FOR-91, so that
+  FOR-70 can replace the file. ADR-0043 part 3 (a worker killed hard leaves
+  no agent behind, and a supervisor) is FOR-91.
 
 ## Before this sprint
 
-Sprint 62, "finish what's there", was completed on 2026-11-24:
-`docs/sprints/archive/sprint-62-finish-whats-there.md`. Its ten tasks,
-FOR-50 to FOR-59, ran through Foreman. On 2026-11-24 the roadmap put
-stage 3 (a method for the agents) before stage 2. The proposal and ADRs
-0040 and 0041 followed on 2026-11-25.
+Sprint 63, "the method, first part", was completed on 2026-11-25:
+`docs/sprints/archive/sprint-63-the-method-first-part.md`. Sprint 64 was a
+one-task trial of its reviewer. On 2026-11-26 ADR-0043 (the work is paused,
+not the engine) was built by hand.
