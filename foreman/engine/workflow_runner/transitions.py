@@ -81,7 +81,9 @@ class Transitions(WorkflowRunnerBase):
             role = self.roles.get(step_def.role)
             if role is None:
                 return None
-            if outcome in (ERROR, KILLED) and own_failure_type(run.failure_type):
+            # A run a limit stopped (cost, time) is the project's limit, not the work.
+            stopped_by_limit = run.status in ("killed", "timeout")
+            if outcome in (ERROR, KILLED) and not stopped_by_limit and own_failure_type(run.failure_type):
                 return step, NO_RESULT
             if role.completion.output.extract_decision and outcome in (DENY, STEER):
                 target = self._agent_step_sent_back_to(workflow, step, outcome)
@@ -94,8 +96,25 @@ class Transitions(WorkflowRunnerBase):
                 for event in self.store.list_events(run_id=run.id)
             )
             target = self._agent_step_sent_back_to(workflow, step, outcome)
-            return (target, TESTS) if ran and target else None
+            if not (ran and target) or self._after_branch_update(run):
+                return None
+            return target, TESTS
         return None
+
+    def _after_branch_update(self, run: Run) -> bool:
+        """Whether this run came right after the merge step brought the branch up to date.
+
+        Tests that fail then may fail on the default branch's new commits, not
+        on the step's work: a send-back after an update is not counted.
+        """
+
+        earlier = [
+            each
+            for each in self.store.list_runs(task_id=run.task_id)
+            if each.id != run.id and (each.started_at or "") <= (run.started_at or "")
+        ]
+        steps = [each for each in earlier if each.role_id != "_builtin:orchestrator"]
+        return bool(steps) and steps[-1].role_id == "_builtin:merge"
 
     def _agent_step_sent_back_to(
         self, workflow: WorkflowDefinition, step: str, outcome: str
@@ -212,10 +231,18 @@ class Transitions(WorkflowRunnerBase):
             self.records.emit_event(
                 run, "workflow.step_retried", {"step": step, "outcome": outcome}
             )
+            # What the step was given (the review's findings) stays; why the
+            # last attempt ended is added to it.
+            given = task.workflow_carried_output
+            carried = (
+                f"{given}\n\nThe previous attempt at this step ended without a result: {detail}"
+                if given and given != detail
+                else detail
+            )
             task.workflow_current_step = step
-            task.workflow_carried_output = detail
+            task.workflow_carried_output = carried
             self.tasks.save(task)
-            return step, detail
+            return step, carried
         if transition is None:
             if task.status != "done":
                 self.records.emit_event(
@@ -265,6 +292,17 @@ class Transitions(WorkflowRunnerBase):
         task.workflow_carried_output = carried_output if transition.to_step is not None else None
         self.tasks.save(task)
         return transition.to_step, carried_output
+
+    def _ladder_visits(self, task: Task, step: str, workflow: WorkflowDefinition) -> int:
+        """The visits a step's models may take with their failures; 0 without a ladder."""
+
+        if not self._has_models_to_move_up(task, step, workflow):
+            return 0
+        step_def = workflow.get_step(step)
+        role = self.roles.get(step_def.role) if step_def is not None else None
+        if role is None:
+            return 0
+        return max(role.agent.escalate_after, 1) * len(role.agent.model_ladder)
 
     def _has_models_to_move_up(self, task: Task, step: str, workflow: WorkflowDefinition) -> bool:
         step_def = workflow.get_step(step)

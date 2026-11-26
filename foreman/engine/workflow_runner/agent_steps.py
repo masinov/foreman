@@ -321,7 +321,7 @@ class AgentSteps(WorkflowRunnerBase):
         if reread_prompt is not None and approved_without_reading(role, reread_prompt, result):
             # Asked to read, it approved unread again. That is not a review;
             # the task stops for a person.
-            result = replace(result, outcome=ERROR, detail=UNREAD_APPROVAL_DETAIL)
+            result = replace(result, outcome=ERROR, detail=UNREAD_APPROVAL_DETAIL, failure_type="policy")
         head_after = self._branch_commit(project, task)
         self.records.complete_run(
             run,

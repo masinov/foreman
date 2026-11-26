@@ -261,16 +261,15 @@ class WorkflowRunnerBase:
             self.tasks.save(current_task)
 
             settings = resolve_project_settings(project)
-            # A step with several models is limited by them (ADR-0041): it
-            # blocks after its last model fails, not after so many visits.
+            # A step with several models blocks after its last model fails
+            # (ADR-0041); its visit limit makes room for those failures, and
+            # still bounds a step that keeps dying without failing.
             limit = self._limit_reached(
                 current_task,
                 current_step,
                 visit_count,
                 settings,
-                visits_counted=not self._has_models_to_move_up(
-                    current_task, current_step, workflow
-                ),
+                extra_visits=self._ladder_visits(current_task, current_step, workflow),
             )
             if limit is not None:
                 self._block_at_step(current_task, current_step, **limit)
