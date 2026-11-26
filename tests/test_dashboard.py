@@ -581,7 +581,7 @@ class DashboardApproveDenyIntegrationTests(unittest.TestCase):
         self.assertFalse(result["engine_resident"])
         self.assertEqual(
             result["message"],
-            f"Approved {updated_task.task_key}. It waits at Develop until the engine is started.",
+            f"Approved {updated_task.task_key}. It waits at Develop until a worker runs.",
         )
         self.assertNotIn("`", result["message"])
 

@@ -36,16 +36,18 @@ a{color:#dedcd8}a:hover{color:#c9a55a}
 <a href="10-project-settings-general.html" style="display: inline-flex; align-items: center; height: 26px; font-size: 12px; color: #a3a19c; text-decoration: none">Project settings</a>
 </div>
 
-<section aria-labelledby="engine" style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px 20px">
-<h2 id="engine" style="margin: 0; flex: 0 0 76px; font-size: 12px; font-weight: 500; color: #85837e">Engine</h2>
+<!-- The work's status line and the active sprint's controls (ADR-0043): no
+     engine on the page. Only what would do something is shown. -->
+<section aria-labelledby="work" style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px 20px">
+<h2 id="work" style="margin: 0; flex: 0 0 76px; font-size: 12px; font-weight: 500; color: #85837e">Work</h2>
 <div style="flex: 999 1 360px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px">
-<span><span aria-hidden="true" style="display: inline-block; width: 6px; height: 6px; margin-right: 7px; border-radius: 50%; background: #5f5d59"></span>Not running</span>
-<span style="color: #a3a19c">Nothing is being worked on. Decisions you make are carried out when it starts.</span>
+<span><span aria-hidden="true" style="display: inline-block; width: 6px; height: 6px; margin-right: 7px; border-radius: 50%; background: #7fb4d2"></span>Working · FOR-13 Develop · 1 paused</span>
 </div>
 <div style="display: flex; gap: 6px">
-<button type="button" style="height: 26px; padding: 0 10px; border: 1px solid #34343a; border-radius: 3px; background: transparent; color: #dedcd8; font: inherit; font-size: 12px; cursor: pointer">Start</button>
-<button type="button" disabled style="height: 26px; padding: 0 10px; border: 1px solid #26262b; border-radius: 3px; background: transparent; color: #85837e; font: inherit; font-size: 12px">Pause</button>
-<button type="button" disabled style="height: 26px; padding: 0 10px; border: 1px solid #26262b; border-radius: 3px; background: transparent; color: #85837e; font: inherit; font-size: 12px">Stop</button>
+<button type="button" style="height: 26px; padding: 0 10px; border: 1px solid #34343a; border-radius: 3px; background: transparent; color: #dedcd8; font: inherit; font-size: 12px; cursor: pointer">Resume</button>
+<button type="button" style="height: 26px; padding: 0 10px; border: 1px solid #34343a; border-radius: 3px; background: transparent; color: #dedcd8; font: inherit; font-size: 12px; cursor: pointer">Pause</button>
+<button type="button" style="height: 26px; padding: 0 10px; border: 1px solid #e08a8a; border-radius: 3px; background: transparent; color: #e08a8a; font: inherit; font-size: 12px; cursor: pointer">Stop</button>
+<button type="button" style="height: 26px; padding: 0 10px; border: 1px solid transparent; border-radius: 3px; background: transparent; color: #a3a19c; font: inherit; font-size: 12px; cursor: pointer">Block</button>
 </div>
 </section>
 

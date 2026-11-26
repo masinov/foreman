@@ -99,7 +99,8 @@ class AgentStepRunner:
             # An operator asked for this. The run is settled exactly as a
             # shutdown settles it — killed, task resumable at its persisted
             # step — and the resident engine decides afterwards whether the
-            # task stays resumable (`pause`) or is parked (`stop_task`).
+            # task stays resumable: paused by a user's Stop (ADR-0043), or
+            # started again for a `steer_task`.
             self.abandon_run(
                 run,
                 task,

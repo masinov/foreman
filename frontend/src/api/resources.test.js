@@ -1,5 +1,20 @@
 import { queryString } from "./client";
-import { pauseEngine, resumeEngine, startEngine, stopEngine } from "./engine";
+import { runTaskNext, startWorker } from "./engine";
+import {
+  blockAll,
+  blockSprint,
+  pauseAll,
+  pauseSprint,
+  pauseTask,
+  resumeAll,
+  resumeSprint,
+  resumeTask,
+  stopAll,
+  stopSprint,
+  stopTask,
+  unblockAll,
+  unblockSprint,
+} from "./holds";
 import { listMilestones, MILESTONE_FILTERS } from "./milestones";
 import { listNeedsYou } from "./needsYou";
 import { confirmProposal, declineProposal, getProposal, listProposals } from "./proposals";
@@ -44,10 +59,10 @@ describe("resource modules", () => {
       "GET /api/v1/milestones?limit=10": { milestones: [], total: 0 },
     });
     const client = testClient(fetchImpl);
-    expect(await getWorkspace(client)).toEqual({ projects: [{ id: "p" }] });
+    expect(await getWorkspace(client)).toEqual({ projects: [{ id: "p" }], block: null });
     expect(await listNeedsYou(client, { limit: 5, offset: 0 })).toEqual({ items: [{ task_id: "t" }], total: 9 });
     expect(await listNeedsYou(client, { projectId: "p 1", limit: 5 })).toEqual({ items: [], total: 0 });
-    const engine = MILESTONE_FILTERS.find((filter) => filter.key === "engine").kinds;
+    const engine = MILESTONE_FILTERS.find((filter) => filter.key === "worker").kinds;
     expect(await listMilestones(client, { projectId: "p", kinds: engine, limit: 25, offset: 25 })).toEqual({
       items: [{ kind: "engine_stopped" }],
       total: 26,
@@ -67,22 +82,50 @@ describe("resource modules", () => {
     expect(fetchImpl.calls.at(-1)).toEqual({ method: "POST", url: "/api/v1/projects/p/sprints", body: { title: "Sprint 59", goal: null } });
   });
 
-  it("send engine commands to the routes that exist", async () => {
-    const fetchImpl = createFakeFetch({
-      "POST /api/v1/projects/p/agent/start": {},
-      "POST /api/v1/projects/p/agent/stop": {},
-      "POST /api/v1/projects/p/engine/commands": {},
-    });
+  it("start a worker and run a task next on the worker's routes", async () => {
+    const fetchImpl = createFakeFetch({ "POST /api/v1/projects/p/agent/start": {} });
     const client = testClient(fetchImpl);
-    await startEngine(client, "p");
-    await resumeEngine(client, "p");
-    await pauseEngine(client, "p");
-    await stopEngine(client, "p");
+    await startWorker(client, "p");
+    await runTaskNext(client, "p", "t");
     expect(fetchImpl.calls.map((call) => [call.url, call.body])).toEqual([
       ["/api/v1/projects/p/agent/start", {}],
-      ["/api/v1/projects/p/agent/start", {}],
-      ["/api/v1/projects/p/agent/stop", {}],
-      ["/api/v1/projects/p/engine/commands", { command: "shutdown" }],
+      ["/api/v1/projects/p/agent/start", { task_id: "t" }],
     ]);
+  });
+
+  it("send holds to the routes that exist (ADR-0043)", async () => {
+    const routes = [
+      "POST /api/v1/tasks/t/pause",
+      "POST /api/v1/tasks/t/stop",
+      "POST /api/v1/tasks/t/resume",
+      "POST /api/v1/sprints/s/pause",
+      "POST /api/v1/sprints/s/stop",
+      "POST /api/v1/sprints/s/resume",
+      "POST /api/v1/sprints/s/block",
+      "POST /api/v1/sprints/s/unblock",
+      "POST /api/v1/workspace/pause",
+      "POST /api/v1/workspace/stop",
+      "POST /api/v1/workspace/resume",
+      "POST /api/v1/workspace/block",
+      "POST /api/v1/workspace/unblock",
+    ];
+    const fetchImpl = createFakeFetch(Object.fromEntries(routes.map((route) => [route, {}])));
+    const client = testClient(fetchImpl);
+    await pauseTask(client, "t");
+    await stopTask(client, "t");
+    await resumeTask(client, "t");
+    await pauseSprint(client, "s");
+    await stopSprint(client, "s");
+    await resumeSprint(client, "s");
+    await blockSprint(client, "s", "design review");
+    await unblockSprint(client, "s");
+    await pauseAll(client);
+    await stopAll(client);
+    await resumeAll(client);
+    await blockAll(client, "freeze");
+    await unblockAll(client);
+    expect(fetchImpl.calls.map((call) => `${call.method} ${call.url}`)).toEqual(routes);
+    expect(fetchImpl.calls[6].body).toEqual({ reason: "design review" });
+    expect(fetchImpl.calls[11].body).toEqual({ reason: "freeze" });
   });
 });

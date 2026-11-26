@@ -23,8 +23,10 @@ cannot be queued for an engine that is not up yet, and they leave no record of
 who asked. So the engine also consumes the ``engine_commands`` table — the
 durable channel the CLI, the dashboard, and the intake API all write to. The
 loop drains pending commands at the top of every pass, and supplies the
-orchestrator with a ``command_poll`` callback so a ``pause`` or a ``stop_task``
-reaches an agent step that may already be twenty minutes into its work.
+orchestrator with a ``command_poll`` callback so a ``shutdown`` or a
+``steer_task`` reaches an agent step that may already be twenty minutes into
+its work. A user's holds on the work (ADR-0043) are not commands: the
+orchestrator reads them itself, before each step and while one runs.
 
 The loop is a plain object with injectable clocks, so all of that is testable
 without a subprocess. The CLI handler only parses arguments and maps

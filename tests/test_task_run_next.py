@@ -62,7 +62,7 @@ class DecisionSentenceTests(unittest.TestCase):
         )
         self.assertEqual(
             say(sent_back=False, next_step="merge", engine_resident=False),
-            "Approved FOR-51. It waits at Merge until the engine is started.",
+            "Approved FOR-51. It waits at Merge until a worker runs.",
         )
         self.assertEqual(
             say(sent_back=True, next_step="develop", engine_resident=True),

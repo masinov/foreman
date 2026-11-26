@@ -210,7 +210,7 @@ class OrchestratorBase:
         )
         #: Called with the running task id before every workflow step and on
         #: every silent-agent tick. The resident engine supplies it so an
-        #: operator's `pause` or `stop_task` reaches an agent that may run for
+        #: `shutdown` or `steer_task` reaches an agent that may run for
         #: an hour. It returns normally to continue and raises
         #: ``EngineCommandInterrupt`` to stop the step. A one-shot ``foreman
         #: run`` leaves it None and behaves exactly as before.

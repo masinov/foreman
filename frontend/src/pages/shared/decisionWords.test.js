@@ -9,7 +9,13 @@ describe("decisionSentence", () => {
 
   it("says where a task waits when no engine runs", () => {
     expect(decisionSentence("FOR-51", { next_step: "merge", engine_resident: false })).toBe(
-      "Approved FOR-51. It waits at Merge until the engine is started.",
+      "Approved FOR-51. It waits at Merge until a worker runs.",
+    );
+  });
+
+  it("says a held task goes on when resumed (ADR-0043)", () => {
+    expect(decisionSentence("FOR-51", { next_step: "merge", engine_resident: true, held: true })).toBe(
+      "Approved FOR-51. It goes on with Merge on Resume.",
     );
   });
 

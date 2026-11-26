@@ -3,13 +3,12 @@ import React from "react";
 import { paths } from "../../app/paths";
 import { Link } from "../../app/router";
 import { Mono } from "../../ui/Mono";
-import { StatusDot } from "../../ui/StatusDot";
 import { Table } from "../../ui/Table";
-import { formatDayTime, humanize } from "../../ui/format";
+import { formatDayTime } from "../../ui/format";
 import { Spend } from "../../ui/Spend";
 import { milestoneSentence } from "../shared/milestones";
 import { TaskCounts } from "../shared/TaskCounts";
-import { engineWords } from "../shared/words";
+import { WorkStatus } from "../shared/WorkStatus";
 
 function ProjectCell({ project }) {
   const location = [project.repo_path, project.default_branch].filter(Boolean).join(" · ");
@@ -23,20 +22,6 @@ function ProjectCell({ project }) {
   );
 }
 
-function EngineCell({ engine }) {
-  const { tone, word } = engineWords(engine);
-  return (
-    <div className="cell-stack">
-      <StatusDot tone={tone}>{word}</StatusDot>
-      {engine?.task_id ? (
-        <span className="quiet">
-          <Mono quiet>{engine.task_key || engine.task_title}</Mono>
-          {engine.step ? `, ${humanize(engine.step).toLowerCase()}` : ""}
-        </span>
-      ) : null}
-    </div>
-  );
-}
 
 function plannedWording(count) {
   return count > 0 ? `${count} planned` : "nothing planned";
@@ -81,7 +66,8 @@ function LastChangeCell({ milestone }) {
 
 const COLUMNS = [
   { key: "project", header: "Project, location, branch", className: "projects__project", render: (p) => <ProjectCell project={p} /> },
-  { key: "engine", header: "Engine", className: "projects__engine", render: (p) => <EngineCell engine={p.engine} /> },
+  // What the project's work is doing now: its active sprint's status line (ADR-0043).
+  { key: "work", header: "Work", className: "projects__work", render: (p) => <WorkStatus work={p.work} /> },
   { key: "sprint", header: "Active sprint", className: "projects__sprint", render: (p) => <SprintCell sprint={p.active_sprint} planned={p.planned_sprints} /> },
   {
     key: "needs-you",

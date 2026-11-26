@@ -19,6 +19,11 @@ export function engine(state = "not_running", task = null) {
   };
 }
 
+/** A sprint's work, as the status line reports it (ADR-0043). */
+export function work(state = "not_started", fields = {}) {
+  return { state, paused: 0, unfinished: 0, step_running: false, no_worker: false, ...fields };
+}
+
 export function milestone(kind, fields = {}) {
   return {
     kind,
@@ -110,6 +115,7 @@ export function workspacePayload({ withGateTask = true } = {}) {
           needs_you: waiting,
           spend_usd: 1.314,
         },
+        work: work("working", { task_id: "task-x", task_key: "FOR-13", step: "develop", unfinished: 3, step_running: true }),
         planned_sprints: 0,
         needs_you: waiting,
         backlog: 4,
@@ -126,12 +132,14 @@ export function workspacePayload({ withGateTask = true } = {}) {
         workflow_id: "development",
         engine: engine("not_running"),
         active_sprint: null,
+        work: work("not_started"),
         planned_sprints: 0,
         needs_you: 0,
         backlog: 0,
         latest_milestone: null,
       },
     ],
+    block: null,
   };
 }
 

@@ -72,12 +72,18 @@ def _humanize(identifier: str | None) -> str:
 
 
 def decision_sentence(
-    task: Task, *, sent_back: bool, next_step: str | None, engine_resident: bool
+    task: Task,
+    *,
+    sent_back: bool,
+    next_step: str | None,
+    engine_resident: bool,
+    held: bool = False,
 ) -> str:
     """The one sentence an approval or a send-back is answered with.
 
     The dashboard builds the same sentence (``decisionSentence`` in the
-    frontend); the CLI and other systems read this one.
+    frontend); the CLI and other systems read this one. A task a user holds
+    goes on when resumed (ADR-0043); one with no worker, when a worker runs.
     """
 
     name = task.task_key or task.title
@@ -86,9 +92,11 @@ def decision_sentence(
         return f"Sent {name} back to {step}." if step else f"Sent {name} back."
     if not step:
         return f"Approved {name}."
+    if held:
+        return f"Approved {name}. It goes on with {step} on Resume."
     if engine_resident:
         return f"Approved {name}. Foreman goes on with {step}."
-    return f"Approved {name}. It waits at {step} until the engine is started."
+    return f"Approved {name}. It waits at {step} until a worker runs."
 
 
 class TaskService(Service):
@@ -457,17 +465,21 @@ class TaskService(Service):
         except MutationError as exc:
             raise ActionFailedError(f"Failed to {outcome}: {exc}") from exc
         resident = self.store.get_engine_lock(task.project_id) is not None
+        held = HoldReader(self.store).hold(self.store.get_task(task_id) or task) is not None
         return {
             "status": "approved" if outcome == "approve" else "denied",
             "task_id": task_id,
             "next_step": result.next_step,
             "deferred": result.deferred,
             "engine_resident": resident,
+            # A user's hold on it (ADR-0043): the decision waits for Resume.
+            "held": held,
             "message": decision_sentence(
                 task,
                 sent_back=outcome != "approve",
                 next_step=result.next_step,
                 engine_resident=resident,
+                held=held,
             ),
         }
 

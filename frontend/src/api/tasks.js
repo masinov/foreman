@@ -52,12 +52,7 @@ export function denyTask(client, taskId, note, options) {
 
 // What a person does to a task from its page.
 
-/** Ask the engine to stop the step it is running; the engine blocks the task. */
-export function stopTask(client, taskId, options) {
-  return client.post(`${task(taskId)}/stop`, {}, options);
-}
-
-/** Park a task with a reason. */
+/** Hold a task with a reason until it is unblocked; a running step finishes first. */
 export function blockTask(client, taskId, reason, options) {
   return client.post(`${task(taskId)}/block`, { reason }, options);
 }

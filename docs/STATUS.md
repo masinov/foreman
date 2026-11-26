@@ -46,6 +46,12 @@ Current snapshot only. History up to 2026-09-08 (sprints 1 to 54) is in
   (`fix/runner-commands-get-no-stdin`), so the 18-minute stall of FOR-53
   cannot recur there. `merge_approval` and `sprint_completion` stay `auto`
   for Foreman's own project, at the owner's word.
+- **2026-11-26.** ADR-0043 (the work is paused, not the engine) is
+  accepted and built by hand (`feat/holds-pause-and-block`): Pause, Stop,
+  Resume and Block on a task, a sprint or the workspace, the status line of
+  a sprint's work, and the engine off the page. Left for later: a
+  supervisor that keeps workers running, and a Workers view (ADR-0043
+  "Order of work", part 3).
 - Nineteen tasks of sprint 58 were run by Foreman itself. On 2026-11-13 the
   owner asked for the engine to be stopped and the rest done by hand; it has
   been stopped since. What the engine did well and badly is in the archived
@@ -53,9 +59,9 @@ Current snapshot only. History up to 2026-09-08 (sprints 1 to 54) is in
 - `main` is pushed to `origin/main`. Work happens on short branches from
   `main`; the operator checkout stays off `main` (the `_integration` worktree
   holds it).
-- Schema version 29 (ADR-0037: an event belongs to a run, a sprint or the
-  project; the migration moves the records the engine had pinned to a task
-  and deletes the 22 runs made up to hold them). 1681 Python tests, 533
+- Schema version 31 (31: a user's holds, ADR-0043; 30: a run's record,
+  ADR-0042; 29: an event belongs to a run, a sprint or the project,
+  ADR-0037). 1681 Python tests, 533
   frontend tests (2026-11-24). The built bundle
   is not in git; `foreman dashboard` builds it when it is missing or stale.
 - Foreman's own project in its database is clean (2026-11-18). Sprint 60c is

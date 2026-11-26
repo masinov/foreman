@@ -23,7 +23,7 @@ class EngineCommandInterrupt(BaseException):
     A ``BaseException`` for the same reason as
     :class:`~foreman.runner.process.EngineShutdown`: the orchestrator's
     defensive ``except Exception`` fallbacks turn an exception into a failed
-    agent outcome, and an operator's `pause` or `stop_task` is not an agent
+    agent outcome, and a user's Stop or a `steer_task` is not an agent
     failure. It propagates through the same guarded-step path a shutdown takes
     — the run is settled as ``killed`` and the task keeps its resume point —
     and the resident engine settles the command once the stack has unwound.

@@ -28,7 +28,7 @@ HUMAN_GATE_BLOCKED_REASON = "Awaiting human approval"
 #: The two ways a task ends up ``blocked``. ``gate`` is waiting for a person and
 #: is resolved with ``foreman approve``/``deny``; ``engine`` is the engine's
 #: dead-letter state (loop limit, unhandled outcome, cost or time gate, branch
-#: violation, failure isolation, ``stop_task``) and is resolved with
+#: violation, failure isolation, a user's Block) and is resolved with
 #: ``foreman task unblock`` or by editing the task.
 BLOCKED_KINDS: tuple[str, ...] = ("gate", "engine")
 

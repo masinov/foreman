@@ -1,5 +1,5 @@
 /* Motion. Something moves only when something is happening: a control
-   answers the pointer, a list row shows where you are, a running engine
+   answers the pointer, a list row shows where you are, a running step
    breathes, a menu or dialog arrives. Durations and distances are tokens.
    All of it is off for anyone who asks for reduced motion. */
 
@@ -27,7 +27,7 @@ a,
   background-color: var(--color-row-hover-tinted);
 }
 
-/* Running: the engine's dot breathes. */
+/* Working: the status dot breathes while something is running. */
 .status--running .status__dot {
   animation: breathe var(--motion-breathe) ease-in-out infinite;
 }

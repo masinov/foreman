@@ -3,6 +3,8 @@
 - Status: accepted
 - Date: 2026-09-04
 - Amended: 2026-09-04 — *The command table is the only control channel*
+- Amended by ADR-0043 (2026-11-26): `pause`, `resume` and `stop_task` are
+  retired; a user's holds on the work replace the engine's paused state
 
 ## Context
 

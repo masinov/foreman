@@ -4,7 +4,7 @@ import { getSprint } from "../api/sprints";
 import { getWorkspace } from "../api/workspace";
 import { getTask } from "../api/tasks";
 import { useResource } from "../api/useResource";
-import { EngineMenu } from "../pages/shared/EngineMenu";
+import { WorkMenu } from "../pages/shared/WorkMenu";
 import { NotFoundPage } from "../pages/status/NotFoundPage";
 import { RebuildingPage } from "../pages/status/RebuildingPage";
 import { BUILT_PAGES, pageKey } from "./pages";
@@ -19,17 +19,17 @@ import { ToastProvider } from "../ui/Toast";
 import { Shell } from "./Shell";
 import { SignInGate } from "./SignInGate";
 
-/** The engine of the project a sprint or task belongs to. */
-function EngineOf({ resourceKey, load }) {
+/** The work of the project a sprint or task belongs to (ADR-0043). */
+function WorkOf({ resourceKey, load }) {
   const { data } = useResource(resourceKey, load);
-  return data?.project_id ? <EngineMenu projectId={data.project_id} /> : null;
+  return data?.project_id ? <WorkMenu projectId={data.project_id} /> : null;
 }
 
 function TopBarRight({ route, params, manager }) {
   if (route.level === "sprint") {
     return (
       <>
-        <EngineOf
+        <WorkOf
           resourceKey={["sprint", params.sprintId]}
           load={(client, options) => getSprint(client, params.sprintId, options)}
         />
@@ -40,7 +40,7 @@ function TopBarRight({ route, params, manager }) {
   if (route.level === "task") {
     return (
       <>
-        <EngineOf
+        <WorkOf
           resourceKey={["task", params.taskId]}
           load={(client, options) => getTask(client, params.taskId, options)}
         />
@@ -49,11 +49,11 @@ function TopBarRight({ route, params, manager }) {
     );
   }
   if (route.level === "project") {
-    // The project page shows its engine in the page. The pages below it
-    // (settings, backlog) are pages of their own, so the engine is in the bar.
+    // The project page shows its work in the page. The pages below it
+    // (settings, backlog) are pages of their own, so the work is in the bar.
     return route.name.startsWith("project-settings") || route.name === "project-backlog" ? (
       <>
-        <EngineMenu projectId={params.projectId} />
+        <WorkMenu projectId={params.projectId} />
         {manager}
       </>
     ) : (

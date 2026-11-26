@@ -1564,26 +1564,48 @@ A `foreman serve` process has no terminal. Signals are the only thing an
 operating system offers, and a signal cannot say "run *that* task", cannot be
 queued for an engine that is not up yet, and leaves no record of who sent it.
 
-So a resident engine is steered through a table. `engine_commands` is the
-**only** control channel: the CLI, the dashboard, and the intake API all write
-rows to it, and whichever engine holds the project lock consumes them. The row
-is the audit trail — it records who asked, when, and what the engine did about
-it.
+So a resident engine (the project's worker) takes messages through a table.
+`engine_commands` is the **only** channel to a worker: the CLI, the
+dashboard, and the intake API all write rows to it, and whichever worker
+holds the project lock consumes them. The row is the audit trail — it records
+who asked, when, and what the worker did about it.
+
+Whether the work may go on is not a message to a worker: it is a user's holds
+on the work (ADR-0043, "Holds on the work" below), which every worker reads.
 
 ### The commands
 
 | Command | Effect |
 |---|---|
-| `pause` | Stop picking up new work. A running agent step is terminated and its run settled as `killed`, with the task left **resumable** at its persisted step. The engine stays resident and keeps heartbeating its lock. |
-| `resume` | Leave the paused state and run a pass. |
-| `run_task <task-id>` | Run that task next, regardless of sprint order. |
-| `stop_task <task-id>` | If that task is the one running, terminate its agent step and mark the task `blocked` with `blocked_reason` "Stopped by \<requester\>". |
-| `shutdown` | Finish as `pause` does, release the engine lock, exit 0. |
+| `run_task <task-id>` | Run that task next, regardless of sprint order. Refused for a task a user holds. |
+| `steer_task <task-id>` | Interrupt the running agent step of that task so it starts again with a user's guidance. |
+| `shutdown` | Cut the running step (its task stays resumable), release the lock, exit 0. The work stays as it is: another worker carries on with it. |
 
-A paused engine changes no task status — pausing is about the engine, not about
-the work. A stopped task becomes `blocked`; there is no separate "stopped"
-status, because `blocked` already means exactly what a stopped task needs it to
-mean: not runnable until a human or the manager says otherwise.
+`pause`, `resume` and `stop_task` were retired by ADR-0043. A worker that
+finds one rejects it, saying where it went.
+
+### Holds on the work
+
+| | Pause | Block |
+|---|---|---|
+| On | a task; a sprint's or the workspace's Pause pauses each unfinished task there | a task, a sprint, or the workspace |
+| A running step | finishes first (`--now`, Stop: is cut, and runs again on Resume) | finishes first |
+| Lifted by | Resume, on the task or on any level above | Unblock, where it was set |
+| In Needs you | no | yes, with its reason |
+
+A held task is skipped when the worker chooses the next task (it does not
+hold the queue), and parked before its next step, built-in steps included, so
+it never merges or becomes done. What waits for it waits too, its sprint is
+not finished, and the next sprint does not start. A blocked sprint or
+workspace holds everything in it the same way. A cut visit does not count
+against the step's visit limit.
+
+```bash
+foreman pause <project> --task FOR-56 [--now]   # or --sprint <id>; --all for the workspace
+foreman resume <project> --sprint <id>          # or --task, or --all
+foreman block <project> --sprint <id> --reason "..."   # or --all
+foreman unblock <project> --sprint <id>         # or --all
+```
 
 ### Lifecycle
 
@@ -1594,27 +1616,27 @@ outcome, and always leaving an `engine.command_applied` or
 or on a project-level run when no task is involved.
 
 Rejections are ordinary, not errors. A `run_task` naming a task that is
-`blocked`, `done`, or owned by another project is rejected with the reason. A
-`stop_task` naming a task the engine is not running is rejected rather than
-guessed at.
+`blocked`, `done`, held, or owned by another project is rejected with the
+reason.
 
 ### When no engine is resident
 
-A command that describes *work* outlives the process, so a pending `resume` or
-`run_task` is honoured by the next engine to start. A command that describes a
-*process* does not: a starting engine rejects every pending `pause`,
-`stop_task`, and `shutdown` with `result_detail = "no engine was resident"`,
-rather than pausing a service nobody asked to pause. `foreman engine` tells you
-which of the two will happen when it queues the command.
+A command that describes *work* outlives the process, so a pending `run_task`
+is honoured by the next worker to start. A command that describes a
+*process* does not: a starting worker rejects every pending `shutdown` and
+`steer_task` with `result_detail = "no engine was resident"`, rather than
+stopping a service nobody asked to stop. `foreman engine` tells you which of
+the two will happen when it queues the command.
 
 ### How fast a command lands
 
 An idle engine wakes on `PRAGMA data_version`, and the insert commits from a
 different connection, so a queued command wakes the engine within one tick
 (0.5 s) rather than waiting out the poll interval. An engine that is mid-task
-checks for commands before every workflow step and on every `agent.tick` while
-a runner streams, so a `pause` reaches an agent that has been working quietly
-for twenty minutes.
+checks for commands, and for a user's Stop, before every workflow step, on
+every `agent.tick` and every few seconds while a runner streams, and every two
+seconds while tests run, so a Stop reaches an agent that has been working
+quietly for twenty minutes.
 
 An engine that is *deliberately* waiting — backing off after a failed task, or
 sitting out a backend quota reset that can be six hours away — also cuts that

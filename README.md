@@ -315,7 +315,7 @@ otherwise nobody to send a command to.
 
 Blocked tasks say which kind of blocked they are: `gate` (waiting for a human
 decision) or `engine` (the engine's dead letter — a loop limit, a cost or time
-gate, a branch violation, a failure, a `stop_task`). Project summaries and
+gate, a branch violation, a failure, a user's Block). Project summaries and
 `foreman status` count both.
 
 ## Local dashboard development
@@ -383,26 +383,41 @@ naming the holder. See
 [ADR-0011](docs/adr/ADR-0011-resident-engine-and-project-lock.md) and
 [§6.1 of the manual](docs/MANUAL.md#61-foreman-serve-the-resident-engine).
 
-## Steering a resident engine
+## Holding the work
 
-A resident engine has no terminal, and a signal cannot say "run *that* task".
-It is steered through the `engine_commands` table instead — the only control
-channel to a running engine, and a durable audit trail of who asked for what:
+A user holds the work, not the engine (ADR-0043). **Pause** lets a running
+step finish, then nothing after it starts; **Stop** (`--now`) cuts the step,
+which runs again on resume; **Resume** lifts pauses. On a sprint or the
+whole workspace they act on each unfinished task there, and any task can then
+be resumed on its own. **Block** holds a sprint or the workspace, with a
+reason, until **Unblock**; a task's own Block is `foreman task block`. What a
+hold holds waits too: a held task never reaches Done, so what waits for it,
+its sprint's finish and the next sprint's start all wait.
 
 ```bash
-foreman engine status <project>                 # holder, heartbeat, state, recent commands
-foreman engine pause|resume|shutdown <project>  # [--by WHO], default the OS user name
-foreman engine run-task <project> <task-id>     # run this task next
-foreman engine stop-task <project> <task-id>    # stop it and block it
+foreman pause <project> --task FOR-56 [--now]   # or --sprint <id>; --all for the workspace
+foreman resume <project> --sprint <id>          # or --task, or --all
+foreman block <project> --sprint <id> --reason "waiting for the design"   # or --all
+foreman unblock <project> --sprint <id>         # or --all
 ```
 
-Each verb queues a row and prints its command id. The engine acknowledges a
-command when it picks it up and completes or rejects it with a reason, checking
-before every workflow step and on every agent tick — so a `pause` reaches an
-agent that has been quiet for twenty minutes. `pause` leaves the task
-resumable; `stop_task` blocks it, naming the requester. A `pause`, `stop_task`,
-or `shutdown` left pending for an engine that is no longer resident is rejected
-at the next startup rather than applied to an engine nobody addressed. See
+## Talking to the worker
+
+The program that runs a project's work is its worker (`foreman serve`). A
+resident worker has no terminal, and a signal cannot say "run *that* task",
+so it takes messages through the `engine_commands` table, a durable audit
+trail of who asked for what:
+
+```bash
+foreman engine status <project>                 # holder, heartbeat, recent commands
+foreman engine run-task <project> <task-id>     # run this task next (not a held one)
+foreman engine shutdown <project>               # end the worker; the work stays as it is
+```
+
+Each verb queues a row and prints its command id. The worker acknowledges a
+command when it picks it up and completes or rejects it with a reason. A
+`shutdown` left pending for a worker that is no longer resident is rejected
+at the next startup. See
 [§23 of the manual](docs/MANUAL.md#23-talking-to-the-resident-engine).
 
 The bootstrap supervisor scripts that once drove this repository were removed

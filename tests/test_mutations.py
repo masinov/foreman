@@ -196,7 +196,7 @@ class MutationsTests(unittest.TestCase):
         self.running_under_an_engine(task)
         with self.assertRaises(MutationError) as caught:
             self.mutations.complete_task(task, "why")
-        self.assertIn("stop-task", str(caught.exception))
+        self.assertIn("foreman pause", str(caught.exception))
         self.assertEqual(self.store.get_task("t1").status, "in_progress")
 
     def test_reopening_returns_a_done_or_cancelled_task_to_the_queue(self) -> None:
@@ -234,7 +234,7 @@ class MutationsTests(unittest.TestCase):
             with self.subTest(change=change.__name__):
                 with self.assertRaises(MutationError) as caught:
                     change(task)
-                self.assertIn("stop-task", str(caught.exception))
+                self.assertIn("foreman pause", str(caught.exception))
         self.assertEqual(self.store.get_task("t1").status, "in_progress")
 
     def test_a_sprint_with_a_running_task_cannot_be_deleted(self) -> None:

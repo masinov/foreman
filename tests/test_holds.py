@@ -593,6 +593,20 @@ class StatusLineTests(_Store):
         self.assertEqual((item["sprint_id"], item["blocked"]["reason"]), ("s1", "design review"))
 
 
+class HoldMilestoneTests(_Store):
+    def test_sprint_and_workspace_holds_are_milestones(self) -> None:
+        from foreman.services.workspace import WorkspaceService
+
+        sprint = self.sprint("s1")
+        self.task("t1", "s1")
+        self.mutations.pause_sprint(sprint)
+        self.mutations.block_all("release freeze")
+        page = WorkspaceService(self.store).list_milestones(project_id="p1")
+        found = {(m["kind"], m["sprint_title"], m["actor"], m["detail"]) for m in page["milestones"]}
+        self.assertIn(("work_paused", "Sprint s1", "ana", None), found)
+        self.assertIn(("work_blocked", "Workspace", "ana", "release freeze"), found)
+
+
 class HoldsCliTests(_Store):
     def run_cli(self, *args: str):
         import subprocess

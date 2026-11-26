@@ -75,6 +75,10 @@ const BY_HAND = {
   "human.task_planned": "Planned into a sprint",
   "human.task_unplanned": "Moved back to the backlog",
   "human.task_deleted": "Deleted",
+  // A user's holds (ADR-0043).
+  "human.task_paused": "Paused",
+  "human.task_stopped": "Stopped",
+  "human.task_resumed": "Resumed",
 };
 
 const FILE_VERB = { Read: "Read", Write: "Wrote", Edit: "Edited", NotebookEdit: "Edited" };
@@ -266,6 +270,8 @@ export function sayEntry(entry) {
         body: d.detail || "",
         prose: true,
       };
+    case "engine.task_stopped":
+      return { says: join(["The step was cut", d.requested_by ? `on a Stop by ${d.requested_by}` : ""], " ") };
     case "task.completed":
       return { says: "Task done", tone: "passed" };
     default:

@@ -112,7 +112,7 @@ class MutationBase:
         if running and self.store.get_engine_lock(task.project_id) is not None:
             raise MutationError(
                 f"Task {task.id} has a running agent step ({running[0].id}). Stop it "
-                f"first with `foreman engine stop-task {task.project_id} {task.id}` "
+                f"first with `foreman pause {task.project_id} --task {task.id} --now` "
                 f"(or Stop in the dashboard), then {verb} it."
             )
 

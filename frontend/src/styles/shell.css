@@ -185,10 +185,21 @@
   .topbar__toggle .icon {
     margin-right: 0;
   }
+
+  /* The work's status line is the menu's name (ADR-0043); at phone width the
+     bar shows its dot, and the line is in the menu's label and on the page. */
+  .work-menu__trigger .status__word {
+    position: absolute;
+    width: var(--line-width);
+    height: var(--line-width);
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
 }
 
 .topbar__right,
-.engine-menu__trigger,
+.work-menu__trigger,
 .user-menu__trigger {
   white-space: nowrap;
 }
@@ -201,22 +212,22 @@
   color: var(--color-gold);
 }
 
-/* The engine in the top bar below project level */
-.engine-menu {
+/* The active sprint's work in the top bar below project level (ADR-0043) */
+.work-menu {
   display: flex;
   align-items: center;
   gap: var(--space-3);
 }
 
-.engine-menu__trigger {
+.work-menu__trigger {
   color: var(--color-text-secondary);
 }
 
-.engine-menu__notice--error {
+.work-menu__notice--error {
   color: var(--color-red);
 }
 
-.engine-menu .menu__list {
+.work-menu .menu__list {
   left: auto;
   right: 0;
 }

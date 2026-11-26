@@ -59,7 +59,7 @@ function SprintLink({ task }) {
   return <Link href={paths.sprint(task.sprint_id)}>{sprint.data?.title || task.sprint_id}</Link>;
 }
 
-/** The tasks this one waits for: each a link, saying whether it is finished. */
+/** Tasks this one waits for, or that wait for it: each a link, saying whether it is finished. */
 function Dependencies({ items, engine }) {
   return (
     <ul className="task-details__list">
@@ -173,6 +173,10 @@ function Details({ task, workflow }) {
     },
     task.dependencies?.length
       ? { key: "depends", term: "Depends on", value: <Dependencies items={task.dependencies} engine={engine} /> }
+      : null,
+    // What waits for it: what holding it holds too (ADR-0043).
+    task.needed_by?.length
+      ? { key: "needed", term: "Needed by", value: <Dependencies items={task.needed_by} engine={engine} /> }
       : null,
     task.complexity ? { key: "size", term: "Size", value: humanize(task.complexity) } : null,
     task.priority

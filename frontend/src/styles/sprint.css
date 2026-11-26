@@ -14,8 +14,11 @@
   gap: var(--space-3) var(--space-5);
 }
 
+/* The title gives way to the actions (Pause, Stop, Resume beside Edit and
+   the state action, ADR-0043) before they wrap under it; a long title takes
+   a second line instead. */
 .sprint__title {
-  flex: 999 1 var(--table-min-width);
+  flex: 999 1 28rem;
   min-width: 0;
 }
 
@@ -26,7 +29,14 @@
 
 .sprint__actions {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-2);
+}
+
+/* The sprint's Pause, Stop and Resume are buttons of this row like Edit, and
+   wrap with them (ADR-0043). */
+.sprint__actions > .hold-controls {
+  display: contents;
 }
 
 .sprint__tabs {

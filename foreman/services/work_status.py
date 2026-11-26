@@ -19,6 +19,9 @@ fixed states, task keys, steps and times.
 - ``not_started``: a planned sprint, or no active sprint.
 
 ``no_worker`` is true when work could run and no worker holds the project.
+``paused``, ``unfinished`` and ``step_running`` are given in every state, for
+the controls: Pause where something unpaused could run, Resume where
+something is paused, Stop where a step runs.
 """
 
 from __future__ import annotations
@@ -52,6 +55,12 @@ def sprint_work_status(
         resident = store.get_engine_lock(sprint.project_id) is not None
     block = workspace_block or store.get_sprint_block(sprint.id)
     status = _state(sprint, tasks, running_ids, block)
+    unfinished = [task for task in tasks if task.status in _UNFINISHED]
+    # What the controls need, whatever the state: how much is paused, how
+    # much could be, and whether a step runs (Stop).
+    status["paused"] = sum(1 for task in unfinished if task.paused_at)
+    status["unfinished"] = len(unfinished)
+    status["step_running"] = any(task.id in running_ids for task in unfinished)
     could_run = sprint.status == "active" and status["state"] in (
         "working",
         "some_paused",

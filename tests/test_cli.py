@@ -1087,7 +1087,7 @@ class ForemanCLISmokeTests(unittest.TestCase):
         refused = self.run_cli("task", "cancel", task.id, "--db", str(db_path))
 
         self.assertEqual(refused.returncode, 1)
-        self.assertIn("foreman engine stop-task project-1 task-1", refused.stderr)
+        self.assertIn("foreman pause project-1 --task task-1 --now", refused.stderr)
         with ForemanStore(db_path) as reopened:
             reopened.initialize()
             still = reopened.get_task(task.id)

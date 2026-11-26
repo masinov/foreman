@@ -386,8 +386,9 @@ is also the audit trail: who asked, when, and what the engine did about it.
   The insert commits on its own connection, which is what makes an idle
   engine's `PRAGMA data_version` wait notice a command without polling a table.
 - `foreman/domain/errors.py` — `EngineCommandInterrupt`, a `BaseException` so the
-  orchestrator's defensive `except Exception` fallbacks cannot turn an
-  operator's `pause` into a failed agent outcome. It lives in `errors.py`
+  orchestrator's defensive `except Exception` fallbacks cannot turn a
+  `shutdown`, a `steer_task` or a user's Stop (`TaskStoppedInterrupt`, its
+  subclass) into a failed agent outcome. It lives in `errors.py`
   because the orchestrator must catch it and `foreman/engine/resident.py` imports the
   orchestrator.
 - `foreman/engine/orchestrator.py` — the `command_poll` seam, called before every
@@ -395,29 +396,29 @@ is also the audit trail: who asked, when, and what the engine did about it.
   interrupt always leaves a correct resume point) and on every `agent.tick`
   while a runner streams. `_execute_agent_step_guarded` settles an interrupted
   run as `killed` with `gate_type="command"`, reusing the shutdown path.
-  `stop_task()` and `release_task()` are the two task-state seams a command
-  needs; `record_engine_event()` anchors `engine.command_applied` /
-  `engine.command_rejected` on a system run.
+  `forgive_step_visit()` and `release_task()` are the task-state seams an
+  interrupt needs; `record_engine_event()` anchors `engine.command_applied` /
+  `engine.command_rejected` (and `engine.task_stopped`) on a system run.
 - `foreman/engine/resident.py` — the command state machine: startup rejection of
-  commands addressed to an engine that is no longer resident, a drain before
-  every pass, the paused state, and settlement of an interrupt once the stack
-  has unwound. Policy lives here, next to the loop state it changes, rather
+  commands addressed to an engine that is no longer resident, rejection of
+  the retired `pause`, `resume` and `stop_task` (ADR-0043), a drain before
+  every pass, and settlement of an interrupt once the stack has unwound. Policy lives here, next to the loop state it changes, rather
   than in the orchestrator.
-- `foreman/cli/` — `foreman engine status|pause|resume|shutdown|run-task|
-  stop-task`, which read the lock view and enqueue commands.
+- `foreman/cli/` — `foreman engine status|shutdown|run-task`, which read the
+  lock view and enqueue commands; `foreman pause|resume|block|unblock`
+  (`cli/holds.py`) for a user's holds.
 - `foreman/engine/control.py` — the read-side derivations every surface needs
   over the lock view and the command log, plus the local `foreman serve`
   bootstrap. It exists so the CLI and the dashboard cannot answer "is an
-  engine resident", "is it paused", or "why is this task blocked" differently
-  from the same database:
+  engine resident" or "why is this task blocked" differently from the same
+  database:
   - `describe_engine()` assembles residency, heartbeat age, lease expiry, the
-    paused state (derived from the last applied `pause`/`resume`, because the
-    flag itself lives in the serve process's memory), the task with a running
-    run, and the recent command log;
+    task with a running run, and the recent command log (whether the work may
+    go on is a user's holds, below, not the engine's state);
   - `resolve_gate_steps()` and `blocked_kind()` classify a blocked task as a
     `gate` (parked at a `_builtin:human_gate` step) or an `engine` dead letter
     (loop limit, unhandled outcome, cost or time gate, branch violation,
-    failure isolation, `stop_task`), deriving the answer from the workflow
+    failure isolation, a user's Block), deriving the answer from the workflow
     definition rather than a new column;
   - `spawn_serve()` starts a detached `foreman serve` writing to
     `.foreman/serve.log`, injected as `ServeSpawner` so callers can substitute
@@ -431,17 +432,48 @@ in-progress task — a dead letter the engine never declared. It now steers the
 engine the same way every other surface does (ADR-0002 amendment):
 
 - `GET /api/projects/{id}/agent/status` returns the engine view above,
-- Run enqueues `resume` (plus `run_task` for a task-scoped start), Pause
-  enqueues `pause`, and a task Stop enqueues `stop_task`,
+- Run next enqueues `run_task` (refused for a held task), and Start worker
+  spawns a worker where none holds the project; neither starts a sprint,
 - `GET /api/projects/{id}/engine/commands` exposes the command log, and
-  `POST` to it queues `pause`, `resume` or `shutdown` for a resident engine
-  (the project page's Stop is `shutdown`). It refuses with a 400 sentence
-  when no engine is resident: a `shutdown` queued for nobody would be the
-  first thing the next engine read, and it would exit at once,
-- when no engine is resident there is nobody to send `resume` to, so the
-  service spawns a detached `foreman serve` through its injected spawner —
-  the single-machine bootstrap, and the only place the dashboard starts a
-  process at all.
+  `POST` to it queues a `shutdown` for a resident engine. It refuses with a
+  400 sentence when no engine is resident (a `shutdown` queued for nobody
+  would be the first thing the next engine read, and it would exit at
+  once), and refuses `pause` and `resume`, which are holds now,
+- when no engine is resident, Start worker spawns a detached `foreman serve`
+  through its injected spawner — the single-machine bootstrap, and the only
+  place the dashboard starts a process at all.
+
+### Holds on the work (ADR-0043)
+
+A user holds the work, not the engine. Pause is soft and belongs to tasks
+(four columns of `tasks`: `paused_at`, `paused_by`, `pause_mode`
+`finish_step`|`now`, and `block_requested`, which only the hold methods of
+`store/holds.py` write); a sprint's or the workspace's Pause is a bulk
+action over their unfinished tasks. Block is hard: a task's is its `blocked`
+status, a sprint's or the workspace's a row of `holds`. A Stop is a pause
+with mode `now`.
+
+- `domain/holds.py` — `task_hold()`, the one answer to "what keeps this task
+  from its next step", for the engine, the API and the pages.
+- `mutations/holds.py` — Pause, Stop, Resume, Block and Unblock at the three
+  levels, audited (task events, sprint events, one project event per project
+  for the workspace); a task joining a sprint whose work is all paused joins
+  paused; holds are cleared when a task moves, closes or reopens, and when a
+  sprint finishes or is cancelled.
+- `engine/holds.py` and the orchestrator — the selector skips held tasks (a
+  held task does not hold the queue), the step loop parks a held task before
+  its next step (built-ins included, so it never merges or becomes done) and
+  applies a Block that waited for the step, the command poll cuts the step
+  for a Stop (agent steps every few seconds, test runs every two; a merge is
+  never cut), and a blocked sprint or workspace is neither finished nor
+  followed by the next sprint.
+- `services/holds.py`, `api/routers/holds.py` — the routes under
+  `/tasks/{id}`, `/sprints/{id}` and `/workspace`: `pause` (`mode`), `stop`,
+  `resume`, and for a sprint or the workspace `block` (`reason`) and
+  `unblock`.
+- `services/work_status.py` — a sprint's status line (`work`: blocked,
+  stopping, pausing, stopped, paused, working, some paused, ready to finish,
+  waiting, not started; plus `no_worker`), the same on every page.
 
 ### One worktree per task
 

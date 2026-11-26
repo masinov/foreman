@@ -27,7 +27,34 @@ MILESTONE_KINDS: tuple[str, ...] = (
     "engine_lost",
     "engine_paused",
     "engine_resumed",
+    "work_paused",
+    "work_stopped",
+    "work_resumed",
+    "work_blocked",
+    "work_unblocked",
 )
+
+#: A user's holds on a sprint's work or the workspace's (ADR-0043), each a
+#: milestone: the event that records it, and its kind.
+_HOLD_MILESTONES: dict[str, str] = {
+    "human.sprint_paused": "work_paused",
+    "human.sprint_stopped": "work_stopped",
+    "human.sprint_resumed": "work_resumed",
+    "human.sprint_blocked": "work_blocked",
+    "human.sprint_unblocked": "work_unblocked",
+    "human.workspace_paused": "work_paused",
+    "human.workspace_stopped": "work_stopped",
+    "human.workspace_resumed": "work_resumed",
+    "human.workspace_blocked": "work_blocked",
+    "human.workspace_unblocked": "work_unblocked",
+}
+
+_HOLD_KIND_SQL = (
+    "CASE e.event_type "
+    + " ".join(f"WHEN '{event}' THEN '{kind}'" for event, kind in _HOLD_MILESTONES.items())
+    + " END"
+)
+_HOLD_EVENTS_SQL = ", ".join(f"'{event}'" for event in _HOLD_MILESTONES)
 
 #: Statuses a sprint can be listed by.
 SPRINT_LIST_STATUSES: tuple[str, ...] = ("active", "planned", "completed")
@@ -73,6 +100,10 @@ _INSTANT = "julianday({column})"
 #   lost too). Start on the dashboard sends a ``resume`` that the new engine
 #   applies as it starts: requested before the lease and completed after,
 #   it is the start's, naming who started the engine, not a resume.
+# - A user's Pause, Stop, Resume, Block or Unblock of a sprint, or of the
+#   whole workspace, is a milestone (ADR-0043); one of the workspace is in
+#   every project's feed, its subject the workspace. A task's own are the
+#   sprint's activity.
 _MILESTONES_SQL = f"""
     SELECT 'sprint_started' AS kind, s.started_at AS at, s.project_id AS project_id,
            s.id AS sprint_id, NULL AS actor, s.id AS ref, NULL AS merged_count,
@@ -136,6 +167,13 @@ _MILESTONES_SQL = f"""
     WHERE l.resource_type = '{ENGINE_RESOURCE_TYPE}'
       AND (l.status = 'expired'
            OR (l.status = 'active' AND julianday(l.expires_at) < julianday('now')))
+    UNION ALL
+    SELECT {_HOLD_KIND_SQL}, e.timestamp, e.project_id, e.sprint_id,
+           json_extract(e.payload_json, '$.by'), e.id, NULL,
+           json_extract(e.payload_json, '$.reason'),
+           CASE WHEN e.event_type LIKE 'human.workspace_%' THEN 'Workspace' END
+    FROM events e
+    WHERE e.event_type IN ({_HOLD_EVENTS_SQL})
 """
 
 

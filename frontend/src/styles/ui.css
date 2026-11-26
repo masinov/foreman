@@ -58,6 +58,47 @@
   border-color: var(--color-text);
 }
 
+/* Stop cuts the running step now (ADR-0043): the one red control. */
+.button--stop:not(:disabled) {
+  border-color: var(--color-red);
+  color: var(--color-red);
+}
+
+/* A status line (ADR-0043): the line, and who, why and when on a tap. */
+.work-status {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+  min-width: 0;
+}
+
+.work-status__toggle {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.work-status__detail {
+  color: var(--color-text-secondary);
+}
+
+.hold-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-self: center;
+  gap: var(--space-2);
+}
+
+.hold-controls__notice {
+  flex-basis: 100%;
+  padding-block: 0;
+}
+
 /* Mono */
 .mono {
   font-family: var(--font-mono);
@@ -159,6 +200,8 @@
 
 .section-heading__actions {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: var(--space-2);
   margin-left: auto;
 }
@@ -281,6 +324,7 @@
 
 /* Table: header line, faint row lines, none above the first or below the last */
 .table-scroll {
+  position: relative; /* holds a visually hidden header in: it widened the page */
   width: 100%;
   overflow-x: auto;
 }

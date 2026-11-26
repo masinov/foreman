@@ -25,10 +25,10 @@ import {
   taskRoutes,
 } from "../../testing/taskFixture";
 import { engine, on, workspacePayload } from "../../testing/workspaceFixture";
-import { actionsFor } from "./TaskActions";
+import { actionsFor, TASK_ACTIONS } from "./TaskActions";
 
 /** The More menu depends on the engine, which arrives with the workspace. */
-const engineKnown = () => screen.findByRole("button", { name: /^Engine/ });
+const workKnown = () => screen.findByRole("button", { name: /^Work: / });
 
 const TITLE = "Make the test step report what happened";
 const BASE = `/dashboard/tasks/${TASK_ID}`;
@@ -231,7 +231,7 @@ describe("the decision", () => {
     expect(region).toHaveTextContent("Plan: done by sonnet-5-5 in 12 s");
     expect(within(region).getByRole("link", { name: "Read its output under Activity" })).toHaveAttribute("href", `${BASE}/activity`);
     fireEvent.click(within(region).getByRole("button", { name: "Approve plan" }));
-    expect(await screen.findByRole("status")).toHaveTextContent("Approved FOR-14. It waits at Develop until the engine is started.");
+    expect(await screen.findByRole("status")).toHaveTextContent("Approved FOR-14. It waits at Develop until a worker runs.");
     expect(postCalls(fetchImpl, "approve")).toHaveLength(1);
   });
 
@@ -375,23 +375,26 @@ describe("the decision", () => {
 });
 
 describe("a task left part-way", () => {
-  const stepWords = async (state, onIt) => {
-    const routes = taskRoutes({ task: taskDetail({ status: "in_progress", workflow_current_step: "develop" }) });
-    const workspace = workspacePayload();
-    workspace.projects[0].engine = engine(state, onIt ? { id: TASK_ID, task_key: "FOR-14", title: "x", step: "develop" } : null);
-    routes["GET /api/v1/workspace"] = workspace;
+  const at = "2026-11-02T14:02:00Z";
+  const stepWords = async (fields) => {
+    const routes = taskRoutes({ task: taskDetail({ status: "in_progress", workflow_current_step: "develop", ...fields }) });
     const view = await renderTask(BASE, routes);
-    await engineKnown();
+    await workKnown();
     const row = within(await screen.findByRole("table", { name: "Steps" })).getByText("Develop").closest("tr");
     const words = row.querySelectorAll("td")[1].textContent;
     view.unmount();
     return words;
   };
 
-  it("reads Running at its step only while the engine is on it", async () => {
-    expect(await stepWords("running", true)).toBe("Running");
-    expect(await stepWords("paused", true)).toBe("Paused here");
-    expect(await stepWords("not_running", false)).toBe("Stopped here");
+  it("reads Running at its step while a step of it runs, and what a user's hold makes of it", async () => {
+    expect(await stepWords({ step_running: true })).toBe("Running");
+    expect(await stepWords({ step_running: true, hold: { scope: "task", kind: "pause", mode: "finish_step", by: "ana", at } })).toBe(
+      "Pausing here",
+    );
+    expect(await stepWords({ hold: { scope: "task", kind: "pause", mode: "now", by: "ana", at } })).toBe("Stopped here");
+    expect(await stepWords({ hold: { scope: "sprint", kind: "block", mode: "finish_step", by: "ana", at, reason: "x" } })).toBe(
+      "Blocked here",
+    );
   });
 });
 
@@ -399,7 +402,7 @@ describe("a task that waits, and one asked to run next", () => {
   const OTHER = { id: "t-other", task_key: "FOR-53", title: "x", step: "test" };
   const at = (minute) => `2026-11-11T10:0${minute}:00Z`;
 
-  /** Render the task in progress at `develop`, with the engine in `state` on another task or none. */
+  /** Render the task in progress at `develop`, with the project's worker in `state` on another task or none. */
   async function render(fields, state, other = OTHER) {
     const routes = taskRoutes({
       task: taskDetail({
@@ -415,23 +418,25 @@ describe("a task that waits, and one asked to run next", () => {
     workspace.projects[0].engine = engine(state, other);
     routes["GET /api/v1/workspace"] = workspace;
     await renderTask(BASE, routes);
-    await engineKnown();
+    await workKnown();
     const row = within(await screen.findByRole("table", { name: "Steps" })).getByText("Develop").closest("tr");
     return row.querySelectorAll("td");
   }
 
-  it("is waiting its turn, not stopped, while the engine runs another task", async () => {
+  it("is waiting its turn while another task runs", async () => {
     const cells = await render({}, "running");
     expect(cells[1]).toHaveTextContent("Waiting here");
-    expect(cells[1].querySelector("span")).toHaveAttribute("title", "The engine runs it after FOR-53");
+    expect(cells[1].querySelector("span")).toHaveAttribute("title", "Foreman runs it after FOR-53");
     const status = screen.getByText("Status").nextElementSibling;
     expect(status).toHaveTextContent("Waiting · Develop");
-    expect(status.querySelector("[title]")).toHaveAttribute("title", "The engine runs it after FOR-53");
+    expect(status.querySelector("[title]")).toHaveAttribute("title", "Foreman runs it after FOR-53");
   });
 
-  it("is stopped only where no engine runs, and paused while the engine is paused", async () => {
-    expect((await render({}, "not_running", null))[1]).toHaveTextContent("Stopped here");
-    expect(screen.getByText("Status").nextElementSibling).toHaveTextContent("Stopped · Develop");
+  it("says no worker runs the project, never that it was stopped", async () => {
+    const cells = await render({}, "not_running", null);
+    expect(cells[1]).toHaveTextContent("Waiting here");
+    expect(cells[1].querySelector("span")).toHaveAttribute("title", "No worker runs this project.");
+    expect(screen.getByText("Status").nextElementSibling).toHaveTextContent("Waiting · Develop");
   });
 
   it("says Runs next in place of the Run next button until the engine starts it", async () => {
@@ -475,6 +480,18 @@ describe("a task that waits, and one asked to run next", () => {
   });
 });
 
+describe("what waits for a task", () => {
+  it("lists what needs it in Details, as Depends on lists what it needs", async () => {
+    const task = taskDetail({
+      needed_by: [{ id: "t-later", task_key: "FOR-20", title: "Use the new report", status: "todo" }],
+    });
+    await renderTask(BASE, taskRoutes({ task }));
+    const details = await screen.findByRole("region", { name: "Details" });
+    expect(within(details).getByText("Needed by")).toBeInTheDocument();
+    expect(within(details).getByRole("link", { name: "FOR-20 Use the new report" })).toHaveAttribute("href", "/dashboard/tasks/t-later");
+  });
+});
+
 describe("a task closed by hand", () => {
   it("says so in Details, with the reason", async () => {
     const task = taskDetail({
@@ -509,34 +526,57 @@ describe("the task's actions beside its title", () => {
     else fireEvent.click(within(openMore()).getByRole("menuitem", { name: label }));
   }
 
-  /** The task's routes with the project's engine in `state`, on this task or on none. */
-  function withEngine(routes, state, onThisTask = true) {
-    const workspace = workspacePayload();
-    workspace.projects[0].engine = engine(state, onThisTask ? { id: TASK_ID, task_key: "FOR-14", title: "x", step: "develop" } : null);
-    routes["GET /api/v1/workspace"] = workspace;
-    return routes;
-  }
+  const AT = "2026-11-02T14:02:00Z";
+  const PAUSED = { scope: "task", kind: "pause", mode: "finish_step", by: "ana", at: AT };
+  const STOPPED = { ...PAUSED, mode: "now" };
+  const SPRINT_BLOCK = { scope: "sprint", kind: "block", mode: "finish_step", by: "ana", at: AT, reason: "design review" };
+  const BLOCKING = { scope: "task", kind: "blocking", mode: "finish_step", by: "ana", at: AT, reason: "wrong approach" };
+  const RUNNING = { status: "in_progress", workflow_current_step: "develop", step_running: true };
 
-  // What depends on the task's state, and closing it, are buttons; More holds what is rare.
-  // A task the engine is running can be neither closed nor deleted: the API refuses both.
+  // What depends on the task's state and its holds (ADR-0043), and closing
+  // it, are buttons; More holds what is rare. While a step of it runs the
+  // task can be neither closed nor deleted: the API refuses both.
   it.each([
-    ["running", { status: "in_progress", workflow_current_step: "develop" }, "running", ["Stop"], []],
-    ["left part-way with no engine", { status: "in_progress", workflow_current_step: "merge" }, "not_running", ["Run next", "Close"], ["Delete"]],
-    ["queued", { status: "todo" }, "not_running", ["Run next", "Close"], ["Block", "Split into smaller tasks", "Delete"]],
-    ["blocked by the engine", { status: "blocked", blocked_kind: "engine" }, "not_running", ["Close"], ["Delete"]],
-    ["at a gate", {}, "not_running", ["Close"], ["Delete"]],
-    ["in the backlog", { status: "todo", in_backlog: true }, "not_running", [], ["Split into smaller tasks", "Decline", "Delete"]],
-    ["done", { status: "done" }, "not_running", ["Reopen"], ["Delete"]],
-    ["cancelled", { status: "cancelled" }, "not_running", ["Reopen"], ["Delete"]],
-  ])("shows what exists for a task that is %s", async (_, fields, state, buttons, more) => {
-    await renderTask(BASE, withEngine(taskRoutes({ task: taskDetail(fields) }), state, state === "running"));
-    await engineKnown();
+    ["running", RUNNING, ["Pause", "Stop"], ["Block"]],
+    ["pausing", { ...RUNNING, hold: PAUSED }, ["Resume", "Stop"], ["Block"]],
+    ["stopping", { ...RUNNING, hold: STOPPED }, ["Resume"], ["Block"]],
+    ["being blocked", { ...RUNNING, hold: BLOCKING }, ["Unblock"], []],
+    ["left part-way", { status: "in_progress", workflow_current_step: "merge" }, ["Run next", "Pause", "Close"], ["Block", "Delete"]],
+    ["paused", { status: "in_progress", workflow_current_step: "merge", hold: PAUSED }, ["Resume", "Close"], ["Block", "Delete"]],
+    ["queued", { status: "todo" }, ["Run next", "Pause", "Close"], ["Block", "Split into smaller tasks", "Delete"]],
+    ["held by its sprint's block", { status: "todo", hold: SPRINT_BLOCK }, ["Sprint blocked", "Close"], ["Block", "Split into smaller tasks", "Delete"]],
+    ["blocked by the engine", { status: "blocked", blocked_kind: "engine", awaiting_human_gate: false }, ["Close"], ["Delete"]],
+    ["at a gate", {}, ["Pause", "Close"], ["Delete"]],
+    ["in the backlog", { status: "todo", in_backlog: true }, [], ["Split into smaller tasks", "Decline", "Delete"]],
+    ["done", { status: "done" }, ["Reopen"], ["Delete"]],
+    ["cancelled", { status: "cancelled" }, ["Reopen"], ["Delete"]],
+  ])("shows what exists for a task that is %s", async (_, fields, buttons, more) => {
+    await renderTask(BASE, taskRoutes({ task: taskDetail(fields) }));
     await waitFor(() => expect(inPlainSight()).toEqual(["Edit", ...buttons, ...(more.length ? ["More"] : [])]));
     if (more.length) expect(within(openMore()).getAllByRole("menuitem").map((item) => item.textContent)).toEqual(more);
   });
 
-  it("offers neither Run next nor Stop for a task in progress until the engine is known", () => {
-    expect(actionsFor({ status: "in_progress", in_backlog: false }, null)).toEqual({ buttons: [], more: [] });
+  it("says why Resume would do nothing under a block above, and Stop is the red one", () => {
+    expect(actionsFor({ status: "todo", in_backlog: false, hold: SPRINT_BLOCK }).heldAbove).toEqual(SPRINT_BLOCK);
+    expect(TASK_ACTIONS.stop.variant).toBe("stop");
+  });
+
+  it.each([
+    ["Pause", "pause", { status: "todo" }, "Paused FOR-14."],
+    ["Stop", "stop", RUNNING, "Stopped FOR-14. The step runs again on Resume."],
+    ["Resume", "resume", { status: "in_progress", workflow_current_step: "merge", hold: PAUSED }, "Resumed FOR-14."],
+  ])("%s acts at once, with no question, and a refusal shows beside the title", async (label, action, fields, done) => {
+    const routes = taskRoutes({ task: taskDetail(fields) });
+    let refuse = true;
+    routes[post(action)] = () => (refuse ? reply(400, { error: `Cannot ${action} this task`, code: "invalid_request" }) : { ok: true });
+    const { fetchImpl } = await renderTask(BASE, routes);
+    fireEvent.click(await screen.findByRole("button", { name: label }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(await screen.findByRole("alert")).toHaveTextContent(`Cannot ${action} this task.`);
+    refuse = false;
+    fireEvent.click(screen.getByRole("button", { name: label }));
+    expect(await screen.findByText(done)).toBeInTheDocument();
+    expect(postCalls(fetchImpl, action)).toHaveLength(2);
   });
 
   it("answers a blocked task's question in its decision only, not in More as well", async () => {
@@ -546,17 +586,14 @@ describe("the task's actions beside its title", () => {
   });
 
   it.each([
-    ["Stop", "stop", { status: "in_progress" }, null, {}, "Stop requested. The task is blocked when the engine acts on it."],
     ["Block", "block", { status: "todo" }, "Why it is blocked", { reason: "Waiting for a key." }, "Blocked."],
     ["Reopen", "reopen", { status: "done" }, null, {}, "Reopened. The task is back in the queue."],
     ["Decline", "decline", { status: "todo", in_backlog: true }, "Why it is declined", { reason: "Waiting for a key." }, "Declined."],
   ])("%s is confirmed, calls its endpoint, and shows a refusal", async (label, action, fields, ask, body, done) => {
-    const routes = withEngine(taskRoutes({ task: taskDetail(fields) }), "running");
+    const routes = taskRoutes({ task: taskDetail(fields) });
     let refuse = true;
     routes[post(action)] = () => (refuse ? reply(400, { error: `Cannot ${action} this task`, code: "invalid_request" }) : { ok: true });
     const { fetchImpl } = await renderTask(BASE, routes);
-    await engineKnown();
-    if (label === "Stop") await screen.findByRole("button", { name: "Stop" });
     choose(label);
     const dialog = screen.getByRole("dialog");
     expect(dialog).toHaveAccessibleDescription(/./);
@@ -574,14 +611,14 @@ describe("the task's actions beside its title", () => {
     expect(sent[1].body).toEqual(body);
   });
 
-  it("Run next asks the project's engine to run this task", async () => {
+  it("Run next puts this task first in line, at once", async () => {
     const routes = taskRoutes({ task: taskDetail({ status: "todo" }) });
     const url = "POST /api/v1/projects/foreman/agent/start";
     routes[url] = { started: true };
     const { fetchImpl } = await renderTask(BASE, routes);
     choose("Run next");
-    fireEvent.click(within(screen.getByRole("dialog", { name: "Run this task next" })).getByRole("button", { name: "Run next" }));
-    expect(await screen.findByText("Requested. The task starts when the engine picks the request up.")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(await screen.findByText("FOR-14 runs next.")).toBeInTheDocument();
     expect(fetchImpl.calls.filter((call) => `${call.method} ${call.url}` === url)[0].body).toEqual({ task_id: TASK_ID });
   });
 

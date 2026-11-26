@@ -90,8 +90,8 @@ describe("WorkspacePage", () => {
     const foremanRow = within(projects).getByRole("link", { name: "Foreman" }).closest("tr");
     expect(within(projects).getByRole("link", { name: "Foreman" })).toHaveAttribute("href", "/dashboard/projects/foreman");
     expect(within(foremanRow).getByText("/srv/foreman · main")).toBeInTheDocument();
-    expect(within(foremanRow).getByText("Running")).toBeInTheDocument();
-    expect(within(foremanRow).getByText("FOR-13")).toBeInTheDocument();
+    // What its work is doing now: the active sprint's status line (ADR-0043).
+    expect(within(foremanRow).getByText("Working · FOR-13 Develop")).toBeInTheDocument();
     expect(within(foremanRow).getByRole("link", { name: "Sprint 56: engine truthfulness" })).toHaveAttribute(
       "href",
       "/dashboard/sprints/sprint-56",
@@ -111,9 +111,7 @@ describe("WorkspacePage", () => {
     expect(within(foremanRow).getByText(/^11 Nov, \d{2}:\d{2}$/)).toBeInTheDocument();
 
     const otherRow = within(projects).getByRole("link", { name: "Other project" }).closest("tr");
-    expect(within(otherRow).getByText("Not running")).toBeInTheDocument();
-    // An idle engine says so once; there is no second line repeating it.
-    expect(within(otherRow).queryByText(/working on/)).toBeNull();
+    expect(within(otherRow).getByText("Not started")).toBeInTheDocument();
     expect(within(otherRow).getByText("None")).toBeInTheDocument();
     expect(within(otherRow).getByText("nothing planned")).toBeInTheDocument();
     expect(within(otherRow).getByText("nothing yet")).toBeInTheDocument();
@@ -125,7 +123,54 @@ describe("WorkspacePage", () => {
     expect(rows.map(withoutClock)).toEqual([
       "11 NovForemanSprint 56engine truthfulnessStarted",
       "10 NovForemanSprint 55baseline and host safetyFinished",
-      "9 NovOther projectEnginePausedana",
+      "9 NovOther projectWorkerPausedana",
+    ]);
+  });
+
+  it("pauses, resumes and blocks every project from above the projects", async () => {
+    const routes = workspaceRoutes();
+    routes["POST /api/v1/workspace/pause"] = { task_keys: ["FOR-13", "FOR-14"] };
+    routes["POST /api/v1/workspace/block"] = { block: { reason: "release freeze" } };
+    const fetchImpl = createFakeFetch(routes);
+    renderApp("/dashboard", fetchImpl);
+    const projects = await waitFor(() => {
+      const section = projectsSection();
+      within(section).getByRole("link", { name: "Foreman" });
+      return section;
+    });
+    const heading = projects.querySelector(".section-heading");
+    // A step runs and nothing is paused: Pause all and Stop all, no Resume all.
+    expect(within(heading).getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "Pause all",
+      "Stop all",
+      "Block all",
+      "Add project",
+    ]);
+    fireEvent.click(within(heading).getByRole("button", { name: "Pause all" }));
+    expect(await screen.findByText("Paused FOR-13 and FOR-14.")).toBeInTheDocument();
+
+    fireEvent.click(within(heading).getByRole("button", { name: "Block all" }));
+    const dialog = screen.getByRole("dialog", { name: "Block every project" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Block all" }));
+    expect(within(dialog).getByText("Why it is blocked is needed.")).toBeInTheDocument();
+    fireEvent.change(within(dialog).getByLabelText("Why it is blocked"), { target: { value: "release freeze" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Block all" }));
+    expect(await screen.findByText("Blocked the workspace.")).toBeInTheDocument();
+    expect(fetchImpl.calls.find((call) => call.url === "/api/v1/workspace/block").body).toEqual({ reason: "release freeze" });
+  });
+
+  it("offers Unblock all, and nothing else of its own, while the workspace is blocked", async () => {
+    const routes = workspaceRoutes();
+    routes["GET /api/v1/workspace"].block = { scope: "workspace", reason: "release freeze", by: "ana", at: "2026-11-02T14:02:00Z" };
+    renderApp("/dashboard", createFakeFetch(routes));
+    const projects = await waitFor(() => {
+      const section = projectsSection();
+      within(section).getByRole("link", { name: "Foreman" });
+      return section;
+    });
+    expect(within(projects.querySelector(".section-heading")).getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "Unblock all",
+      "Add project",
     ]);
   });
 

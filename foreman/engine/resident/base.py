@@ -500,7 +500,7 @@ class ResidentEngineBase:
 
         Called by :meth:`run`, and by a one-shot `foreman run`, which holds the
         project lock for its pass and so is the only process that can act on a
-        `pause` or a `stop_task` sent while it works.
+        `shutdown` or a `steer_task` sent while it works.
         """
 
         # This engine is the one that just took the lock, so it owns the
